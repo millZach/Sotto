@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, type AgentCommand, type AgentModel, type AgentState } from '../../../src/shared/agents'
-import { OWN_SERVER_WORDS, ownServerRefusalWords, type CheckResult, type OwnServer, type OwnServerRefusal, type OwnServersBridge } from '../../../src/shared/ownModelServers'
+import { OWN_SERVER_WORDS, ownServerRefusalWords, type AddResult, type CheckResult, type OwnServer, type OwnServerRefusal, type OwnServersBridge } from '../../../src/shared/ownModelServers'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ModelPicker } from '../../../src/renderer/src/agents/ModelPicker'
 import { AddOwnServerDialog, OwnModelServers, ownServerName, parseContext } from '../../../src/renderer/src/agents/OwnModelServers'
@@ -138,9 +138,21 @@ describe('the group', () => {
     const list = vi.fn<OwnServersBridge['list']>().mockRejectedValueOnce(new Error('gone')).mockResolvedValue([SPARK])
     render(<OwnModelServers bridge={fake({ list })} />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Sotto could not read your saved servers. Nothing was changed. Try again.')
+    expect(screen.queryByText(/^None yet/u)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Read your saved servers again' }))
     expect(await screen.findByText('spark-head')).toBeVisible()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('says plainly when a server added with a key asks for it on Check again, and names no models', async () => {
+    const keyKept: CheckResult = { status: 'ok', address: SPARK.address, kind: 'sglang', answeredMs: 40, keyKept: true,
+      models: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', context: 1_048_576, thinking: true, images: false }] }
+    await group(fake({ list: vi.fn(async () => [SPARK]), checkSaved: vi.fn(async () => keyKept) }))
+    fireEvent.click(screen.getByRole('button', { name: 'Check spark-head again' }))
+    const row = screen.getByText('spark-head').closest('li')!
+    expect(await within(row).findByRole('status')).toHaveTextContent(
+      /^spark-head answered in 40 ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again\.$/u)
+    expect(within(row).getByRole('status')).not.toHaveTextContent(/model(s)? (found|listed)|also lists|no longer lists|with \d/u)
   })
 
   it('says on the row when Check again finds the server gone, in main’s words', async () => {
@@ -239,6 +251,47 @@ describe('the group', () => {
     expect(within(dialog()).getByText('SGLang answered in 84 ms with 1 model.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Add server' })).toHaveFocus()
     expect(screen.queryByText(/^Added/u)).toBeNull()
+  })
+
+  it('cannot be closed while an add is with main, says it is adding, and closes when main answers', async () => {
+    const user = userEvent.setup()
+    let answer: (result: AddResult) => void = () => undefined
+    const bridge = await group(fake({ check: vi.fn(async () => ({ ...answered, models: [answered.models[0]!] }) as CheckResult),
+      add: vi.fn(() => new Promise<AddResult>(resolve => { answer = resolve })) }))
+    await user.click(screen.getByRole('button', { name: 'Add a server' }))
+    await user.type(field('Address'), 'spark-head:8888')
+    await user.click(screen.getByRole('button', { name: 'Check this server' }))
+    await user.click(await screen.findByRole('button', { name: 'Add server' }))
+    const adding = screen.getByRole('button', { name: 'Adding…' })
+    expect(adding).toHaveFocus()
+    expect(adding).toHaveAttribute('aria-disabled', 'true')
+    expect(dialog()).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'Close without adding a server' })).toBeDisabled()
+    expect(field('Address')).toHaveAttribute('readonly')
+    await user.keyboard('{Escape}')
+    await user.click(adding)
+    expect(dialog()).toBeVisible()
+    expect(bridge.add).toHaveBeenCalledTimes(1)
+    answer({ status: 'ok', server: { ...SPARK, id: 'own-new1', address: answered.address, keyed: false } })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByText('Added spark-head. Its models are in the model menu under spark-head, with OpenCode.')).toBeVisible()
+  })
+
+  it('opens again for Cancel once a pending add is refused', async () => {
+    const user = userEvent.setup()
+    let answer: (result: AddResult) => void = () => undefined
+    await group(fake({ check: vi.fn(async () => ({ ...answered, models: [answered.models[0]!] }) as CheckResult),
+      add: vi.fn(() => new Promise<AddResult>(resolve => { answer = resolve })) }))
+    await user.click(screen.getByRole('button', { name: 'Add a server' }))
+    await user.type(field('Address'), 'spark-head:8888')
+    await user.click(screen.getByRole('button', { name: 'Check this server' }))
+    await user.click(await screen.findByRole('button', { name: 'Add server' }))
+    answer({ status: 'refused', reason: 'opencode-not-running', message: OWN_SERVER_WORDS.openCodeNotRunning })
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(OWN_SERVER_WORDS.openCodeNotRunning)
+    expect(screen.getByRole('button', { name: 'Add server' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Close without adding a server' })).toBeEnabled()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('says a mistyped address itself, without asking main', async () => {

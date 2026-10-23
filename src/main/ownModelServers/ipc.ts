@@ -10,12 +10,14 @@ import type { OwnServers } from './service'
 export type OwnServersCalls = Pick<OwnServers, 'list' | 'check' | 'add' | 'checkSaved' | 'remove'>
 
 const FAILED = { status: 'refused', reason: 'failed', message: OWN_SERVER_WORDS.failed } as const
+/** A list that could not be read rejects, so the window says so and offers Try again rather than showing none saved. */
+export const OWN_SERVERS_UNREAD = 'Sotto could not read your own model servers.'
 
 /**
  * The main window's bridge to the user's own model servers (ADR-0123). The `own-model-servers` Owl answer decides whether
  * the handlers exist: with it off, or OpenCode held, nothing is registered and no renderer can turn it on. Every request
  * is checked by the service's schema, one that fails it or throws answers that nothing was changed rather than echoing
- * what was sent, and every answer is checked against its schema on the way out, so no key ever crosses back.
+ * what was sent (a list that cannot be read rejects with fixed words instead), and every answer is checked against its schema on the way out, so no key ever crosses back.
  */
 export function registerOwnServersIpc(ipc: IpcMainAdapter, calls: OwnServersCalls | undefined, senders: () => readonly TrustedIpcSender[]): () => void {
   if (!calls) return () => undefined
@@ -27,7 +29,7 @@ export function registerOwnServersIpc(ipc: IpcMainAdapter, calls: OwnServersCall
       return schema.parse(answer)
     })
   }
-  handle(OWN_SERVERS_LIST, ownServerListSchema, () => calls.list(), () => [])
+  handle(OWN_SERVERS_LIST, ownServerListSchema, () => calls.list(), () => { throw new Error(OWN_SERVERS_UNREAD) })
   handle(OWN_SERVERS_CHECK, checkResultSchema, request => calls.check(request), () => FAILED)
   handle(OWN_SERVERS_ADD, addResultSchema, request => calls.add(request), () => FAILED)
   handle(OWN_SERVERS_CHECK_SAVED, checkResultSchema, request => calls.checkSaved(request), () => FAILED)

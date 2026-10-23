@@ -1,6 +1,9 @@
 // @vitest-environment node
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { openCodeForOwnServers } from '../../src/main/ownModelServers/openCode'
+import { OwnServers } from '../../src/main/ownModelServers/service'
 import type { OwnServer } from '../../src/shared/ownModelServers'
 import { opencodeFixture } from '../fixtures/fakeOpenCodeFixture'
 
@@ -54,5 +57,49 @@ it('starts nothing for a change while OpenCode is not connected', async () => {
     openCode.outdated()
     expect(await openCode.catalogAgain()).toBe(false)
     expect(await configs(f)).toEqual([])
+  } finally { await f.cleanup() }
+})
+
+// Made up for this test; no real key ever goes near a fixture.
+const KEY = 'sk-own-server-fixture-key-81d2'
+/** The fake OpenCode lists the server's source as OpenCode 2.1.4 lists a provider declared only in config. */
+const OWN_SOURCE = { id: 'own-spark1', name: 'Spark', methods: [{ type: 'key', label: 'Manually enter API Key' }] }
+const ANTHROPIC = { id: 'anthropic', name: 'Anthropic', methods: [{ type: 'key' }] }
+
+/** The record and Sotto's OpenCode over the fake, the new server's ID fixed so the fake lists its source. */
+async function addFixture(script: Record<string, unknown>) {
+  const events: string[] = []
+  const f = await opencodeFixture(undefined, undefined, {}, { ownServers: () => servers.list(), signInIdleMs: 60_000 })
+  const servers = new OwnServers({ directory: f.root, openCode: () => openCodeForOwnServers(f.host), newId: () => 'spark1', log: event => events.push(event) })
+  await f.script({ integrations: [ANTHROPIC, OWN_SOURCE], ...script })
+  await f.host.connect()
+  const credentials = async (): Promise<{ integrationID: string }[]> => JSON.parse(await readFile(join(f.root, 'credentials.json'), 'utf8').catch(() => '[]')) as { integrationID: string }[]
+  return { f, servers, events, credentials }
+}
+const keyed = { name: 'Spark', address: 'spark-head:8888', key: KEY, models: [spark.models[0]!] }
+
+it('keeps a server whose key OpenCode saved when its answer was lost, and keeps it out of OpenCode’s own source list', async () => {
+  const { f, servers, credentials } = await addFixture({ loseAnswer: { 'integration.connect.key': true } })
+  try {
+    expect(await servers.add(keyed)).toMatchObject({ status: 'ok', server: { id: 'own-spark1', keyed: true } })
+    expect((await credentials()).map(credential => credential.integrationID)).toEqual(['own-spark1'])
+    const sources = await f.host.signIn.sources()
+    expect(sources.status === 'ok' && sources.sources.map(source => source.id)).toEqual(['anthropic'])
+  } finally { await f.cleanup() }
+})
+
+it('asks OpenCode to forget a key it may have saved when the sign-in cannot tell, so none is left once the server is taken out', async () => {
+  // The key is saved, its answer is lost, and the read that would say so fails too.
+  const { f, servers, events, credentials } = await addFixture({ loseAnswer: { 'integration.connect.key': true }, refuse: { 'integration.list': [500, 1, 1] } })
+  try {
+    expect(await servers.add(keyed)).toMatchObject({ status: 'refused', reason: 'sign-in-failed' })
+    expect(await servers.list()).toEqual([])
+    expect(await credentials()).toEqual([])
+    // OpenCode had saved it: the key went in once and its credential was deleted again.
+    const methods = (await f.driver.requests()).map(record => record.method)
+    expect(methods.filter(method => method === 'integration.connect.key')).toHaveLength(1)
+    expect(methods.filter(method => method === 'credential.remove')).toHaveLength(1)
+    expect(events).toEqual(['own-server-sign-in-failed', 'own-server-add-refused'])
+    expect(JSON.stringify(events) + JSON.stringify(f.events)).not.toContain(KEY)
   } finally { await f.cleanup() }
 })

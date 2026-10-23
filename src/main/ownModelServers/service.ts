@@ -45,14 +45,17 @@ export interface OwnServersOptions {
   readonly log?: (event: OwnServerEvent) => void
   /** A new server's ID suffix, which a test fixes. */
   readonly newId?: () => string
+  /** The clock Check again times a server by, which a test fixes. */
+  readonly now?: () => number
 }
 
 const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 function randomSuffix(): string {
   return [...randomBytes(10)].map(byte => ID_ALPHABET[byte % ID_ALPHABET.length]).join('')
 }
-const refusal = <R extends { status: 'refused'; reason: OwnServerRefusal; message: string }>(reason: OwnServerRefusal, message: string): R =>
-  ({ status: 'refused', reason, message }) as R
+/** Why a check, an add or a remove went no further, in the shape every one of their answers shares. */
+interface Refusal { readonly status: 'refused'; readonly reason: OwnServerRefusal; readonly message: string }
+const refusal = (reason: OwnServerRefusal, message: string): Refusal => ({ status: 'refused', reason, message })
 
 /**
  * The user's own model servers (ADR-0123): the record main keeps in `own-model-servers.json`, the check, and adding and
@@ -97,16 +100,20 @@ export class OwnServers {
   }
 
   /**
-   * Check again: the saved server as it is saved. Sotto keeps no key, so a server that asks for one it was added with
-   * answered all the same, and its saved models are what it is known to have.
+   * Check again: the saved server as it is saved. Sotto keeps no key, so a server added with one that asks for it has
+   * answered, and says so with `keyKept`: its models could not be read again, so they are the saved ones. The time is
+   * how long it took to ask, since a check that is asked for a key sends nothing more.
    */
   async checkSaved(request: unknown): Promise<CheckResult> {
     const { id } = checkSavedRequestSchema.parse(request)
     const server = (await this.servers()).find(item => item.id === id)
     if (!server) return this.checked(refusal('not-found', OWN_SERVER_WORDS.notFound))
+    const now = this.options.now ?? Date.now
+    const started = now()
     const result = await this.run(server.address, undefined)
-    if (server.keyed && result.status === 'refused' && result.reason === 'key-needed') {
-      return this.checked({ status: 'ok', address: server.address, kind: 'openai-compatible', models: server.models.map(savedAsFound), answeredMs: 0 })
+    if (server.keyed && result.status === 'refused' && (result.reason === 'key-needed' || result.reason === 'key-refused')) {
+      const answeredMs = Math.min(600_000, Math.max(0, Math.round(now() - started)))
+      return this.checked({ status: 'ok', address: server.address, kind: 'openai-compatible', models: server.models.map(savedAsFound), answeredMs, keyKept: true })
     }
     return this.checked(result)
   }
@@ -151,6 +158,9 @@ export class OwnServers {
       const signedIn = await openCode.signInWithKey(id, key).catch(() => false)
       if (!signedIn) {
         this.log('own-server-sign-in-failed')
+        // OpenCode may have kept the key all the same, such as when its answer was lost; it is asked to forget it while
+        // the record still declares the source, so no key is left behind for a source nothing lists.
+        if (!await openCode.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
         // Nothing is kept: the record goes, and the processes started with it are outdated again.
         await this.save((await this.servers()).filter(item => item.id !== id))
         openCode.outdated()
@@ -164,7 +174,8 @@ export class OwnServers {
 
   /**
    * Removes a server: OpenCode forgets its key first, so no key is left behind for a source nothing lists, then the record
-   * goes and OpenCode is told.
+   * goes and OpenCode is told. When the record could not be written after the key went, the answer says so; removing it
+   * again then signs out a source with no key left, which OpenCode takes as done.
    */
   remove(request: unknown): Promise<RemoveResult> {
     const { id } = removeRequestSchema.parse(request)
@@ -186,8 +197,10 @@ export class OwnServers {
         this.log('own-server-sign-out-failed')
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signOutFailed(server.name))
       }
-    }
-    await this.save(servers.filter(item => item.id !== id))
+      try { await this.save(servers.filter(item => item.id !== id)) } catch {
+        return refusal('failed', OWN_SERVER_WORDS.removePartly(server.name))
+      }
+    } else await this.save(servers.filter(item => item.id !== id))
     if (running) {
       openCode!.outdated()
       if (!await openCode!.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')

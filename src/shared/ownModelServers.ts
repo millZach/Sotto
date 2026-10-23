@@ -79,8 +79,13 @@ export const checkResultSchema = z.discriminatedUnion('status', [
     status: z.literal('ok'),
     /** The address as Sotto will save it, after `ownServerAddress`. */
     address, kind: ownServerKindSchema, models: z.array(foundModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
-    /** How long the server took to list its models, in milliseconds. */
+    /** How long the server took to list its models, or with `keyKept` to ask for its key, in milliseconds. */
     answeredMs: z.number().int().min(0).max(600_000),
+    /**
+     * Check again on a server added with a key: it answered and asked for the key, which OpenCode keeps and Sotto does not,
+     * so its models could not be read again and `models` are the saved ones. Absent on every other check.
+     */
+    keyKept: z.literal(true).optional(),
   }).strict(),
   refused,
 ])
@@ -123,6 +128,7 @@ export const OWN_SERVER_WORDS = {
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
+  removePartly: (name: string) => `OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`,
   failed: 'Sotto could not finish that, so nothing was changed. Try again.',
   contextUnknown: 'The server does not say how much context this model has. Type it from the model’s page.',
   privacy: 'Threads on this server send your code and messages to it, so whoever runs it can read them.',

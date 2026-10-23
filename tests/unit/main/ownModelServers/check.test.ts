@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { checkOwnServer, serverRoot } from '../../../../src/main/ownModelServers/check'
 import { OWN_SERVER_WORDS, type CheckResult } from '../../../../src/shared/ownModelServers'
 
-interface Seen { method: string; path: string; auth: string | undefined; body: unknown }
+interface Seen { method: string; path: string; auth: string | undefined; body: unknown; abandoned?: boolean }
 type Route = (body: unknown) => { status?: number; json?: unknown; text?: string; hang?: boolean; headers?: Record<string, string> }
 
 const servers: Server[] = []
@@ -18,11 +18,13 @@ async function fake(routes: Record<string, Route>): Promise<{ address: string; h
     request.on('data', chunk => { raw += chunk })
     request.on('end', () => {
       const body = raw ? JSON.parse(raw) as unknown : undefined
-      seen.push({ method: request.method!, path: request.url!, auth: request.headers.authorization, body })
+      const record: Seen = { method: request.method!, path: request.url!, auth: request.headers.authorization, body }
+      seen.push(record)
       const route = routes[`${request.method} ${request.url}`]
       if (!route) { response.writeHead(404, { 'content-type': 'text/plain' }); response.end('Not Found'); return }
       const answer = route(body)
-      if (answer.hang) return
+      // A request left unanswered is written down as abandoned when the check lets its connection go.
+      if (answer.hang) { response.on('close', () => { record.abandoned = true }); return }
       response.writeHead(answer.status ?? 200, { 'content-type': answer.text !== undefined ? 'text/plain' : 'application/json', ...answer.headers })
       response.end(answer.text ?? JSON.stringify(answer.json))
     })
@@ -101,10 +103,12 @@ describe('what a check answers', () => {
 
   it('ends the whole check by its overall deadline, leaving what was not answered unknown', async () => {
     const server = await fake({ 'GET /v1/models': list({ id: 'alpha' }), 'GET /api/tags': () => ({ hang: true }), 'GET /props': () => ({ hang: true }) })
-    const started = Date.now()
+    // Each request alone may take ten seconds; the check's own deadline ends both unanswered ones first.
     const result = ok(await checkOwnServer(server.address, undefined, { totalMs: 500, requestMs: 10_000 }))
-    expect(Date.now() - started).toBeLessThan(5_000)
     expect(result).toMatchObject({ kind: 'openai-compatible', models: [{ id: 'alpha', images: false }] })
+    const hung = server.seen.filter(request => request.path === '/api/tags' || request.path === '/props')
+    expect(hung).toHaveLength(2)
+    await expect.poll(() => hung.every(request => request.abandoned)).toBe(true)
   })
 })
 
@@ -163,6 +167,20 @@ describe('what each kind of server says about its models', () => {
       { id: 'qwen/qwen3-30b-a3b', name: 'Qwen3 30B A3B', context: 32_768, thinking: true, images: false },
       { id: 'google/gemma-3-12b', name: 'Gemma 3 12B', context: 131_072, thinking: false, images: true },
     ])
+  })
+
+  it('takes each LM Studio model’s context from its own loaded instance, and the model’s most when none has its ID', async () => {
+    const server = await fake({
+      'GET /v1/models': list({ id: 'qwen/qwen3-30b-a3b' }, { id: 'qwen/qwen3-30b-a3b:2' }, { id: 'openai/gpt-oss-20b' }),
+      'GET /api/v1/models': () => ({ json: { models: [
+        { type: 'llm', key: 'qwen/qwen3-30b-a3b', max_context_length: 262_144, capabilities: { vision: false },
+          loaded_instances: [{ id: 'qwen/qwen3-30b-a3b', config: { context_length: 131_072 } }, { id: 'qwen/qwen3-30b-a3b:2', config: { context_length: 8_192 } }] },
+        { type: 'llm', key: 'openai/gpt-oss-20b', max_context_length: 131_072, capabilities: { vision: false },
+          loaded_instances: [{ id: 'openai/gpt-oss-20b:other', config: { context_length: 4_096 } }] },
+      ] } }),
+    })
+    const models = ok(await checkOwnServer(server.address, undefined)).models
+    expect(models.map(model => [model.id, model.context])).toEqual([['qwen/qwen3-30b-a3b', 131_072], ['qwen/qwen3-30b-a3b:2', 8_192], ['openai/gpt-oss-20b', 131_072]])
   })
 
   it('reads an older LM Studio’s v0 list when v1 is not there', async () => {

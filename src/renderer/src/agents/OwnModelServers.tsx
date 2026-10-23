@@ -164,6 +164,8 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
 /** What Check again found on a saved server, in words. Its saved models are not changed until it is added again. */
 function checkedWords(server: OwnServer, result: CheckResult): { readonly tone: 'ok' | 'bad'; readonly words: string } {
   if (result.status !== 'ok') return { tone: 'bad', words: result.message }
+  // A server added with a key asks for it again, and only OpenCode has it: the models shown are the saved ones, unread.
+  if (result.keyKept) return { tone: 'ok', words: `${server.name} answered in ${result.answeredMs.toLocaleString('en-US')} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again.` }
   const found = new Set(result.models.map(model => model.id)), saved = new Set(server.models.map(model => model.id))
   const extra = result.models.filter(model => !saved.has(model.id)).map(model => model.name)
   const gone = server.models.filter(model => !found.has(model.id)).map(model => model.name)
@@ -213,7 +215,9 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
   useEffect(() => () => { live.current = false }, [])
   const titleId = useId(), aboutId = useId(), addressId = useId(), addressNoteId = useId(), addressErrorId = useId(), nameId = useId(), nameNoteId = useId(), keyId = useId(),
     keyNoteId = useId(), refusalId = useId(), privacyId = useId()
-  const dialogRef = useDialogFocus({ onEscape: onClose, initialFocus: addressRef, fallbackFocus })
+  // While an add is with main, nothing closes the dialog: it closes, or says the refusal, when main answers.
+  const close = (): void => { if (!adding) onClose() }
+  const dialogRef = useDialogFocus({ onEscape: close, initialFocus: addressRef, fallbackFocus })
   useEffect(() => { if (done) doneRef.current?.focus() }, [done])
 
   const parsed = ownServerAddress(address)
@@ -273,7 +277,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
   const describedBy = (...ids: Array<string | false>): string | undefined => ids.filter(Boolean).join(' ') || undefined
 
   const shell = (body: ReactNode, actions: ReactNode, title: string, about: string): ReactNode => createPortal(
-    <div className="tt-dialog-backdrop own-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}>
+    <div className="tt-dialog-backdrop own-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
       <section ref={dialogRef} className="tt-dialog own-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={aboutId} aria-busy={running || adding || undefined}>
         <h2 id={titleId}>{title}</h2>
         <p className="tt-dialog__description" id={aboutId}>{about}</p>
@@ -289,7 +293,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
   return shell(<>
     <div className="own-fields">
       <div className="own-field"><label htmlFor={addressId}>Address</label>
-        <input ref={addressRef} id={addressId} className="tt-input" type="url" inputMode="url" value={address} placeholder="http://localhost:11434" autoComplete="off" spellCheck={false} maxLength={400}
+        <input ref={addressRef} id={addressId} className="tt-input" type="url" inputMode="url" value={address} placeholder="http://localhost:11434" autoComplete="off" spellCheck={false} maxLength={400} readOnly={adding}
           aria-invalid={(addressShown && addressWords !== null) || refusal?.field === 'address' || undefined}
           aria-describedby={describedBy(addressNoteId, addressShown && addressWords !== null && refusal?.field !== 'address' && addressErrorId, refusal?.field === 'address' && refusalId)}
           onChange={event => { setAddress(event.target.value); forget() }} onBlur={() => setAddressShown(true)} onKeyDown={enter} />
@@ -297,12 +301,12 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
         {addressShown && addressWords !== null && refusal?.field !== 'address' ? <small className="own-field__error" id={addressErrorId}>{addressWords}</small> : null}
       </div>
       <div className="own-field"><label htmlFor={nameId}>Name</label>
-        <input id={nameId} className="tt-input" type="text" value={shownName} placeholder={derivedName ? `${derivedName}, from the address` : 'From the address, if left empty'} autoComplete="off" spellCheck={false} maxLength={80} aria-describedby={nameNoteId}
+        <input id={nameId} className="tt-input" type="text" value={shownName} placeholder={derivedName ? `${derivedName}, from the address` : 'From the address, if left empty'} autoComplete="off" spellCheck={false} maxLength={80} aria-describedby={nameNoteId} readOnly={adding}
           onChange={event => { setNamed(true); setName(event.target.value) }} onKeyDown={enter} />
         <small id={nameNoteId}>What the model menu calls it.</small>
       </div>
       <div className="own-field"><label htmlFor={keyId}>Key <span className="own-field__optional">(optional)</span></label>
-        <input ref={keyRef} id={keyId} className="tt-input" type="password" value={key} placeholder="Only if the server was started with one" autoComplete="off" spellCheck={false} maxLength={OWN_SERVER_KEY_MAX}
+        <input ref={keyRef} id={keyId} className="tt-input" type="password" value={key} placeholder="Only if the server was started with one" autoComplete="off" spellCheck={false} maxLength={OWN_SERVER_KEY_MAX} readOnly={adding}
           aria-invalid={refusal?.field === 'key' || undefined} aria-describedby={describedBy(keyNoteId, refusal?.field === 'key' && refusalId)}
           onChange={event => { setKey(event.target.value); forget() }} onKeyDown={enter} />
         <small id={keyNoteId}>{KEY_NOTE}</small>
@@ -315,18 +319,20 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, co
     {refusal ? <p className="provider-detail__error own-refusal" role="alert" id={refusalId}>{refusal.words}</p> : null}
     {result ? <div className="own-found" ref={resultsRef}>
       <p className="own-found__who">{`${KINDS[result.kind]} answered in ${result.answeredMs.toLocaleString('en-US')} ms with ${plural(result.models.length, 'model')}.`}</p>
-      <ul className="own-models" aria-label="Models found">{drafts.map((draft, index) => <ModelCard key={draft.found.id} draft={draft} valid={contexts[index] !== null}
+      <ul className="own-models" aria-label="Models found">{drafts.map((draft, index) => <ModelCard key={draft.found.id} draft={draft} valid={contexts[index] !== null} locked={adding}
         onChange={patch => setDrafts(current => current.map((item, at) => at === index ? { ...item, ...patch } : item))} />)}</ul>
     </div> : null}
     <p className="own-privacy" id={privacyId}>{OWN_SERVER_WORDS.privacy}</p>
   </>, <>
-    <Button variant="secondary" aria-label="Close without adding a server" onClick={onClose}>Cancel</Button>
-    <Button ref={addRef} variant="primary" disabled={!canAdd} aria-describedby={privacyId} onClick={() => void add()}>{adding ? 'Adding…' : 'Add server'}</Button>
+    <Button variant="secondary" aria-label="Close without adding a server" disabled={adding} onClick={close}>Cancel</Button>
+    {/* While adding, the button keeps focus and says so; it is only marked unavailable, so focus does not fall to the page. */}
+    <Button ref={addRef} variant="primary" disabled={!canAdd && !adding} aria-disabled={adding || undefined} aria-describedby={privacyId}
+      onClick={() => void add()}>{adding ? 'Adding…' : 'Add server'}</Button>
   </>, 'Add your own model server', 'SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models.')
 }
 
 /** One model the check found: its name, Thinking, its context to confirm or type, and whether it takes images. */
-function ModelCard({ draft, valid, onChange }: { readonly draft: Draft; readonly valid: boolean; readonly onChange: (patch: Partial<Draft>) => void }): ReactNode {
+function ModelCard({ draft, valid, locked, onChange }: { readonly draft: Draft; readonly valid: boolean; readonly locked: boolean; readonly onChange: (patch: Partial<Draft>) => void }): ReactNode {
   const contextId = useId(), noteId = useId(), errorId = useId()
   const unknown = draft.found.context === undefined
   // A context the server did not give is asked for by its note; one typed that is not a number of tokens says why.
@@ -335,12 +341,12 @@ function ModelCard({ draft, valid, onChange }: { readonly draft: Draft; readonly
     <div className="own-model__top">
       <strong>{draft.found.name}</strong>
       <span className="own-model__think"><span aria-hidden="true">Thinking</span>
-        <button type="button" role="switch" className="tt-toggle tt-focusable own-switch" aria-checked={draft.thinking} aria-label={`Thinking for ${draft.found.name}`}
+        <button type="button" role="switch" className="tt-toggle tt-focusable own-switch" aria-checked={draft.thinking} aria-label={`Thinking for ${draft.found.name}`} disabled={locked}
           onClick={() => onChange({ thinking: !draft.thinking })}><span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span></button></span>
     </div>
     <div className="own-model__context">
       <label htmlFor={contextId}>Context, in tokens</label>
-      <input id={contextId} className="tt-input" type="text" inputMode="numeric" value={draft.context} autoComplete="off" spellCheck={false}
+      <input id={contextId} className="tt-input" type="text" inputMode="numeric" value={draft.context} readOnly={locked} autoComplete="off" spellCheck={false}
         aria-required="true" aria-invalid={!valid || undefined} aria-describedby={[unknown ? noteId : '', showError ? errorId : ''].filter(Boolean).join(' ') || undefined}
         onChange={event => onChange({ context: event.target.value })} />
     </div>

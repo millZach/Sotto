@@ -122,8 +122,9 @@ async function ollama(ask: Asker, root: string, models: Listed[], concurrency: n
 }
 
 /**
- * LM Studio: `/api/v1/models` (0.4 and later) or `/api/v0/models` before it. The context a loaded model runs with wins
- * over the most it could take, since that is what the server will hold a prompt to.
+ * LM Studio: `/api/v1/models` (0.4 and later) or `/api/v0/models` before it. The context the loaded instance of that ID
+ * runs with wins over the most the model could take, since that is what the server will hold a prompt to; a model loaded
+ * more than once has an instance, and a context, for each ID it lists.
  */
 function lmstudio(answer: unknown, models: Listed[]): boolean {
   if (!isObject(answer)) return false
@@ -134,7 +135,7 @@ function lmstudio(answer: unknown, models: Listed[]): boolean {
     const entry = entries.find(item => text(item.key) === model.id || text(item.id) === model.id
       || (Array.isArray(item.loaded_instances) && item.loaded_instances.some(instance => isObject(instance) && text(instance.id) === model.id)))
     if (!entry) continue
-    const instance = Array.isArray(entry.loaded_instances) ? entry.loaded_instances.find(isObject) : undefined
+    const instance = Array.isArray(entry.loaded_instances) ? entry.loaded_instances.find(item => isObject(item) && text(item.id) === model.id) : undefined
     const loaded = isObject(instance) && isObject(instance.config) ? contextOf(instance.config.context_length) : undefined
     model.context = loaded ?? contextOf(entry.loaded_context_length) ?? contextOf(entry.max_context_length)
     const capabilities = entry.capabilities

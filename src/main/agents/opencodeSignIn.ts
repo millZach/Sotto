@@ -5,7 +5,7 @@ import {
 } from '../../shared/opencodeSignIn'
 import { locationQuery, OpenCodeRejected, type OpenCodeClient } from './opencodeClient'
 import { OpenCodeUncertain } from './opencodeServer'
-import { attemptOf, attemptReplySchema, attemptStatusSchema, credentialsOf, hiddenAnswers, integrationListSchema, KEY_METHOD, modelSourcesOf, safeSignInPage, type Integration } from './opencodeSources'
+import { attemptOf, attemptReplySchema, attemptStatusSchema, credentialsOf, dialogSources, hiddenAnswers, integrationListSchema, KEY_METHOD, modelSourcesOf, safeSignInPage, type Integration } from './opencodeSources'
 
 /** Stable event names a sign-in is logged by. No key, code, address or answer from OpenCode ever reaches a log. */
 export type OpenCodeSignInEvent = 'opencode-sign-in-key' | 'opencode-sign-in-browser-started' | 'opencode-sign-in-complete' | 'opencode-sign-in-cancelled'
@@ -33,6 +33,10 @@ export interface OpenCodeSignInOptions {
 
 const modelListSchema = z.looseObject({ data: z.array(z.looseObject({ providerID: z.string(), enabled: z.boolean().optional(), status: z.string().optional() })) })
 const providerListSchema = z.looseObject({ data: z.array(z.looseObject({ id: z.string(), integrationID: z.string().optional() })) })
+/** The sources as the dialog gets them: without the user's own model servers, which the sign-in still reads itself. */
+function shown(sources: ModelSources): ModelSources {
+  return sources.status === 'ok' ? { ...sources, sources: dialogSources(sources.sources) } : sources
+}
 /** A waiting browser sign-in. `owner` is the client a host started it for (#1107), which alone may read, finish or cancel it. */
 interface Attempt { readonly sourceId: string; readonly name: string; readonly url: string; readonly server: SignInServer; readonly expiresAt: number; readonly owner?: string | undefined }
 /** How long a waiting sign-in that OpenCode gave no expiry for keeps the server up. */
@@ -132,11 +136,14 @@ export class OpenCodeSignIn {
     this.signedIn = sources.sources.filter(source => source.signedIn).map(source => source.id).sort().join(' ')
     return { status: 'ok', ...sources }
   }
-  /** The answer once the sign-ins changed: the sources as they are now, and words for a model list that was not read again. */
-  private async afterChange(server: SignInServer): Promise<{ status: 'ok'; sources: ModelSources; warning?: string }> {
+  /**
+   * The answer once the sign-ins changed, for the dialog: the sources as they are now, and words for a model list that
+   * was not read again. `whole` keeps the user's own model servers in, for a check of this class's own.
+   */
+  private async afterChange(server: SignInServer, whole = false): Promise<{ status: 'ok'; sources: ModelSources; warning?: string }> {
     const read = await this.options.changed(server.client).then(() => true, () => false)
     const sources = await this.read(server).catch((): ModelSources => ({ status: 'refused', message: SIGN_IN_WORDS.notRunning }))
-    return { status: 'ok', sources, ...(read ? {} : { warning: SIGN_IN_WORDS.catalogUnread }) }
+    return { status: 'ok', sources: whole ? sources : shown(sources), ...(read ? {} : { warning: SIGN_IN_WORDS.catalogUnread }) }
   }
   /**
    * The catalog read again after something other than a sign-in changed what OpenCode lists, such as the user's own
@@ -161,7 +168,7 @@ export class OpenCodeSignIn {
       const before = this.signedIn
       let now: ModelSources
       try { now = await this.read(server) } catch { return { status: 'refused', message: SIGN_IN_WORDS.notRunning } }
-      if (before === undefined || before === this.signedIn) return now
+      if (before === undefined || before === this.signedIn) return shown(now)
       return (await this.afterChange(server)).sources
     }, message => ({ status: 'refused', message }))
   }
@@ -358,11 +365,11 @@ export class OpenCodeSignIn {
         this.log('opencode-sign-in-failed')
         if (!deleted) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
         // Some of its sign-ins are gone, so the threads move to what is left, and the list says whether any is.
-        const after = await this.afterChange(server)
+        const after = await this.afterChange(server, true)
         const gone = after.sources.status === 'ok' && !after.sources.sources.some(source => source.id === sourceId && source.signedIn)
         if (!gone) return { status: 'refused', message: SIGN_IN_WORDS.signOutFailed(integration.name) }
         this.log('opencode-sign-out')
-        return after
+        return { ...after, sources: shown(after.sources) }
       }
       this.log('opencode-sign-out')
       return await this.afterChange(server)

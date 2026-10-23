@@ -136,15 +136,20 @@ function howSignedIn(integration: Integration, methods: readonly ModelSourceMeth
 }
 
 /**
- * Every source as the dialog lists it, with how it is signed in and how many models it has in the catalog. The user's own
- * model servers (ADR-0123) are listed by OpenCode as sources too, and are left out: they have their own group, added and
- * removed there, apart from any one provider.
+ * Whether a source is one of the user's own model servers (ADR-0123). OpenCode lists them as sources too; the sign-in
+ * reads them like any other, and the dialog's list leaves them out, since they have their own group, added and removed
+ * there, apart from any one provider.
  */
+export function isOwnServerSource(id: string): boolean { return id.startsWith(OWN_SERVER_ID_PREFIX) }
+/** The sources as the dialog lists them: every one but the user's own model servers. */
+export function dialogSources(sources: readonly ModelSource[]): ModelSource[] { return sources.filter(source => !isOwnServerSource(source.id)) }
+
+/** Every source OpenCode lists, with how it is signed in and how many models it has in the catalog. */
 export function modelSourcesOf(integrations: readonly Integration[], modelProviders: readonly string[]): { zenModels: number; sources: ModelSource[] } {
   const counts = new Map<string, number>()
   for (const provider of modelProviders) counts.set(provider, (counts.get(provider) ?? 0) + 1)
   const sources = integrations.flatMap((integration): ModelSource[] => {
-    if (!/^[A-Za-z0-9._-]{1,128}$/u.test(integration.id) || integration.id.startsWith(OWN_SERVER_ID_PREFIX)) return []
+    if (!/^[A-Za-z0-9._-]{1,128}$/u.test(integration.id)) return []
     const methods = methodsOf(integration)
     const how = howSignedIn(integration, methods)
     return [{ id: integration.id, name: integration.name.slice(0, 200), methods, ...(how ? { signedIn: { how } } : {}),
