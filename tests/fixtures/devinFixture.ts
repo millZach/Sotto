@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { DevinAcpHost } from '../../src/main/agents/devin'
+import { DevinAcpHost, type DevinAcpOptions } from '../../src/main/agents/devin'
 import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const devinFixtureSkips: AdapterContractSkips = {
@@ -25,13 +25,25 @@ export interface DevinPaceOptions {
   productionPace?: boolean
 }
 
-/** Every request deadline includes process startup; lost evidence is scripted, never inferred from a short timer. */
-export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, knownSessions = new Map<string, Set<string>>(),
+/**
+ * How long a send waits once a test has scripted its prompt lost. Devin sends no acknowledgement: a prompt is uncertain
+ * when nothing has shown it taken by the request deadline, so the test of that waits the deadline out. A short one is
+ * safe there: a slow runner can only delay the evidence the deadline waits for.
+ */
+const LOST_PROMPT_DEADLINE_MS = 2000
+
+/**
+ * A send's request deadline covers the integration checks, the process starts and a replay read in a process of its own,
+ * which a loaded two-core runner stretches past five seconds (#1073, #1110). The default is the adapter's own, and a
+ * test that needs a prompt lost scripts it with `driver.delayNextAck` instead of shortening this.
+ */
+export async function devinFixture(root?: string, requestTimeoutMs = 15_000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, knownSessions = new Map<string, Set<string>>(),
   pace: DevinPaceOptions = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-devin-thread-'))
-  const adapter = new DevinAcpHost(root, { executable: process.execPath,
+  const options: DevinAcpOptions = { executable: process.execPath,
     nativeConfigDirectory: join(root, 'native-config'), args: [resolve('tests/fixtures/fakeDevinAgent.mjs'), root], requestTimeoutMs, ...(pace.productionPace ? {} : { pollIntervalMs }),
-    acceptanceGraceMs: pace.acceptanceGraceMs ?? 0, ...session })
+    acceptanceGraceMs: pace.acceptanceGraceMs ?? 0, ...session }
+  const adapter = new DevinAcpHost(root, options)
   const checkViolations = async (): Promise<void> => {
     const text = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')
     if (text) throw new Error(`Invalid Devin fixture traffic: ${text}`)
@@ -84,7 +96,11 @@ export async function devinFixture(root?: string, requestTimeoutMs = 2000, pollI
       raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
       delayNextAck: async (method: string): Promise<void> => {
         if (method !== 'session/prompt') throw new Error('Only prompt acceptance can be delayed by this script')
-        await script({ delayPrompt: requestTimeoutMs + 1000 })
+        // The adapter reads its deadline at each send and each process start, so only what follows the scripted loss
+        // on this fixture waits the short one; a restart goes back to the deadline the fixture was made with.
+        // The replay hides the prompt until a second after that deadline, which starts before Devin receives it.
+        options.requestTimeoutMs = Math.min(requestTimeoutMs, LOST_PROMPT_DEADLINE_MS)
+        await script({ delayPrompt: options.requestTimeoutMs + 1000 })
       }, requests,
       restart: async () => { adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, pace) },
     },

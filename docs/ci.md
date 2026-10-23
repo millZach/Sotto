@@ -379,6 +379,14 @@ in time" / "Claude did not acknowledge the request" on a loaded runner. That was
 *Gates (Windows)* runs on PRs #100 and #103: `claudeFixture` defaulted to 150 ms and several Codex and
 Grok tests passed 150–500 ms.
 
+Devin is the exception to the 2000 ms default. Native ACP sends no acknowledgement, so a send waits until
+its own stream or a replay of the session shows the prompt taken, and the replay is read in a process of
+its own after the integration checks start two more. On a loaded Linux runner that took longer than five
+seconds, and sends came back uncertain (#1073, #1110). `devinFixture` therefore defaults to the adapter's
+own 15 s. A Devin prompt is uncertain only when that deadline passes with nothing showing it taken, so
+`driver.delayNextAck()` hides the prompt from the replay and lowers that fixture's deadline to 2000 ms for
+what follows. A short deadline is safe there, because a slow runner can only delay the evidence it waits for.
+
 To reproduce runner load locally, pin the run to two cores and give it a competitor on the same cores:
 
 ```powershell
