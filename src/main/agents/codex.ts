@@ -98,7 +98,10 @@ const aliasesSchema = z.record(z.string(), aliasSchema)
 
 type Alias = z.infer<typeof aliasSchema>
 type Origin = z.infer<typeof originSchema>
-const itemSchema = codexItemSchema
+/** The text parts of a user message's content, the only shape of it Sotto reads. */
+const userContent = z.array(z.object({ type: z.string(), text: z.string().optional() })).optional()
+/** A user message whose content Sotto cannot read fails with its item, so the whole frame is refused before any of it applies (#680). */
+const itemSchema = codexItemSchema.refine(item => item.type !== 'userMessage' || userContent.safeParse(item.content).success)
 const turnSchema = z.object({ id: z.string(), status: z.enum(['inProgress', 'completed', 'interrupted', 'failed']), items: z.array(itemSchema).default([]), startedAt: z.number().nullish(),
   itemsView: z.enum(['notLoaded', 'summary', 'full']).default('full'),
   completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() })
@@ -179,7 +182,7 @@ const turnKey = (id: string, nativeId: string): string => `${id}\n${nativeId}`
 type ModelList = AgentHostSnapshot['models']
 
 /** What happened to Sotto's own Codex role files (#1042), as stable event names; never a path, a model or Codex's words. */
-export type CodexAdapterEvent = 'codex-role-malformed' | CodexRoleFilesEvent
+export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unreadable' | CodexRoleFilesEvent
 
 export interface CodexAppServerHostOptions {
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
@@ -1215,7 +1218,7 @@ export class CodexAppServerHost implements AgentHost {
   private identityItem(item: z.infer<typeof itemSchema>): IdentityItem | undefined {
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
     return { id: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', clientId: item.clientId,
-      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))) }
+      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))) }
   }
   private stableMessageId(id: string, turnId: string, itemId: string): string {
     return this.aliases[id]!.messageIdentities.find(turn => turn.turnId === turnId)?.messages.find(m => m.nativeIds.includes(itemId))?.id ?? itemId
@@ -1260,7 +1263,7 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'agentMessage' && lifecycle.phase === 'started' && this.completedMessages.has(messageKey)) return
     if (item.type === 'agentMessage' && (lifecycle.phase === 'completed' || lifecycle.terminal)) this.completedMessages.add(messageKey)
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(z.array(z.object({ type: z.string(), text: z.string().optional() })).optional().parse(item.content))
+    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))
     const input = this.identityItem(item)!
     let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
     const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
@@ -1861,7 +1864,11 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     if (frame.method === 'thread/started') {
-      const { thread } = threadResponse.parse(frame.params); const id = this.sessionId(thread.id)
+      // An unreadable notification is skipped whole: one Codex sends in a new shape must not end the app-server
+      // and every turn on it (#680). Only the event is logged; the params can hold prompt text.
+      const started = threadResponse.safeParse(frame.params)
+      if (!started.success) { this.options.logEvent?.('codex-notification-unreadable'); return }
+      const { thread } = started.data; const id = this.sessionId(thread.id)
       if (id) { this.touch(id); this.applyThread(id, thread); this.emit() }
       return
     }
@@ -1917,7 +1924,9 @@ export class CodexAppServerHost implements AgentHost {
     if (!['turn/started', 'turn/completed', 'item/started', 'item/completed', 'item/agentMessage/delta', 'error', 'serverRequest/resolved',
       'item/commandExecution/outputDelta', 'item/fileChange/outputDelta', 'item/reasoning/summaryTextDelta', 'item/plan/delta', 'item/mcpToolCall/progress',
       'turn/plan/updated', 'thread/status/changed'].includes(frame.method ?? '')) return
-    const params = notificationSchema.parse(frame.params); const id = this.sessionId(params.threadId)
+    const parsed = notificationSchema.safeParse(frame.params)
+    if (!parsed.success) { this.options.logEvent?.('codex-notification-unreadable'); return }
+    const params = parsed.data; const id = this.sessionId(params.threadId)
     if (!id) {
       const owner = this.activity.childNotification(params.threadId, frame.method!, params)
       if (owner) { this.touch(owner.id); this.emit(true) }

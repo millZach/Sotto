@@ -3,11 +3,24 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SpeechModelStore } from '../../../src/main/asr/speechModelStore'
 import type { SpeechEngine } from '../../../src/main/asr/speechEngine'
 import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, speechModelBytes, speechModelFileUrl, type SottoSpeechModel, type SpeechModelStatus } from '../../../src/shared/speechModel'
+
+/** When set, every download sink fails its first write with this error code, as a full or over-quota disk does. */
+const sinkFault = vi.hoisted(() => ({ code: null as string | null }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  const createWriteStream = ((...args: Parameters<typeof actual.createWriteStream>) => {
+    const code = sinkFault.code
+    if (code === null) return actual.createWriteStream(...args)
+    return new Writable({ write: (_chunk, _encoding, callback) => callback(Object.assign(new Error('Synthetic storage fault'), { code })) })
+  }) as typeof actual.createWriteStream
+  return { ...actual, createWriteStream, default: { ...actual, createWriteStream } }
+})
 
 const bytes = (seed: number, length: number): Buffer => Buffer.from(Array.from({ length }, (_, index) => (seed * 31 + index * 7) % 256))
 const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
@@ -77,7 +90,10 @@ const engine: SpeechEngine = { transcribe: async () => 'hello' }
 describe('SpeechModelStore', () => {
   let directory: string
   beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-speech-model-')) })
-  afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
+  afterEach(async () => {
+    sinkFault.code = null
+    await rm(directory, { recursive: true, force: true })
+  })
 
   function createStore(fetchFn: typeof fetch, loadEngine = vi.fn(async () => engine)) {
     const statuses: SpeechModelStatus[] = []
@@ -132,6 +148,14 @@ describe('SpeechModelStore', () => {
     const left = await readdir(join(directory, 'test-model'))
     expect(left).not.toContain('decoder.int8.onnx')
     expect(left).not.toContain('decoder.int8.onnx.part')
+    expect(store.currentEngine()).toBeNull()
+  })
+
+  it.each(['ENOSPC', 'EDQUOT'])('says the model could not be saved when writing it fails with %s, not that GitHub could not be reached', async (code) => {
+    sinkFault.code = code
+    const { store } = createStore(fakeGitHub().fetchFn)
+    await store.ensure()
+    expect(store.get()).toMatchObject({ state: 'failed', reason: 'disk', totalBytes: TOTAL })
     expect(store.currentEngine()).toBeNull()
   })
 

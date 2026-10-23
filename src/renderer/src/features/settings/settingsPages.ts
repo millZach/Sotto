@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -95,6 +95,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Success message duration', section: 'settings-output', words: 'milliseconds', gate: 'dictation' },
     { label: 'AI formatting', section: 'settings-formatting', words: 'cleanup openrouter', gate: 'dictation' },
     { label: 'OpenRouter key', section: 'settings-formatting', target: 'OpenRouter API key', words: 'api key cleanup', gate: 'dictation' },
+    { label: 'Cleanup model', section: 'settings-formatting', words: 'openrouter ai formatting llm', gate: 'cleanup-model' },
+    { label: 'Cleanup mode', section: 'settings-formatting', target: 'Mode', words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
     { label: 'Personal dictionary', section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
 
     { label: 'New threads start with', section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
