@@ -13,6 +13,7 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
+import { desktopWindowClient } from './agents/hostService'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -60,6 +61,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  Notification,
   powerMonitor,
   protocol,
   screen,
@@ -214,8 +216,13 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { fakeNotification } from './e2e/fakeNotification'
+import { createDesktopNotifier } from './notifications/desktopNotifier'
+import { registerNotificationIpc } from './notifications/notificationIpc'
+import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
+import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
@@ -326,6 +333,7 @@ type NativeDiagnostic =
   | 'dock-icon-failed'
   | 'owl-frames-unavailable'
   | 'owl-failed'
+  | 'desktop-notification-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -659,6 +667,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
   mainActivity?.start()
   app.on('will-quit', () => mainActivity?.dispose())
+  // Notifications when a thread has finished everything or needs the user (ADR-0117): an Owl feature, on a Mac that can
+  // show them. Anywhere else main builds nothing, passes no renderer argument and registers no channel.
+  const desktopNotificationsEnabled = owlFeatures['desktop-notifications'] && profile.desktopNotifications && Notification.isSupported()
   const hostVersion = hostReleaseVersion(appRunningVersion, appVersion, usageEnabled || releasesHeldProvider(heldProviders))
   // With Update all on, the host version the update this computer is downloading brings, which a host may run before
   // Sotto restarts (ADR-0077 decision 6). It stays undefined on stable, where hosts follow the running version alone.
@@ -747,6 +758,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
+        ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
@@ -1542,6 +1554,34 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
   saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
+  // Notifications (ADR-0117): the tracker reads each state the router publishes, which joins every host's threads, and the
+  // notifier shows what it finds. A press brings the window forward, selects the thread and shows Threads. An end-to-end
+  // run shows a stand-in, never the system's.
+  const desktopNotifier = desktopNotificationsEnabled ? createDesktopNotifier({
+    create: options => e2eConfiguration === null ? new Notification(options) : fakeNotification(options),
+    isSupported: () => Notification.isSupported(),
+    switches: async () => { const current = await settingsCoordinator.getSettings(); return { needsYou: current.notifyNeedsYou, finished: current.notifyFinished } },
+    open: threadId => {
+      void windows.showMain()
+        .then(() => hostRouter.command({ type: 'select-thread', threadId }, desktopWindowClient()))
+        .then(() => { windows.sendToMain(NOTIFICATION_OPENED, null) })
+        .catch(() => logOperational('native-main-show-failed'))
+    },
+    log: logOperational,
+  }) : null
+  if (desktopNotifier !== null) {
+    const alerts = new ThreadAlerts({
+      shows: threadId => hostRouter.windowShows(threadId),
+      // Watcher keeps a thread it watches going and settles it when done, so that thread's finish is not told (ADR-0117).
+      ...(localRuntime.watcher ? { watched: (threadId: string) => {
+        const key = parseHostEntityKey(threadId)
+        return key !== null && localRuntime.watcher?.watches({ hostId: key.hostId, threadId: key.id }) === true
+      } } : {}),
+      emit: alert => { void desktopNotifier.notify(alert) },
+    })
+    const stopAlerts = hostRouter.subscribe(state => alerts.track(state))
+    app.on('will-quit', () => { stopAlerts(); alerts.dispose(); desktopNotifier.dispose() })
+  }
   if (dictationActive) void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
@@ -1728,6 +1768,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
@@ -1958,6 +1999,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupDelegations()
         cleanupContinue()
         cleanupMainActivity()
+        cleanupNotifications()
         cleanupOpenCodeSignIn()
         worktreeCleanup?.dispose()
         cleanupTools()
