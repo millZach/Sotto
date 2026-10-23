@@ -13,7 +13,7 @@ export { folderKey, folderName } from './projectFolders'
 export type ProjectChoice = { readonly project: AgentProject; readonly folder?: undefined } | { readonly project?: undefined; readonly folder: string; readonly isNew?: true }
 
 /**
- * The first step of New thread and New terminal: a folder from disk or one of the projects, searched and chosen by
+ * The first step of New thread: a folder from disk or one of the projects, searched and chosen by
  * keyboard. The search sits in the dialog's header and the list in its body, so both come back as nodes.
  */
 export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectChoice) => void, options: {

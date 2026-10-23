@@ -41,20 +41,19 @@ describe('the Terminal drawer shortcut', () => {
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBe('second')
     second.setAttribute('data-hidden', '')
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBeNull()
-    // No pane at all: Terminal mode or another page. The key is not the drawer's.
+    // No pane at all: another page. The key is not the drawer's.
     document.body.innerHTML = ''
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBeNull()
   })
 
-  it('leaves the key alone in a pane with no drawer: Terminal mode’s panes, and a thread on a paired host', () => {
-    // Terminal mode lays its terminals out in the same pane grid, with no drawer button in their headers.
+  it('leaves the key alone in a pane with no drawer, as a thread on a paired host has', () => {
     document.body.innerHTML = '<section class="thread-pane" data-thread-id="terminal-1"><button>Stop</button></section>'
     const control = document.querySelector('button')!
     expect(paneTerminalTarget(keydown({ target: control }), windows, 'terminal-1')).toBeNull()
     expect(paneTerminalTarget(keydown(), windows, 'terminal-1')).toBeNull()
   })
 
-  it('leaves the key to a terminal that is not a drawer, so Tools and Terminal mode shells still get Ctrl+J', () => {
+  it('leaves the key to a terminal that is not a drawer, so Tools shells still get Ctrl+J', () => {
     panes()
     const tools = document.createElement('aside')
     tools.innerHTML = '<div class="xterm"><textarea></textarea></div>'

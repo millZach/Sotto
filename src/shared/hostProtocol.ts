@@ -15,7 +15,6 @@ import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
 import { agentActivitySchema, type AgentActivity } from './agentActivity'
-import { phoneTerminalAnswerSchema, phoneTerminalListSchema, type PhoneTerminal } from './phoneTerminals'
 import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
@@ -107,9 +106,10 @@ export function shellForProtocolV1<T extends AgentState>(state: T) {
  * A shell as a client reads it. `host.modelsRevision` is sent only to a client that accepts
  * `model-catalog-revision`. The desktop's own client accepts it, and puts a catalog the host left out back
  * before it reads the shell, so it reads `modelsRevision` as optional and `host.models` stays required, as v1 has it.
+ * `terminals` is always empty: the retired feature's list, sent only to a client whose hello still accepts it (ADR-0111).
  */
 const hostClientShellSchema = agentStateSchema.extend({ clientCapabilities: z.object({ mayAnswer: z.boolean() }).optional(),
-  terminals: phoneTerminalListSchema.optional(),
+  terminals: z.tuple([]).optional(),
   watcher: watcherPhoneStateSchema.optional(),
   host: agentHostSnapshotSchema.extend({ modelsRevision: z.number().int().positive().optional() }) })
 /** Older hosts carry retired fields; strip them before the strict domain schemas read them. */
@@ -163,9 +163,6 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * require an exact previous host revision. Socket save outcomes remain private to their caller.
  * `background-refresh`: `refresh-thread-worktree` takes `background`, a refresh the window made on its own, which asks
  * GitHub only as the host's timer would (#820). A client strips the field for a host that does not list it.
- * `terminals`: only the desktop's phone listener offers Terminal mode rows. Opting in adds `shell.terminals`;
- * `terminal-approval` reads a bounded live approval preview, `observe-terminals` reports foreground details, and
- * `answer-terminal` delivers one exact reviewed answer through the local hook (ADR-0066). No screen stream or input.
  * `watcher-work-settled`: the host's threads report their background work, monitoring and sub-agent counts, so a desktop's
  * Watcher can say when a finished turn's work has ended (ADR-0073). A host that does not list it reads as unknown, not idle.
  * `watcher-outcomes`: the host's exact operation reads carry each Watcher start's or send's outcome, its text-free result
@@ -213,7 +210,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['terminals', 'client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -369,9 +366,6 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
    * they keep streaming, but none counts as shown, which reads a finish or sees a failure (ADR-0046, ADR-0092). Sent only
    * to a host that lists `failure-seen`; absent, the threads are shown, as from every older client and every phone. */
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
-  z.object({ ...base, op: z.literal('terminal-approval'), terminalId: z.uuid() }).strict(),
-  z.object({ ...base, op: z.literal('observe-terminals'), terminalIds: z.array(z.uuid()).max(64) }).strict(),
-  z.object({ ...base, op: z.literal('answer-terminal'), answer: phoneTerminalAnswerSchema }).strict(),
   z.object({ ...base, op: z.literal('command'), command: protocolAgentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
@@ -434,7 +428,7 @@ export type HostErrorCode = 'unauthenticated' | 'invalid_request' | 'stale_reque
 export interface HostProtocolError { code: HostErrorCode; message: string; reason?: GitPullRequestReadFailure | undefined }
 export type HostResponse = { v: 1; id: string; ok: true; result: unknown } | { v: 1; id: string; ok: false; error: HostProtocolError }
 /** `error` stands in for a push that would not fit in one frame, instead of the host closing the socket. */
-export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: PhoneTerminal[] | undefined }
+export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undefined; clientCapabilities?: { mayAnswer: boolean } | undefined; terminals?: [] | undefined }
 /**
  * A shell as it crosses the socket. To a client that accepts `model-catalog-revision` its `host` names the
  * catalog's revision and leaves `models` out when this connection was already sent that revision; to every

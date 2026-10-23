@@ -293,7 +293,6 @@ export interface WorktreeHome {
   readonly branchPrefix: string
 }
 const THREAD_WORKTREE_HOME: WorktreeHome = { folder: 'thread-worktrees', branchPrefix: 'sotto/' }
-export const TERMINAL_WORKTREE_HOME: WorktreeHome = { folder: 'terminal-worktrees', branchPrefix: 'sotto/terminal-' }
 
 type OriginBase = NonNullable<AgentWorktree['originBase']>
 interface OriginFetch { readonly answer: Promise<OriginBase>; finishedAt?: number }

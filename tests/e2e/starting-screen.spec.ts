@@ -120,12 +120,12 @@ test('covers launch until the providers connect, then opens on Threads, and a re
     await expect(page.locator('.starting-screen [data-state="ready"]')).toHaveCount(1)
     // Nothing in the room takes focus while it waits, and the Threads page is not underneath it.
     await expect(page.locator('.starting-screen button')).toHaveCount(0)
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toHaveCount(0)
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toHaveCount(0)
     await resizeWindow(launched, 1280, 800)
     await page.screenshot({ path: join(evidence, 'providers-1280x800-dark.png'), animations: 'disabled' })
 
     // Devin answers: the app replaces the screen.
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible({ timeout: 30_000 })
     await expect(page.locator('.starting-screen')).toHaveCount(0)
 
     // Launch only: the same window reloaded opens straight onto the app, never painting the screen on the way.
@@ -134,7 +134,7 @@ test('covers launch until the providers connect, then opens on Threads, and a re
         .observe(document, { childList: true, subtree: true })
     })
     await page.reload()
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     expect(await page.evaluate(() => (window as { sawStartingScreen?: boolean }).sawStartingScreen ?? false)).toBe(false)
   } finally {
     if (launched) await closeSotto(launched)
@@ -196,7 +196,7 @@ test('names a host that has not answered in ten seconds, and opens Sotto without
     // Enter on the focused button opens the app; forge keeps connecting in the background.
     await late.focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible()
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await expect(screen).toHaveCount(0)
     const forge = (await page.evaluate(() => window.sotto!.hosts!.get())).hosts.find(host => host.id === FORGE)
     expect(forge?.phase).toBe('connecting')
@@ -253,7 +253,7 @@ test('keeps focus and a half-typed answer in an SSH question over the screen, th
     await page.keyboard.type('test-')
 
     // Devin answers and the app takes the window under the same question, with the answer and focus where they were.
-    await expect(page.getByRole('complementary', { name: /Thread sidebar|Terminal sidebar/ })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible({ timeout: 20_000 })
     await expect(screen).toHaveCount(0)
     await expect(question).toHaveCount(1)
     await expect(field).toHaveValue('test-')

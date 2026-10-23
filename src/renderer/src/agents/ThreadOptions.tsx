@@ -76,7 +76,7 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
 export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>
   providerMode ?? model?.providerModes?.[0]?.id
 
-/** The three controls laid out in full, as New thread and New terminal show them. */
+/** The three controls laid out in full, as New thread shows them. */
 export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMode, providerMode, onModel, onReasoning, onRuntime, onProviderMode, disabled = false, modelDisabled = false }: {
   readonly models: AgentModel[]
   readonly modelId: string
@@ -285,8 +285,8 @@ export function watcherPermissionFixedReason(state: AgentState, thread: AgentThr
  * with Try again; a result the provider never gave keeps the choice on the chip and says what comes next. Those
  * lines go in `noticeSlot` when the composer gives one, a row of its own under the chips and the send button, so
  * they never move the row; otherwise under the chips. Focus stays on the chip a choice was made from. Before the first
- * send, Watch follows the permissions where Watcher is on (`WatchOnSendToggle`). New thread
- * and New terminal show the same three controls laid out in full.
+ * send, Watch follows the permissions where Watcher is on (`WatchOnSendToggle`). New thread shows the same three
+ * controls laid out in full.
  */
 export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false, continueOffer }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']

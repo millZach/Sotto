@@ -6,7 +6,7 @@ import { bareEntityId, closeSotto, launchSotto, openPage, openThreads } from './
 
 const evidence = evidenceDirectory('artifacts/new-thread-setup')
 
-test('project defaults remain editable in Application and terminal creation keeps its layout', async () => {
+test('project defaults remain editable in Application', async () => {
   test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page, app } = launched
@@ -58,17 +58,6 @@ test('project defaults remain editable in Application and terminal creation keep
     await choice.press('Escape')
     await expect(page.getByRole('button', { name: 'Project defaults', exact: true })).toBeFocused()
     await expect(choice).toBeHidden()
-    await openThreads(page)
-    await page.getByRole('radio', { name: 'Terminal', exact: true }).check()
-    await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-    const dialog = page.getByRole('dialog', { name: 'New terminal', exact: true })
-    await dialog.getByRole('searchbox', { name: 'Search projects' }).press('ArrowDown')
-    await page.keyboard.press('Enter')
-    await expect(dialog.getByRole('textbox', { name: 'Terminal name' })).toBeVisible()
-    expect(await dialog.locator('form').evaluate(node => ({ display: getComputedStyle(node).display, overflow: getComputedStyle(node).overflowY }))).toEqual({ display: 'grid', overflow: 'auto' })
-    await page.screenshot({ path: join(evidence, 'terminal-820-light.png'), animations: 'disabled' })
-    await page.keyboard.press('Escape')
-    await expect(dialog).toHaveCount(0)
   } finally { await closeSotto(launched) }
 })
 

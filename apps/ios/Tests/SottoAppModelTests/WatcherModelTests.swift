@@ -147,7 +147,7 @@ final class WatcherModelTests: XCTestCase {
         HostConnection.receipt = .object(["status": .string("unknown")]); HostConnection.receipts = [:]
         HostConnection.features = features; HostConnection.shells = [:]
         HostConnection.commandHandler = nil; HostConnection.folderHandler = nil; HostConnection.stageHandler = nil
-        HostConnection.previewHandler = nil; HostConnection.terminalHandler = nil; HostConnection.watcherHandler = nil
+        HostConnection.previewHandler = nil; HostConnection.watcherHandler = nil
         HostConnection.detail = try json(#"{"threadId":"t","revision":1,"messages":[]}"#)
         HostConnection.shells[laptop] = try shell(spec.map { page($0) }, mayAnswer: mayAnswer)
         let store = TestKeychain.store
