@@ -4,7 +4,7 @@
 // Sessions are kept one file each under <root>/sessions, so `session/load` in a later process replays them.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { clearInterval, setInterval } from 'node:timers'
 
@@ -172,7 +172,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     // Cursor names a session on its first prompt; it is also the first sign the prompt was taken.
     const taken = () => send({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'session_info_update', title: 'Fixture title' } } })
     if (script.delayPrompt) setTimeout(taken, script.delayPrompt); else taken()
-    writeFileSync(path('script.json'), JSON.stringify({ ...script, delayPrompt: undefined }))
+    // A delay is spent once. The script is rewritten only then, and moved into place whole, so a process starting
+    // meanwhile, or the fixture merging a script of its own, never reads half a file and takes it for none.
+    if (script.delayPrompt) { const staged = path(`script.json.${process.pid}.tmp`); writeFileSync(staged, JSON.stringify({ ...script, delayPrompt: undefined })); renameSync(staged, path('script.json')) }
   } else if (frame.method === 'session/cancel') {
     finish('cancelled')
   } else if (frame.id !== undefined) send({ id: frame.id, error: { code: -32601, message: 'Method not found' } })

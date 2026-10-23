@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { CursorAcpHost, type CursorAcpOptions } from '../../src/main/agents/cursor'
@@ -28,7 +28,9 @@ export async function cursorFixture(root?: string, requestTimeoutMs = 2000, sess
   const script = async (value: Record<string, unknown>): Promise<void> => {
     let current: Record<string, unknown> = {}
     try { current = JSON.parse(await readFile(join(folder, 'script.json'), 'utf8')) as Record<string, unknown> } catch { /* None yet. */ }
-    await writeFile(join(folder, 'script.json'), JSON.stringify({ ...current, ...value }))
+    // Moved into place whole: a fake process starting meanwhile reads the old script or the new one, never half of either.
+    const staged = join(folder, `script.json.${randomUUID()}.tmp`)
+    await writeFile(staged, JSON.stringify({ ...current, ...value })); await rename(staged, join(folder, 'script.json'))
   }
   const realId = async (id: string): Promise<string> => (JSON.parse(await readFile(join(folder, 'cursor-threads.json'), 'utf8')) as Record<string, { cursorSessionId: string }>)[id]!.cursorSessionId
   const action = async (id: string, value: Record<string, unknown>): Promise<void> => { await writeProviderAction(join(folder, 'control.json'), value, { sessionId: await realId(id) }, randomUUID()) }
