@@ -16,7 +16,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 
 it.each(['claude', 'grok'] as const)('%s keeps three streaming threads responsive without losing replies or permissions', async provider => {
   // The Grok history clock is independent of this test's live notification burst.
-  const f = provider === 'claude' ? await claudeFixture() : await grokFixture(undefined, 2000, 60_000)
+  const f = provider === 'claude' ? await claudeFixture() : await grokFixture(undefined, undefined, 60_000)
   const registry = new ThreadRegistry(f.root)
   const host = new SottoThreadHost(provider, f.host, registry)
   const providers = new ConfiguredProviderHost({ hosts: { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), [provider]: host }, provider: () => provider })

@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { expect, it, vi } from 'vitest'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
 import type { GrokRpc } from '../../src/main/agents/grokRpc'
 
 async function question(f: Awaited<ReturnType<typeof grokFixture>>, id: string) {
@@ -18,13 +18,30 @@ async function thread(f: Awaited<ReturnType<typeof grokFixture>>) {
   await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Question' })
   return id
 }
+/**
+ * Holds the next answer's write to the thread's process open, so the answer is lost. Sotto finds it lost only when that
+ * process's deadline passes, so the process takes the short deadline until `restore`, and keeps the generous one for
+ * everything after (#1021). `release` completes the held write.
+ */
+function holdAnswerWrite(f: Awaited<ReturnType<typeof grokFixture>>, id: string): { restore(): void; release(): void } {
+  const rpc = (f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }).processes.get(id)!.rpc
+  const deadline = rpc as unknown as { timeoutMs: number }, generous = deadline.timeoutMs
+  const stdin = (rpc as unknown as { child: ChildProcessWithoutNullStreams }).child.stdin, write = stdin.write.bind(stdin)
+  let release: () => void = () => undefined
+  const delayed = vi.spyOn(stdin, 'write').mockImplementation(((chunk: string, callback?: (error?: Error | null) => void) => {
+    if (!callback || !(JSON.parse(chunk) as { result?: unknown }).result) return write(chunk, callback)
+    return write(chunk, error => { release = () => callback(error) })
+  }) as typeof stdin.write)
+  deadline.timeoutMs = LOST_REPLY_DEADLINE_MS
+  return { restore: () => { delayed.mockRestore(); deadline.timeoutMs = generous }, release: () => release() }
+}
 function answer(threadId: string, requestId: string) {
   return { type: 'answer' as const, commandId: randomUUID(), threadId, requestId, answer: '', questionAnswers: { '0': { optionIds: [], text: 'Blue' } } }
 }
 
 it('releases a Grok restart re-offer only after an explicit native Check, without sending an answer', async () => {
   let f = await grokFixture()
-  let release: () => void = () => undefined
+  let held: ReturnType<typeof holdAnswerWrite> | undefined
   try {
     const id = await thread(f), original = await question(f, id)
     expect(await f.host.execute(answer(id, original.id))).toMatchObject({ accepted: true })
@@ -39,14 +56,9 @@ it('releases a Grok restart re-offer only after an explicit native Check, withou
     await f.driver.raiseQuestion(id, 'Another question?')
     await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.requests.length).toBe(3)
     const current = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests[2]!
-    const rpc = (f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }).processes.get(id)!.rpc
-    const stdin = (rpc as unknown as { child: ChildProcessWithoutNullStreams }).child.stdin, write = stdin.write.bind(stdin)
-    const delayed = vi.spyOn(stdin, 'write').mockImplementation(((chunk: string, callback?: (error?: Error | null) => void) => {
-      if (!callback || !(JSON.parse(chunk) as { result?: unknown }).result) return write(chunk, callback)
-      return write(chunk, error => { release = () => callback(error) })
-    }) as typeof stdin.write)
+    held = holdAnswerWrite(f, id)
     expect(await f.host.execute(answer(id, current.id))).toMatchObject({ accepted: false, uncertain: true })
-    delayed.mockRestore()
+    held.restore()
     const before = await f.driver.requests()
     const ordinary = await f.host.refreshThread(id)
     expect(ordinary.threads.find(thread => thread.id === id)!.requests[0]).toMatchObject({ delivery: 'uncertain' })
@@ -65,29 +77,23 @@ it('releases a Grok restart re-offer only after an explicit native Check, withou
     expect((await f.host.snapshot()).threads.find(thread => thread.id === id)!.requests).toMatchObject([
       { id: originalNeighbor.id, delivery: 'uncertain' }, { id: current.id, delivery: 'uncertain' },
     ])
-  } finally { release(); vi.restoreAllMocks(); await f.cleanup() }
+  } finally { held?.release(); vi.restoreAllMocks(); await f.cleanup() }
 })
 
 it('does not release a Grok answer whose stdin completion is still unresolved after its deadline', async () => {
   const f = await grokFixture()
-  let release: () => void = () => undefined
+  let held: ReturnType<typeof holdAnswerWrite> | undefined
   try {
     const id = await thread(f), pending = await question(f, id)
-    const rpc = (f.adapter as unknown as { processes: Map<string, { rpc: GrokRpc }> }).processes.get(id)!.rpc
-    const stdin = (rpc as unknown as { child: ChildProcessWithoutNullStreams }).child.stdin
-    const write = stdin.write.bind(stdin)
-    const delayed = vi.spyOn(stdin, 'write').mockImplementation(((chunk: string, callback?: (error?: Error | null) => void) => {
-      if (!callback || !(JSON.parse(chunk) as { result?: unknown }).result) return write(chunk, callback)
-      return write(chunk, error => { release = () => callback(error) })
-    }) as typeof stdin.write)
+    held = holdAnswerWrite(f, id)
     expect(await f.host.execute(answer(id, pending.id))).toMatchObject({ accepted: false, uncertain: true })
-    delayed.mockRestore()
+    held.restore()
     const checked = await f.host.refreshThread(id, { retryUncertainAnswers: true })
     expect(checked.threads.find(thread => thread.id === id)!.requests[0]).toMatchObject({ id: pending.id, delivery: 'uncertain' })
     expect(checked.threads.find(thread => thread.id === id)!.requests[0]).not.toHaveProperty('answerRetryReady')
     expect(await f.host.execute(answer(id, pending.id))).toMatchObject({ accepted: false, uncertain: true })
     expect((await f.driver.requests()).filter(record => record.result?.outcome)).toHaveLength(1)
-  } finally { release(); vi.restoreAllMocks(); await f.cleanup() }
+  } finally { held?.release(); vi.restoreAllMocks(); await f.cleanup() }
 })
 
 it('shows a same-ID Grok re-offer after its child restarts inside the connected adapter', async () => {

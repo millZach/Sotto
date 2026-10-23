@@ -282,6 +282,7 @@ describe('AudioRecorder', () => {
       samples: new Float32Array(TRANSCRIPTION_SAMPLE_RATE).fill(0.25),
       sourceSampleRate: 48_000,
       durationMs: 1_000,
+      peakChunkRms: 0.25,
     })
     expect(await recorder.stop()).toBeNull()
     expect(harness.context.close).toHaveBeenCalledOnce()

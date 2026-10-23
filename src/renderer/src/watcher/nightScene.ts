@@ -2,7 +2,9 @@
  * The maths of Watcher's night scene. Zach picked the look on October 21, 2026 (variant A of the prototype kept at the
  * tag `prototype/watcher-owl-scene`) and moved it into the room's side margins on October 22 (`prototype/watcher-owl-family`):
  * where the landscape, the trees, the moon and every owl's perch fall beside the column, how Watcher's own owl flies
- * between them, what a ripple does to a cell, and what ink the scene draws with. Nothing here touches the DOM or a
+ * between them, what a ripple does to a cell, and what ink the scene draws with. On October 23 the user let the sky and
+ * the hills run on under the column, quieter there, with a soft gap around each line of words (variant A of
+ * `docs/prototypes/watcher-column-scene-prototype.html`). Nothing here touches the DOM or a
  * canvas, so all of it can be tested on its own; `owlFamily.ts` keeps the thread owls, `nightScenePainter.ts` draws the
  * scene and `WatcherNightScene.tsx` runs it.
  *
@@ -22,9 +24,12 @@ export interface SceneMeasure {
   readonly height: number
   /** The bottom of the header band: the header, and the needs-you line when it shows. */
   readonly header: number
-  /** Watcher's composer. Its sides are the column's: the scene lives only beside it. */
+  /** Watcher's composer. Its sides are the column's: the trees, the owls and the ripples live only beside it. */
   readonly composer: Box
-  /** Every block of words in the pane. Nothing is drawn under them, whatever reaches the margins. */
+  /**
+   * The words that stand still while the conversation scrolls: the header's, what stands on the composer and the line
+   * under it. Nothing is drawn under them. The transcript's lines move, and the painter takes them on their own.
+   */
   readonly words: readonly Box[]
   /**
    * The message scrubber's lane beside the column's left edge, while a long conversation shows it (ADR-0109). The scene
@@ -90,7 +95,7 @@ export interface SceneLayout {
   readonly composer: Box
   readonly words: readonly Box[]
   readonly header: number
-  /** The column's two edges: the composer's sides. Nothing is drawn between them. */
+  /** The column's two edges: the composer's sides. Between them the scene shows quieter, and only the sky and the hills. */
   readonly column: { readonly left: number; readonly right: number }
   /** The message scrubber's lane, which the scene keeps clear, or null while it does not show. */
   readonly lane: Box | null
@@ -213,17 +218,58 @@ export function inMargin(layout: SceneLayout, x: number): boolean {
 }
 
 /**
- * How much of the scene shows at a point, 0 to 1: nothing in the column or under words, a band falling to a tenth under
- * the header, and the landscape fading toward the column's edges, except along the composer's branches, which grow
- * out of it.
+ * How much of the scene shows in the column, as a share of the margins': the user's pick on October 23, 2026 is 35% on a
+ * dark surface. On a light one the ink is made stronger (LIGHT_INK_BOOST) and a drawn cell never goes below its floor,
+ * so the same share reads darker there; a fifth reads about as quiet.
  */
-export function quietAt(layout: SceneLayout, x: number, y: number): number {
-  if (!inMargin(layout, x)) return 0
-  const pad = 4
-  for (const box of layout.words) if (x >= box.x - pad && x <= box.x + box.w + pad && y >= box.y - pad && y <= box.y + box.h + pad) return 0
+export const COLUMN_QUIET = { dark: 0.35, light: 0.2 } as const
+/** How far either side of the column's edge the scene blends from the column's share to the margins' whole. */
+export const COLUMN_BLEND = 40
+/** Around a line of words: nothing within `hard` pixels, then the scene comes back by `soft`. */
+export const LINE_GAP = { hard: 12, soft: 32 } as const
+/** Around the words that stand still, in the margins: nothing within this many pixels. */
+const WORD_PAD = 4
+
+/** How far a point is from a box, 0 inside it. */
+export function boxDistance(box: Box, x: number, y: number): number {
+  return Math.hypot(Math.max(box.x - x, 0, x - box.x - box.w), Math.max(box.y - y, 0, y - box.y - box.h))
+}
+
+/** The scene's share at `x`: `strength` in the column, the whole in the margins, blending across COLUMN_BLEND either side of each edge. */
+export function columnFactor(layout: Pick<SceneLayout, 'column'>, x: number, strength: number): number {
+  const { left, right } = layout.column
+  const out = x < left ? left - x : x > right ? x - right : -Math.min(x - left, right - x)
+  return lerp(strength, 1, smooth(-COLUMN_BLEND, COLUMN_BLEND, out))
+}
+
+/** The scene's share at `near` pixels from the nearest line of words: nothing within the hard gap, the whole past the soft one. */
+export function lineGap(near: number): number {
+  return smooth(LINE_GAP.hard, LINE_GAP.soft, near)
+}
+
+/** How far a point is from the nearest of `lines`, Infinity with none. Overlapping gaps take the nearest line, never a product. */
+export function nearestLine(lines: readonly Box[], x: number, y: number): number {
+  let near = Number.POSITIVE_INFINITY
+  for (const box of lines) near = Math.min(near, boxDistance(box, x, y))
+  return near
+}
+
+/**
+ * How much of the scene shows at a point, 0 to 1, before the transcript's lines are taken out: nothing under the words
+ * that stand still or the composer, nor in the column's part of the header band, a band falling to a tenth under the
+ * header, and `strength` in the column, blending to the whole in the margins, except along the composer's branches,
+ * which grow out of it. In the column the still words and the composer keep the lines' soft gap.
+ */
+export function quietAt(layout: SceneLayout, x: number, y: number, strength: number = COLUMN_QUIET.dark): number {
+  const inside = !inMargin(layout, x)
+  if (inside && y < layout.header) return 0
+  let near = Number.POSITIVE_INFINITY
+  for (const box of layout.words) near = Math.min(near, boxDistance(box, x, y))
+  near = Math.min(near, boxDistance(layout.composer, x, y))
+  if (near <= WORD_PAD) return 0
   const toColumn = Math.min(Math.abs(x - layout.column.left), Math.abs(x - layout.column.right))
-  const onBranch = Math.abs(y - layout.branches.left.y0) < 16 + 12 * layout.s && toColumn < 64 * layout.s + 52
-  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * (onBranch ? 1 : lerp(0.35, 1, smooth(8, 40, toColumn)))
+  const onBranch = !inside && Math.abs(y - layout.branches.left.y0) < 16 + 12 * layout.s && toColumn < 64 * layout.s + 52
+  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * (onBranch ? 1 : columnFactor(layout, x, strength)) * (inside ? lineGap(near) : 1)
 }
 
 // ---------- Flights ----------
@@ -324,7 +370,7 @@ export function owlRoom(layout: SceneLayout, x: number): boolean {
 
 /**
  * A flight from where the owl sits to `to`. Between the trees it rises, passes the moon and comes down; the column is
- * crossed behind the room, since nothing is drawn there. To or from the composer it drops onto or rises off the branch
+ * crossed behind the room, since no owl is drawn there. To or from the composer it drops onto or rises off the branch
  * on the side of the tree it comes from or goes to.
  */
 export function planFlight(layout: SceneLayout, owl: Pick<WatcherOwlState, 'at' | 'side'>, to: OwlPlace, t0: number): OwlFlight {
@@ -573,12 +619,15 @@ export function gridFor(width: number, height: number): Grid {
   return { cols: Math.ceil(width / CELL.w), rows: Math.ceil(height / CELL.h), cw: CELL.w, ch: CELL.h }
 }
 
-/** Stars scattered over the margins' open sky, where the landscape leaves a cell empty. */
+/**
+ * Stars scattered over the open sky, where the landscape leaves a cell empty: the margins' and the column's, where the
+ * quiet and the gaps around words decide how much of each shows.
+ */
 export function placeStars(layout: SceneLayout, grid: Grid, ink: Float32Array): Star[] {
   const S = seeded(5), count = Math.round(layout.width * layout.height / 6000), stars: Star[] = []
   for (let k = 0; k < count; k++) {
     const c = Math.floor(S() * grid.cols), r = Math.floor(S() * grid.rows), y = r * grid.ch
-    if (y < layout.header + 6 || y > layout.horizon - layout.sky * 0.08 || !inMargin(layout, (c + 0.5) * grid.cw)) continue
+    if (y < layout.header + 6 || y > layout.horizon - layout.sky * 0.08) continue
     const i = r * grid.cols + c
     if ((ink[i] ?? 1) > 0.05) continue
     const tier = S()

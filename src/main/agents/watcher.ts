@@ -733,7 +733,7 @@ export class WatcherService implements WatcherControlHooks {
       // A finish held for its work whose thread began another turn first: its work-settled news will not come.
       if (event.kind !== 'work-settled' && event.backgroundWorkCount && thread.lastTurn && thread.lastTurn.id !== event.turnId)
         return 'Its thread has begun another turn since, so no work-settled news for this turn will follow.'
-      return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread))
+      return watcherReplyStart(thread, event.turnId, watcherNewestTurnReply(thread), event.operationId !== undefined)
     }
   }
   /** How long each held finish in a wake-up's news was held, in minutes, when it went by itself with its thread idle (#1263). */

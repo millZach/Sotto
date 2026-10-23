@@ -1,7 +1,8 @@
 # Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0093) from the same source commit and Owl version as the
 # Windows Owl the release lead packaged by hand. Runs only when started by hand; never on a push or a pull request.
 # It publishes nothing: it attests the disk image and zip and keeps them as a workflow artifact, which release:owl
-# verifies and attaches to the Owl prerelease. The app is signed with Sotto's Developer ID, notarized and stapled,
+# verifies and attaches to the Owl prerelease. It also builds the matching Mac host archive and keeps it, with its
+# checksum sidecar, as a second artifact for release:owl's --host-archive. The app is signed with Sotto's Developer ID, notarized and stapled,
 # with the certificate and App Store Connect key from the `owl-mac` environment, which only this job reads and which
 # allows only main. A run without them fails; there is no unsigned Mac Owl.
 name: Sotto Owl for Mac
@@ -200,5 +201,27 @@ jobs:
         with:
           name: sotto-owl-mac-${{ inputs.version }}
           path: ${{ steps.files.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # Every Owl carries a Mac host archive at its own version (#1314), so a Mac connected as a machine has a host to
+      # update to. It is built after the signing keychain is gone and after the app is kept, so a failure here never
+      # costs the signed app. package:host:owl refuses a checkout that is not clean and at the source, verifies the
+      # archive's bytes and smoke-starts the packaged host. COPYFILE_DISABLE keeps macOS tar from adding AppleDouble
+      # files, which the archive's inventory check would refuse.
+      - name: Package and verify the Mac host archive
+        env:
+          COPYFILE_DISABLE: '1'
+        run: npm run package:host:owl -- --version "$VERSION" --source "$SOURCE"
+
+      # Its own artifact, because the Mac Owl folder must hold only the files its receipt lists. release:owl takes the
+      # archive with --host-archive and reads the .sha256 sidecar beside it.
+      - name: Retain the Mac host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-owl-mac-host-${{ inputs.version }}
+          path: |
+            release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz
+            release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14

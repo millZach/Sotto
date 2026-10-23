@@ -34,6 +34,7 @@ const customSettings = {
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
   creature: 'claude',
+  showCreature: false,
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -45,6 +46,8 @@ const customSettings = {
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
   reducedMotion: 'on',
+  roomTransition: false,
+  roomTransitionSpeed: 1.5,
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
@@ -74,6 +77,8 @@ const customSettings = {
   llmDictionary: 'Sotto\nMoonshine',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
+  llmModel: 'google/gemini-3.1-flash-lite',
+  llmMode: 'nitro',
   threadTitles: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
@@ -241,10 +246,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, customThemes: [] })
     }
   })
 
@@ -345,8 +350,11 @@ describe('settings', () => {
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
       creature: 'sotto',
+      showCreature: true,
       customThemes: [],
       reducedMotion: 'system',
+      roomTransition: true,
+      roomTransitionSpeed: 1,
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
       pressShortcuts: [],
@@ -375,6 +383,8 @@ describe('settings', () => {
       llmDictionary: '',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
+      llmModel: null,
+      llmMode: 'default',
       threadTitles: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
@@ -594,5 +604,21 @@ describe('settings', () => {
     first.theme = 'light'
     expect(second.theme).toBe('dark')
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
+
+describe('night falls settings', () => {
+  it('defaults to on at speed 1 and keeps a saved choice', () => {
+    expect(DEFAULT_SETTINGS.roomTransition).toBe(true)
+    expect(DEFAULT_SETTINGS.roomTransitionSpeed).toBe(1)
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
+    expect(parsed.roomTransition).toBe(false)
+    expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('falls back to the default for a speed outside the dial', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 3 }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 'fast' }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransition: 'yes' }).roomTransition).toBe(true)
   })
 })

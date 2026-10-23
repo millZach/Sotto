@@ -344,7 +344,7 @@ export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }:
 
 export function NoHistory({ names }: { readonly names: readonly string[] }): ReactNode {
   const name = joinNames(names)
-  return <EmptyUsage title={`No history from ${joinNames(names.map(midSentence))} yet`} detail={`${name}'s history appears after its Owl host update.`} />
+  return <EmptyUsage title={`No history from ${joinNames(names.map(midSentence))} yet`} detail={`${name}'s history appears after its host update.`} />
 }
 
 export function About({ page }: { readonly page: UsagePage }): ReactNode {

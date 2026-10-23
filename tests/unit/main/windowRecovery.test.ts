@@ -101,6 +101,25 @@ describe('WindowManager lifecycle', () => {
     expect(windows[1]!.focus).toHaveBeenCalledOnce()
   })
 
+  it('finishes the cleanup of a window that closed on its own when one step refuses, and says so without detail', async () => {
+    const { log, manager, windows } = createHarness()
+    await manager.createWindows()
+    const main = windows[0]!
+    // Electron closes every window itself when macOS's installer restarts Sotto, and a closed window throws for some native calls.
+    main.removeRenderProcessGoneListener.mockImplementationOnce(() => {
+      throw new TypeError('Object has been destroyed')
+    })
+
+    expect(() => main.emit('closed')).not.toThrow()
+
+    expect(main.removedListeners).toStrictEqual(['maximize', 'unmaximize', 'hide', 'minimize', 'close', 'closed', 'page-title-updated'])
+    // The navigation steps run after the one that refused.
+    expect(main.webContents.removeListener).toHaveBeenCalledTimes(3)
+    expect(log).toHaveBeenCalledWith('renderer-cleanup-failed')
+    expect(JSON.stringify(log.mock.calls)).not.toContain('Object has been destroyed')
+    expect(manager.getMainWebContents()).toBeNull()
+  })
+
   it('reports renderer loss through the public lifecycle seam and contains handler details', async () => {
     const onRendererProcessGone = vi.fn(() => {
       throw new Error('private renderer crash detail')

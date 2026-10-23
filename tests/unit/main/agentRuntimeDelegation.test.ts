@@ -26,8 +26,8 @@ async function runtime(delegationEnabled: boolean | undefined, runsAs?: 'headles
     ...(delegationEnabled === undefined ? {} : { delegationEnabled }), ...(runsAs ? { runsAs } : {}) })
 }
 
-it('is off on stable and on in Owl', () => {
-  expect(owlFeaturesForTrack('stable')['thread-delegation']).toBe(false)
+it('is on in both tracks now that it is sent to stable', () => {
+  expect(owlFeaturesForTrack('stable')['thread-delegation']).toBe(true)
   expect(owlFeaturesForTrack('owl')['thread-delegation']).toBe(true)
 })
 

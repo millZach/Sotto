@@ -24,6 +24,8 @@ The **creature** that stands on the composer's top edge has been one character s
 
 **6. The readout is words on the room.** No fill and no outline, for both creatures, so it can never cover what it stands over. The room is solid (ADR-0084), so the words keep the contrast the theme gives text.
 
+**7. Show the creature, in Owl (amended October 23, 2026).** At Drake Morey's request, Settings → Appearance → Creature has a switch, **Show the creature**, saved as `showCreature`, on by default. Off, no pose and no readout stand above any composer, and the character choice hides until it is back on; the sidebar still says what each thread is doing, so nothing the user needs to answer goes unseen. Unlike the character choice, the switch is a new feature rather than a change to one already in stable, so it is the Owl feature `creature-toggle` (ADR-0072): where it is held, the switch is not shown, Find a setting does not list it, and the creature shows whatever was saved, so a saved `false` stays whole for a build that has it. Only the renderer reads it; main starts nothing for it.
+
 ## Considered options
 
 - **A creature per provider or per thread.** Claude bot only on Claude Code threads. Rejected: the poses are not tied to one provider, a held action shows on Codex, Grok Build and Devin threads alike, and the creature says nothing about who runs the thread. Which one stands above the composer is the user's choice of look.
