@@ -13,7 +13,7 @@ const KEY = 'sk-e2e-made-up-key-41c9'
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('region', { name: 'Provider configuration', exact: true })
+  return page.getByRole('region', { name: 'OpenCode details', exact: true })
 }
 
 const contrasts: { surface: string; width: number; appearance: string; ratio: number }[] = []

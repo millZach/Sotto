@@ -27,7 +27,7 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['update-text', ['update-surface']],
   ['terminal-foreground', ['terminal-background', 'terminal-selection']],
   ['effort-text-fill', ['surface-elevated', 'field', 'sidebar', 'sidebar-control']],
-  ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin']],
+  ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-muse', 'provider-opencode-badge']],
 ]
 /** These color: declarations paint SVG/provider marks only; their children override inherited text. */
 export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-opencode'] as const
