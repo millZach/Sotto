@@ -57,7 +57,7 @@ describe('the sidebar frame in the stylesheets', () => {
   it('gives the Settings column the sidebar width and its frame, not widths and padding of its own', () => {
     // One rule gives the layout its columns, in no media block more; SettingsView hands it the sidebar's remembered width.
     const layouts = settings.filter(rule => rule.selectors.includes('.settings-view .settings-layout'))
-    expect(layouts.map(rule => rule.declarations.get('grid-template-columns'))).toEqual(['var(--app-sidebar-width, 320px) minmax(0, 1fr)'])
+    expect(layouts.map(rule => rule.declarations.get('grid-template-columns'))).toEqual(['var(--app-sidebar-width, 280px) minmax(0, 1fr)'])
     expect(global.flatMap(rule => [...rule.declarations.keys()]).filter(property => property === '--app-sidebar-width')).toEqual([])
     // The rail takes no padding of its own, at any size; its section list insets itself as the foot does.
     const rail = settings.filter(rule => rule.selectors.some(selector => /(^|\s)\.settings-sidebar$/u.test(selector)))

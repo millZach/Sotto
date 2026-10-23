@@ -19,30 +19,33 @@ function columnWidth(): string {
 }
 
 describe('the Settings column', () => {
-  it('is as wide as the Threads sidebar is, so going there and back moves nothing', () => {
-    // Nothing saved: the sidebar's default.
-    expect(columnWidth()).toBe('320px')
+  // Until the sidebar's edge is dragged it is 30% of the window, from 260 to 280 pixels (ADR-0110), and so is the column.
+  it.each([[1600, 280], [1024, 280], [900, 270], [820, 260]])('is as wide as the Threads sidebar is, in a window %ipx wide', (viewport, shown) => {
+    setWindowWidth(viewport)
+    expect(columnWidth()).toBe(`${shown}px`)
   })
 
   it.each([
-    ['the minimum', { width: 260, collapsed: false }, 260],
-    ['one the person dragged to', { width: 400, collapsed: false }, 400],
-    ['the maximum', { width: 480, collapsed: false }, 480],
+    ['the minimum', { width: 260, chosen: true, collapsed: false }, 260],
+    ['one the person dragged to', { width: 400, chosen: true, collapsed: false }, 400],
+    ['the maximum', { width: 480, chosen: true, collapsed: false }, 480],
+    ['a width of 320, which is theirs once they chose it', { width: 320, chosen: true, collapsed: false }, 320],
     // The sidebar can be collapsed to its rail; Settings has no rail, so it keeps the width the sidebar expands to.
-    ['the width a collapsed sidebar expands to', { width: 360, collapsed: true }, 360],
+    ['the width a collapsed sidebar expands to', { width: 360, chosen: true, collapsed: true }, 360],
   ])('takes %s', (_name, saved, shown) => {
     localStorage.setItem(THREADS_SIDEBAR_KEY, JSON.stringify(saved))
     expect(columnWidth()).toBe(`${shown}px`)
   })
 
   it('narrows with the window the way the sidebar does, keeping 470px for the room', () => {
-    localStorage.setItem(THREADS_SIDEBAR_KEY, JSON.stringify({ width: 480, collapsed: false }))
+    localStorage.setItem(THREADS_SIDEBAR_KEY, JSON.stringify({ width: 480, chosen: true, collapsed: false }))
     setWindowWidth(820)
     expect(columnWidth()).toBe('350px')
   })
 
   it('starts at the default when the saved width is damaged', () => {
     localStorage.setItem(THREADS_SIDEBAR_KEY, '{"width":"wide"')
-    expect(columnWidth()).toBe('320px')
+    setWindowWidth(1024)
+    expect(columnWidth()).toBe('280px')
   })
 })

@@ -9,14 +9,16 @@ import { resizeContentWindow } from './support/sottoWindow'
 /**
  * Going to Settings and back leaves the sidebar's frame where it was: the column, the brand in the top row and the foot
  * (its hairline, the room switch, the page links, the update control) are the same boxes on both pages, at the
- * sidebar's narrowest, default and widest saved widths. Run after `npm run build`. Captures go to disposable run
- * evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/sidebar-crossing.
+ * sidebar's default (30% of the window until its edge is dragged, ADR-0110) and at its narrowest, a middle and its widest
+ * dragged widths. Run after `npm run build`. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish`
+ * writes artifacts/sidebar-crossing.
  */
 const evidence = evidenceDirectory('artifacts/sidebar-crossing')
 /** The Threads sidebar's saved size (src/renderer/src/agents/sidebarSize.ts); the Settings column reads it too. */
 const SIDEBAR_KEY = 'sotto.threadWorkspace.sidebar'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
-const SAVED_WIDTHS = [260, 320, 480] as const
+/** The width the user dragged the sidebar to; null is a sidebar never dragged, which follows the window. */
+const SAVED_WIDTHS = [null, 260, 320, 480] as const
 const PROFILE = { onboardingComplete: true, appearance: 'dark', motion: 'reduced', scenario: 'design-threads', agents: 'design-threads' } as const
 
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
@@ -76,13 +78,16 @@ async function onSettings(page: Page): Promise<Frame> {
   return frame(page)
 }
 
-/** What a saved sidebar width comes to in a window, as `useSidebarSize` clamps it. */
-function shownWidth(saved: number, viewport: number): number {
-  return Math.min(saved, Math.min(480, Math.max(260, viewport - 470)))
+/** What the sidebar's width comes to in a window, as `useSidebarSize` works it out: a dragged width, or 30% of the window from 260 to 280, kept to 470px short of the window's width. */
+function shownWidth(saved: number | null, viewport: number): number {
+  const preferred = saved ?? Math.round(Math.max(260, Math.min(280, viewport * 0.3)))
+  return Math.min(preferred, Math.min(480, Math.max(260, viewport - 470)))
 }
 
-async function saveWidth(page: Page, width: number, collapsed = false): Promise<void> {
-  await page.evaluate(([key, value]) => localStorage.setItem(key!, value!), [SIDEBAR_KEY, JSON.stringify({ width, collapsed })])
+/** Saves the width the user dragged the sidebar to, or with null the record of a sidebar never dragged; then reloads. */
+async function saveWidth(page: Page, width: number | null, collapsed = false): Promise<void> {
+  const record = width === null ? { collapsed } : { width, chosen: true, collapsed }
+  await page.evaluate(([key, value]) => localStorage.setItem(key!, value!), [SIDEBAR_KEY, JSON.stringify(record)])
   await page.reload()
 }
 

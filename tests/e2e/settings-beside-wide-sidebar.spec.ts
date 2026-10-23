@@ -7,12 +7,12 @@ import { resizeContentWindow } from './support/sottoWindow'
 /**
  * Settings lays its sections out beside a column as wide as the Threads sidebar is, so the room they have shrinks
  * as the sidebar is widened. Every section, on both tracks, still fits at the widths that leave it the least: the
- * sidebar at the widest the window lets it be (470px of room at 820 and at 920 wide) and at its default, and at larger
- * windows with the widest saved. A classic 17px scrollbar's room is taken from the sections, as Windows draws one and a
+ * sidebar dragged to the widest the window lets it be (470px of room at 820 and at 920 wide) or to 320, and at larger
+ * windows dragged to its widest. A classic 17px scrollbar's room is taken from the sections, as Windows draws one and a
  * Mac does not. Run after `npm run build`.
  */
 const SIDEBAR_KEY = 'sotto.threadWorkspace.sidebar'
-/** The window's size, then the sidebar width saved before it. */
+/** The window's size, then the width the sidebar was dragged to. */
 const CASES = [[820, 560, 480], [820, 560, 320], [920, 600, 480], [1000, 700, 480], [1120, 800, 480], [1280, 800, 480], [1600, 1000, 480]] as const
 
 interface Fit { readonly pageOverflow: boolean; readonly formOverflow: boolean; readonly clipped: readonly string[] }
@@ -41,7 +41,7 @@ for (const track of ['stable', 'owl'] as const) {
       const { page } = launched
       for (const [width, height, saved] of CASES) {
         await resizeContentWindow(launched, width, height, [800, 540])
-        await page.evaluate(([key, value]) => localStorage.setItem(key!, value!), [SIDEBAR_KEY, JSON.stringify({ width: saved, collapsed: false })])
+        await page.evaluate(([key, value]) => localStorage.setItem(key!, value!), [SIDEBAR_KEY, JSON.stringify({ width: saved, chosen: true, collapsed: false })])
         await page.reload()
         await openPage(page, 'Settings')
         await page.addStyleTag({ content: '.settings-detail { padding-right: 17px !important }' })

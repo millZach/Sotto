@@ -91,7 +91,7 @@
    --app-sidebar-width, and the page owns the window, so the window controls sit at its top right and the sentence at
    its bottom right. The rail is a container the way the sidebar is, so its top row answers the width as that one does. */
 .settings-view { position: relative; overflow: hidden; }
-.settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width, 320px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
+.settings-view .settings-layout { grid-template-columns: var(--app-sidebar-width, 280px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); justify-content: stretch; gap: 0; padding: 0; overflow: hidden; }
 .settings-view .settings-sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: visible; container: thread-sidebar / inline-size; }
 .settings-sidebar__body { flex: 1; min-height: 0; overflow-y: auto; margin-inline: var(--thread-nav-inset); padding: 10px 0 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .settings-sidebar h1 { margin: 6px 0 18px; padding: 0 8px; color: var(--tt-text); font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -0.7px; font-variation-settings: 'opsz' 96; }

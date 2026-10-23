@@ -6,7 +6,7 @@ Verification of the `fix/settings-sidebar-matches-threads` branch in the built a
 
 Going to Settings and back moved the sidebar in two ways.
 
-- **The width.** The Threads sidebar is as wide as the user left it (260 to 480, 320 by default). The Settings column was 264, or 205 in a window under 1,100 pixels wide and 178 under 900, whatever the sidebar was. Dictate, Usage in Owl and Help already took the Threads width.
+- **The width.** The Threads sidebar is as wide as the user left it (260 to 480; until its edge is dragged, 30% of the window from 260 to 280 since ADR-0110, and 320 before). The Settings column was 264, or 205 in a window under 1,100 pixels wide and 178 under 900, whatever the sidebar was. Dictate, Usage in Owl and Help already took the Threads width.
 - **The foot.** The Threads sidebar drew its foot edge to edge: the hairline from 0 to 319 at the default width, the switch 6 pixels in. The Settings column drew its foot inside a padded column: the hairline from 10, the switch 16 pixels in. Under 900 pixels wide it also stood 15 pixels higher.
 
 Not measured here, read from the stylesheets and the committed Windows captures: on Windows and Linux the padded Settings column also put its top row 16 pixels lower and 10 to the right of the Threads one (macOS already pulled it back), and a column that is not a container missed the narrow-width rules the Threads top row follows, so the mark sat 4 pixels differently on a Mac at the sidebar's narrowest.
@@ -15,7 +15,7 @@ Not measured here, read from the stylesheets and the committed Windows captures:
 
 Every column that wears the sidebar's top row and foot is one unpadded frame, and the foot insets itself, hairline and all. The Settings column takes the Threads sidebar's remembered width and is a container as the sidebar is. The padded variant of the frame, its macOS special cases, the Settings-only foot switch and the Settings-only widths are gone. `CONTEXT.md` (Strip, Sidebar width, Sidebar foot) and the guide's Sidebar section say so.
 
-| At 320 wide, 1280x800 | Threads before | Settings before | Both now |
+| Sidebar 320 wide, 1280x800 | Threads before | Settings before | Both now |
 | --- | --- | --- | --- |
 | Column | 320 | 264 | 320 |
 | Hairline | 0 to 319 | 10 to 253 | 10 to 309 |
@@ -23,18 +23,18 @@ Every column that wears the sidebar's top row and foot is one unpadded frame, an
 | Page links | x 6 and 36 | x 16 and 46 | x 16 and 46 |
 | Update control | x 283 | x 217 | x 273 |
 
-The before numbers were read from the built app on `main` (`d4028ed1e`) with a throwaway spec that is not kept; the after numbers are what `sidebar-crossing.spec.ts` asserts and compares.
+The before numbers were read from the built app on `main` (`d4028ed1e`, when 320 was the default) with a throwaway spec that is not kept; the after numbers are what `sidebar-crossing.spec.ts` asserts and compares. At the default width today (ADR-0110: 280 at 1280x800, 260 at the 820x560 minimum) the Settings column is as wide as the sidebar, close to its old 264 at 1280x800. The `before-` captures predate that look tune-up, so their labels are smaller.
 
 ## What was checked
 
 | Journey | Evidence | Result |
 | --- | --- | --- |
-| Threads, Settings, Threads again, at 1600x1000, 1280x800 and 820x560, with the sidebar saved at 260, 320 and 480, on the stable and the Owl track | `tests/e2e/sidebar-crossing.spec.ts` | The column, the brand, the foot, its hairline, every switch tab, the page links and the update control are the same boxes on all three visits. The hairline stops 10 pixels short of each edge and the switch sits 16 pixels in. It fails on the code before the change. |
+| Threads, Settings, Threads again, at 1600x1000, 1280x800 and 820x560, with the sidebar at its default and dragged to 260, 320 and 480, on the stable and the Owl track | `tests/e2e/sidebar-crossing.spec.ts` | The column, the brand, the foot, its hairline, every switch tab, the page links and the update control are the same boxes on all three visits. The hairline stops 10 pixels short of each edge and the switch sits 16 pixels in. It fails on the code before the change. |
 | The path Windows and Linux take (the macOS class taken off the column), at 260 and 320 | the same spec | The brand is at 14 pixels, centred in the 44 pixel row, and the whole frame matches; at 260 the wordmark gives way on both pages. |
 | A collapsed Threads sidebar | the same spec | Settings keeps the width the sidebar expands to (400 in the run); a rail cannot hold the sections. |
-| Every Settings section beside the wider column: 12 on stable, 14 on Owl, at 820x560 with the column at the widest the window allows (470 pixels of room) and at 320, at 920x600, 1000x700, 1120x800, 1280x800 and 1600x1000 with 480 saved, with 17 pixels taken for a classic scrollbar | `tests/e2e/settings-beside-wide-sidebar.spec.ts`; `settings-820x560-dark.png`, `threads-820x560-dark.png` | No page overflow, no form overflow and no clipped control. The Windows desktop check in CI runs `settings-index.spec.ts` over the same sections at the default width. |
+| Every Settings section beside the wider column: 12 on stable, 14 on Owl, at 820x560 with the sidebar dragged to the widest the window allows (470 pixels of room) and to 320, at 920x600, 1000x700, 1120x800, 1280x800 and 1600x1000 dragged to 480, with 17 pixels taken for a classic scrollbar | `tests/e2e/settings-beside-wide-sidebar.spec.ts`; `settings-820x560-dark.png`, `threads-820x560-dark.png` | No page overflow, no form overflow and no clipped control. The Windows desktop check in CI runs `settings-index.spec.ts` over the same sections at the default width. |
 | The foot on both pages, dark and light, and on Owl | `threads-foot-dark.png`, `settings-foot-dark.png`, `threads-foot-light.png`, `settings-foot-light.png`, `owl-threads-foot-dark.png`, `owl-settings-foot-dark.png` (before: `before-threads-foot-dark.png`, `before-settings-foot-dark.png`) | The two feet are the same picture but for the lit page link and the lit switch tab. Colour still comes from theme roles; nothing new draws a colour. |
-| The sidebar's other surfaces | `tests/e2e/thread-sidebar-resize.spec.ts`, `settings-mode-row.spec.ts`, `theme-editor-and-request-layout.spec.ts` (its first two tests), `browser-theme-editor-layout.spec.ts`, `phones.spec.ts`, `cloud-iphone.spec.ts` | Pass. Resizing, collapsing, the rail's page links, the switch labels at 12.5px and the minimised theme editor clear of the foot links hold. |
+| The sidebar's other surfaces | `tests/e2e/thread-sidebar-resize.spec.ts`, `settings-mode-row.spec.ts`, `theme-editor-and-request-layout.spec.ts` (its first two tests), `browser-theme-editor-layout.spec.ts`, `phones.spec.ts`, `cloud-iphone.spec.ts` | Pass. Resizing, collapsing, the rail's page links, the switch labels at 14px (the stale 12.5px in `settings-mode-row.spec.ts` is now 14px, since the look tune-up) and the minimised theme editor clear of the foot links hold. |
 
 ## Keyboard
 
