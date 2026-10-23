@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { branchMoveWords, incomingRef, type BranchMoveRefusal } from '../../src/shared/branchMoves'
 import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
 
@@ -142,5 +143,34 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     await writeFile(join(staging, 'keep.txt'), 'not ours')
     await new BranchBundles(machines.data('forge')).start()
     expect(await readdir(staging)).toEqual(['keep.txt'])
+  })
+
+  it('keeps every move’s record when moves finish together', async () => {
+    const commit = await featureBranch()
+    const laptop = new BranchBundles(machines.data('laptop'))
+    const together = 4
+    // Once armed, the read of each move's incoming ref answers only when all of them have, so every finish reaches its
+    // record in the same turn.
+    let armed: Array<() => void> | undefined
+    const run: RunGitCommand = async (cwd, command, args, options) => {
+      const output = await runGitStatusCommand(cwd, command, args, options)
+      const waiting = armed
+      if (waiting && args[0] === 'rev-parse' && args.includes('--quiet')) {
+        await new Promise<void>(resolve => { waiting.push(resolve); if (waiting.length === together) for (const release of waiting) release() })
+      }
+      return output
+    }
+    const forge = new BranchBundles({ ...machines.data('forge'), run })
+    const moves = await Promise.all(Array.from({ length: together }, async () => {
+      const moveId = randomUUID()
+      const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+      const receiving = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+      await carry(laptop, prepared, receiving)
+      return { moveId, receiving }
+    }))
+    armed = []
+    for (const receipt of await Promise.all(moves.map(({ receiving }) => forge.finish(receiving)))) expect(receipt).toMatchObject({ type: 'moved', commit })
+    const records = JSON.parse(await readFile(machines.data('forge').recordsPath, 'utf8')) as { moves: Record<string, unknown> }
+    expect(Object.keys(records.moves).sort()).toEqual(moves.map(({ moveId }) => moveId).sort())
   })
 })

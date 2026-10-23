@@ -72,6 +72,8 @@ export class BranchBundles {
   private readonly maxBytes: number
   private readonly records: AtomicJsonStore<Records>
   private started: Promise<void> | undefined
+  /** The records' last read-modify-write, which the next one waits for, so moves finishing together each keep theirs. */
+  private recording: Promise<void> = Promise.resolve()
   constructor(private readonly options: BranchBundlesOptions) {
     this.run = options.run ?? runGitStatusCommand
     this.maxBytes = Math.min(options.maxBytes ?? BRANCH_BUNDLE_MAX_BYTES, BRANCH_BUNDLE_MAX_BYTES)
@@ -235,14 +237,18 @@ export class BranchBundles {
     await unlink(incoming.path).catch(() => undefined)
   }
 
-  private async record(moveId: string, commit: string, ref: string): Promise<void> {
-    const records = await this.records.read()
-    records.moves[moveId] = { commit, ref, at: (this.options.now?.() ?? new Date()).toISOString() }
-    const ids = Object.keys(records.moves)
-    if (ids.length > RECORDS_MAX) {
-      for (const old of ids.sort((a, b) => records.moves[a]!.at.localeCompare(records.moves[b]!.at)).slice(0, ids.length - RECORDS_MAX)) delete records.moves[old]
-    }
-    await this.records.write(records)
+  private record(moveId: string, commit: string, ref: string): Promise<void> {
+    const recorded = this.recording.then(async () => {
+      const records = await this.records.read()
+      records.moves[moveId] = { commit, ref, at: (this.options.now?.() ?? new Date()).toISOString() }
+      const ids = Object.keys(records.moves)
+      if (ids.length > RECORDS_MAX) {
+        for (const old of ids.sort((a, b) => records.moves[a]!.at.localeCompare(records.moves[b]!.at)).slice(0, ids.length - RECORDS_MAX)) delete records.moves[old]
+      }
+      await this.records.write(records)
+    })
+    this.recording = recorded.catch(() => undefined)
+    return recorded
   }
 
   private stagedPath(moveId: string, way: 'in' | 'out'): string { return join(this.options.stagingDirectory, `${moveId}.${way}.bundle`) }
