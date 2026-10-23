@@ -518,6 +518,10 @@ export class WatcherService implements WatcherControlHooks {
     this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
     void this.reconcileRemote().catch(() => undefined)
   }
+  /** The thread as its owning host last published it, or undefined while that host or thread is out of view. */
+  private knownThread(target: WatcherThreadTarget): AgentThread | undefined {
+    return this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
+  }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
