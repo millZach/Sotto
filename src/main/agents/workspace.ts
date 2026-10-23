@@ -3441,6 +3441,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async reopenThreadForWork(threadId: string, guard?: () => void): Promise<AgentHostSnapshot> {
     await this.initialize()
     const projectId = this.thread(threadId).projectId
+    let projectRestored = false
     await this.onLane(projectId, async () => {
       guard?.()
       const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -3459,9 +3460,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const thread of this.state.snapshot.threads) if (ids.has(thread.id)) thread.workspaceSettledAt = null
         throw error
       }
+      projectRestored = true
       this.publish()
     }, this.organizationLanes)
-    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, guard)
+    // The guard decides once: having let the project return, it does not stop the thread's own restore halfway.
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, projectRestored ? undefined : guard)
     return this.workspaceSnapshot()
   }
   /**

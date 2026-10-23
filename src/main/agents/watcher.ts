@@ -508,6 +508,8 @@ export class WatcherService implements WatcherControlHooks {
     allowed()
     if (target.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher restores only this computer’s threads. Ask the user to restore it from Settled. Nothing was changed.')
     const thread = this.thread(target)
+    // A thread with a special job, or an archived one, is not Watcher's to restore, as it is not Watcher's to settle.
+    this.protect(thread)
     if (isWorkspaceThreadSettled(thread, this.options.control.watcherSnapshot().projects.find(project => project.id === thread.projectId))) {
       if (!this.options.host.reopenThreadForWork) refuse('PROVIDER_UNAVAILABLE', 'Sotto cannot restore threads here. Nothing was changed.')
       // Asked again inside the workspace's lane, so a Stop or a takeover while the restore waited for it holds it back.

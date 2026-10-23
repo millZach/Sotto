@@ -164,3 +164,10 @@ it('restores only under the user’s own active request: not a standing watch’
   expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
   expect(f.settled()).toBe(true)
 })
+
+it('refuses to unsettle a thread with a special job, as it refuses to settle one', async () => {
+  const f = await fixture()
+  const requestId = f.service.state().requests.at(-1)!.id
+  const watcher = f.service.state().current!.target
+  expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: watcher })).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+})
