@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'keep-main-current'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -129,6 +129,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Proactive panels', section: 'settings-git', words: 'changes' },
     { label: 'Git fetch interval', section: 'settings-git', words: 'background' },
     { label: 'Automatically pull', section: 'settings-git', words: 'fetch' },
+    { label: 'Keep main up to date', section: 'settings-git', words: 'pull fetch fast-forward behind default branch', gate: 'keep-main-current' },
 
     { label: 'Settle finished threads', section: 'settings-watcher', gate: 'watcher' },
     { label: 'Worker roles', section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },

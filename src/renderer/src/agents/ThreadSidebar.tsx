@@ -11,6 +11,11 @@ import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
+import { MainCheckoutLine } from './MainCheckoutLine'
+import { useMainCheckoutLines } from './mainCheckoutLine.logic'
+import { useOwlFeature } from '../state/owlFeature'
+import { projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
+import type { ProjectMainCheckout } from '../../../shared/mainCheckout'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
@@ -206,8 +211,10 @@ function useFolderToggles(): readonly [(key: string) => boolean, (key: string) =
 }
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, mainCheckout }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
+  /** Keep main up to date's line for this project, when it has one (ADR-0123). */
+  readonly mainCheckout?: ProjectMainCheckout | undefined
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
   readonly expanded: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
@@ -244,6 +251,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         {folder.settled || section === 'open' ? <ProjectSettleAction projectId={folder.id} title={folder.title} settled={folder.settled} disabled={globalLaneBusy} command={command} /> : null}
       </span> : null}
     </div>
+    {mainCheckout ? <MainCheckoutLine line={mainCheckout} title={folder.title} /> : null}
     {expanded ? <ul className="thread-folder__rows" id={listId}>
       {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
         liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} settle={settle} />)}
@@ -320,11 +328,14 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const searching = query.trim() !== ''
   const connections = state.connections
   const hosts = useMemo(() => listedHosts({ connections }), [connections])
+  // Keep main up to date (ADR-0123): this computer's projects only, by their local ID, and only among open work.
+  const mainCheckout = useMainCheckoutLines(useOwlFeature('keep-main-current') ? window.sotto?.mainCheckout : undefined)
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = folderKey(section, folder.id)
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
       host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut}
+      mainCheckout={section === 'open' && mainCheckout.size ? mainCheckout.get(projectWorkingCopyDefaultKey(state, folder.id)) : undefined}
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
   }
   const { open, settled } = organization

@@ -9,6 +9,7 @@ import { SegmentedControl } from '../../components/SegmentedControl'
 import { Select } from '../../components/Select'
 import { Toggle } from '../../components/Toggle'
 import { SettingsGroup } from './SettingsGroup'
+import { useOwlFeature } from '../../state/owlFeature'
 import './gitSettings.css'
 
 interface GitSettingsProps {
@@ -24,7 +25,7 @@ const MAX_CHARACTERS = GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS.toLocaleString('e
 /** How long typing pauses before Custom instructions saves on its own. */
 export const CUSTOM_INSTRUCTIONS_SAVE_DELAY_MS = 600
 
-type GitSettingDescriptions = Record<'style' | 'templates' | 'merge' | 'settle' | 'layout' | 'whitespace' | 'fileState' | 'proactive' | 'fetch' | 'autoPull', string>
+type GitSettingDescriptions = Record<'style' | 'templates' | 'merge' | 'settle' | 'layout' | 'whitespace' | 'fileState' | 'proactive' | 'fetch' | 'autoPull' | 'keepMain', string>
 
 /**
  * What each Git setting will do with the value it holds, one sentence or two each, so a description changes
@@ -67,6 +68,9 @@ export function gitSettingDescriptions(settings: AppSettings): GitSettingDescrip
     autoPull: settings.gitAutoPull
       ? 'Fast-forwards a clean folder on the default branch when it falls behind. Nothing is merged or rebased.'
       : 'Shows when the default branch is behind and leaves the pull to you.',
+    keepMain: settings.keepMainCurrent
+      ? 'Every 15 minutes and after a pull request merges, each project’s folder moves forward to its remote’s default branch when that branch is checked out and has no local changes. Sotto never stashes, resets or rebases.'
+      : 'Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults.',
   }
 }
 
@@ -169,6 +173,8 @@ function WritingStyle({ settings, onSave, description }: GitSettingsProps & { re
  */
 export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   const says = gitSettingDescriptions(settings)
+  // Keep main up to date (ADR-0123): an Owl feature, so stable shows no switch for it.
+  const keepMain = useOwlFeature('keep-main-current')
   return <div className="git-settings">
     <SettingsGroup id="settings-worktrees" title="Removing worktrees" icon={FolderMinus}>
       <Field label="Remove idle worktrees after" description="Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."><Select value={String(settings.worktreeCleanup.afterDays ?? 'never')} onChange={event => { const value = event.currentTarget.value; void onSave({ worktreeCleanup: { afterDays: value === 'never' ? null : Number(value) as WorktreeCleanupDays } }) }}><option value="never">Never</option>{WORKTREE_CLEANUP_DAYS.map(days => <option key={days} value={String(days)}>{days} days</option>)}</Select></Field>
@@ -212,6 +218,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
         </Select>
       </Field>
       <Toggle label="Automatically pull" checked={settings.gitAutoPull} onCheckedChange={checked => void onSave({ gitAutoPull: checked })} description={says.autoPull} />
+      {keepMain ? <Toggle label="Keep main up to date" checked={settings.keepMainCurrent} onCheckedChange={checked => void onSave({ keepMainCurrent: checked })} description={says.keepMain} /> : null}
     </SettingsGroup>
   </div>
 }

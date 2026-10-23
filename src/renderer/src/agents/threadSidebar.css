@@ -243,3 +243,18 @@
 @container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
 
 .thread-nav .thread-nav__row--details:is(:hover, :focus-within, [data-current]) .thread-nav__time { visibility: visible; }
+
+/* Keep main up to date's line under a project's name (ADR-0123, variant A). */
+.thread-folder__main { padding: 1px 8px 6px 26px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.thread-folder__main-line { margin: 0; overflow-wrap: anywhere; }
+.thread-folder__main-behind { color: var(--tt-warning-text); }
+.thread-folder__main-updated { color: var(--tt-success); }
+.thread-folder__main-press { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.thread-folder__main-dismiss { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); vertical-align: middle; cursor: pointer; }
+.thread-folder__main-dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
+.thread-folder__main-list { margin-top: 5px; }
+.thread-folder__main-list ul { margin: 0 0 4px; padding: 0; list-style: none; }
+.thread-folder__main-list li { display: flex; gap: 8px; min-width: 0; padding: 1px 0; }
+.thread-folder__main-kind { flex: none; width: 64px; color: var(--tt-text-muted); }
+.thread-folder__main-path { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-folder__main-more, .thread-folder__main-failed { margin: 0 0 4px; }

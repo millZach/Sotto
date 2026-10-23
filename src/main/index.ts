@@ -218,6 +218,9 @@ import { registerSubagentIpc } from './agents/subagentIpc'
 import { registerUsageIpc } from './agents/usageIpc'
 import { MainActivityService, type MainActivityLogEvent } from './performance/mainActivityService'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
+import type { MainCheckoutEvent } from './agents/mainCheckout'
+import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
 import { fakeNotification } from './e2e/fakeNotification'
 import { createDesktopNotifier } from './notifications/desktopNotifier'
 import { registerNotificationIpc } from './notifications/notificationIpc'
@@ -336,6 +339,7 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | MainCheckoutEvent
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -709,6 +713,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // Keep main up to date (ADR-0123): this computer's projects only, so only where the local host runs, and never in a
+  // design capture, whose fixture folders must look the same on every run.
+  const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && process.env['SOTTO_DESIGN_CAPTURE'] !== '1'
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -764,6 +771,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
+        ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
@@ -838,7 +846,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled,
+    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled,
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
@@ -1555,12 +1563,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const grantDefaultChanged = settings.browserWithoutAsking !== workingCopySettings.browserWithoutAsking
       const babysittingChanged = settings.babysitPullRequests !== workingCopySettings.babysitPullRequests
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
+      const previous = workingCopySettings
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       worktreeCleanup?.settingsChanged()
+      if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
@@ -1810,6 +1820,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
+      const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),
+        async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
+      const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
@@ -2039,6 +2052,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupDelegations()
         cleanupContinue()
         cleanupMainActivity()
+        cleanupMainCheckout()
+        unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
         worktreeCleanup?.dispose()

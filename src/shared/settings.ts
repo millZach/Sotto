@@ -185,6 +185,14 @@ export interface AppSettings {
    * and behind with nothing of its own ahead, each time it reads the remote status (T3 Code's rule).
    */
   gitAutoPull: boolean
+  /**
+   * Keep main up to date (ADR-0123, an Owl feature): every 15 minutes and after a pull request merges, the host
+   * fast-forwards each project's checkout to its remote's default branch when that branch is checked out and nothing
+   * of the user's is in the way. On by default where the feature is on.
+   */
+  keepMainCurrent: boolean
+  /** Explicit project overrides of Keep main up to date, by the same key as the working-copy defaults; an absent key follows it. */
+  projectKeepMainCurrent: Record<string, 'on' | 'off'>
   /** The merge method a pull request's merge starts on; `last` reuses `lastMergeMethod`. */
   defaultMergeMethod: DefaultMergeMethod
   /** The merge method chosen last, kept while `defaultMergeMethod` is `last`. */
@@ -408,6 +416,8 @@ const fieldSchemas = {
   worktreeCleanup: worktreeCleanupRulesSchema,
   gitFetchIntervalSeconds: z.union([z.literal(0), z.literal(15), z.literal(30), z.literal(60), z.literal(300)]),
   gitAutoPull: z.boolean(),
+  keepMainCurrent: z.boolean(),
+  projectKeepMainCurrent: z.record(z.string().min(1).max(256), z.enum(['on', 'off'])),
   defaultMergeMethod: z.enum(DEFAULT_MERGE_METHODS),
   lastMergeMethod: z.enum(GIT_MERGE_METHODS),
   diffLayout: z.enum(['stacked', 'split']),
@@ -504,6 +514,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitFetchIntervalSeconds: 30,
   // Off: a pull changes the user's folder, so it happens on their word until they say otherwise.
   gitAutoPull: false,
+  // On: a fast-forward of a checkout on its default branch with nothing of the user's in the way loses nothing (ADR-0123).
+  keepMainCurrent: true,
+  projectKeepMainCurrent: {},
   // T3's defaults: the method chosen last, starting from a plain merge.
   defaultMergeMethod: 'last',
   lastMergeMethod: 'merge',
@@ -661,6 +674,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
     gitFetchIntervalSeconds: parseField(persisted, 'gitFetchIntervalSeconds', defaults),
     gitAutoPull: parseField(persisted, 'gitAutoPull', defaults),
+    keepMainCurrent: parseField(persisted, 'keepMainCurrent', defaults),
+    projectKeepMainCurrent: parseField(persisted, 'projectKeepMainCurrent', defaults),
     defaultMergeMethod: parseField(persisted, 'defaultMergeMethod', defaults),
     lastMergeMethod: parseField(persisted, 'lastMergeMethod', defaults),
     diffLayout: parseField(persisted, 'diffLayout', defaults),

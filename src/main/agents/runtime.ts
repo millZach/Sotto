@@ -18,6 +18,8 @@ import { heldProvidersOption, type HeldProviders } from '../../shared/heldProvid
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
+import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
+import type { PullRequestObservation } from './watcherEvidence'
 import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
@@ -72,6 +74,11 @@ export interface AgentRuntimeOptions {
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
+  /**
+   * Keep main up to date (ADR-0123): the Owl list's answer, read once by the process owner, and its log of stable event
+   * names. Absent fails closed, and a headless host builds none whatever it says.
+   */
+  keepMainCurrent?: { readonly log?: (event: MainCheckoutEvent) => void }
   /** The Owl list's answer for the iPhone's pull request sheet (#1281), read once. Absent fails closed. */
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
@@ -192,10 +199,22 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   })
   agentHost.setBranchNameWriter(threadBranchWriter(shortTextWriter, options.writingSettings))
   // T3's Git actions (ADR-0027): the commit message and pull request text are the same side calls the forms use.
-  if (gitStatus) agentHost.setGitActions(new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}),
+  const gitActions = gitStatus ? new GitActions({ status: gitStatus, ...(gitRun ? { run: gitRun } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}),
     writeCommitMessage: commitMessageWriter(shortTextWriter, options.writingSettings),
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
-    followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }))
+    followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }) : undefined
+  if (gitActions) agentHost.setGitActions(gitActions)
+  // Keep main up to date (ADR-0123): this computer's own projects, every 15 minutes and when a pull request merges. A
+  // headless host's projects wait for a follow-up that carries the line to its clients.
+  const mainCheckout = options.keepMainCurrent && options.runsAs !== 'headless-host' && gitStatus && gitActions
+    ? new MainCheckoutKeeper({ host: agentHost, status: gitStatus, actions: gitActions, directory, ...(gitRun ? { run: gitRun } : {}),
+      ...(options.keepMainCurrent.log ? { log: options.keepMainCurrent.log } : {}),
+      enabled: projectId => {
+        const settings = options.settings()
+        const own = settings.projectKeepMainCurrent[projectId]
+        return own === undefined ? settings.keepMainCurrent : own === 'on'
+      } }) : undefined
+  if (mainCheckout) agentHost.onPullRequestMerged(url => mainCheckout.pullRequestMerged(url))
   // The branch's pull request as a Tools surface (ADR-0027): read and acted on through the same gh.
   if (gitStatus) agentHost.setGitPullRequests(new GitPullRequests({ ...(gitRun ? { run: gitRun } : {}), ...(gitHubRateLimit ? { rateLimit: gitHubRateLimit } : {}), ...(gitHubHosts ? { hosts: gitHubHosts } : {}) }))
   const turns = new TurnRecorder({ directory, resolveSession: id => { const binding = threadRegistry?.byThread(id); return binding ? { provider: binding.provider, sessionId: binding.sessionId } : undefined },
@@ -275,9 +294,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const SAID_ENDINGS: ReadonlySet<BabysitEndReason> = new Set(babysitEndedReasonSchema.options)
   const babysitRun = options.babysitting?.run ?? gitRun
   const babysitter = gitHubRateLimit && options.gitStatus ? new Babysitter({ store: agentHost, deliver: deliverWakeUp, rateLimit: gitHubRateLimit,
-    ...(watcher ? { observed: read => watcher.pullRequestObserved(read) } : {}),
+    ...(watcher || mainCheckout ? { observed: (read: PullRequestObservation) => {
+      watcher?.pullRequestObserved(read)
+      if (read.state === 'merged') mainCheckout?.pullRequestMerged(read.url)
+    } } : {}),
     ...(babysitRun ? { run: babysitRun } : {}), ...(options.gitStatus.log ? { log: options.gitStatus.log } : {}),
     ended: async (threadId, url, reason) => {
+      if (reason === 'merged') mainCheckout?.pullRequestMerged(url)
       if (SAID_ENDINGS.has(reason)) await agentHost.recordBabysitEnded(threadId, url, reason as BabysitEndedReason).catch(() => undefined)
       if (QUIET_ENDINGS.has(reason)) await agentControl.withdrawWakeUp(threadId, url, { tool: babysitTool(threadId) }).catch(() => undefined)
     } }) : undefined
@@ -336,6 +359,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const prepareForShutdown = (): Promise<void> => {
     if (preparingForShutdown) return preparingForShutdown
     worktreeCleanup.dispose()
+    void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
     preparingForShutdown = stopProviders().finally(() => agentHost.flush())
     return preparingForShutdown
@@ -347,6 +371,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
       await worktreeCleanup.close()
+      if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
       toolReads.dispose()
       try { await stopProviders(); await preparingForShutdown } finally { usage?.close(); await agentHost.close() }
@@ -368,6 +393,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
+    void mainCheckout?.close()
     agentControl.dispose()
     await Promise.allSettled([reasoner.close?.(), shortTextWriter.close(), ...Object.values(providers).map(provider => provider.closed?.()), ...(closingWatcherTools ? [closingWatcherTools] : [])])
     agentHost.dispose()
@@ -386,7 +412,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.runsAs === 'headless-host' && watcher ? { watcher } : {}),
     ...(options.runsAs !== 'headless-host' && watcher ? { watcherPhone: new WatcherPhoneService(agentControl, watcher) } : {}) })
   babysitter?.begin()
+  mainCheckout?.start()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
 }

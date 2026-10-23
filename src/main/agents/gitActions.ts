@@ -50,6 +50,22 @@ export class GitActionRefusal extends Error {}
 const COMMIT_TIMEOUT_MS = 10 * 60_000
 const PUSH_TIMEOUT_MS = 10 * 60_000
 const PULL_TIMEOUT_MS = 30_000
+
+/** What `GitActions.fastForward` did. A refusal changed nothing; `moved` means the branch was no longer checked out. */
+export type GitFastForwardResult = { readonly status: 'fast-forwarded'; readonly before: string; readonly after: string } | { readonly status: 'up-to-date' } | { readonly status: 'moved' }
+  | { readonly status: 'refused'; readonly reason: 'untracked' | 'changes'; readonly files: readonly string[] }
+
+/**
+ * The files Git said a merge would overwrite, from its refusal: untracked files in the way, or tracked files with local
+ * changes. Null for any other refusal. Git lists them one to a tab-indented line under the sentence that says which.
+ */
+export function inTheWay(detail: string): { reason: 'untracked' | 'changes'; files: string[] } | null {
+  const untracked = /untracked working tree files would be (?:overwritten|removed)/iu.test(detail)
+  const changes = /local changes to the following files would be overwritten/iu.test(detail)
+  if (!untracked && !changes) return null
+  const files = detail.split(/\r?\n/u).filter(line => line.startsWith('\t')).map(line => line.trim()).filter(Boolean)
+  return { reason: untracked ? 'untracked' : 'changes', files }
+}
 const RECENT_SUBJECTS = 20
 const AGENTS_FILE_MAX_BYTES = 20_000
 const TEMPLATE_MAX_BYTES = 8_000
@@ -437,6 +453,30 @@ export class GitActions {
       const after = (await this.git(cwd, ['rev-parse', 'HEAD'])).trim()
       return { status: before === after ? 'skipped_up_to_date' : 'pulled', branch: status.branch, upstream: status.upstream }
     }, options.automatic ? 'automatic-pull' : 'action')
+  }
+
+  /**
+   * Keep main up to date's update (ADR-0123): `git merge --ff-only` of `target`, the remote's default branch as the last
+   * fetch left it, into `branch`, which must still be checked out. It runs under this folder's one-action rule as an
+   * automatic pull does, fetches nothing itself, and never merges, rebases, stashes or resets: Git refuses, changing
+   * nothing, when the branch has commits the target lacks or a file of the user's would be overwritten, and the refusal
+   * names the files Git named. A refusal for any other reason rejects, with nothing changed.
+   */
+  fastForward(cwd: string, expected: { readonly branch: string; readonly target: string }): Promise<GitFastForwardResult> {
+    return this.exclusive(cwd, async () => {
+      const branch = (await this.git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).catch(() => '')).trim()
+      if (branch !== expected.branch) return { status: 'moved' }
+      const before = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+      try { await this.git(cwd, ['merge', '--ff-only', '--quiet', '--end-of-options', expected.target], { timeoutMs: PULL_TIMEOUT_MS }) }
+      catch (error) {
+        const detail = error instanceof Error ? error.message : ''
+        const refused = inTheWay(detail)
+        if (refused) return { status: 'refused', ...refused }
+        throw new GitActionRefusal('The fast-forward did not run.')
+      }
+      const after = (await this.git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+      return before === after ? { status: 'up-to-date' } : { status: 'fast-forwarded', before, after }
+    }, 'automatic-pull')
   }
 
   /**

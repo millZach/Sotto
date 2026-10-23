@@ -22,6 +22,8 @@ import {
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
+import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
+  mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
@@ -361,6 +363,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** Keep main up to date (ADR-0123): only while the `keep-main-current` Owl feature is on and the local host runs. */
+  mainCheckoutEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -421,6 +425,12 @@ export function createSottoBridge(
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
       command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
+    ...(mainCheckoutEnabled ? { mainCheckout: Object.freeze<MainCheckoutBridge>({
+      read: () => invokeParsed(renderer, MAIN_CHECKOUT_READ, mainCheckoutStateSchema),
+      changes: projectId => invokeParsed(renderer, MAIN_CHECKOUT_CHANGES, mainCheckoutChangesSchema, z.string().min(1).max(256).parse(projectId)),
+      command: command => invokeParsed(renderer, MAIN_CHECKOUT_COMMAND, mainCheckoutStateSchema, mainCheckoutCommandSchema.parse(command)),
+      onChanged: listener => subscribe(renderer, MAIN_CHECKOUT_CHANGED, mainCheckoutStateSchema, listener),
     }) } : {}),
     // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
@@ -665,7 +675,8 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
+      arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
