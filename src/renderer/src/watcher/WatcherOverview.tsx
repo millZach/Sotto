@@ -1,10 +1,11 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode, type RefObject } from 'react'
-import { ChevronRight, Search } from 'lucide-react'
+import { AppWindow, ChevronRight, Search } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import { WATCHER_GROUPS, watcherOverview, type WatcherGroup, type WatcherOverviewRow } from '../../../shared/watcherOverview'
 import { ProviderMark } from '../agents/ProviderMark'
 import { RowTime } from '../agents/ThreadSidebar'
 import { rowStatus, type ThreadRow } from '../agents/threadFacts'
+import { usePageOpener } from '../agents/requests/AgentRequestCard'
 import { WATCHED_BY_WATCHER, WatchedBadge } from './WatcherOwl'
 import { WatchListToggle } from './WatchControls'
 import { useWatchActions } from './watcherRoom'
@@ -19,11 +20,16 @@ export const TONES: Record<WatcherGroup, string> = {
 export interface OverviewEntry { readonly overview: WatcherOverviewRow; readonly facts: ThreadRow }
 export interface OverviewGroup { readonly group: WatcherGroup; readonly entries: readonly OverviewEntry[] }
 
-/** What a thread in Needs you waits on: a question, a permission, or the user after a failed turn. */
-export type WaitKind = 'question' | 'permission' | 'failed'
+/**
+ * What a thread in Needs you waits on: a question, a permission, the user after a failed turn, or a prototype to review
+ * (ADR-0108). A request outranks a failure, and a failure a prototype, as the Overview's own rule reads them.
+ */
+export type WaitKind = 'question' | 'permission' | 'failed' | 'prototype'
 export function waitKind({ facts }: OverviewEntry): WaitKind {
   const request = facts.request ?? facts.thread.requests[0]
-  return request?.kind === 'permission' ? 'permission' : request?.kind === 'question' ? 'question' : 'failed'
+  if (request !== undefined) return request.kind
+  const failed = facts.thread.status === 'error' || facts.thread.lastTurn?.status === 'failed'
+  return !failed && facts.thread.prototypeReady !== undefined ? 'prototype' : 'failed'
 }
 
 /** How a press on a thread in the room opens it: beside Watcher, at its request, or in the Threads room. */
@@ -73,7 +79,7 @@ export function useOverview(state: AgentState | null, facts: readonly ThreadRow[
 export function statusWord({ overview, facts }: OverviewEntry): string {
   const thread = overview.thread
   switch (overview.group) {
-    case 'Needs you': return facts.state === 'needs' ? facts.stateLabel : 'Last turn failed'
+    case 'Needs you': return facts.state === 'needs' ? facts.stateLabel : waitKind({ overview, facts }) === 'prototype' ? 'Prototype to review' : 'Last turn failed'
     case 'Ready for review': {
       const open = thread.pullRequests?.find(pr => pr.state === 'open') ?? (thread.worktree?.git?.pullRequest?.state === 'open' ? thread.worktree.git.pullRequest : undefined)
       return open ? `PR #${open.number} open` : 'Pull request open'
@@ -87,7 +93,22 @@ export function statusWord({ overview, facts }: OverviewEntry): string {
 
 /** The name of a press that opens a thread at what it waits on. */
 export function openAtRequestLabel(title: string, kind: WaitKind): string {
-  return kind === 'failed' ? `Open ${title} at its failed turn` : `Open ${title} to answer its ${kind}`
+  return kind === 'failed' ? `Open ${title} at its failed turn` : kind === 'prototype' ? `Open ${title} to review its prototype` : `Open ${title} to answer its ${kind}`
+}
+
+/**
+ * Open the prototype, for a thread whose prototype waits for review (ADR-0108, variant A): opens its first page through
+ * main by the thread and the page's token, as the strip above its composer does, and says so in plain words when the page
+ * could not open. Nothing without a waiting prototype.
+ */
+export function OpenPrototype({ thread }: { readonly thread: OverviewEntry['facts']['thread'] }): ReactNode {
+  const { open, failure } = usePageOpener({ threadId: thread.id })
+  const page = thread.prototypeReady?.pages[0]
+  if (page === undefined) return null
+  return <>
+    <button type="button" className="watcher-answer tt-focusable" aria-label={`Open the prototype, ${page.name}`} title={page.name} onClick={() => open(page)}>Open the prototype</button>
+    {failure === null ? null : <span className="watcher-row__failure" role="status">{failure}</span>}
+  </>
 }
 
 /**
@@ -108,7 +129,7 @@ function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
   const where = [facts.project?.title, thread.hostLabel].filter(Boolean).join(' · ')
   const needs = overview.group === 'Needs you'
   const kind = needs ? waitKind(entry) : null
-  const asks = needs ? facts.request?.text.split('\n').find(line => line.trim() !== '')?.trim() ?? (kind === 'failed' ? 'Its last turn failed.' : undefined) : undefined
+  const asks = needs ? facts.request?.text.split('\n').find(line => line.trim() !== '')?.trim() ?? (kind === 'failed' ? 'Its last turn failed.' : kind === 'prototype' ? '' : undefined) : undefined
   return <li className="watcher-row" data-group={tone} data-current={current || undefined} data-unavailable={overview.available ? undefined : true}>
     <span className="watcher-row__ring" data-tone={facts.thread.status === 'error' || facts.thread.lastTurn?.status === 'failed' ? 'failed' : tone} aria-hidden="true" />
     <button type="button" className="watcher-row__open tt-focusable" aria-label={`Open ${thread.title} beside Watcher`} aria-describedby={describedBy} title={thread.title}
@@ -120,13 +141,14 @@ function OverviewRow({ entry, watched, current, liveClock, onOpen }: {
         {watched ? <WatchedBadge size={14} /> : null}
       </span>
       {where ? <span className="watcher-row__where">{where}</span> : null}
-      <span className="watcher-row__status" data-tone={tone}>{word}{unavailable}</span>
+      <span className="watcher-row__status" data-tone={tone}>{kind === 'prototype' ? <AppWindow size={12} aria-hidden="true" /> : null}{word}{unavailable}</span>
     </span>
     <span id={describedBy} className="tt-visually-hidden">{[facts.provider, where, `${word}${unavailable}`, watched ? WATCHED_BY_WATCHER : ''].filter(Boolean).join(', ')}</span>
     {asks !== undefined && kind !== null ? <div className="watcher-row__asks">
-      <span>{asks}</span>
-      <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} {...threadPress(onOpen, thread.id, true)}>
-        {kind === 'failed' ? 'Open' : 'Open to answer'}</button>
+      {asks === '' ? null : <span>{asks}</span>}
+      {kind === 'prototype' ? <OpenPrototype thread={thread} />
+        : <button type="button" className="watcher-answer tt-focusable" aria-label={openAtRequestLabel(thread.title, kind)} {...threadPress(onOpen, thread.id, true)}>
+          {kind === 'failed' ? 'Open' : 'Open to answer'}</button>}
     </div> : null}
     <WatchListToggle threadId={thread.id} title={thread.title} />
   </li>

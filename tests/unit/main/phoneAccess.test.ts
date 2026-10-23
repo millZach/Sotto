@@ -22,6 +22,20 @@ it('turns on: checks Tailscale, opens a loopback listener with no admin routes, 
   await access.close()
 })
 
+it('gives the listener’s loopback port for a page Sotto’s browser opens, and none once phone access is off (ADR-0108)', async () => {
+  const fake = fakeTailscale(), server = fakeServer()
+  const { access, settings } = create({ tailscale: fake.tailscale, startServer: server.startServer })
+  expect(access.pagePort()).toBeUndefined()
+  await access.start()
+  expect(access.pagePort()).toBe(41000)
+  settings.phoneAccess = false
+  access.settingsChanged()
+  expect(access.pagePort()).toBeUndefined()
+  await vi.waitFor(() => expect(access.get().phase).toBe('off'))
+  expect(access.pagePort()).toBeUndefined()
+  await access.close()
+})
+
 it('advertises the packaged version supplied by desktop startup on the phone listener', async () => {
   const fake = fakeTailscale(), server = fakeServer()
   const startServer = vi.fn(server.startServer)

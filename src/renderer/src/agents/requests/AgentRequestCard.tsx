@@ -1,10 +1,11 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2 } from 'lucide-react'
+import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
 import { linkPlace, webLinks } from './messageLinks'
+import { useWebLinkRouter } from '../../tools/webLinks'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
@@ -127,6 +128,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
         {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id }}
+          linkMissing={index === 0 && request.linkMissing === true}
           selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
@@ -137,7 +139,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
         <p className="agent-request__text"><LinkedText text={request.text} /></p>
-        <MessageLinks links={rows} pages={pages} owner={{ threadId: ownerId, requestId: request.id }} />
+        <MessageLinks links={rows} pages={pages} owner={{ threadId: ownerId, requestId: request.id }} linkMissing={request.linkMissing === true} />
         {mode === 'legacy-options' ? <>
           <fieldset className="agent-request__question" disabled={disabled}>
             <legend className="tt-visually-hidden">{request.text}</legend>
@@ -212,14 +214,48 @@ function servedAsPage(url: string, pages: readonly QuestionPage[]): boolean {
   return pages.some(page => page.kind === 'server' && page.name === parsed.host && page.start === start)
 }
 
-/** The request a row's page belongs to, which main opens it through. */
-interface PageOwner { readonly threadId: string; readonly requestId: string }
+/**
+ * What a row's page belongs to, which main opens it through: the thread and the request it is on, or, with no request,
+ * the thread's prototype waiting for review (ADR-0108).
+ */
+export interface PageOwner { readonly threadId: string; readonly requestId?: string | undefined }
 
 /** What a row says when its page could not be opened. */
 const PAGE_OPEN_FAILURES = {
   gone: 'That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now.',
   unavailable: 'Sotto could not open that page. Nothing else changed. Try again.',
 } as const
+
+/** What a row says when its page opened in Sotto's browser and nothing here can show that browser. */
+const PAGE_OPENED_UNSEEN = 'Opened in Sotto’s browser. Open Tools > Browser in this thread to see it.'
+
+/** What stands where Open the prototype would be on a question whose prototype names no page that opens (ADR-0108). */
+export const LINK_MISSING = 'No working link. This question is about a prototype, and no page it names opens.'
+
+/**
+ * Opens one of an owner's pages through main, by its token, never by path or address (ADR-0085). `failure` says how the
+ * latest press went, in plain words, until the next press; a slow earlier press cannot overwrite it.
+ */
+export function usePageOpener(owner: PageOwner | undefined): { readonly open: (page: QuestionPage) => void; readonly failure: string | null } {
+  const [failure, setFailure] = useState<string | null>(null)
+  const latest = useRef(0)
+  const router = useWebLinkRouter()
+  const open = (page: QuestionPage): void => {
+    if (!owner) return
+    const press = ++latest.current
+    setFailure(null)
+    const settle = (said: string | null): void => { if (press === latest.current) setFailure(said) }
+    const input = owner.requestId === undefined ? { threadId: owner.threadId, token: page.token } : { threadId: owner.threadId, requestId: owner.requestId, token: page.token }
+    void (window.sotto?.openQuestionPage?.(input) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
+      .then(result => {
+        if (!result.ok) return settle(PAGE_OPEN_FAILURES[result.reason])
+        // Opened in Sotto's browser, as Web links in threads chose: shown where this thread's links show theirs (ADR-0108).
+        if (!result.page) return settle(null)
+        settle((router.show ? router.show(result.page).message : PAGE_OPENED_UNSEEN) ?? null)
+      }, () => settle(PAGE_OPEN_FAILURES.unavailable))
+  }
+  return { open, failure }
+}
 
 /**
  * The pages Sotto found for a question (ADR-0085), then the links from the agent's message before it, each a row of its
@@ -228,20 +264,20 @@ const PAGE_OPEN_FAILURES = {
  * page opens through main, by the request it is on and its token: a file as itself, a loopback page and a remote
  * host's page at their address.
  */
-function MessageLinks({ links, pages = [], owner }: { readonly links: readonly string[]; readonly pages?: readonly QuestionPage[]; readonly owner?: PageOwner | undefined }): ReactNode {
-  const [failure, setFailure] = useState<keyof typeof PAGE_OPEN_FAILURES | null>(null)
-  // Only the latest press says how it went, so a slow earlier one cannot overwrite it.
-  const latest = useRef(0)
-  if (links.length === 0 && pages.length === 0) return null
-  const open = (page: QuestionPage): void => {
-    if (!owner) return
-    const press = ++latest.current
-    setFailure(null)
-    const settle = (reason: keyof typeof PAGE_OPEN_FAILURES | null): void => { if (press === latest.current) setFailure(reason) }
-    void (window.sotto?.openQuestionPage?.({ ...owner, token: page.token }) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
-      .then(result => settle(result.ok ? null : result.reason), () => settle('unavailable'))
-  }
-  return <div className="agent-request__link-rows" role="group" aria-label={pages.length ? 'Pages and links for this question' : 'Links from the message above'}>
+export function MessageLinks({ links, pages = [], owner, linkMissing = false, label }: {
+  readonly links: readonly string[]; readonly pages?: readonly QuestionPage[]; readonly owner?: PageOwner | undefined
+  /** The question is about a prototype that names no page that opens: a muted row stands where its page's would (ADR-0108). */
+  readonly linkMissing?: boolean
+  /** The group's name, where it is not a question's. */
+  readonly label?: string | undefined
+}): ReactNode {
+  const { open, failure } = usePageOpener(owner)
+  // Not a button and not a link: there is nothing to open, so it takes no stop in the keyboard order.
+  // Said even beside a loopback page's row: a page that did not answer is still offered (ADR-0085), but it is no working link.
+  const missing = linkMissing
+    ? <p className="agent-request__no-link"><Link2Off size={16} aria-hidden="true" /><span>{LINK_MISSING}</span></p> : null
+  if (links.length === 0 && pages.length === 0) return missing
+  return <>{missing}<div className="agent-request__link-rows" role="group" aria-label={label ?? (pages.length ? 'Pages and links for this question' : 'Links from the message above')}>
     {/* A link rather than a button: the question's fieldset disables its buttons while the choices cannot be used. */}
     {owner ? pages.map(page => <a key={page.token} role="link" tabIndex={0} className="agent-request__link-row tt-focusable" title={page.name} aria-label={`Open the prototype, ${page.name}`}
       onClick={event => { event.preventDefault(); event.stopPropagation(); open(page) }}
@@ -260,11 +296,11 @@ function MessageLinks({ links, pages = [], owner }: { readonly links: readonly s
         <ArrowUpRight size={16} aria-hidden="true" />
       </a>
     })}
-    {failure ? <p className="agent-request__link-failure" role="status">{PAGE_OPEN_FAILURES[failure]}</p> : null}
-  </div>
+    {failure ? <p className="agent-request__link-failure" role="status">{failure}</p> : null}
+  </div></>
 }
 
-function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner }: {
+function QuestionField({ name, question, selection, disabled, onChange, links = [], pages = [], owner, linkMissing = false }: {
   readonly name: string; readonly question: StructuredQuestion; readonly selection: typeof EMPTY_SELECTION
   readonly disabled: boolean; readonly onChange: (selection: typeof EMPTY_SELECTION) => void
   /** The message's links, shown under this question's words: the first question's, when a form has several. */
@@ -272,6 +308,8 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   /** The question's pages, shown with the links: the first question's, when a form has several (ADR-0085). */
   readonly pages?: readonly QuestionPage[]
   readonly owner?: PageOwner | undefined
+  /** No page opens for this question's prototype (ADR-0108): the first question's, when a form has several. */
+  readonly linkMissing?: boolean
 }): ReactNode {
   const type = question.multiSelect ? 'checkbox' : 'radio'
   const onlyText = textOnly(question)
@@ -287,7 +325,7 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
     <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
       {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
-    <MessageLinks links={links} pages={pages} owner={owner} />
+    <MessageLinks links={links} pages={pages} owner={owner} linkMissing={linkMissing} />
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
       {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
       {onlyText ? question.allowFreeText

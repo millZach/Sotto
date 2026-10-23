@@ -38,6 +38,15 @@
 .agent-request__link-row strong { font-size: 14px; font-weight: 600; }
 .agent-request__link-row small { overflow: hidden; color: var(--tt-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .agent-request__link-failure { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+/* A question about a prototype that names no page that opens (ADR-0108): a muted dashed row where its page's would be. */
+.agent-request__no-link { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 9px 12px; border: 1px dashed var(--tt-field-border); border-radius: var(--tt-radius-md); color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.agent-request__no-link > svg { flex: none; margin-top: 2px; }
+/* A prototype waiting for review (ADR-0108, variant A): a slim strip above the composer, its page rows beside the title. */
+.prototype-ready { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 8px 8px 8px 14px; border: 1px solid var(--tt-hairline); border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); animation: question-arrive 180ms ease-out; }
+.prototype-ready__title { display: flex; flex: none; align-items: center; gap: 8px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.prototype-ready__title > svg { flex: none; color: var(--tt-accent-text); }
+.prototype-ready .agent-request__link-rows { flex: 1 1 260px; min-width: 0; }
+.prototype-ready .agent-request__link-row { min-height: 40px; }
 .agent-request__note { color: var(--tt-text-muted); font-size: 13px; }
 .agent-request__options { display: grid; gap: 2px; }
 .agent-request__option { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 7px 8px; margin: 0 -8px; border-radius: var(--tt-radius-md); cursor: pointer; }
@@ -92,7 +101,7 @@
 .agent-request[data-collapsed] .agent-request__toggle-row { position: static; display: flex; gap: 10px; align-items: center; justify-content: space-between; min-width: 0; }
 .agent-request__collapsed-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--tt-text); }
 @keyframes question-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .agent-request[data-placement='composer'] { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .agent-request[data-placement='composer'], .prototype-ready { animation: none; } }
 
 /* The compact pane normally keeps its composer fixed. A question makes that area shrinkable instead. */
 .threads-view .thread-pane .thread-workspace__compose:has(> .thread-questions) { flex: 0 1 auto; }
@@ -110,4 +119,4 @@
   .threads-view .thread-pane:has(> .thread-transcript .agent-request) .thread-workspace__compose > .thread-questions { max-height: 160px; }
 }
 
-:root[data-reduced-motion='on'] .agent-request[data-placement='composer'] { animation: none; }
+:root[data-reduced-motion='on'] :is(.agent-request[data-placement='composer'], .prototype-ready) { animation: none; }

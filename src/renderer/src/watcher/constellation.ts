@@ -40,7 +40,7 @@ export interface PictureNode {
   readonly word: string
   readonly settled: boolean
   /** What it waits on the user for, when it does. */
-  readonly waits: 'question' | 'permission' | 'failed' | null
+  readonly waits: 'question' | 'permission' | 'failed' | 'prototype' | null
   readonly provider: string | undefined
   readonly project: string
   readonly computer: string

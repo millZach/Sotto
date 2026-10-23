@@ -14,6 +14,7 @@ import { serveQuestionPage } from '../../../src/host/questionPageRoute'
 const FILE = 'f'.repeat(32), SERVER = 's'.repeat(32), SELF = 'o'.repeat(32), STOPPED = 'x'.repeat(32)
 let folder: string, listener: Server, upstream: Server, base: string
 const targets = new Map<string, QuestionPageTarget>()
+const opened: string[] = []
 
 const listen = (server: Server): Promise<number> => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)))
 const closed = (server: Server): Promise<void> => new Promise(resolve => { server.closeAllConnections(); server.close(() => resolve()) })
@@ -39,7 +40,7 @@ beforeEach(async () => {
     response.end(`served ${request.url} cookie=${request.headers.cookie ?? 'none'}`)
   })
   const upstreamPort = await listen(upstream)
-  listener = createServer((request, response) => { void serveQuestionPage(request, response, { target: token => targets.get(token), ownPort: () => (listener.address() as AddressInfo).port }) })
+  listener = createServer((request, response) => { void serveQuestionPage(request, response, { target: token => targets.get(token), ownPort: () => (listener.address() as AddressInfo).port, opened: token => opened.push(token) }) })
   const port = await listen(listener)
   base = `http://127.0.0.1:${port}`
   targets.set(FILE, { kind: 'file', root: join(folder, 'page'), file: join(folder, 'page', 'greeting.html') })
@@ -53,6 +54,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   targets.clear()
+  opened.length = 0
   await Promise.all([closed(listener), closed(upstream)])
   await rm(folder, { recursive: true, force: true })
 })
@@ -68,6 +70,17 @@ it('serves the page and the files it is made of from its folder, sandboxed and n
   expect(await page.text()).toContain('<h1>Greeting</h1>')
   const style = await get(`/page/${FILE}/assets/look.css`)
   expect([style.status, await style.text()]).toEqual([200, 'h1{color:teal}'])
+})
+
+it('says a page was opened when a GET of it is served, and not for a HEAD, a refusal or a page that has gone (ADR-0108)', async () => {
+  await (await get(`/page/${FILE}/greeting.html`, { method: 'HEAD' })).arrayBuffer()
+  await (await get(`/page/${FILE}/.env`)).arrayBuffer()
+  await (await get(`/page/${STOPPED}/`)).arrayBuffer()
+  await (await get(`/page/${'n'.repeat(32)}/`)).arrayBuffer()
+  expect(opened).toEqual([])
+  await (await get(`/page/${FILE}/greeting.html`)).arrayBuffer()
+  await (await get(`/page/${SERVER}/variants/a.html`)).arrayBuffer()
+  expect(opened).toEqual([FILE, SERVER])
 })
 
 it('sends the token alone to the page, and the bare token to its folder', async () => {

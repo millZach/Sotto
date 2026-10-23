@@ -17,6 +17,8 @@ export interface WebLinkRouter {
   readonly canEmbed: boolean
   /** Opens a vetted URL. Without `destination`, the Web links setting decides. */
   open(url: string, destination?: WebLinkDestination): Promise<WebLinkResult>
+  /** Shows a page that already opened in this thread's browser, such as a question's page main opened there (ADR-0108). */
+  show?(page: BrowserPage): WebLinkResult
 }
 
 function bridgeBrowser(): BrowserBridge | undefined {
@@ -54,7 +56,16 @@ export const BrowserPageRouteContext = createContext<BrowserPageRoute | undefine
  */
 export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true,
   show?: (page: BrowserPage) => WebLinkResult): WebLinkRouter {
+  const showPage = (page: BrowserPage): WebLinkResult => {
+    if (show) return show(page)
+    const shown = store.showBrowserPage(page, focused)
+    if (shown === 'opened') return { ok: true }
+    // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
+    if (shown === 'pinned-elsewhere') return { ok: true, message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.` }
+    return { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
+  }
   return {
+    show: showPage,
     canEmbed: bridge !== undefined,
     async open(url, destination) {
       if (!bridge || url.startsWith('mailto:')) return destination === 'embedded' ? { ok: false, message: 'Only web pages open in Sotto’s browser.' } : openSystem(url)
@@ -68,12 +79,7 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
           return { ok: false }
         }
         if (result.value.destination === 'external' || !result.value.page) return { ok: true }
-        if (show) return show(result.value.page)
-        const shown = store.showBrowserPage(result.value.page, focused)
-        if (shown === 'opened') return { ok: true }
-        // Pinned elsewhere: the page opened here, but Tools is looking at another thread, not this one.
-        if (shown === 'pinned-elsewhere') return { ok: true, message: `Opened in ${threadTitle}’s browser, and Tools is pinned to another thread. Unpin it to see the page.` }
-        return { ok: true, message: `Opened in ${threadTitle}’s browser. Open Tools > Browser in that thread to see it.` }
+        return showPage(result.value.page)
       } catch {
         return { ok: false }
       }

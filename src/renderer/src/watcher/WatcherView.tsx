@@ -321,7 +321,8 @@ const FAILURE_MARGIN_PX = 12
 function focusBeside(atRequest: boolean): void {
   const pane = document.getElementById(BESIDE_PANE_ID)
   if (pane === null) return
-  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind]') : null
+  // What it waits on: its request's card, or the strip of a prototype waiting for review (ADR-0108).
+  const card = atRequest ? pane.querySelector<HTMLElement>('.agent-request[data-kind], .prototype-ready') : null
   if (atRequest && card === null && focusFailure(pane)) return
   const target = card ?? pane.querySelector<HTMLElement>('.thread-workspace__head h2')
   if (target === null) return

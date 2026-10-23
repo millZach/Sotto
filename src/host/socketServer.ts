@@ -1311,7 +1311,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         // requests carry the page's origin; the token is the only thing that admits them, and only to that page.
         if (QUESTION_PAGE_PATH.test((request.url ?? '').split('?')[0]!)) {
           spend('page', HTTP_BUDGETS.page)
-          await serveQuestionPage(request, response, { target: token => service.questionPage?.(token), ownPort: () => { const own = server.address(); return own && typeof own !== 'string' ? own.port : undefined } })
+          await serveQuestionPage(request, response, { target: token => service.questionPage?.(token), ownPort: () => { const own = server.address(); return own && typeof own !== 'string' ? own.port : undefined },
+            opened: token => service.questionPageOpened?.(token) })
           return
         }
         if (request.headers.origin && !originAllowed(request.headers.origin, options.origins)) throw new Refusal('unauthenticated')
