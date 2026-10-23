@@ -906,6 +906,25 @@ it('changes Watcher’s provider at rest when its only queued send waits for the
   expect(f.service.state().history.at(-1)!.target.threadId).toBe(f.id)
 })
 
+it('counts a queued send toward a provider change only while its prompt can still go: not unconfirmed, nor behind a failed wake-up', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic GO MERGE' })
+  if (queued.status !== 'ok' || !('receipt' in queued)) throw new Error('queue refused')
+  const operationId = queued.receipt.operationId
+  // Behind a working thread's turn, it waits, and holds a replacement.
+  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(true)
+  type Items = { items: { id: string; threadId: string; status: string; wakeUp?: boolean; watcherOperationId?: string | undefined }[] }
+  const change = (update: (state: Items) => void) => (followupStoreOf(f.control) as unknown as { change(update: (state: Items) => void): Promise<void> }).change(update)
+  const own = (state: Items) => state.items.find(item => item.watcherOperationId === operationId)!
+  // A restart between the queue's claim and the outbox leaves it unconfirmed: it cannot go as it is, and holds nothing.
+  await change(state => { own(state).status = 'uncertain' })
+  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(false)
+  // Queued again, but behind a wake-up that failed and waits for the user's review, it cannot go either.
+  await change(state => { own(state).status = 'queued'; state.items.unshift({ ...own(state), id: randomUUID(), wakeUp: true, status: 'failed', watcherOperationId: undefined }) })
+  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(false)
+})
+
 it('changes Watcher’s model or effort while a send to another thread has been unconfirmed for days, set aside and through a restart, as Settings asks (#1325)', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
