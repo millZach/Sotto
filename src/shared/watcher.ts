@@ -220,10 +220,14 @@ export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
-const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
+const machineShape = { hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
-  runningThreads: counter.nullable(), load: hostLoadSchema.strict().nullable(), placedNotStarted: counter.nullable(),
-  memoryState: z.enum(['short', 'enough', 'unknown']), cpuState: z.enum(['busy', 'not-busy', 'unknown']) }).strict()
+  runningThreads: counter.nullable() }
+// Live load (#1311) is part of the Owl feature Work across machines: present on every machine while it is on, on none while off.
+const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullable().optional(), placedNotStarted: counter.nullable().optional(),
+  memoryState: z.enum(['short', 'enough', 'unknown']).optional(), cpuState: z.enum(['busy', 'not-busy', 'unknown']).optional() }).strict()
+/** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
+export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time })
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {

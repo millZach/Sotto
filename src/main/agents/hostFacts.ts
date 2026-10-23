@@ -1,6 +1,6 @@
 import * as nodeOs from 'node:os'
 import { readFile as nodeReadFile } from 'node:fs/promises'
-import type { AgentState } from '../../shared/agents'
+import type { AgentDelivery, AgentFollowup, AgentHostSnapshot } from '../../shared/agents'
 import { HOST_FACTS_CPU_COUNT_MAX, HOST_FACTS_REFRESH_MS, HOST_FACTS_TEXT_MAX, HOST_LOAD_SAMPLE_MS, HOST_LOAD_WINDOW_MAX_MS, HOST_RUNNING_THREADS_MAX, hostFactsSchema, hostLoadSchema, type HostFacts, type HostLoad, type HostMachineReport, type HostOs, type HostOsFamily } from '../../shared/hostFacts'
 
 /**
@@ -180,8 +180,9 @@ async function availableMemory(system: HostFactsSystem, family: HostOsFamily | n
   // Windows' free memory counts standby pages as available, which is what a new process could have.
   if (family === 'windows') return count(attempt(() => system.freemem()))
   if (family === 'linux') {
+    // Linux's free memory leaves out the cache it would give back, so without MemAvailable the honest answer is unknown.
     const meminfo = await readText(readFile, MEMINFO)
-    return (meminfo === null ? null : parseMemAvailable(meminfo)) ?? count(attempt(() => system.freemem()))
+    return meminfo === null ? null : parseMemAvailable(meminfo)
   }
   // macOS's free memory leaves out what the system would give back, so it understates; another system is not known.
   return null
@@ -289,21 +290,52 @@ export class HostFactsSource {
 
 /** A send this host has taken and not yet begun. */
 const PLACED_DELIVERIES: ReadonlySet<string> = new Set(['queued', 'submitting'])
+/**
+ * A follow-up that will start without anyone touching it: queued until it goes, or going. Once the follow-up queue owns a
+ * send, its delivery record is gone, so the queue's item is what counts until it starts or the user withdraws it. One
+ * paused for the user's review, failed or uncertain waits on the user, not on the machine.
+ */
+const PLACED_FOLLOWUPS: ReadonlySet<string> = new Set(['queued', 'dispatching'])
+
+/**
+ * What a machine report counts beside its facts, as the host holds it now: its threads, and the sends it has taken. Read
+ * through a function, after the load is read, because a load reading may wait out its window and counts taken before it
+ * would be that much out of date.
+ */
+export interface MachineWork {
+  readonly threads: readonly Pick<AgentHostSnapshot['threads'][number], 'id' | 'status'>[]
+  readonly deliveries?: readonly Pick<AgentDelivery, 'threadId' | 'status'>[]
+  readonly followups?: readonly Pick<AgentFollowup, 'threadId' | 'status'>[]
+  /**
+   * Threads Watcher has admitted a start for here whose first prompt has not gone yet, created or not: the start's
+   * reservation comes before its thread and its delivery do, so without it a start in progress would count nowhere.
+   */
+  readonly startsNotYetSent?: readonly string[]
+}
 
 /**
  * A machine's facts, how many of its threads are running a turn now, its live load, and its work placed but not started
  * (#1311): threads not running a turn that hold a send not yet begun, such as a thread Watcher has just started there.
+ * The counts are read after the facts and the load, so they are as of the answer. The load and the placed work are part
+ * of the Owl feature Work across machines: with `live` off the report is the facts and running threads alone, as it was,
+ * and no load is read.
  */
-export async function hostMachineReport(facts: HostFactsSource, shell: Pick<AgentState, 'host' | 'deliveries' | 'followups'>): Promise<HostMachineReport> {
-  const threads = shell.host.threads
-  const running = threads.filter(thread => thread.status === 'running').length
-  const notRunning = new Set(threads.filter(thread => thread.status !== 'running').map(thread => thread.id))
-  const placed = new Set([
-    ...(shell.deliveries ?? []).filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
-    ...(shell.followups ?? []).filter(item => item.status === 'dispatching').map(item => item.threadId),
-  ].filter(threadId => notRunning.has(threadId))).size
-  const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
+export async function hostMachineReport(facts: HostFactsSource, work: () => MachineWork, live: boolean): Promise<HostMachineReport> {
+  if (!live) {
+    const machine = await facts.read()
+    const running = work().threads.filter(thread => thread.status === 'running').length
+    return { facts: machine, runningThreads: running <= HOST_RUNNING_THREADS_MAX ? running : null }
+  }
   // A load that cannot be read leaves the facts standing and reads unknown.
   const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
-  return { facts: machine, runningThreads: within(running), load, placedNotStarted: within(placed) }
+  const { threads, deliveries = [], followups = [], startsNotYetSent = [] } = work()
+  const running = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
+  const placed = new Set([
+    ...deliveries.filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
+    ...followups.filter(item => PLACED_FOLLOWUPS.has(item.status)).map(item => item.threadId),
+    // A start whose thread is not created yet has no thread to be running, so it counts.
+    ...startsNotYetSent,
+  ].filter(threadId => !running.has(threadId))).size
+  const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
+  return { facts: machine, runningThreads: within(running.size), load, placedNotStarted: within(placed) }
 }

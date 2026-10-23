@@ -111,6 +111,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   // A host names its projects' GitHub origins to a desktop placing work (#1032) only where its Owl answer turns it on.
+  // A host reads its live load and counts its work placed but not started (#1311) only where its Owl answer turns on Work
+  // across machines; otherwise its facts are what they were.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)

@@ -58,9 +58,12 @@ async function pairedDesktop(record = true, gate = true) {
   return { socket, pairing, hello, project: socket.shell().host.projects.find(item => item.path === path)!,
     model: socket.shell().host.models.find(item => item.providerId === 'codex' && item.ready)! }
 }
-/** `machines` turns on Work across machines (#1032) on both sides: the host's Owl answer, and where this computer's new workers start. */
-async function master(native?: CodexAppServerHost, usage = false, machines?: { setting: () => WorkerMachineSetting }) {
-  const owl = usage || machines !== undefined
+/**
+ * `machines` turns on Work across machines (ADR-0082, #1032, #1311) on both sides: the host's Owl answer, the desktop's,
+ * and, given a setting, where this computer's new workers start.
+ */
+async function master(native?: CodexAppServerHost, usage = false, machines?: { setting: () => WorkerMachineSetting } | true) {
+  const crossMachine = machines !== undefined, owl = usage || crossMachine
   if (native || owl) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
     ...(owl ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
   const paired = await pairedDesktop()
@@ -70,9 +73,9 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: { s
   // This computer's facts are read as the desktop reads them, from this machine (#1031).
   const facts = new HostFactsSource({ sleep: async () => undefined })
   const watcher = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
-    machineFacts: () => hostMachineReport(facts, f.control.shell()),
-    ...machines ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
-  const tools = new WatcherToolServer(watcher, { machines: machines !== undefined }); workspace.host.useWatcherTools(tools)
+    machineFacts: () => hostMachineReport(facts, () => ({ threads: f.control.watcherSnapshot().threads, ...f.control.watcherSendRecords() }), crossMachine), crossMachine,
+    ...typeof machines === 'object' ? { workerMachine: machines.setting, projectOrigins: () => readProjectOrigins(f.control.shell().host.projects) } : {} })
+  const tools = new WatcherToolServer(watcher, { machines: crossMachine }); workspace.host.useWatcherTools(tools)
   const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
   const connection = { hostId: paired.pairing.hostId, name: 'Synthetic remote', kind: 'remote' as const, service: paired.socket,
     detail: (id: string) => paired.socket.readThreadDetail(id), preview: () => null }
@@ -98,7 +101,7 @@ async function master(native?: CodexAppServerHost, usage = false, machines?: { s
     }
     return result
   }
-  return { ...f, ...paired, watcher, router, connection, workspace, id, requestId, start, call }
+  return { ...f, ...paired, watcher, tools, router, connection, workspace, id, requestId, start, call }
 }
 /** Lets the paired desktop answer on the host, or stops it, as Settings > Hosts & phones does, and waits for the desktop to hear. */
 async function allowAnswers(f: Awaited<ReturnType<typeof master>>, allowed: boolean) {
@@ -156,9 +159,9 @@ it('lists This computer and each paired machine with its facts and running threa
     expect.objectContaining({ hostId: f.control.hostId(), name: 'This computer', thisComputer: true, connected: true, factsState: 'reported',
       facts: expect.objectContaining({ os: expect.objectContaining({ family }) }) }),
     expect.objectContaining({ hostId: f.pairing.hostId, name: 'Synthetic remote', thisComputer: false, connected: true, factsState: 'reported',
-      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0,
-      // Its live load and work placed but not started come with its facts (#1311).
-      load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0 })])
+      facts: expect.objectContaining({ os: expect.objectContaining({ family }) }), runningThreads: 0 })])
+  // Work across machines is off on both: no machine shows a live load or work placed but not started (#1311).
+  for (const machine of await machines()) expect(Object.keys(machine)).not.toEqual(expect.arrayContaining(['load']))
   // A start on the paired machine is in flight there, and its thread runs there.
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
@@ -187,7 +190,7 @@ it('lists This computer and each paired machine with its facts and running threa
   socket.features = features.filter(feature => feature !== 'host-facts')
   const asked = vi.spyOn(f.socket, 'hostFacts')
   expect((await machines())[1]).toMatchObject({ connected: true, factsState: 'unknown', facts: null, runningThreads: null,
-    load: null, placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown', note: expect.stringContaining('Update Sotto on it') })
+    note: expect.stringContaining('Update Sotto on it') })
   expect(asked).not.toHaveBeenCalled()
   socket.features = features
   // A connection that drops while its facts are read reads not connected, not as the facts it sent before dropping.
@@ -201,6 +204,26 @@ it('lists This computer and each paired machine with its facts and running threa
   // A host that is not connected says so rather than reading its last facts as current, and is not asked.
   expect((await machines())[1]).toMatchObject({ connected: false, factsState: 'not-connected', facts: null, runningThreads: null })
   expect(asked).toHaveBeenCalledTimes(1)
+})
+
+it('shows each machine’s live load and work placed but not started with Work across machines on, and unknown where a host sends none (#1311)', async () => {
+  const f = await master(undefined, false, true)
+  const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
+  const listed = await machines()
+  expect(listed).toEqual([
+    expect.objectContaining({ thisComputer: true, factsState: 'reported', load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0,
+      memoryState: expect.stringMatching(/^(short|enough|unknown)$/u), cpuState: expect.stringMatching(/^(busy|not-busy|unknown)$/u) }),
+    expect.objectContaining({ hostId: f.pairing.hostId, factsState: 'reported', runningThreads: 0, load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0 })])
+  // A host whose own answer has the feature off sends its facts alone, as it did before: its load reads unknown.
+  const report = await f.socket.hostFacts()
+  vi.spyOn(f.socket, 'hostFacts').mockResolvedValue({ facts: report.facts, runningThreads: report.runningThreads })
+  expect((await machines())[1]).toMatchObject({ factsState: 'reported', load: null, placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown' })
+  // An older host does not list host-facts: its load reads unknown with its facts.
+  const socket = f.socket as unknown as { features: readonly string[] }
+  socket.features = socket.features.filter(feature => feature !== 'host-facts')
+  expect((await machines())[1]).toMatchObject({ factsState: 'unknown', load: null, placedNotStarted: null, memoryState: 'unknown', cpuState: 'unknown' })
+  // The tool Watcher is offered says so too.
+  expect(f.tools.definitions.find(tool => tool.name === 'list_machines')!.description).toContain('how busy its CPU and memory are now')
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {

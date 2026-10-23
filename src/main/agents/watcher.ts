@@ -351,6 +351,11 @@ export class WatcherService implements WatcherControlHooks {
     workerMachine?: () => WorkerMachineSetting
     /** This computer's projects' GitHub origins, read when a start is placed on another machine than its project's (#1032). */
     projectOrigins?: () => Promise<ProjectOrigins>
+    /**
+     * The Owl answer for Work across machines (ADR-0082), read once at start. With it on, list_machines shows each machine's
+     * live load and work placed but not started (#1311); with it off, or absent, it shows neither, whatever a host sends.
+     */
+    crossMachine?: boolean
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -791,6 +796,23 @@ export class WatcherService implements WatcherControlHooks {
    * host protocol version 1 has a count. Nothing is held back at any number (#1183).
    */
   startsInFlight(): number { return this.inFlight() }
+  /**
+   * The threads Watcher has admitted a start for on this machine whose first prompt has not gone yet (#1311). Admission
+   * records the start's reservation before the working copy is resolved and the thread is created, so this machine's
+   * work placed but not started counts the start from then, and a second placement seconds later sees the first.
+   */
+  startsNotYetSent(): string[] {
+    const record = this.view(), hostId = this.options.control.hostId()
+    if (!hostId || record.reservations.length === 0) return []
+    const reserved = new Map(record.reservations.filter(item => item.target.hostId === hostId).map(item => [item.operationId, item.target.threadId]))
+    if (reserved.size === 0) return []
+    const threads: string[] = []
+    for (const operation of record.operations) {
+      const threadId = operation.action === 'start' && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching') ? reserved.get(operation.id) : undefined
+      if (threadId !== undefined) threads.push(threadId)
+    }
+    return threads
+  }
   /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */
   private inFlight(record: Readonly<WatcherRecord> = this.view()): number {
     if (record.reservations.length === 0) return 0
@@ -3544,16 +3566,21 @@ ${operation.draftId}`)
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
   private async listMachines() {
-    // Live load and work placed but not started (#1311) read unknown wherever the facts do.
-    const noLoad = { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const }
+    // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
+    // wherever the facts do, or where a host does not send them.
+    const live = this.options.crossMachine === true
+    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
+    const loadOf = (report: HostMachineReport) => {
+      if (!live) return {}
+      const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
+      return { load, placedNotStarted: report.placedNotStarted ?? null, memoryState: states.memory, cpuState: states.cpu }
+    }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
       try {
         const report = await facts()
         if (!report) return unknown(older)
-        const states = machineLoadStates(report.load, report.facts.totalMemoryBytes, Date.now())
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, load: report.load,
-          placedNotStarted: report.placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

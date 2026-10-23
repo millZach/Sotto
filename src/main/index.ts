@@ -662,8 +662,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
-  // Work across machines (#1032): where new workers start, a start's machine or system, and the machines a delegating
-  // thread may list. Stable reads no setting for it, offers none of it and asks no host for its projects' origins.
+  // Work across machines (ADR-0082): where new workers start, a start's machine or system, the machines a delegating thread
+  // may list (#1032), and this computer's live load and work placed but not started (#1311). Stable reads no setting for
+  // it, samples nothing, offers none of it and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
   // builds no service, starts no monitor and registers no bridge.
