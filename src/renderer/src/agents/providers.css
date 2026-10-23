@@ -48,7 +48,7 @@
 .provider-row__column { display: grid; align-content: start; gap: 20px; min-width: 0; }
 .provider-row__models { gap: 10px; }
 .provider-row__column h4 { margin: 0 0 6px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
-.provider-row__column p { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.provider-row__column p:not(.provider-detail__error) { margin: 0; max-width: 36em; color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .provider-connection, .provider-client { display: grid; gap: 12px; min-width: 0; }
 .provider-client__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
 /* What a saved change still owes the running client, such as Muse's shell sandbox before a reconnect. */
@@ -98,6 +98,9 @@
   .provider-row__trigger { grid-area: trigger; padding-left: 10px; column-gap: 10px; }
   .provider-row__head .tt-toggle { grid-area: toggle; }
   .provider-row__update-slot { display: none; }
+  /* With an update offered, the switch drops beside the chip so the eye and Tab both go name, update, switch. */
+  .provider-row__head:has(.provider-row__update) { grid-template-areas: 'trigger trigger' 'update toggle'; }
+  .provider-row__head:has(.provider-row__update) .tt-toggle { margin: -6px 0 12px; }
   .provider-row__update { grid-area: update; justify-self: start; margin: -6px 0 12px 76px; }
   .provider-row__error { margin-left: 76px; margin-right: 14px; }
   .provider-row__panel { padding: 4px 14px 18px; }
