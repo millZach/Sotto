@@ -578,6 +578,26 @@ describe('desktop host routing', () => {
       expect(remote.observe).not.toHaveBeenCalled()
     } finally { router.dispose() }
   })
+  it('says the window shows a thread only while it has the focus and one of its panes is that thread, on any host (ADR-0112)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) router.add(f.connection)
+    try {
+      const here = hostEntityKey(LOCAL, 'thread'), there = hostEntityKey(REMOTE, 'thread'), other = hostEntityKey(REMOTE, 'other')
+      expect(router.windowShows(here)).toBe(false)
+      await router.command({ type: 'observe-threads', threadIds: [here, there] }, desktopWindowClient())
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([true, true, false])
+      // Behind another app, minimised or in the tray, the panes show nothing; the threads stay observed.
+      router.setWindowFocused(false)
+      expect([router.windowShows(here), router.windowShows(there)]).toEqual([false, false])
+      router.setWindowFocused(true)
+      expect(router.windowShows(here)).toBe(true)
+      // The window's next change of panes replaces what it shows, per host.
+      await router.command({ type: 'observe-threads', threadIds: [other] }, desktopWindowClient())
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([false, false, true])
+      router.remove(REMOTE)
+      expect(router.windowShows(other)).toBe(false)
+    } finally { router.dispose() }
+  })
   it('says a window is behind another app only to a host that lists failure-seen, whose observe takes the field (ADR-0092)', async () => {
     const remote = fixture(REMOTE, 'remote')
     for (const features of [[], ['failure-seen']]) {

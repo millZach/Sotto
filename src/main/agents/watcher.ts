@@ -649,6 +649,18 @@ export class WatcherService implements WatcherControlHooks {
       ...(record.watches ?? []).filter(watch => watch.target.hostId === this.hostId()).map(watch => watch.target.threadId),
       ...record.requests.filter(request => request.remoteOrigin && request.state === 'active').flatMap(request => request.participants.filter(item => item.target.hostId === this.hostId() && item.state === 'participating' && !item.automationStopped).map(item => item.target.threadId))])]
   }
+  /**
+   * Whether Watcher watches this thread, on this computer or a paired host: it is under a standing watch, or takes part in
+   * an active Watcher request, as the glossary's **Watched thread** says. Desktop notifications ask it: Watcher keeps a
+   * watched thread going and brings its questions and permissions, so that thread's finish is not the last word and it is
+   * never told as finished (ADR-0112).
+   */
+  watches(target: WatcherThreadTarget): boolean {
+    const wanted = key(target), record = this.view()
+    return (record.watches ?? []).some(watch => key(watch.target) === wanted)
+      || record.requests.some(request => request.state === 'active'
+        && request.participants.some(part => part.state === 'participating' && part.automationStopped !== true && key(part.target) === wanted))
+  }
   wakeDueAll(events: readonly WatcherEvent[]): boolean[] { return this.wakes.dueAll(events) }
   wakeReady(): boolean { return this.wakes.ready() }
   /** Watcher's hidden wake-up left its queue; the coordinator has already saved any of its news as untold again. */
