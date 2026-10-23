@@ -13,7 +13,7 @@ import { desktopWindowClient, type HostService } from '../../src/main/agents/hos
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { rawPeer } from '../fixtures/rawHostPeer'
-import { useSocketHostFixture } from '../fixtures/socketHostFixture'
+import { SAME_VERSION_HELD, useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
 
@@ -286,7 +286,7 @@ it('drains a pushed catch-up page even when the host never publishes another she
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Catch-up')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     rows = Array.from({ length: 300 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset', at: new Date().toISOString() } }))
@@ -388,7 +388,7 @@ it('frees a permission mode by what it allows, not by being listed first', async
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Modes')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Smart', modelId: model.id, providerMode: 'smart' })).rejects.toMatchObject({ code: 'forbidden' })
@@ -409,7 +409,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing, receipts: new CommandReceipts({ lifetimeMs: 1000, limit: 2, now: () => now }) })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Receipts')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     // More selections than the cap holds, and none of them counts against it.

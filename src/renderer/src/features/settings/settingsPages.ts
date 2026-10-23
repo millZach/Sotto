@@ -159,7 +159,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Keep local history', section: 'settings-history', words: 'transcripts privacy' },
     { label: 'History retention', section: 'settings-history', words: 'transcripts' },
     { label: 'Clear transcript history', section: 'settings-history', words: 'delete' },
-    // Only where the window can show notifications: in Owl on a Mac (ADR-0117).
+    // Only where the window can show notifications: on a Mac (ADR-0117).
     { label: 'When a thread needs you', section: 'settings-privacy', words: 'notifications notify question permission', gate: 'notifications' },
     { label: 'When a thread has finished everything', section: 'settings-privacy', words: 'notifications notify done', gate: 'notifications' },
     { label: 'Send a test notification', section: 'settings-privacy', words: 'notifications', gate: 'notifications' },

@@ -37,12 +37,12 @@ async function capture(page: Page, name: string): Promise<void> {
 }
 async function focusThread(page: Page, id: string, title: string): Promise<void> {
   // The sidebar stays available while a restored split changes from narrow tabs to wide panes.
-  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
+  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
   await promptField(page.locator(`section.thread-pane[data-thread-id="${id}"]`)).click()
 }
 async function beside(page: Page, title: string): Promise<void> {
   const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
-  await sidebar.getByRole('button', { name: title, exact: true }).hover()
+  await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
   await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
 }
 
