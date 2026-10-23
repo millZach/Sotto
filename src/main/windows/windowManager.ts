@@ -572,9 +572,10 @@ export class WindowManager {
     return wrappedReady
   }
 
-  async createWindows(): Promise<void> {
+  async createWindows(widget = true): Promise<void> {
     await this.createMainWindow()
     this.assertRunning()
+    if (!widget) return
     await this.createWidgetWindow()
     this.assertRunning()
   }

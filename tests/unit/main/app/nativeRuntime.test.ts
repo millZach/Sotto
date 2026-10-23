@@ -205,6 +205,32 @@ describe('NativeRuntimeController', () => {
     runtime.dispose()
   })
 
+  it('keeps the widget hidden at startup while dictation is turned off', async () => {
+    const showWidget = vi.fn(async () => undefined)
+    const runtime = new NativeRuntimeController({
+      windows: {
+        createWindows: vi.fn(async () => undefined),
+        showMain: vi.fn(async () => undefined),
+        showWidget,
+        beginQuit: vi.fn(),
+        dispose: vi.fn(),
+      },
+      hotkeys: { replace: vi.fn(() => ({ ok: true as const })), dispose: vi.fn() },
+      tray: { update: vi.fn(), dispose: vi.fn() },
+      startup: { set: vi.fn() },
+      settings: { get: async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true, showWidgetWhenIdle: true }) },
+      installPermissions: () => vi.fn(),
+      registerIpc: () => vi.fn(),
+      dictationOn: () => false,
+      log: vi.fn(),
+    })
+
+    await runtime.start()
+
+    expect(showWidget).not.toHaveBeenCalled()
+    runtime.dispose()
+  })
+
   it('publishes an initial idle widget snapshot at startup once onboarding is complete', async () => {
     const createRuntime = (
       settings: Partial<typeof DEFAULT_SETTINGS>,

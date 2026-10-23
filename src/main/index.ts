@@ -128,6 +128,7 @@ import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { loadParakeetEngine } from './asr/speechEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
 import { SpeechModelManager } from './asr/speechModelManager'
+import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
@@ -191,7 +192,7 @@ import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
-import { defaultSettings, type AppSettings } from '../shared/settings'
+import { defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   createE2EClipboard,
@@ -1175,7 +1176,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     clipboard: e2eState === null
       ? linuxClipboard ?? clipboard
       : createE2EClipboard(e2eState, e2eConfiguration?.scenario),
-    widget: windows,
+    // After a paste, the widget comes back only while dictation is on (ADR-0107).
+    widget: { hideWidget: () => windows.hideWidget(), showWidget: () => dictationActive ? windows.showWidget() : undefined },
     delay: (milliseconds) =>
       new Promise((resolve) => {
         setTimeout(resolve, milliseconds)
@@ -1257,6 +1259,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : join(__dirname, '../../native/coreml-asr/.build/sotto-coreml-asr')
   // The settings coordinator is made further down; the choice is saved through it once it exists.
   let saveSpeechModelChoice: (id: string | null) => Promise<void> = () => Promise.reject(new Error('Settings are not ready yet'))
+  // Turned off (ADR-0107, Owl), main spends nothing on dictation: no shortcuts, key listener, speech model or widget,
+  // and every dictation command is refused. It follows the setting live, both ways.
+  let dictationActive = dictationOn(startupSettings, owlFeatures['dictation-off'])
   const speechModelManager = e2eConfiguration === null
     ? new SpeechModelManager({
       // One folder per model under speech-models; Parakeet v3's is where ADR-0071 put it.
@@ -1278,13 +1283,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     : null
   const speechModel = {
     status: (): SpeechModelStatus => speechModelManager?.status() ?? { state: 'ready' },
-    download: (): void => { speechModelManager?.download() },
+    download: (): void => { if (dictationActive) speechModelManager?.download() },
     // E2E runs offer Parakeet v3 as already here and Sotto's other models as downloads, so setup and
     // Settings show real rows; choosing one only saves the choice, since an E2E model is always ready.
     list: (): Promise<SpeechModelOption[]> => speechModelManager?.list() ?? Promise.resolve(
       SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
     ),
     choose: async (id: string): Promise<boolean> => {
+      // Off, choosing would load the model; Settings hides the picker then (ADR-0107).
+      if (!dictationActive) return false
       if (speechModelManager !== null) return speechModelManager.choose(id)
       if (sottoSpeechModel(id) === undefined) return false
       await saveSpeechModelChoice(id)
@@ -1335,6 +1342,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const messageDelivery = new NativeMessageDelivery(windows)
   let currentTrayState: TrayState = { dictating: false, autoPaste: true }
   const dispatchDictation = (command: DictationCommand): void => {
+    if (!dictationActive) return
     void messageDelivery.sendToMain(DICTATION_COMMAND, command).then((delivered) => {
       if (!delivered) {
         logOperational('native-main-send-failed')
@@ -1342,6 +1350,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     })
   }
   const showWidget = (): void => {
+    if (!dictationActive) return
     void windows.showWidget().catch(() => logOperational('native-widget-show-failed'))
   }
   const toggleDictation = (): void => {
@@ -1352,8 +1361,10 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const e2eShortcuts = e2eConfiguration === null
     ? null
     : createE2EGlobalShortcuts(e2eConfiguration.scenario)
+  // Off, the gate holds every dictation shortcut back from the OS and stops the key listener's helper.
+  const dictationGate = createDictationGate(e2eShortcuts ?? globalShortcut, dictationActive)
   const hotkeys = new HotkeyManager(
-    e2eShortcuts ?? globalShortcut,
+    dictationGate.shortcuts,
     () => {
       // A hold in progress no longer owns the session the primary shortcut toggled.
       dictationShortcuts?.pressToggled()
@@ -1378,8 +1389,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // Extra and hold shortcuts are an Owl feature, and Linux binds shortcuts in the compositor.
   const dictationShortcuts = platform !== 'linux' && owlFeatures['dictation-hold-shortcuts']
     ? createDictationShortcutRouter({
-        shortcuts: e2eShortcuts ?? globalShortcut,
-        createListener: handlers => createKeyListener({
+        shortcuts: dictationGate.shortcuts,
+        createListener: handlers => dictationGate.listener(createKeyListener({
           platform,
           // The Windows helper can take long to start cold.
           readyTimeoutMs: platform === 'win32' ? 30_000 : 5_000,
@@ -1389,7 +1400,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             : () => null,
           log: event => logOperational(event as DictationShortcutEvent),
           ...handlers,
-        }),
+        })),
         canStart: () => holdCanStart(widgetState),
         isFocused: mainWindowFocused,
         dispatch: dispatchDictation,
@@ -1496,12 +1507,16 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools.settingChanged().catch(() => undefined)
       agentHistoryEnabled = settings.historyEnabled
+      const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
+      if (dictationNow !== dictationActive) applyDictation(dictationNow)
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings)
         dockSettings = settings
         paintDock()
-        if (!dictationLifecycle.isIdle()) {
+        if (!dictationActive) {
+          windows.hideWidget()
+        } else if (!dictationLifecycle.isIdle()) {
           await dictationLifecycle.repaint()
         } else if (settings.onboardingComplete) {
           // Re-seed the resting sliver so theme/shortcut changes repaint it and
@@ -1517,10 +1532,11 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   })
   // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
   saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
-  void speechModelManager?.start()
+  if (dictationActive) void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
+    dictationOn: () => dictationActive,
     setAutoPaste(enabled): void {
       void settingsCoordinator
         .updateSettings({ autoPaste: enabled })
@@ -1546,7 +1562,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   }
 
   const dictationLifecycle = new NativeDictationLifecycle({
-    delivery: messageDelivery,
+    // Off, nothing reaches the widget, so nothing shows or makes it; turning on re-seeds the resting sliver.
+    delivery: { sendToWidget: (channel, payload, reveal) => dictationActive ? messageDelivery.sendToWidget(channel, payload, reveal) : Promise.resolve(true) },
     publishShellState: (state) => linuxDictationShell?.publish(state),
     getTrayState: () => currentTrayState,
     updateTray(state): void {
@@ -1566,16 +1583,51 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     // A crashed Settings can no longer end its recording, so the shortcuts come back now.
     if (kind === 'main') shortcutLifecycle.rendererGone()
   }
+  // Set when dictation goes off mid-transcription: the model is let go once that dictation ends.
+  let unloadWhenDone = false
   const publishWidgetState = async (state: WidgetSnapshot): Promise<void> => {
     await dictationLifecycle.publish(state)
+    // A dictation being transcribed when dictation went off has finished; the model can go now.
+    if (unloadWhenDone && state.status !== 'processing') {
+      unloadWhenDone = false
+      void speechModelManager?.unload()
+    }
   }
   const publishIdleWidgetState = async (current: AppSettings): Promise<void> => {
+    if (!dictationActive) return
     await dictationLifecycle.publish({
       status: 'idle',
       ...widgetPresentationFor(current),
       shortcut: current.hotkey,
       cancellable: false,
     })
+  }
+
+  const applyDictation = (on: boolean): void => {
+    if (!on) {
+      // A recording under way, or one still waiting for the microphone, ends unsaved, since no shortcut could stop
+      // it now. A dictation already being transcribed finishes, and a kept one stays kept for when dictation is back on.
+      if (widgetState.status === 'listening' || widgetState.status === 'requesting-permission') void messageDelivery.sendToMain(DICTATION_COMMAND, { type: 'cancel' })
+      dictationShortcuts?.interrupt()
+      hotkeys.cancelListening()
+    }
+    // The router lets go of its shortcuts and takes them back after the gate opens, so one another app took
+    // meanwhile goes through its usual retries instead of counting as registered.
+    if (on) dictationShortcuts?.suspend(true)
+    dictationActive = on
+    if (dictationGate.set(on).length > 0) logOperational('native-hotkey-registration-failed')
+    if (on) dictationShortcuts?.suspend(false)
+    // A hotkey another app took meanwhile is tried again, as at a start.
+    if (on) hotkeys.replace(workingCopySettings.hotkey)
+    trayController.update(currentTrayState)
+    unloadWhenDone = false
+    if (on) {
+      void speechModelManager?.start()
+    } else {
+      windows.hideWidget()
+      if (widgetState.status === 'processing') unloadWhenDone = true
+      else void speechModelManager?.unload()
+    }
   }
 
   const permissionAdapter = createPermissionAdapter()
@@ -1586,6 +1638,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           request: () => systemPreferences.askForMediaAccess('microphone'),
         })
       : null
+  // Off, nothing in Sotto may open the microphone: every ask answers no without asking the user (ADR-0107).
+  const microphoneAccessWhileOn = microphoneAccess === null ? null : {
+    ...microphoneAccess,
+    ensure: () => dictationActive ? microphoneAccess.ensure() : Promise.resolve(false),
+    isGranted: () => dictationActive && microphoneAccess.isGranted(),
+  }
   if (platform === 'linux') {
     linuxDictationShell = new LinuxDictationShell(
       e2eConfiguration?.userDataPath ?? process.env.XDG_RUNTIME_DIR,
@@ -1608,6 +1666,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
           await windows.setWidgetPlacement({ edge })
           return true
         }
+        // Turned off, the user's own compositor keys start nothing.
+        if (!dictationActive) return false
         const pressedWhileRecording = at !== undefined && recordingSpan !== null && at >= recordingSpan.from && (recordingSpan.to === null || at <= recordingSpan.to)
         if ((compositorKeysSuspended || pressedWhileRecording) && (command === 'start' || command === 'toggle')) {
           if (compositorKeysSuspended) windows.sendToMain(DICTATION_KEYS_TAKEN, command === 'toggle' ? 'press' : 'hold')
@@ -1628,6 +1688,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     startup,
     settings,
     publishIdleWidgetState,
+    dictationOn: () => dictationActive,
     installPermissions: () =>
       installSessionPermissionPolicy(
         permissionAdapter,
@@ -1637,8 +1698,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             .filter((renderer) => renderer.role === 'main'),
         // Omitted where no OS microphone gate exists, which keeps the grant
         // synchronous exactly as it is today.
-        microphoneAccess === null ? undefined : () => microphoneAccess.ensure(),
-        microphoneAccess === null ? undefined : () => microphoneAccess.isGranted(),
+        microphoneAccessWhileOn === null ? undefined : () => microphoneAccessWhileOn.ensure(),
+        microphoneAccessWhileOn === null ? undefined : () => microphoneAccessWhileOn.isGranted(),
       ),
     registerIpc: () => {
       const cleanupRequestDrafts = registerRequestDraftIpc(ipcMain, requestDrafts, () => windows.getTrustedRenderers())
@@ -1864,7 +1925,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         recoveryNotices: {
           list: () => recoveryNotices.list(),
         },
-        ...(microphoneAccess === null ? {} : { microphoneAccess }),
+        ...(microphoneAccessWhileOn === null ? {} : { microphoneAccess: microphoneAccessWhileOn }),
       })
       const unsubscribeRecoveryNotices = recoveryNotices.subscribe((notice) => {
         void messageDelivery.sendToMain(RECOVERY_NOTICE, notice).then((delivered) => {

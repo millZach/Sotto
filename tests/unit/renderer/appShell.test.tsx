@@ -14,9 +14,20 @@ vi.mock('../../../src/renderer/src/state/memoryFeature', () => ({
   useMemoryEnabled: () => memory.enabled,
 }))
 
+// The room switch follows Watcher's gate and whether dictation is on (ADR-0107).
+const rooms = vi.hoisted(() => ({ watcher: false, dictation: true }))
+vi.mock('../../../src/renderer/src/state/watcherFeature', () => ({
+  useWatcherEnabled: () => rooms.watcher,
+}))
+vi.mock('../../../src/renderer/src/state/dictationFeature', () => ({
+  useDictationOn: () => rooms.dictation,
+}))
+
 afterEach(() => {
   cleanup()
   memory.enabled = false
+  rooms.watcher = false
+  rooms.dictation = true
 })
 
 const chrome = {
@@ -326,10 +337,37 @@ describe('AppShell', () => {
   })
 })
 
+describe('appRooms', () => {
+  const ids = (watcher: boolean, dictation: boolean): string[] => appRooms({ watcher, dictation }).map(({ id }) => id)
+
+  it('draws Dictate, the owl while Watcher is on, and Threads; Dictate leaves while dictation is off', () => {
+    expect(ids(true, true)).toEqual(['dictate', 'watcher', 'threads'])
+    expect(ids(false, true)).toEqual(['dictate', 'threads'])
+    expect(ids(true, false)).toEqual(['watcher', 'threads'])
+    expect(ids(false, false)).toEqual(['threads'])
+  })
+
+  it('keeps the strip switch to owl and Threads while dictation is off', () => {
+    rooms.watcher = true
+    rooms.dictation = false
+    render(<AppShell {...chrome} layout="strip" navigation="threads"><p /></AppShell>)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(tab => tab.getAttribute('data-room'))).toEqual(['watcher', 'threads'])
+    expect(screen.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('draws no strip switch when Threads is the only room left', () => {
+    rooms.dictation = false
+    render(<AppShell {...chrome} layout="strip" navigation="threads"><p /></AppShell>)
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+})
+
 describe('useRoomSwitch', () => {
   /** A bare switch: the hook's behaviour with nothing of any switch's look. */
   function Switch({ room, navigate, shown }: { readonly room: AppRoom | null; readonly navigate: (destination: string) => void; readonly shown?: boolean }) {
-    const rooms = appRooms(true)
+    const rooms = appRooms({ watcher: true, dictation: true })
     const roomSwitch = useRoomSwitch(room, rooms, navigate, shown)
     return <div ref={roomSwitch.ref} role="tablist" aria-label="Rooms">
       {rooms.map((target, index) => <button key={target.id} type="button" role="tab" {...roomSwitch.tab(target, index)}>{target.id === 'watcher' ? 'owl' : target.label}</button>)}
