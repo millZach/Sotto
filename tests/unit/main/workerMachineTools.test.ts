@@ -23,6 +23,22 @@ describe('Watcher with Work across machines', () => {
     }
     expect(WATCHER_TOOL_DEFINITIONS).toEqual(watcherToolDefinitions(false, false))
   })
+  it('advertises no placement or newWorkersStart in any result while it is off, and both while it is on', () => {
+    const offered = (roles: boolean, machines: boolean) => JSON.stringify(watcherToolDefinitions(roles, machines))
+    const output = (roles: boolean, machines: boolean, name: string) => JSON.stringify(watcherToolDefinitions(roles, machines).find(item => item.name === name)!.outputSchema)
+    for (const roles of [false, true]) {
+      for (const field of ['placement', 'newWorkersStart']) expect(offered(roles, false)).not.toContain(field)
+      expect(output(roles, true, 'start_thread')).toContain('"placement"')
+      expect(output(roles, true, 'list_machines')).toContain('"newWorkersStart"')
+      // The rest of each result, and the refusal, are the same either way.
+      expect(output(roles, false, 'start_thread')).toContain('"firstPromptReceiptId"')
+      expect(output(roles, false, 'start_thread')).toContain('"refused"')
+      expect(output(roles, false, 'list_machines')).toContain('"machines"')
+      for (const name of watcherToolDefinitions(roles).map(item => item.name).filter(item => item !== 'start_thread' && item !== 'list_machines')) {
+        expect(output(roles, true, name)).toBe(output(roles, false, name))
+      }
+    }
+  })
   it('offers a machine and a system on start_thread, with or without worker roles, and says where a start that names neither goes', () => {
     for (const roles of [false, true]) {
       const start = tool(watcherToolDefinitions(roles, true), 'start_thread')!
