@@ -815,14 +815,14 @@ export class WatcherService implements WatcherControlHooks {
       && (operation.action === 'start' || operation.action === 'send') && !operation.promptRefunded).length
       : record.requests.find(request => request.id === requestId)?.participants.find(participant => key(participant.target) === key(target))?.promptCount ?? 0
   }
-  /** `seen` is Watcher's thread as the caller already read it; without it, the thread is read from its owning host. */
-  private promptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, importedId?: string, seen?: AgentThread): PromptTurn {
+  /** `observedThread` is Watcher's thread as the caller already read it; without it, the thread is read from its owning host. */
+  private promptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, importedId?: string, observedThread?: AgentThread): PromptTurn {
     if (importedId) {
       const retained = record.promptTurns?.find(turn => turn.id === importedId)
       if (retained) { if (key(retained.watcher) !== key(watcher)) refuse('RETRY_KEY_CONFLICT', 'This turn budget belongs to another Watcher. Nothing was sent.'); return retained }
       const created: PromptTurn = { id: importedId, watcher, createdAt: now() }; (record.promptTurns ??= []).push(created); return created
     }
-    const thread = seen ?? this.thread(watcher), nativeTurnId = thread.lastTurn?.id
+    const thread = observedThread ?? this.thread(watcher), nativeTurnId = thread.lastTurn?.id
     let latest = record.promptTurns?.findLast(turn => key(turn.watcher) === key(watcher))
     if (latest) {
       // Native IDs and heads are observations. Only an actual Sotto Send may open another prompt budget.
@@ -849,9 +849,9 @@ export class WatcherService implements WatcherControlHooks {
     const nativeTurnId = thread.lastTurn?.id
     return !nativeTurnId || nativeTurnId === latest.previousNativeTurnId || nativeTurnId === latest.nativeTurnId
   }
-  private beginPromptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, messageId: string, seen?: AgentThread): void {
+  private beginPromptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, messageId: string, observedThread?: AgentThread): void {
     if (record.promptTurns?.some(turn => key(turn.watcher) === key(watcher) && turn.rootUserMessageId === messageId)) return
-    const previous = this.promptTurn(record, watcher, undefined, seen)
+    const previous = this.promptTurn(record, watcher, undefined, observedThread)
     ;(record.promptTurns ??= []).push({ id: randomUUID(), watcher, rootUserMessageId: messageId, createdAt: now(),
       ...(previous.nativeTurnId ? { previousNativeTurnId: previous.nativeTurnId } : {}) })
   }
@@ -1786,8 +1786,11 @@ export class WatcherService implements WatcherControlHooks {
     void this.options.control.cancelWatcherQueue(operations).catch(() => { this.recoveryNotice = 'A taken-over thread’s queued Watcher message could not be removed. It is fenced and will not be sent.'; this.publish() })
   }
   preserveUserQueue(threadId: string): boolean {
-    // Read, not copied: the follow-up queue asks this on the update path.
-    return this.view().requests.some(request => request.participants.some(participant => participant.target.hostId === this.hostId() && participant.target.threadId === threadId
+    // Read, not copied: the follow-up queue asks this on the update path, from its own timers too, where nothing catches a
+    // refusal. Without this computer's host ID, a hold on a thread of this ID on any host keeps the queue waiting until it is
+    // back (#1129).
+    const hostId = this.options.control.hostId()
+    return this.view().requests.some(request => request.participants.some(participant => (hostId === undefined || participant.target.hostId === hostId) && participant.target.threadId === threadId
       && participant.state === 'participating' && stoppedParticipation(request, participant)))
   }
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
@@ -1912,13 +1915,13 @@ export class WatcherService implements WatcherControlHooks {
     })
     return { ...command, ...(handover ? { text: handover.prefix + command.text } : {}), watcherRequestNote: note }
   }
-  /** `seen` is Watcher's thread as the observe pass has it, so the pass reads no other copy of it. */
-  private activatePromptTurn(commandId: string, seen?: AgentThread): void {
+  /** `observedThread` is Watcher's thread as the observe pass has it, so the pass reads no other copy of it. */
+  private activatePromptTurn(commandId: string, observedThread?: AgentThread): void {
     const candidate = this.pendingPromptTurns.get(commandId)
     // Read without copying: this runs once per Watcher send, and the change below makes the one copy it needs.
     const current = this.view().current
     if (candidate && current && key(candidate.watcher) === key(current.target)) this.options.control.mutateWatcher(record => {
-      this.beginPromptTurn(record, candidate.watcher, candidate.messageId, seen)
+      this.beginPromptTurn(record, candidate.watcher, candidate.messageId, observedThread)
     })
     this.pendingPromptTurns.delete(commandId)
   }

@@ -1456,6 +1456,31 @@ it('waits while this computer has no host ID, refusing nothing, and does what it
   unsubscribe(); observed.mockRestore()
 })
 
+it('keeps Watcher’s waiting news queued and a stopped thread’s queue held while this computer has no host ID (#1129)', async () => {
+  const f = await fixture(), { started, hidden } = await heldQuestion(f)
+  const worker = started.target.threadId
+  // As while Sotto starts: no host ID, and a snapshot that names none.
+  const hostless = () => {
+    const live = f.control.watcherSnapshot()
+    const noHost = vi.spyOn(f.control, 'hostId').mockReturnValue(undefined)
+    const noSnapshotHost = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...live, hostId: undefined })
+    return () => { noHost.mockRestore(); noSnapshotHost.mockRestore() }
+  }
+  // The queue prunes Watcher's waiting news: nothing says it is out of date, so it stays.
+  const waiting = hidden().map(item => item.id)
+  expect(waiting).toHaveLength(1)
+  let restore = hostless()
+  try {
+    await expect(f.control.pruneWatcherWakeUps()).resolves.toBeUndefined()
+    expect(hidden().map(item => item.id)).toEqual(waiting)
+  } finally { restore() }
+  // The queue asks whether Watcher's Stop holds the thread: it still does.
+  expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: started.target })).toMatchObject({ status: 'ok' })
+  await vi.waitFor(() => expect(f.service.preserveUserQueue(worker)).toBe(true))
+  restore = hostless()
+  try { expect(f.service.preserveUserQueue(worker)).toBe(true) } finally { restore() }
+})
+
 it('rechecks answered news after checkpoint preparation and before the provider writer', async () => {
   const f = await fixture(), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
