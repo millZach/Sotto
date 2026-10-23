@@ -1,0 +1,1064 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Question: what should interface translation look like in Sotto?
+  Screens: Settings language picker (variants A/B/C via ?variant=), Arabic and Urdu right to left,
+  Simplified Chinese and Japanese, Hindi at the 820x560 minimum. Nothing here is wired to the app.
+  URL keys: screen=settings|rtl|cjk|hindi  variant=A|B|C  mode=dark|light  ui=<locale>  open=1
+            disclose=1  rtl=ar|ur  digits=native|latin  marks=0|1  cjk=zh-Hans|ja  hl=hi|en  actual=1
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: interface language in Sotto</title>
+<style>
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Figtree'; font-style: normal; font-weight: 300 900; font-display: swap; src: url('figtree-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Spline Sans Mono'; font-style: normal; font-weight: 300 700; font-display: swap; src: url('spline-sans-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Windows ships no Nastaliq face by default, so the prototype bundles Noto Nastaliq Urdu's Arabic-script subset (OFL, 239 KB). */
+@font-face { font-family: 'Proto Nastaliq'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('noto-nastaliq-urdu-arabic.woff2') format('woff2');
+  unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+200C-200E, U+FB50-FDFF, U+FE70-FEFC; }
+
+/* ---------- Sotto's default theme roles (src/styles/tokens.css, Sotto theme at 100% contrast) ---------- */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-raised: oklch(0.185 0.008 265);
+  --tt-overlay: oklch(0.215 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-muted-fg: oklch(0.72 0.014 265);
+  --tt-text-2: color-mix(in oklab, var(--tt-text) 55%, var(--tt-muted-fg));
+  --tt-text-muted: color-mix(in oklab, var(--tt-muted-fg) 85%, var(--tt-text));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-input: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-fg: oklch(0.16 0.012 190);
+  --tt-accent-surface: oklch(0.32 0.05 185);
+  --tt-update-fg: oklch(0.83 0.08 183);
+  --tt-warning: oklch(0.829017 0.171221 81.038);
+  --tt-error-fg: oklch(0.702184 0.189226 22.228);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-message: oklch(0.205 0.014 265);
+  --tt-code-bg: oklch(0.155 0.008 265);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-control: oklch(0.295 0.003 265);
+  --tt-row-hover: oklch(0.28 0.003 265);
+  --tt-row-active: oklch(0.32 0.025 190);
+  --tt-row-selected: oklch(0.355 0.035 188);
+  --tt-sidebar-border: oklch(0.355 0.012 265);
+  --tt-solid: oklch(0.985 0.005 280);
+  --tt-solid-fg: oklch(0.16 0.012 190);
+  --tt-shadow: 0 24px 72px -20px rgb(0 0 0 / 90%);
+
+  --f-mono: 'Spline Sans Mono', ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+  --f-latin: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-ar: 'Figtree', 'Segoe UI', 'Geeza Pro', 'Noto Sans Arabic', 'Arabic UI Text', sans-serif;
+  --f-ur: 'Figtree', 'Noto Nastaliq Urdu', 'Urdu Typesetting', 'Proto Nastaliq', 'Segoe UI', sans-serif;
+  --f-zhs: 'Figtree', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --f-zht: 'Figtree', 'Microsoft JhengHei UI', 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif;
+  --f-ja: 'Figtree', 'Yu Gothic UI', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Meiryo UI', 'Noto Sans JP', sans-serif;
+  --f-indic: 'Figtree', 'Nirmala UI', 'Kohinoor Devanagari', 'Kohinoor Bangla', 'Kohinoor Telugu', 'Tamil Sangam MN', 'Noto Sans Devanagari', sans-serif;
+
+  /* prototype chrome, deliberately not Sotto's look */
+  --p-bg: #17181b; --p-fg: #e9e9ec; --p-muted: #a3a4ab; --p-line: #34353b; --p-chip: #24252a; --p-on: #f3d34a; --p-on-fg: #16130a;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-raised: oklch(0.955 0.006 85);
+  --tt-overlay: oklch(0.99 0.003 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-muted-fg: oklch(0.5 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-input: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-fg: oklch(0.99 0.003 85);
+  --tt-accent-surface: oklch(0.92 0.03 186);
+  --tt-update-fg: oklch(0.43 0.08 186);
+  --tt-warning: oklch(0.530927 0.155556 45.359);
+  --tt-error-fg: oklch(0.509494 0.208583 28.513);
+  --tt-success: oklch(0.5 0.11 165);
+  --tt-message: oklch(0.93 0.012 85);
+  --tt-code-bg: oklch(0.96 0.005 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-control: oklch(0.995 0.002 85);
+  --tt-row-hover: oklch(0.93 0.01 85);
+  --tt-row-active: oklch(0.915 0.02 190);
+  --tt-row-selected: oklch(0.895 0.028 188);
+  --tt-sidebar-border: oklch(0.87 0.012 82);
+  --tt-solid: oklch(0.235 0.014 75);
+  --tt-solid-fg: oklch(0.99 0.003 85);
+  --tt-shadow: 0 24px 60px -24px rgb(60 50 30 / 35%);
+  --p-bg: #ecebe7; --p-fg: #1d1c19; --p-muted: #5f5d57; --p-line: #cfcdc6; --p-chip: #dfddd7; --p-on: #1d1c19; --p-on-fg: #f4f2ec;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--p-bg); color: var(--p-fg); font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; -webkit-text-size-adjust: 100%; padding-bottom: 90px; }
+button { font: inherit; color: inherit; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- prototype chrome ---------- */
+.p-head { position: sticky; top: 0; z-index: 50; background: var(--p-bg); border-bottom: 1px dashed var(--p-line); padding: 10px 18px 0; }
+.p-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.p-tag { background: var(--p-on); color: var(--p-on-fg); font: 700 11px/1 system-ui, sans-serif; letter-spacing: .06em; padding: 4px 7px; border-radius: 4px; }
+.p-title { font-weight: 600; }
+.p-note { color: var(--p-muted); font-size: 13px; }
+.p-spacer { flex: 1; }
+.p-mode { border: 1px solid var(--p-line); background: var(--p-chip); border-radius: 999px; padding: 5px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.p-tabs { display: flex; gap: 2px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+.p-tabs button { border: 0; background: none; padding: 8px 12px 9px; color: var(--p-muted); border-bottom: 2px solid transparent; white-space: nowrap; cursor: pointer; }
+.p-tabs button[aria-selected='true'] { color: var(--p-fg); border-bottom-color: var(--p-on); font-weight: 600; }
+.p-controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 14px 18px 10px; }
+.p-seg { display: inline-flex; border: 1px solid var(--p-line); border-radius: 999px; padding: 2px; background: var(--p-chip); }
+.p-seg button { border: 0; background: none; padding: 4px 11px; border-radius: 999px; cursor: pointer; color: var(--p-muted); }
+.p-seg button[aria-pressed='true'] { background: var(--p-on); color: var(--p-on-fg); }
+.p-label { color: var(--p-muted); font-size: 12px; }
+.p-state { font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--p-muted); }
+.p-warn { border: 1px dashed var(--p-on); border-radius: 6px; padding: 4px 9px; font-size: 12.5px; }
+.p-legend { display: inline-flex; gap: 10px; font-size: 12px; color: var(--p-muted); flex-wrap: wrap; }
+.p-legend i { display: inline-block; width: 12px; height: 12px; border: 2px dashed; border-radius: 2px; vertical-align: -2px; margin-inline-end: 4px; }
+.stage { padding: 0 18px; }
+.fit { position: relative; }
+.fit > .win { transform-origin: top left; }
+.notes { max-width: 980px; padding: 16px 18px 0; color: var(--p-fg); }
+.notes h3 { margin: 14px 0 6px; font-size: 14px; }
+.notes ul { margin: 0; padding-inline-start: 18px; }
+.notes li { margin: 4px 0; color: var(--p-fg); }
+.notes code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--p-chip); padding: 0 4px; border-radius: 3px; }
+.notes .m { color: var(--p-muted); }
+.pill { position: fixed; z-index: 60; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: #0b0b0c; color: #fff; border-radius: 999px; padding: 5px; box-shadow: 0 10px 30px rgb(0 0 0 / 45%), 0 0 0 1px rgb(255 255 255 / 14%); font: 13px/1.2 system-ui, sans-serif; max-width: calc(100vw - 20px); }
+.pill[hidden] { display: none; }
+.pill button { width: 34px; height: 34px; border-radius: 999px; border: 0; background: #2a2b30; color: #fff; cursor: pointer; font-size: 16px; }
+.pill span { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-theme='light'] .pill { background: #fff; color: #111; box-shadow: 0 10px 30px rgb(0 0 0 / 22%), 0 0 0 1px rgb(0 0 0 / 12%); }
+:root[data-theme='light'] .pill[hidden] { display: none; }
+.pill button { background: #ecebe7; color: #111; }
+
+/* ---------- Sotto window ---------- */
+.win { position: relative; width: 1280px; height: 800px; background: var(--tt-canvas); color: var(--tt-text); border-radius: 10px; overflow: hidden;
+  box-shadow: 0 30px 80px -40px rgb(0 0 0 / 70%), 0 0 0 1px var(--tt-hairline); container: win / inline-size; text-align: start;
+  font-family: var(--f-latin); font-size: 14px; --lh-tight: 1.35; --lh-body: 1.6; line-height: var(--lh-tight); font-synthesis: none; }
+.win [lang|='ar'], .win[lang|='ar'] { font-family: var(--f-ar); }
+.win [lang|='ur'], .win[lang|='ur'] { font-family: var(--f-ur); }
+.win [lang='zh-Hans'], .win[lang='zh-Hans'] { font-family: var(--f-zhs); }
+.win [lang='zh-Hant'], .win[lang='zh-Hant'] { font-family: var(--f-zht); }
+.win [lang|='ja'], .win[lang|='ja'] { font-family: var(--f-ja); }
+.win :is([lang|='hi'],[lang|='bn'],[lang|='mr'],[lang|='te'],[lang|='ta']), .win:is([lang|='hi']) { font-family: var(--f-indic); }
+.win:lang(ar) { --lh-tight: 1.5; --lh-body: 1.75; }
+.win:lang(ur) { --lh-tight: 2.05; --lh-body: 2.3; }
+.win:is(:lang(zh), :lang(ja)) { --lh-tight: 1.45; --lh-body: 1.75; line-break: strict; }
+.win:lang(hi) { --lh-tight: 1.5; --lh-body: 1.7; }
+/* Figtree's tight headline tracking breaks Arabic joins and the Devanagari headline; CJK wants none either. */
+.win:is(:lang(ar), :lang(ur), :lang(hi), :lang(zh), :lang(ja)) :is(h1, h2, h3) { letter-spacing: 0 !important; }
+.win code, .win pre, .win kbd, .win .mono { font-family: var(--f-mono); }
+.win code { unicode-bidi: isolate; direction: ltr; font-size: .87em; background: var(--tt-code-bg); border: 1px solid var(--tt-hairline); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+.win pre { direction: ltr; text-align: left; unicode-bidi: isolate; margin: 0; }
+.win bdi { unicode-bidi: isolate; }
+.win button { cursor: pointer; }
+.win .flip { }
+.win[dir='rtl'] .flip { transform: scaleX(-1); }
+.ib { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 7px; background: none; color: var(--tt-text-muted); }
+.ib:hover { background: var(--tt-row-hover); color: var(--tt-text); }
+.ib.on { background: var(--tt-sidebar-control); color: var(--tt-text); }
+.wc { display: flex; gap: 2px; }
+.wc button { width: 34px; height: 30px; border: 0; background: none; color: var(--tt-text-muted); display: grid; place-items: center; border-radius: 6px; }
+.wc button:hover { background: var(--tt-row-hover); }
+.wc svg.i { width: 15px; height: 15px; stroke-width: 1.5; }
+.mark { width: 20px; height: 20px; flex: none; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.seg2 { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); background: var(--tt-canvas); border-radius: 9px; padding: 3px; }
+:root[data-theme='light'] .seg2 { background: var(--tt-row-hover); }
+.seg2 button { border: 0; background: none; color: var(--tt-text-muted); padding: 7px 4px; border-radius: 7px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg2 button.on { background: var(--tt-sidebar); color: var(--tt-text); }
+:root[data-theme='light'] .seg2 button.on { background: var(--tt-surface); box-shadow: 0 1px 2px rgb(0 0 0 / 10%); }
+.foot-icons { display: flex; align-items: center; gap: 2px; margin-top: 8px; }
+.foot-icons .sp { flex: 1; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+/* ---------- Settings ---------- */
+.set { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100%; }
+.set-side { background: var(--tt-sidebar); display: flex; flex-direction: column; min-height: 0; padding: 22px 15px 12px; }
+.set-side .brand { padding: 0 8px; height: 30px; }
+.set-side h1 { margin: 18px 0 16px; padding: 0 8px; font-size: 24px; font-weight: 600; line-height: 1.25; letter-spacing: -.7px; }
+.subnav { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 3px; scrollbar-width: thin; }
+.subnav button { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: start; font-size: 14px; line-height: var(--lh-tight); }
+.subnav button > span { flex: 1; min-width: 0; }
+.subnav button:hover { background: var(--tt-row-hover); color: var(--tt-text); }
+.subnav button[aria-current='page'] { color: var(--tt-text); background: var(--tt-row-active); }
+.subnav button[aria-current='page'] > svg:first-child { color: var(--tt-accent); }
+.subnav button .chev { display: none; }
+.subnav button[aria-current='page'] .chev { display: block; }
+.subnav .sep { height: 1px; background: var(--tt-hairline); margin: 12px 12px; flex: none; }
+.set-side .foot { padding-top: 10px; border-top: 1px solid var(--tt-hairline); margin-top: 8px; }
+.set-main { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.set-main > .wc { position: absolute; top: 8px; inset-inline-end: 8px; z-index: 3; }
+.set-scroll { flex: 1; min-height: 0; overflow: auto; padding: 42px 64px 56px; scrollbar-width: thin; }
+.form { max-width: 790px; margin: 0 auto; animation: arrive 180ms ease; }
+@keyframes arrive { from { opacity: .55; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .form { animation: none; } }
+.heading { padding-bottom: 20px; border-bottom: 1px solid var(--tt-hairline); margin-bottom: 4px; }
+.heading h2 { margin: 0 0 8px; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
+.heading p { margin: 0; color: var(--tt-text-muted); font-size: 16px; line-height: 1.5; }
+.feedback { flex: none; padding: 6px 22px 10px; text-align: end; font-size: 12px; color: var(--tt-text-muted); }
+.toast { position: absolute; top: 14px; inset-inline-start: 50%; transform: translateX(-50%); z-index: 6; min-width: 300px; max-width: 70%; background: var(--tt-raised); border: 1px solid var(--tt-hairline); border-inline-start: 2px solid var(--tt-accent); border-radius: 9px; padding: 10px 16px; font-size: 14px; box-shadow: var(--tt-shadow); }
+.win[dir='rtl'] .toast { transform: translateX(50%); }
+.rows > .row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 250px); grid-template-areas: 'label control' 'desc control'; column-gap: 22px; row-gap: 5px; align-items: center; min-height: 66px; padding: 17px 0; border-bottom: 1px solid var(--tt-hairline); position: relative; }
+.rows > .row:last-child { border-bottom: 0; }
+.row > .lbl { grid-area: label; font-size: 15px; font-weight: 500; line-height: var(--lh-tight); display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.row > .desc { grid-area: desc; margin: 0; max-width: 360px; color: var(--tt-text-muted); font-size: 13px; line-height: var(--lh-tight); }
+.row > .ctl { grid-area: control; min-width: 0; position: relative; }
+.row.stack { grid-template-columns: minmax(0,1fr); grid-template-areas: 'label' 'desc' 'control'; }
+.anchor { color: var(--tt-text-muted); font-weight: 400; font-size: 13px; }
+.badge { font-size: 11px; font-weight: 500; color: var(--tt-text-muted); border: 1px solid var(--tt-hairline); border-radius: 999px; padding: 0 7px; line-height: 18px; }
+.lbl svg.i { color: var(--tt-text-muted); }
+.selectbtn { width: 100%; min-height: 38px; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 12px; padding-inline: 12px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface); color: var(--tt-text); font-size: 14px; text-align: start; line-height: var(--lh-tight); }
+.selectbtn > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selectbtn svg.i { color: var(--tt-text-muted); width: 14px; height: 14px; }
+.pop { position: absolute; z-index: 20; top: calc(100% + 6px); inset-inline-end: 0; width: 330px; max-height: 380px; overflow: auto; background: var(--tt-overlay); border: 1px solid var(--tt-hairline); border-radius: 10px; box-shadow: var(--tt-shadow); padding: 6px; scrollbar-width: thin; }
+.pop .pnote { padding: 6px 10px 8px; font-size: 12px; color: var(--tt-text-muted); line-height: var(--lh-tight); border-bottom: 1px solid var(--tt-hairline); margin-bottom: 4px; }
+.opt { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: 14px; min-height: 36px; }
+.opt .chk { width: 16px; color: var(--tt-accent); visibility: hidden; }
+.opt[aria-selected='true'] .chk { visibility: visible; }
+.opt .endo { flex: none; }
+.opt .other { margin-inline-start: auto; color: var(--tt-text-muted); font-size: 12.5px; text-align: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.opt.active, .opt:hover { background: var(--tt-row-hover); }
+.opt.sys { border-bottom: 1px solid var(--tt-hairline); border-radius: 7px 7px 0 0; margin-bottom: 4px; }
+.endo[lang|='ur'] { line-height: 1.9; }
+
+.appearance { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 28px; }
+.blk { padding: 18px 0; border-bottom: 1px solid var(--tt-hairline); }
+.blk-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.blk-h strong { font-size: 15px; font-weight: 600; flex: 1; }
+.ghost { border: 0; background: none; color: var(--tt-text-muted); display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 13.5px; white-space: nowrap; }
+.ghost:hover { color: var(--tt-text); background: var(--tt-row-hover); }
+.stepper { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 14px; text-align: center; }
+.stepper::before { content: ''; position: absolute; top: 9px; inset-inline: 16.6%; height: 1.5px; background: var(--tt-text-muted); opacity: .7; }
+.stepper div { position: relative; display: grid; justify-items: center; gap: 8px; font-size: 13px; color: var(--tt-text-muted); line-height: var(--lh-tight); }
+.stepper i { width: 19px; height: 19px; border-radius: 50%; border: 1.5px solid var(--tt-text-muted); background: var(--tt-canvas); }
+.stepper .on { color: var(--tt-text); font-weight: 600; }
+.stepper .on i { background: var(--tt-accent); border-color: var(--tt-accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--tt-accent) 25%, transparent); }
+.tcols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.tcol { border: 1px solid var(--tt-hairline); border-radius: 12px; padding: 12px 10px 8px; }
+.tcol.now { border-color: var(--tt-input); background: var(--tt-surface); }
+.tcol h4 { margin: 0 4px; display: flex; gap: 7px; align-items: center; font-size: 15px; font-weight: 600; }
+.tcol p { margin: 3px 4px 8px; font-size: 12px; color: var(--tt-text-muted); line-height: var(--lh-tight); }
+.trw { display: flex; align-items: center; gap: 10px; padding: 4px 4px; border-radius: 7px; font-size: 14px; border: 1px solid transparent; }
+.trw.on { background: var(--tt-accent-surface); border-color: color-mix(in oklab, var(--tt-accent) 50%, transparent); }
+.trw .sw { display: grid; grid-template-columns: 1.5fr 1fr 1fr .8fr; width: 46px; height: 24px; border-radius: 6px; overflow: hidden; flex: none; box-shadow: inset 0 0 0 1px rgb(127 127 127 / 25%); }
+.trw .ck { margin-inline-start: auto; color: var(--tt-text); }
+.slider { display: flex; align-items: center; gap: 10px; }
+.slider .track { flex: 1; height: 4px; border-radius: 4px; background: var(--tt-hairline); position: relative; }
+.slider .track::before { content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; width: 33%; background: var(--tt-accent); border-radius: 4px; }
+.slider .track::after { content: ''; position: absolute; top: -6px; inset-inline-start: calc(33% - 8px); width: 16px; height: 16px; border-radius: 50%; background: var(--tt-solid); }
+.slider output { font-size: 13px; color: var(--tt-text-muted); min-width: 44px; text-align: end; }
+.live { border: 1px solid var(--tt-hairline); border-radius: 14px; padding: 16px; align-self: start; }
+.live .lh { display: flex; gap: 8px; align-items: center; color: var(--tt-text-muted); font-size: 13px; }
+.live .mini { margin-top: 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; overflow: hidden; }
+.live .mini-top { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--tt-hairline); font-size: 12.5px; font-weight: 600; }
+.live .mini-top span { margin-inline-start: auto; font-weight: 400; color: var(--tt-text-muted); }
+.live .bars { display: flex; justify-content: center; gap: 4px; align-items: center; height: 40px; margin-top: 18px; }
+.live .bars b { width: 5px; border-radius: 3px; background: var(--tt-accent); }
+.live .ready { text-align: center; font-weight: 600; font-size: 15px; padding: 8px 10px 20px; line-height: var(--lh-tight); }
+.live .row2 { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 10px; }
+.live .row2 small { display: block; color: var(--tt-text-muted); font-size: 12px; margin-top: 6px; }
+.live .wpill { display: inline-flex; gap: 8px; align-items: center; padding: 9px 16px; border-radius: 999px; background: var(--tt-solid); color: var(--tt-solid-fg); font-weight: 600; font-size: 13px; }
+
+.search { display: flex; align-items: center; gap: 8px; height: 38px; padding-inline: 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface); color: var(--tt-text-muted); }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--tt-text); font: inherit; font-size: 14px; }
+.search input::placeholder { color: var(--tt-text-muted); }
+.search:focus-within { border-color: var(--tt-accent); }
+.pre-note { display: flex; gap: 8px; align-items: baseline; margin: 16px 0 14px; color: var(--tt-text-muted); font-size: 13px; line-height: var(--lh-tight); }
+.radio { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; min-width: 0; line-height: var(--lh-tight); }
+.radio:hover { background: var(--tt-row-hover); }
+.radio input { appearance: none; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--tt-text-muted); margin: 0; flex: none; display: grid; place-items: center; }
+.radio input:checked { border-color: var(--tt-accent); }
+.radio input:checked::after { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--tt-accent); }
+.radio .other { color: var(--tt-text-muted); font-size: 12.5px; margin-inline-start: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.radio.sysr { border: 1px solid var(--tt-hairline); padding: 12px 12px; }
+.radio.sysr .sub { display: block; color: var(--tt-text-muted); font-size: 12.5px; margin-top: 2px; }
+.group { margin-top: 24px; }
+.group > h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: var(--tt-text-2); font-size: 14px; font-weight: 600; }
+.group > h3 svg { color: var(--tt-text-muted); }
+.group > .grid { border-top: 1px solid var(--tt-hairline); padding-top: 6px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
+.empty { padding: 24px 0; color: var(--tt-text-muted); }
+.disc { margin-top: 10px; }
+.disc-btn { border: 1px solid var(--tt-hairline); background: none; color: var(--tt-text); display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; font-size: 13.5px; }
+.disc-btn[aria-expanded='true'] svg.chev { transform: rotate(180deg); }
+.disc-body { margin-top: 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; padding: 10px; background: var(--tt-surface); }
+.disc-body .list { max-height: 270px; overflow: auto; margin-top: 8px; scrollbar-width: thin; }
+.c-line { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: var(--lh-tight); }
+.c-line b { color: var(--tt-text); font-weight: 600; }
+.linkish { border: 0; background: none; color: var(--tt-update-fg); text-decoration: underline; text-underline-offset: 3px; padding: 0; font-size: 13.5px; margin-top: 8px; }
+
+/* ---------- Threads ---------- */
+.thr { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
+.thr-side { background: var(--tt-sidebar); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.side-top { height: 46px; display: flex; align-items: center; gap: 2px; padding-inline: 14px 8px; flex: none; }
+.side-top .brand { flex: 1; }
+.tsearch { margin: 2px 8px 10px; height: 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-canvas); display: flex; align-items: center; gap: 8px; padding-inline: 10px; color: var(--tt-text-muted); font-size: 13px; flex: none; overflow: hidden; white-space: nowrap; }
+:root[data-theme='light'] .tsearch { background: var(--tt-surface); }
+.tlist { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.proj { display: flex; align-items: center; gap: 7px; padding: 10px 14px 6px; font-weight: 600; font-size: 14px; }
+.proj .cnt { margin-inline-start: auto; color: var(--tt-text-muted); font-weight: 400; font-size: 12px; }
+.proj svg.i { color: var(--tt-text-muted); width: 15px; height: 15px; }
+.trow { position: relative; margin: 1px 5px; padding: 8px 10px; padding-inline-start: 30px; border-radius: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; align-items: center; }
+.trow:hover { background: var(--tt-row-hover); }
+.trow.sel { background: var(--tt-row-selected); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tt-accent) 45%, transparent); }
+.trow .tt { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: var(--lh-tight); }
+.trow .tm { font-size: 12px; color: var(--tt-text-muted); white-space: nowrap; }
+.trow .pv { color: var(--tt-text-muted); display: flex; }
+.trow .pv svg { width: 15px; height: 15px; }
+.trow .st { font-size: 12px; text-align: end; white-space: nowrap; line-height: var(--lh-tight); }
+.trow .dot { position: absolute; top: 14px; inset-inline-start: 11px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--tt-text-muted); }
+.trow.sel .dot, .dot.warn { border-color: var(--tt-warning); }
+.dot.done { border-color: var(--tt-hairline); }
+.dot.work { border-color: var(--tt-accent); border-inline-end-color: transparent; }
+.st.warn { color: var(--tt-warning); } .st.done { color: var(--tt-text-muted); } .st.work { color: var(--tt-update-fg); }
+.settled { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-size: 13.5px; color: var(--tt-text); }
+.settled svg.i { width: 14px; height: 14px; color: var(--tt-text-muted); }
+.thr-side .foot { padding: 8px 8px 8px; border-top: 1px solid var(--tt-hairline); flex: none; }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane-head { height: 46px; display: flex; align-items: center; gap: 10px; padding-inline: 18px 8px; flex: none; min-width: 0; }
+.pane-head .ttl { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pane-head .sl { color: var(--tt-text-muted); }
+.pane-head .pj { color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.pane-head .pf { display: inline-flex; gap: 6px; align-items: center; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.pane-head .sp { flex: 1; }
+.pane-head .tools { display: flex; gap: 2px; }
+.msgs { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 12px; display: flex; flex-direction: column; gap: 22px; scrollbar-width: thin; }
+.meta { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--tt-text-muted); }
+.meta b { color: var(--tt-text); font-weight: 600; font-size: 13px; }
+.mu { align-self: flex-end; max-width: 640px; background: var(--tt-message); border: 1px solid var(--tt-hairline); border-radius: 12px; padding: 12px 18px 14px; }
+.msgs p { margin: 8px 0 0; font-size: 15px; line-height: var(--lh-body); }
+.ma { max-width: 780px; display: flex; flex-direction: column; gap: 12px; }
+.ma p { margin: 0; }
+.chip { align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--tt-hairline); border-radius: 999px; padding: 4px 12px 4px 10px; padding-inline: 10px 12px; font-size: 13px; color: var(--tt-text-2); }
+.chip .mono { color: var(--tt-text); font-size: 12.5px; direction: ltr; unicode-bidi: isolate; }
+.blkc { border: 1px solid var(--tt-hairline); border-radius: 10px; overflow: hidden; background: var(--tt-code-bg); }
+.blkc .bh { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; padding-inline: 12px 6px; border-bottom: 1px solid var(--tt-hairline); font-size: 12px; color: var(--tt-text-muted); }
+.blkc .bh .mono { direction: ltr; unicode-bidi: isolate; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
+.blkc .bh .ib { width: 26px; height: 26px; }
+.blkc pre { padding: 10px 14px 12px; font-size: 13px; line-height: 1.6; overflow-x: auto; }
+.blkc pre .del { color: var(--tt-error-fg); } .blkc pre .add { color: var(--tt-success); } .blkc pre .dim { color: var(--tt-text-muted); }
+.term { background: var(--tt-canvas); }
+.perm { border: 1px solid var(--tt-hairline); border-inline-start: 3px solid var(--tt-warning); border-radius: 12px; padding: 14px 16px 16px; background: var(--tt-raised); }
+.perm h4 { margin: 0 0 10px; font-size: 15px; font-weight: 600; line-height: var(--lh-tight); }
+.perm .cmd { border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-code-bg); padding: 9px 12px; font-size: 13px; }
+.perm .acts { display: flex; gap: 8px; margin-top: 12px; }
+.btn { border: 1px solid var(--tt-hairline); background: none; color: var(--tt-text); border-radius: 999px; padding: 7px 16px; font-size: 14px; line-height: var(--lh-tight); }
+.btn.solid { background: var(--tt-solid); color: var(--tt-solid-fg); border-color: var(--tt-solid); font-weight: 600; }
+.composer { margin: 4px 24px 18px; border: 1px solid color-mix(in oklab, var(--tt-accent) 65%, var(--tt-hairline)); border-radius: 14px; padding: 12px 14px 8px; background: var(--tt-surface); flex: none; }
+.composer .ph { color: var(--tt-text-muted); font-size: 15px; min-height: 44px; line-height: var(--lh-body); }
+.composer .cbar { display: flex; align-items: center; gap: 8px; }
+.composer .model { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--tt-hairline); border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--tt-text-muted); direction: ltr; unicode-bidi: isolate; }
+.composer .model svg { width: 13px; height: 13px; }
+.composer .sp { flex: 1; }
+.composer .stop { width: 30px; height: 30px; border-radius: 50%; background: var(--tt-accent); border: 0; display: grid; place-items: center; }
+.composer .stop b { width: 10px; height: 10px; border-radius: 2px; background: var(--tt-accent-fg); }
+
+/* annotation overlay: what mirrors, what stays */
+.annot [data-ann] { outline: 1.5px dashed; outline-offset: 2px; position: relative; }
+.annot [data-ann='m'] { outline-color: #2bb5a4; }
+.annot [data-ann='l'] { outline-color: #e5a50a; }
+.annot [data-ann='n'] { outline-color: #b388ff; }
+.annot [data-ann]::after { position: absolute; top: -8px; inset-inline-end: 2px; font: 700 9px/13px system-ui, sans-serif; padding: 0 4px; border-radius: 3px; color: #000; direction: ltr; z-index: 7; white-space: nowrap; pointer-events: none; letter-spacing: 0; }
+.annot [data-ann='m']::after { content: 'mirrors'; background: #2bb5a4; }
+.annot [data-ann='l']::after { content: 'stays LTR'; background: #e5a50a; }
+.annot [data-ann='n']::after { content: 'Latin name'; background: #b388ff; }
+.annot code[data-ann]::after, .annot bdi[data-ann]::after { display: none; }
+.annot [data-ann='r'] { outline-color: #ff7eb6; }
+.annot [data-ann='r']::after { content: 'text right to left'; background: #ff7eb6; }
+.annot span[data-ann='r']::after { display: none; }
+.annot.kept [data-ann='m'] { outline: none; }
+.annot.kept [data-ann='m']::after { display: none; }
+/* Kept as in English: the window stays left to right; only Arabic-script text runs right to left. */
+.win.kept .kl { text-align: left; }
+.win.kept :is(.st, .tm).kl { text-align: right; }
+.win.kept .ready.kl { text-align: center; }
+
+/* ---------- small framed fragments (CJK comparison) ---------- */
+.frags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 1280px; margin-top: 18px; }
+.frag { position: relative; width: auto; height: auto; padding: 20px 26px 8px; border-radius: 12px; }
+.frag .cap { font: 12px system-ui, sans-serif; color: var(--tt-text-muted); margin-bottom: 10px; }
+.glyphs { display: grid; grid-template-columns: auto repeat(9, 1fr); gap: 6px 4px; align-items: center; max-width: 720px; margin-top: 18px; padding: 14px 18px; border-radius: 12px; }
+.glyphs span { font-size: 30px; text-align: center; line-height: 1.2; }
+.glyphs em { font: 12px system-ui, sans-serif; color: var(--tt-text-muted); font-style: normal; padding-inline-end: 10px; }
+
+/* ---------- window width rules, as the real app's media queries but on the window ---------- */
+@container win (max-width: 1100px) {
+  .set { grid-template-columns: 205px minmax(0,1fr); }
+  .set-scroll { padding: 32px 35px 56px; }
+}
+@container win (max-width: 900px) {
+  .set { grid-template-columns: 178px minmax(0,1fr); }
+  .set-side { padding: 20px 10px 12px; }
+  .set-side h1 { font-size: 24px; margin: 14px 0 14px; }
+  .subnav button { padding: 7px 10px; gap: 8px; min-height: 36px; }
+  .subnav button .chev { display: none !important; }
+  .subnav .sep { margin: 9px 10px; }
+  .set-scroll { padding: 26px 28px 48px; }
+  .rows > .row { grid-template-columns: minmax(0,1fr) minmax(140px, 210px); column-gap: 18px; }
+  .rows > .row.segrow { grid-template-columns: minmax(0,1fr); grid-template-areas: 'label' 'desc' 'control'; row-gap: 9px; }
+  .rows > .row.segrow .ctl { justify-self: start; }
+  .rows > .row { min-height: 56px; padding-block: 12px; }
+  .heading { padding-bottom: 13px; }
+  .heading h2 { font-size: 26px; margin-bottom: 6px; }
+}
+/* Phone reflow: the window takes the phone's width and its own height. */
+@container win (max-width: 699px) {
+  .set { display: block; height: auto; }
+  .set-side { padding: 14px 12px 10px; }
+  .set-side h1 { font-size: 22px; margin: 8px 0 10px; }
+  .subnav { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 4px; scrollbar-width: none; }
+  .subnav button { flex: none; min-height: 34px; padding: 6px 11px; border-radius: 999px; }
+  .subnav button .chev, .subnav .sep { display: none !important; }
+  .set-side .foot { display: none; }
+  .set-main > .wc { top: 10px; }
+  .set-scroll { padding: 20px 16px 48px; overflow: visible; }
+  .heading h2 { font-size: 24px; }
+  .heading p { font-size: 15px; }
+  .appearance { grid-template-columns: minmax(0,1fr); }
+  .live { display: none; }
+  .rows > .row, .rows > .row.segrow { grid-template-columns: minmax(0,1fr); grid-template-areas: 'label' 'desc' 'control'; row-gap: 9px; }
+  .pop { inset-inline: 0; width: auto; }
+  .tcols { grid-template-columns: 1fr; }
+  .group > .grid { grid-template-columns: minmax(0,1fr); }
+  .toast { min-width: 0; width: calc(100% - 28px); max-width: none; }
+  .feedback { padding: 0 16px 14px; }
+
+  .thr { grid-template-columns: 126px minmax(0,1fr); height: auto; min-height: 720px; }
+  .side-top { padding-inline: 10px 4px; }
+  .side-top .ib { display: none; }
+  .tsearch { margin: 2px 6px 8px; font-size: 12px; padding-inline: 7px; gap: 5px; }
+  .proj { padding: 8px 8px 4px; font-size: 13px; gap: 5px; }
+  .proj > svg:first-child { display: none; }
+  .trow { margin: 1px 3px; padding: 7px 6px; padding-inline-start: 20px; grid-template-columns: minmax(0,1fr); }
+  .trow .tt { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13px; }
+  .trow .tm, .trow .pv { display: none; }
+  .trow .st { text-align: start; font-size: 11.5px; white-space: normal; }
+  .trow .dot { top: 12px; inset-inline-start: 6px; width: 9px; height: 9px; }
+  .settled { padding: 10px 10px; font-size: 13px; }
+  .thr-side .foot .foot-icons { display: none; }
+  .seg2 { grid-auto-flow: row; }
+  .seg2 button { font-size: 12px; padding: 5px 2px; }
+  .pane-head { padding-inline: 10px 2px; gap: 6px; height: auto; min-height: 44px; }
+  .pane-head .sl, .pane-head .pj, .pane-head .pf, .pane-head .tools, .pane-head > svg { display: none; }
+  .pane-head .ttl { font-size: 14px; }
+  .wc button { width: 26px; }
+  .msgs { padding: 10px 10px; gap: 16px; overflow: visible; }
+  .msgs p { font-size: 14px; }
+  .mu { padding: 10px 12px 12px; }
+  .blkc pre { font-size: 11.5px; padding: 8px 10px; }
+  .perm { padding: 12px; }
+  .perm .cmd { font-size: 11.5px; overflow-x: auto; white-space: nowrap; }
+  .composer { margin: 4px 10px 12px; }
+  .composer .ph { font-size: 14px; }
+}
+@media (max-width: 699px) {
+  .p-head { padding: 8px 12px 0; }
+  .p-note { flex-basis: 100%; }
+  .p-controls { padding: 12px 12px 8px; }
+  .stage { padding: 0 8px; }
+  .notes { padding: 12px 14px 0; font-size: 14px; }
+  .frags { grid-template-columns: minmax(0,1fr); }
+  .frag { padding: 16px 14px 6px; }
+  .glyphs { grid-template-columns: auto repeat(5, 1fr); }
+  .glyphs span:nth-of-type(n+6):nth-of-type(-n+9), .glyphs span:nth-of-type(n+15) { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="p-head">
+  <div class="p-top">
+    <span class="p-tag">PROTOTYPE</span>
+    <span class="p-title">Interface language in Sotto</span>
+    <span class="p-note">Prototype — nothing here is wired to the app.</span>
+    <span class="p-spacer"></span>
+    <button class="p-mode" id="modeBtn" type="button"></button>
+  </div>
+  <nav class="p-tabs" role="tablist" aria-label="Screens" id="tabs"></nav>
+</header>
+<main id="screen"></main>
+<div class="pill" id="pill" hidden>
+  <button type="button" id="prevV" aria-label="Previous variant">←</button>
+  <span id="pillLabel"></span>
+  <button type="button" id="nextV" aria-label="Next variant">→</button>
+</div>
+
+<script>
+'use strict';
+/* ================= icons (Lucide shapes) ================= */
+const P = {
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  lines: '<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>',
+  sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
+  command: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+  agents: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+  out: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+  palette: '<circle cx="13.5" cy="6.5" r=".6"/><circle cx="17.5" cy="10.5" r=".6"/><circle cx="8.5" cy="7.5" r=".6"/><circle cx="6.5" cy="12.5" r=".6"/><path d="M12 2a10 10 0 0 0 0 20c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.7-1.7 1.7-1.7h2c3 0 5.5-2.5 5.5-5.5C22 6 17.5 2 12 2Z"/>',
+  sliders: '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  langs: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
+  panelL: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
+  panelR: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  panelB: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  chats: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  term: '<path d="m7 11 2-2-2-2"/><path d="M11 13h4"/><rect width="18" height="18" x="3" y="3" rx="2"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  min: '<path d="M5 12h14"/>',
+  max: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  brush: '<path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08"/><path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  claude: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>',
+  codex: '<circle cx="12" cy="12" r="8.5"/><path d="M12 6.5v6l5 3M12 12.5l-5 3"/>',
+  grok: '<path d="M5 19 19 5"/><circle cx="12" cy="12" r="7.5"/>',
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n]}</svg>`;
+const MARK = `<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#47b8a9"/><path d="M5 6.5 8.2 9h7.6L19 6.5V14a6.5 6.5 0 0 1-6.5 6.5h-1A6.5 6.5 0 0 1 5 14Z" fill="#0b0b0c"/><circle cx="9.2" cy="13.2" r="1.9" fill="#47b8a9"/><circle cx="14.8" cy="13.2" r="1.9" fill="#47b8a9"/><path d="m12 15.2-1 1.5h2Z" fill="#47b8a9"/></svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ================= languages ================= */
+const LANGS = [
+  ['en', 'English', 'English', 'americas'], ['es-MX', 'Español (México)', 'Spanish (Mexico)', 'americas'], ['es-ES', 'Español (España)', 'Spanish (Spain)', 'europe'],
+  ['fr', 'Français', 'French', 'europe'], ['de', 'Deutsch', 'German', 'europe'], ['it', 'Italiano', 'Italian', 'europe'],
+  ['pt-BR', 'Português (Brasil)', 'Portuguese (Brazil)', 'americas'], ['pt-PT', 'Português (Portugal)', 'Portuguese (Portugal)', 'europe'],
+  ['nl', 'Nederlands', 'Dutch', 'europe'], ['pl', 'Polski', 'Polish', 'europe'], ['sv', 'Svenska', 'Swedish', 'europe'], ['da', 'Dansk', 'Danish', 'europe'],
+  ['nb', 'Norsk bokmål', 'Norwegian Bokmål', 'europe'], ['fi', 'Suomi', 'Finnish', 'europe'], ['cs', 'Čeština', 'Czech', 'europe'], ['ro', 'Română', 'Romanian', 'europe'],
+  ['hu', 'Magyar', 'Hungarian', 'europe'], ['el', 'Ελληνικά', 'Greek', 'europe'], ['uk', 'Українська', 'Ukrainian', 'europe'], ['tr', 'Türkçe', 'Turkish', 'europe'],
+  ['ar', 'العربية', 'Arabic', 'mesa'], ['zh-Hans', '简体中文', 'Chinese (Simplified)', 'eastasia'], ['zh-Hant', '繁體中文', 'Chinese (Traditional)', 'eastasia'],
+  ['ja', '日本語', 'Japanese', 'eastasia'], ['hi', 'हिन्दी', 'Hindi', 'mesa'], ['bn', 'বাংলা', 'Bangla', 'mesa'], ['mr', 'मराठी', 'Marathi', 'mesa'],
+  ['te', 'తెలుగు', 'Telugu', 'mesa'], ['ta', 'தமிழ்', 'Tamil', 'mesa'], ['ur', 'اردو', 'Urdu', 'mesa'],
+].map(([code, endo, en, region]) => ({ code, endo, en, region }));
+const RTL = new Set(['ar', 'ur']);
+const REGIONS = ['europe', 'americas', 'mesa', 'eastasia'];
+const SYSTEM = 'en';
+const nameIn = (code, ui) => {
+  try { const n = new Intl.DisplayNames([ui], { type: 'language', languageDisplay: 'standard' }).of(code); if (n && n !== code) return n; } catch (e) {}
+  return LANGS.find(l => l.code === code).en;
+};
+const fold = s => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/* ================= Settings strings ================= */
+const S = {
+  en: { settings: 'Settings', dictation: 'Dictation', transcription: 'Transcription', cleanup: 'Cleanup', providers: 'Providers', hosts: 'Hosts', phones: 'Phones', cloud: 'Cloud iPhone', agents: 'Agents', output: 'Output', appearance: 'Appearance', language: 'Language', application: 'Application', git: 'Git', dictate: 'Dictate', threads: 'Threads',
+    appearanceSub: 'Themes & interface', colorScheme: 'Color scheme', light: 'Light', matchWindows: 'Match Windows', dark: 'Dark', themes: 'Themes', themesNote: 'Choose one theme for light mode and one for dark.', createTheme: 'Create theme', addTheme: 'Add theme', lightNote: 'Used when you switch to Light.', darkNote: 'Painting the window now.', contrast: 'Contrast', contrastDesc: 'Color and border intensity.',
+    languageDesc: 'Menus, buttons and messages. What you dictate and what agents write stay as they are.', sameAs: 'Same as this computer', preview: 'Preview', previewNote: 'Translations are new and ship on Owl first. Some words may still be in English.', saved: 'Language saved.', changesSave: 'Changes save as you make them.', search: 'Search languages', noMatch: 'No language matches that.',
+    europe: 'Europe', americas: 'Americas', mesa: 'Middle East and South Asia', eastasia: 'East Asia', follows: 'Sotto follows your computer’s language: {lang}. Change it in Windows settings.', override: 'Sotto is in {lang}. This computer is in {sys}.', choose: 'Choose a language for Sotto', useSystem: 'Use this computer’s language', languageSub: 'Words in Sotto’s windows', systemDesc: 'Uses the language Windows is set to.',
+    live: 'Live appearance', readyWhen: 'Ready when you are', appIcon: 'App icon', widget: 'Floating widget', ready: 'Ready', minimize: 'Minimize', maximize: 'Maximize', close: 'Close' },
+  'es-MX': { settings: 'Configuración', dictation: 'Dictado', transcription: 'Transcripción', cleanup: 'Limpieza', providers: 'Proveedores', hosts: 'Equipos', phones: 'Teléfonos', cloud: 'iPhone en la nube', agents: 'Agentes', output: 'Salida', appearance: 'Apariencia', language: 'Idioma', application: 'Aplicación', git: 'Git', dictate: 'Dictar', threads: 'Hilos',
+    appearanceSub: 'Temas e interfaz', colorScheme: 'Esquema de color', light: 'Claro', matchWindows: 'Igual que Windows', dark: 'Oscuro', themes: 'Temas', themesNote: 'Elige un tema para el modo claro y otro para el oscuro.', createTheme: 'Crear tema', addTheme: 'Agregar tema', lightNote: 'Se usa al cambiar a Claro.', darkNote: 'Pintando la ventana ahora.', contrast: 'Contraste', contrastDesc: 'Intensidad del color y los bordes.',
+    languageDesc: 'Menús, botones y mensajes. Lo que dictas y lo que escriben los agentes no cambia.', sameAs: 'Igual que esta computadora', preview: 'Vista previa', previewNote: 'Las traducciones son nuevas y llegan primero a Owl. Algunas palabras pueden seguir en inglés.', saved: 'Idioma guardado.', changesSave: 'Los cambios se guardan al hacerlos.', search: 'Buscar idiomas', noMatch: 'Ningún idioma coincide.',
+    europe: 'Europa', americas: 'América', mesa: 'Medio Oriente y Asia del Sur', eastasia: 'Asia Oriental', follows: 'Sotto usa el idioma de tu computadora: {lang}. Cámbialo en la configuración de Windows.', override: 'Sotto está en {lang}. Esta computadora está en {sys}.', choose: 'Elegir un idioma para Sotto', useSystem: 'Usar el idioma de esta computadora', languageSub: 'Las palabras de las ventanas de Sotto', systemDesc: 'Usa el idioma configurado en Windows.',
+    live: 'Vista en vivo', readyWhen: 'Listo cuando quieras', appIcon: 'Icono de la app', widget: 'Widget flotante', ready: 'Listo', minimize: 'Minimizar', maximize: 'Maximizar', close: 'Cerrar' },
+  ar: { settings: 'الإعدادات', dictation: 'الإملاء', transcription: 'النسخ', cleanup: 'التنقيح', providers: 'المزوّدون', hosts: 'الأجهزة المضيفة', phones: 'الهواتف', cloud: 'iPhone السحابي', agents: 'الوكلاء', output: 'الإخراج', appearance: 'المظهر', language: 'اللغة', application: 'التطبيق', git: 'Git', dictate: 'إملاء', threads: 'المحادثات',
+    appearanceSub: 'السمات والواجهة', colorScheme: 'نظام الألوان', light: 'فاتح', matchWindows: 'مثل Windows', dark: 'داكن', themes: 'السمات', themesNote: 'اختر سمة للوضع الفاتح وأخرى للداكن.', createTheme: 'إنشاء سمة', addTheme: 'إضافة سمة', lightNote: 'تُستخدم عند التبديل إلى الفاتح.', darkNote: 'تلوّن النافذة الآن.', contrast: 'التباين', contrastDesc: 'شدة الألوان والحدود.',
+    languageDesc: 'القوائم والأزرار والرسائل. ما تمليه وما يكتبه الوكلاء يبقى كما هو.', sameAs: 'مثل هذا الكمبيوتر', preview: 'معاينة', previewNote: 'الترجمات جديدة وتصل إلى Owl أولًا. قد تبقى بعض الكلمات بالإنجليزية.', saved: 'تم حفظ اللغة.', changesSave: 'تُحفظ التغييرات فور إجرائها.', search: 'ابحث عن لغة', noMatch: 'لا توجد لغة مطابقة.',
+    europe: 'أوروبا', americas: 'الأمريكتان', mesa: 'الشرق الأوسط وجنوب آسيا', eastasia: 'شرق آسيا', follows: 'يتبع Sotto لغة جهازك: {lang}. غيّرها من إعدادات Windows.', override: 'لغة Sotto: {lang}. لغة هذا الكمبيوتر: {sys}.', choose: 'اختر لغة Sotto', useSystem: 'استخدم لغة هذا الكمبيوتر', languageSub: 'كلمات نوافذ Sotto', systemDesc: 'يستخدم اللغة المضبوطة في Windows.',
+    live: 'معاينة مباشرة', readyWhen: 'جاهز متى شئت', appIcon: 'أيقونة التطبيق', widget: 'الأداة العائمة', ready: 'جاهز', minimize: 'تصغير', maximize: 'تكبير', close: 'إغلاق' },
+  'zh-Hans': { settings: '设置', dictation: '听写', transcription: '转写', cleanup: '润色', providers: '提供方', hosts: '主机', phones: '手机', cloud: '云端 iPhone', agents: '智能体', output: '输出', appearance: '外观', language: '语言', application: '应用', git: 'Git', dictate: '听写', threads: '会话',
+    appearanceSub: '主题与界面', colorScheme: '配色方案', light: '浅色', matchWindows: '跟随 Windows', dark: '深色', themes: '主题', themesNote: '为浅色模式和深色模式各选一个主题。', createTheme: '创建主题', addTheme: '添加主题', lightNote: '切换到浅色时使用。', darkNote: '当前窗口正在使用。', contrast: '对比度', contrastDesc: '颜色和边框的强度。',
+    languageDesc: '菜单、按钮和提示。你听写的内容和智能体写的内容保持原样。', sameAs: '跟随此电脑', preview: '预览', previewNote: '翻译是新功能，先在 Owl 上推出。部分文字可能仍是英文。', saved: '语言已保存。', changesSave: '更改会立即保存。', search: '搜索语言', noMatch: '没有匹配的语言。',
+    europe: '欧洲', americas: '美洲', mesa: '中东和南亚', eastasia: '东亚', follows: 'Sotto 使用这台电脑的语言：{lang}。可在 Windows 设置中更改。', override: 'Sotto 使用{lang}。这台电脑使用 {sys}。', choose: '为 Sotto 选择语言', useSystem: '使用这台电脑的语言', languageSub: 'Sotto 窗口中的文字', systemDesc: '使用 Windows 设置的语言。',
+    live: '实时预览', readyWhen: '随时可以开始', appIcon: '应用图标', widget: '浮动小组件', ready: '就绪', minimize: '最小化', maximize: '最大化', close: '关闭' },
+  ja: { settings: '設定', dictation: '音声入力', transcription: '文字起こし', cleanup: '整形', providers: 'プロバイダー', hosts: 'ホスト', phones: 'スマートフォン', cloud: 'クラウド iPhone', agents: 'エージェント', output: '出力', appearance: '外観', language: '言語', application: 'アプリ', git: 'Git', dictate: '音声入力', threads: 'スレッド',
+    appearanceSub: 'テーマとインターフェース', colorScheme: '配色', light: 'ライト', matchWindows: 'Windows に合わせる', dark: 'ダーク', themes: 'テーマ', themesNote: 'ライトモードとダークモードのテーマをそれぞれ選びます。', createTheme: 'テーマを作成', addTheme: 'テーマを追加', lightNote: 'ライトに切り替えたときに使います。', darkNote: 'いまウィンドウに使用中。', contrast: 'コントラスト', contrastDesc: '色と枠線の強さ。',
+    languageDesc: 'メニュー、ボタン、メッセージ。音声入力した内容やエージェントの文章はそのままです。', sameAs: 'このコンピューターと同じ', preview: 'プレビュー', previewNote: '翻訳は新しい機能で、まず Owl で提供します。一部の言葉は英語のままの場合があります。', saved: '言語を保存しました。', changesSave: '変更はすぐに保存されます。', search: '言語を検索', noMatch: '一致する言語がありません。',
+    europe: 'ヨーロッパ', americas: '南北アメリカ', mesa: '中東・南アジア', eastasia: '東アジア', follows: 'Sotto はこのコンピューターの言語（{lang}）を使います。Windows の設定で変更できます。', override: 'Sotto は{lang}で表示しています。このコンピューターは {sys} です。', choose: 'Sotto の言語を選ぶ', useSystem: 'このコンピューターの言語を使う', languageSub: 'Sotto のウィンドウに表示する言葉', systemDesc: 'Windows で設定している言語を使います。',
+    live: 'ライブプレビュー', readyWhen: 'いつでもどうぞ', appIcon: 'アプリアイコン', widget: 'フローティングウィジェット', ready: '準備完了', minimize: '最小化', maximize: '最大化', close: '閉じる' },
+  hi: { settings: 'सेटिंग्स', dictation: 'डिक्टेशन', transcription: 'ट्रांसक्रिप्शन', cleanup: 'सुधार', providers: 'प्रदाता', hosts: 'होस्ट', phones: 'फ़ोन', cloud: 'क्लाउड iPhone', agents: 'एजेंट', output: 'आउटपुट', appearance: 'रूप-रंग', language: 'भाषा', application: 'ऐप्लिकेशन', git: 'Git', dictate: 'डिक्टेट करें', threads: 'थ्रेड',
+    appearanceSub: 'थीम और इंटरफ़ेस', colorScheme: 'रंग योजना', light: 'हल्का', matchWindows: 'Windows जैसा', dark: 'गहरा', themes: 'थीम', themesNote: 'हल्के मोड के लिए एक थीम चुनें और गहरे के लिए एक।', createTheme: 'थीम बनाएं', addTheme: 'थीम जोड़ें', lightNote: 'हल्के पर जाने पर इस्तेमाल होती है।', darkNote: 'अभी विंडो इसी से रंगी है।', contrast: 'कंट्रास्ट', contrastDesc: 'रंग और किनारों की तीव्रता।',
+    languageDesc: 'मेनू, बटन और संदेश। आप जो बोलकर लिखवाते हैं और एजेंट जो लिखते हैं, वह वैसा ही रहता है।', sameAs: 'इस कंप्यूटर जैसी', preview: 'प्रीव्यू', previewNote: 'अनुवाद नए हैं और पहले Owl पर आते हैं। कुछ शब्द अभी अंग्रेज़ी में हो सकते हैं।', saved: 'भाषा सहेजी गई।', changesSave: 'बदलाव करते ही सहेजे जाते हैं।', search: 'भाषा खोजें', noMatch: 'कोई भाषा मेल नहीं खाती।',
+    europe: 'यूरोप', americas: 'अमेरिका', mesa: 'मध्य पूर्व और दक्षिण एशिया', eastasia: 'पूर्वी एशिया', follows: 'Sotto आपके कंप्यूटर की भाषा इस्तेमाल करता है: {lang}। इसे Windows सेटिंग्स में बदलें।', override: 'Sotto {lang} में है। यह कंप्यूटर {sys} में है।', choose: 'Sotto के लिए भाषा चुनें', useSystem: 'इस कंप्यूटर की भाषा इस्तेमाल करें', languageSub: 'Sotto की विंडो में दिखने वाले शब्द', systemDesc: 'Windows में चुनी गई भाषा इस्तेमाल करता है।',
+    live: 'लाइव रूप', readyWhen: 'जब चाहें, तैयार है', appIcon: 'ऐप आइकन', widget: 'फ़्लोटिंग विजेट', ready: 'तैयार', minimize: 'छोटा करें', maximize: 'बड़ा करें', close: 'बंद करें' },
+};
+const fill = (s, vars) => s.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+
+/* ================= Threads page content ================= */
+const T = {
+  ar: { dir: 'rtl', search: 'ابحث في المحادثات', settled: 'المكتملة', dictate: 'إملاء', threads: 'المحادثات', folder: 'مجلد المشروع', you: 'أنت', branch: 'الفرع', terminal: 'الطرفية', copy: 'نسخ', deny: 'رفض', allow: 'سماح', perm: 'تشغيل أمر في {p:workshop}', ph: 'اسمح بالطلب أعلاه أو ارفضه للمتابعة.',
+    rows: [['مربع الكتابة بالعربية', 'يحتاج موافقتك'], ['معاينات الصوت في Grok', 'انتهى'], ['توقف بث WAV', 'يحتاج انتباهك'], ['روابط التذييل', 'يعمل'], ['ملاحظة الأسبوع', 'يعمل']],
+    m1: 'زر الإرسال في مربع الكتابة يظهر في الجهة الخطأ بالعربية. أصلحه في {p:workshop} وشغّل الاختبارات.',
+    m2: 'وجدت السبب. يضع {c:Composer.tsx} الزر باستخدام {c:margin-left: auto}، لذلك يبقى على اليسار حين تكون الواجهة من اليمين إلى اليسار. غيّرته إلى {c:margin-inline-start} وأنشأت فرعًا للإصلاح.',
+    m3: 'نجحت كل اختبارات مربع الكتابة. أريد رفع الفرع الآن.' },
+  ur: { dir: 'rtl', search: 'تھریڈز تلاش کریں', settled: 'مکمل شدہ', dictate: 'ڈکٹیٹ', threads: 'تھریڈز', folder: 'پروجیکٹ فولڈر', you: 'آپ', branch: 'برانچ', terminal: 'ٹرمینل', copy: 'کاپی', deny: 'انکار', allow: 'اجازت دیں', perm: '{p:workshop} میں ایک کمانڈ چلائیں', ph: 'جاری رکھنے کے لیے اوپر والی درخواست کی اجازت دیں یا انکار کریں۔',
+    rows: [['عربی میں کمپوزر', 'آپ کی منظوری درکار ہے'], ['Grok آواز کے نمونے', 'مکمل'], ['WAV اسٹریمنگ رک گئی', 'توجہ درکار ہے'], ['فوٹر کے لنکس', 'کام جاری ہے'], ['ہفتہ وار نوٹ', 'کام جاری ہے']],
+    m1: 'عربی میں کمپوزر کا بھیجنے والا بٹن غلط طرف ہے۔ اسے {p:workshop} میں ٹھیک کریں اور ٹیسٹ چلائیں۔',
+    m2: 'وجہ مل گئی۔ {c:Composer.tsx} بٹن کو {c:margin-left: auto} سے رکھتا ہے، اس لیے دائیں سے بائیں ترتیب میں بھی وہ بائیں طرف رہتا ہے۔ میں نے اسے {c:margin-inline-start} میں بدل دیا اور اس اصلاح کے لیے ایک برانچ بنائی۔',
+    m3: 'کمپوزر کے سب ٹیسٹ پاس ہو گئے۔ اب میں برانچ پُش کرنا چاہتا ہوں۔' },
+  'zh-Hans': { dir: 'ltr', search: '搜索会话', settled: '已结束', dictate: '听写', threads: '会话', folder: '项目文件夹', you: '你', branch: '分支', terminal: '终端', copy: '复制', deny: '拒绝', allow: '允许', perm: '在 {p:workshop} 中运行命令', ph: '请允许或拒绝上面的请求以继续。',
+    rows: [['阿拉伯语输入框', '需要你批准'], ['Grok 语音预览', '已完成'], ['WAV 流式传输卡住', '需要注意'], ['页脚链接', '进行中'], ['每周笔记', '进行中']],
+    m1: '在阿拉伯语界面里，输入框的发送按钮在错误的一侧。请在 {p:workshop} 里修复并运行测试。',
+    m2: '找到原因了。{c:Composer.tsx} 用 {c:margin-left: auto} 放置按钮，所以在从右到左的布局里它仍在左边。我改成了 {c:margin-inline-start}，并为这个修复建了一个分支。',
+    m3: '输入框的测试全部通过。现在我想推送这个分支。' },
+  ja: { dir: 'ltr', search: 'スレッドを検索', settled: '完了済み', dictate: '音声入力', threads: 'スレッド', folder: 'プロジェクトフォルダー', you: 'あなた', branch: 'ブランチ', terminal: 'ターミナル', copy: 'コピー', deny: '拒否', allow: '許可', perm: '{p:workshop} でコマンドを実行', ph: '続けるには、上のリクエストを許可または拒否してください。',
+    rows: [['アラビア語の入力欄', '承認が必要です'], ['Grok 音声プレビュー', '完了'], ['WAV ストリーミングの停止', '確認が必要です'], ['フッターのリンク', '作業中'], ['週次メモ', '作業中']],
+    m1: 'アラビア語の表示で、入力欄の送信ボタンが逆側にあります。{p:workshop} で直して、テストを実行してください。',
+    m2: '原因が分かりました。{c:Composer.tsx} がボタンを {c:margin-left: auto} で配置しているため、右から左のレイアウトでも左側に残ります。{c:margin-inline-start} に変更し、修正用のブランチを作りました。',
+    m3: '入力欄のテストはすべて通りました。ブランチをプッシュしてもよいですか。' },
+};
+const inline = (s) => esc(s).replace(/\{c:([^}]+)\}/g, '<code dir="ltr" data-ann="l">$1</code>').replace(/\{p:([^}]+)\}/g, '<bdi dir="ltr" data-ann="l">$1</bdi>');
+
+/* ================= state ================= */
+const q = new URLSearchParams(location.search);
+const st = {
+  screen: ['settings', 'rtl', 'cjk', 'hindi'].includes(q.get('screen')) ? q.get('screen') : 'settings',
+  variant: ['A', 'B', 'C'].includes((q.get('variant') || '').toUpperCase()) ? q.get('variant').toUpperCase() : 'A',
+  mode: q.get('mode') === 'light' ? 'light' : 'dark',
+  ui: LANGS.some(l => l.code === q.get('ui')) ? q.get('ui') : 'system',
+  open: q.get('open') === '1', disclose: q.get('disclose') === '1', search: q.get('q') || '', active: 0, toast: '',
+  layout: q.get('layout') === 'mirrored' ? 'mirrored' : 'kept',
+  rtl: q.get('rtl') === 'ur' ? 'ur' : 'ar', digits: q.get('digits') === 'latin' ? 'latin' : 'native', marks: q.get('marks') !== '0',
+  cjk: q.get('cjk') === 'ja' ? 'ja' : 'zh-Hans', hl: q.get('hl') === 'en' ? 'en' : 'hi', actual: q.get('actual') === '1',
+};
+const VARIANTS = { A: 'One row in Appearance', B: 'A Language page, grouped', C: 'Follow the computer, choose if needed' };
+let toastTimer = 0;
+function syncUrl() {
+  const p = new URLSearchParams();
+  p.set('screen', st.screen);
+  if (st.screen === 'settings') { p.set('variant', st.variant); if (st.ui !== 'system') p.set('ui', st.ui); if (RTL.has(shownLocale())) p.set('layout', st.layout); }
+  if (st.mode === 'light') p.set('mode', 'light');
+  if (st.screen === 'rtl') { p.set('rtl', st.rtl); p.set('layout', st.layout); if (st.digits === 'latin') p.set('digits', 'latin'); if (!st.marks) p.set('marks', '0'); }
+  if (st.screen === 'cjk' && st.cjk === 'ja') p.set('cjk', 'ja');
+  if (st.screen === 'hindi') { if (st.hl === 'en') p.set('hl', 'en'); if (st.actual) p.set('actual', '1'); }
+  history.replaceState(null, '', '?' + p.toString());
+}
+
+/* ================= shared window bits ================= */
+const wc = (s) => `<div class="wc" data-ann="m"><button aria-label="${esc(s.minimize)}">${ic('min')}</button><button aria-label="${esc(s.maximize)}">${ic('max')}</button><button aria-label="${esc(s.close)}">${ic('x')}</button></div>`;
+const footIcons = `<div class="foot-icons"><button class="ib" aria-label="History">${ic('history')}</button><button class="ib on" aria-label="Settings">${ic('gear')}</button><button class="ib" aria-label="Help">${ic('help')}</button><span class="sp"></span><button class="ib" aria-label="Check for updates">${ic('refresh')}</button></div>`;
+
+function settingsSide(s, current, withLanguage) {
+  const item = (key, icon, flip = '') => `<button type="button" ${key === current ? 'aria-current="page"' : ''}>${ic(icon, flip)}<span>${esc(s[key])}</span>${ic('chevR', 'chev flip')}</button>`;
+  return `<aside class="set-side">
+    <div class="brand">${MARK}<span>Sotto</span></div>
+    <h1>${esc(s.settings)}</h1>
+    <nav class="subnav" aria-label="${esc(s.settings)}">
+      ${item('dictation', 'mic')}${item('transcription', 'lines')}${item('cleanup', 'sparkles')}<div class="sep"></div>
+      ${item('providers', 'command')}${item('hosts', 'server')}${item('phones', 'phone')}${item('cloud', 'cloud')}<div class="sep"></div>
+      ${item('agents', 'agents')}${item('output', 'out', 'flip')}${item('appearance', 'palette')}${withLanguage ? item('language', 'langs') : ''}${item('application', 'sliders')}${item('git', 'branch')}
+    </nav>
+    <div class="foot"><div class="seg2"><button>${esc(s.dictate)}</button><button>${esc(s.threads)}</button></div>${footIcons}</div>
+  </aside>`;
+}
+
+/* ================= Screen 1: Settings ================= */
+function uiLocale() { return st.ui === 'system' ? SYSTEM : st.ui; }
+function shownLocale() { const u = uiLocale(); return S[u] ? u : 'en'; }
+const sysEndo = () => LANGS.find(l => l.code === SYSTEM).endo;
+function currentChoiceLabel(s, loc) {
+  if (st.ui === 'system') return `${s.sameAs} (${sysEndo()})`;
+  return LANGS.find(l => l.code === st.ui).endo;
+}
+function langLabel(s, loc) {
+  // The word "Language" stays readable in English beside its translation, so a wrong pick can be undone.
+  return `${ic('langs')}<span>${esc(s.language)}</span>${loc !== 'en' ? '<span class="anchor" lang="en">Language</span>' : ''}<span class="badge">${esc(s.preview)}</span>`;
+}
+function filtered() {
+  const f = fold(st.search.trim());
+  const ui = shownLocale();
+  return LANGS.filter(l => !f || fold(l.endo).includes(f) || fold(l.en).includes(f) || fold(nameIn(l.code, ui)).includes(f) || l.code.toLowerCase().startsWith(f));
+}
+function optionList() {
+  const loc = shownLocale(), s = S[loc];
+  const opts = [{ code: 'system', endo: `${s.sameAs} (${sysEndo()})`, other: '' }, ...LANGS.map(l => ({ code: l.code, endo: l.endo, other: nameIn(l.code, loc) }))];
+  return opts.map(o => ({ ...o, other: o.other === o.endo ? '' : o.other }));
+}
+function popover(s) {
+  const opts = optionList();
+  return `<div class="pop" role="listbox" id="langList" aria-label="${esc(s.language)}" tabindex="-1">
+    <div class="pnote"><span class="badge">${esc(s.preview)}</span> ${esc(s.previewNote)}</div>
+    ${opts.map((o, i) => `<div class="opt ${o.code === 'system' ? 'sys' : ''} ${i === st.active ? 'active' : ''}" role="option" id="opt-${i}" data-code="${o.code}" aria-selected="${o.code === st.ui}">
+      ${ic('check', 'chk')}<span class="endo" ${o.code !== 'system' ? `lang="${o.code}" dir="${RTL.has(o.code) ? 'rtl' : 'ltr'}"` : ''}>${esc(o.endo)}</span><span class="other">${esc(o.other)}</span></div>`).join('')}
+  </div>`;
+}
+function radioRow(l, loc, name) {
+  const other = nameIn(l.code, loc);
+  return `<label class="radio"><input type="radio" name="${name}" value="${l.code}" ${st.ui === l.code ? 'checked' : ''}><span class="endo" lang="${l.code}" dir="${RTL.has(l.code) ? 'rtl' : 'ltr'}">${esc(l.endo)}</span>${other !== l.endo ? `<span class="other">${esc(other)}</span>` : ''}</label>`;
+}
+function sysRadio(s, name, withSub) {
+  return `<label class="radio ${withSub ? 'sysr' : ''}"><input type="radio" name="${name}" value="system" ${st.ui === 'system' ? 'checked' : ''}><span>${esc(s.sameAs)} (${sysEndo()})${withSub ? `<span class="sub">${esc(s.systemDesc)}</span>` : ''}</span></label>`;
+}
+function swatches(dark) {
+  const L = { Sotto: ['#f7f5f0', '#efece6', '#e3dfd8', '#0f7f74'], Hush: ['#f3f4f2', '#e4e6e3', '#d1d5d1', '#5d6e66'], Linen: ['#f6f1ea', '#ebe3d8', '#dcd1c3', '#7d6750'], Nocturne: ['#eef0f5', '#e0e4ec', '#cfd5e0', '#3d5680'], Tropic: ['#eef5ef', '#dceade', '#c9dccc', '#c41d63'], Citrine: ['#f6f4ea', '#ebe8d8', '#ddd8c0', '#8a7300'] };
+  const D = { Sotto: ['#060608', '#16171a', '#202125', '#47b8a9'], Hush: ['#151716', '#202321', '#2b2f2c', '#8fa79a'], Linen: ['#17140f', '#221e18', '#2d2820', '#c9a77c'], Nocturne: ['#12141c', '#1b1e29', '#252a38', '#8aa2cf'], Tropic: ['#0d1a12', '#14261b', '#1c3324', '#f0628f'], Citrine: ['#151510', '#202017', '#2b2b1f', '#e3c21c'] };
+  const set = dark ? D : L;
+  return Object.keys(set).map((n, i) => `<div class="trw ${i === 0 ? 'on' : ''}"><span class="sw">${set[n].map(c => `<i style="background:${c}"></i>`).join('')}</span><span lang="en">${n}</span>${i === 0 ? ic('check', 'ck') : ''}</div>`).join('');
+}
+function pct(n, loc) { try { return new Intl.NumberFormat(numLocale(loc), { style: 'percent' }).format(n / 100); } catch (e) { return n + '%'; } }
+function numLocale(loc) { if (loc === 'ar') return st.digits === 'native' ? 'ar-u-nu-arab' : 'ar-u-nu-latn'; if (loc === 'ur') return st.digits === 'native' ? 'ur-u-nu-arabext' : 'ur-u-nu-latn'; return loc; }
+
+function appearanceBlocks(s, loc, top) {
+  const dark = st.mode === 'dark';
+  return `<div class="appearance"><div>
+    ${top}
+    <div class="blk"><div class="blk-h"><strong>${esc(s.colorScheme)}</strong></div>
+      <div class="stepper"><div class="${dark ? '' : 'on'}"><i></i>${esc(s.light)}</div><div><i></i>${esc(s.matchWindows)}</div><div class="${dark ? 'on' : ''}"><i></i>${esc(s.dark)}</div></div></div>
+    <div class="blk"><div class="blk-h"><strong>${esc(s.themes)}</strong><button class="ghost">${ic('brush')}${esc(s.createTheme)}</button><button class="ghost">${ic('plus')}${esc(s.addTheme)}</button></div>
+      <p class="c-line" style="margin-top:8px;font-size:13px;color:var(--tt-text-muted)">${esc(s.themesNote)}</p>
+      <div class="tcols"><div class="tcol ${dark ? '' : 'now'}"><h4>${ic('sun')}${esc(s.light)}</h4><p>${esc(dark ? s.lightNote : s.darkNote)}</p>${swatches(false)}</div>
+        <div class="tcol ${dark ? 'now' : ''}"><h4>${ic('moon')}${esc(s.dark)}</h4><p>${esc(dark ? s.darkNote : s.lightNote.replace(s.light, s.dark))}</p>${swatches(true)}</div></div></div>
+    <div class="rows"><div class="row"><span class="lbl">${esc(s.contrast)}</span><p class="desc">${esc(s.contrastDesc)}</p><div class="ctl"><div class="slider"><span class="track"></span><output>${pct(100, loc)}</output></div></div></div></div>
+  </div>
+  <aside class="live"><div class="lh">${ic('eye')}${esc(s.live)}</div>
+    <div class="mini"><div class="mini-top">${MARK}Sotto<span>${esc(s.dictate)}</span></div><div class="bars">${[10, 18, 14, 26, 20, 14, 9].map(h => `<b style="height:${h}px"></b>`).join('')}</div><div class="ready">${esc(s.readyWhen)}</div></div>
+    <div class="row2"><div>${MARK.replace('class="mark"', 'class="mark" style="width:44px;height:44px"')}<small>${esc(s.appIcon)}</small></div><div style="text-align:center"><span class="wpill">${ic('lines')}${esc(s.ready)}</span><small>${esc(s.widget)}</small></div></div>
+  </aside></div>`;
+}
+
+function variantA(s, loc) {
+  const row = `<div class="rows"><div class="row" id="langRow"><span class="lbl" id="langLbl">${langLabel(s, loc)}</span><p class="desc">${esc(s.languageDesc)}</p>
+    <div class="ctl"><button type="button" class="selectbtn" id="langBtn" role="combobox" aria-haspopup="listbox" aria-expanded="${st.open}" aria-controls="langList" aria-labelledby="langLbl langBtn" ${st.open ? `aria-activedescendant="opt-${st.active}"` : ''}>
+      <span ${st.ui !== 'system' ? `lang="${st.ui}"` : ''}>${esc(currentChoiceLabel(s, loc))}</span>${ic('chevD')}</button>${st.open ? popover(s) : ''}</div></div></div>`;
+  return `<div class="heading"><h2>${esc(s.appearance)}</h2><p>${esc(s.appearanceSub)}</p></div>${appearanceBlocks(s, loc, row)}`;
+}
+function variantB(s, loc) {
+  const list = filtered();
+  const groups = REGIONS.map(r => { const ls = list.filter(l => l.region === r); return ls.length ? `<section class="group"><h3>${ic('globe')}${esc(s[r])}</h3><div class="grid" role="radiogroup" aria-label="${esc(s[r])}">${ls.map(l => radioRow(l, loc, 'langB')).join('')}</div></section>` : ''; }).join('');
+  return `<div class="heading"><h2>${esc(s.language)}${loc !== 'en' ? ' <span class="anchor" lang="en" style="font-size:16px">Language</span>' : ''}</h2><p>${esc(s.languageSub)}</p></div>
+    <div class="pre-note"><span class="badge">${esc(s.preview)}</span><span>${esc(s.previewNote)}</span></div>
+    ${sysRadio(s, 'langB', true)}
+    <div class="search" style="margin-top:18px">${ic('search')}<input id="langSearch" type="search" placeholder="${esc(s.search)}" aria-label="${esc(s.search)}" value="${esc(st.search)}" autocomplete="off"></div>
+    <div id="groups">${groups || `<p class="empty">${esc(s.noMatch)}</p>`}</div>`;
+}
+function variantC(s, loc) {
+  const list = filtered();
+  const line = st.ui === 'system'
+    ? `<p class="c-line">${esc(fill(s.follows, { lang: '\u0001' })).replace('\u0001', `<b>${esc(nameIn(SYSTEM, loc))}</b>`)}</p>`
+    : `<p class="c-line">${esc(fill(s.override, { lang: '\u0001', sys: '\u0002' })).replace('\u0001', `<b lang="${st.ui}">${esc(LANGS.find(l => l.code === st.ui).endo)}</b>`).replace('\u0002', `<b lang="en">${esc(sysEndo())}</b>`)}</p>
+       <button type="button" class="linkish" id="useSys">${esc(s.useSystem)}</button>`;
+  const body = st.disclose ? `<div class="disc-body" id="discBody"><div class="pre-note" style="margin:2px 2px 10px"><span class="badge">${esc(s.preview)}</span><span>${esc(s.previewNote)}</span></div>
+      <div class="search">${ic('search')}<input id="langSearch" type="search" placeholder="${esc(s.search)}" aria-label="${esc(s.search)}" value="${esc(st.search)}" autocomplete="off"></div>
+      <div class="list" role="radiogroup" aria-label="${esc(s.language)}" id="cList">${sysRadio(s, 'langC', false)}${list.map(l => radioRow(l, loc, 'langC')).join('') || `<p class="empty">${esc(s.noMatch)}</p>`}</div></div>` : '';
+  const top = `<div class="blk"><div class="blk-h" style="margin-bottom:8px"><strong style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${langLabel(s, loc)}</strong></div>${line}
+    <div class="disc"><button type="button" class="disc-btn" id="discBtn" aria-expanded="${st.disclose}" aria-controls="discBody">${ic('langs')}${esc(s.choose)}${ic('chevD', 'chev')}</button>${body}</div></div>`;
+  return `<div class="heading"><h2>${esc(s.appearance)}</h2><p>${esc(s.appearanceSub)}</p></div>${appearanceBlocks(s, loc, top)}`;
+}
+
+function renderSettings() {
+  const loc = shownLocale(), s = S[loc], rtlText = RTL.has(loc), kept = rtlText && st.layout === 'kept', dir = rtlText && !kept ? 'rtl' : 'ltr';
+  const chosen = uiLocale();
+  const fallback = !S[chosen];
+  const page = st.variant === 'B' ? 'language' : 'appearance';
+  const body = st.variant === 'A' ? variantA(s, loc) : st.variant === 'B' ? variantB(s, loc) : variantC(s, loc);
+  const chosenL = LANGS.find(l => l.code === chosen);
+  return `<div class="p-controls">
+      <span class="p-label">Variant</span><span class="p-seg">${['A', 'B', 'C'].map(v => `<button type="button" data-variant="${v}" aria-pressed="${st.variant === v}">${v}</button>`).join('')}</span>
+      <span class="p-label">Jump to</span><span class="p-seg">${['system', 'es-MX', 'ar', 'zh-Hans', 'ja', 'hi'].map(c => `<button type="button" data-ui="${c}" aria-pressed="${st.ui === c}">${c === 'system' ? 'System' : c}</button>`).join('')}</span>
+      ${rtlText ? layoutSeg() : ''}
+      <span class="p-state">variant=${st.variant} · setting=${st.ui} · shown=${loc} · window dir=${dir}${kept ? ' · text dir=rtl' : ''}</span>
+      ${fallback ? `<span class="p-warn">${esc(chosenL.endo)} (${chosenL.en}) has no translation in this prototype, so the strings fall back to English.</span>` : ''}
+    </div>
+    <div class="stage"><div class="fit" data-w="1280" data-h="800" data-reflow="1">
+      <div class="win ${kept ? 'kept' : ''}" lang="${loc}" dir="${dir}" id="setWin">
+        <div class="set">${settingsSide(s, page, st.variant === 'B')}
+          <div class="set-main">${wc(s)}${st.toast ? `<div class="toast" role="status">${esc(st.toast)}</div>` : ''}
+            <div class="set-scroll" id="setScroll"><div class="form" id="form">${body}</div></div>
+            <div class="feedback">${esc(s.changesSave)}</div></div></div>
+      </div></div></div>
+    <div class="notes">
+      <h3>What to look at</h3>
+      <ul>
+        <li><b>A</b> puts one Language row at the top of Appearance: a list that opens with "Same as this computer (English)", then every language in its own script. <b>B</b> gives Language its own Settings page, with a search field and the languages grouped by region. <b>C</b> follows the computer and says so, and keeps the list folded away.</li>
+        <li>The change takes effect at once, with no restart. The page redraws in the new language and the save message comes up in it too. Picking <bdi lang="ar">العربية</bdi> shows a Layout choice above the window. Kept as in English leaves the window as it is and runs only the text right to left. Mirrored flips the whole window, sidebar and window controls included.</li>
+        <li>When Sotto is in another language, the word <i>Language</i> stays beside the translated label, and the row keeps the translate icon. If someone picks a language they cannot read, they can still find the way back.</li>
+        <li>The muted name beside each language is written in Sotto's current language, taken from the system's own list of language names (<code>Intl.DisplayNames</code>). It reads "Spanish (Mexico)" in English and "<bdi lang="ar" dir="rtl">الإسبانية (المكسيك)</bdi>" in Arabic.</li>
+        <li class="m">Theme names (Sotto, Hush, Linen…) and Owl, Git and Windows are left untranslated. Only es-MX, ar, zh-Hans, ja and hi are translated here.</li>
+      </ul>
+    </div>`;
+}
+
+/* ================= Threads page (screens 2 and 3) ================= */
+function timeStr(loc, h, m) {
+  const d = new Date(2026, 9, 23, h, m);
+  try { return new Intl.DateTimeFormat(numLocale(loc), { hour: 'numeric', minute: '2-digit' }).format(d); } catch (e) { return `${h}:${String(m).padStart(2, '0')}`; }
+}
+function durStr(loc, mins, secs) {
+  try { const f = u => new Intl.NumberFormat(numLocale(loc), { style: 'unit', unit: u, unitDisplay: 'narrow' }); return `${f('minute').format(mins)} ${new Intl.NumberFormat(numLocale(loc), { style: 'unit', unit: 'second', unitDisplay: 'narrow', minimumIntegerDigits: 2 }).format(secs)}`; } catch (e) { return `${mins}m ${secs}s`; }
+}
+const num = (loc, n) => new Intl.NumberFormat(numLocale(loc)).format(n);
+function renderThreadsWindow(loc) {
+  const t = T[loc], s = S[loc] || S.en, kept = RTL.has(loc) && st.layout === 'kept', dir = kept ? 'ltr' : t.dir;
+  const prov = (p) => `<span class="pv">${ic(p)}</span>`;
+  const row = (i, prv, time, cls, sel) => `<div class="trow ${sel ? 'sel' : ''}"><span class="dot ${cls}"></span><span class="tt">${esc(t.rows[i][0]).replace(/(Grok|WAV)/, '<bdi>$1</bdi>')}</span><span class="tm">${time}</span>${prov(prv)}<span class="st ${cls}">${esc(t.rows[i][1])}</span></div>`;
+  const proj = (name, n) => `<div class="proj">${ic('chevD')}${ic('folder')}<bdi dir="ltr" data-ann="l">${name}</bdi><span class="cnt">${num(loc, n)}</span></div>`;
+  return `<div class="win ${st.marks && st.screen === 'rtl' ? 'annot' : ''} ${kept ? 'kept' : ''}" lang="${loc}" dir="${dir}">
+    <div class="thr">
+      <aside class="thr-side" data-ann="m">
+        <div class="side-top"><div class="brand">${MARK}<span lang="en">Sotto</span></div>
+          <button class="ib on" aria-label="Threads">${ic('chats', 'flip')}</button><button class="ib" aria-label="Terminals">${ic('term')}</button><button class="ib" aria-label="Add project">${ic('folderPlus')}</button><button class="ib" aria-label="New thread">${ic('pen')}</button><button class="ib" aria-label="Hide sidebar" data-ann="m">${ic('panelL', 'flip')}</button></div>
+        <div class="tsearch">${ic('search')}<span>${esc(t.search)}</span></div>
+        <div class="tlist">
+          ${proj('workshop', 3)}
+          ${row(0, 'claude', timeStr(loc, 12, 41), 'warn', true)}
+          ${row(1, 'claude', timeStr(loc, 7, 58), 'done')}
+          ${row(2, 'codex', timeStr(loc, 10, 2), 'warn')}
+          ${proj('sotto-site', 1)}
+          ${row(3, 'codex', durStr(loc, 3, 0), 'work')}
+          ${proj('notes', 1)}
+          ${row(4, 'grok', durStr(loc, 10, 0), 'work')}
+          <div class="settled"><span data-ann="m" style="display:flex">${ic('chevR', 'flip')}</span>${esc(t.settled)}</div>
+        </div>
+        <div class="foot"><div class="seg2"><button>${esc(t.dictate)}</button><button class="on">${esc(t.threads)}</button></div>${footIcons}</div>
+      </aside>
+      <section class="pane">
+        <div class="pane-head">${ic('claude')}<span class="ttl">${esc(t.rows[0][0])}</span><span class="sl">/</span><bdi class="pj" dir="ltr">workshop</bdi><span class="pf">${ic('folder')}${esc(t.folder)}</span><span class="sp"></span>
+          <span class="tools"><button class="ib" aria-label="Files">${ic('panelR', 'flip')}</button><button class="ib" aria-label="Terminal">${ic('panelB')}</button><button class="ib" aria-label="More">${ic('more')}</button></span>${wc(s)}</div>
+        <div class="msgs">
+          <div class="mu" data-ann="m"><div class="meta"><b>${esc(t.you)}</b><span>${timeStr(loc, 12, 38)}</span></div><p>${inline(t.m1)}</p></div>
+          <div class="ma">
+            <div class="meta"><b lang="en" data-ann="n">Claude</b><span>${timeStr(loc, 12, 41)}</span></div>
+            <p>${inline(t.m2)}</p>
+            <span class="chip">${ic('branch')}${esc(t.branch)}<span class="mono" data-ann="l">fix/composer-rtl</span></span>
+            <div class="blkc" data-ann="l"><div class="bh"><span class="mono">src/renderer/src/agents/composer.css</span><button class="ib" aria-label="${esc(t.copy)}">${ic('copy')}</button></div>
+<pre><span class="del">-  .composer__send { margin-left: auto; }</span>
+<span class="add">+  .composer__send { margin-inline-start: auto; }</span></pre></div>
+            <p>${inline(t.m3)}</p>
+            <div class="blkc term" data-ann="l"><div class="bh">${ic('term')}<span>${esc(t.terminal)}</span></div>
+<pre><span class="dim">$</span> npm test -- tests/unit/renderer/agents/composer
+<span class="add"> ✓</span> composer.test.tsx (14 tests) 412ms
+<span class="dim"> Test Files</span>  1 passed (1)
+<span class="dim">      Tests</span>  14 passed (14)</pre></div>
+            <div class="perm" data-ann="m"><h4>${inline(t.perm)}</h4><div class="cmd mono" dir="ltr" data-ann="l">git push -u origin fix/composer-rtl</div>
+              <div class="acts"><button class="btn">${esc(t.deny)}</button><button class="btn solid">${esc(t.allow)}</button></div></div>
+          </div>
+        </div>
+        <div class="composer"><div class="ph">${esc(t.ph)}</div><div class="cbar"><button class="ib" aria-label="Attach">${ic('clip')}</button><span class="model" data-ann="n">${ic('claude')}Sonnet 4.5${ic('chevD')}</span><span class="sp"></span><button class="stop" aria-label="Stop"><b></b></button></div></div>
+      </section>
+    </div></div>`;
+}
+function renderRtl() {
+  return `<div class="p-controls">
+      <span class="p-label">Language</span><span class="p-seg"><button type="button" data-rtl="ar" aria-pressed="${st.rtl === 'ar'}">العربية · Arabic</button><button type="button" data-rtl="ur" aria-pressed="${st.rtl === 'ur'}">اردو · Urdu</button></span>
+      ${layoutSeg()}
+      <span class="p-label">Digits</span><span class="p-seg"><button type="button" data-digits="native" aria-pressed="${st.digits === 'native'}">${st.rtl === 'ar' ? '١٢:٤١' : '۱۲:۴۱'}</button><button type="button" data-digits="latin" aria-pressed="${st.digits === 'latin'}">12:41</button></span>
+      <span class="p-label">Marks</span><span class="p-seg"><button type="button" data-marks="1" aria-pressed="${st.marks}">On</button><button type="button" data-marks="0" aria-pressed="${!st.marks}">Off</button></span>
+      ${st.marks ? `<span class="p-legend">${st.layout === 'kept' ? '<span><i style="border-color:#ff7eb6"></i>text right to left</span>' : '<span><i style="border-color:#2bb5a4"></i>mirrors</span>'}<span><i style="border-color:#e5a50a"></i>stays left to right</span><span><i style="border-color:#b388ff"></i>Latin name, not translated</span></span>` : ''}
+      <span class="p-state">lang=${st.rtl} · window dir=${st.layout === 'kept' ? 'ltr · text dir=rtl' : 'rtl'} · body line height <span id="lhOut">…</span></span>
+    </div>
+    <div class="stage"><div class="fit" data-w="1280" data-h="800" data-reflow="1">${renderThreadsWindow(st.rtl)}</div></div>
+    <div class="notes">
+      <h3>Kept as in English</h3>
+      <ul><li>The window keeps its English layout: the sidebar on the left, the window controls at the top right, and icons, chevrons, buttons and the composer where they are in English.</li>
+        <li>Only the words run right to left. Paragraphs, the composer's text and descriptions line up on the right edge of their own box. Short labels such as thread titles, statuses and buttons sit where the English label sits. Each piece of Arabic is isolated from the text around it, so its full stops and the Latin words inside it stay in order.</li></ul>
+      <h3>Mirrored</h3>
+      <ul><li>The whole window flips: the sidebar moves to the right, your own messages sit on the left, and the agent's text lines up on the right.</li>
+        <li>Pointing icons flip: the Settled chevron, the panel toggles, the threads icon and the Output arrow in Settings. Plain shapes like search, the clock, refresh and the paperclip do not. In the permission card, Deny comes first from the right. The window controls move to the top left, with close at the far left, as Arabic Windows draws them.</li></ul>
+      <h3>Stays left to right</h3>
+      <ul><li>Code, the diff, the terminal, file paths, branch names and project folder names. Each is isolated from the text around it (<code>dir="ltr"</code>, <code>unicode-bidi: isolate</code>), so a path at the end of an Arabic sentence keeps its full stop where it belongs.</li>
+        <li>Claude, Codex, Grok, Sotto, Owl and model names like Sonnet 4.5 stay in Latin letters.</li>
+        <li>Times and counts go through <code>Intl</code> with a digits choice: ١٢٣ or 123 for Arabic, ۱۲۳ or 123 for Urdu. Code never changes its digits.</li></ul>
+      <h3>Type</h3>
+      <ul><li>Arabic falls from Figtree to Segoe UI on Windows and Geeza Pro on Apple. Figtree's negative headline tracking is switched off, because it breaks the joins between Arabic letters.</li>
+        <li>Urdu in Nastaliq needs a body line height of about 2.3, against 1.75 for Arabic, which makes each line about a third taller. Sidebar rows, the composer and the window controls' row all grow. Windows ships no Nastaliq font by default, so Sotto would have to bundle one. This prototype carries the Arabic-script part of Noto Nastaliq Urdu (239 KB). iPhones and Macs have it built in.</li>
+        <li class="m">Before right to left can ship, the real stylesheets need logical properties. For example, <code>crossing-settings.css</code> uses <code>text-align: left</code>, <code>left: 12px; right: 12px</code> and <code>padding-right: 116px</code>.</li></ul>
+    </div>`;
+}
+
+const FRAG_ROWS = (loc) => { const s = S[loc]; return `<div class="win frag" lang="${loc}" dir="ltr"><div class="cap" lang="en">${loc === 'en' ? 'English' : loc === 'ja' ? 'Japanese · 日本語' : 'Simplified Chinese · 简体中文'}</div>
+  <div class="heading" style="padding-bottom:12px"><h2 style="font-size:24px">${esc(s.appearance)}</h2><p style="font-size:14px">${esc(s.appearanceSub)}</p></div>
+  <div class="rows">
+    <div class="row"><span class="lbl">${ic('langs')}<span>${esc(s.language)}</span>${loc !== 'en' ? '<span class="anchor" lang="en">Language</span>' : ''}<span class="badge">${esc(s.preview)}</span></span><p class="desc">${esc(s.languageDesc)}</p><div class="ctl"><button class="selectbtn"><span>${esc(s.sameAs)} (${loc === 'en' ? 'English' : LANGS.find(l => l.code === loc).endo})</span>${ic('chevD')}</button></div></div>
+    <div class="row"><span class="lbl">${esc(s.colorScheme)}</span><div class="ctl"><span class="p-seg" style="font-family:inherit;background:var(--tt-surface);border-color:var(--tt-hairline)"><button style="color:var(--tt-text-muted)">${esc(s.light)}</button><button style="color:var(--tt-text-muted)">${esc(s.matchWindows)}</button><button aria-pressed="true" style="background:var(--tt-accent);color:var(--tt-accent-fg)">${esc(s.dark)}</button></span></div></div>
+    <div class="row"><span class="lbl">${esc(s.contrast)}</span><p class="desc">${esc(s.contrastDesc)}</p><div class="ctl"><div class="slider"><span class="track"></span><output>100%</output></div></div></div>
+    <div class="row"><span class="lbl">${esc(s.themes)}</span><p class="desc">${esc(s.themesNote)}</p><div class="ctl" style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"><button class="ghost">${ic('brush')}${esc(s.createTheme)}</button><button class="ghost">${ic('plus')}${esc(s.addTheme)}</button></div></div>
+  </div></div>`; };
+function renderCjk() {
+  const g = ['直', '今', '骨', '角', '写', '次', '海', '述', '曜'];
+  return `<div class="p-controls">
+      <span class="p-label">Language</span><span class="p-seg"><button type="button" data-cjk="zh-Hans" aria-pressed="${st.cjk === 'zh-Hans'}">简体中文 · zh-Hans</button><button type="button" data-cjk="ja" aria-pressed="${st.cjk === 'ja'}">日本語 · ja</button></span>
+      <span class="p-state">lang=${st.cjk} · font for Han: <span id="fontOut">…</span></span>
+    </div>
+    <div class="stage"><div class="fit" data-w="1280" data-h="800" data-reflow="1">${renderThreadsWindow(st.cjk)}</div>
+      <div class="frags">${FRAG_ROWS('en')}${FRAG_ROWS(st.cjk)}</div>
+      <div class="win glyphs" style="width:auto;height:auto"><em>zh-Hans</em>${g.map(c => `<span lang="zh-Hans">${c}</span>`).join('')}<em>ja</em>${g.map(c => `<span lang="ja">${c}</span>`).join('')}</div>
+    </div>
+    <div class="notes">
+      <h3>What to look at</h3>
+      <ul><li>The same characters take different shapes under <code>lang="zh-Hans"</code> and <code>lang="ja"</code>: compare 直, 骨 and 写 in the strip above. Sotto has to set <code>lang</code> on the window from the chosen language. Without it, Japanese text is drawn with Chinese glyphs, or the other way round.</li>
+        <li>Latin text inside Chinese or Japanese (Composer.tsx, workshop, Claude, Sonnet 4.5) stays in Figtree. Han and kana fall through to Microsoft YaHei UI or Yu Gothic UI on Windows, and PingFang SC or Hiragino Sans on Apple. Nothing is bundled.</li>
+        <li>Chinese and Japanese labels are about half the width of the English ones, so rows look emptier rather than overflowing. The long Latin case is Spanish, about a third longer than English. Try es-MX on the Settings tab.</li>
+        <li>No italics, no negative heading tracking, and a body line height of 1.75. Japanese line breaks follow <code>line-break: strict</code>, so small kana and closing brackets never start a line.</li></ul>
+    </div>`;
+}
+
+/* ================= Screen 4: Hindi at 820x560 ================= */
+const HD = {
+  en: { title: 'Dictation', sub: 'Microphone & recording', mic: 'Microphone', micVal: 'Windows default', test: 'Microphone test', testDesc: 'Check that Sotto can hear you. Access is asked for only while the test runs.', card: 'Run a quick input-level test.', btn: 'Test microphone', sc: 'Global shortcut', scDesc: 'Starts and stops dictation from anywhere in Windows.', lim: 'Recording limit', segs: ['30 s', '1 min', '2 min', '5 min'], cue: 'Sound cues', cueDesc: 'A short sound when recording starts and stops.' },
+  hi: { title: 'डिक्टेशन', sub: 'माइक्रोफ़ोन और रिकॉर्डिंग', mic: 'माइक्रोफ़ोन', micVal: 'Windows का डिफ़ॉल्ट', test: 'माइक्रोफ़ोन जाँच', testDesc: 'देख लें कि Sotto आपको सुन पा रहा है। अनुमति सिर्फ़ जाँच चलने के दौरान माँगी जाती है।', card: 'इनपुट का स्तर जल्दी से जाँचें।', btn: 'माइक्रोफ़ोन जाँचें', sc: 'ग्लोबल शॉर्टकट', scDesc: 'Windows में कहीं से भी डिक्टेशन शुरू और बंद करता है।', lim: 'रिकॉर्डिंग की सीमा', segs: ['30 सेकंड', '1 मिनट', '2 मिनट', '5 मिनट'], cue: 'ध्वनि संकेत', cueDesc: 'रिकॉर्डिंग शुरू और बंद होने पर एक छोटी-सी आवाज़।' },
+};
+function renderHindi() {
+  const loc = st.hl, h = HD[loc], s = S[loc];
+  const seg = `<span class="p-seg" style="font-family:inherit;background:var(--tt-surface);border-color:var(--tt-hairline)">${h.segs.map((x, i) => `<button style="${i === 1 ? 'background:var(--tt-accent);color:var(--tt-accent-fg)' : 'color:var(--tt-text-muted)'};white-space:nowrap">${x}</button>`).join('')}</span>`;
+  return `<div class="p-controls">
+      <span class="p-label">Language</span><span class="p-seg"><button type="button" data-hl="hi" aria-pressed="${st.hl === 'hi'}">हिन्दी · Hindi</button><button type="button" data-hl="en" aria-pressed="${st.hl === 'en'}">English</button></span>
+      <span class="p-label">Size</span><span class="p-seg"><button type="button" data-actual="0" aria-pressed="${!st.actual}">Fit</button><button type="button" data-actual="1" aria-pressed="${st.actual}">Actual 820×560</button></span>
+      <span class="p-state">window 820×560 (the minimum) · lang=${loc}</span>
+    </div>
+    <div class="stage" style="${st.actual ? 'overflow-x:auto' : ''}"><div class="fit" data-w="820" data-h="560" ${st.actual ? 'data-actual="1"' : ''}>
+      <div class="win" lang="${loc}" dir="ltr" style="width:820px;height:560px">
+        <div class="set">${settingsSide(s, 'dictation', false)}
+          <div class="set-main">${wc(s)}<div class="set-scroll"><div class="form">
+            <div class="heading"><h2>${esc(h.title)}</h2><p>${esc(h.sub)}</p></div>
+            <div class="rows">
+              <div class="row"><span class="lbl">${esc(h.mic)}</span><div class="ctl"><button class="selectbtn"><span>${esc(h.micVal)}</span>${ic('chevD')}</button></div></div>
+              <div class="row"><span class="lbl">${esc(h.test)}</span><p class="desc">${esc(h.testDesc)}</p><div class="ctl"><div style="border:1px solid var(--tt-hairline);border-radius:12px;padding:12px 14px;background:var(--tt-surface)"><div style="color:var(--tt-accent);letter-spacing:2px">▮▮▮▮▮▮▮</div><div style="font-size:13px;color:var(--tt-text-2);margin:6px 0 10px;line-height:var(--lh-tight)">${esc(h.card)}</div><button class="btn solid" style="width:100%">${esc(h.btn)}</button></div></div></div>
+              <div class="row"><span class="lbl">${esc(h.sc)}</span><p class="desc">${esc(h.scDesc)}</p><div class="ctl"><button class="selectbtn"><span class="mono" dir="ltr" style="font-family:var(--f-latin)">Ctrl+Shift+Space</span></button></div></div>
+              <div class="row segrow"><span class="lbl">${esc(h.lim)}</span><div class="ctl">${seg}</div></div>
+              <div class="row"><span class="lbl">${esc(h.cue)}</span><p class="desc">${esc(h.cueDesc)}</p><div class="ctl" style="justify-self:end"><span style="display:inline-block;width:36px;height:20px;border-radius:999px;background:var(--tt-accent);position:relative"><i style="position:absolute;top:3px;inset-inline-end:3px;width:14px;height:14px;border-radius:50%;background:var(--tt-accent-fg)"></i></span></div></div>
+            </div></div></div>
+            <div class="feedback">${esc(s.changesSave)}</div></div></div>
+      </div></div></div>
+    <div class="notes">
+      <h3>What to look at</h3>
+      <ul><li>This is the 820×560 minimum window. At this width the real app narrows the Settings sidebar to 178px and gives the controls column at most 210px. Its rule for rows with segmented choices drops the choices under the label, as Recording limit shows.</li>
+        <li>Devanagari needs a taller line (1.7 for body text, 1.5 for labels) because vowel signs sit above and below the headline. Descriptions run longer than the English and wrap sooner, so rows grow and the page scrolls sooner. Nothing clips.</li>
+        <li>Hindi falls from Figtree to Nirmala UI on Windows and Kohinoor Devanagari on Apple. The heading's negative tracking is off, because it breaks the headline that joins the letters. The <i>Ctrl+Shift+Space</i> chord and Windows stay in Latin.</li>
+        <li class="m">On a phone the window is scaled to fit. Switch to Actual 820×560 and scroll sideways to read it at true size.</li></ul>
+    </div>`;
+}
+
+function layoutSeg() {
+  return `<span class="p-label">Layout</span><span class="p-seg"><button type="button" data-layout="kept" aria-pressed="${st.layout === 'kept'}">Kept as in English</button><button type="button" data-layout="mirrored" aria-pressed="${st.layout === 'mirrored'}">Mirrored</button></span>`;
+}
+// Kept as in English: give Arabic-script text its own direction without moving anything.
+const ARABIC = /[؀-ۿݐ-ݿﭐ-﷿ﹰ-﻿]/;
+const KEPT_PARA = '.msgs p, .composer .ph, .row > .desc, .pnote, .c-line, .tcol p, .pre-note > span:last-child, .radio .sub';
+const KEPT_LEAF = '.tt, .ttl, .st, .tm, .heading h2, .heading p, .perm h4, .live .ready';
+function applyKept(win) {
+  win.querySelectorAll(KEPT_PARA).forEach(el => { if (ARABIC.test(el.textContent)) { el.dir = 'rtl'; el.dataset.ann = 'r'; } });
+  win.querySelectorAll(KEPT_LEAF).forEach(el => { if (ARABIC.test(el.textContent)) { el.dir = 'rtl'; el.classList.add('kl'); el.dataset.ann = 'r'; } });
+  win.querySelectorAll('input[type=search]').forEach(el => { el.dir = (ARABIC.test(el.placeholder) && !el.value) ? 'rtl' : 'auto'; });
+  const walk = document.createTreeWalker(win, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  while (walk.nextNode()) {
+    const n = walk.currentNode, pe = n.parentElement;
+    if (!ARABIC.test(n.nodeValue) || pe.closest('code, pre, .mono, .endo, [dir="rtl"], [dir="ltr"]:not(.win)')) continue;
+    hits.push(n);
+  }
+  hits.forEach(n => { const sp = document.createElement('span'); sp.dir = 'rtl'; sp.dataset.ann = 'r'; n.replaceWith(sp); sp.appendChild(n); });
+}
+
+/* ================= render + fit ================= */
+const TABS = [['settings', 'Settings: language picker'], ['rtl', 'Arabic, right to left'], ['cjk', 'Chinese and Japanese'], ['hindi', 'Hindi at 820×560']];
+function render(focus) {
+  document.documentElement.dataset.theme = st.mode;
+  const mb = document.getElementById('modeBtn');
+  mb.innerHTML = `${ic(st.mode === 'dark' ? 'moon' : 'sun')}<span>${st.mode === 'dark' ? 'Dark' : 'Light'}</span>`;
+  mb.setAttribute('aria-label', `Switch to ${st.mode === 'dark' ? 'light' : 'dark'}`);
+  document.getElementById('tabs').innerHTML = TABS.map(([k, l]) => `<button type="button" role="tab" aria-selected="${st.screen === k}" data-screen="${k}">${l}</button>`).join('');
+  const prevScroll = document.getElementById('setScroll')?.scrollTop ?? 0;
+  const html = st.screen === 'settings' ? renderSettings() : st.screen === 'rtl' ? renderRtl() : st.screen === 'cjk' ? renderCjk() : renderHindi();
+  document.getElementById('screen').innerHTML = html;
+  document.querySelectorAll('.win.kept').forEach(applyKept);
+  const sc = document.getElementById('setScroll'); if (sc && focus !== 'top') sc.scrollTop = prevScroll;
+  const pill = document.getElementById('pill');
+  pill.hidden = st.screen !== 'settings';
+  document.getElementById('pillLabel').textContent = `${st.variant} — ${VARIANTS[st.variant]}`;
+  syncUrl(); fit();
+  if (focus && focus !== 'top') { const el = document.getElementById(focus); if (el) { el.focus({ preventScroll: true }); if (el.tagName === 'INPUT') { try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} } } }
+  if (st.open) document.getElementById(`opt-${st.active}`)?.scrollIntoView({ block: 'nearest' });
+  const lh = document.getElementById('lhOut'); if (lh) { const p = document.querySelector('.msgs p'); if (p) lh.textContent = getComputedStyle(p).lineHeight + ' (' + getComputedStyle(p).fontSize + ' text)'; }
+  const fo = document.getElementById('fontOut'); if (fo) fo.textContent = st.cjk === 'ja' ? 'Yu Gothic UI / Hiragino Sans' : 'Microsoft YaHei UI / PingFang SC';
+}
+function fit() {
+  const phone = window.innerWidth < 700;
+  document.querySelectorAll('.fit').forEach(f => {
+    const w = +f.dataset.w, h = +f.dataset.h, win = f.firstElementChild;
+    if (phone && f.dataset.reflow) { win.style.transform = ''; win.style.width = '100%'; win.style.height = 'auto'; f.style.height = ''; return; }
+    win.style.width = w + 'px'; win.style.height = h + 'px';
+    const cs = getComputedStyle(f.parentElement);
+    const avail = f.parentElement.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const s = f.dataset.actual ? 1 : Math.min(1, avail / w);
+    win.style.transform = s < 1 ? `scale(${s})` : '';
+    f.style.height = (h * s) + 'px'; f.style.width = f.dataset.actual ? w + 'px' : '';
+  });
+}
+window.addEventListener('resize', fit);
+
+function choose(code) {
+  const was = st.ui; st.ui = code; st.open = false;
+  if (code !== was) {
+    const loc = shownLocale(); st.toast = S[loc].saved;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { st.toast = ''; const t = document.querySelector('.toast'); if (t) t.remove(); }, 2600);
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button, .opt, [data-screen]');
+  if (e.target.closest('#modeBtn')) { st.mode = st.mode === 'dark' ? 'light' : 'dark'; return render(); }
+  const tab = e.target.closest('[data-screen]'); if (tab) { st.screen = tab.dataset.screen; st.open = false; window.scrollTo(0, 0); return render('top'); }
+  const v = e.target.closest('[data-variant]'); if (v) { st.variant = v.dataset.variant; st.open = false; st.search = ''; return render('top'); }
+  const u = e.target.closest('[data-ui]'); if (u) { choose(u.dataset.ui); return render(); }
+  const ly = e.target.closest('[data-layout]'); if (ly) { st.layout = ly.dataset.layout; return render(); }
+  const r = e.target.closest('[data-rtl]'); if (r) { st.rtl = r.dataset.rtl; return render(); }
+  const d = e.target.closest('[data-digits]'); if (d) { st.digits = d.dataset.digits; return render(); }
+  const mk = e.target.closest('[data-marks]'); if (mk) { st.marks = mk.dataset.marks === '1'; return render(); }
+  const c = e.target.closest('[data-cjk]'); if (c) { st.cjk = c.dataset.cjk; return render(); }
+  const hl = e.target.closest('[data-hl]'); if (hl) { st.hl = hl.dataset.hl; return render(); }
+  const ac = e.target.closest('[data-actual]'); if (ac) { st.actual = ac.dataset.actual === '1'; return render(); }
+  if (e.target.closest('#prevV')) return cycle(-1);
+  if (e.target.closest('#nextV')) return cycle(1);
+  if (e.target.closest('#langBtn')) { st.open = !st.open; st.active = Math.max(0, optionList().findIndex(o => o.code === st.ui)); return render('langBtn'); }
+  const opt = e.target.closest('.opt'); if (opt) { choose(opt.dataset.code); return render('langBtn'); }
+  if (e.target.closest('#discBtn')) { st.disclose = !st.disclose; st.search = ''; return render('discBtn'); }
+  if (e.target.closest('#useSys')) { choose('system'); return render('discBtn'); }
+  if (st.open && !e.target.closest('.pop')) { st.open = false; render(); }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.matches('input[type=radio][name^=lang]')) { choose(e.target.value); render(); const el = document.querySelector(`input[name="${e.target.name}"][value="${e.target.value}"]`); el?.focus({ preventScroll: true }); }
+});
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'langSearch') { st.search = e.target.value; render('langSearch'); }
+});
+function cycle(dir) { const k = ['A', 'B', 'C']; st.variant = k[(k.indexOf(st.variant) + dir + 3) % 3]; st.open = false; st.search = ''; render('top'); }
+document.addEventListener('keydown', (e) => {
+  if (st.open) {
+    const n = optionList().length;
+    if (e.key === 'Escape') { e.preventDefault(); st.open = false; return render('langBtn'); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); st.active = (st.active + 1) % n; return render('langBtn'); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); st.active = (st.active - 1 + n) % n; return render('langBtn'); }
+    if (e.key === 'Home') { e.preventDefault(); st.active = 0; return render('langBtn'); }
+    if (e.key === 'End') { e.preventDefault(); st.active = n - 1; return render('langBtn'); }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(optionList()[st.active].code); return render('langBtn'); }
+    if (e.key === 'Tab') { st.open = false; render(); return; }
+    return;
+  }
+  if (e.key === 'Escape' && st.disclose && document.activeElement?.closest('#discBody')) { st.disclose = false; return render('discBtn'); }
+  if (st.screen !== 'settings') return;
+  const a = document.activeElement;
+  if (a && (a.matches('input, textarea, select, [contenteditable], [role=combobox], [role=listbox]'))) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); cycle(-1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); cycle(1); }
+});
+render(st.open ? 'langBtn' : undefined);
+document.fonts && document.fonts.ready.then(() => render(st.open ? 'langBtn' : undefined));
+</script>
+</body>
+</html>
