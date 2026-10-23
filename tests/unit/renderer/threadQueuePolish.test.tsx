@@ -286,3 +286,27 @@ describe('composer while a turn runs', () => {
     expect(prompt()).toHaveAttribute('data-placeholder', 'What would you like to do next?')
   })
 })
+
+describe('queued message line (ADR-0112)', () => {
+  it('says when the list sends while a turn runs, keeps the count in the toggle, and gives each row Steer now as a quiet button', () => {
+    shortWindow(false)
+    const state = manualState({ running: true, capabilities: { steer: true } })
+    state.followups = [followup({ id: ids(1), text: 'First follow-up' }), followup({ id: ids(2), text: 'Second follow-up' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByRole('button', { name: /^Queued 2$/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(queue.querySelector('.thread-followups__when')).toHaveTextContent('· sends when Claude Code finishes')
+    const steer = within(queue).getAllByRole('button', { name: 'Steer now' })
+    expect(steer).toHaveLength(2)
+    for (const button of steer) expect(button).toHaveClass('tt-button--ghost', 'thread-followup__steer')
+  })
+
+  it('says nothing about when it sends once no turn runs', () => {
+    shortWindow(false)
+    const state = manualState({ running: false })
+    state.followups = [followup({ id: ids(1), text: 'First follow-up' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(queue.querySelector('.thread-followups__when')).toBeNull()
+  })
+})

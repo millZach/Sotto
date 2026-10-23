@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
-import { capabilitiesForThread, isThreadBusy, type AgentFollowup, type AgentState } from '../../../shared/agents'
+import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
+import { capabilitiesForThread, isThreadBusy, PROVIDER_LABELS, type AgentFollowup, type AgentState } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
@@ -251,6 +251,9 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const pauseNote = queuePaused && paused.every(item => item.error === paused[0]!.error) ? paused[0]!.error : undefined
   // A Watcher stop holds the queue for the user's review (ADR-0073); the pause names who made it.
   const pausedBy = queuePaused && paused.every(item => item.pausedBy === 'watcher') ? 'Paused by Watcher' : 'Paused'
+  // When the list sends, said beside its count while a turn runs and something waits for it to end.
+  const sendsWhen = row.thread.status === 'running' && !queuePaused && row.providerId !== undefined && visible.some(item => item.status === 'queued')
+    ? `sends when ${PROVIDER_LABELS[row.providerId]} finishes` : null
   const tool = (itemId: string, name: string): HTMLElement | null | undefined =>
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')
@@ -308,6 +311,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
         {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">Added</span>{added.text}</span>
           : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">Next</span>{next}</span> : null}
       </button>
+      {expanded && sendsWhen ? <span className="thread-followups__when"><span aria-hidden="true">· </span>{sendsWhen}</span> : null}
       {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />{pausedBy}</span>
         : !expanded && admissions.some(item => !item.resolved) ? <span className="thread-followup__state" role="status">Queuing…</span>
           : !expanded && visible.some(item => item.status === 'dispatching') ? <span className="thread-followup__state" data-status="dispatching"><i aria-hidden="true" />Sending</span> : null}
@@ -344,13 +348,13 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
             {/* Sotto's own item: removed as the user's are, never edited, moved or steered. Babysitting goes on either way. */}
             <Button variant="ghost" iconOnly data-tool="remove" aria-label="Remove the wake-up from the queue" title="Remove the wake-up. Babysitting goes on." {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
           </span> : editable ? <span className="thread-followup__tools">
-            {steerVisible && item.status === 'queued' ? <Button variant="secondary" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
+            {steerVisible && item.status === 'queued' ? <Button variant="ghost" className="thread-followup__steer" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
               if (!canSteer || itemBusy) return
               run(item.id, { type: 'steer-followup', threadId, itemId: item.id },
                 next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id),
                 'Sotto could not confirm this steer. Check the message before trying again.',
                 shown => { refocus.current = { target: toggle, shown } })
-            }}>Steer now</Button> : null}
+            }}><ArrowRight size={14} aria-hidden="true" />Steer now</Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
               <Button variant="ghost" iconOnly data-tool="up" aria-label={`Move queued message ${index + 1} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
               <Button variant="ghost" iconOnly data-tool="down" aria-label={`Move queued message ${index + 1} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
