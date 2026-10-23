@@ -843,9 +843,13 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
       await f.control.commandShell({ type: 'refresh', provider: 'codex' })
       await expect.poll(() => reads.mock.calls.length).toBeGreaterThan(before)
     }
+    // An answer to a request made after a publish comes behind any shell that publish wrote, on the same socket. This read
+    // moves nothing the listener remembers for the phone, so a shell missing once it is answered was never written.
+    let asked = 0
+    const received = () => peer.call(`after-${++asked}`, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
     await publish()
     await expect.poll(() => shells()).toHaveLength(1)
-    await publish(); await publish()
+    await publish(); await publish(); await received()
     expect(shells()).toHaveLength(1)
     // The phone may answer now: its shell says so, with the page as read then.
     f.canAnswer(true)
@@ -859,7 +863,7 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     expect(await peer.call('read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
     await publish()
     await expect.poll(() => shells()).toHaveLength(3)
-    await publish()
+    await publish(); await received()
     expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
 })
