@@ -23,6 +23,7 @@ import {
 } from '../shared/opencodeSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
+import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_RENDERER_ARGUMENT, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../shared/usageDashboard'
 import { createToolsBridges } from './tools'
 import { createCloudIphoneBridge } from './cloudIphone'
@@ -356,6 +357,8 @@ export function createSottoBridge(
   opencodeHostsEnabled = false,
   /** Main's watch on itself and Record a minute (ADR-0098): only while the `main-freeze` Owl feature is on. */
   mainActivityEnabled = false,
+  /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
+  desktopNotificationsEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -416,6 +419,11 @@ export function createSottoBridge(
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
       command: command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+    }) } : {}),
+    // Notifications (ADR-0117): only while the Owl list turns them on and this Mac can show them, so no other window has this bridge.
+    ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
+      test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
+      onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
@@ -653,7 +661,7 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

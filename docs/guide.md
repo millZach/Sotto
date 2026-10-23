@@ -595,6 +595,7 @@ Settings has nine pages, eleven in Sotto Owl, in four runs down its sidebar: **D
 - Appearance: the color scheme (Light, Dark, or match the system), then one theme for light mode and one for dark, chosen in two columns. Sotto ships six themes of its own: Sotto, Hush, Linen, Nocturne, Tropic and Citrine. Sotto is the default, with an almost-black dark room and the app icon's teal (a deeper teal in light mode, so text and links stay readable). You can create a theme, import a T3 Code or VS Code theme file, or install one from Open VSX. Imported files and pasted theme JSON accept comments and trailing commas, as VS Code theme files do. Below the themes: the effort color, the creature, contrast and **Reduced motion**. Creature chooses who stands above the composer in every thread: Sotto, the creature Sotto has always had, or Claude bot, a small pixel bot in Claude's colour. It saves at once. On a Mac in an Owl build, **Menu bar owl** sits between the creature and contrast, with two rows of colours: **Body** (Slate, Ink or Light) and **Eyes** (Sotto teal, Ice blue or Amber). The menu bar icon changes at once. The window, menus, dialogs and the composer are always solid in your theme's colours. Diagrams keep their current colors while you drag a theme color and update after you pause.
 - Application, under **Updates**: the version you are running and, on Windows and in Sotto Owl on a Mac, an automatic GitHub release check that is on by default and can be turned off, plus a manual check. On Linux it says Sotto never updates itself and how pacman brings the next version, with nothing to check or turn on
 - Application: launch at login and start minimized; **History**, with local history, retention and clear history; **Updates**; and reset settings
+- Application, under **Notifications**, in Sotto Owl on a Mac: when Sotto tells you a thread needs you or has finished everything; see [Notifications on a Mac](#notifications-on-a-mac).
 - Threads: what new threads start with, the projects folder, the working-copy default with **Project defaults**, Replies in threads, Generated thread titles and, in Owl, Resume threads after a restart; Web links in threads and Show the browser when an agent opens a page; and the two switches that let agents act without asking, in Sotto's browser and by drawing visuals
 - Git & worktrees: every Git setting, grouped under when it acts: the rules for removing worktrees; the Commit and pull request style with its example, and Generated commit messages; Generated pull request text, Follow pull request templates, Default merge method, Auto-settle merged threads and Let agents babysit pull requests; the diff defaults for Changes and Proactive panels; the Git fetch interval and Automatically pull
 
@@ -887,7 +888,7 @@ If Sotto cannot read its saved keys, it preserves the encrypted file and shows a
 
 ## Sotto Owl
 
-Sotto Owl is Sotto's preview track for Watcher, the Muse and OpenCode providers, Usage, Update all, resuming threads after a restart, delegation between threads, worker roles, continuing a thread on another provider and continuing an agent as its own thread. It comes for Windows, Apple silicon Macs and Linux on Omarchy (x64). On Windows, close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
+Sotto Owl is Sotto's preview track for Watcher, the Muse and OpenCode providers, Usage, Update all, resuming threads after a restart, delegation between threads, worker roles, continuing a thread on another provider, continuing an agent as its own thread and notifications on a Mac. It comes for Windows, Apple silicon Macs and Linux on Omarchy (x64). On Windows, close Sotto and install the Owl installer over it to keep your existing data. Owl offers only newer Owl builds; downloads and restarts still ask. Install a stable installer over Owl to return to the stable feed.
 
 On a Mac, quit Sotto, open the Owl disk image from the Owl release and drag Sotto into Applications, replacing it. Your threads, settings and keys stay. The Mac Owl is signed with Sotto's Developer ID and notarized by Apple, so it opens like any other app, without the steps stable needs. It updates itself the way Owl does on Windows: the update control offers a newer Owl, one press downloads it and the next asks before restarting into it. Because each Owl carries the same signature, macOS does not ask for the microphone, automation and accessibility again after an update. Moving between stable and Owl does ask again, because the signature changes. An Owl from before signing cannot update itself to a signed one; install the first signed Owl by hand once. To return to stable, drag the stable app over it the same way. Stable on a Mac does not update itself.
 
@@ -977,6 +978,28 @@ In an Owl build, **Settings → Threads → Resume threads after a restart** is 
 
 Your own message is never sent again. Follow-ups you queued behind the stopped turn go after the resumed turn finishes. If the provider refuses the note, Sotto drops it and leaves the thread as it was, so nothing you send that thread waits behind it. A thread is resumed at most three times in a row; if Sotto stops a fourth time before a turn finishes, the thread waits for you. A thread settled or archived in the meantime is left alone. A request for permission that was waiting when Sotto closed was declined then; the agent asks again, and you answer it. Sotto keeps which threads were working in `restart-resume.json` in its data folder, thread IDs and times only. Turn the setting off and a stopped thread waits for you to send it a message. Threads on a remote host keep running when Sotto closes. Stable hosts resume their own threads once this feature reaches stable; matching Owl hosts follow their own feature list and setting.
 
+
+### Notifications on a Mac
+
+In an Owl build on a Mac, Sotto shows a macOS notification when a thread needs you or has finished everything. Windows and Linux show none. **Settings → Application → Notifications** holds:
+
+- **When a thread needs you**: a thread asks a question or a permission.
+- **When a thread has finished everything**: a thread's turn has ended and nothing it started is still going. No reviewer or advisor it handed work to is working or asking you, no background work or monitoring runs, no pull request is babysat, and nothing is on its way to send (a paused or failed message does not hold it back). A sub-agent that is working, or was last seen working before a restart, holds it back like background work. Sotto waits 3 seconds to be sure, or 15 for a thread that handed work to another thread.
+- **Send a test notification**, to see one now.
+
+Both switches are on until you turn them off. The first notification makes macOS ask whether Sotto may show them. macOS shows them only for an app it can find and validate, such as Sotto installed in Applications; a copy run from another folder, or Sotto started from a development checkout, shows none. If nothing appears, allow Sotto in System Settings → Notifications. Sound follows System Settings too.
+
+A notification shows the thread's title and one plain line, such as "Codex finished." or "Claude Code is asking a question.", with the computer's name when more than one computer is connected and the thread runs on another one. It never shows the question or the reply. Press it to bring Sotto forward on that thread. It has no buttons, so you still answer in Sotto.
+
+No notification appears when:
+
+- the thread is on screen in Sotto's window and the window is in front;
+- a reviewer or advisor a thread handed work to finishes: the thread that handed it notifies once everything is done (a question it asks does notify, under that thread's title);
+- a watched thread finishes, since Watcher keeps it going and brings you its questions and permissions, so its finish is not the last word (its questions and permissions still notify);
+- the thread still has background work, a babysat pull request or a message on its way to send;
+- a turn failed or was stopped.
+
+A paired host on an older version of Sotto's host, from before a thread finishing in a pane could count while the window is behind another app, does not mark those finishes, so they do not notify. The iPhone's alerts are separate: each device notifies from what it shows itself.
 
 ### When main freezes, and Record a minute
 

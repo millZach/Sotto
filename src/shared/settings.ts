@@ -236,6 +236,10 @@ export interface AppSettings {
   showWidgetWhenIdle: boolean
   /** Off when the user dictates with another app: no hotkey, speech model, widget or Dictate room (Owl, ADR-0107). */
   dictationEnabled: boolean
+  /** A notification when a thread asks a question or for permission and the window is not showing it (Owl, macOS, ADR-0117). */
+  notifyNeedsYou: boolean
+  /** A notification when a thread has wrapped up: finished everything, nothing left running or waiting (Owl, macOS, ADR-0117). */
+  notifyFinished: boolean
   /** Linux-only, read-only, supplied by main: the shell pill has taken the floating widget's place. Never saved or patched. */
   shellPillInUse?: boolean | undefined
   historyEnabled: boolean
@@ -360,6 +364,8 @@ const fieldSchemas = {
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
   dictationEnabled: z.boolean(),
+  notifyNeedsYou: z.boolean(),
+  notifyFinished: z.boolean(),
   shellPillInUse: z.boolean().optional(),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
@@ -450,6 +456,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startMinimized: false,
   showWidgetWhenIdle: true,
   dictationEnabled: true,
+  notifyNeedsYou: true,
+  notifyFinished: true,
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
@@ -605,6 +613,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     startMinimized: parseField(persisted, 'startMinimized', defaults),
     showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
     dictationEnabled: parseField(persisted, 'dictationEnabled', defaults),
+    notifyNeedsYou: parseField(persisted, 'notifyNeedsYou', defaults),
+    notifyFinished: parseField(persisted, 'notifyFinished', defaults),
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),

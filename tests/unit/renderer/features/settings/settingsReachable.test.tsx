@@ -10,6 +10,7 @@ import { SettingsView } from '../../../../../src/renderer/src/features/settings/
 import {
   findSettingControl, isSettingsSection, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingsSectionId,
 } from '../../../../../src/renderer/src/features/settings/settingsPages'
+import type { NotificationsBridge } from '../../../../../src/shared/desktopNotifications'
 import type { MainActivityBridge, MainActivityState } from '../../../../../src/shared/mainActivity'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
@@ -23,11 +24,12 @@ vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal
 
 afterEach(() => { owl.on = true; vi.unstubAllGlobals() })
 
-/** Main answering for the panels that wait on it, Phones and Performance, so their rows show as they do in the app. */
+/** Main answering for the panels that wait on it, Phones, Performance and Notifications, so their rows show as they do in the app. */
 function withMain(): void {
   const activity: MainActivityState = { reading: { blockedShare: 0.03, longestFreezeMs: 90, freezesOver100ms: 0, bars: Array.from({ length: 60 }, () => 20), frozen: false }, recording: { phase: 'idle' }, noticeHidden: false }
   const mainActivity: MainActivityBridge = { read: vi.fn(async () => activity), command: vi.fn(async () => activity), onChanged: () => () => undefined }
-  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity })
+  const notifications: NotificationsBridge = { test: vi.fn(async () => 'shown' as const), onOpened: () => () => undefined }
+  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications })
 }
 
 function withAgents(): void {

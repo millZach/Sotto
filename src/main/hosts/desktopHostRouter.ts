@@ -521,6 +521,17 @@ export class DesktopHostRouter {
       void (focused ? connection.observe(ids) : connection.observe(ids, false)).catch(() => undefined)
     }
   }
+  /**
+   * Whether the window shows a thread now (ADR-0046): it has the focus and one of its panes, or the Tools panel's pinned
+   * thread, is that thread. `threadId` is the window's ID for it, as published. Desktop notifications ask this so a
+   * thread the user is looking at never notifies (ADR-0117).
+   */
+  windowShows(threadId: string): boolean {
+    if (!this.windowFocused) return false
+    const key = parseHostEntityKey(threadId)
+    const hostId = key?.hostId ?? this.selectedHostId
+    return hostId !== undefined && (this.observedOn.get(hostId)?.includes(key?.id ?? threadId) ?? false)
+  }
   select(hostId: string): void {
     if (!this.hosts.has(hostId)) throw new Error('Connect this host before selecting it.')
     this.selectedHostId = hostId; this.selectedThreadId = null; this.selectedProjectId = null; this.selections++; this.emit()

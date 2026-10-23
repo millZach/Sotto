@@ -63,6 +63,8 @@ const customSettings = {
   startMinimized: true,
   showWidgetWhenIdle: false,
   dictationEnabled: true,
+  notifyNeedsYou: false,
+  notifyFinished: false,
   historyEnabled: false,
   historyRetention: 'unlimited',
   onboardingComplete: true,
@@ -362,6 +364,8 @@ describe('settings', () => {
       startMinimized: false,
       showWidgetWhenIdle: true,
       dictationEnabled: true,
+      notifyNeedsYou: true,
+      notifyFinished: true,
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
@@ -501,6 +505,13 @@ describe('settings', () => {
     expect(parseSettings({}).dictationEnabled).toBe(true)
     expect(parseSettings({ dictationEnabled: false }).dictationEnabled).toBe(false)
     expect(parseSettings({ dictationEnabled: 'no' }).dictationEnabled).toBe(true)
+  })
+
+  it('reads the two notification switches on by default and keeps a saved off, recovering anything else (ADR-0117)', () => {
+    expect(parseSettings({}).notifyNeedsYou).toBe(true)
+    expect(parseSettings({}).notifyFinished).toBe(true)
+    expect(parseSettings({ notifyNeedsYou: false, notifyFinished: false })).toMatchObject({ notifyNeedsYou: false, notifyFinished: false })
+    expect(parseSettings({ notifyNeedsYou: 'no', notifyFinished: 0 })).toMatchObject({ notifyNeedsYou: true, notifyFinished: true })
   })
 
   it('counts dictation off only while its Owl feature is on', () => {

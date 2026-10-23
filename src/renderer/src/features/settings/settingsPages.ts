@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'notifications'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -156,6 +156,10 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Keep local history', section: 'settings-history', words: 'transcripts privacy' },
     { label: 'History retention', section: 'settings-history', words: 'transcripts' },
     { label: 'Clear transcript history', section: 'settings-history', words: 'delete' },
+    // Only where the window can show notifications: in Owl on a Mac (ADR-0117).
+    { label: 'When a thread needs you', section: 'settings-privacy', words: 'notifications notify question permission', gate: 'notifications' },
+    { label: 'When a thread has finished everything', section: 'settings-privacy', words: 'notifications notify done', gate: 'notifications' },
+    { label: 'Send a test notification', section: 'settings-privacy', words: 'notifications', gate: 'notifications' },
     { label: 'Updates', section: 'settings-updates', words: 'version check now download' },
     // Where Sotto never updates itself (Linux), the Updates group says how to update by hand and has no switch.
     ...copy.settingsUpdatesByHand === null ? [{ label: 'Check for updates automatically', section: 'settings-updates' } as const] : [],

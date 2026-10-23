@@ -40,6 +40,8 @@ import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { SettingsGroup } from './SettingsGroup'
+import { NotificationSettings } from './NotificationSettings'
+import { useDesktopNotifications } from '../../state/desktopNotifications'
 import { formatModelSize, SPEECH_MODEL_REFUSED, SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
 import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shared/speechModel'
 import { platformCopy } from '../../platformCopy'
@@ -415,7 +417,8 @@ export function SettingsView({
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn }
+  const notificationsShown = useDesktopNotifications() !== undefined
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, notifications: notificationsShown }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -729,6 +732,7 @@ export function SettingsView({
                     <Button variant="danger" onClick={() => { setClearFailure(null); setClearOpen(true) }}>Clear history</Button>
                   </div>
                 </SettingsGroup>
+                <NotificationSettings settings={settings} onSave={save} />
                 <SettingsGroup id="settings-updates" title="Updates" icon={Download} note={copy.settingsUpdatesLead}>
                   {/* Where Sotto never updates itself, the row says how to update by hand and offers nothing to press. */}
                   <div className="settings-update-row">

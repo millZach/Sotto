@@ -22,6 +22,7 @@ describe('platformProfile', () => {
     expect(profile.pasteRequiresAccessibilityTrust).toBe(false)
     expect(profile.pasteUsesWarmHelper).toBe(true)
     expect(profile.requiresMediaAccessGate).toBe(false)
+    expect(profile.desktopNotifications).toBe(false)
     expect(profile.defaultHotkey).toBe('CommandOrControl+Shift+Space')
   })
 
@@ -41,6 +42,7 @@ describe('platformProfile', () => {
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
+      desktopNotifications: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
       defaultHoldShortcuts: ['CommandOrControl+Super'],
     })
@@ -62,6 +64,7 @@ describe('platformProfile', () => {
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
+      desktopNotifications: true,
       defaultHotkey: 'Control+Shift+Space',
       defaultHoldShortcuts: ['Fn'],
     })
@@ -84,6 +87,7 @@ describe('platformProfile', () => {
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
+      desktopNotifications: false,
       defaultHotkey: 'Super+CommandOrControl+X',
       defaultHoldShortcuts: ['F9'],
     })

@@ -23,6 +23,7 @@ import {
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
+import { useOpenThreadsOnNotification } from './state/desktopNotifications'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -248,6 +249,10 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
+
+  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
+  const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
+  useOpenThreadsOnNotification(showThreads)
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()

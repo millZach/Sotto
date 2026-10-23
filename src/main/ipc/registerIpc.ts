@@ -127,6 +127,8 @@ const settingKeys = [
   'startMinimized',
   'showWidgetWhenIdle',
   'dictationEnabled',
+  'notifyNeedsYou',
+  'notifyFinished',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
