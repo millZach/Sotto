@@ -67,9 +67,10 @@ export class HostBranchMoves {
         if (this.transfers.has(request.moveId) || this.transfers.size >= BRANCH_TRANSFERS_MAX) return branchMoveRefusal('busy', branchMoveWords.busy)
         // Nothing is staged, but the move still holds its place while its ref is created, and is fenced like a bundle's:
         // once `end` answers or the connection's discard has run, no ref of it is created.
-        const holding: Transfer = { owner, fence: new MoveFence() }
+        const fence = new MoveFence()
+        const holding: Transfer = { owner, fence }
         this.transfers.set(request.moveId, holding)
-        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, fence: holding.fence }) }
+        try { return await this.bundles.receiveRef({ repository: folder, moveId: request.moveId, branch: request.branch, commit: request.commit, fence }) }
         finally { this.release(request.moveId, holding) }
       }
       case 'send-begin': {
