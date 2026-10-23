@@ -142,6 +142,8 @@ export interface HostService {
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /** What a question page's token opens on this host, while its question waits and for an hour after (ADR-0085). */
   questionPage?(token: string): QuestionPageTarget | undefined
+  /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
+  questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
@@ -220,6 +222,7 @@ export interface LocalHostControl {
   checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   questionPage?(token: string): QuestionPageTarget | undefined
+  questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
@@ -363,6 +366,7 @@ export class LocalHostService implements HostService {
   }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
+  questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))

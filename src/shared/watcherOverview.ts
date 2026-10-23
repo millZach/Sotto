@@ -43,9 +43,10 @@ export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
     let group: WatcherGroup = 'Idle'
     const project = state.host.projects.find(project => project.id === thread.projectId && project.hostId === thread.hostId)
     if (!isThreadClosed(thread)) {
-      // A settled thread was put aside: only a question or permission still waits on the user there, not an error.
+      // A settled thread was put aside: only a question or permission still waits on the user there, not an error or a
+      // prototype. A prototype waiting for review needs the user like a question does (ADR-0108), whatever else it does.
       const settled = isWorkspaceThreadSettled(thread, project)
-      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed')) group = 'Needs you'
+      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed' || thread.prototypeReady)) group = 'Needs you'
       else if (!settled) {
         const landingAt = Date.parse(observation?.landing?.observedAt ?? '')
         const landing = available && observation?.fresh && observation.landing?.fresh && Number.isFinite(landingAt) && landingAt <= now

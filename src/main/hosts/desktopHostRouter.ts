@@ -60,12 +60,17 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   available?: () => boolean
   /** What a question page's token opens on this computer's own host (ADR-0085). */
   questionPage?(token: string): QuestionPageTarget | undefined
+  /** This computer's host hears that one of its pages was opened, which clears the prototype-ready mark it belongs to (ADR-0108). */
+  questionPageOpened?(token: string): void
   /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0085). */
   pageAddress?(token: string): string | undefined
 }
 
-/** How this computer opens one of a question's pages: a file of its own, or an address in the browser (ADR-0085). */
-export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string } | { readonly kind: 'url'; readonly url: string }
+/**
+ * How this computer opens one of a question's pages: a file of its own, or an address in the browser (ADR-0085). A file
+ * keeps its token and start, so Sotto's browser can open it through the phone access listener instead (ADR-0108).
+ */
+export type QuestionPageOpening = { readonly kind: 'file'; readonly file: string; readonly token: string; readonly start: string } | { readonly kind: 'url'; readonly url: string }
 
 /** Creation opens its result unless the window selected something else while it ran. */
 const SELECTING_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['create-thread', 'create-project', 'continue-agent', 'fork-thread'])
@@ -355,23 +360,34 @@ export class DesktopHostRouter {
   /**
    * How this computer opens a page of a question the window shows (ADR-0085). The page must be one the host put on that
    * request: a file or loopback page on this computer opens as itself, and a remote host's opens at the address it is
-   * served on. Null when the question or page is gone or the host offers no way to reach it.
+   * served on. Null when the question or page is gone or the host offers no way to reach it. Without a request, the page
+   * must be one of the thread's waiting prototype's (ADR-0108).
    */
-  questionPageOpening(input: { threadId: string; requestId: string; token: string }): QuestionPageOpening | null {
+  questionPageOpening(input: { threadId: string; requestId?: string | undefined; token: string }): QuestionPageOpening | null {
     const key = parseHostEntityKey(input.threadId)
     const connection = this.hosts.get(key?.hostId ?? this.selectedHostId ?? '')?.connection
     if (!connection) return null
     const threadId = key?.id ?? input.threadId
-    const page = connection.service.shell().host.threads.find(thread => thread.id === threadId)
-      ?.requests.find(request => request.id === input.requestId)?.pages?.find(item => item.token === input.token)
+    const thread = connection.service.shell().host.threads.find(item => item.id === threadId)
+    const pages = input.requestId === undefined ? thread?.prototypeReady?.pages : thread?.requests.find(request => request.id === input.requestId)?.pages
+    const page = pages?.find(item => item.token === input.token)
     if (!page) return null
     if (connection.kind === 'local') {
       const target = connection.questionPage?.(page.token)
       if (!target) return null
-      return target.kind === 'file' ? { kind: 'file', file: target.file } : { kind: 'url', url: `${target.origin}/${page.start}` }
+      return target.kind === 'file' ? { kind: 'file', file: target.file, token: page.token, start: page.start } : { kind: 'url', url: `${target.origin}/${page.start}` }
     }
     const base = connection.pageAddress?.(page.token)
     return base ? { kind: 'url', url: base + page.start } : null
+  }
+  /**
+   * A page this computer opened (ADR-0108). This computer's host hears it here; a remote host's page opened at the address
+   * its own page route serves, which tells that host itself.
+   */
+  questionPageOpened(input: { threadId: string; token: string }): void {
+    const key = parseHostEntityKey(input.threadId)
+    const connection = this.hosts.get(key?.hostId ?? this.selectedHostId ?? '')?.connection
+    if (connection?.kind === 'local') connection.questionPageOpened?.(input.token)
   }
   /** Saved owner classification stays available even when the public shell omits Watcher. */
   preservesWatcherThread(threadId: string): boolean | undefined {

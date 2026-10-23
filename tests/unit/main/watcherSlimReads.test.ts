@@ -138,6 +138,23 @@ it('says in a slim row why a thread needs the user or is not watched, and carrie
   expect(watcherToolSchemas.list_threads.output.parse(whole)).toBeTruthy()
 })
 
+it('says on a row and a read that a prototype waits for the user’s review, from the thread itself (ADR-0108)', () => {
+  const full = roster(2, 0), ready = (item: { threadId: string }) => item.threadId === 'thread-0'
+  for (const input of [{}, { detail: 'full' as const }]) {
+    const rows = (watcherSlimRead('list_threads', input, full, () => true, () => false, ready) as typeof full).rows
+    expect(watcherToolSchemas.list_threads.output.parse({ ...full, rows })).toBeTruthy()
+    expect(rows[0]).toMatchObject({ prototypeReady: true })
+    expect(rows[1]).not.toHaveProperty('prototypeReady')
+  }
+  const read = { status: 'ok', target: target('thread-0'), messages: [], waitsOn: [], activities: [], evidence: [], historyEpoch: 'epoch',
+    firstPosition: null, lastPosition: null, nextPosition: null, truncated: false, earlierAvailable: false, observedAt: at }
+  for (const input of [{}, { evidence: 'full' as const }]) {
+    const slim = watcherSlimRead('read_thread', input, read, () => true, () => false, ready)
+    expect(watcherToolSchemas.read_thread.output.parse(slim)).toMatchObject({ prototypeReady: true })
+  }
+  expect(watcherSlimRead('read_thread', {}, read, () => true)).not.toHaveProperty('prototypeReady')
+})
+
 it('counts a watched-only page again from the rows left, as a paired host counted all of them', () => {
   const full = roster(3, 0)
   const only = watcherSlimRead('list_threads', { watchedOnly: true }, full, item => item.threadId === 'thread-2') as typeof full

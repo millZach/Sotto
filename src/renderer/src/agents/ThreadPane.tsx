@@ -11,6 +11,7 @@ import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { messageLinks } from './requests/messageLinks'
 import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
+import { PrototypeReady } from './requests/PrototypeReady'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
@@ -327,6 +328,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* The branch under this thread moved since its last send. Nothing is refused; the notice waits for a draft to continue. */}
       {/* Watcher keeps to its own folder; it switches no working copy (ADR-0073). */}
       {ownPane ? null : <ThreadBranchNotice thread={thread} project={row.project} command={command} composing={composing} />}
+      {/* A prototype waiting for review, with its pages to open (ADR-0108); a waiting question's card carries them instead. */}
+      {ownPane ? null : <PrototypeReady thread={thread} />}
       <ThreadRequests kind="question" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
         watcher={ownPane} />

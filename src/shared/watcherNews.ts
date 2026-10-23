@@ -23,10 +23,12 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * card, which Watcher's pane shows under the wake-up's reply as well (ADR-0073), and never through Watcher.
  * `work-settled` comes once per turn that finished with background work or monitoring still running, when that reaches zero.
  * `delegatedThreadId` names the thread a watched thread delegated to whose request card this is: Watcher watches the
- * delegating thread, and hears of the card as that thread's news (#1190).
+ * delegating thread, and hears of the card as that thread's news (#1190). `prototype-ready` comes once for each prototype
+ * waiting for the user's review (ADR-0108), named by its question (`requestCardId`) or by the reply that named its page
+ * (`messageId`); like all news it answers and approves nothing.
  */
 export const watcherEventSchema = z.object({
-  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled']),
+  id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),

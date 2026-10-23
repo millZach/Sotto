@@ -305,11 +305,16 @@
 /* Open to answer sits over the row's own press, so it is the one that answers there. */
 .watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: 999px; background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
 .watcher-answer:hover { border-color: var(--watcher-needs-ink); background: var(--tt-warning-surface); }
+/* Why a prototype could not open (ADR-0108), on a line of its own under Open the prototype. */
+.watcher-row__failure { flex-basis: 100%; color: var(--tt-text-muted); font-size: 12.5px; }
+/* A prototype to review: the page's quiet glyph in the accent before its words. */
+.watcher-row__status > svg { display: inline-block; margin-right: 5px; vertical-align: -2px; color: var(--tt-accent-text); }
 
 /* Rings, after the sidebar's: the Overview adds failed, ready, landing and quiet. */
 .watcher-row__ring { display: block; width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
 .watcher-row__ring[data-tone='needs'] { border: 2px solid var(--threads-attention); }
 .watcher-row__ring[data-tone='failed'] { border: 2px solid var(--tt-error); }
+.watcher-row__ring[data-tone='prototype'] { border: 2px solid var(--tt-accent); }
 .watcher-row__ring:is([data-tone='ready'], [data-tone='landing']) { border: 0; background: var(--tt-success); }
 .watcher-row__ring[data-tone='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
 .watcher-row__ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }

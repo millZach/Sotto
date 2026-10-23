@@ -69,11 +69,13 @@ const servable = (root: string, file: string): boolean => file !== root && insid
 /**
  * Answers one request on a question page's route (ADR-0085): `/page/<token>/<path>`. A file page serves its folder
  * read-only, without hidden files and only the kinds of file a page is made of; a server page passes GET and HEAD on to
- * the loopback address the agent named, never to this listener's own port.
+ * the loopback address the agent named, never to this listener's own port. A GET that the page answers, before its body
+ * goes, tells `opened` the token, which clears the prototype-ready mark the page belongs to (ADR-0108).
  */
 export async function serveQuestionPage(request: IncomingMessage, response: ServerResponse, options: {
   target: (token: string) => QuestionPageTarget | undefined
   ownPort: () => number | undefined
+  opened?: (token: string) => void
 }): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://page.invalid')
   const match = QUESTION_PAGE_PATH.exec(url.pathname)
@@ -89,12 +91,13 @@ export async function serveQuestionPage(request: IncomingMessage, response: Serv
   const base = `/page/${match[1]!}/`
   const rest = match[2]
   if (rest === undefined) { response.writeHead(308, { ...PAGE_HEADERS, Location: `${base}${url.search}` }); response.end(); return }
-  if (target.kind === 'file') await serveFile(request, response, target, base, rest.slice(1))
-  else await proxy(request, response, target.origin, base, rest + url.search, options.ownPort())
+  const answered = (): void => { if (request.method === 'GET') options.opened?.(match[1]!) }
+  if (target.kind === 'file') await serveFile(request, response, target, base, rest.slice(1), answered)
+  else await proxy(request, response, target.origin, base, rest + url.search, options.ownPort(), answered)
 }
 
-async function serveFile(request: IncomingMessage, response: ServerResponse, target: Extract<QuestionPageTarget, { kind: 'file' }>, base: string, rest: string): Promise<void> {
-  if (rest === '') { response.writeHead(307, { ...PAGE_HEADERS, Location: base + encodeURIComponent(path.basename(target.file)) }); response.end(); return }
+async function serveFile(request: IncomingMessage, response: ServerResponse, target: Extract<QuestionPageTarget, { kind: 'file' }>, base: string, rest: string, answered: () => void): Promise<void> {
+  if (rest === '') { response.writeHead(307, { ...PAGE_HEADERS, Location: base + encodeURIComponent(path.basename(target.file)) }); response.end(); answered(); return }
   let parts: string[]
   try { parts = rest.split('/').map(part => decodeURIComponent(part)) } catch { parts = [] }
   // Each part is checked after it is decoded, so an escaped slash or dot cannot name a hidden file or step out of the folder.
@@ -122,6 +125,7 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
     return
   }
   response.writeHead(200, { ...PAGE_HEADERS, 'Content-Type': CONTENT_TYPES[path.extname(file!).toLowerCase()] ?? type, 'Content-Length': info.size })
+  answered()
   if (request.method === 'HEAD') { response.end(); return }
   // The file is closed when the browser goes away part way, which a plain pipe would not do on its own.
   const stream = createReadStream(file!)
@@ -131,7 +135,7 @@ async function serveFile(request: IncomingMessage, response: ServerResponse, tar
   await finished(response)
 }
 
-async function proxy(request: IncomingMessage, response: ServerResponse, origin: string, base: string, rest: string, ownPort: number | undefined): Promise<void> {
+async function proxy(request: IncomingMessage, response: ServerResponse, origin: string, base: string, rest: string, ownPort: number | undefined, answered: () => void): Promise<void> {
   const upstream = new URL(origin)
   const port = Number(upstream.port || 80)
   const host = upstream.hostname.replace(/^\[|\]$/gu, '')
@@ -169,6 +173,7 @@ async function proxy(request: IncomingMessage, response: ServerResponse, origin:
         } catch { delete passed.location }
       }
       response.writeHead(incoming.statusCode ?? 502, passed)
+      if (status > 0 && status < 400) answered()
       incoming.pipe(response)
       incoming.on('error', () => response.destroy())
       void finished(response).then(resolve)

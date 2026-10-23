@@ -76,9 +76,12 @@ export class WatcherStateStore {
 type WatchedThread = WatcherRoomState['watchedThreads'][number]
 /** What a watched thread waits on, in Sotto's words, from its own facts: never anything it said. */
 export function watcherWaitsOn(thread: Pick<WatchedThread, 'status' | 'connected' | 'settled' | 'backgroundWorkCount' | 'paused'>
-  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[] }): string {
+  & { readonly waitsOn: readonly { readonly kind: 'question' | 'permission' }[]; readonly delegatedWaitsOn?: readonly { readonly kind: 'question' | 'permission' }[]
+    readonly prototypeReady?: boolean }): string {
   if (thread.waitsOn.some(card => card.kind === 'permission')) return 'The user’s answer to its permission request.'
   if (thread.waitsOn.length) return 'The user’s answer to its question.'
+  // A prototype waiting for review is the user's to open, as a card is theirs to answer (ADR-0108).
+  if (thread.prototypeReady) return 'The user’s review of the prototype it made. Only the user can review it.'
   // A thread it delegated to is its to see through (#1190), so that thread's card is what it waits on too.
   if (thread.delegatedWaitsOn?.some(card => card.kind === 'permission')) return 'The user’s answer to a permission request in a thread it delegated to.'
   if (thread.delegatedWaitsOn?.length) return 'The user’s answer to a question in a thread it delegated to.'
