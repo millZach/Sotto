@@ -5,7 +5,7 @@ import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { useRevisionDraft } from './useRevisionDraft'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
 import { findSettingControl, findSettings, isSettingsSection, revealSetting, settingsIndex, settingsSectionHome, SETTINGS_PAGES, type SettingEntry, type SettingGate, type SettingsPageId, type SettingsSectionId } from './settingsPages'
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
@@ -47,6 +47,7 @@ import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
+import { useSidebarSize } from '../../agents/sidebarSize'
 import { PageWindowControls } from '../../components/WindowControls'
 import { AppearanceSettings } from './AppearanceSettings'
 import { CloudIphoneSettings } from './CloudIphoneSettings'
@@ -131,6 +132,16 @@ const panelIdOf = (id: SettingsPageId): string => id === 'settings-appearance' ?
 /** Watcher's owl at the rail's icon size; the rail passes lucide's props, of which the owl takes only the size. */
 function WatcherNavIcon({ size }: { readonly size?: number; readonly strokeWidth?: number; readonly 'aria-hidden'?: 'true' }): ReactNode {
   return <WatcherOwl size={size ?? 17} />
+}
+
+/**
+ * The two columns. The sections' column is as wide as the Threads sidebar is, whatever the person left it at, so going
+ * to Settings and back moves nothing in the frame. A collapsed sidebar has no rail to match: the column keeps the width
+ * the sidebar expands to. It is a component of its own so that a window resize redraws this box and not every section in it.
+ */
+function SettingsLayout({ children }: { readonly children: ReactNode }): ReactNode {
+  const { width } = useSidebarSize()
+  return <div className="settings-layout" style={{ '--app-sidebar-width': `${width}px` } as CSSProperties}>{children}</div>
 }
 
 function updateStatusCopy(status: UpdateStatus | null): string {
@@ -465,7 +476,7 @@ export function SettingsView({
 
   return (
     <div className="management-view settings-view">
-      <div className="settings-layout">
+      <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
           <SidebarTop />
@@ -740,7 +751,7 @@ export function SettingsView({
             </div>
           </div>
         </div>
-      </div>
+      </SettingsLayout>
       <PageWindowControls />
       {statusText ? <p className="page-status">{statusText}</p> : null}
 

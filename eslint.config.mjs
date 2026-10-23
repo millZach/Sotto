@@ -59,6 +59,7 @@ export default tseslint.config(
       'artifacts/watcher-permission-watch/**',
       'artifacts/watcher-header-overlap/**',
       'artifacts/immediate-client-updates/**',
+      'artifacts/sidebar-crossing/**',
       'artifacts/omarchy-shell-integration/**',
       'artifacts/linux-window-minimum/**',
       'artifacts/linux-hyprland-paste/**',
