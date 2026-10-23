@@ -367,6 +367,8 @@ export interface SottoBridge {
   readonly continueThread?: import('./continueThread').ContinueBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
+  /** Signing Cursor in and out on this computer (ADR-0123), present only while Cursor's Owl feature is on. */
+  readonly cursor?: import('./cursorSignIn').CursorSignInBridge
   /** Main's watch on itself and Record a minute (ADR-0098), present only while the `main-freeze` Owl feature is on. */
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
   /** Notifications when a thread has finished or needs the user (ADR-0117), present only while the Owl feature is on, on a Mac that can show them. */

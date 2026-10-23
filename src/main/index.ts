@@ -228,6 +228,8 @@ import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '..
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
+import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
@@ -766,7 +768,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
-        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
+        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : [])] : []
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -855,14 +858,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       devin: new DevinAcpHost(userDataPath, {
         executable: devinFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeDevinAgent.mjs'), devinFixtureRoot],
         nativeConfigDirectory: join(devinFixtureRoot, 'native-config'), pollIntervalMs: 50,
       }),
     } } : {}),
     ...(museFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
         // Read at connect, as the runtime's own Muse reads it, so a journey proves the switch reaches the host it starts.
@@ -870,7 +873,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       }) } : {}),
     } } : {}),
     ...(opencodeFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
         executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot], heldProviders,
         // A journey's sign-in page is written down for the spec to read, never opened in a browser.
@@ -882,7 +885,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home') }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home') }),
-      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
@@ -1811,6 +1814,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
+      // Cursor's sign-in from its tile (ADR-0123): only while its Owl feature is on, so stable registers nothing.
+      const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -2041,6 +2046,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupMainActivity()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
+        cleanupCursorSignIn()
         worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined

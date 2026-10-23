@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest'
-const probes = vi.hoisted(() => ({ codex: vi.fn(), claude: vi.fn(), grok: vi.fn(), devin: vi.fn(), muse: vi.fn(), opencode: vi.fn() }))
+const probes = vi.hoisted(() => ({ codex: vi.fn(), claude: vi.fn(), grok: vi.fn(), devin: vi.fn(), muse: vi.fn(), opencode: vi.fn(), cursor: vi.fn() }))
 vi.mock('../../../src/main/agents/subscriptionCodex', () => ({ findExecutable: probes.codex }))
 vi.mock('../../../src/main/agents/subscriptionClaude', () => ({ ClaudeSubscriptionClient: class { findExecutable = probes.claude } }))
 vi.mock('../../../src/main/agents/grokRpc', () => ({ findGrokExecutable: probes.grok }))
@@ -8,8 +8,10 @@ vi.mock('../../../src/main/agents/devinRpc', () => ({ findDevinExecutable: probe
 vi.mock('../../../src/main/agents/museRpc', () => ({ findMuseExecutable: probes.muse }))
 // No OpenCode here, whatever this computer has installed.
 vi.mock('../../../src/main/agents/opencodeServer', () => ({ findOpenCodeExecutable: probes.opencode }))
+// No Cursor either.
+vi.mock('../../../src/main/agents/cursorRpc', () => ({ findCursorExecutable: probes.cursor }))
 import { detectInstalledProviders } from '../../../src/main/agents/installedProviders'
-beforeEach(() => { for (const probe of Object.values(probes)) probe.mockReset().mockResolvedValue('/synthetic/client'); probes.opencode.mockResolvedValue(undefined) })
+beforeEach(() => { for (const probe of Object.values(probes)) probe.mockReset().mockResolvedValue('/synthetic/client'); probes.opencode.mockResolvedValue(undefined); probes.cursor.mockResolvedValue(undefined) })
 it.each([undefined, false])('does not even probe Muse installation when the startup gate is %s', async museEnabled => {
   expect(await detectInstalledProviders(museEnabled === undefined ? {} : { museEnabled })).toEqual(['codex', 'claude', 'grok', 'devin'])
   expect(probes.muse).not.toHaveBeenCalled()
@@ -26,4 +28,11 @@ it('skips every held provider through the one gate, with a test-only held Grok',
   expect(await detectInstalledProviders({ heldProviders: new Set(['grok', 'muse']) })).toEqual(['codex', 'claude', 'devin'])
   expect(probes.grok).not.toHaveBeenCalled()
   expect(probes.muse).toHaveBeenCalledOnce()
+})
+it('looks for Cursor only where its Owl feature is on (ADR-0123)', async () => {
+  probes.cursor.mockResolvedValue('/synthetic/agent')
+  expect(await detectInstalledProviders({ heldProviders: new Set() })).toContain('cursor')
+  probes.cursor.mockClear()
+  expect(await detectInstalledProviders({ heldProviders: new Set(['cursor']) })).not.toContain('cursor')
+  expect(probes.cursor).not.toHaveBeenCalled()
 })

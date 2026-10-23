@@ -27,6 +27,11 @@
     "watcherRecord()": 2,
     "clonePlainData(": 3
   },
+  "src/main/agents/cursor.ts": {
+    "structuredClone(": 1,
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
     "cloneHostSnapshot(": 1,

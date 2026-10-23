@@ -7,12 +7,14 @@ import { withCliPath } from '../main/agents/cliLookup'
 import { findExecutable as findCodex, nativeEnvironment as codexEnvironment } from '../main/agents/subscriptionCodex'
 import { claudeEnvironment, findClaudeExecutable } from '../main/agents/subscriptionClaude'
 import { findGrokExecutable, grokEnvironment } from '../main/agents/grokRpc'
+import { cursorEnvironment, findCursorProgram } from '../main/agents/cursorRpc'
 
 /**
  * A provider's own sign-in, run on this host for a paired client and finished by the user in that client's browser
  * (ADR-0037). The client is started as a child process with pipes, as the host has no terminal to give it: Codex's and
  * Grok Build's device-code sign-ins print a page and a code and finish by themselves once the code is entered there,
- * and Claude Code's subscription sign-in prints a page and waits for the code that page shows to be pasted back.
+ * Claude Code's subscription sign-in prints a page and waits for the code that page shows to be pasted back, and Cursor's
+ * prints a page and no code and finishes by itself once the user has signed in there (ADR-0123).
  *
  * What the client prints (the page's address, the code) and the code pasted back are held here in memory, for the
  * client that started the sign-in and for no one else, and only until it ends or its fifteen minutes run out. None of it
@@ -24,6 +26,8 @@ export interface SignInCommand { readonly executable: string; readonly args: rea
 export interface ProviderSignInOptions {
   /** Each provider's sign-in command, or undefined when its client is not on this machine. */
   readonly command?: (provider: ProviderId) => Promise<SignInCommand | undefined>
+  /** Sotto's own Cursor folder, which Cursor's sign-in runs with (ADR-0123): the host's data directory's, or this computer's user data's. */
+  readonly cursorConfigDirectory?: string
   /** Connects the provider once its client says it signed in, for the client that asked; answers the provider's error when it did not connect. */
   readonly connect: (provider: ProviderId, clientId: string) => Promise<string | undefined>
   readonly lifetimeMs?: number
@@ -46,15 +50,23 @@ const PAGE = /https:\/\/[^\s"'<>`]+/u
 const DEVICE_CODE = /\b([A-Z0-9]{4,5}-[A-Z0-9]{4,6})\b/u
 const EXPIRES = /expires in (\d{1,2}) minutes?/iu
 
-/** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, and Claude Code's subscription only. */
+/** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, Claude Code's subscription only, and Cursor's page. */
 export const PROVIDER_SIGN_IN_ARGS: Readonly<Record<ProviderId, readonly string[] | null>> = {
-  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: null,
+  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'],
 }
 
-/** Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. */
-async function defaultCommand(provider: ProviderId): Promise<SignInCommand | undefined> {
+/**
+ * Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. Cursor's
+ * runs with Sotto's own Cursor folder, `cursorConfigDirectory`, and prints its page rather than opening a browser.
+ */
+export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string): Promise<SignInCommand | undefined> {
   const args = PROVIDER_SIGN_IN_ARGS[provider]
   if (!args) return undefined
+  if (provider === 'cursor') {
+    const program = await findCursorProgram()
+    if (!program || !cursorConfigDirectory) return undefined
+    return { executable: program.executable, args: [...program.args, ...args], env: withCliPath(cursorEnvironment(cursorConfigDirectory), program.executable) }
+  }
   if (provider === 'codex') {
     const executable = await findCodex()
     return executable ? { executable, args, env: withCliPath({ ...codexEnvironment(), NO_COLOR: '1' }, executable) } : undefined
@@ -101,7 +113,7 @@ export class ProviderSignIns {
     const entry: Entry = { view: { id, provider, shape, stage: 'starting' }, clientId, shape, output: '', codeSent: false, timers: [] }
     this.entries.set(id, entry)
     let command: SignInCommand | undefined
-    try { command = await (this.options.command ?? defaultCommand)(provider) } catch { command = undefined }
+    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory)) } catch { command = undefined }
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)

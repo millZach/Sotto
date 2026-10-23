@@ -21,6 +21,8 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
+  cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
@@ -361,6 +363,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** Cursor's sign-in from its tile (ADR-0123): only while Cursor's Owl feature is on. */
+  cursorEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -416,6 +420,14 @@ export function createSottoBridge(
       reopen: request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
+    }) } : {}),
+    // Cursor's sign-in from its tile (ADR-0123): only while Cursor's Owl feature is on. The page's address stays in main.
+    ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
+      start: () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
+      read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInViewSchema.nullable(), cursorSignInRequestSchema.parse(request)),
+      reopen: request => invokeParsed(renderer, CURSOR_SIGN_IN_REOPEN, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      cancel: request => invokeParsed(renderer, CURSOR_SIGN_IN_CANCEL, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      signOut: () => invokeParsed(renderer, CURSOR_SIGN_OUT, cursorSignInDoneSchema),
     }) } : {}),
     ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
@@ -665,7 +677,8 @@ export function exposeRendererBridge(
   if (rendererRole === 'main') {
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
-      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT)))
+      arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
+      arguments_.includes(CURSOR_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

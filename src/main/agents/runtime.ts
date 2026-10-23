@@ -13,6 +13,8 @@ import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
+import { CursorAcpHost } from './cursor'
+import { CursorSignIn } from './cursorSignIn'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -148,8 +150,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
-    // Cursor's adapter lands after its provider ID (ADR-0123); until then it is held everywhere, Owl included.
-    cursor: options.providers?.cursor ?? new HeldProviderHost('cursor'),
+    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0123).
+    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -390,5 +392,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
+  // Signing Cursor in from its tile on this computer (ADR-0123): only where its adapter runs, and never on a headless host, whose
+  // Cursor a desktop signs in through the provider sign-in request instead.
+  const cursorSignIn = providers.cursor instanceof CursorAcpHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
+    configDirectory: join(directory, 'cursor', 'config'), openExternal: async url => { await options.openExternal(url) },
+    connect: async () => {
+      const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
+      const status = state.host.providers?.find(item => item.id === 'cursor')
+      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+    },
+    signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
+  }) : undefined
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, cursorSignIn, prepareForShutdown, close }
 }
