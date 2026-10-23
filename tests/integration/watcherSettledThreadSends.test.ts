@@ -165,9 +165,15 @@ it('restores only under the user’s own active request: not a standing watch’
   expect(f.settled()).toBe(true)
 })
 
-it('refuses to unsettle a thread with a special job, as it refuses to settle one', async () => {
+it('refuses to unsettle a thread with a special job or an archived one, as it refuses to settle them', async () => {
   const f = await fixture()
   const requestId = f.service.state().requests.at(-1)!.id
   const watcher = f.service.state().current!.target
   expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: watcher })).toMatchObject({ status: 'refused', code: 'RESERVED_THREAD' })
+  // The settled worker is archived by its provider: it is kept for its history only, and stays settled.
+  f.native().archivedAt = new Date().toISOString()
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.control.watcherSnapshot().threads.find(item => item.id === f.target.threadId)!.archivedAt).toBeTruthy()
+  expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(f.settled()).toBe(true)
 })
