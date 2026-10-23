@@ -53,6 +53,8 @@ A job that is not needed reports as skipped, not failed. A change that should ha
 
 The renderer activity tests keep handles to their mounted prompt editors, finish Tiptap’s deferred destruction during cleanup and assert that each editor is destroyed before jsdom removes `document`. This prevents a late dependency callback from making an otherwise passing full suite fail; no test deadline or sleep is changed.
 
+`tests/unit/shared/interfaceCatalogs.test.ts` checks the interface catalogs (ADR-0122) in the normal test gate: every message the code writes is in every catalog, none is left over, and every translation parses and names the same placeholders as English. A red run names the message; `npm run i18n:extract` writes the catalogs again, and a new message shows in English until it is translated.
+
 `tests/unit/release/trackedFileEncoding.test.ts` checks every Git-tracked file for a UTF-8 byte order mark in the normal test gate. Files stay UTF-8 without a BOM.
 
 Each gate is its own named step, so a red check names the gate that failed. Locally, `npm test -- --maxWorkers=2` still runs the whole suite in one go; while iterating, `npx vitest related <changed files> --run` runs only the tests that import them.

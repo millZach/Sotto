@@ -1,6 +1,9 @@
+import { lingui } from '@lingui/vite-plugin'
 import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  // The same macro transform and catalogs the app is built with; tests/setup.ts shows English (ADR-0122).
+  plugins: [lingui({ macroTransform: true })],
   test: {
     environment: 'jsdom',
     include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],

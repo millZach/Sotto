@@ -32,6 +32,9 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
   ...COMPOSER_NOTICE_COMPONENTS,
+  // The interface language (ADR-0122), compiled into main and both windows.
+  packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
+  packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
@@ -288,6 +291,8 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## Manrope SIL Open Font License 1.1',
     '## Spline Sans Mono SIL Open Font License 1.1',
     '## Figtree SIL Open Font License 1.1',
+    '## Interface language MIT licenses',
+    'Copyright (c) 2017-2022 Tomáš Ehrlich, (c) 2022-2023 Crowdin.',
     '## Markdown rendering MIT licenses',
     'Copyright (c) Espen Hovlandsdal',
     '## Markdown rendering ISC license',

@@ -363,6 +363,8 @@ export interface SottoBridge {
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
   /** Notifications when a thread has finished or needs the user (ADR-0117), present only while the Owl feature is on, on a Mac that can show them. */
   readonly notifications?: import('./desktopNotifications').NotificationsBridge
+  /** The interface language (ADR-0122), present only while the `interface-language` Owl feature is on. */
+  readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
 
   readonly omarchySetup?: import('./omarchySetup').OmarchySetupBridge
   readonly watcher?: import('./watcherRoom').WatcherBridge
@@ -474,6 +476,8 @@ export interface SottoBridge {
 /** Least-privilege surface exposed only inside the non-focusing widget renderer. */
 export interface SottoWidgetBridge {
   readonly platform: SottoPlatform
+  /** The interface language (ADR-0122), present only while the `interface-language` Owl feature is on. */
+  readonly interfaceLanguage?: import('./interfaceLanguageBridge').InterfaceLanguageBridge
 
   onWidgetState(listener: (state: WidgetSnapshot) => void): Unsubscribe
   onWidgetVisibilityChange(listener: (visibility: WidgetVisibilityPayload) => void): Unsubscribe
