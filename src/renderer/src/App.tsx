@@ -22,6 +22,7 @@ import {
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
+import { useDictationOn } from './state/dictationFeature'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -118,8 +119,10 @@ function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choi
   return sottoSpeechModel(choice)?.name ?? 'The speech model'
 }
 
-function FooterStatus({ navigation, speechModel, speechModelName }: {
+function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
+  /** With dictation off (ADR-0107) the speech model is not loaded, so the status says nothing about it. */
+  readonly dictationOn: boolean
   readonly speechModel: SpeechModelStatus | null
   readonly speechModelName: string
 }): ReactNode {
@@ -128,13 +131,14 @@ function FooterStatus({ navigation, speechModel, speechModelName }: {
     case 'memory': return 'Your preferences, with their history.'
     case 'settings': return 'Changes save as you make them.'
     case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return speechModelSummary(speechModel, speechModelName)
+    default: return dictationOn ? speechModelSummary(speechModel, speechModelName) : null
   }
 }
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
   const watcherEnabled = useWatcherEnabled()
+  const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
@@ -145,8 +149,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     void app.actions.chooseSpeechModel(id).then(chosen => { setSpeechModelRefused(!chosen) })
   }, [app.actions])
   // The models on this computer can change while Sotto runs (another app downloads or deletes one),
-  // so the list is read again whenever a page that offers them opens.
-  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || app.navigation === 'settings'
+  // so the list is read again whenever a page that offers them opens. Settings offers none while dictation is off.
+  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || (app.navigation === 'settings' && dictationOn)
   useEffect(() => {
     if (offersSpeechModels) void app.actions.refreshSpeechModels()
   }, [offersSpeechModels, app.actions])
@@ -232,14 +236,18 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const search = (event: KeyboardEvent): void => {
       if (!app.settings?.onboardingComplete || document.querySelector('dialog[open], [role="dialog"]')) return
       if (event.key.toLowerCase() !== 'k' || !(app.platform === 'darwin' ? event.metaKey : event.ctrlKey)) return
+      // Ctrl+K (Cmd+K on macOS) opens the Dictate room on the Journal's search; with dictation off there is no room.
+      if (!dictationOn) return
       event.preventDefault()
-      // Ctrl+K (Cmd+K on macOS) opens the Dictate room on the Journal's search.
       app.actions.navigate('home')
       setJournalSearchRequest(value => value + 1)
     }
     window.addEventListener('keydown', search)
     return () => window.removeEventListener('keydown', search)
-  }, [app.actions, app.platform, app.settings?.onboardingComplete])
+  }, [app.actions, app.platform, app.settings?.onboardingComplete, dictationOn])
+
+  // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
+  useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
@@ -402,13 +410,14 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const navigation = app.navigation
     // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
     const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
-    // Watcher's room is reachable only while its gate is on; without it the navigation lands on Threads.
+    // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
+    // without them the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
+    const statusText = <FooterStatus navigation={navigation} dictationOn={dictationOn} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
     // An end-to-end run counts the Journal's days from the instant its dictations are stamped near.
     const journalNow = window.sottoE2E === undefined ? undefined : E2E_THREADS_NOW
     const threadWorkspace = (
@@ -463,7 +472,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
-        view = <DictateRoom
+        view = threadsPage ? threadWorkspace : <DictateRoom
           settings={app.settings}
           speechModel={app.speechModel}
           speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
