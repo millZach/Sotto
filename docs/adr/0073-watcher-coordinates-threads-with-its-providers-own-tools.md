@@ -575,6 +575,18 @@ A Muse Watcher called `read_thread` 2.9 times a turn in an hour of use, against 
 
 This is wording, so unit tests check the prompt, the reply line and the footer, and the measure is `read_thread` calls per turn in Watcher's activity before and after. #1142's design goes further: news comes from the thread's own events and watching starts with the thread's state, so Watcher has less reason to read at all. This change needs none of that and stays true under it, since #1142 also keeps the ping small and leaves reading for when Watcher wants more.
 
+## October 23, 2026: new work restores a settled thread
+
+A thread that Settle finished threads settled at 06:38 took Watcher's new work at 16:18 under an ordinary request and worked the rest of the day while it stayed settled. The refusal of a send to a settled thread asked only under a standing watch's own request, and nothing on the send's path restored the thread. Settled, the thread's queue never sent, so Watcher's queued GO MERGE stayed `queued` and `read_operation` said "still working" for good. A request's end and the worktree cleanup's on-settle rule read the thread as put aside too, and the cleanup reclaimed its folder mid-work.
+
+Zach decided on October 23:
+
+- **New work restores a settled thread first.** A prompt sent or queued to a settled thread restores it before it goes, whoever sends it: the user, Watcher under any request or standing watch, a delegating thread or a phone. Its delegated threads come back as Restore brings them back. In a settled project the thread returns alone, as a new thread there returns. Sotto's own news is not new work and never restores one. This replaces the refusal "This watched thread is settled. Its next user instruction starts new work." A participation Watcher settled with `settle_thread` still takes no more sends for its request.
+- **A queue the user must review takes no more of Watcher's prompts.** A `queue` send to a thread whose queue is paused, or holds a prompt that failed, is refused with the words a `now` send gets, as a delegated brief already is (ADR-0081). One already queued when its queue pauses stays `working`, since the user's Resume sends it, but `read_operation` says it waits in a paused queue for the user and has not been sent, rather than that the thread is still working.
+- **What a thread babysits holds its settle.** Settling a thread ends its babysitting (ADR-0061 decision 9), so Settle finished threads treats a pull request the thread babysits as open, linked or not, and read_state names it among what a pending settle waits on.
+
+A worker's READY TO MERGE is its own words, which Sotto never reads for meaning. What holds a settle for it is what Sotto knows: the pull request open on the thread or babysat there, and Watcher's GO MERGE still queued or on its way.
+
 ## October 23, 2026: the iPhone says Watcher works only for its own turn (#1436)
 
 The phone's page called Watcher working while its own turn ran or any thread it started was still working. Watcher starts threads that run for hours, so the iPhone's pill, tab dot and "Watcher is working" line stayed on while Watcher was idle. Zach decided on October 23, 2026 that Watcher working, on the phone as on the desktop, is Watcher's own turn, a turn on news of a watched thread included: Watcher is really working then, and a send steers or queues behind it. A thread Watcher started says its own state under Watched. The desktop does not change. Host protocol version 1 does not change either: `working` keeps its shape, and an iPhone already installed shows the new meaning once its computer updates. `inFlight` still counts the starts.

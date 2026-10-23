@@ -39,6 +39,8 @@ Electron additionally ships its exact upstream `LICENSE.electron.txt` and compre
 | `rope-sequence` | `1.3.4` | MIT | Marijn Haverbeke and contributors |
 | `fast-equals` | `5.4.4` | MIT | Tony Quetano |
 | `use-sync-external-store` | `1.7.0` | MIT | Meta Platforms, Inc. and affiliates |
+| `@lingui/core` | `6.10.1` | MIT | Tomáš Ehrlich; Crowdin |
+| `@lingui/react` | `6.10.1` | MIT | Tomáš Ehrlich; Crowdin |
 | `zod` | `4.4.3` | MIT | Colin McDonnell |
 | `@anthropic-ai/claude-agent-sdk` | `0.3.270` | SEE LICENSE IN README.md | Anthropic PBC |
 | `@xterm/xterm` | `6.0.0` | MIT | The xterm.js authors; SourceLair Private Company; Christopher Jeffrey |
@@ -1000,6 +1002,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+## Interface language MIT licenses
+
+`@lingui/core` and `@lingui/react` are development dependencies compiled into the main-process and window bundles, so Sotto's interface can be shown in the interface language (ADR-0123). Both carry this license.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2017-2022 Tomáš Ehrlich, (c) 2022-2023 Crowdin.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 ```
 
 ## Zod MIT license
