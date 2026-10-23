@@ -1378,8 +1378,10 @@ test.describe("Watcher's room on the built app", () => {
           await settle(page)
           const boxes = await entry.evaluate(element => {
             const line = element.closest('.watcher-machines')!.getBoundingClientRect(), name = element.querySelector('.watcher-machines__name > span')!
-            const count = element.querySelector('.watcher-machines__count')!.getBoundingClientRect(), words = element.querySelector('.watcher-machines__words')!.getBoundingClientRect()
-            return { inside: element.getBoundingClientRect().right <= line.right + 1, cut: name.scrollWidth > name.clientWidth,
+            const count = element.querySelector('.watcher-machines__count')!.getBoundingClientRect()
+            // The words' first piece follows the count on its line, or starts a line under it.
+            const words = element.querySelector('.watcher-machines__words')!.getClientRects()[0]!
+            return { inside: [...element.getClientRects()].every(rect => rect.right <= line.right + 1), cut: name.scrollWidth > name.clientWidth,
               apart: count.right <= words.left + 1 || words.top >= count.bottom - 1 }
           })
           expect(boxes).toEqual({ inside: true, cut: true, apart: true })
