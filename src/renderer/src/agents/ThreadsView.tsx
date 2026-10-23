@@ -1,5 +1,6 @@
 import { focusedComposerField } from './promptSelection'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { Button } from '../components/Button'
@@ -126,7 +127,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, delegation), [state, rows, query, delegation]))
+  const sidebarRows = useListedRows(agents.threadDrafts, rows)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation), [state, sidebarRows, query, delegation]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])

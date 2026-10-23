@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useOwlFeature } from '../state/owlFeature'
+import { useListedRows } from './unsentThreads'
 import { useOptionalApp } from '../state/AppContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
@@ -44,7 +45,8 @@ export function PageSidebar({ now: fixedNow }: {
   const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, delegation), [state, rows, query, delegation]))
+  const sidebarRows = useListedRows(agents.threadDrafts, rows)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation), [state, sidebarRows, query, delegation]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {

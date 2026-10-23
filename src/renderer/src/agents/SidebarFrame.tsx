@@ -4,10 +4,11 @@ import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, roomsLayout, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
+import { useDictationOn } from '../state/dictationFeature'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -83,16 +84,18 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
 
 /**
  * The room switch, drawn from the one room definition (`appRooms`): Dictate | Threads, with Watcher's owl between
- * them while its gate is on. It lights the room of the open page and answers the keyboard as every switch does
+ * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
+ * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
  * page draws. The sidebar foot and Watcher's floating switch both draw this one.
  */
 export function RoomSwitch({ className }: { readonly className: string }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
-  const rooms = appRooms(useWatcherEnabled())
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
-  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={rooms.length === 3 ? 3 : undefined}>
+  if (rooms.length < 2) return null
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={roomsLayout(rooms)}>
     {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
       {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
   </div>

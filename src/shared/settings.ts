@@ -220,6 +220,8 @@ export interface AppSettings {
   launchAtStartup: boolean
   startMinimized: boolean
   showWidgetWhenIdle: boolean
+  /** Off when the user dictates with another app: no hotkey, speech model, widget or Dictate room (Owl, ADR-0107). */
+  dictationEnabled: boolean
   /** Linux-only, read-only, supplied by main: the shell pill has taken the floating widget's place. Never saved or patched. */
   shellPillInUse?: boolean | undefined
   historyEnabled: boolean
@@ -340,6 +342,7 @@ const fieldSchemas = {
   launchAtStartup: z.boolean(),
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
+  dictationEnabled: z.boolean(),
   shellPillInUse: z.boolean().optional(),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
@@ -426,6 +429,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtStartup: false,
   startMinimized: false,
   showWidgetWhenIdle: true,
+  dictationEnabled: true,
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
@@ -577,6 +581,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     launchAtStartup: parseField(persisted, 'launchAtStartup', defaults),
     startMinimized: parseField(persisted, 'startMinimized', defaults),
     showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
+    dictationEnabled: parseField(persisted, 'dictationEnabled', defaults),
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),
@@ -614,4 +619,9 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),
   }
+}
+
+/** Whether Sotto dictates: the setting counts only while its Owl feature is on, so stable always dictates (ADR-0107). */
+export function dictationOn(settings: Pick<AppSettings, 'dictationEnabled'>, owlFeatureOn: boolean): boolean {
+  return !owlFeatureOn || settings.dictationEnabled
 }

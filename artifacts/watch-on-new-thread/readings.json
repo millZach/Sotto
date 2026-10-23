@@ -1,0 +1,450 @@
+{
+  "dark-row": [
+    "DIV  Fixture Codex",
+    "DIV  Low",
+    "DIV  Ask for approval",
+    "BUTTON  Watch"
+  ],
+  "dark-tab-after-watch": "Threads (the room switch; Send is disabled with an empty prompt)",
+  "dark-focus-ring": {
+    "outline": "solid 3px oklch(0.714403 0.104089 183.092)",
+    "boxShadow": "none"
+  },
+  "dark-off-1600x1000": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.75975 -0.000906917 -0.0125933)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.230507 0.255177 0.306541)",
+    "textContrast": 9.2,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "dark-pressed-1600x1000": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 12.13,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "dark-pressed-hover-1600x1000": {
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "chipBg": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 7.6,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "dark-off-1280x800": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.75975 -0.000906917 -0.0125933)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.230507 0.255177 0.306541)",
+    "textContrast": 9.2,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "dark-pressed-1280x800": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 12.13,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "dark-pressed-hover-1280x800": {
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "chipBg": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 7.6,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "dark-off-820x560": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.75975 -0.000906917 -0.0125933)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.230507 0.255177 0.306541)",
+    "textContrast": 9.2,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  },
+  "dark-pressed-820x560": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "oklch(0.145 0.008 265)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 12.13,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  },
+  "dark-pressed-hover-820x560": {
+    "pressed": "true",
+    "inkHex": "oklab(0.83 -0.0798904 -0.0041869)",
+    "onHex": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "chipBg": "color(srgb 0.045116 0.231404 0.212219 / 0.7)",
+    "border": "color(srgb 0.251976 0.465069 0.466853)",
+    "textContrast": 7.6,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  },
+  "light-row": [
+    "DIV  Fixture Codex",
+    "DIV  Low",
+    "DIV  Ask for approval",
+    "BUTTON  Watch"
+  ],
+  "light-tab-after-watch": "Threads (the room switch; Send is disabled with an empty prompt)",
+  "light-focus-ring": {
+    "outline": "solid 3px oklch(0.53 0.095 186)",
+    "boxShadow": "none"
+  },
+  "light-off-1600x1000": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.46025 0.00362347 0.013523)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.765265 0.740399 0.699993)",
+    "textContrast": 6.95,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "light-pressed-1600x1000": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 7.58,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "light-pressed-hover-1600x1000": {
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "chipBg": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 6.22,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 1001.2578125,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    },
+    "row": {
+      "left": 645,
+      "right": 1079,
+      "top": 583.546875,
+      "bottom": 611.546875
+    }
+  },
+  "light-off-1280x800": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.46025 0.00362347 0.013523)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.765265 0.740399 0.699993)",
+    "textContrast": 6.95,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "light-pressed-1280x800": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 7.58,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "light-pressed-hover-1280x800": {
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "chipBg": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 6.22,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 841.2578125,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    },
+    "row": {
+      "left": 485,
+      "right": 919,
+      "top": 483.546875,
+      "bottom": 511.546875
+    }
+  },
+  "light-off-820x560": {
+    "bounds": [],
+    "pressed": "false",
+    "inkHex": "oklab(0.46025 0.00362347 0.013523)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.765265 0.740399 0.699993)",
+    "textContrast": 6.95,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  },
+  "light-pressed-820x560": {
+    "bounds": [],
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "oklch(0.99 0.003 85)",
+    "chipBg": "rgba(0, 0, 0, 0)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 7.58,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  },
+  "light-pressed-hover-820x560": {
+    "pressed": "true",
+    "inkHex": "oklab(0.43 -0.0795618 -0.00836227)",
+    "onHex": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "chipBg": "color(srgb 0.813252 0.923597 0.907477 / 0.7)",
+    "border": "color(srgb 0.40279 0.628048 0.589613)",
+    "textContrast": 6.22,
+    "inside": true,
+    "textClipped": false,
+    "chipClipped": false,
+    "rect": {
+      "left": 379,
+      "right": 456.7421875,
+      "top": 356.34375,
+      "bottom": 384.34375
+    },
+    "row": {
+      "left": 379,
+      "right": 753,
+      "top": 328.34375,
+      "bottom": 384.34375
+    }
+  }
+}

@@ -4,6 +4,7 @@ import { MessagesSquare } from 'lucide-react'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { AppNavigation } from '../state/AppContext'
+import { useDictationOn } from '../state/dictationFeature'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
@@ -55,10 +56,17 @@ const threads: Room = { id: 'threads', label: 'Threads', destination: 'threads' 
 
 /**
  * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
- * while the Watcher gate is on (ADR-0072, ADR-0073).
+ * while the Watcher gate is on (ADR-0072, ADR-0073). Dictate leaves while dictation is off (ADR-0107). A switch
+ * left with one room is not drawn.
  */
-export function appRooms(watcherEnabled: boolean): ReadonlyArray<Room> {
-  return watcherEnabled ? [dictate, watcher, threads] : [dictate, threads]
+export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: boolean; readonly dictation: boolean }): ReadonlyArray<Room> {
+  return [...(dictation ? [dictate] : []), ...(watcherOn ? [watcher] : []), threads]
+}
+
+/** The switch's layout hook for its CSS: '3' for Dictate | owl | Threads, 'owl' for owl | Threads. */
+export function roomsLayout(rooms: ReadonlyArray<Room>): '3' | 'owl' | undefined {
+  if (rooms.length === 3) return '3'
+  return rooms.length === 2 && rooms[0]?.id === 'watcher' ? 'owl' : undefined
 }
 
 /**
@@ -191,14 +199,14 @@ export function AppShell({
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
-  const rooms = appRooms(useWatcherEnabled())
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   // Memory is hidden for the beta: its link goes with it.
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
   const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage))
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
   // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
-  const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management)
+  const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management && rooms.length > 1)
 
   const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()
@@ -226,7 +234,7 @@ export function AppShell({
               <span>Sotto</span>
             </div>
           )}
-          {management ? (
+          {management && rooms.length > 1 ? (
             <div ref={roomSwitch.ref} className="app-switch" role="tablist" aria-label="Mode">
               {rooms.map((target, index) => (
                 <button
