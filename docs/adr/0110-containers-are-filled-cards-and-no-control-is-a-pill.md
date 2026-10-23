@@ -37,3 +37,4 @@ Almost every container in the main window was a 1px line in the faintest border 
 - Text and accent text are held to 4.5:1 on the card and the selected card, and chart series to 3:1 on the card, for every built-in theme in both modes. Three chart series moved by less than two OKLab points to clear that: dark slot 4 to `#c33786`, dark slot 5 to `#8056d6`, light slot 3 to `#038db6`. `docs/verification/usage-chart-split.md` records the old values as they were when it was written.
 - The design capture baselines change wherever a container, a control or the sidebar shows, and are regenerated on the machines that hold them.
 - The floating widget and Omarchy's shell pill keep their own look; this decision is about the main window.
+- The message scrubber's card (ADR-0109) keeps the clear border Zach picked, with the soft square's 6px corners, and the question's choices on it are filled 4px labels like every other chip. Its ticks are square-ended lines and stay so.
