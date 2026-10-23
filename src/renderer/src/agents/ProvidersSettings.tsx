@@ -169,7 +169,7 @@ export function ProvidersSettings(): ReactNode {
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   return <div className="providers-settings">
     <div className="providers-workspace">
-      <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {
+      <nav className="providers-list" aria-label="Thread providers" data-setting="thread-providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {
         const current = statusFor(provider)
         const active = enabled.includes(provider)
         const connecting = current.connection === 'connecting' || pending[provider]
@@ -220,7 +220,7 @@ export function ProvidersSettings(): ReactNode {
               </div>
               <div className="provider-client__actions" ref={sandboxActions}>
                 {museSandboxOwed && <Button variant="primary" disabled={Boolean(working) || selectedUpdating} aria-label="Reconnect Muse to apply the shell sandbox setting" onClick={() => void reconnectMuse()}>Reconnect</Button>}
-                <Toggle label="Shell sandbox" checked={!museDisableSandbox}
+                <Toggle setting="shell-sandbox" label="Shell sandbox" checked={!museDisableSandbox}
                   onCheckedChange={value => void saveMuseSandbox(!value)} />
               </div>
             </div>}
@@ -239,7 +239,7 @@ export function ProvidersSettings(): ReactNode {
         <h4>Check for client updates</h4>
         <p>{!held.has('muse') ? "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
       </div>
-      <Toggle label="Check for client updates" checked={checkClientUpdates}
+      <Toggle setting="client-updates" label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />
     </div>
   </div>
