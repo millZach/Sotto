@@ -19,10 +19,10 @@ export const USER_TURN_RUNNING = 'The user’s own turn in this thread is runnin
 export const UNCONFIRMED_SEND_HOLD = 'An earlier send to this thread is unconfirmed. Read the thread to see what happened, then ask the user to set that send aside there with Continue with a new message. Nothing was sent.'
 
 /**
- * The refusal once the user set their own unconfirmed prompt aside: automatic work waits until their next message there
- * is confirmed (ADR-0058), so there is nothing more to ask of them.
+ * The refusal while a watch stays paused after the user's turn for some other hold, or one this computer cannot see, as
+ * on a paired host whose deliveries only that host knows (#1222). It names no turn, since none is running.
  */
-export const SET_ASIDE_HOLD = 'The user set aside an unconfirmed message in this thread. Watcher can send there once their next message is confirmed. Nothing was sent.'
+export const WATCH_PAUSED_HOLD = 'This watch is paused until the thread’s earlier work settles. Read the thread to see what it waits on. Nothing was sent.'
 
 /**
  * A prompt whose first word is a slash command, such as `/compact` (#1222). A provider runs one as a command of its own

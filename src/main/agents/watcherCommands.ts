@@ -31,8 +31,6 @@ export interface WatcherControlHooks {
   queueFailed?(operationIds: ReadonlySet<string>): void
   guardOperation(operationId: string): void
   preserveUserQueue(threadId: string): boolean
-  /** Whether a prompt revision sent to a thread on this computer is one of Watcher's own sends (#1222). */
-  ownsDraft?(threadId: string, draftId: string): boolean
   watchedThreadIds?(): string[]
   /** Whether each queued event may still go, answered in one pass that reads the snapshot and the record once. */
   wakeDueAll?(events: readonly WatcherEvent[]): boolean[]

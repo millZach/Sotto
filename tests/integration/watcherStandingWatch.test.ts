@@ -14,7 +14,7 @@ import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 import { isWatcherWakeUpTurn } from '../../src/shared/threadActivity'
-import { SET_ASIDE_HOLD, SLASH_COMMAND_REFUSAL, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../src/main/agents/watcherSendHolds'
+import { SLASH_COMMAND_REFUSAL, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../src/main/agents/watcherSendHolds'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -776,9 +776,8 @@ it('resumes a standing watch after a confirmed fresh desktop turn while the set-
   const oldDelivery = () => f.control.shell().deliveries?.find(item => item.threadId === target.threadId && item.draftId === original.draftId)
   expect(oldDelivery()).toMatchObject({ status: 'uncertain' })
   expect((await f.control.commandShell({ type: 'set-aside-send', threadId: target.threadId, draftId: original.draftId })).error).toBeNull()
-  // Setting aside the user's own prompt holds Watcher until their next message is confirmed, and the refusal says that (#1222).
-  expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic send before the fresh prompt', delivery: 'now' }))
-    .toEqual({ status: 'refused', code: 'DELIVERY_UNCERTAIN', message: SET_ASIDE_HOLD, retryable: false })
+  // Setting aside the user's own prompt frees the thread to Watcher too, before any fresh prompt (#1222).
+  await expect.poll(() => f.service.state().watchedThreads.find(row => row.target.threadId === target.threadId)?.paused).toBe(false)
   const fresh = { ...original, draftId: randomUUID(), text: 'Synthetic confirmed replacement prompt' }
   expect((await f.control.commandShell(fresh)).error).toBeNull()
   const delivery = f.control.shell().deliveries?.find(item => item.draftId === fresh.draftId)

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SET_ASIDE_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../../src/main/agents/watcherSendHolds'
+import { NO_TURN_TO_STEER, queueHold, RUNNING_TURN_HOLD, SLASH_COMMAND_REFUSAL, startsWithSlashCommand, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING, WATCH_PAUSED_HOLD } from '../../../src/main/agents/watcherSendHolds'
 
 describe('what a refused Watcher send says it waits on (#1203)', () => {
   it('names a different hold for each reason, and never background work as one', () => {
-    const said = [RUNNING_TURN_HOLD, NO_TURN_TO_STEER, USER_TURN_RUNNING, SET_ASIDE_HOLD, queueHold('pending-work', false), queueHold('pending-work', true),
+    const said = [RUNNING_TURN_HOLD, NO_TURN_TO_STEER, USER_TURN_RUNNING, WATCH_PAUSED_HOLD, queueHold('pending-work', false), queueHold('pending-work', true),
       queueHold('paused-followups', false), queueHold('failed-followups', false), queueHold('uncertain-send', false)]
     expect(new Set(said).size).toBe(said.length)
     for (const text of said) expect(text).toMatch(/Nothing was sent\.$/u)
@@ -16,8 +16,8 @@ describe('what a refused Watcher send says it waits on (#1203)', () => {
     expect(UNCONFIRMED_SEND_HOLD).toContain('Continue with a new message')
     expect(UNCONFIRMED_SEND_HOLD).not.toMatch(/turn/u)
     expect(USER_TURN_RUNNING).not.toMatch(/unconfirmed/u)
-    // Once the user set their own prompt aside there is nothing more to ask of them (ADR-0058).
-    expect(SET_ASIDE_HOLD).not.toContain('Continue with a new message')
+    // A pause held by something else names no turn, since none is running.
+    expect(WATCH_PAUSED_HOLD).not.toMatch(/turn/u)
   })
 })
 

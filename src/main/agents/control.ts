@@ -3231,7 +3231,7 @@ export class AgentControl {
       command = { ...command, draftId: command.draftId ?? randomUUID() }
       if (origin) this.watcherOrigins.set(command, origin)
       const { threadId, draftId } = command
-      if (!this.outbox.some(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))) {
+      if (!this.outbox.some(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, this.heldBySetAside(origin)))) {
         const current = this.state.threadDrafts?.find(item => item.threadId === threadId)
         // An explicit answer retains its owner and request; manual prompt validation will reject it.
         if (!origin && !current?.requestId) {
@@ -3251,7 +3251,7 @@ export class AgentControl {
       }
     }
     const selectionRevision = this.selectionRevision
-    const manualRetryId = (command.type === 'manual-send' || command.type === 'steer') ? this.outbox.find(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, Boolean(origin)))?.id
+    const manualRetryId = (command.type === 'manual-send' || command.type === 'steer') ? this.outbox.find(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, this.heldBySetAside(origin)))?.id
       : command.type === 'send' ? this.outbox.find(item => item.threadId === this.state.draftThreadId && this.blocksExplicitPrompt(item, this.manualDraftId ?? undefined))?.id : undefined
     // Host observations bypass this lane: a direct provider send must revoke authority even during model reasoning.
     const laneThreadId = actionThreadId && THREAD_SCOPED_COMMAND_TYPES.has(command.type) ? actionThreadId : ''
@@ -3422,8 +3422,8 @@ export class AgentControl {
    */
   private waitsOnRequest(thread: AgentThread): boolean { return thread.requests.length > 0 || this.prototypeQuestions.holds(thread.id) }
   private followupReady(threadId: string, followup: Readonly<QueuedFollowup>): boolean {
-    const userFollowup = this.isUserFollowup(followup)
-    if (this.pendingSetAsideDeliveries.has(threadId) || !userFollowup && this.hasSetAsideUpdateHold(threadId)) return false
+    const setAsideHolds = this.followupHeldBySetAside(followup)
+    if (this.pendingSetAsideDeliveries.has(threadId) || setAsideHolds && this.hasSetAsideUpdateHold(threadId)) return false
     const thread = this.state.host.threads.find(t => t.id === threadId)
     const reviewed = thread && this.followupStore.peek().items.find(item => item.id === followup.id)?.resumeAfterTurnId === (thread.lastTurn?.id ?? UNKNOWN_TURN)
     return Boolean(thread && isThreadProviderConnected(this.state.host, thread) && (thread.status === 'idle' || thread.status === 'error' && reviewed)
@@ -3437,7 +3437,7 @@ export class AgentControl {
       && (!thread.historyStatus || thread.historyStatus === 'ready') && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))
       && !this.outbox.some(item => item.threadId === threadId && item.id !== followup.commandId
-        && this.blocksExplicitPrompt(item, followup.draftId, !userFollowup)))
+        && this.blocksExplicitPrompt(item, followup.draftId, setAsideHolds)))
   }
   /**
    * Whether a delegation's hidden news can go to its thread now (ADR-0081, October 19, 2026): only what makes a send
@@ -3776,7 +3776,8 @@ export class AgentControl {
       if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.state.host.projects.find(p => p.id === thread.projectId))) throw new Error('Restore this thread and project before steering.')
     }
     validate()
-    if (!this.isUserFollowup(queued) && this.hasSetAsideUpdateHold(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, queued.draftId, !this.isUserFollowup(queued))) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
+    const setAsideHolds = this.followupHeldBySetAside(queued)
+    if (setAsideHolds && this.hasSetAsideUpdateHold(command.threadId) || this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, queued.draftId, setAsideHolds)) || this.pumping.has(command.threadId)) throw new Error('Wait for the pending delivery before steering this message.')
     await this.followupStore.claim(queued.id, 'steer')
     this.syncFollowups(); this.publish()
     const item = this.followupStore.get().items.find(item => item.id === queued.id)!
@@ -3801,7 +3802,7 @@ export class AgentControl {
   private async steer(command: Extract<AgentCommand, { type: 'steer' }>, turn?: ActiveTurn): Promise<void> {
     const origin = this.watcherOrigins.get(command)
     if (this.state.deliveredDrafts?.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) return
-    const blocked = (): boolean => this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, Boolean(origin)))
+    const blocked = (): boolean => this.outbox.some(item => item.threadId === command.threadId && this.blocksExplicitPrompt(item, command.draftId, this.heldBySetAside(origin)))
     if (blocked()) {
       this.acceptSnapshot(await this.readThread(command.threadId))
       if (blocked()) throw new Error('An earlier action is uncertain. Refresh to reconcile it; it will not be replayed.')
@@ -4574,8 +4575,9 @@ export class AgentControl {
     // The user's own answer or Watcher room setup carries a Watcher origin for its guard, but is the user's, not automation.
     const automatic = Boolean(origin) && !(command.type === 'answer' && origin?.userAnswer) && !origin?.userSetup || wakeUp
     const mayPassSetAside = prompt !== null || !automatic && (command.type === 'configure-thread' || command.type === 'answer')
-    // A delegation's hidden news is automatic, but a set-aside prompt does not hold it (ADR-0081, October 19, 2026).
-    const setAsideHolds = automatic && !(command.type === 'send' && command.hiddenWakeUp === true)
+    // A delegation's hidden news is automatic, but a set-aside prompt does not hold it (ADR-0081, October 19, 2026), nor a
+    // Watcher send (#1222).
+    const setAsideHolds = automatic && !(command.type === 'send' && command.hiddenWakeUp === true) && origin?.operationId === undefined
     if (command.type !== 'interrupt' && (threadId && setAsideHolds && this.hasSetAsideUpdateHold(threadId)
       || this.outbox.some(item => threadId
         ? item.threadId === threadId && !holdsNothingBack(item) && (!mayPassSetAside || this.blocksExplicitPrompt(item, draftId, setAsideHolds))
@@ -4811,6 +4813,14 @@ export class AgentControl {
     return this.pendingSetAsideDeliveries.has(threadId)
       || (this.state.deliveries ?? []).some(item => item.threadId === threadId && setAsideUpdatesHeld(item))
   }
+  /**
+   * Whether a prompt the user set aside with Continue with a new message holds this command back. Other automatic work
+   * waits until a fresh explicit prompt is confirmed (ADR-0058), but a Watcher send does not: setting a send aside frees
+   * its thread to Watcher at once, so a watch it paused goes on (#1222).
+   */
+  private heldBySetAside(origin: WatcherCommandOrigin | undefined): boolean { return origin !== undefined && origin.operationId === undefined }
+  /** The same for a queued item: the user's own prompts never wait on a set-aside one, and Watcher's do not either (#1222). */
+  private followupHeldBySetAside(item: Readonly<QueuedFollowup>): boolean { return !this.isUserFollowup(item) && item.watcherOperationId === undefined }
   /** Recovery permits fresh explicit prompts; a confirmed one releases automatic updates, never the old revision. */
   private blocksExplicitPrompt(item: Saved['outbox'][number], draftId?: string, automatic = false): boolean {
     if (holdsNothingBack(item)) return false
@@ -4856,15 +4866,12 @@ export class AgentControl {
     if (delivery?.status === 'accepted' || this.state.deliveredDrafts?.some(matches)) return
     const entry = this.outbox.find(matches)
     const now = new Date().toISOString()
-    // A send of Watcher's leaves no prompt of the user's in doubt, so setting it aside holds no automatic work back, and a
-    // watch it paused goes on at once (#1222). The user's own prompt holds it until their next one is confirmed (ADR-0058).
-    const resumed = this.watcherHooks?.ownsDraft?.(threadId, draftId) === true ? { updatesResumed: true } : {}
-    const recovery: AgentDelivery = { threadId, draftId, createdAt: delivery?.createdAt ?? now, ...delivery, status: 'uncertain', setAside: true, ...resumed, updatedAt: now }
+    const recovery: AgentDelivery = { threadId, draftId, createdAt: delivery?.createdAt ?? now, ...delivery, status: 'uncertain', setAside: true, updatedAt: now }
     this.pendingSetAsideDeliveries.set(threadId, recovery)
     const previousObsoleteDrafts = this.state.obsoleteDrafts
     let recoveryObsoleteDrafts: AgentState['obsoleteDrafts']
     if (entry) {
-      this.outbox = this.outbox.map(item => item === entry ? { ...item, setAside: true, ...resumed } : item)
+      this.outbox = this.outbox.map(item => item === entry ? { ...item, setAside: true } : item)
     } else {
       // A lost IPC reply can have no outbox entry. Retire only this revision, never claim delivery.
       this.obsoleteDraft(threadId, draftId)
@@ -4872,17 +4879,17 @@ export class AgentControl {
     }
     try { await this.persist() }
     catch {
-      if (entry) this.outbox = this.outbox.map(item => item.id === entry.id ? { ...item, setAside: entry.setAside, updatesResumed: entry.updatesResumed } : item)
+      if (entry) this.outbox = this.outbox.map(item => item.id === entry.id ? { ...item, setAside: entry.setAside } : item)
       // A concurrent newer draft can independently retire this revision. Keep its fence and its edits.
       else if (this.state.obsoleteDrafts === recoveryObsoleteDrafts) this.state.obsoleteDrafts = previousObsoleteDrafts
       throw new Error('Could not save this recovery. The prompt is still unconfirmed. Restore access to local storage and try again.')
     } finally { this.pendingSetAsideDeliveries.delete(threadId) }
     const latest = this.state.deliveries?.find(matches)
-    this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true, ...resumed })
+    this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
   }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
-    const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))?.id
+    const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, this.heldBySetAside(origin)))?.id
     if (pendingId) {
       // A retry may discover that the earlier command already succeeded. It is
       // never a new dispatch and must not replace an edited or recovered draft.
