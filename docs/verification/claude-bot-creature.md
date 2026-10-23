@@ -1,6 +1,6 @@
 # Claude bot creature verification
 
-October 22, 2026, on `feat/claude-bot-creature` from `main` at 03706b056. Drake Morey asked for a second creature above the composer, Claude bot, a switch for it in Settings → Appearance, and the readout's gray box gone, and left the bot's look to us. There was no prototype round: the choice is an affordance on a surface that already exists, and the character was ours to draw. The decision is ADR-0113; the glossary terms are **Creature**, **Claude bot** and the **readout** inside it.
+October 22, 2026, on `feat/claude-bot-creature` from `main` at 03706b056. Drake Morey asked for a second creature above the composer, Claude bot, a switch for it in Settings → Appearance, and the readout's gray box gone, and left the bot's look to us. There was no prototype round: the choice is an affordance on a surface that already exists, and the character was ours to draw. The decision is ADR-0116; the glossary terms are **Creature**, **Claude bot** and the **readout** inside it.
 
 ## What changed
 
