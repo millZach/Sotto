@@ -120,7 +120,7 @@ describe('the launcher without its worker', () => {
   it('refuses a launch with no folder instead of running it in Sotto\'s own folder', async () => {
     // Node runs a process given an empty folder in the parent's own folder: Git there would change a repository nobody chose.
     resetMainThreadLaunches()
-    const refusal = 'Sotto did not start git because it was not given a folder to run in. Nothing was changed.'
+    const refusal = 'Sotto did not start git because it was not given a folder to run in. Nothing was changed. Try again from a thread that has a project folder.'
     expect(() => launcher(null).launch('git', ['status'], { cwd: '', env: process.env })).toThrow(refusal)
     expect(() => launcher(worker.path).launch('git', ['status'], { cwd: '', env: process.env })).toThrow(refusal)
     expect(mainThreadLaunches.count).toBe(0)
@@ -240,7 +240,7 @@ describe('Git through the worker', () => {
   it('carries the test harness\'s Git guard, so a test cannot change a repository outside the temporary folder through it', async () => {
     resetMainThreadLaunches()
     // A dry run: a guard that failed to travel would still change nothing.
-    await expect(runGitStatusCommand(process.cwd(), 'git', ['commit', '--dry-run', '--allow-empty', '-m', 'Refused'])).rejects.toThrow(/^The test harness refused `git commit` in .*: a test may change only repositories under the temporary folder/u)
+    await expect(runGitStatusCommand(process.cwd(), 'git', ['commit', '--dry-run', '--allow-empty', '-m', 'Refused'])).rejects.toThrow(/^The test harness refused `git commit` on .*: a test may change only repositories under the temporary folder/u)
     await expect(runWorktreeGitProcess(process.cwd(), ['add', '--dry-run', '.'])).rejects.toThrow(/^The test harness refused `git add`/u)
     expect(mainThreadLaunches.count).toBe(0)
   })

@@ -105,7 +105,7 @@ export async function gitRepositorySeed(options: Omit<GitRepositoryOptions, 'rem
       // A copy cut short (a full disk) without an error would leave a folder Git does not see as this repository, and
       // Git would look above it for one. Refuse it rather than let a test run its commands there.
       for (const path of ['HEAD', 'config', 'objects', 'refs']) {
-        if (!(await lstat(join(repo, '.git', path)).then(() => true, () => false))) throw new Error(`The repository copy at ${repo} is incomplete: .git/${path} is missing.`)
+        if (!(await lstat(join(repo, '.git', path)).then(() => true, () => false))) throw new Error(`The repository copy at ${repo} is incomplete: .git/${path} is missing. Nothing ran in it; free some disk space, then run the test again.`)
       }
       const linked = await addRemote(owner.root, repo, { ...options, ...remotes })
       return { ...owner, repo, ...linked, git: (...args: string[]) => runFixtureGit(repo, ...args) }
