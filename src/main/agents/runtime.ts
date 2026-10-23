@@ -135,8 +135,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The first live load sample is taken now too, so the first ask reads over a window without waiting (#1311).
   const facts = new HostFactsSource()
   void facts.read().then(() => facts.primeLoad()).catch(() => undefined)
-  // Its threads and sends are read in place, after the load, as the report is answered.
-  const machineFacts = () => hostMachineReport(facts, () => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords() }))
+  // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
+  // their way to a thread here.
+  const machineFacts = () => hostMachineReport(facts, () => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }))
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.

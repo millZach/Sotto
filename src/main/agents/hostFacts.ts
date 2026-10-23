@@ -300,6 +300,11 @@ export interface MachineWork {
   readonly threads: readonly Pick<AgentHostSnapshot['threads'][number], 'id' | 'status'>[]
   readonly deliveries?: readonly Pick<AgentDelivery, 'threadId' | 'status'>[]
   readonly followups?: readonly Pick<AgentFollowup, 'threadId' | 'status'>[]
+  /**
+   * Threads Watcher has admitted a start for here whose first prompt has not gone yet, created or not: the start's
+   * reservation comes before its thread and its delivery do, so without it a start in progress would count nowhere.
+   */
+  readonly startsNotYetSent?: readonly string[]
 }
 
 /**
@@ -310,13 +315,14 @@ export interface MachineWork {
 export async function hostMachineReport(facts: HostFactsSource, work: () => MachineWork): Promise<HostMachineReport> {
   // A load that cannot be read leaves the facts standing and reads unknown.
   const [machine, load] = await Promise.all([facts.read(), facts.load().catch(() => null)])
-  const { threads, deliveries = [], followups = [] } = work()
-  const running = threads.filter(thread => thread.status === 'running').length
-  const notRunning = new Set(threads.filter(thread => thread.status !== 'running').map(thread => thread.id))
+  const { threads, deliveries = [], followups = [], startsNotYetSent = [] } = work()
+  const running = new Set(threads.filter(thread => thread.status === 'running').map(thread => thread.id))
   const placed = new Set([
     ...deliveries.filter(item => PLACED_DELIVERIES.has(item.status)).map(item => item.threadId),
     ...followups.filter(item => item.status === 'dispatching').map(item => item.threadId),
-  ].filter(threadId => notRunning.has(threadId))).size
+    // A start whose thread is not created yet has no thread to be running, so it counts.
+    ...startsNotYetSent,
+  ].filter(threadId => !running.has(threadId))).size
   const within = (value: number) => value <= HOST_RUNNING_THREADS_MAX ? value : null
-  return { facts: machine, runningThreads: within(running), load, placedNotStarted: within(placed) }
+  return { facts: machine, runningThreads: within(running.size), load, placedNotStarted: within(placed) }
 }

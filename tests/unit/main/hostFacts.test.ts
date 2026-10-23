@@ -322,6 +322,12 @@ describe('the machine report', () => {
     expect(report.load).toMatchObject({ availableMemoryBytes: 11 * GIB })
   })
 
+  it('counts Watcher’s starts not yet sent, created or not, once each, and not once their thread is running', async () => {
+    const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }, { id: 'began', status: 'running' }],
+      deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork)
+    expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
+  })
+
   it('reads its counts after the load, so a thread that started while the load was read counts as running', async () => {
     let threads: ShellThread[] = [{ id: 'new', status: 'idle' }]
     let sends: ShellSends = { deliveries: [{ threadId: 'new', status: 'queued' }] }

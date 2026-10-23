@@ -775,6 +775,23 @@ export class WatcherService implements WatcherControlHooks {
    * host protocol version 1 has a count. Nothing is held back at any number (#1183).
    */
   startsInFlight(): number { return this.inFlight() }
+  /**
+   * The threads Watcher has admitted a start for on this machine whose first prompt has not gone yet (#1311). Admission
+   * records the start's reservation before the working copy is resolved and the thread is created, so this machine's
+   * work placed but not started counts the start from then, and a second placement seconds later sees the first.
+   */
+  startsNotYetSent(): string[] {
+    const record = this.view(), hostId = this.options.control.hostId()
+    if (!hostId || record.reservations.length === 0) return []
+    const reserved = new Map(record.reservations.filter(item => item.target.hostId === hostId).map(item => [item.operationId, item.target.threadId]))
+    if (reserved.size === 0) return []
+    const threads: string[] = []
+    for (const operation of record.operations) {
+      const threadId = operation.action === 'start' && (operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching') ? reserved.get(operation.id) : undefined
+      if (threadId !== undefined) threads.push(threadId)
+    }
+    return threads
+  }
   /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */
   private inFlight(record: Readonly<WatcherRecord> = this.view()): number {
     if (record.reservations.length === 0) return 0
