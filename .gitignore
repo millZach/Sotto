@@ -191,6 +191,7 @@ artifacts/activity-performance/
 artifacts/process-creature/
 artifacts/held-action/
 artifacts/working-creature/
+artifacts/claude-bot-creature/
 artifacts/background-command/
 artifacts/queued-steering/
 

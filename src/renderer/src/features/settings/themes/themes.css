@@ -786,3 +786,18 @@
 }
 .effort-sample[data-still='true'] .effort-sample__composer::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 .effort-sample[data-still='true'] * { animation: none !important; transition: none !important; }
+
+/* Creature (Settings → Appearance → Creature) ----
+   Each character is a card (ADR-0110), the same selectable card the providers use: filled, no outline, the chosen one
+   wearing the accent edge and wash. It walks in an inset of the room above its name, standing on the inset's bottom
+   edge as it stands on the composer's. Reduced motion is handled inside CreatureWalk. */
+.creature-choice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }
+.creature-choice .theme-settings__subheading { margin: 0 0 10px; }
+.creature-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
+.creature-choice__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.creature-option { display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 0; padding: 10px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; font-size: 14px; font-weight: 500; line-height: 20px; text-align: left; cursor: pointer; }
+.creature-option:hover:not([aria-pressed='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
+.creature-option[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); font-weight: 600; }
+.creature-option__preview { display: flex; align-items: flex-end; height: 76px; padding: 0 8px; overflow: hidden; border-radius: 6px; background: var(--tt-card-inset); }
+.creature-option__preview > * { flex: 1 1 auto; min-width: 0; }
+.creature-option__name { padding: 0 2px; }

@@ -130,6 +130,7 @@ export default tseslint.config(
       'artifacts/process-creature/**',
       'artifacts/held-action/**',
       'artifacts/working-creature/**',
+      'artifacts/claude-bot-creature/**',
       'artifacts/background-command/**',
       'artifacts/terminal-loading/**',
       'artifacts/terminal-agent-states/**',
