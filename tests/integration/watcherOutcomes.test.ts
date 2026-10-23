@@ -79,9 +79,9 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic answer to both')
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered' })
-    const answered = await w.outcome(first)
-    expect(await w.outcome(steer)).toEqual(answered)
-    expect(await w.replyText(answered?.replyMessageId)).toBe('Synthetic answer to both')
+    // The reply can land after the outcome reads answered, so it is waited for like the outcome.
+    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer to both')
+    expect(await w.outcome(steer)).toEqual(await w.outcome(first))
   })
 
   it('gives a queued send its own turn and answer', async () => {
@@ -94,11 +94,11 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
     await w.idle()
     await expect.poll(() => w.outcome(queued)).toMatchObject({ outcome: 'answered', turnMessageId: queued.messageId })
+    await expect.poll(async () => w.replyText((await w.outcome(queued))?.replyMessageId)).toBe('Synthetic second answer')
+    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
     const own = await w.outcome(queued), earlier = await w.outcome(first)
     expect(earlier).toMatchObject({ outcome: 'answered', turnMessageId: first.messageId })
     expect(own?.replyMessageId).not.toBe(earlier?.replyMessageId)
-    expect(await w.replyText(own?.replyMessageId)).toBe('Synthetic second answer')
-    expect(await w.replyText(earlier?.replyMessageId)).toBe('Synthetic first answer')
   })
 
   it('pauses a brief whose turn the user\'s own message took over, and stops one that was only stopped', async () => {
@@ -203,8 +203,8 @@ describe('claude', () => {
     await w.f.driver.completeTurn(w.id, 'Synthetic answer after the cut')
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
+    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer after the cut')
     expect(await w.outcome(steer)).toEqual(await w.outcome(first))
-    expect(await w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer after the cut')
   })
 
   it('gives a steer the turn ended before reading its own turn and answer', async () => {
@@ -217,8 +217,9 @@ describe('claude', () => {
     await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
     await w.idle()
     await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
-    expect(await w.replyText((await w.outcome(steer))?.replyMessageId)).toBe('Synthetic second answer')
-    expect(await w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
+    // The first turn's reply can land after the steer's outcome does (#1113), so each reply is waited for.
+    await expect.poll(async () => w.replyText((await w.outcome(steer))?.replyMessageId)).toBe('Synthetic second answer')
+    await expect.poll(async () => w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
   })
 
   it('pauses a brief whose turn the user cut with a steer of their own', async () => {
