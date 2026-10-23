@@ -1401,14 +1401,19 @@ it('starts Watcher’s news afresh after a restart: wake-ups an earlier build sa
   void started
 }, 40_000)
 
-it('reads Watcher’s turn from the snapshot its pass was handed, though the coordinator’s copy lacks Watcher’s thread (#1249)', async () => {
+it('reads Watcher’s turn from one copy of its thread, and records it once that copy holds it (#1249)', async () => {
   const f = await fixture()
-  const handed = f.control.watcherSnapshot(), latest = f.control.watcherRecord().promptTurns!.at(-1)!
-  // A turn of Watcher's the record has not named yet, in the snapshot the pass is handed and in no other.
+  const live = f.control.watcherSnapshot(), latest = f.control.watcherRecord().promptTurns!.at(-1)!
+  // A turn of Watcher's the record has not named yet, in the snapshot the pass is handed.
   const turnId = randomUUID()
-  const snapshot = { ...handed, threads: handed.threads.map(thread => thread.id === f.id ? { ...thread, status: 'running' as const, lastTurn: { id: turnId, status: 'running' as const } } : thread) }
-  const elsewhere = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...handed, threads: handed.threads.filter(thread => thread.id !== f.id) })
-  try { expect(() => f.service.observe(snapshot, new Set())).not.toThrow() } finally { elsewhere.mockRestore() }
+  const turned = { ...live, threads: live.threads.map(thread => thread.id === f.id ? { ...thread, status: 'running' as const, lastTurn: { id: turnId, status: 'running' as const } } : thread) }
+  // The coordinator's own copy does not hold Watcher's thread for the moment: the pass refuses nothing and records nothing.
+  const elsewhere = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue({ ...live, threads: live.threads.filter(thread => thread.id !== f.id) })
+  try { expect(() => f.service.observe(turned, new Set())).not.toThrow() } finally { elsewhere.mockRestore() }
+  expect(f.control.watcherRecord().promptTurns!.find(turn => turn.id === latest.id)!.nativeTurnId).not.toBe(turnId)
+  // Once it holds the thread again, the next pass records the turn.
+  const held = vi.spyOn(f.control, 'watcherSnapshot').mockReturnValue(turned)
+  try { f.service.observe(turned, new Set()) } finally { held.mockRestore() }
   expect(f.control.watcherRecord().promptTurns!.find(turn => turn.id === latest.id)!.nativeTurnId).toBe(turnId)
 })
 

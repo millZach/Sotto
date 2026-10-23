@@ -1984,10 +1984,11 @@ export class WatcherService implements WatcherControlHooks {
       // The draft was changed in place, so what was worked out from it is worked out again.
       if (this.indexed?.record === draft.record) this.indexed = undefined
     }
-    // Watcher's own thread as this snapshot has it. The check and the change both read this one thread, never another
-    // copy of it looked up elsewhere, which may not hold it yet or any more (#1249).
+    // Watcher's own thread as its host last published it, read once. The check and the change both read this one thread,
+    // never one copy for the check and another for the change, which may not hold it yet or any more (#1249). A thread
+    // that copy does not hold has nothing to record, and the next update asks again.
     const current = this.view().current, watcherTarget = current?.target.hostId === localId ? current.target : undefined
-    const watcherThread = watcherTarget && threads.get(watcherTarget.threadId)
+    const watcherThread = watcherTarget && this.options.control.watcherSnapshot().threads.find(item => item.id === watcherTarget.threadId)
     if (!this.options.workerHost && watcherTarget && watcherThread && !this.promptTurnCurrent(this.view(), watcherTarget, watcherThread)) changes.push(record => {
       const target = record.current?.target
       if (target && sameTarget(target, watcherTarget)) this.promptTurn(record, target, undefined, watcherThread)
