@@ -80,15 +80,22 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
     window.addEventListener('resize', measure)
     return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
   }, [anchor, frame])
-  const placed = place !== null
+  // The panel was unseen until a render placed it, and Chromium can refuse focus to it until its style settles, so focus
+  // is offered on each placing render and on the next frames until the panel has taken it once.
+  const focused = useRef(false)
   useLayoutEffect(() => {
-    if (!placed) return
-    panel.current?.focus()
-    // The panel was unseen until this render placed it, and Chromium can refuse focus to it until its style settles, so
-    // focus is offered again once the press that opened it has ended.
-    const again = window.setTimeout(() => { if (panel.current && !panel.current.contains(document.activeElement)) panel.current.focus() }, 0)
-    return () => window.clearTimeout(again)
-  }, [placed])
+    if (place === null || focused.current) return
+    const offer = (): void => {
+      if (focused.current || !panel.current) return
+      if (!panel.current.contains(document.activeElement)) panel.current.focus()
+      focused.current = panel.current.contains(document.activeElement)
+    }
+    offer()
+    let frames = 0, frame = 0
+    const next = (): void => { offer(); if (!focused.current && ++frames < 10) frame = window.requestAnimationFrame(next) }
+    frame = window.requestAnimationFrame(next)
+    return () => window.cancelAnimationFrame(frame)
+  }, [place])
   useEffect(() => {
     const outside = (event: PointerEvent): void => {
       const target = event.target as Node | null
