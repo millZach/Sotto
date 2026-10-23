@@ -28,7 +28,7 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
-import { heldOperation } from '../fixtures/deferred'
+import { deferred, heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
@@ -1686,6 +1686,31 @@ it('does not take an answer about another operation as the paired machine having
   const next = await f.call('start_thread', held())
   expect(next).toMatchObject({ status: 'ok', target: { hostId } })
   expect(next).not.toHaveProperty('warning')
+})
+
+it('counts a start the paired machine lists before its first prompt is confirmed, while it waits for its first turn (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const nine = Array.from({ length: 9 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  // The machine lists a start's thread, idle with no turn yet, while its first prompt is still on its way: neither accepted nor answered.
+  const waiting = () => f.control.watcherRecordView().operations.filter(item => item.action === 'start' && item.target.hostId === hostId && item.deliveryState === 'dispatching')
+    .map(item => ({ ...shape, id: item.target.threadId, kind: undefined, status: 'idle' as const, lastTurn: undefined, messages: [], summary: undefined, title: 'Synthetic waiting worker' }))
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => {
+    const snapshot = real(id)
+    return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads.filter(thread => thread.title !== 'Synthetic held worker'), ...nine, ...waiting()] } : snapshot
+  })
+  const gate = deferred(), control = f.socket.watcherControl.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const held1 = f.call('start_thread', { ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  await vi.waitFor(() => expect(held).toBe(1))
+  expect(waiting()).toHaveLength(1)
+  // Nine running, the listed worker waiting for its first turn and the new start: eleven.
+  expect(await f.call('start_thread', { ...f.start(), machine: hostId, title: 'Synthetic held worker' })).toMatchObject({ status: 'ok',
+    warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
+  gate.resolve()
+  expect(await held1).toMatchObject({ status: 'ok' })
 })
 
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
