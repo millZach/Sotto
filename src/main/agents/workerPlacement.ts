@@ -86,7 +86,8 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
     if (!matching.length) refuse('HOST_DISCONNECTED', `No ${words.one} is connected. Connect ${words.a}, or run this on This computer. Nothing was started.`, true)
     target = [defaultId, project.hostId, local.hostId].flatMap(id => matching.find(machine => machine.hostId === id) ?? []).at(0) ?? matching[0]!
   } else if (project.hostId !== local.hostId || defaultId === undefined || defaultId === local.hostId) {
-    // A project named on another machine is placed there, as Watcher has always placed work; so is Watcher's own choice.
+    // Where new workers start applies only to this computer's projects (Zach, October 23, 2026). A project named on another
+    // machine is placed there, whatever the setting says, as Watcher has always placed work; so is Watcher's own choice.
     target = from ?? { hostId: project.hostId, name: 'Paired machine', thisComputer: false, connected: false }
   } else {
     const chosen = machines.find(machine => machine.hostId === defaultId)
