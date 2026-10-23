@@ -1,0 +1,598 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: what does the message scrubber look like beside a long conversation? A thin column of short ticks at the
+  left edge of the transcript, one per message the user sent; hovering a tick shows a card with the message and the
+  start of what came back; pressing it jumps there.
+
+  Settled before this prototype (October 22, 2026, Zach through Watcher):
+    1. One tick per message the user sent. The card shows the message and the start of the reply, or the question it
+       led to.
+    2. On the Threads page and in Watcher's Conversation tab. Not on the iPhone for now.
+    3. Only on long conversations (past a screen or two), faint until hovered.
+    4. No pills: square or small-radius shapes, clear borders rather than hairlines.
+
+  Variants:
+    A  Stacked.  Ticks evenly spaced in a short column centred on the transcript's left edge, as Codex does it. The
+                 card is compact: the message and two lines of the reply.
+    B  Map.      Ticks placed where each message sits in the whole conversation, with a bordered box for the part on
+                 screen, like a scrollbar that knows where you spoke. The card is fuller: who, when, turn n of N, the
+                 message, then the reply or the question with its choices.
+
+  The window holds only the last 8 turns at first, the way the real transcript holds its last 80 messages behind
+  "Show earlier messages". A tick for a turn that is not drawn widens the window and lands on it.
+
+  Keyboard: Tab reaches the ticks as one stop. Up and Down move between them and show each card, Home and End go to
+  the first and last, Enter or Space jumps and puts focus on the message, Escape closes the card, then leaves.
+  Touch: a tap shows the card, a tap on the card jumps.
+
+  The bar: variant, surface, theme, size, reduced motion, a short conversation, the lane, the state. ← → cycle variants.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — message scrubber, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'), url('figtree-latin.woff2') format('woff2'); }
+:root {
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-sunken: oklch(0.13 0.008 265);
+  --tt-sidebar: oklch(0.165 0.006 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.5 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.84 0.08 183);
+  --tt-accent-border: color-mix(in srgb, oklch(0.714 0.104 183) 45%, transparent);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-bubble: oklch(0.19 0.01 265);
+  --tt-shadow: 0 14px 36px -10px rgb(0 0 0 / 60%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+.app[data-theme='light'] {
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.995 0.002 85);
+  --tt-surface-sunken: oklch(0.955 0.006 85);
+  --tt-sidebar: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-text-muted: oklch(0.47 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.62 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-accent-text: oklch(0.45 0.13 235);
+  --tt-accent-border: color-mix(in srgb, oklch(0.52 0.13 235) 45%, transparent);
+  --tt-hover: oklch(0.92 0.01 85);
+  --tt-bubble: oklch(0.955 0.006 85);
+  --tt-shadow: 0 14px 36px -12px rgb(0 0 0 / 22%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #1b1b1f; font-family: var(--tt-font); overflow: hidden; }
+button { font: inherit; color: inherit; }
+
+/* The window, drawn at its real size and scaled to fit. */
+.stage { position: fixed; inset: 58px 0 64px; display: grid; place-items: center; overflow: hidden; }
+.app { position: absolute; left: 50%; top: 50%; display: grid; grid-template-rows: 38px 1fr; background: var(--tt-canvas); color: var(--tt-text); color-scheme: dark; transform-origin: 0 0; box-shadow: 0 30px 80px rgb(0 0 0 / 50%); overflow: hidden; }
+.app[data-theme='light'] { color-scheme: light; }
+.app :focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+.strip { display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; }
+.strip b { color: var(--tt-text-2); font-weight: 600; }
+.strip .winctl { margin-left: auto; display: flex; gap: 18px; letter-spacing: 2px; }
+.body { display: grid; min-height: 0; }
+.body[data-surface='thread'] { grid-template-columns: 260px 1fr; }
+.body[data-surface='thread'][data-narrow] { grid-template-columns: 220px 1fr; }
+.sidebar { border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); padding: 14px 10px; font-size: 13.5px; overflow: hidden; }
+.sidebar h4 { margin: 4px 8px 10px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.sidebar .row { padding: 8px 10px; border-radius: 6px; color: var(--tt-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .row[aria-current] { background: var(--tt-hover); color: var(--tt-text); }
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; isolation: isolate; }
+.pane-head { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 20px; border-bottom: 1px solid var(--tt-hairline); font-size: 14px; }
+.pane-head .title { font-weight: 600; }
+.pane-head .meta { color: var(--tt-text-muted); font-size: 12.5px; }
+.tabs { display: flex; gap: 4px; margin-left: 8px; }
+.tabs span { padding: 6px 10px; border-radius: 6px; color: var(--tt-text-muted); font-size: 13px; }
+.tabs span[aria-selected] { background: var(--tt-hover); color: var(--tt-text); }
+
+/* The transcript, as threads.css draws it: a 760 px column with the rest as margins. */
+.transcript { position: relative; flex: 1; min-height: 0; display: flex; }
+.scroller { position: relative; flex: 1; min-height: 0; overflow-y: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; }
+.app[data-narrow] .scroller { padding: 22px max(24px, calc((100% - 760px) / 2)); }
+.scroller:focus-visible { outline-offset: -2px; }
+.earlier { display: flex; justify-content: center; margin: 0 0 22px; }
+.earlier button { padding: 6px 12px; border: 1px solid var(--tt-border); border-radius: 4px; background: transparent; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.msg { position: relative; margin: 0 0 26px; font-size: 14.5px; line-height: 1.6; scroll-margin-top: 18px; }
+.msg header { display: flex; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header b { color: var(--tt-text-2); font-weight: 500; }
+.msg p { margin: 0 0 10px; }
+.msg p:last-child { margin-bottom: 0; }
+.msg code { font-family: var(--tt-mono); font-size: 13px; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--tt-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.msg[data-sought] { box-shadow: 0 0 0 2px var(--tt-accent); }
+.app:not([data-reduced]) .msg { transition: box-shadow 300ms ease; }
+.work { margin: -8px 0 18px; color: var(--tt-text-muted); font-size: 13px; }
+.ask { margin: 10px 0 0; padding: 12px 14px; border: 1px solid var(--tt-accent-border); border-radius: 6px; background: var(--tt-surface-elevated); }
+.ask .q { margin: 0 0 8px; font-weight: 600; }
+.ask .choice { display: block; margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-border); border-radius: 4px; font-size: 13.5px; }
+.ask .answered { margin-top: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.compose { padding: 8px max(24px, calc((100% - 760px) / 2)) 16px; }
+.compose .box { min-height: 86px; padding: 12px 14px; border: 1px solid var(--tt-border); border-radius: 10px; background: var(--tt-surface); color: var(--tt-text-muted); font-size: 14px; }
+.app[data-narrow] .compose .box { min-height: 64px; }
+
+/* The scrubber: a lane just outside the column's left edge, in the transcript's own margin. */
+.scrub { position: absolute; z-index: 3; top: 0; bottom: 0; width: var(--lane); left: calc(var(--col-left) - var(--lane)); }
+.scrub[hidden] { display: none; }
+.scrub .tick { position: absolute; left: 0; width: 100%; height: var(--hit); margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; transform: translateY(-50%); }
+.scrub .tick::before { content: ''; position: absolute; top: 50%; right: var(--tick-gap); width: var(--len, var(--tick-rest)); height: 2px; margin-top: -1px; border-radius: 1px; background: var(--tt-text-muted); opacity: var(--lit, .5); }
+.scrub .tick[data-in-view]::before { background: var(--tt-text-2); opacity: .8; }
+.scrub .tick[data-hot]::before { background: var(--tt-text); height: 3px; margin-top: -1.5px; }
+.scrub .tick:focus-visible { outline: none; }
+.scrub .tick:focus-visible::before { box-shadow: 0 0 0 2px var(--tt-canvas), 0 0 0 4px var(--tt-accent); }
+.app:not([data-reduced]) .scrub .tick::before { transition: width 120ms ease, opacity 160ms ease, background-color 160ms ease; }
+/* Faint until the pointer or the keyboard reaches it. */
+.scrub { opacity: .55; }
+.scrub:hover, .scrub:focus-within, .scrub[data-active] { opacity: 1; }
+.app:not([data-reduced]) .scrub { transition: opacity 200ms ease; }
+.scrub .view { position: absolute; right: 6px; width: 12px; border: 1px solid var(--tt-border); border-radius: 2px; pointer-events: none; opacity: .6; }
+.scrub:hover .view, .scrub:focus-within .view { opacity: 1; }
+.lane-shown .scrub { outline: 1px dashed var(--tt-accent); outline-offset: -1px; }
+
+/* The card, over the column beside the hovered tick. */
+.card { position: absolute; z-index: 6; left: calc(var(--col-left) + 6px); width: 300px; max-width: calc(100% - var(--col-left) - 18px); padding: 10px 12px 11px; border: 1px solid var(--tt-border);
+  border-radius: 4px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: pointer; }
+.card[hidden] { display: none; }
+.app:not([data-reduced]) .card { animation: card-in 120ms ease-out; }
+@keyframes card-in { from { opacity: 0; transform: translateX(-4px); } }
+.card .said { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 0; font-weight: 600; }
+.card .then { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 5px 0 0; color: var(--tt-text-muted); }
+.card ul { margin: 4px 0 0; padding-left: 16px; color: var(--tt-text-muted); }
+.card ul li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card[data-v='B'] { width: 340px; padding: 0; border-radius: 0; }
+.card[data-v='B'] .head { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--tt-border); color: var(--tt-text-muted); font-size: 12px; }
+.card[data-v='B'] .head b { color: var(--tt-text-2); font-weight: 600; }
+.card[data-v='B'] .head span:last-child { margin-left: auto; }
+.card[data-v='B'] .said { -webkit-line-clamp: 3; margin: 9px 12px 0; font-weight: 500; }
+.card[data-v='B'] .who { margin: 9px 12px 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.card[data-v='B'] .then { -webkit-line-clamp: 3; margin: 2px 12px 11px; color: var(--tt-text-2); }
+.card[data-v='B'] .choices { margin: 4px 12px 11px; padding: 0; list-style: none; }
+.card[data-v='B'] .choices li { margin-top: 4px; padding: 4px 8px; border: 1px solid var(--tt-border); border-radius: 2px; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .keys { margin: 7px 0 0; color: var(--tt-text-muted); font-size: 11.5px; }
+.card[data-v='B'] .keys { margin: -4px 12px 9px; }
+
+/* Watcher's night scene, in the margins: a sketch of #1343's trees, moon and owls, never in the scrubber's lane. */
+.scene { position: absolute; z-index: 0; inset: 0; pointer-events: none; color: var(--tt-text-muted); font-family: var(--tt-mono); font-size: 11px; line-height: 1.05; white-space: pre; opacity: .7; }
+.scene .art { position: absolute; }
+.scene .eye { color: var(--tt-accent); }
+.scene .owl { color: var(--tt-text); }
+.lane-note { position: absolute; z-index: 2; font-family: var(--tt-font); font-size: 11px; color: var(--tt-accent-text); white-space: nowrap; pointer-events: none; }
+
+/* The prototype's own bar and state. */
+.bar { position: fixed; left: 50%; bottom: 10px; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 6px 8px; transform: translateX(-50%); background: #101014; color: #ddd;
+  border: 1px solid #44444c; border-radius: 6px; font: 12px var(--tt-font); box-shadow: 0 10px 30px rgb(0 0 0 / 60%); white-space: nowrap; max-width: calc(100vw - 16px); overflow-x: auto; }
+.bar .grp { display: flex; gap: 2px; padding: 2px; border: 1px solid #33333a; border-radius: 4px; }
+.bar button { padding: 4px 8px; border: 0; border-radius: 3px; background: transparent; color: #bbb; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: #e8e8ea; color: #111; }
+.bar .lbl { color: #888; margin: 0 2px 0 6px; }
+.state { position: fixed; top: 10px; right: 10px; z-index: 50; width: 300px; padding: 10px 12px; background: #101014ee; color: #cfcfd4; border: 1px solid #44444c; border-radius: 6px;
+  font: 11px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; opacity: .92; }
+.state[hidden] { display: none; }
+.vname { position: fixed; top: 10px; left: 10px; z-index: 50; padding: 6px 10px; background: #101014ee; color: #eee; border: 1px solid #44444c; border-radius: 6px; font: 12px var(--tt-font); max-width: 46vw; }
+.vname b { font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="vname" id="vname"></div>
+<div class="stage" id="stage"></div>
+<pre class="state" id="state"></pre>
+<div class="bar" id="bar" role="toolbar" aria-label="Prototype controls"></div>
+<script>
+'use strict'
+// ---------------------------------------------------------------- data
+const THREAD = {
+  title: 'Fix host update pill flicker', who: 'Codex', you: 'You',
+  turns: [
+    ['The host update pill flickers when two hosts reconnect at the same moment. Can you find out why?',
+      ['Both hosts send `host-updated` inside the same frame, and the router replaces the whole update list for each one. Between the two writes the list is briefly empty, so the pill unmounts and mounts again.', 'It only shows with two or more hosts because one host never races itself. The fix is either to batch the writes or to keep the last list until the new one is whole.', 'Batching is smaller and keeps the router’s shape. I would batch for 150 ms.']],
+    ['Go with the debounce, but keep it under 200 ms so a real update still shows quickly.', ['Done. The router now batches host updates for 150 ms and writes the list once. A single host’s update still shows on the next frame because a batch of one is written straight away.']],
+    ['Can you also make a video of this app being used with two hosts reconnecting, so I can show Pat?', ['I can record it two ways.'], { q: 'Which video do you want?', choices: ['A screen capture of the real app with two fake hosts', 'A scripted Playwright run, recorded at 1280x800', 'Both, side by side'], answered: 'You chose: A scripted Playwright run, recorded at 1280x800' }],
+    ['The video is great. Trim the first four seconds and put it in artifacts/host-pill.', ['Trimmed and saved as `artifacts/host-pill/two-hosts-reconnect.mp4`, 18 seconds, 2.1 MB.']],
+    ['Now run the host contract tests, only the reconnect ones. RAM is tight.', ['Ran `hostServiceContract` filtered to reconnect: 14 passed, 0 failed, 41 seconds. I kept it to one worker.', 'Nothing else ran.']],
+    ['Why did the second host’s update count go to zero after the reconnect?', ['The count is read from the host’s first status message after it reconnects. That message arrives before the host has listed its clients, so it reports zero.', 'The old code hid that because the pill had already unmounted. With the flicker gone, the zero is visible for about 300 ms.', 'Two ways out: keep the last count until a full list arrives, or ask the host for its list before showing anything.']],
+    ['OK, keep the count from the last read until the new one arrives. Don’t show a zero in between.', ['The pill keeps the last count it read and replaces it only when the host’s client list arrives. A host that really has nothing to update still clears the pill, after its list says so.']],
+    ['Does this change anything on the iPhone? It reads the same host list.', ['It reads the same list through host protocol version 1, so it has the same zero for a moment.'], { q: 'Should the iPhone change too?', choices: ['Leave the iPhone alone', 'Fix it there too, in its own PR', 'Write it up as an issue'], answered: 'You chose: Leave the iPhone alone' }],
+    ['Leave the iPhone alone for now. Write the verification note.', ['Wrote `docs/verification/2026-10-22-host-pill-flicker.md` with the before and after captures and the video. It says the iPhone keeps the old behaviour on purpose.']],
+    ['Light theme: the pill text looks washed out. Check it against 4.5:1.', ['It measures 3.9:1 on the strip in light, so it fails. Dark is 7.2:1.', 'The pill uses `--tt-text-muted`. `--tt-text-2` measures 8.1:1 in light and keeps the quiet look.']],
+    ['Use text-2 instead of text-muted there and recapture the baselines that changed on purpose.', ['Changed it and recaptured two baselines: `strip-light-1280x800` and `strip-light-820x560`. Nothing else moved.']],
+    ['What happens at 820 by 560? Does the pill still fit beside the window controls?', ['It fits with 6 px to spare when the count is one digit. With two digits it pushes the thread name off by 11 px and the name clips.', 'The strip has no room to give at that size.']],
+    ['Make it drop the word Update and keep the count when it is that narrow.', ['Below 900 px the pill shows only the count with its icon, and its accessible name still says "3 updates".']],
+    ['Can you add a unit test for the narrow label?', ['Added `hostUpdatePill.test.tsx`: the label at 1280 and at 820, and the accessible name at both.']],
+    ['Run typecheck and lint, then open the PR.', ['Typecheck and lint are clean. Opened #1102, "Stop the host update pill flickering when hosts reconnect together".']],
+    ['Greptile says the debounce timer is never cleared on unmount. Is it right?', ['Yes. If the Threads page unmounts inside the 150 ms, the timer fires and writes to a store nobody reads. It is harmless today but it would leak in tests.']],
+    ['Fix it in its own commit.', ['Pushed "Clear the host update batch timer when the router stops".']],
+    ['CI is red on Package (Windows). What failed?', ['Package failed in `release-external-dependencies`: it found nothing new, but the step timed out reading `node_modules` after the merge of #1096 grew it.', 'It is not this change. Merging main in picks up the fix from #1099, which caches that read.', 'I have not pushed anything yet.']],
+    ['Merge main in and push once.', ['Merged `origin/main` and pushed once. Gates (Windows) and Package result are running.']],
+    ['Green. Write me a two-line summary I can paste into the release notes.', ['The host update pill no longer flickers when several hosts reconnect at once.', 'At the smallest window it shows the count alone, and light theme text now meets 4.5:1.']],
+  ],
+}
+const WATCHER = {
+  title: 'Watcher', who: 'Watcher', you: 'You',
+  turns: [
+    ['Watch the release thread and tell me when Package goes green.', ['Watching "Release 0.48.2". Package (Windows) is running now; I will tell you when it finishes, green or red.']],
+    ['What is the Codex thread on the composer waiting for?', ['"Composer keeps the queue order" is waiting on a permission: it wants to run `npm test -- tests/unit/agents` outside its folder. Open it beside me to answer.']],
+    ['Send the composer thread a note: keep the queue order when a send fails.', ['Sent it: "Keep the queue order when a send fails." It answered that it already does for direct sends and is adding the queued case.']],
+    ['Which threads are still working?', ['Three are working: "Release 0.48.2", "Composer keeps the queue order" and "iPhone tab bar". Two are waiting on you. Six are resting.']],
+    ['Can you also make a video of this app being used for the release notes?', ['I can start a thread to record it.'], { q: 'Which part of the app should the video show?', choices: ['The Threads page with two panes', 'Watcher’s room and its owls', 'Dictation from the widget'], answered: 'You chose: The Threads page with two panes' }],
+    ['Start a Claude thread to look at the flaky reconnect test.', ['Started "Flaky reconnect test" on Claude Code in a new worktree, and I am watching it.']],
+    ['How is that thread doing?', ['It found the cause: the test waits for a reconnect that the fake host acknowledges before it has listed its threads. It is scripting the lost acknowledgement instead of shortening the deadline.', 'No changes pushed yet.']],
+    ['Stop watching the docs thread. It’s done.', ['Stopped watching "Guide: remote hosts". Its owl flew back into the moon.']],
+    ['Summarise what merged today.', ['Six pull requests merged today: #1084 host updates wait for clients, #1090 remote thread backlog, #1096 the Update all journey, and three smaller fixes to the composer, the widget and the release check.']],
+    ['Is anything waiting on me?', ['Two things: the composer thread’s test permission, and a question from "iPhone tab bar" about where Settings goes.']],
+    ['Open the permission one beside you.', ['Opened "Composer keeps the queue order" beside me, at its permission.']],
+    ['Ask the release thread to wait for my GO before it tags.', ['Sent: "Wait for Zach’s GO before you tag 0.48.2." It answered that it will hold after packaging.']],
+    ['What did the iPhone thread decide about the tab bar?', ['It is asking you, not deciding: Settings either moves into the tab bar as a fifth tab, or stays behind the profile button. It recommends the profile button.']],
+    ['Draft the release notes from today’s merges.', ['I have the six merges.'], { q: 'How should the notes read?', choices: ['Five lines, the biggest changes only', 'One line per pull request', 'Grouped by area: threads, hosts, release'], answered: 'You chose: Grouped by area: threads, hosts, release' }],
+    ['Grouped by area.', ['Threads: the composer keeps its queue order when a send fails.', 'Hosts: an update waits for every client, and a remote thread’s backlog arrives whole.', 'Release: Update all no longer checks Sotto’s own update twice.']],
+    ['Thanks. Watch the release until it’s out, then tell me.', ['Watching "Release 0.48.2" until it is published. I will tell you here when it is out.']],
+  ],
+}
+const WINDOW = 8 // turns drawn at first: the prototype's stand-in for the real 80-message window
+const SIZES = { '1600': [1600, 1000], '1280': [1280, 800], '820': [820, 560] }
+
+// ---------------------------------------------------------------- state
+const S = { variant: 'A', surface: 'thread', theme: 'dark', size: '1280', reduced: matchMedia('(prefers-reduced-motion: reduce)').matches, short: false, lane: false, showState: false,
+  start: 0, hot: -1, focusIndex: -1, inView: new Set(), lastJump: '—', shown: false, cardVia: '' }
+let els = {}
+
+const data = () => S.surface === 'thread' ? THREAD : WATCHER
+const turns = () => S.short ? data().turns.slice(0, 3) : data().turns
+const clock = i => { const m = 9 * 60 + 2 + i * 7; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} AM` }
+const md = text => text.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/`([^`]+)`/g, '<code>$1</code>')
+const plain = text => text.replace(/`/g, '')
+
+// ---------------------------------------------------------------- render the window
+function build() {
+  const [w, h] = SIZES[S.size]
+  const narrow = S.size === '820'
+  const d = data()
+  const stage = document.getElementById('stage')
+  stage.innerHTML = ''
+  const app = document.createElement('div')
+  app.className = 'app' + (S.lane ? ' lane-shown' : '')
+  app.dataset.theme = S.theme
+  if (S.reduced) app.dataset.reduced = ''
+  if (narrow) app.dataset.narrow = ''
+  app.style.width = w + 'px'; app.style.height = h + 'px'
+  const sidebar = S.surface === 'thread' ? `<nav class="sidebar" aria-label="Threads"><h4>Sotto</h4>
+      <div class="row" aria-current="page">${d.title}</div><div class="row">Composer keeps the queue order</div><div class="row">iPhone tab bar</div>
+      <div class="row">Release 0.48.2</div><div class="row">Guide: remote hosts</div><div class="row">Flaky reconnect test</div></nav>` : ''
+  const head = S.surface === 'thread'
+    ? `<div class="pane-head"><span class="title">${d.title}</span><span class="meta">Codex · sotto/host-pill</span></div>`
+    : `<div class="pane-head"><span class="title">Watcher</span><div class="tabs"><span>All threads</span><span aria-selected="true">Conversation</span><span>Watched 6</span></div></div>`
+  app.innerHTML = `<div class="strip"><b>Sotto</b><span>${S.surface === 'thread' ? 'Threads' : 'Owl'}</span><span class="winctl">— ▢ ✕</span></div>
+    <div class="body" data-surface="${S.surface}" ${narrow ? 'data-narrow' : ''}>${sidebar}
+      <section class="pane">${head}
+        <div class="transcript" id="transcript">
+          ${S.surface === 'watcher' ? '<div class="scene" id="scene" aria-hidden="true"></div>' : ''}
+          <nav class="scrub" id="scrub" aria-label="Messages you sent" hidden></nav>
+          <div class="scroller" id="scroller" tabindex="0" role="log" aria-label="${S.surface === 'thread' ? 'Thread transcript' : 'Watcher conversation'}"><div id="content"></div></div>
+          <div class="card" id="card" hidden></div>
+        </div>
+        <div class="compose"><div class="box">${S.surface === 'thread' ? 'Write a prompt, or hold Ctrl+Shift+Space to dictate' : 'Ask Watcher'}</div></div>
+      </section></div>`
+  stage.appendChild(app)
+  els = { app, scroller: app.querySelector('#scroller'), content: app.querySelector('#content'), scrub: app.querySelector('#scrub'), card: app.querySelector('#card'),
+    transcript: app.querySelector('#transcript'), scene: app.querySelector('#scene') }
+  fit()
+  S.start = Math.max(0, turns().length - WINDOW)
+  S.hot = -1; S.focusIndex = -1
+  drawContent()
+  els.scroller.scrollTop = els.scroller.scrollHeight
+  wire()
+  layout()
+}
+
+function fit() {
+  const [w, h] = SIZES[S.size]
+  const box = document.getElementById('stage').getBoundingClientRect()
+  const scale = Math.min(1, (box.width - 24) / w, (box.height - 24) / h)
+  els.app.style.transform = `scale(${scale}) translate(-50%, -50%)`
+  els.scale = scale
+}
+
+function drawContent() {
+  const all = turns(), d = data()
+  const hidden = S.start
+  let html = hidden > 0 ? `<div class="earlier"><button type="button" id="earlier">Show earlier messages (${hidden * 2})</button></div>` : ''
+  for (let i = S.start; i < all.length; i++) {
+    const [said, reply, ask] = all[i]
+    html += `<article class="msg" data-role="user" data-turn="${i}" tabindex="-1"><header><b>${d.you}</b><time>${clock(i)}</time></header><p>${md(said)}</p></article>`
+    if (reply.length > 1 || ask) html += `<div class="work">Worked for ${1 + (i * 37) % 9}m ${(i * 13) % 60}s ›</div>`
+    html += `<article class="msg" data-role="assistant"><header><b>${d.who === 'Watcher' ? '🦉 Watcher' : d.who}</b><time>${clock(i)}</time></header>${reply.map(p => `<p>${md(p)}</p>`).join('')}`
+    if (ask) html += `<div class="ask"><p class="q">${ask.q}</p>${ask.choices.map(c => `<span class="choice">${c}</span>`).join('')}<p class="answered">${ask.answered}</p></div>`
+    html += `</article>`
+  }
+  els.content.innerHTML = html
+  els.content.querySelector('#earlier')?.addEventListener('click', () => {
+    const before = els.scroller.scrollHeight - els.scroller.scrollTop
+    S.start = Math.max(0, S.start - WINDOW); drawContent()
+    els.scroller.scrollTop = els.scroller.scrollHeight - before
+    layout()
+  })
+}
+
+// ---------------------------------------------------------------- the scrubber
+const LANE = () => S.size === '820' ? 22 : 44
+function colLeft() {
+  const pad = parseFloat(getComputedStyle(els.scroller).paddingLeft)
+  return els.scroller.offsetLeft + pad
+}
+
+/** A turn's place in the whole conversation as a fraction, for B: drawn turns measured, the rest estimated from their words. */
+function fractions() {
+  const all = turns()
+  const est = all.map(([said, reply, ask]) => 120 + said.length * .35 + reply.join(' ').length * .45 + (ask ? 170 : 0))
+  const drawnTop = new Map()
+  for (const el of els.content.querySelectorAll('.msg[data-role="user"]')) drawnTop.set(+el.dataset.turn, el.offsetTop)
+  const firstDrawn = S.start
+  const estAbove = est.slice(0, firstDrawn).reduce((a, b) => a + b, 0)
+  const drawnStart = drawnTop.get(firstDrawn) ?? 0
+  const total = estAbove + (els.content.offsetHeight - drawnStart)
+  let acc = 0
+  return {
+    total, estAbove, drawnStart,
+    at: all.map((_, i) => { if (i < firstDrawn) { const f = acc / total; acc += est[i]; return f } return (estAbove + drawnTop.get(i) - drawnStart) / total }),
+  }
+}
+
+function layout() {
+  const all = turns()
+  const sc = els.scroller
+  // Long enough: the conversation is more than two screens tall, with at least three messages sent.
+  const screens = (sc.scrollHeight + (S.start > 0 ? 9999 : 0)) / sc.clientHeight
+  S.shown = all.length >= 3 && screens >= 2
+  const scrub = els.scrub
+  const lane = LANE()
+  els.transcript.style.setProperty('--lane', lane + 'px')
+  els.transcript.style.setProperty('--col-left', colLeft() + 'px')
+  els.transcript.style.setProperty('--tick-rest', (S.size === '820' ? 8 : 10) + 'px')
+  els.transcript.style.setProperty('--tick-gap', (S.size === '820' ? 5 : 18) + 'px')
+  els.transcript.style.setProperty('--tick-hot', (S.size === '820' ? 12 : 18) + 'px')
+  scrub.hidden = !S.shown
+  if (S.surface === 'watcher') drawScene()
+  if (!S.shown) { hideCard(); writeState(); return }
+  const H = els.transcript.clientHeight
+  const top = 24, bottom = H - 24
+  let ys
+  if (S.variant === 'A') {
+    const pitch = Math.max(4, Math.min(9, (bottom - top) * .7 / all.length))
+    const span = pitch * (all.length - 1)
+    const start = H / 2 - span / 2
+    ys = all.map((_, i) => start + i * pitch)
+    els.transcript.style.setProperty('--hit', Math.max(pitch, 6) + 'px')
+  } else {
+    const f = fractions()
+    ys = f.at.map(x => top + x * (bottom - top))
+    els.transcript.style.setProperty('--hit', '8px')
+    els.fr = f
+  }
+  els.ys = ys
+  if (scrub.children.length !== all.length + (S.variant === 'B' ? 1 : 0)) {
+    scrub.innerHTML = (S.variant === 'B' ? '<i class="view"></i>' : '') + all.map(([said], i) =>
+      `<button type="button" class="tick" data-i="${i}" tabindex="${i === all.length - 1 ? 0 : -1}" aria-label="Go to your message at ${clock(i)}: ${plain(said).slice(0, 80)}"></button>`).join('')
+  }
+  scrub.querySelectorAll('.tick').forEach((t, i) => { t.style.top = ys[i] + 'px' })
+  updateInView()
+  writeState()
+}
+
+function updateInView() {
+  if (!S.shown) return
+  const sc = els.scroller
+  const a = sc.scrollTop, b = a + sc.clientHeight
+  const users = [...els.content.querySelectorAll('.msg[data-role="user"]')]
+  S.inView = new Set()
+  users.forEach((el, k) => {
+    const i = +el.dataset.turn
+    const end = users[k + 1]?.offsetTop ?? els.content.offsetHeight
+    if (el.offsetTop < b && end > a) S.inView.add(i)
+  })
+  els.scrub.querySelectorAll('.tick').forEach((t, i) => { if (S.inView.has(i)) t.dataset.inView = ''; else delete t.dataset.inView })
+  if (S.variant === 'B' && els.fr) {
+    const f = els.fr, H = els.transcript.clientHeight, top = 24, bottom = H - 24
+    const y0 = top + (f.estAbove + Math.max(0, a - f.drawnStart)) / f.total * (bottom - top)
+    const y1 = top + (f.estAbove + Math.max(0, b - f.drawnStart)) / f.total * (bottom - top)
+    const view = els.scrub.querySelector('.view')
+    view.style.top = y0 + 'px'; view.style.height = Math.max(8, y1 - y0) + 'px'
+  }
+}
+
+/** Zach's pick: the ticks near the pointer rise on a bell curve, longest and brightest under it. */
+function swell(y) {
+  const rest = S.size === '820' ? 8 : 10, peak = S.size === '820' ? 15 : 24, sigma = 16
+  els.scrub.querySelectorAll('.tick').forEach((t, k) => {
+    if (y === null) { t.style.removeProperty('--len'); t.style.removeProperty('--lit'); return }
+    const g = Math.exp(-((els.ys[k] - y) ** 2) / (2 * sigma * sigma))
+    t.style.setProperty('--len', (rest + (peak - rest) * g).toFixed(1) + 'px')
+    t.style.setProperty('--lit', (.55 + .45 * g).toFixed(2))
+  })
+}
+function setHot(i, via) {
+  S.hot = i
+  els.scrub.querySelectorAll('.tick').forEach((t, k) => { if (k === i) t.dataset.hot = ''; else delete t.dataset.hot })
+  if (i < 0) { hideCard(); swell(null); delete els.scrub.dataset.active; writeState(); return }
+  if (via !== 'pointer') swell(els.ys[i])
+  els.scrub.dataset.active = ''
+  showCard(i, via)
+}
+
+function showCard(i, via) {
+  const all = turns(), d = data()
+  const [said, reply, ask] = all[i]
+  const card = els.card
+  card.dataset.v = S.variant
+  S.cardVia = via
+  const keys = via === 'keys' ? `<p class="keys">Enter goes there · ↑ ↓ for the others · Esc closes</p>` : ''
+  if (S.variant === 'A') {
+    card.innerHTML = `<p class="said">${plain(said)}</p>` + (ask
+      ? `<p class="then">${d.who} asked: ${ask.q}</p><ul>${ask.choices.map(c => `<li>${c}</li>`).join('')}</ul>`
+      : `<p class="then">${plain(reply.join(' '))}</p>`) + keys
+  } else {
+    card.innerHTML = `<div class="head"><b>${d.you}</b><span>${clock(i)}</span><span>Message ${i + 1} of ${all.length}</span></div><p class="said">${plain(said)}</p>`
+      + (ask ? `<p class="who">${d.who} asked</p><p class="then" style="margin-bottom:0">${ask.q}</p><ul class="choices">${ask.choices.map(c => `<li>${c}</li>`).join('')}</ul>`
+        : `<p class="who">${d.who} replied</p><p class="then">${plain(reply.join(' '))}</p>`) + keys
+  }
+  card.hidden = false
+  card.setAttribute('aria-hidden', 'true') // the tick's name already says what the card shows; the card is for the eye
+  const H = els.transcript.clientHeight
+  const ch = card.offsetHeight
+  const y = Math.min(H - ch - 8, Math.max(8, els.ys[i] - ch / 2))
+  card.style.top = y + 'px'
+  card.onclick = () => jump(i, false)
+  writeState()
+}
+function hideCard() { els.card.hidden = true; S.cardVia = '' }
+
+/** Pressing a tick: widen the window when the turn is not drawn, then land on its message. */
+function jump(i, fromKeys) {
+  let widened = 0
+  if (i < S.start) { widened = S.start - i; S.start = i; drawContent() }
+  const target = els.content.querySelector(`.msg[data-role="user"][data-turn="${i}"]`)
+  els.scroller.scrollTo({ top: target.offsetTop - 18, behavior: S.reduced ? 'auto' : 'smooth' })
+  target.dataset.sought = ''
+  setTimeout(() => delete target.dataset.sought, 1600)
+  if (fromKeys) target.focus({ preventScroll: true })
+  S.lastJump = `message ${i + 1}` + (widened ? `: not drawn, window widened by ${widened} turns, then landed` : ': already drawn, landed')
+  setHot(-1)
+  layout()
+}
+
+let leaveTimer = 0
+function wire() {
+  const sc = els.scroller, scrub = els.scrub
+  sc.addEventListener('scroll', () => { updateInView(); writeState() }, { passive: true })
+  // The pointer anywhere in the lane picks the nearest tick, so ticks a few pixels apart are still easy to reach.
+  const nearest = clientY => {
+    const r = els.transcript.getBoundingClientRect()
+    const y = (clientY - r.top) / els.scale
+    let best = -1, dist = Infinity
+    els.ys.forEach((v, i) => { const dd = Math.abs(v - y); if (dd < dist) { dist = dd; best = i } })
+    return dist <= 14 ? best : -1
+  }
+  scrub.addEventListener('pointermove', e => { if (e.pointerType === 'touch') return; clearTimeout(leaveTimer); const i = nearest(e.clientY); swell((e.clientY - els.transcript.getBoundingClientRect().top) / els.scale); if (i !== S.hot) setHot(i, 'pointer') })
+  scrub.addEventListener('pointerleave', e => { if (S.cardVia !== 'pointer') return; leaveTimer = setTimeout(() => { if (!els.card.matches(':hover')) setHot(-1) }, 140) })
+  els.card.addEventListener('pointerleave', () => { if (S.cardVia === 'pointer') leaveTimer = setTimeout(() => setHot(-1), 140) })
+  els.card.addEventListener('pointerenter', () => clearTimeout(leaveTimer))
+  scrub.addEventListener('click', e => {
+    const i = e.pointerType === 'touch' || e.detail === 0 ? +(e.target.closest('.tick')?.dataset.i ?? -1) : nearest(e.clientY)
+    if (i < 0) return
+    if (e.pointerType === 'touch' && S.hot !== i) { setHot(i, 'touch'); return } // a tap shows the card; a tap on the card goes there
+    if (e.detail === 0) return // keyboard presses are handled on keydown
+    jump(i, false)
+  })
+  scrub.addEventListener('focusin', e => { const t = e.target.closest('.tick'); if (t) { S.focusIndex = +t.dataset.i; setHot(+t.dataset.i, 'keys') } })
+  scrub.addEventListener('focusout', () => setTimeout(() => { if (!scrub.contains(document.activeElement)) setHot(-1) }, 0))
+  scrub.addEventListener('keydown', e => {
+    const ticks = [...scrub.querySelectorAll('.tick')]
+    const i = S.focusIndex
+    const move = n => { e.preventDefault(); const k = Math.max(0, Math.min(ticks.length - 1, n)); ticks.forEach((t, j) => t.tabIndex = j === k ? 0 : -1); ticks[k].focus() }
+    if (e.key === 'ArrowUp') move(i - 1)
+    else if (e.key === 'ArrowDown') move(i + 1)
+    else if (e.key === 'PageUp') move(i - 5)
+    else if (e.key === 'PageDown') move(i + 5)
+    else if (e.key === 'Home') move(0)
+    else if (e.key === 'End') move(ticks.length - 1)
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); jump(i, true) }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!els.card.hidden) { hideCard(); setHot(-1) ; ticks[i].focus(); delete els.scrub.dataset.active } else sc.focus() }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation()
+  })
+}
+
+// ---------------------------------------------------------------- Watcher's scene, kept out of the lane
+function drawScene() {
+  const scene = els.scene
+  const W = els.transcript.clientWidth, H = els.transcript.clientHeight
+  const cl = colLeft(), lane = LANE()
+  const leftRoom = cl - lane           // what the scene may use on the left: the margin less the scrubber's lane
+  const rightRoom = W - (cl + 760 > W ? W - cl : 760) - cl
+  const tree = ['      ,%%%,', '    ,%%%%%%%,', '   %%%%%%%%%%%', '  %%%%%\\%%%%%%%', '   %%%%%|%%/%%', '    `%%%|%%\'', '        |    ', '        |', '        |', '  ______|______']
+  const owlL = '  (o,o)'
+  let html = ''
+  if (leftRoom >= 150) {
+    html += `<div class="art" style="right:${W - leftRoom + 8}px;bottom:28px">${'<span class="owl">' + owlL + '</span>\n'}${tree.join('\n')}</div>`
+  } else {
+    html += '' // too narrow: the left margin is the scrubber's alone; the rail of eyes goes right
+  }
+  if (rightRoom >= 150) {
+    html += `<div class="art" style="left:${W - rightRoom + 20}px;top:30px">   .--.\n  /    \\  <span class="eye">~</span>\n  \\    /\n   '--'</div>`
+    html += `<div class="art" style="left:${W - rightRoom + 30}px;bottom:28px">${tree.join('\n').replace('%%%%%%%,', '%(<span class="eye">o</span>,<span class="eye">o</span>)%,')}</div>`
+  } else if (rightRoom >= 16) {
+    html += `<div class="art" style="right:4px;top:40px">${Array.from({ length: 10 }, (_, k) => k % 3 === 1 ? '<span class="eye">oo</span>' : 'oo').join('\n\n')}</div>`
+  }
+  if (S.lane) html += `<div class="lane-note" style="left:${cl - lane}px;top:6px;transform:translateX(-100%)">scrubber's lane ${lane}px · scene stays out →</div>`
+  scene.innerHTML = html
+}
+
+// ---------------------------------------------------------------- the prototype's chrome
+const VARIANTS = {
+  A: '<b>A · Stacked</b> — evenly spaced ticks in a short column on the transcript\'s left edge (as Codex). Compact card: your message and two lines of the reply.',
+  B: '<b>B · Map</b> — ticks where each message sits in the whole conversation, with a bordered box for what is on screen. Fuller square card: who, when, message n of N, then the reply or the question and its choices.',
+}
+function writeState() {
+  document.getElementById('vname').innerHTML = VARIANTS[S.variant]
+  const st = document.getElementById('state')
+  st.hidden = !S.showState
+  if (!S.showState || !els.scroller) return
+  const all = turns(), sc = els.scroller
+  st.textContent = [
+    `surface   ${S.surface === 'thread' ? 'Thread (Codex)' : 'Watcher › Conversation'}`,
+    `messages  ${all.length} sent → ${all.length} ticks`,
+    `screens   ${(sc.scrollHeight / sc.clientHeight).toFixed(1)} drawn${S.start ? ' + more above' : ''}`,
+    `scrubber  ${S.shown ? 'shown (≥ 2 screens, ≥ 3 sent)' : 'hidden (shorter than 2 screens)'}`,
+    `drawn     turns ${S.start + 1}–${all.length} of ${all.length}`,
+    `in view   ${[...S.inView].map(i => i + 1).join(', ') || '—'}`,
+    `card      ${S.hot >= 0 ? `message ${S.hot + 1} (${S.cardVia})` : '—'}`,
+    `last jump ${S.lastJump}`,
+    `lane      ${LANE()} px at the column's left edge`,
+    `motion    ${S.reduced ? 'reduced: no smooth scroll, no fades' : 'full'}`,
+  ].join('\n')
+}
+
+function bar() {
+  const groups = [
+    ['Variant', 'variant', [['A', 'A Stacked'], ['B', 'B Map']]],
+    ['Where', 'surface', [['thread', 'Thread'], ['watcher', 'Watcher']]],
+    ['Theme', 'theme', [['dark', 'Dark'], ['light', 'Light']]],
+    ['Size', 'size', [['1600', '1600×1000'], ['1280', '1280×800'], ['820', '820×560']]],
+  ]
+  const toggles = [['reduced', 'Reduced motion'], ['short', 'Short conversation'], ['lane', 'Show lane'], ['showState', 'State']]
+  const b = document.getElementById('bar')
+  b.innerHTML = groups.map(([l, key, opts]) => `<span class="lbl">${l}</span><span class="grp">${opts.map(([v, t]) => `<button type="button" data-k="${key}" data-v="${v}" aria-pressed="${S[key] === v}">${t}</button>`).join('')}</span>`).join('')
+    + `<span class="grp">${toggles.map(([key, t]) => `<button type="button" data-t="${key}" aria-pressed="${S[key]}">${t}</button>`).join('')}</span>`
+  b.onclick = e => {
+    const btn = e.target.closest('button'); if (!btn) return
+    if (btn.dataset.k) S[btn.dataset.k] = btn.dataset.v
+    if (btn.dataset.t) S[btn.dataset.t] = !S[btn.dataset.t]
+    const url = new URL(location); for (const k of ['variant', 'surface', 'theme', 'size']) url.searchParams.set(k, S[k]); history.replaceState(null, '', url)
+    bar(); if (btn.dataset.t === 'showState') writeState(); else build()
+  }
+}
+
+const q = new URLSearchParams(location.search)
+for (const k of ['variant', 'surface', 'theme', 'size']) if (q.get(k)) S[k] = q.get(k)
+if (q.get('reduced') === '1') S.reduced = true
+addEventListener('keydown', e => {
+  if (e.target.closest?.('.app')) return
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { S.variant = S.variant === 'A' ? 'B' : 'A'; bar(); build() }
+})
+addEventListener('resize', () => { fit(); layout() })
+bar(); build()
+</script>
+</body>
+</html>
