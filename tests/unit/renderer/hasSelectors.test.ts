@@ -57,8 +57,33 @@ function subjectCompound(selector: string): string {
 function restylesEverything(selector: string): boolean {
   const subject = subjectCompound(selector)
   if (!selector.includes(':has(') || subject.includes(':has(')) return false
-  const named = subject.replace(/::?[\w-]+\((?:[^()]|\([^()]*\))*\)/gu, match => match.startsWith(':not(') ? '' : match)
-  return !/^[a-z]|[.#[]/iu.test(named)
+  return !namesSomething(subject)
+}
+
+/**
+ * Whether a compound limits what it matches by an element name, class, id or attribute. `:not()` limits nothing that way;
+ * `:is()` and `:where()` do only when every one of their selectors does. Other pseudo-classes and elements do not count.
+ */
+function namesSomething(compound: string): boolean {
+  let rest = '', named = false
+  for (let index = 0; index < compound.length;) {
+    const call = /^::?([\w-]+)\(/u.exec(compound.slice(index))
+    if (call === null) { rest += compound[index]; index++; continue }
+    const open = index + call[0].length
+    let depth = 1, close = open
+    for (; close < compound.length && depth > 0; close++) {
+      if (compound[close] === '(') depth++
+      else if (compound[close] === ')') depth--
+    }
+    const name = call[1]!.toLowerCase()
+    if (name === 'is' || name === 'where' || name === 'matches') {
+      const branches = splitTopLevel(compound.slice(open, close - 1), char => char === ',').map(branch => subjectCompound(branch.trim()))
+      if (branches.every(namesSomething)) named = true
+    }
+    rest += ' '
+    index = close
+  }
+  return named || /(^|[\s])[a-z]|[.#[]/iu.test(rest.replace(/::?[\w-]+/gu, ' '))
 }
 
 describe(':has() selectors', () => {
@@ -72,6 +97,15 @@ describe(':has() selectors', () => {
     expect(restylesEverything(".pill:has(.update-control:not([data-state='idle']))::before")).toBe(false)
     expect(restylesEverything('.view .pane:has(> .questions) > [data-part]')).toBe(false)
     expect(restylesEverything('.pill > :not(.tab)')).toBe(false)
+    expect(restylesEverything('.pill:has(.update-control) > :is(:not(.tab))')).toBe(true)
+    expect(restylesEverything('.pill:has(.update-control) > :is(.tab, *)')).toBe(true)
+    expect(restylesEverything('.pill:has(.update-control) > :where(.tab, :hover)')).toBe(true)
+    expect(restylesEverything('.pill:has(.update-control) > :is(span, button)')).toBe(false)
+    expect(restylesEverything('.pill:has(.update-control) > :is(.a > span, .b)')).toBe(false)
+    expect(restylesEverything('.pill:has(.update-control) > button:hover')).toBe(false)
+    expect(restylesEverything('.pill:has(.update-control) > :hover')).toBe(true)
+    expect(restylesEverything('.pill:has(.update-control) > :nth-child(2)')).toBe(true)
+    expect(restylesEverything('.pill:has(.update-control) > :nth-child(2 of .tab)')).toBe(true)
   })
 
   it('never leaves the part a :has() rule styles naming nothing', () => {
