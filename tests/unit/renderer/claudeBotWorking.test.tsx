@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThreadWorking } from '../../../src/renderer/src/agents/ThreadMonitor'
 
 /** Claude bot's working pose: it stands at the readout end and sends one small bot out per running task. */
-vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreature: () => 'claude' }))
+vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => 'claude' }))
 
 const work = (count: number) => Array.from({ length: count }, (_, index) => ({
   id: `6f0c1a2e-8f4b-4d3c-9a1e-${String(index).padStart(12, '0')}`, label: `Agent ${index + 1}`, type: 'subagent' as const,

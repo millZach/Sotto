@@ -127,6 +127,8 @@ export interface AppSettings {
   menuBarOwlEyes: MenuBarOwlEyes
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature
+  /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
+  showCreature: boolean
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -338,6 +340,7 @@ const fieldSchemas = {
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
+  showCreature: z.boolean(),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -433,6 +436,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
+  showCreature: true,
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -587,6 +591,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
+    showCreature: parseField(persisted, 'showCreature', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),

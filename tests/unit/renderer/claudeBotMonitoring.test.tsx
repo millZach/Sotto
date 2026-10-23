@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ThreadMonitor } from '../../../src/renderer/src/agents/ThreadMonitor'
 
 // The real wiring picks the bot from the creature setting; pin it to Claude bot.
-vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreature: () => 'claude' }))
+vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => 'claude' }))
 
 const tasks = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
 let systemReduce = false
