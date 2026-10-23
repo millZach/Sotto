@@ -15,6 +15,8 @@ export interface ScrubberMark {
   readonly message: AgentMessage
   /** The turn's last reply with words, so far. A turn still being written may have none yet. */
   readonly reply: AgentMessage | undefined
+  /** No message comes after this one's turn: an open question in the thread is the one this message led to. */
+  readonly newest: boolean
 }
 
 /** What the card shows under the message: the start of the reply, the question it asked, or nothing yet. */
@@ -45,14 +47,16 @@ const OPENING = 220
  * sent, which is the reply a finished turn shows unfolded. What answers a wake-up or a brief belongs to neither tick.
  */
 export function scrubberMarks(messages: readonly AgentMessage[], notTheUsers: ReadonlySet<string> = new Set()): ScrubberMark[] {
-  const marks: ScrubberMark[] = []
-  let current: { messageId: string; index: number; message: AgentMessage; reply: AgentMessage | undefined } | undefined
+  const marks: { messageId: string; index: number; message: AgentMessage; reply: AgentMessage | undefined; newest: boolean }[] = []
+  let current: typeof marks[number] | undefined
   for (const [index, message] of messages.entries()) {
     if (message.role === 'user') {
-      current = isWakeUpMessage(message) || notTheUsers.has(message.id) ? undefined : { messageId: message.id, index, message, reply: undefined }
+      current = isWakeUpMessage(message) || notTheUsers.has(message.id) ? undefined : { messageId: message.id, index, message, reply: undefined, newest: false }
       if (current) marks.push(current)
     } else if (current && message.role === 'assistant' && !isVisualMessage(message) && message.text.trim().length > 0) current.reply = message
   }
+  // A wake-up or a brief after the last message sent starts a turn of its own, and what it asks is not this message's.
+  if (current) current.newest = true
   return marks
 }
 
@@ -62,10 +66,10 @@ export function scrubberShown(marks: number, contentHeight: number, viewHeight: 
   return moreAbove || contentHeight >= SCRUBBER_SCREENS * viewHeight
 }
 
-/** Markdown read as the words it shows, on one line: code, links, emphasis, headings and list marks set aside. */
+/** Markdown read as the words it shows, on one line: code kept as its text, links as their words, emphasis, headings and list marks set aside. */
 export function plainOpening(text: string, most = OPENING): string {
   const words = text
-    .replace(/```[\s\S]*?(?:```|$)/gu, ' ')
+    .replace(/```[^\n]*\n?([\s\S]*?)(?:```|$)/gu, ' $1 ')
     .replace(/!\[([^\]]*)\]\([^)]*\)/gu, '$1')
     .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
     .replace(/`([^`]*)`/gu, '$1')
@@ -88,8 +92,8 @@ function questionsOf(message: AgentMessage): readonly string[] {
  * What came back for a mark. The newest message's open question is the card it led to, with its choices; an earlier
  * turn whose reply ends on a question shows that question; anything else shows the start of the reply.
  */
-export function scrubberAfter(mark: ScrubberMark, newest: boolean, requests: readonly AgentRequest[]): ScrubberAfter {
-  const open = newest ? requests.find(request => request.kind === 'question') : undefined
+export function scrubberAfter(mark: ScrubberMark, requests: readonly AgentRequest[]): ScrubberAfter {
+  const open = mark.newest ? requests.find(request => request.kind === 'question') : undefined
   if (open) {
     const first = open.questions?.[0]
     const question = plainOpening(first?.question ?? open.text)
@@ -106,19 +110,18 @@ export function scrubberAfter(mark: ScrubberMark, newest: boolean, requests: rea
   return { kind: 'reply', text: plainOpening(mark.reply.text) }
 }
 
-/** The most room between two ticks, and the least. */
+/** The most room between two ticks. */
 const PITCH_MOST = 9
-const PITCH_LEAST = 2
 /** The share of the transcript's height the column may take. */
 const COLUMN_SHARE = 0.8
 
 /**
  * Where each tick sits, from the top of the transcript: evenly spaced in one column centred on its height (Zach's pick A).
- * A long conversation packs the ticks closer, down to two pixels apart.
+ * A long conversation packs the ticks closer, so the column always fits the transcript, however many there are.
  */
 export function tickPlaces(count: number, height: number): { readonly pitch: number; readonly places: readonly number[] } {
   if (count <= 0 || height <= 0) return { pitch: 0, places: [] }
-  const pitch = count === 1 ? PITCH_MOST : Math.max(PITCH_LEAST, Math.min(PITCH_MOST, height * COLUMN_SHARE / (count - 1)))
+  const pitch = count === 1 ? PITCH_MOST : Math.min(PITCH_MOST, height * COLUMN_SHARE / (count - 1))
   const first = height / 2 - pitch * (count - 1) / 2
   return { pitch, places: Array.from({ length: count }, (_, index) => first + index * pitch) }
 }

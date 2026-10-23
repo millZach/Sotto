@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
 import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark } from './messageScrubberMarks'
@@ -56,6 +56,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const leaveTimer = useRef(0)
   const lastPointer = useRef<string>('mouse')
   const frame = useRef(0)
+  const cardId = useId()
   const count = marks.length
 
   const measure = useCallback((): void => {
@@ -71,24 +72,28 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
       && current.lane === next.lane && current.long === next.long ? current : next)
   }, [scroller, count, moreAbove])
 
+  // The marks change with every streamed word, and what is on screen does not, so the scan reads them from here and runs
+  // only on a scroll, a resize or a new message sent.
+  const marksNow = useRef(marks)
+  marksNow.current = marks
   // Which sent messages are on screen: each one's turn runs from its message to the next one the user sent.
   const readInView = useCallback((): void => {
     const element = scroller.current
     const holder = content.current
     if (element === null || holder === null) return
     const view = element.getBoundingClientRect()
-    const ids = new Set(marks.map(mark => mark.messageId))
+    const ids = new Set(marksNow.current.map(mark => mark.messageId))
     const drawn = [...holder.querySelectorAll<HTMLElement>('.thread-message[data-role="user"][data-message-id]')].filter(article => ids.has(article.dataset.messageId!))
+    const tops = drawn.map(article => article.getBoundingClientRect().top)
+    const bottom = holder.getBoundingClientRect().bottom
     const seen = new Set<string>()
     for (const [index, article] of drawn.entries()) {
-      const top = article.getBoundingClientRect().top
-      const end = drawn[index + 1]?.getBoundingClientRect().top ?? holder.getBoundingClientRect().bottom
-      if (top < view.bottom && end > view.top) seen.add(article.dataset.messageId!)
+      if (tops[index]! < view.bottom && (tops[index + 1] ?? bottom) > view.top) seen.add(article.dataset.messageId!)
     }
     setInView(current => current.size === seen.size && [...seen].every(id => current.has(id)) ? current : seen)
-  }, [scroller, content, marks])
+  }, [scroller, content])
 
-  useLayoutEffect(() => { measure(); readInView() }, [measure, readInView])
+  useLayoutEffect(() => { measure(); readInView() }, [measure, readInView, count])
   useEffect(() => {
     const element = scroller.current
     if (element === null) return
@@ -106,6 +111,19 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     return () => { element.removeEventListener('scroll', onScroll); observer?.disconnect(); cancelAnimationFrame(frame.current) }
   }, [scroller, content, measure, readInView])
   useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
+  // A card the pointer opened answers Escape wherever focus is, as everything that opens does.
+  const pointerCard = hot !== null && hot.via !== 'keys'
+  useEffect(() => {
+    if (!pointerCard) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.stopPropagation()
+      setHot(null)
+      for (const tick of ticks.current) tick?.style.removeProperty('--rise')
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [pointerCard])
 
   const shown = geometry !== null && geometry.long && geometry.lane > 0
   const { pitch, places } = useMemo(() => tickPlaces(shown ? count : 0, geometry?.height ?? 0), [shown, count, geometry?.height])
@@ -183,7 +201,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     const height = card.current?.offsetHeight ?? 0
     const place = places[hot.index] ?? 0
     setCardTop(Math.max(CARD_GAP, Math.min(geometry.height - height - CARD_GAP, place - height / 2)))
-  }, [hot, geometry, places])
+  }, [hot, geometry, places, marks, requests, running])
 
   if (!shown) return null
   const tabbable = focusIndex ?? lastIndexOf(marks, inView) ?? count - 1
@@ -206,17 +224,19 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
         rise(places[index] ?? null)
       }}
       onBlur={event => { if (!nav.current?.contains(event.relatedTarget as Node | null)) { setFocusIndex(null); if (hot?.via === 'keys') close() } }}>
-      {marks.map((mark, index) => <button key={mark.messageId} ref={element => { ticks.current[index] = element }} type="button" className="message-scrubber__tick"
+      {marks.map((mark, index) => <button key={mark.messageId} aria-describedby={hot?.index === index ? cardId : undefined} ref={element => { ticks.current[index] = element }} type="button" className="message-scrubber__tick"
         style={{ top: `${places[index]}px` }} tabIndex={index === tabbable ? 0 : -1} data-hot={hot?.index === index || undefined} data-in-view={inView.has(mark.messageId) || undefined}
         aria-label={`Go to your message at ${clockLabel(Date.parse(mark.message.createdAt))}: ${opening(mark, 80)}`}
         onClick={event => {
-          // A tap shows the card first; a tap on the card goes there. The keyboard's press is handled on its key.
-          if (event.detail === 0) return
+          // A tap shows the card first; a tap on the card goes there. Enter and Space are handled on their keys and never
+          // reach here, so a press with no pointer is assistive technology's, and goes there with focus.
+          if (event.detail === 0) { jump(index, true); return }
           if (lastPointer.current === 'touch' && hot?.index !== index) { setHot({ index, via: 'touch' }); return }
-          jump(index, false)
+          // Packed ticks' buttons overlap, so a pointer's press goes to the tick it was showing, not the button on top.
+          jump(hot?.via === 'pointer' ? hot.index : index, false)
         }} />)}
     </nav>
-    {shownMark && hot ? <ScrubberCard ref={card} mark={shownMark} index={hot.index} count={count} who={who} running={running} requests={requests} keys={hot.via === 'keys'}
+    {shownMark && hot ? <ScrubberCard ref={card} id={cardId} mark={shownMark} index={hot.index} count={count} who={who} running={running} requests={requests} keys={hot.via === 'keys'}
       top={cardTop} place={cardPlace} onPress={() => jump(hot.index, false)} onEnter={() => window.clearTimeout(leaveTimer.current)} onLeave={() => { if (hot.via === 'pointer') leave() }} /> : null}
   </>
 }
@@ -235,25 +255,26 @@ function lastIndexOf(marks: readonly ScrubberMark[], inView: ReadonlySet<string>
 
 /**
  * The card for one tick (pick B): who sent it, when and which of how many, the message, then the start of the reply or
- * the question it led to with its choices. It repeats what the tick's name already says, so it is for the eye alone.
+ * the question it led to with its choices. It describes the tick it belongs to, so a screen reader hears the reply too.
+ * Its press is the pointer's way there; the keyboard's is the tick's.
  */
-function ScrubberCard({ ref, mark, index, count, who, running, requests, keys, top, place, onPress, onEnter, onLeave }: {
+function ScrubberCard({ ref, id, mark, index, count, who, running, requests, keys, top, place, onPress, onEnter, onLeave }: {
   readonly ref: RefObject<HTMLDivElement | null>
+  readonly id: string
   readonly mark: ScrubberMark; readonly index: number; readonly count: number; readonly who: string; readonly running: boolean
   readonly requests: readonly AgentRequest[]; readonly keys: boolean; readonly top: number
   readonly place: { readonly left: number; readonly width: number }
   readonly onPress: () => void; readonly onEnter: () => void; readonly onLeave: () => void
 }): ReactNode {
-  const newest = index === count - 1
-  const after = scrubberAfter(mark, newest, requests)
-  return <div ref={ref} className="message-scrubber__card" aria-hidden="true" style={{ top: `${top}px`, left: `${place.left}px`, width: `${place.width}px` }} onClick={onPress} onPointerEnter={onEnter} onPointerLeave={onLeave}>
+  const after = scrubberAfter(mark, requests)
+  return <div ref={ref} id={id} role="tooltip" className="message-scrubber__card" style={{ top: `${top}px`, left: `${place.left}px`, width: `${place.width}px` }} onClick={onPress} onPointerEnter={onEnter} onPointerLeave={onLeave}>
     <div className="message-scrubber__head"><b>You</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>Message {index + 1} of {count}</span></div>
     <p className="message-scrubber__said">{opening(mark, 400)}</p>
     {after.kind === 'reply' ? <><p className="message-scrubber__who">{who} replied</p><p className="message-scrubber__then">{after.text}</p></>
       : after.kind === 'asked' ? <><p className="message-scrubber__who">{who} asked</p><p className="message-scrubber__then">{after.question}</p>
         {after.choices.length ? <ul className="message-scrubber__choices">{after.choices.map(choice => <li key={choice}>{choice}</li>)}</ul> : null}
         {after.more > 0 ? <p className="message-scrubber__more">{after.more === 1 ? 'One more choice' : `${after.more} more choices`}</p> : null}</>
-        : newest && running ? <p className="message-scrubber__who">{who} is working</p> : null}
+        : mark.newest && running ? <p className="message-scrubber__who">{who} is working</p> : null}
     {keys ? <p className="message-scrubber__keys">Enter goes there. Up and Down move to the others. Esc closes this.</p> : null}
   </div>
 }

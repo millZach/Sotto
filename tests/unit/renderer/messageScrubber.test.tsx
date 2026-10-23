@@ -110,12 +110,37 @@ describe('the message scrubber', () => {
     expect(card()).toHaveTextContent('Question 2: what about part 2?')
     expect(card()).toHaveTextContent('Claude replied')
     expect(card()).toHaveTextContent('Answer 2: part 2 is done.')
-    expect(card()).toHaveAttribute('aria-hidden', 'true')
+    // The card describes its tick, so a screen reader hears the reply too.
+    expect(card()).toHaveAttribute('role', 'tooltip')
+    expect(ticks()[2]).toHaveAccessibleDescription(/Answer 2: part 2 is done\./u)
     expect(Number(ticks()[2]!.style.getPropertyValue('--rise'))).toBe(1)
     const neighbour = Number(ticks()[1]!.style.getPropertyValue('--rise'))
     const further = Number(ticks()[0]!.style.getPropertyValue('--rise'))
     expect(neighbour).toBeLessThan(1)
     expect(further).toBeLessThan(neighbour)
+  })
+
+  it('closes a card the pointer opened on Escape, wherever focus is', () => {
+    mount(conversation(5))
+    fireEvent.pointerMove(scrubber()!, { clientY: tickPlaces(5, VIEW).places[1], pointerType: 'mouse' })
+    expect(card()).not.toBeNull()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(card()).toBeNull()
+  })
+
+  it('goes to the tick whose card shows when packed ticks overlap, and a press with no pointer goes there too', () => {
+    contentHeight = 50_000
+    mount(conversation(TRANSCRIPT_PAGE / 2 + 100))
+    const places = tickPlaces(ticks().length, VIEW).places
+    const shown = 120
+    fireEvent.pointerMove(scrubber()!, { clientY: places[shown], pointerType: 'mouse' })
+    expect(ticks()[shown]).toHaveAttribute('data-hot')
+    // The pointer is over the next button too, whose hit area overlaps; the press still goes where the card said.
+    fireEvent.click(ticks()[shown + 1]!, { detail: 1 })
+    expect(article(`u${shown}`)).toHaveAttribute('data-sought')
+    // Assistive technology's press has no pointer, and lands with focus.
+    fireEvent.click(ticks()[shown - 5]!, { detail: 0 })
+    expect(article(`u${shown - 5}`)).toHaveFocus()
   })
 
   it('lands on a message the window has not drawn yet, widening it first', () => {

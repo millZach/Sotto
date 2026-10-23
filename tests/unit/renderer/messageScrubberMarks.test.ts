@@ -17,7 +17,7 @@ describe('the ticks', () => {
       user('u2', 'Debounce it.'), reply('r2', 'Done.'),
       user('u3', 'And the iPhone?'),
     ])
-    expect(marks.map(mark => [mark.messageId, mark.index, mark.reply?.id])).toEqual([['u1', 0, 'r1c'], ['u2', 4, 'r2'], ['u3', 6, undefined]])
+    expect(marks.map(mark => [mark.messageId, mark.index, mark.reply?.id, mark.newest])).toEqual([['u1', 0, 'r1c', false], ['u2', 4, 'r2', false], ['u3', 6, undefined, true]])
   })
 
   it('leaves out Sotto’s wake-ups and another thread’s briefs, and what answered them', () => {
@@ -28,6 +28,13 @@ describe('the ticks', () => {
       user('u2', 'Merge it.'),
     ], new Set(['brief']))
     expect(marks.map(mark => [mark.messageId, mark.reply?.id])).toEqual([['u1', 'r1'], ['u2', undefined]])
+  })
+
+  it('leaves the newest message sent without the open question when a wake-up came after it', () => {
+    const marks = scrubberMarks([user('u1', 'Open the PR.'), reply('r1', 'Opened #1102.'), user('wake', 'CI is green.', { wakeUp: true })])
+    expect(marks.map(mark => mark.newest)).toEqual([false])
+    const request: AgentRequest = { id: 'q', kind: 'question', text: 'Merge now?', options: [{ id: 'yes', label: 'Yes' }] }
+    expect(scrubberAfter(marks[0]!, [request])).toEqual({ kind: 'reply', text: 'Opened #1102.' })
   })
 })
 
@@ -54,12 +61,14 @@ describe('where the ticks sit', () => {
     expect(places).toEqual([282, 291, 300, 309, 318])
   })
 
-  it('packs a long conversation closer, within most of the height, and never under two pixels apart', () => {
+  it('packs a long conversation closer, so the column always fits the transcript', () => {
     const { pitch, places } = tickPlaces(101, 600)
     expect(pitch).toBeCloseTo(4.8)
     expect(places[0]).toBeCloseTo(60)
     expect(places.at(-1)).toBeCloseTo(540)
-    expect(tickPlaces(1000, 600).pitch).toBe(2)
+    const packed = tickPlaces(400, 400).places
+    expect(packed[0]).toBeCloseTo(40)
+    expect(packed.at(-1)).toBeCloseTo(360)
     expect(tickPlaces(1, 600).places).toEqual([300])
     expect(tickPlaces(0, 600).places).toEqual([])
   })
@@ -91,20 +100,22 @@ describe('what a card shows', () => {
 
   it('reads the message and the reply as the words they show', () => {
     expect(plainOpening(marks[0]!.message.text)).toBe('Can you also make a video of two hosts?')
-    expect(scrubberAfter(marks[0]!, false, [])).toEqual({ kind: 'reply', text: 'Recorded it at 1280x800. Saved to artifacts/.' })
+    expect(scrubberAfter(marks[0]!, [])).toEqual({ kind: 'reply', text: 'Recorded it at 1280x800. npm run video Saved to artifacts/.' })
     expect(plainOpening('x'.repeat(300), 20)).toBe(`${'x'.repeat(19)}…`)
+    // A message of code alone still shows its code.
+    expect(plainOpening('```ts\nconst one = 1\n```')).toBe('const one = 1')
   })
 
   it('shows the question a reply ended on', () => {
-    expect(scrubberAfter(marks[1]!, false, [])).toEqual({ kind: 'asked', question: 'Which one do you want?', choices: [], more: 0 })
+    expect(scrubberAfter(marks[1]!, [])).toEqual({ kind: 'asked', question: 'Which one do you want?', choices: [], more: 0 })
   })
 
   it('shows the newest message’s open question with its first choices, and nothing yet for a turn without a reply', () => {
     const request: AgentRequest = { id: 'q', kind: 'question', text: 'Notes', options: [], questions: [{ id: 'len', question: 'How should the notes read?', multiSelect: false, allowFreeText: true,
       options: ['Five lines (Recommended)', 'One line per PR', 'By area', 'As a table'].map((label, index) => ({ id: `o${index}`, label })) }] }
-    expect(scrubberAfter(marks[2]!, true, [request])).toEqual({ kind: 'asked', question: 'How should the notes read?', choices: ['Five lines', 'One line per PR', 'By area'], more: 1 })
-    expect(scrubberAfter(marks[2]!, true, [])).toEqual({ kind: 'none' })
+    expect(scrubberAfter(marks[2]!, [request])).toEqual({ kind: 'asked', question: 'How should the notes read?', choices: ['Five lines', 'One line per PR', 'By area'], more: 1 })
+    expect(scrubberAfter(marks[2]!, [])).toEqual({ kind: 'none' })
     // An earlier message never borrows the open question.
-    expect(scrubberAfter(marks[0]!, false, [request]).kind).toBe('reply')
+    expect(scrubberAfter(marks[0]!, [request]).kind).toBe('reply')
   })
 })

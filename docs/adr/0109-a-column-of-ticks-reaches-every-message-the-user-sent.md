@@ -18,9 +18,9 @@ The transcript's left margin is empty on the Threads page. On Watcher's Conversa
 
 **2. It shows on long conversations only.** Three or more messages sent, and a conversation at least two screens tall or with messages above the first one drawn. Until the pointer or the keyboard reaches it the column is faint.
 
-**3. Evenly spaced, centred, in the margin.** The ticks sit in one column centred on the transcript's height, 9 pixels apart, packed closer for a long thread down to 2. They live in a lane beside the column's left edge, up to 44 pixels wide, with an 18-pixel gap to the text; in a narrower margin the lane is the margin and the ticks are shorter, and a margin under 14 pixels shows no scrubber. The pointer anywhere in the lane reaches the nearest tick within 14 pixels. The ticks near it rise on a normal curve (sigma 16 pixels): the tick under the pointer is longest and brightest. The messages on screen are a step brighter.
+**3. Evenly spaced, centred, in the margin.** The ticks sit in one column centred on the transcript's height, 9 pixels apart, packed closer for a long thread so the column always fits within the transcript's middle four fifths. A press goes to the tick whose card the pointer was showing, even where packed ticks overlap. They live in a lane beside the column's left edge, up to 44 pixels wide, with an 18-pixel gap to the text; in a narrower margin the lane is the margin and the ticks are shorter, and a margin under 14 pixels shows no scrubber. The pointer anywhere in the lane reaches the nearest tick within 14 pixels. The ticks near it rise on a normal curve (sigma 16 pixels): the tick under the pointer is longest and brightest. The messages on screen are a step brighter.
 
-**4. The card is the message and what came back.** Who sent it, when, and "Message n of N", then the message's opening, then the start of the turn's last reply. A reply that ends on a question shows the question; the newest message's open question shows its first three choices and counts the rest. Everything comes from what the window already holds, and nothing is fetched or sent to fill a card. The card repeats what the tick's accessible name says, so it is hidden from assistive technology.
+**4. The card is the message and what came back.** Who sent it, when, and "Message n of N", then the message's opening, then the start of the turn's last reply. A reply that ends on a question shows the question; the newest message's open question shows its first three choices and counts the rest, unless a wake-up or a brief came after it, whose question it then is. Everything comes from what the window already holds, and nothing is fetched or sent to fill a card. The card describes the tick it belongs to, so a screen reader hears the reply as well as the message, and it closes on Escape wherever focus is.
 
 **5. A press lands, drawn or not.** A tick for a message above the first one drawn widens the window to it first, then the message is put at the top of the transcript and marked for a moment, the way Show where it asked marks a reply. It is put back for a few frames while the messages around it are laid out for real. The reader stops following the end.
 
@@ -32,6 +32,6 @@ The transcript's left margin is empty on the Threads page. On Watcher's Conversa
 
 ## Consequences
 
-- With hundreds of messages sent the ticks are 2 pixels apart and the pointer picks among them only roughly; the keyboard still reaches each one.
+- With hundreds of messages sent the ticks are a pixel or two apart and the pointer picks among them only roughly; the keyboard still reaches each one.
 - A turn whose question was answered on its card shows the reply that followed, not the question, because an answered request leaves no record in the thread's history.
 - The night scene in #1343 has to read the lane when it lands; until it does, the two can overlap in the left margin.
