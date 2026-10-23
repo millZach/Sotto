@@ -18,7 +18,7 @@
 
 /* What a tick leads to: the message, then the start of the reply or the question it asked. */
 .message-scrubber__card { position: absolute; z-index: 5; margin: 0; padding: 0; border: 1px solid var(--tt-border);
-  border-radius: 0; background: var(--tt-surface-elevated); box-shadow: 0 14px 36px -14px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: pointer; }
+  border-radius: 6px; background: var(--tt-surface-elevated); box-shadow: 0 14px 36px -14px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: pointer; }
 .message-scrubber__head { display: flex; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--tt-border); color: var(--tt-text-muted); font-size: 12px; }
 .message-scrubber__head b { color: var(--tt-text-2); font-weight: 600; }
 .message-scrubber__head span:last-child { margin-left: auto; }
@@ -26,7 +26,7 @@
 .message-scrubber__who { margin: 9px 12px 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
 .message-scrubber__then { display: -webkit-box; margin: 2px 12px 0; overflow: hidden; color: var(--tt-text-2); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .message-scrubber__choices { margin: 6px 12px 0; padding: 0; list-style: none; }
-.message-scrubber__choices li { margin-top: 4px; padding: 4px 8px; overflow: hidden; border: 1px solid var(--tt-border); border-radius: 2px; color: var(--tt-text-2); font-size: 12.5px;
+.message-scrubber__choices li { margin-top: 4px; padding: 4px 8px; overflow: hidden; border: 1px solid transparent; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-size: 12.5px;
   text-overflow: ellipsis; white-space: nowrap; }
 .message-scrubber__more { margin: 4px 12px 0; color: var(--tt-text-muted); font-size: 12px; }
 .message-scrubber__keys { margin: 8px 12px 0; color: var(--tt-text-muted); font-size: 11.5px; }

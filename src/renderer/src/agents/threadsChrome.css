@@ -33,7 +33,7 @@
    sidebar or label size. */
 .thread-nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin: auto var(--thread-nav-inset) 0; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
 .thread-nav__foot .thread-nav__seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); flex: 1 0 100%; min-width: 0; }
-.thread-nav__foot .thread-nav__seg button { min-width: 0; padding-inline: 0; }
+.thread-nav__foot .thread-nav__seg button { min-width: 0; height: 28px; padding-inline: 0; font-size: 14px; }
 .thread-nav__pages { display: flex; align-items: center; }
 .thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; }
 .thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }

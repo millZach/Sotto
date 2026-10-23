@@ -118,7 +118,7 @@
 .tools-panel__pinned-owner { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
 .tools-panel__pinned-owner > svg { flex: none; color: var(--tt-accent-text); }
 .tools-panel__pinned-owner .tools-panel__thread-title { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; }
-.tools-panel__tag { flex: none; padding: 0 6px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-pill); color: var(--tt-accent-text); font-size: 12px; line-height: 16px; }
+.tools-panel__tag { flex: none; padding: 0 6px; border: 1px solid var(--tt-accent-border); border-radius: 4px; color: var(--tt-accent-text); font-size: 12px; line-height: 16px; }
 .tools-panel__foot-actions { display: flex; flex: none; align-items: center; margin-left: auto; }
 .tools-panel__foot .files-icon--small { width: 26px; height: 26px; border-radius: 6px; }
 .tools-panel__accessible { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip-path: inset(50%); white-space: nowrap!important; border: 0!important; }
@@ -126,7 +126,7 @@
 .tools-panel__status:empty { display: none; }
 .tools-panel__status {
   position: absolute; bottom: 46px; left: 50%; z-index: 2; max-width: calc(100% - 24px); margin: 0; padding: 7px 14px;
-  border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-pill); background: var(--tt-field); box-shadow: var(--tt-shadow-sm);
+  border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); box-shadow: var(--tt-shadow-sm);
   color: var(--tt-text); font-size: 13px; text-align: center; white-space: normal; transform: translateX(-50%);
 }
 

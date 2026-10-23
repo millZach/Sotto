@@ -6,7 +6,7 @@
 .settings-view .cloud-iphone-usage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label meter' 'text meter'; gap: 5px 22px; align-items: center; }
 .settings-view .cloud-iphone-usage__label { grid-area: label; margin: 0; color: var(--tt-text); font-size: 15px; font-weight: 500; line-height: 1.35; }
 .settings-view .cloud-iphone-usage__text { grid-area: text; margin: 0; max-width: 330px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
-.settings-view .cloud-iphone-meter { grid-area: meter; height: 6px; border-radius: var(--tt-radius-pill); background: var(--tt-hairline); overflow: hidden; }
+.settings-view .cloud-iphone-meter { grid-area: meter; height: 6px; border-radius: 2px; background: var(--tt-hairline); overflow: hidden; }
 .settings-view .cloud-iphone-meter > i { display: block; height: 100%; border-radius: inherit; background: var(--tt-accent); }
 
 /* One quiet line a session: the title takes the room, the date and minutes sit at the right. */
