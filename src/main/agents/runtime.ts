@@ -281,7 +281,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.mayAnswer(clientId)),
       ...hostDelegation.roles ? { roles: () => defaults.roles() } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
-      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.shell().host.threads) })
+      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads) })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
