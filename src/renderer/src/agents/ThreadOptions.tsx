@@ -23,6 +23,15 @@ export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   auto: 'Auto',
   'full-access': 'Full access',
 }
+/**
+ * What each of Cursor's three modes does, said as Cursor doing it (ADR-0123). Cursor has no Allow edits: it edits inside
+ * the project without asking under every mode, so Ask for approval says so, and Auto says where its judgement runs.
+ */
+export const CURSOR_MODE_LINES: Readonly<Partial<Record<AgentRuntimeMode, string>>> = {
+  'approval-required': 'Cursor asks before commands, web requests and tools. It edits files inside the project without asking.',
+  auto: 'Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you.',
+  'full-access': 'Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it.',
+}
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
@@ -72,7 +81,8 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   if (modes.length === 0) return []
   const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
-  return [...lead, ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
+  const lines = model?.providerId === 'cursor' ? CURSOR_MODE_LINES : {}
+  return [...lead, ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode], ...(lines[mode] ? { description: lines[mode] } : {}) }))]
 }
 /** The provider mode a thread is on, or the one it starts on when none has been chosen: the first offered. */
 export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>

@@ -21,8 +21,8 @@ function spelled(code: string): string { return [...code].map(character => chara
 
 /**
  * Sign in to a provider on a host, from this computer (ADR-0037). The provider's own client runs on the host; the user
- * finishes in this computer's browser, either by entering the code shown here (Codex, Grok Build) or by pasting back the
- * code the page shows (Claude Code). Cancel and Escape stop the sign-in on the host; nothing is kept on this computer.
+ * finishes in this computer's browser, either by entering the code shown here (Codex, Grok Build), by pasting back the
+ * code the page shows (Claude Code), or on a page that needs neither and finishes by itself (Cursor). Cancel and Escape stop the sign-in on the host; nothing is kept on this computer.
  */
 export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   readonly host: HostStatus; readonly provider: HostProviderId; readonly bridge: HostsBridge; readonly onClose: () => void
@@ -127,6 +127,14 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
       <p className="host-sign-in__waiting" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />Waiting for you on {page}.{view.expiresInMinutes ? ` The code lasts ${view.expiresInMinutes} minutes.` : ''}</p>
       {copied === 'failed' ? <p className="host-sign-in__quiet">The code could not be copied. Type it on the page instead.</p> : null}
       <span className="tt-visually-hidden" role="status">{copied === 'copied' ? 'Copied the code' : ''}</span>
+    </div>
+    // A page with no code (Cursor, ADR-0123): signing in on the page is the whole step, and the host finishes by itself.
+    if (view.shape === 'page') return <div className="host-sign-in">
+      <p>{name} signs in on {page} in this computer's browser. {host.name} finishes signing in by itself once you do.</p>
+      <div className="host-sign-in__row">
+        <Button variant={opened ? 'secondary' : 'primary'} data-autofocus disabled={busy} onClick={() => void open()}>{opened ? 'Open sign-in page again' : 'Open sign-in page'}</Button>
+      </div>
+      {opened ? <p className="host-sign-in__waiting" role="status"><LoaderCircle size={14} aria-hidden="true" className="hosts-spin" />Waiting for you on {page}.</p> : null}
     </div>
     return <div className="host-sign-in">
       <p>{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here.</p>

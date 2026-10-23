@@ -1,6 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
+import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type AgentModel, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
@@ -9,12 +9,20 @@ import { useHeldProviders } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
+import { CursorConnection, useCursorSignIn } from './CursorConnection'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor CLI' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor' }
+
+/** Where the clients that do not use the npm registry read their published version, for the update switch; none, when every such client is held. */
+function updateSources(held: ReadonlySet<ProviderId>): string {
+  const muse = !held.has('muse'), cursor = !held.has('cursor')
+  const own = muse && cursor ? 'Muse uses its own release feed and Cursor its install script' : muse ? 'Muse uses its own release feed' : cursor ? 'Cursor uses its install script' : ''
+  return own ? `${own}; the other clients use the npm registry.` : ''
+}
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
 function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, connected = false, checkingNow = false): string {
@@ -47,6 +55,8 @@ export function ProvidersSettings(): ReactNode {
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
   const [loginFeedback, showLoginFeedback] = useTransientFlag()
+  /** Cursor's sign-in from its tile (ADR-0123), kept while the page shows another tab or provider. */
+  const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
   const sandboxActions = useRef<HTMLDivElement>(null)
@@ -77,7 +87,10 @@ export function ProvidersSettings(): ReactNode {
   const models = newestModelsFirst(hostModels.filter(model => model.providerId === selected
     || (!model.providerId && model.provider === PROVIDER_LABELS[selected])))
   const label = PROVIDER_LABELS[selected]
-  const detailError = errors[selected] ?? status.error
+  // Cursor's tile says what to do when it is not signed in and offers Sign in, so main's sentence about it is not repeated.
+  const cursorBridge = selected === 'cursor' ? window.sotto?.cursor : undefined
+  const cursorExplains = cursorBridge !== undefined && 'problem' in status && status.problem === 'signed-out'
+  const detailError = errors[selected] ?? (cursorExplains ? undefined : status.error)
   const update = clientUpdates?.find(item => item.id === selected)
   const updating = (clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
   const selectedUpdating = Boolean(updatePending[selected]) || update?.state === 'updating' || update?.state === 'queued'
@@ -129,6 +142,13 @@ export function ProvidersSettings(): ReactNode {
     catch { setErrors(previous => ({ ...previous, muse: 'The command could not be copied. Select muse login and copy it yourself.' })) }
     finally { setCopyingLogin(false) }
   }
+  const openCursorGuide = async (): Promise<void> => {
+    setErrors(previous => ({ ...previous, cursor: undefined }))
+    try {
+      const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES.cursor)
+      if (!result?.ok) setErrors(previous => ({ ...previous, cursor: 'Cursor’s install guide could not be opened. Try again.' }))
+    } catch { setErrors(previous => ({ ...previous, cursor: 'Cursor’s install guide could not be opened. Try again.' })) }
+  }
   const openMuseGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
     try {
@@ -167,18 +187,30 @@ export function ProvidersSettings(): ReactNode {
   const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
   // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
+  const connectButton = <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
+    onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
+  // Cursor's models arrive grouped by model maker, in Cursor's order (ADR-0123), and its Models tab keeps them so.
+  const makers = selected === 'cursor' && models.some(model => model.source) ? hostModels.filter(model => model.providerId === 'cursor').reduce((groups, model) => {
+    const maker = model.source ?? 'Cursor'
+    const group = groups.find(([name]) => name === maker)
+    if (group) group[1].push(model)
+    else groups.push([maker, [model]])
+    return groups
+  }, [] as [string, AgentModel[]][]) : undefined
   return <div className="providers-settings">
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {
         const current = statusFor(provider)
         const active = enabled.includes(provider)
         const connecting = current.connection === 'connecting' || pending[provider]
-        const statusLabel = pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : current.connection === 'connected' ? 'Connected' : current.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
+        const signingIn = provider === 'cursor' && cursorSignIn.signing && current.connection !== 'connected'
+        const signedOut = provider === 'cursor' && current.connection === 'error' && 'problem' in current && current.problem === 'signed-out'
+        const statusLabel = signingIn ? 'Signing in…' : pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : current.connection === 'connected' ? 'Connected' : signedOut ? 'Not signed in' : current.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
         return <div key={provider} className="providers-list__row" data-selected={provider === selected}>
           <button type="button" className="providers-list__select" aria-label={PROVIDER_LABELS[provider]} aria-pressed={provider === selected}
             onClick={() => setSelected(provider)}><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={21} /><span><strong>{PROVIDER_LABELS[provider]}</strong>
-              <small data-status={current.connection}><i aria-hidden="true" />{statusLabel}</small></span></button>
-          <Toggle label={`Enable ${PROVIDER_LABELS[provider]}`} checked={active} disabled={Boolean(connecting) || Boolean(updatePending[provider]) || Boolean(clientUpdates?.some(item => item.id === provider && (item.state === 'updating' || item.state === 'queued')))} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
+              <small data-status={signingIn ? 'signing' : current.connection}><i aria-hidden="true" />{statusLabel}</small></span></button>
+          <Toggle label={`Enable ${PROVIDER_LABELS[provider]}`} checked={active} disabled={signingIn || Boolean(connecting) || Boolean(updatePending[provider]) || Boolean(clientUpdates?.some(item => item.id === provider && (item.state === 'updating' || item.state === 'queued')))} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
         </div>
       })}</nav>
       <section className="provider-detail" aria-label="Provider configuration">
@@ -189,12 +221,13 @@ export function ProvidersSettings(): ReactNode {
           tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = value === 'configuration' ? 'models' : 'configuration'; setTab(next); document.getElementById(`${tabId}-${next}`)?.focus() } }}>{value === 'configuration' ? 'Configuration' : 'Models'}</button>)}</div>
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
-            <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
+            {cursorBridge ? <CursorConnection signIn={cursorSignIn} problem={'problem' in status ? status.problem : undefined} connected={connected}
+              busy={Boolean(working) || selectedUpdating} connectButton={connectButton} onGuide={() => void openCursorGuide()} />
+            : <div className="provider-connection"><div><h4>Local connection</h4><p>{selected === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : selected === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : selected === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' : `Uses your ${CLIENT_NAMES[selected]} sign-in on this computer.`}</p>
               {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label="Copy Muse login command" onClick={() => void copyMuseLogin()}>{loginFeedback ?? 'Copy'}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>Sign-in steps</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? 'Muse login command copied.' : ''}</span></div>}
             </div>
-              <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
-                onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
-            </div>
+              {connectButton}
+            </div>}
             {selected === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
@@ -228,8 +261,12 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
+            {selected === 'cursor' && <details className="provider-support"><summary>Threads with Cursor</summary><p>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</p><p>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage, and Watcher does not run on it yet. Cursor keeps its own history, and runs Auto’s checks on its servers.</p></details>}
             {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
-          </> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
+          </> : makers?.length ? <div aria-label={`${label} available models`} role="group">{makers.map(([maker, items]) => <section key={maker} aria-label={maker}>
+            <h5 className="provider-models__maker">{maker}</h5>
+            <ul className="provider-models">{items.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul>
+          </section>)}</div> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
           {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
         </div>
       </section>
@@ -237,7 +274,7 @@ export function ProvidersSettings(): ReactNode {
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
-        <p>{!held.has('muse') ? "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
+        <p>{updateSources(held) ? `Checks each client's published version when it connects and every five minutes. ${updateSources(held)} No thread text is sent. Off, Sotto does not check versions or offer updates.` : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
       </div>
       <Toggle label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />

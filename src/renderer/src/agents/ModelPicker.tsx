@@ -54,13 +54,22 @@ export interface ModelSourceGroup { readonly name: string; readonly models: Agen
 /**
  * A provider's models by model source, or undefined for a provider whose models name none, whose menu stays one list.
  * OpenCode Zen comes first, since every OpenCode folder has it, then the rest in the order the provider lists them. A
- * model without a source among ones that have one goes under the provider's own name.
+ * model without a source among ones that have one goes under the provider's own name. Cursor's groups are its model
+ * makers (ADR-0123), which arrive in Cursor's order, Cursor's own Auto and Composer first, and are kept in it, models too.
  */
 export function modelSources(models: readonly AgentModel[], provider: string): ModelSourceGroup[] | undefined {
   if (!models.some(model => model.source !== undefined)) return undefined
-  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: newestModelsFirst(items) }))
+  const byMaker = makerGrouped(models)
+  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: byMaker ? items : newestModelsFirst(items) }))
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
+
+/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0123). */
+const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
+
+/** The words a menu of makers uses where a menu of model sources uses its own, and the line under a Cursor model list. */
+const MAKER_WORDS = { back: 'Makers', backLabel: 'Back to Cursor’s model makers', group: 'Cursor’s model makers' } as const
+export const CURSOR_MODELS_NOTE = 'Every model here runs through Cursor, on your Cursor plan.'
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
@@ -132,6 +141,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
+  const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
   const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
@@ -299,15 +309,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
           </div>
           : openSource ? <>
             <div className="model-picker__step">
-              <button ref={back} type="button" aria-label="Back to model sources" title="Back to model sources" onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />Model sources</button>
+              <button ref={back} type="button" aria-label={makers ? MAKER_WORDS.backLabel : 'Back to model sources'} title={makers ? MAKER_WORDS.backLabel : 'Back to model sources'} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? MAKER_WORDS.back : 'Model sources'}</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
-            <div ref={list} role="listbox" aria-label={`${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+            <div ref={list} role="listbox" aria-label={makers ? `${openSource.name} models in Cursor` : `${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
               {openSource.models.map(option)}
             </div>
           </>
           // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
-          : <div ref={list} role="group" aria-label={`${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
+          : <div ref={list} role="group" aria-label={makers ? MAKER_WORDS.group : `${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
               const about = `${countModels(source.models.length)}${source.name === OPENCODE_ZEN_SOURCE ? ' · Free with OpenCode Zen' : ''}`
               return <button type="button" key={source.name} data-source={source.name} aria-current={holdsChosen(source) || undefined} tabIndex={source.name === stopSource ? 0 : -1}
@@ -316,7 +326,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
               </button>
             })}
           </div>}
-        {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
+        {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note || selectedProvider?.providerId === 'cursor'
+          ? <p className="model-picker__note">{selectedProvider?.providerId === 'cursor' ? [CURSOR_MODELS_NOTE, note].filter(Boolean).join(' ') : note}</p> : null}
       </div>
     </dialog>}
   </div>
