@@ -142,7 +142,7 @@ test('synthetic thread histories keep streaming and permission available across 
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     await sidebar.getByRole('button', { name: PANES[0][1], exact: true }).click()
     for (const [, title] of PANES.slice(1)) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     await expect(page.locator('section.thread-pane:not([data-hidden])')).toHaveCount(PANES.length)

@@ -100,7 +100,7 @@ async function emit(page: Page, threadId: string, request: AgentRequest): Promis
 }
 
 async function selectThread(page: Page, title: string): Promise<void> {
-  await page.getByRole('button', { name: title, exact: true }).click()
+  await page.getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
 }
 
@@ -446,7 +446,7 @@ test('keeps a question and its message bar reachable in a short stacked pane', a
     await selectThread(page, 'Grok voice previews')
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note']) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     const panes = page.getByRole('group', { name: 'Thread panes' })
@@ -513,7 +513,7 @@ test('keeps simultaneous question and permission controls reachable in a short s
     await selectThread(page, 'Grok voice previews')
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     for (const title of ['Footer links', 'Weekly note']) {
-      await sidebar.getByRole('button', { name: title, exact: true }).hover()
+      await sidebar.getByRole('button', { name: title, exact: true }).hover({ position: { x: 16, y: 12 } })
       await sidebar.getByRole('button', { name: `Open ${title} beside`, exact: true }).click()
     }
     const pane = page.locator(`section.thread-pane[data-thread-id="${key('footer-links')}"]`)
