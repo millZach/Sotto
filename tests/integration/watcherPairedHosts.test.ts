@@ -28,7 +28,7 @@ import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { codexFixture } from '../fixtures/codexFixture'
-import { heldOperation } from '../fixtures/deferred'
+import { deferred, heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
@@ -205,6 +205,21 @@ it('shows each machine’s live load and work placed but not started with Work a
     expect.objectContaining({ thisComputer: true, factsState: 'reported', load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0,
       memoryState: expect.stringMatching(/^(short|enough|unknown)$/u), cpuState: expect.stringMatching(/^(busy|not-busy|unknown)$/u) }),
     expect.objectContaining({ hostId: f.pairing.hostId, factsState: 'reported', runningThreads: 0, load: expect.objectContaining({ windowMs: expect.any(Number) }), placedNotStarted: 0 })])
+  // A start admitted for the paired machine counts there before the host has it: the desktop adds its own reservation.
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  const holding = vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const starting = f.call('start_thread', f.start())
+  await vi.waitFor(() => expect(held).toBe(1))
+  expect((await f.socket.hostFacts()).placedNotStarted).toBe(0)
+  expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
+  gate.resolve()
+  const started = await starting
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start-refused')
+  holding.mockRestore()
+  // Once the host holds it, it is counted once, by the host or as running there, and never twice.
+  for (let index = 0; index < 5; index++) expect((await machines())[1]!.placedNotStarted).toBeLessThanOrEqual(1)
+  await expect.poll(async () => (await machines())[1]).toMatchObject({ placedNotStarted: 0 })
   // A host whose own answer has the feature off sends its facts alone, as it did before: its load reads unknown.
   const report = await f.socket.hostFacts()
   vi.spyOn(f.socket, 'hostFacts').mockResolvedValue({ facts: report.facts, runningThreads: report.runningThreads })

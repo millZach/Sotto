@@ -15,7 +15,7 @@ import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_P
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
-import { machineLoadStates, type HostMachineReport } from '../../shared/hostFacts'
+import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -808,7 +808,10 @@ export class WatcherService implements WatcherControlHooks {
    */
   startsNotYetSent(): string[] {
     const hostId = this.options.control.hostId()
-    if (!hostId) return []
+    return hostId ? this.startsNotYetSentOn(hostId) : []
+  }
+  /** The threads of the starts Watcher has admitted on a machine, any machine, whose first prompt has not gone yet. */
+  private startsNotYetSentOn(hostId: string): string[] {
     return this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
   }
   /** Distinct threads among the reserved starts: the phone's page asks on every build. */
@@ -3485,17 +3488,22 @@ ${operation.draftId}`)
     // wherever the facts do, or where a host does not send them.
     const live = this.options.crossMachine === true
     const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
-    const loadOf = (report: HostMachineReport) => {
+    // A paired machine's count gains the starts this desktop has admitted there that it has not counted yet. This
+    // computer's own report already holds this Watcher's starts here (`startsNotYetSent`).
+    const placedOf = (report: HostMachineReport, remote: string | undefined) => remote === undefined ? report.placedNotStarted ?? null
+      : placedNotStartedWith(report, this.startsNotYetSentOn(remote),
+        threadId => this.owningSnapshot(remote)?.threads.some(thread => thread.id === threadId && thread.status === 'running') === true)
+    const loadOf = (report: HostMachineReport, remote: string | undefined) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
-      return { load, placedNotStarted: report.placedNotStarted ?? null, memoryState: states.memory, cpuState: states.cpu }
+      return { load, placedNotStarted: placedOf(report, remote), memoryState: states.memory, cpuState: states.cpu }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
-    const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
+    const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
       try {
         const report = await facts()
         if (!report) return unknown(older)
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, remote) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
@@ -3504,7 +3512,7 @@ ${operation.draftId}`)
     const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
     const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
       const facts = !host.connected ? notConnected
-        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER) : unknown(MACHINE_FACTS_OLDER)
+        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER, host.hostId) : unknown(MACHINE_FACTS_OLDER)
       // A connection that dropped while its facts were read is not connected, whatever the read came back with.
       const connected = host.connected && stillConnected(host.hostId)
       return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,

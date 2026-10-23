@@ -343,6 +343,13 @@ describe('the machine report', () => {
     const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }, { id: 'began', status: 'running' }],
       deliveries: [{ threadId: 'created', status: 'queued' }], startsNotYetSent: ['pending', 'created', 'began'] }) as unknown as MachineWork, true)
     expect(report).toMatchObject({ runningThreads: 1, placedNotStarted: 2 })
+    // The IDs it counted go with the count, so a desktop with a start on its way here can count it once.
+    expect([...report.placedThreadIds!].sort()).toEqual(['created', 'pending'])
+  })
+
+  it('sends no thread IDs with Work across machines off', async () => {
+    const report = await hostMachineReport(quiet(), () => ({ threads: [{ id: 'created', status: 'idle' }], deliveries: [{ threadId: 'created', status: 'queued' }] }) as unknown as MachineWork, false)
+    expect(report).not.toHaveProperty('placedThreadIds')
   })
 
   it('reads its counts after the load, so a thread that started while the load was read counts as running', async () => {

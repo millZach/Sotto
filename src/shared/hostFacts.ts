@@ -129,5 +129,30 @@ export const hostMachineReportSchema = z.object({
   runningThreads: threadCount.catch(null),
   load: hostLoadSchema.nullable().optional().catch(null),
   placedNotStarted: threadCount.optional().catch(null),
+  /**
+   * The Sotto thread IDs `placedNotStarted` counts, so a desktop that has admitted a start there can tell whether the
+   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; an answer without
+   * it is taken at its count.
+   */
+  placedThreadIds: z.array(z.string().min(1).max(200)).max(HOST_RUNNING_THREADS_MAX).optional().catch(undefined),
 })
 export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
+
+/**
+ * A paired machine's work placed but not started as this desktop reads it (#1311). The host counts what it holds; a
+ * start this desktop's Watcher has admitted there reaches the host only as its thread is created and its first prompt
+ * queued, so until then the host cannot count it, and the desktop adds its own reservation. A start and its thread share
+ * one Sotto thread ID on both sides (the desktop names the thread in its create-thread), so the rule is keyed by it: a
+ * reserved thread counts once, by the host when it echoes the ID in `placedThreadIds`, and otherwise by the desktop,
+ * unless the desktop already sees it running there, which is work begun, not placed. A host's unknown count stays
+ * unknown, and an answer without the IDs is taken at its count, since which starts it holds cannot be told.
+ */
+export function placedNotStartedWith(report: Pick<HostMachineReport, 'placedNotStarted' | 'placedThreadIds'>, reserved: readonly string[],
+  runningThere: (threadId: string) => boolean): number | null {
+  const counted = report.placedNotStarted
+  if (counted === null || counted === undefined) return null
+  if (reserved.length === 0 || !report.placedThreadIds) return counted
+  const echoed = new Set(report.placedThreadIds)
+  const extra = new Set(reserved.filter(threadId => !echoed.has(threadId) && !runningThere(threadId))).size
+  return counted + extra <= HOST_RUNNING_THREADS_MAX ? counted + extra : null
+}
