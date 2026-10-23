@@ -6,3 +6,245 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid ". New workers start here."
+msgstr ". New workers start here."
+
+#. placeholder {0}: entry.starting
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
+msgstr "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
+
+#. placeholder {0}: working.length - NAMED
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {and # more} other {and # more}}"
+msgstr "{0, plural, one {and # more} other {and # more}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{calm}, nothing wrong. Show every machine"
+msgstr "{calm}, nothing wrong. Show every machine"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
+msgstr "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more} other {# more}}"
+msgstr "{count, plural, one {# more} other {# more}}"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
+msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available"
+msgstr "{free} available"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available. Short on memory"
+msgstr "{free} available. Short on memory"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available"
+msgstr "{free} of {all} available"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available. Short on memory"
+msgstr "{free} of {all} available. Short on memory"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{machines, plural, one {# machine} other {# machines}}"
+msgstr "{machines, plural, one {# machine} other {# machines}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{minutes, plural, one {the last minute} other {the last # minutes}}"
+msgstr "{minutes, plural, one {the last minute} other {the last # minutes}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} {tail}"
+msgstr "{name} {tail}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr "{name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr "{name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. Connect it in Settings, under Hosts & phones."
+msgstr "{name} is not connected. Connect it in Settings, under Hosts & phones."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones."
+msgstr "{name} is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+msgstr "{name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name}’s load and what runs there"
+msgstr "{name}’s load and what runs there"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{seconds, plural, one {the last second} other {the last # seconds}}"
+msgstr "{seconds, plural, one {the last second} other {the last # seconds}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}"
+msgstr "{share} busy over {span}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}. Busy"
+msgstr "{share} busy over {span}. Busy"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show {name}’s load and what runs there."
+msgstr "{shown}. Show {name}’s load and what runs there."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show this computer’s load and what runs there."
+msgstr "{shown}. Show this computer’s load and what runs there."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{starting, plural, one {# starting} other {# starting}}"
+msgstr "{starting, plural, one {# starting} other {# starting}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{working, plural, one {# working} other {# working}}"
+msgstr "{working, plural, one {# working} other {# working}}"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "busy"
+msgstr "busy"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Change where new workers start"
+msgstr "Change where new workers start"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close {name}’s panel"
+msgstr "Close {name}’s panel"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close this computer’s panel"
+msgstr "Close this computer’s panel"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Counted, so the next start sees it"
+msgstr "Counted, so the next start sees it"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "CPU"
+msgstr "CPU"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by {parent}"
+msgstr "delegated by {parent}"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by another thread"
+msgstr "delegated by another thread"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "load unknown"
+msgstr "load unknown"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Machines and what works on each"
+msgstr "Machines and what works on each"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "may slow down"
+msgstr "may slow down"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Memory"
+msgstr "Memory"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on {name}. It may slow down. Nothing is stopped or held back."
+msgstr "More than ten threads are working on {name}. It may slow down. Nothing is stopped or held back."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on this computer. This computer may slow down or use its battery faster. Nothing is stopped or held back."
+msgstr "More than ten threads are working on this computer. This computer may slow down or use its battery faster. Nothing is stopped or held back."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "not connected"
+msgstr "not connected"
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default machine. Watcher says why in its reply."
+msgstr "Not your default machine. Watcher says why in its reply."
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default, {name}. Watcher says why in its reply."
+msgstr "Not your default, {name}. Watcher says why in its reply."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Read"
+msgstr "Read"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "short on memory"
+msgstr "short on memory"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read {name}’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+msgstr "Sotto could not read {name}’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+msgstr "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "System"
+msgstr "System"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats {name}’s load as unknown, not idle."
+msgstr "The last reading is {ago}, older than a minute, so Watcher treats {name}’s load as unknown, not idle."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats this computer’s load as unknown, not idle."
+msgstr "The last reading is {ago}, older than a minute, so Watcher treats this computer’s load as unknown, not idle."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer"
+msgstr "This computer"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+msgstr "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "This computer’s load and what runs there"
+msgstr "This computer’s load and what runs there"
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+msgstr "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "unknown"
+msgstr "unknown"
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "your thread"
+msgstr "your thread"

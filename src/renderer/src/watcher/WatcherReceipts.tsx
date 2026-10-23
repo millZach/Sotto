@@ -8,6 +8,7 @@ import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
+import { t } from '@lingui/core/macro'
 
 /** A thread as a receipt card or a takeover line names it: what the window knows of it now. */
 export interface ConversationThread {
@@ -97,9 +98,11 @@ export function receiptLead(operation: Pick<WatcherOperation, 'action' | 'delive
  */
 export function placementLine(placement: WorkerPlacementReceipt | undefined): string | null {
   if (placement === undefined) return null
+  // Sotto's own note is written where the start is placed and goes to Watcher as well, so it stays in English (ADR-0123).
   if (placement.note !== undefined) return placement.note
   if (!placement.awayFromDefault) return null
-  return placement.defaultName ? `Not your default, ${placement.defaultName}. Watcher says why in its reply.` : 'Not your default machine. Watcher says why in its reply.'
+  const name = placement.defaultName
+  return name ? t`Not your default, ${name}. Watcher says why in its reply.` : t`Not your default machine. Watcher says why in its reply.`
 }
 
 /**

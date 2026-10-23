@@ -2,18 +2,22 @@ import { MACHINE_LOAD_THRESHOLDS } from './hostFacts'
 import { MACHINE_FACTS_OLDER } from './watcher'
 import type { NewWorkersStart } from './workerMachine'
 import type { WatcherMachine } from './watcherRoom'
-import { THIS_COMPUTER, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX } from './workingThreads'
+import { THIS_COMPUTER, WORKING_THREADS_QUIET_MAX } from './workingThreads'
 
 /**
  * The machines line under Watcher's header (#1032, Zach's pick D "Names" on October 23, 2026): "This computer 2 working ·
  * forge 3 working". Each machine's name opens its panel. A problem only adds words after that machine's count, in the
  * order the prototype set: more than ten working, busy, short on memory, load unknown; a machine not connected says
  * only that. Names and counts never change colour. No pills, chips or meters (ADR-0110).
+ *
+ * What the line is made of lives here, for the window and for the iPhone's page main projects. The window says it in the
+ * interface language (`src/renderer/src/watcher/machineWords.ts`, ADR-0123); what main sends the iPhone stays in the
+ * host's English, as ADR-0123 has it for text a host sends.
  */
 export interface MachineEntry {
   /** The machine's host ID; This computer's own. */
   readonly hostId: string
-  /** "This computer", or the name the user saved for the machine. */
+  /** "This computer", or the name the user saved for the machine. The window says This computer in its own language. */
   readonly name: string
   readonly thisComputer: boolean
   readonly connected: boolean
@@ -21,20 +25,15 @@ export interface MachineEntry {
   readonly working: number
   /** Work placed but not started there, as its host counts it (#1311); 0 when it does not say. */
   readonly starting: number
-  /** The words a problem adds after the count, in order; empty when nothing is wrong. */
-  readonly words: readonly string[]
+  /** The problems whose words follow the count, in the line's order; empty when nothing is wrong. */
+  readonly problems: readonly MachineProblem[]
   /** Whether new workers start here: the default machine Settings names. */
   readonly isDefault: boolean
   readonly machine: WatcherMachine | null
 }
 
-export const MACHINE_WORDS = {
-  notConnected: 'not connected',
-  over: 'may slow down',
-  busy: 'busy',
-  short: 'short on memory',
-  unknown: 'load unknown',
-} as const
+/** What can be wrong with a machine, in the order the line says it: may slow down, busy, short on memory, load unknown. */
+export type MachineProblem = 'not-connected' | 'over' | 'busy' | 'short' | 'unknown'
 
 const cpuUnknown = (machine: WatcherMachine): boolean => (machine.cpuState ?? 'unknown') === 'unknown'
 const memoryUnknown = (machine: WatcherMachine): boolean => (machine.memoryState ?? 'unknown') === 'unknown'
@@ -51,16 +50,16 @@ export function partlyUnknown(machine: WatcherMachine): boolean {
   return cpuUnknown(machine) || memoryUnknown(machine)
 }
 
-/** The words a machine's problems add after its count, empty when nothing is wrong. */
-export function machineWords(machine: WatcherMachine | null, working: number): readonly string[] {
-  if (machine !== null && (!machine.connected || machine.factsState === 'not-connected')) return [MACHINE_WORDS.notConnected]
-  const words: string[] = []
-  if (working > WORKING_THREADS_QUIET_MAX) words.push(MACHINE_WORDS.over)
-  if (machine === null) return words
-  if (machine.cpuState === 'busy') words.push(MACHINE_WORDS.busy)
-  if (machine.memoryState === 'short') words.push(MACHINE_WORDS.short)
-  if (loadUnknown(machine)) words.push(MACHINE_WORDS.unknown)
-  return words
+/** A machine's problems, in the line's order, empty when nothing is wrong. */
+export function machineProblems(machine: WatcherMachine | null, working: number): readonly MachineProblem[] {
+  if (machine !== null && (!machine.connected || machine.factsState === 'not-connected')) return ['not-connected']
+  const problems: MachineProblem[] = []
+  if (working > WORKING_THREADS_QUIET_MAX) problems.push('over')
+  if (machine === null) return problems
+  if (machine.cpuState === 'busy') problems.push('busy')
+  if (machine.memoryState === 'short') problems.push('short')
+  if (loadUnknown(machine)) problems.push('unknown')
+  return problems
 }
 
 /** The machine new workers start on, by host ID, or null when Watcher chooses or nothing has been read. */
@@ -86,7 +85,7 @@ export function machineEntries(machines: readonly WatcherMachine[] | null, worki
     const count = working.get(thisComputer ? THIS_COMPUTER : hostId) ?? 0
     const facts = connected && readAs(machine) ? machine : null
     return { hostId, name, thisComputer, connected, working: count, starting: connected ? facts?.placedNotStarted ?? 0 : 0,
-      words: connected ? machineWords(facts, count) : [MACHINE_WORDS.notConnected], isDefault: hostId === defaultId, machine: connected ? facts : null }
+      problems: connected ? machineProblems(facts, count) : ['not-connected'], isDefault: hostId === defaultId, machine: connected ? facts : null }
   }
   const others = (machines ?? []).filter(machine => !machine.thisComputer)
   const remotes = saved === undefined ? others.map(machine => entry(machine.hostId, machine.name, machine, false, readAs(machine)))
@@ -95,66 +94,17 @@ export function machineEntries(machines: readonly WatcherMachine[] | null, worki
   return [entry(local?.hostId ?? THIS_COMPUTER, 'This computer', local ?? null, true, true), ...remotes]
 }
 
-/** "3 working", or "3 working, 1 starting" while work placed there has not begun; nothing for a machine not connected. */
-export function countWords(entry: MachineEntry, withStarting = true): string {
-  if (!entry.connected) return ''
-  return `${entry.working} working${withStarting && entry.starting > 0 ? `, ${entry.starting} starting` : ''}`
-}
-
-/** One machine as the line reads it, in words: "forge 3 working, busy", "forge not connected". */
-export function lineText(entry: MachineEntry, withStarting = true): string {
-  const count = countWords(entry, withStarting)
-  const words = entry.words.join(', ')
-  if (!count) return words ? `${entry.name} ${words}` : entry.name
-  return words ? `${entry.name} ${count}, ${words}` : `${entry.name} ${count}`
-}
-
-/** What a press on a machine's name does, with what the line shows of it first, for its accessible name. */
-export function machineLabel(entry: MachineEntry, withStarting = true): string {
-  const parts = [entry.name, countWords(entry, withStarting), ...entry.words].filter(Boolean)
-  const whose = entry.thisComputer ? 'this computer’s' : `${entry.name}’s`
-  return `${parts.join(', ')}. Show ${whose} load and what runs there.`
-}
-
 /**
- * The line in a narrow room (Zach, October 23, 2026): no "starting" counts, and only the machines with a problem, then a
- * count of the rest. With nothing wrong anywhere no machine is named: the line is the shortest true sentence, "3
- * machines, 5 working", which a press opens into the wide line. This computer alone is named, since it is all there is.
- * All of them, when they are few enough to fit anyway, is the wide line's business, not this one's.
+ * The line in a narrow room or on a phone (Zach, October 23, 2026): no "starting" counts, and only the machines with a
+ * problem, then a count of the rest. With nothing wrong anywhere no machine is named, and how many there are and how much
+ * works on them stands for them all ("3 machines, 5 working", approved by Zach on October 23); This computer alone is
+ * named, since there is nothing else to count. All of them, when they are few enough to fit anyway, is the wide line's
+ * business, not this one's.
  */
 export function shortLine(entries: readonly MachineEntry[]): { readonly shown: readonly MachineEntry[]; readonly more: number } {
-  const troubled = entries.filter(entry => entry.words.length > 0)
+  const troubled = entries.filter(entry => entry.problems.length > 0)
   const shown = troubled.length > 0 || entries.length > 1 ? troubled : entries
   return { shown, more: entries.length - shown.length }
-}
-
-/** The narrow line when nothing is wrong on any machine: "3 machines, 5 working", the press that shows every machine. */
-export function calmWords(entries: readonly MachineEntry[]): string {
-  const working = entries.reduce((sum, entry) => sum + entry.working, 0)
-  return `${entries.length} machine${entries.length === 1 ? '' : 's'}, ${working} working`
-}
-
-const GIB = 1024 ** 3
-/** Memory as the panel and Settings say it: "41 GB", "1.6 GB". */
-export function memoryWords(bytes: number): string {
-  const gb = bytes / GIB
-  return `${gb >= 10 ? Math.round(gb) : Math.round(gb * 10) / 10} GB`
-}
-
-/** How long ago a reading was taken: "6 s ago", "3 min ago". */
-export function agoWords(ms: number): string {
-  const seconds = Math.max(0, Math.round(ms / 1000))
-  if (seconds < 60) return `${seconds} s ago`
-  const minutes = Math.round(seconds / 60)
-  return minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`
-}
-
-/** The span a CPU reading covers: "the last 2 seconds", "the last minute". */
-export function windowWords(ms: number): string {
-  const seconds = Math.max(1, Math.round(ms / 1000))
-  if (seconds < 60) return `the last ${seconds} second${seconds === 1 ? '' : 's'}`
-  const minutes = Math.round(seconds / 60)
-  return minutes === 1 ? 'the last minute' : `the last ${minutes} minutes`
 }
 
 /** The system a machine runs, as the panel and Settings name it: "Windows 11", "Omarchy (Linux)", "macOS 15.3". */
@@ -168,34 +118,55 @@ export function systemWords(machine: WatcherMachine): string | null {
   return name
 }
 
+/** Why a machine's load, or half of it, reads unknown: what its panel explains. */
+export type UnknownReason =
+  | { readonly kind: 'older-host' }
+  | { readonly kind: 'unread' }
+  | { readonly kind: 'stale'; readonly ageMs: number }
+  | { readonly kind: 'cpu-unreported' }
+  | { readonly kind: 'memory-unreported' }
+  | { readonly kind: 'memory-changed' }
+
 /**
- * Why a machine's load reads unknown, in a sentence for its panel, or null when it is known. A machine never reads idle
- * for want of a reading: Watcher treats it as unknown.
+ * Why a machine's load reads unknown, or null when it is known. A machine never reads idle for want of a reading:
+ * Watcher treats it as unknown.
  */
-export function unknownWhy(entry: MachineEntry, now: number): string | null {
+export function unknownReason(entry: MachineEntry, now: number): UnknownReason | null {
   const machine = entry.machine
   if (machine === null || !entry.connected || !partlyUnknown(machine)) return null
-  const name = entry.thisComputer ? 'This computer' : entry.name
-  const whose = entry.thisComputer ? 'this computer’s' : `${entry.name}’s`
-  if (machine.factsState === 'unknown') {
-    return machine.note === MACHINE_FACTS_OLDER
-      ? `${name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones.`
-      : `Sotto could not read ${whose} load just now. Watcher treats it as unknown, never idle. It reads again when you open this.`
-  }
+  if (machine.factsState === 'unknown') return machine.note === MACHINE_FACTS_OLDER ? { kind: 'older-host' } : { kind: 'unread' }
   const load = machine.load ?? null
-  if (load === null) return `${name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones.`
+  if (load === null) return { kind: 'older-host' }
   const age = now - Date.parse(load.observedAt)
-  if (Number.isFinite(age) && Math.abs(age) > MACHINE_LOAD_THRESHOLDS.staleAfterMs) {
-    return `The last reading is ${agoWords(Math.abs(age))}, older than a minute, so Watcher treats ${whose} load as unknown, not idle.`
-  }
-  if (load.cpuBusyPercent === null) return `${name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle.`
-  if (load.availableMemoryBytes === null) return `${name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful.`
-  return `${name}’s memory changed during the reading, so Watcher treats it as unknown until the next one.`
+  if (Number.isFinite(age) && Math.abs(age) > MACHINE_LOAD_THRESHOLDS.staleAfterMs) return { kind: 'stale', ageMs: Math.abs(age) }
+  if (load.cpuBusyPercent === null) return { kind: 'cpu-unreported' }
+  if (load.availableMemoryBytes === null) return { kind: 'memory-unreported' }
+  return { kind: 'memory-changed' }
 }
 
-/** The warning above ten, in the panel: this computer's own sentence, or another machine's. */
-export function overWords(entry: MachineEntry): string | null {
-  if (entry.working <= WORKING_THREADS_QUIET_MAX) return null
-  return entry.thisComputer ? `More than ten threads are working on this computer. ${WORKING_THREADS_CAUTION} Nothing is stopped or held back.`
-    : `More than ten threads are working on ${entry.name}. It may slow down. Nothing is stopped or held back.`
+/** "6 s ago", "3 min ago": the host's English for the phone. */
+function englishAgo(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  if (seconds < 60) return `${seconds} s ago`
+  const minutes = Math.round(seconds / 60)
+  return minutes < 60 ? `${minutes} min ago` : `${Math.round(minutes / 60)} h ago`
+}
+
+/**
+ * Why a machine's load reads unknown, in the sentence the iPhone's panel shows, or null when it is known. In the host's
+ * English: the iPhone shows text a host sends as it was sent (ADR-0123). The window says it in its own language.
+ */
+export function unknownWhy(entry: MachineEntry, now: number): string | null {
+  const reason = unknownReason(entry, now)
+  if (reason === null) return null
+  const name = entry.thisComputer ? 'This computer' : entry.name
+  const whose = entry.thisComputer ? 'this computer’s' : `${entry.name}’s`
+  switch (reason.kind) {
+    case 'older-host': return `${name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones.`
+    case 'unread': return `Sotto could not read ${whose} load just now. Watcher treats it as unknown, never idle. It reads again when you open this.`
+    case 'stale': return `The last reading is ${englishAgo(reason.ageMs)}, older than a minute, so Watcher treats ${whose} load as unknown, not idle.`
+    case 'cpu-unreported': return `${name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle.`
+    case 'memory-unreported': return `${name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful.`
+    case 'memory-changed': return `${name}’s memory changed during the reading, so Watcher treats it as unknown until the next one.`
+  }
 }

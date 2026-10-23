@@ -6,7 +6,8 @@ import { MACHINE_FACTS_OLDER } from '../../../src/shared/watcher'
 import type { WatcherMachine, WatcherMachinesRead } from '../../../src/shared/watcherRoom'
 import { THIS_COMPUTER } from '../../../src/shared/workingThreads'
 import { WatcherMachines } from '../../../src/renderer/src/watcher/WatcherMachines'
-import { calmWords, lineText, machineEntries, machineLabel, shortLine, unknownWhy } from '../../../src/shared/machineLine'
+import { machineEntries, shortLine, unknownWhy as unknownWhyEnglish } from '../../../src/shared/machineLine'
+import { calmWords, lineText, machineLabel, unknownWhyWords as unknownWhy } from '../../../src/renderer/src/watcher/machineWords'
 import { placementLine } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 import { machinesStore } from '../../../src/renderer/src/watcher/useMachines'
@@ -95,7 +96,9 @@ describe('The machines line’s words (#1032, pick D)', () => {
     const older = machineEntries([local(), forge({ factsState: 'unknown', facts: null, note: MACHINE_FACTS_OLDER, load: null, memoryState: 'unknown', cpuState: 'unknown' })], counts({}))[1]!
     expect(unknownWhy(older, NOW)).toMatch(/^forge runs an older Sotto host that does not report its load\. Watcher treats it as unknown, never idle\./u)
     const stale = machineEntries([local(), forge({ load: read(22, 41 * GIB, NOW - 190_000), memoryState: 'unknown', cpuState: 'unknown' })], counts({}))[1]!
-    expect(unknownWhy(stale, NOW)).toBe('The last reading is 3 min ago, older than a minute, so Watcher treats forge’s load as unknown, not idle.')
+    expect(unknownWhy(stale, NOW)).toBe('The last reading is 3 min. ago, older than a minute, so Watcher treats forge’s load as unknown, not idle.')
+    // The iPhone is sent the host's English, as ADR-0123 has it for text a host sends.
+    expect(unknownWhyEnglish(stale, NOW)).toBe('The last reading is 3 min ago, older than a minute, so Watcher treats forge’s load as unknown, not idle.')
     const mac = machineEntries([local(), forge({ load: read(93, null), memoryState: 'unknown', cpuState: 'busy' })], counts({}))[1]!
     expect(unknownWhy(mac, NOW)).toMatch(/does not report the memory a new process could have/u)
     // The line says load unknown only when both halves are: a Mac says busy from its CPU and leaves its memory to the panel.
@@ -144,7 +147,7 @@ describe('The machines line in Watcher’s room', () => {
     expect(row('CPU')).toHaveAttribute('data-warn', 'true')
     expect(row('Memory')).toHaveTextContent('41 GB of 64 GB available')
     expect(row('Memory')).not.toHaveAttribute('data-warn')
-    expect(row('Read')).toHaveTextContent('6 s ago')
+    expect(row('Read')).toHaveTextContent('6 sec. ago')
     expect(panel).toHaveTextContent('2 working, 1 starting. New workers start here.')
     expect(within(panel).getByText('Review the reconnect diff').parentElement).toHaveTextContent('delegated by Tailnet reconnect fix')
     expect(within(panel).getByText('1 placed here, starting')).toBeInTheDocument()
@@ -158,7 +161,7 @@ describe('The machines line in Watcher’s room', () => {
     await act(async () => undefined)
     await act(async () => { fireEvent.click(wide().getByRole('button', { name: /^This computer,/u })) })
     const panel = screen.getByRole('dialog', { name: 'This computer' })
-    const close = within(panel).getByRole('button', { name: 'Close This computer’s panel' })
+    const close = within(panel).getByRole('button', { name: 'Close this computer’s panel' })
     const change = within(panel).getByRole('button', { name: 'Change where new workers start' })
     // What the panel says is a stop of its own between them, so a panel taller than the room scrolls from the keyboard.
     const numbers = within(panel).getByRole('region', { name: 'This computer’s load and what runs there' })

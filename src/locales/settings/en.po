@@ -7,9 +7,26 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
 
+#. placeholder {0}: choice.working
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{0, plural, one {# working} other {# working}}"
+msgstr "{0, plural, one {# working} other {# working}}"
+
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "{count, plural, one {Theme removed.} other {# themes removed.}}"
 msgstr "{count, plural, one {Theme removed.} other {# themes removed.}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
+msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free"
+msgstr "{free} free"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free, short on memory"
+msgstr "{free} free, short on memory"
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "{name} could not be exported."
@@ -18,6 +35,18 @@ msgstr "{name} could not be exported."
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "{name} exported."
 msgstr "{name} exported."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
+msgstr "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "A machine no longer saved"
+msgstr "A machine no longer saved"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "An older Sotto host: load unknown. Update it in Hosts & phones."
+msgstr "An older Sotto host: load unknown. Update it in Hosts & phones."
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Appearance"
@@ -38,6 +67,18 @@ msgstr "Contrast"
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Contrast saved."
 msgstr "Contrast saved."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}"
+msgstr "CPU {cpu}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}, busy"
+msgstr "CPU {cpu}, busy"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU unknown"
+msgstr "CPU unknown"
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Creature hidden."
@@ -67,9 +108,37 @@ msgstr "Language"
 msgid "Language saved."
 msgstr "Language saved."
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Let Watcher choose"
+msgstr "Let Watcher choose"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "load unknown"
+msgstr "load unknown"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "may slow down"
+msgstr "may slow down"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "memory unknown"
+msgstr "memory unknown"
+
 #: src/renderer/src/features/settings/LanguagePicker.tsx
 msgid "Menus, buttons and messages. What you dictate and what agents write stay as they are."
 msgstr "Menus, buttons and messages. What you dictate and what agents write stay as they are."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "New workers start here"
+msgstr "New workers start here"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Not connected"
+msgstr "Not connected"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 
 #: src/renderer/src/features/settings/LanguagePicker.tsx
 msgid "Preview"
@@ -95,6 +164,26 @@ msgstr "Theme saved."
 msgid "Themes, contrast & motion"
 msgstr "Themes, contrast & motion"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "This computer"
+msgstr "This computer"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "This machine is no longer saved, so new workers start on this computer. Choose another."
+msgstr "This machine is no longer saved, so new workers start on this computer. Choose another."
+
 #: src/renderer/src/features/settings/LanguagePicker.tsx
 msgid "Translations are new and ship on Owl first. Some words may still be in English."
 msgstr "Translations are new and ship on Owl first. Some words may still be in English."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+msgstr "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Where new workers start"
+msgstr "Where new workers start"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
+msgstr "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."

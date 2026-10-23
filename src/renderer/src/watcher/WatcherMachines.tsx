@@ -5,8 +5,11 @@ import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { THIS_COMPUTER, workingThreadsByMachine } from '../../../shared/workingThreads'
 import { useOptionalApp } from '../state/AppContext'
-import { agoWords, calmWords, countWords, lineText, machineEntries, machineLabel, memoryWords, overWords, shortLine, systemWords, unknownWhy, windowWords,
-  type MachineEntry } from '../../../shared/machineLine'
+import { machineEntries, shortLine, systemWords, type MachineEntry } from '../../../shared/machineLine'
+import { agoWords, calmLabel, calmWords, countWords, cpuWords, lineText, listWords, machineLabel, machineName, memoryRowWords, moreLabel, moreWords, overWords,
+  problemWords, unknownWhyWords } from './machineWords'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { machinesStore, useMachines } from './useMachines'
 import { savedMachines, useHostsState } from '../state/hostsState'
 import type { HostsBridge } from '../../../shared/hosts'
@@ -59,6 +62,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   readonly onClose: (refocus: boolean) => void
   readonly onChangeDefault: (() => void) | null
 }): ReactNode {
+  const { t } = useLingui()
   const heading = useId()
   const panel = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<{ readonly top: number; readonly left: number; readonly maxHeight: number } | null>(null)
@@ -120,11 +124,16 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   const machine = entry.machine
   const working = workingOn(entry, threads)
   const byId = new Map(threads.map(thread => [thread.id, thread] as const))
-  const who = (thread: AgentThread): string => watcherIds.has(thread.id) ? 'Watcher'
-    : thread.delegatedBy !== undefined ? `delegated by ${byId.get(thread.delegatedBy)?.title ?? 'another thread'}` : 'your thread'
+  const who = (thread: AgentThread): string => {
+    if (watcherIds.has(thread.id)) return 'Watcher'
+    if (thread.delegatedBy === undefined) return t`your thread`
+    const parent = byId.get(thread.delegatedBy)?.title
+    return parent === undefined ? t`delegated by another thread` : t`delegated by ${parent}`
+  }
   const load = machine?.load ?? null
   const facts = machine?.facts ?? null
-  const why = unknownWhy(entry, now)
+  const why = unknownWhyWords(entry, now)
+  const name = machineName(entry)
   const over = overWords(entry)
   const system = machine === null ? null : systemWords(machine)
   const cpus = facts?.logicalCpuCount ?? null
@@ -133,32 +142,35 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   const busy = machine?.cpuState === 'busy', short = machine?.memoryState === 'short'
   return <div ref={panel} className="watcher-machine-panel" role="dialog" aria-labelledby={heading} tabIndex={-1} onKeyDown={onKeyDown}
     style={place ? { top: place.top, left: place.left, maxHeight: place.maxHeight } : { visibility: 'hidden' }}>
-    <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{entry.name}</span></h2>
-    <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={`Close ${entry.name}’s panel`} onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
+    <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{name}</span></h2>
+    <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={entry.thisComputer ? t`Close this computer’s panel` : t`Close ${name}’s panel`}
+      onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
     {/* A stop in the Tab order between Close and Change where new workers start, so what does not fit can be scrolled
         from the keyboard as well as read. */}
     <div className="watcher-machine-panel__body tt-focusable" role="region" tabIndex={0}
-      aria-label={`${entry.thisComputer ? 'This computer’s' : `${entry.name}’s`} load and what runs there`}>{!entry.connected ? <p>{entry.name} is not connected.{entry.isDefault ? ' It is where new workers start, so until it connects they start on this computer, and Watcher says so.' : ''} Connect it in Settings, under Hosts & phones.</p> : <>
+      aria-label={entry.thisComputer ? t`This computer’s load and what runs there` : t`${name}’s load and what runs there`}>{!entry.connected
+        ? <p className="tt-paragraph">{entry.isDefault ? t`${name} is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones.`
+          : t`${name} is not connected. Connect it in Settings, under Hosts & phones.`}</p> : <>
       <dl>
-        {system !== null ? <><dt>System</dt><dd>{system}{cpus !== null ? ` · ${cpus} CPUs` : ''}</dd></> : null}
-        <dt>CPU</dt><dd data-warn={busy || !cpuKnown || undefined}>{cpuKnown ? `${load!.cpuBusyPercent}% busy over ${windowWords(load!.windowMs)}${busy ? '. Busy' : ''}` : 'unknown'}</dd>
-        <dt>Memory</dt><dd data-warn={short || !memoryKnown || undefined}>{memoryKnown
-          ? `${memoryWords(load!.availableMemoryBytes!)}${facts?.totalMemoryBytes != null ? ` of ${memoryWords(facts.totalMemoryBytes)}` : ''} available${short ? '. Short on memory' : ''}` : 'unknown'}</dd>
-        {load !== null ? <><dt>Read</dt><dd>{agoWords(now - Date.parse(load.observedAt))}</dd></> : null}
+        {system !== null ? <><dt>{t`System`}</dt><dd>{system}{cpus !== null ? ` · ${plural(cpus, { one: '# CPU', other: '# CPUs' })}` : ''}</dd></> : null}
+        <dt>{t`CPU`}</dt><dd data-warn={busy || !cpuKnown || undefined}>{cpuKnown ? cpuWords(load!.cpuBusyPercent!, load!.windowMs, busy) : t`unknown`}</dd>
+        <dt>{t`Memory`}</dt><dd data-warn={short || !memoryKnown || undefined}>{memoryKnown
+          ? memoryRowWords(load!.availableMemoryBytes!, facts?.totalMemoryBytes ?? null, short) : t`unknown`}</dd>
+        {load !== null ? <><dt>{t`Read`}</dt><dd>{agoWords(now - Date.parse(load.observedAt))}</dd></> : null}
       </dl>
-      {why !== null ? <p>{why}</p> : null}
-      <p className="watcher-machine-panel__count"><b>{countWords(entry)}</b>{entry.isDefault ? '. New workers start here.' : ''}</p>
-      {over !== null ? <p data-warn="true">{over}</p> : null}
+      {why !== null ? <p className="tt-paragraph">{why}</p> : null}
+      <p className="watcher-machine-panel__count"><b>{countWords(entry)}</b>{entry.isDefault ? t`. New workers start here.` : ''}</p>
+      {over !== null ? <p className="tt-paragraph" data-warn="true">{over}</p> : null}
       {working.length > 0 || entry.starting > 0 ? <ul>
         {working.slice(0, NAMED).map(thread => <li key={thread.id}><span className="watcher-row__ring" data-tone="working" aria-hidden="true" />
           <span className="watcher-machine-panel__title">{thread.title}</span><span className="watcher-machine-panel__who">{who(thread)}</span></li>)}
-        {working.length > NAMED ? <li><span aria-hidden="true" /><span className="watcher-machine-panel__who">and {working.length - NAMED} more</span></li> : null}
-        {entry.starting > 0 ? <li><span className="watcher-machine-panel__wait" aria-hidden="true" /><span className="watcher-machine-panel__title">{entry.starting} placed here, starting</span>
-          <span className="watcher-machine-panel__who">Counted, so the next start sees it</span></li> : null}
+        {working.length > NAMED ? <li><span aria-hidden="true" /><span className="watcher-machine-panel__who">{plural(working.length - NAMED, { one: 'and # more', other: 'and # more' })}</span></li> : null}
+        {entry.starting > 0 ? <li><span className="watcher-machine-panel__wait" aria-hidden="true" /><span className="watcher-machine-panel__title">{plural(entry.starting, { one: '# placed here, starting', other: '# placed here, starting' })}</span>
+          <span className="watcher-machine-panel__who">{t`Counted, so the next start sees it`}</span></li> : null}
       </ul> : null}
     </>}</div>
     {onChangeDefault !== null ? <div className="watcher-machine-panel__foot">
-      <button type="button" className="watcher-machine-panel__link tt-focusable" onClick={onChangeDefault}>Change where new workers start</button>
+      <button type="button" className="watcher-machine-panel__link tt-focusable" onClick={onChangeDefault}>{t`Change where new workers start`}</button>
     </div> : null}
   </div>
 }
@@ -174,6 +186,7 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   readonly now?: number | undefined
   readonly hosts?: HostsBridge | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const room = useWatcherRoom()
   const app = useOptionalApp()
   const { machines, read } = useMachines(room?.readMachines ?? null)
@@ -222,12 +235,15 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   }, [all, entries, short.shown])
   const name = (entry: MachineEntry, withStarting: boolean): ReactNode => {
     const count = countWords(entry, withStarting)
+    // The count and the problem's words are one list in the reader's language, the words drawn in the warning ink.
+    const whole = listWords([count, ...entry.problems.map(problemWords)])
+    const words = entry.problems.length === 0 ? '' : count && whole.startsWith(count) ? whole.slice(count.length) : ` ${whole}`
     return <span className="watcher-machines__machine" data-host={entry.thisComputer ? THIS_COMPUTER : entry.hostId}>
       <button type="button" className="watcher-machines__name tt-focusable" aria-haspopup="dialog" aria-expanded={open === keyOf(entry)}
         aria-label={machineLabel(entry, withStarting)} title={lineText(entry, withStarting)} onClick={event => toggle(keyOf(entry), event.currentTarget)}>
-        <span>{entry.name}</span></button>
-      {count ? <span className="watcher-machines__count" aria-hidden="true"> {count}</span> : null}
-      {entry.words.length ? <span className="watcher-machines__words" aria-hidden="true">{count ? ', ' : ' '}{entry.words.join(', ')}</span> : null}
+        <span>{machineName(entry)}</span></button>
+      {count && words !== ` ${whole}` ? <span className="watcher-machines__count" aria-hidden="true"> {count}</span> : null}
+      {words ? <span className="watcher-machines__words" aria-hidden="true">{words}</span> : null}
     </span>
   }
   const run = (list: readonly MachineEntry[], withStarting: boolean): ReactNode => list.map((entry, index) => <Fragment key={keyOf(entry)}>
@@ -236,14 +252,14 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   const opened = entries.find(entry => keyOf(entry) === open) ?? null
   const changeDefault = app === null ? null : (): void => { setOpen(null); app.actions.navigate('settings', 'settings-new-workers') }
   return <div ref={line} className="watcher-machines" role="group" aria-labelledby={label} data-all={all || undefined}>
-    <span id={label} className="tt-visually-hidden">Machines and what works on each</span>
+    <span id={label} className="tt-visually-hidden">{t`Machines and what works on each`}</span>
     <span className="watcher-machines__wide">{run(entries, true)}</span>
     <span className="watcher-machines__narrow">{run(short.shown, false)}
       {short.more > 0 && short.shown.length > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr />
-        <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={`${short.more} more machine${short.more === 1 ? '' : 's'}. Show every machine`}
-          onClick={() => setAll(true)}>{short.more} more</button></> : null}
+        <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={moreLabel(short.more)}
+          onClick={() => setAll(true)}>{moreWords(short.more)}</button></> : null}
       {short.more > 0 && short.shown.length === 0 ? <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all}
-        aria-label={`${calmWords(entries)}, nothing wrong. Show every machine`} onClick={() => setAll(true)}>{calmWords(entries)}</button> : null}
+        aria-label={calmLabel(entries)} onClick={() => setAll(true)}>{calmWords(entries)}</button> : null}
     </span>
     {opened !== null ? <MachinePanel key={keyOf(opened)} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
       anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} /> : null}
