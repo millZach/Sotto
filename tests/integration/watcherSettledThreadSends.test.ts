@@ -143,3 +143,24 @@ it('unsettles a thread in a settled project alone, and refuses without an active
   expect(snapshot.threads.find(item => item.id === f.target.threadId)!.workspaceSettledAt ?? null).toBeNull()
   expect(snapshot.threads.find(item => item.id === other)!.workspaceSettledAt).toBeTruthy()
 })
+
+it('answers an unsettle_thread retry as the first call did, restoring nothing again, and refuses its key for another thread', async () => {
+  const f = await fixture()
+  const requestId = f.service.state().requests.at(-1)!.id, retryKey = randomUUID()
+  expect(await f.call('unsettle_thread', { requestId, retryKey, target: f.target })).toEqual({ status: 'ok', target: f.target, settled: false })
+  // The user settles it again; the first call's retry must not undo that.
+  expect((await f.control.commandShell({ type: 'settle-thread', threadId: f.target.threadId })).error).toBeNull()
+  expect(await f.call('unsettle_thread', { requestId, retryKey, target: f.target })).toEqual({ status: 'ok', target: f.target, settled: false })
+  expect(f.settled()).toBe(true)
+  expect(await f.call('unsettle_thread', { requestId, retryKey, target: { ...f.target, threadId: randomUUID() } })).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+})
+
+it('restores only under the user’s own active request: not a standing watch’s, nor a thread the user stopped watching', async () => {
+  const f = await fixture()
+  const watch = (f.control.watcherRecord().watches ?? []).find(item => item.target.threadId === f.target.threadId)!
+  expect(await f.call('unsettle_thread', { requestId: watch.id, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(await f.service.unwatchThread({ target: f.target })).toMatchObject({ status: 'ok' })
+  const requestId = f.service.state().requests.at(-1)!.id
+  expect(await f.call('unsettle_thread', { requestId, retryKey: randomUUID(), target: f.target })).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+  expect(f.settled()).toBe(true)
+})

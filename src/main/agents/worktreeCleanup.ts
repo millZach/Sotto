@@ -3,6 +3,7 @@ import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
 import type { WorktreeCleanupRules } from '../../shared/settings'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { isWatcherWorkActive } from '../../shared/watcherOverview'
+import { delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
 
@@ -40,6 +41,13 @@ const HOUR_MS = 3_600_000
  * work may still be writing (October 23, 2026).
  */
 const busy = (thread: AgentThread): boolean => thread.requests.length > 0 || isWatcherWorkActive(thread) || (thread.subagentSummary?.unknown ?? 0) > 0
+/** The same of a thread or, when it is to be settled, a thread it delegated to (ADR-0081), which settles with it. */
+function atWork(threads: readonly AgentThread[], threadId: string, delegated: boolean): boolean {
+  const thread = threads.find(item => item.id === threadId)
+  if (!thread || busy(thread)) return true
+  if (!delegated || !threads.some(item => item.delegatedBy)) return false
+  return delegatedThreadsBelow(threads, threadId).some(id => { const below = threads.find(item => item.id === id); return below !== undefined && busy(below) })
+}
 const DAY_MS = 86_400_000
 const rulesOn = (rules: WorktreeCleanupRules): boolean => rules.afterDays !== null || rules.merged || rules.onSettle || rules.unchanged
 
@@ -156,7 +164,7 @@ export class WorktreeCleanup {
       const worktree = thread.worktree
       const project = snapshot.projects.find(item => item.id === thread.projectId)
       if (!worktree?.repositoryRoot || thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
-      if (busy(thread)) continue
+      if (atWork(snapshot.threads, thread.id, true)) continue
       const branch = worktree.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree.sentBranch
       if (!branch) continue
       const key = `${thread.id}\0${branch}`
@@ -165,6 +173,8 @@ export class WorktreeCleanup {
         if (branch === await this.defaultBranchOf(worktree.repositoryRoot)) continue
         const tip = await this.merged(worktree.repositoryRoot, branch)
         if (!tip) continue
+        // Asked again as it now stands: work may have started while Git and GitHub were asked.
+        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, true)) continue
         await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, { expectedMergedTip: tip, expectedMergedBranch: branch })
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
@@ -198,6 +208,8 @@ export class WorktreeCleanup {
       try {
         const eligibility = await this.eligible(thread, rules, defaults)
         if (!eligibility) continue
+        // Asked again as it now stands: work may have started while the folder was looked at.
+        if (atWork(this.dependencies.host.workspaceSnapshot().threads, thread.id, false)) continue
         await this.dependencies.host.reclaimThreadWorktree(thread.id, { automatic: true, ...eligibility })
         this.dependencies.log?.('worktree-cleanup-reclaimed')
       } catch { this.dependencies.log?.('worktree-cleanup-skipped') }

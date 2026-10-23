@@ -235,6 +235,24 @@ describe('auto-settle merged threads', () => {
     expect(host.settled).toEqual(['done'])
   })
 
+  it('leaves a merged thread alone while a thread it delegated to still works, or once work starts while GitHub is asked', async () => {
+    const threads = [
+      thread('parent', own('feature/parent')),
+      thread('child', { mode: 'shared', status: 'ready', path: '/repo', repositoryRoot: '/repo', branch: 'trunk', sentBranch: 'trunk' },
+        { delegatedBy: 'parent', subagentSummary: { total: 3, working: 3, completed: 0, failed: 0, interrupted: 0, unknown: 0 } }),
+      thread('late', own('feature/late')),
+      thread('done', own('feature/done')),
+    ]
+    const host = settlingHost(threads)
+    // Background agents start in one thread while GitHub is asked about its branch.
+    const pullRequestMerged = vi.fn(async (_root: string, branch: string) => {
+      if (branch === 'feature/late') threads[2]!.backgroundWork = [{ id: randomUUID(), type: 'subagent', label: 'Synthetic agent' }]
+      return true
+    })
+    await new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged }).sweep()
+    expect(host.settled).toEqual(['done'])
+  })
+
   it('asks GitHub once per branch when the merged rule wants the same answer, and never without gh', async () => {
     const threads = [thread('merged', own('feature/merged'))]
     const host = settlingHost(threads)

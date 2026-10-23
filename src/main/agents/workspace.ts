@@ -3438,10 +3438,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * restored as Restore does, with the delegated threads settled with it. A settled project returns with this thread
    * alone, as a new thread there returns it: the project's other threads keep its timestamp as their own.
    */
-  async reopenThreadForWork(threadId: string): Promise<AgentHostSnapshot> {
+  async reopenThreadForWork(threadId: string, guard?: () => void): Promise<AgentHostSnapshot> {
     await this.initialize()
     const projectId = this.thread(threadId).projectId
     await this.onLane(projectId, async () => {
+      guard?.()
       const project = this.state.snapshot.projects.find(item => item.id === projectId)
       const projectSettledAt = project?.workspaceSettledAt ?? null
       if (!project || projectSettledAt === null) return
@@ -3460,7 +3461,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       this.publish()
     }, this.organizationLanes)
-    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false)
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, guard)
     return this.workspaceSnapshot()
   }
   /**
