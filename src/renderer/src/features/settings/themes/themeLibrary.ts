@@ -11,6 +11,9 @@
  * halves; Sotto always stores both halves, so "use for both" writes two ids.
  */
 
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+
 import { OMARCHY_THEME_ID } from '../../../../../shared/themes/omarchy'
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
 import {
@@ -60,7 +63,15 @@ export function useThemePatch(theme: ThemeDefinition): LibraryPatch {
 // ---------------------------------------------------------------------------
 // Library changes
 
-export class ThemeLibraryError extends Error {}
+/**
+ * A change the library refused. `words` is the message to show, read in the interface language when it is shown; the
+ * error's own message is the same words as they read when it was thrown.
+ */
+export class ThemeLibraryError extends Error {
+  constructor(readonly words: MessageDescriptor) {
+    super(i18n._(words))
+  }
+}
 
 function libraryIds(state: LibraryState): Set<string> {
   return new Set([
@@ -70,14 +81,15 @@ function libraryIds(state: LibraryState): Set<string> {
 }
 
 function checkCapacity(count: number): void {
-  if (count > MAX_CUSTOM_THEMES) throw new ThemeLibraryError(`Sotto keeps up to ${MAX_CUSTOM_THEMES} saved themes. Remove one to add another.`)
+  if (count > MAX_CUSTOM_THEMES) throw new ThemeLibraryError(msg`${plural(MAX_CUSTOM_THEMES, { other: 'Sotto keeps up to # saved themes. Remove one to add another.' })}`)
 }
 
 export function installThemesPatch(state: LibraryState, themes: readonly ThemeDefinition[]): LibraryPatch {
   const taken = libraryIds(state)
   for (const theme of themes) {
-    if (BUILT_IN_THEMES.some(builtIn => builtIn.id === theme.id) || (state.omarchyTheme !== undefined && theme.id === OMARCHY_THEME_ID)) throw new ThemeLibraryError(`The theme id "${theme.id}" is reserved.`)
-    if (taken.has(theme.id)) throw new ThemeLibraryError(`A theme with the id "${theme.id}" is already installed.`)
+    const id = theme.id
+    if (BUILT_IN_THEMES.some(builtIn => builtIn.id === theme.id) || (state.omarchyTheme !== undefined && theme.id === OMARCHY_THEME_ID)) throw new ThemeLibraryError(msg`The theme id "${id}" is reserved.`)
+    if (taken.has(theme.id)) throw new ThemeLibraryError(msg`A theme with the id "${id}" is already installed.`)
     taken.add(theme.id)
   }
   checkCapacity(state.customThemes.length + themes.length)
@@ -87,7 +99,7 @@ export function installThemesPatch(state: LibraryState, themes: readonly ThemeDe
 export function updateThemesPatch(state: LibraryState, themes: readonly ThemeDefinition[]): LibraryPatch {
   const byId = new Map(themes.map(theme => [theme.id, canonicalizeTheme(theme)]))
   for (const id of byId.keys()) {
-    if (!state.customThemes.some(theme => theme.id === id)) throw new ThemeLibraryError('That theme is no longer installed.')
+    if (!state.customThemes.some(theme => theme.id === id)) throw new ThemeLibraryError(msg`That theme is no longer installed.`)
   }
   return { customThemes: state.customThemes.map(theme => byId.get(theme.id) ?? theme) }
 }
@@ -109,7 +121,8 @@ export function replaceCollectionPatch(state: LibraryState, collectionId: string
   const kept = state.customThemes.filter(theme => theme.collection?.id !== collectionId)
   const keptIds = new Set(kept.map(theme => theme.id))
   for (const theme of themes) {
-    if (keptIds.has(theme.id)) throw new ThemeLibraryError(`A theme with the id "${theme.id}" is already installed.`)
+    const id = theme.id
+    if (keptIds.has(id)) throw new ThemeLibraryError(msg`A theme with the id "${id}" is already installed.`)
   }
   checkCapacity(kept.length + themes.length)
   const insertAt = state.customThemes.findIndex(theme => theme.collection?.id === collectionId)
@@ -151,7 +164,8 @@ export function versionedCopy(theme: ThemeDefinition, state: LibraryState, prefe
       continue
     }
   }
-  throw new ThemeLibraryError(`Too many copies of "${theme.label}".`)
+  const name = theme.label
+  throw new ThemeLibraryError(msg`Too many copies of "${name}".`)
 }
 
 // ---------------------------------------------------------------------------
@@ -189,12 +203,15 @@ export function editorMergeTarget(state: LibraryState, name: string, editingId: 
  */
 export function editorSavePatch(state: LibraryState, input: EditorSaveInput): EditorSaveResult {
   const name = input.name.trim()
-  if (!name) throw new ThemeLibraryError('Name your theme first.')
+  if (!name) throw new ThemeLibraryError(msg`Name your theme first.`)
   const { editingTheme, activeAppearance, colorsByAppearance, advanced } = input
   const live = editingTheme ? state.customThemes.find(theme => theme.id === editingTheme.id) ?? null : null
   // A built-in's name would put two cards with one name in the gallery; a theme that already has it may keep it.
   const builtIn = BUILT_IN_THEMES.find(theme => theme.label.toLowerCase() === name.toLowerCase())
-  if (builtIn && live?.label.trim().toLowerCase() !== name.toLowerCase()) throw new ThemeLibraryError(`“${builtIn.label}” is a built-in theme. Pick another name.`)
+  if (builtIn && live?.label.trim().toLowerCase() !== name.toLowerCase()) {
+    const builtInName = builtIn.label
+    throw new ThemeLibraryError(msg`“${builtInName}” is a built-in theme. Pick another name.`)
+  }
   const mergeTarget = editorMergeTarget(state, name, live?.id ?? null)
   const managed = advanced ? {} : { managed: true }
 
@@ -202,7 +219,8 @@ export function editorSavePatch(state: LibraryState, input: EditorSaveInput): Ed
     const editedModes = getThemeModes(live)
     const taken = getThemeModes(mergeTarget)
     const collision = editedModes.find(mode => taken.includes(mode))
-    if (collision) throw new ThemeLibraryError(`“${mergeTarget.label}” already has a ${collision} palette. Pick another name.`)
+    const target = mergeTarget.label
+    if (collision) throw new ThemeLibraryError(collision === 'light' ? msg`“${target}” already has a light palette. Pick another name.` : msg`“${target}” already has a dark palette. Pick another name.`)
     const merged = withCollection(parseThemeFile({
       version: THEME_FILE_VERSION,
       id: mergeTarget.id,
@@ -236,11 +254,12 @@ export function editorSavePatch(state: LibraryState, input: EditorSaveInput): Ed
     return { patch: updateThemesPatch(state, [saved]), theme: saved, created: false, mergedAppearance: null }
   }
 
-  if (editingTheme) throw new ThemeLibraryError('That theme was removed while you were editing it. Save it under a new name to keep your changes.')
+  if (editingTheme) throw new ThemeLibraryError(msg`That theme was removed while you were editing it. Save it under a new name to keep your changes.`)
 
   if (mergeTarget) {
     if (getThemeModes(mergeTarget).includes(activeAppearance)) {
-      throw new ThemeLibraryError(`“${mergeTarget.label}” already has light and dark palettes. Pick another name.`)
+      const target = mergeTarget.label
+      throw new ThemeLibraryError(msg`“${target}” already has light and dark palettes. Pick another name.`)
     }
     const merged = withCollection(parseThemeFile({
       version: THEME_FILE_VERSION,
@@ -260,7 +279,10 @@ export function editorSavePatch(state: LibraryState, input: EditorSaveInput): Ed
   }
 
   const created = parseThemeFile({ version: THEME_FILE_VERSION, name, appearance: activeAppearance, colors: colorsByAppearance[activeAppearance], ...managed })
-  if (BUILT_IN_THEMES.some(theme => theme.id === created.id)) throw new ThemeLibraryError(`The theme id "${created.id}" is reserved. Pick another name.`)
+  if (BUILT_IN_THEMES.some(theme => theme.id === created.id)) {
+    const id = created.id
+    throw new ThemeLibraryError(msg`The theme id "${id}" is reserved. Pick another name.`)
+  }
   return {
     patch: { ...installThemesPatch(state, [created]), ...assignHalfPatch(activeAppearance, created.id) },
     theme: created,

@@ -22,7 +22,7 @@ import { heldProvidersOf } from '../../src/shared/heldProviders'
 
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof fs>() }))
 
-const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, 2000, 60000), devin: devinFixture, muse: () => museFixture(undefined, 10_000), cursor: () => cursorFixture(undefined, 10_000) }
+const factories = { claude: claudeFixture, codex: codexFixture, grok: () => grokFixture(undefined, undefined, 60000), devin: devinFixture, muse: () => museFixture(undefined, 10_000), cursor: () => cursorFixture(undefined, 10_000) }
 const cleanups: (() => Promise<void>)[] = []
 /** Muse and Cursor are Owl features: each case runs with its own provider's answer on, and every other held one held. */
 const held = (provider: keyof typeof factories) => provider === 'muse' || provider === 'cursor' ? heldProvidersOf({ [provider]: true }) : false

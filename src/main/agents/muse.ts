@@ -28,7 +28,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { providerTakesNoSkills } from './providerSwitch'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { ReadsBeforeSend } from './readsBeforeSend'
-import { markSendStage } from './sendStages'
+import { holdTurnEnd, markSendStage, type TurnEndTimings } from './sendStages'
 import { SessionReaper } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -39,7 +39,7 @@ import { markTurnActivity } from './turnActivity'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
-import { watcherRequestLine } from './watcherRequestNote'
+import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
 const THREAD_PROCESS_LOST = 'Muse stopped before this reply finished, so it may be cut short. Send a message to carry on.'
@@ -189,26 +189,37 @@ const MUSE_WATCHER_WITHOUT_TOOLS = 'This Muse cannot give Watcher its Sotto tool
 const MUSE_WATCHER_REVIEWED = 'This Muse would let its own reviewer decide Watcher’s approvals instead of you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 const MUSE_WATCHER_UNPROVEN = 'This Muse cannot show that Watcher’s approvals stay with you, so Watcher did not start. Nothing was sent. Update Muse and connect it again, or choose a Codex, Claude Code or Grok Build model for Watcher.'
 /**
- * Watcher's instructions on Muse. MSP takes no system prompt or instructions from a client, so they travel as a text part
- * ahead of each message Sotto sends Watcher, marked as Sotto's. The turn's `displayText` is the message alone, so Muse's
- * transcript and Sotto's show only what was sent; the model reads both (ADR-0073).
+ * Watcher's instructions on Muse: `instructions` is the profile's own, with the worker-role lines when that feature is on,
+ * or the base prompt (#1417). MSP takes no system prompt or instructions from a client, so they travel as a text part,
+ * marked as Sotto's, ahead of the first message Sotto sends Watcher's session on a host and again after its conversation
+ * was compacted (#1418). The turn's `displayText` is the message alone, so Muse's transcript and Sotto's show only what
+ * was sent; the model reads both (ADR-0073).
  */
-export const MUSE_WATCHER_INSTRUCTIONS = `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]\n${WATCHER_SYSTEM_PROMPT}\n[End of Watcher's instructions. The message follows.]\n\n`
+export function museWatcherInstructions(instructions: string = WATCHER_SYSTEM_PROMPT): string {
+  return `[Sotto: Watcher's instructions. Muse takes no instructions from Sotto any other way, so they come with Sotto's first message to you, and again after this conversation is compacted or resumed. They are not the user's words.]\n${instructions}\n[End of Watcher's instructions. The message follows.]\n\n`
+}
+export const MUSE_WATCHER_INSTRUCTIONS = museWatcherInstructions()
+/**
+ * Watcher's instructions at the start of a message, in any wording Sotto has sent them: with or without the worker-role
+ * lines, and the opening line that said they came ahead of every message.
+ */
+const MUSE_WATCHER_BLOCK = /^\[Sotto: Watcher's instructions\.[^\n]*\]\n[\s\S]*?\n\[End of Watcher's instructions\. The message follows\.\]/u
 /** The request note's line as `watcherRequestLine` writes it, at the end of a message Sotto sent Watcher. */
 const MUSE_WATCHER_NOTE = /\n\n\[Sotto Watcher request: [^\]\n]{1,500}\]$/u
 /**
- * A message Sotto sent Watcher on Muse, as it was typed, from the wire text when Muse kept no whole display text: the
- * instructions Sotto put ahead of it and the note after it come off (ADR-0079). Only a message beginning with the exact
- * instructions is touched. The words are proved by the digest Sotto kept when it sent them; when Muse cut the message
- * short there is nothing to prove them by, and only Sotto's own parts come off.
+ * A message Sotto sent, as it was typed, from the wire text when Muse kept no whole display text: Watcher's instructions
+ * ahead of it and the note after it come off (ADR-0079). Only a message that begins with the instructions or ends with
+ * the note is touched. The words are proved by the digest Sotto kept when it sent them, so words the user typed that look
+ * like instructions or a note stay; when Muse cut the message short there is nothing to prove them by, and only Sotto's
+ * own parts come off.
  */
 function museWatcherTyped(text: string, typedDigest: string): string | undefined {
-  const marker = MUSE_WATCHER_INSTRUCTIONS.trimEnd()
-  if (!text.startsWith(marker)) return undefined
+  const block = MUSE_WATCHER_BLOCK.exec(text)
   // MSP joins a turn's text parts in order; the separator it puts between them is Muse's.
-  const body = text.slice(marker.length).replace(/^\n{1,2}/u, '')
+  const body = block ? text.slice(block[0].length).replace(/^\n{1,2}/u, '') : text
   const note = MUSE_WATCHER_NOTE.exec(body)
-  const candidates = [body, ...(note ? [body.slice(0, note.index)] : []), text.slice(MUSE_WATCHER_INSTRUCTIONS.length)]
+  if (!block && !note) return undefined
+  const candidates = [text, body, ...(note ? [body.slice(0, note.index)] : [])]
   return candidates.find(candidate => digest(candidate) === typedDigest) ?? (note ? body.slice(0, note.index) : body)
 }
 
@@ -228,6 +239,17 @@ interface ThreadProcess {
   /** Started for Watcher's thread with its launch profile: its session gets Watcher's tools and instructions, never the browser. */
   watcher: boolean
   /**
+   * Watcher's instructions are in its session's conversation: a turn Muse started on this host carried them, and nothing
+   * since says the conversation was compacted (#1418). A new host, after a restart, a lost process or an idle close,
+   * starts without, so the session it resumes is told them again.
+   */
+  instructed?: boolean
+  /**
+   * The last note sent said the conversation is new or was compacted. That line stays in each note until Watcher reads
+   * its state, so only the first note to carry it, after one that did not, asks for the instructions again.
+   */
+  reminded?: boolean
+  /**
    * Set once this host has built the thread's session runtime, by a start or the first resume, with the names of the
    * Sotto tools it was given. Later resumes on the same host send no servers: Muse keeps the ones it was built with,
    * and refuses a different set (`session_configuration_conflict`).
@@ -238,6 +260,11 @@ interface ThreadProcess {
   admitted?: Map<string, MuseApproval>
 }
 type Pending = MusePending & { rpc: MuseRpc; answerCommandId?: string }
+/**
+ * When a thread's running turn showed itself on this connection (#1420), as monotonic times, so its send's record can
+ * hold how long Muse took to its first output and from its last output to saying the turn finished. Numbers only.
+ */
+interface TurnTimes { turnId: string; startedAt?: number; firstOutputAt?: number; lastOutputAt?: number; report?: (timings: TurnEndTimings) => void }
 interface Fold {
   /** The newest copy of each item, so a delta or an update folds onto what came before it. */
   readonly items: Map<string, MuseItem>
@@ -343,7 +370,7 @@ export class MuseMspHost implements AgentHost {
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.folds.delete(id); this.reaper.forget(id)
     this.requestChanges.delete(id); this.requestReads.delete(id)
-    this.activePrompts.delete(id); this.activeTurns.delete(id); this.log.release(id)
+    this.activePrompts.delete(id); this.activeTurns.delete(id); this.turnTimes.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
     if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
@@ -462,6 +489,7 @@ export class MuseMspHost implements AgentHost {
   private readonly modelWants = new Map<string, number>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
   private readonly activeTurns = new Map<string, { turnId: string; messageId?: string }>()
+  private readonly turnTimes = new Map<string, TurnTimes>()
   private readonly folds = new Map<string, Fold>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
@@ -666,7 +694,7 @@ export class MuseMspHost implements AgentHost {
       delivery.reject(new MuseUncertain('Muse stopped before confirming this prompt.'))
       this.deliveries.delete(messageId)
     }
-    const active = this.activeTurns.get(id); this.activeTurns.delete(id)
+    const active = this.activeTurns.get(id); this.activeTurns.delete(id); this.turnTimes.delete(id)
     const thread = this.threads.get(id), alias = this.aliases[id]
     if (thread) {
       thread.requests = []
@@ -1259,6 +1287,24 @@ export class MuseMspHost implements AgentHost {
     }
   }
   /** Settle a turn Muse ended: its record, the thread's state, and any work it left showing as running. */
+  /** Output of the thread's running turn arrived: an item, a delta or a token record, never the user's own message. */
+  private turnOutput(id: string, turnId?: string | null): void {
+    const times = this.turnTimes.get(id)
+    if (!times || (turnId && turnId !== times.turnId)) return
+    const now = performance.now()
+    times.firstOutputAt ??= now; times.lastOutputAt = now
+  }
+  /** Muse said the turn finished: its send's record gets how long Muse took to its first output and after its last. */
+  private reportTurnTimes(id: string, turnId: string): void {
+    const times = this.turnTimes.get(id)
+    if (!times || times.turnId !== turnId) return
+    this.turnTimes.delete(id)
+    const now = performance.now()
+    times.report?.({
+      turnFirstOutputMs: times.startedAt !== undefined && times.firstOutputAt !== undefined ? times.firstOutputAt - times.startedAt : null,
+      turnFinishWaitMs: times.lastOutputAt !== undefined ? now - times.lastOutputAt : null,
+    })
+  }
   private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string): void {
     const thread = this.thread(id)
     const messageId = this.fold(id).turnMessages.get(turnId) ?? this.activeTurns.get(id)?.messageId
@@ -1301,6 +1347,9 @@ export class MuseMspHost implements AgentHost {
         case 'item/started': case 'item/updated': case 'item/completed': {
           const parsed = museItemEventSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          if (parsed.item.kind !== 'userMessage') this.turnOutput(owner, parsed.item.turnId)
+          // A compaction's summary may have dropped Watcher's instructions, so its next message carries them again (#1418).
+          if (parsed.item.kind === 'compaction') entry.instructed = false
           this.fold(owner).viewCursor = parsed.viewCursor
           this.foldItem(owner, parsed.item)
           this.emit(true)
@@ -1309,6 +1358,7 @@ export class MuseMspHost implements AgentHost {
         case 'item/delta': {
           const parsed = museItemDeltaSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          this.turnOutput(owner)
           this.fold(owner).viewCursor = parsed.viewCursor
           this.foldDelta(owner, parsed)
           this.emit(true)
@@ -1321,6 +1371,8 @@ export class MuseMspHost implements AgentHost {
           this.fold(owner).viewCursor = parsed.viewCursor
           const messageId = this.fold(owner).turnMessages.get(parsed.turnId)
           this.activeTurns.set(owner, { turnId: parsed.turnId, ...(messageId ? { messageId } : {}) })
+          const held = this.turnTimes.get(owner)
+          this.turnTimes.set(owner, { turnId: parsed.turnId, startedAt: performance.now(), ...(held?.turnId === parsed.turnId && held.report ? { report: held.report } : {}) })
           if (this.observedUsage) this.usageTurnStarts.set(parsed.turnId, new Date().toISOString())
           const thread = this.thread(owner)
           thread.status = 'running'; thread.lastTurn = { id: messageId ?? parsed.turnId, status: 'running' }
@@ -1334,6 +1386,8 @@ export class MuseMspHost implements AgentHost {
           entry.turnRevision++
           this.fold(owner).viewCursor = parsed.viewCursor
           const outcome = parsed.terminal === 'completed' ? 'completed' : parsed.terminal === 'cancelled' ? 'interrupted' : 'failed'
+          // Before the turn shows finished, so its send's record has the times when the coordinator sees it end.
+          this.reportTurnTimes(owner, parsed.turnId)
           this.usageTurnStarts.delete(parsed.turnId); this.readQuotaAfterTurn(rpc)
           const said = parsed.error?.kind === 'authRequired' ? 'Muse is not signed in on this machine. Run muse login, then send again.'
             : outcome === 'failed' ? 'Muse could not finish this turn. Nothing else was lost. Send a message to carry on.' : undefined
@@ -1418,6 +1472,8 @@ export class MuseMspHost implements AgentHost {
         case 'session/tokenUsage': {
           const parsed = tokenUsageSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          // A model call's token record is the last word of that call, so it counts as output for the turn's times.
+          this.turnOutput(owner)
           this.observeTokenCall(owner, frame.params, parsed.modelId)
           const thread = this.thread(owner), before = thread.usage
           thread.usage = {
@@ -1648,13 +1704,12 @@ export class MuseMspHost implements AgentHost {
           if (command.type === 'steer' && !active) throw new Error('There is no running turn to steer. Queue a follow-up instead.')
           if (thread.requests.length) throw new Error('Answer the pending Muse request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
-          // Watcher's instructions go ahead of each message to it, and its request note after the words as Grok's does, the
-          // two channels MSP offers; the turn's display text is the message alone (ADR-0073). A wake-up's news for Watcher
-          // goes the same way as the note.
+          // Watcher's request note goes after the words as Grok's does, and its instructions, when its session needs them,
+          // ahead of them: the two channels MSP offers. The turn's display text is the message alone (ADR-0073). A
+          // wake-up's news for Watcher goes the same way as the note.
           const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
           const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
-          const parts: Record<string, unknown>[] = [...(watcherProfile && command.type === 'send' ? [{ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS }] : []),
-            { type: 'text', text: command.text + note }]
+          const parts: Record<string, unknown>[] = [{ type: 'text', text: command.text + note }]
           const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
           for (const attachment of attachments) {
             const bytes = await attachment.read()
@@ -1686,6 +1741,15 @@ export class MuseMspHost implements AgentHost {
             if (alias.nativeModelId && alias.nativeModelId !== alias.modelId) validatePromptAttachments(this.state, alias.nativeModelId, command.attachments)
           }
           this.assertGeneration(generation)
+          // Once per conversation, not with every message (#1418): with the first send on this host, and again when the
+          // note says the conversation is new or was compacted, which also catches a compaction Muse made by itself.
+          const reminder = watcherNote?.includes(WATCHER_COMPACTED_NOTE) === true
+          if (watcherProfile && command.type === 'send') {
+            if (reminder && !entry.reminded) entry.instructed = false
+            entry.reminded = reminder
+          }
+          const instructing = watcherProfile !== undefined && command.type === 'send' && !entry.instructed
+          if (instructing) parts.unshift({ type: 'text', text: museWatcherInstructions(watcherProfile.instructions) })
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           release()
@@ -1712,7 +1776,14 @@ export class MuseMspHost implements AgentHost {
               ? await entry.rpc.request('turn/steer', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, expectedTurnId: active!.turnId, input: parts, ...effort })
               : await entry.rpc.request('turn/start', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, input: parts, ...display, ...effort })
             const started = turnStartSchema.parse(ack)
-            if (command.type === 'send') this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
+            if (instructing) entry.instructed = true
+            if (command.type === 'send') {
+              this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
+              const report = holdTurnEnd(command.commandId)
+              const times = this.turnTimes.get(command.threadId)
+              if (report && times?.turnId === started.turnId) times.report = report
+              else if (report) this.turnTimes.set(command.threadId, { turnId: started.turnId, report })
+            }
             thread.status = 'running'
             thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
             if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
@@ -1810,6 +1881,8 @@ export class MuseMspHost implements AgentHost {
           watcherGuard?.()
           const before = this.thread(command.threadId).usage
           await entry.rpc.request('session/compact', { commandId: museCommandId(), sessionId: alias.museSessionId })
+          // The summary may have dropped Watcher's instructions, so its next message carries them again (#1418).
+          entry.instructed = false
           // Muse's new size comes only with its next session/contextUsage, so the figure from before the compaction would
           // outlive it: cleared, with a new time, unless a reading came in while it ran (ADR-0095).
           const thread = this.thread(command.threadId), usage = thread.usage
