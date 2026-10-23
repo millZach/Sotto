@@ -5,7 +5,7 @@ import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { THIS_COMPUTER, workingThreadsByMachine } from '../../../shared/workingThreads'
 import { useOptionalApp } from '../state/AppContext'
-import { agoWords, countWords, lineText, machineEntries, machineLabel, memoryWords, overWords, shortLine, systemWords, unknownWhy, windowWords,
+import { agoWords, calmWords, countWords, lineText, machineEntries, machineLabel, memoryWords, overWords, shortLine, systemWords, unknownWhy, windowWords,
   type MachineEntry } from './machineLine'
 import { machinesStore, useMachines } from './useMachines'
 import { savedMachines, useHostsState } from '../state/hostsState'
@@ -218,9 +218,11 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
     <span id={label} className="tt-visually-hidden">Machines and what works on each</span>
     <span className="watcher-machines__wide">{run(entries, true)}</span>
     <span className="watcher-machines__narrow">{run(short.shown, false)}
-      {short.more > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr />
+      {short.more > 0 && short.shown.length > 0 ? <><span className="watcher-machines__sep" aria-hidden="true">·</span><wbr />
         <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={`${short.more} more machine${short.more === 1 ? '' : 's'}. Show every machine`}
           onClick={() => setAll(true)}>{short.more} more</button></> : null}
+      {short.more > 0 && short.shown.length === 0 ? <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all}
+        aria-label={`${calmWords(entries)}, nothing wrong. Show every machine`} onClick={() => setAll(true)}>{calmWords(entries)}</button> : null}
     </span>
     {opened !== null ? <MachinePanel key={keyOf(opened)} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
       anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} /> : null}

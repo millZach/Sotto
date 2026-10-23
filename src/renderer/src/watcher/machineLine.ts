@@ -118,13 +118,20 @@ export function machineLabel(entry: MachineEntry, withStarting = true): string {
 
 /**
  * The line in a narrow room (Zach, October 23, 2026): no "starting" counts, and only the machines with a problem, then a
- * count of the rest. With nothing wrong anywhere, This computer stands for the rest. All of them, when they are few
- * enough to fit anyway, is the wide line's business, not this one's.
+ * count of the rest. With nothing wrong anywhere no machine is named: the line is the shortest true sentence, "3
+ * machines, 5 working", which a press opens into the wide line. This computer alone is named, since it is all there is.
+ * All of them, when they are few enough to fit anyway, is the wide line's business, not this one's.
  */
 export function shortLine(entries: readonly MachineEntry[]): { readonly shown: readonly MachineEntry[]; readonly more: number } {
   const troubled = entries.filter(entry => entry.words.length > 0)
-  const shown = troubled.length > 0 ? troubled : entries.slice(0, 1)
+  const shown = troubled.length > 0 || entries.length > 1 ? troubled : entries
   return { shown, more: entries.length - shown.length }
+}
+
+/** The narrow line when nothing is wrong on any machine: "3 machines, 5 working", the press that shows every machine. */
+export function calmWords(entries: readonly MachineEntry[]): string {
+  const working = entries.reduce((sum, entry) => sum + entry.working, 0)
+  return `${entries.length} machine${entries.length === 1 ? '' : 's'}, ${working} working`
 }
 
 const GIB = 1024 ** 3

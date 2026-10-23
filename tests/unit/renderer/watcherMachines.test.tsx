@@ -6,7 +6,7 @@ import { MACHINE_FACTS_OLDER } from '../../../src/shared/watcher'
 import type { WatcherMachine, WatcherMachinesRead } from '../../../src/shared/watcherRoom'
 import { THIS_COMPUTER } from '../../../src/shared/workingThreads'
 import { WatcherMachines } from '../../../src/renderer/src/watcher/WatcherMachines'
-import { lineText, machineEntries, machineLabel, shortLine, unknownWhy } from '../../../src/renderer/src/watcher/machineLine'
+import { calmWords, lineText, machineEntries, machineLabel, shortLine, unknownWhy } from '../../../src/renderer/src/watcher/machineLine'
 import { placementLine } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 import { machinesStore } from '../../../src/renderer/src/watcher/useMachines'
@@ -79,9 +79,14 @@ describe('The machines line’s words (#1032, pick D)', () => {
     expect(machineEntries(null, counts({ [THIS_COMPUTER]: 3 })).map(entry => lineText(entry))).toEqual(['This computer 3 working'])
   })
 
-  it('shortens to the machines with a problem and a count of the rest, or This computer when nothing is wrong', () => {
-    const calm = machineEntries([local(), forge()], counts({}))
-    expect(shortLine(calm)).toMatchObject({ shown: [calm[0]], more: 1 })
+  it('shortens to the machines with a problem and a count of the rest, or to a count of all when nothing is wrong', () => {
+    const calm = machineEntries([local(), forge()], counts({ [THIS_COMPUTER]: 2, [FORGE]: 3 }))
+    // Nothing wrong anywhere names no machine, This computer included: the shortest true sentence stands for them all.
+    expect(shortLine(calm)).toMatchObject({ shown: [], more: 2 })
+    expect(calmWords(calm)).toBe('2 machines, 5 working')
+    // This computer alone is named, since there is nothing else to count.
+    const alone = machineEntries([local()], counts({ [THIS_COMPUTER]: 1 }))
+    expect(shortLine(alone)).toMatchObject({ shown: [alone[0]], more: 0 })
     const troubled = machineEntries([local(), forge({ cpuState: 'busy' }), machine({ hostId: STUDIO, name: 'studio' })], counts({}))
     expect(shortLine(troubled)).toMatchObject({ shown: [troubled[1]], more: 2 })
   })
@@ -174,11 +179,20 @@ describe('The machines line in Watcher’s room', () => {
   })
 
   it('shows every machine in a narrow room once more is pressed', async () => {
-    show([local(), forge(), machine({ hostId: STUDIO, name: 'studio' })], [])
+    show([local(), forge({ cpuState: 'busy' }), machine({ hostId: STUDIO, name: 'studio' })], [])
     await act(async () => undefined)
     await act(async () => { fireEvent.click(narrow().getByRole('button', { name: '2 more machines. Show every machine' })) })
     expect(document.querySelector('.watcher-machines')).toHaveAttribute('data-all', 'true')
-    expect(wide().getByRole('button', { name: /^forge,/u })).toHaveFocus()
+    expect(wide().getByRole('button', { name: /^This computer,/u })).toHaveFocus()
+  })
+
+  it('names no machine in a narrow room when nothing is wrong, only how many and how much works, which a press opens', async () => {
+    show([local(), forge(), machine({ hostId: STUDIO, name: 'studio' })], [thread('a', 'One'), thread('c', 'Two', FORGE)])
+    await act(async () => undefined)
+    expect(document.querySelector('.watcher-machines__narrow')).toHaveTextContent(/^3 machines, 2 working$/u)
+    await act(async () => { fireEvent.click(narrow().getByRole('button', { name: '3 machines, 2 working, nothing wrong. Show every machine' })) })
+    expect(document.querySelector('.watcher-machines')).toHaveAttribute('data-all', 'true')
+    expect(wide().getByRole('button', { name: /^This computer,/u })).toHaveFocus()
   })
 
   it('reads machine facts only when Watcher places work or a panel opens, never on a timer, and once per placement', async () => {
