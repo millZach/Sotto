@@ -21,7 +21,17 @@ On Windows, in `.worktrees/worker-machine-ui`, against Sotto Owl built from the 
 - `tests/unit/main/watcherRoomDesktop.test.ts` and `tests/unit/preload/watcherMachines.test.ts`: the machines read is offered, registered and exposed only while Work across machines is on, and what main answers is checked.
 - `tests/integration/watcherPairedHosts.test.ts`: the room carries a placed start's placement, and none while the feature is off.
 
+## Review fixes, October 23
+
+- A machine's panel is no taller than the room under its name, measured again when the room or the window resizes; its heading and Change where new workers start stay put and the rest scrolls inside it. The journey checks at every size that Change where new workers start is in view and the panel ends inside the room.
+- A long saved name is cut short with an ellipsis, short enough to leave its count room on the line, and stays whole in the button's name and title; a problem's words may wrap. The journey seeds a 61-character name with "busy, short on memory" at 820x560 and checks it stays inside the line, its name is cut and its words sit clear of its count ([capture](../../artifacts/watcher-machines/machines-long-name-dark-820x560.png)).
+- Where new workers start's cards are filled with no outline (ADR-0110); the chosen card wears the selected card surface, and a machine not connected keeps its fill and says so ([light 820x560](../../artifacts/watcher-machines/machines-settings-light-820x560.png)).
+- The short line with nothing wrong names no machine and says "3 machines, 5 working" (Zach approved these words on October 23).
+- The iPhone's Watcher page shows the line in its short form and each machine's panel as a sheet (`watcher-phone-machines`); its Swift is first compiled and tested by the macOS CI job.
+
 ## Found while checking
 
 - A panel opened from the keyboard was refused focus in the built app on the render that placed it, though the same call worked a moment later; the panel now offers focus again once the press has ended. jsdom did not show this.
 - The night scene lays its owls out again a moment after the window resizes, so the journey reads the window's bounds once that has happened.
+- Once the panel re-measured on resize, the one retry of focus after the press sometimes came too early in the built app; the panel now offers focus on each placing render and the next frames until it has taken it once.
+- An inline flex box per machine wrapped its words a word at a time in the built app, though the line had room; each machine is plain inline text again, with only the name an inline flex box whose inner text takes the ellipsis.
