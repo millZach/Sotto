@@ -100,7 +100,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -237,6 +237,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
+    && (feature !== 'watcher-phone-machines' || service.watcherPhone?.offersMachines === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -364,6 +365,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const scopeOf = (peer: Peer): ProviderScope => ({ providers: peer.unknownProviders, thread: id => unknownProviderThread(peer, id), project: id => unknownProviderProject(peer, id) })
   /** A Watcher answer, projection, or phone state as this peer may be sent it: without a row of a provider it does not know. */
   const watcherFor = <T>(peer: Peer, value: T): T => peer.unknownProviders.size ? readWithoutProviders(value, scopeOf(peer)) : value
+  /** Watcher's phone page with the machines line, for a phone that accepted `watcher-phone-machines` (#1032). */
+  const withMachines = <T extends object>(peer: Peer, page: T): T => peer.watcherPhoneMachines && service.watcherPhone ? { ...page, machines: service.watcherPhone.machines() } : page
+  /** A phone answer carrying a page, with the machines line on its page for a phone that accepted it. */
+  const answerWithMachines = <T>(peer: Peer, answer: T): T => answer !== null && typeof answer === 'object' && 'state' in answer && answer.state !== null && typeof answer.state === 'object'
+    ? { ...answer, state: withMachines(peer, answer.state) } : answer
   /**
    * A Watcher request that names a thread, project or model of a provider this peer does not know is refused before the host
    * reads or acts on it, as one for a thread it was never sent is (#1107).
@@ -417,7 +423,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A client from before #480 reads the client updates' channel and state against the values it knows, and one it
     // does not know would make it refuse the whole shell: it is sent them as it knew them.
     // Watcher's phone state is the host's own, so it is filtered for this peer as the shell was (#1107).
-    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true)) : undefined
+    const phoneState = peer.watcherPhone && service.watcherPhone ? watcherFor(peer, withMachines(peer, service.watcherPhone.state(options.mayAnswer?.(peer.client) ?? false, peer.watcherPhoneManage === true, peer.watcherPhoneSteer === true))) : undefined
     const projected = phoneState ? { ...own, watcher: phoneState, host: { ...own.host, threads: own.host.threads.map(thread => ({ ...thread,
       watchedByWatcher: phoneState.watchedThreads.some(row => row.target.hostId === hostId && row.target.threadId === thread.id && row.watched) })) } } : own
     const shell = peer.clientUpdates || !state.clientUpdates ? projected : { ...projected, clientUpdates: state.clientUpdates.map(clientUpdateForOlderClient) }
@@ -866,7 +872,15 @@ export async function startSocketServer(options: SocketServerOptions) {
           receipts.record(peer.client.clientId, request.id, { digest, receipt, task })
           return task
         }
-        case 'watcher-phone-read': await observe(); return phone.get(mayAnswer(), standing, steer)
+        case 'watcher-phone-read': {
+          // Read afresh only for a phone that negotiated the machines line (#1032): when its user opens a machine's numbers
+          // or Watcher placed work. Nothing reads on a timer.
+          if (request.machines === true) {
+            if (!peer.watcherPhoneMachines || !offers(peer, 'watcher-phone-machines')) throw new Refusal('invalid_request')
+            await phone.readMachines()
+          }
+          await observe(); return phone.get(mayAnswer(), standing, steer)
+        }
         case 'watcher-phone-remove-followup': {
           if (!steer || !offers(peer, 'watcher-phone-steer')) throw new Refusal('invalid_request')
           // As a management change: its outcome is kept under the request's ID, so a lost acknowledgement reads it and a
@@ -951,7 +965,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         }
       } })()
       // Stop all's result keeps a row for every thread its confirmation listed, so a phone hears which it could not stop.
-      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answer)
+      return request.op === 'watcher-phone-stop-all' ? stopResultWithoutProviders(answer, scopeOf(peer)) : watcherFor(peer, answerWithMachines(peer, answer))
     }
     if ('threadId' in request && request.threadId && hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
     if ('request' in request && request.request && 'threadId' in request.request && hiddenThread(peer, request.request.threadId as string)) throw new Refusal('forbidden')
@@ -976,6 +990,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhoneStop = peer.watcherPhone && (request.accepts?.includes('watcher-phone-stop-all') ?? false) && offers(peer, 'watcher-phone-stop-all')
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
         peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
+        peer.watcherPhoneMachines = peer.watcherPhone && (request.accepts?.includes('watcher-phone-machines') ?? false) && offers(peer, 'watcher-phone-machines')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
@@ -1347,7 +1362,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

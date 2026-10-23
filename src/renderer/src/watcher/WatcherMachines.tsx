@@ -6,7 +6,7 @@ import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { THIS_COMPUTER, workingThreadsByMachine } from '../../../shared/workingThreads'
 import { useOptionalApp } from '../state/AppContext'
 import { agoWords, calmWords, countWords, lineText, machineEntries, machineLabel, memoryWords, overWords, shortLine, systemWords, unknownWhy, windowWords,
-  type MachineEntry } from './machineLine'
+  type MachineEntry } from '../../../shared/machineLine'
 import { machinesStore, useMachines } from './useMachines'
 import { savedMachines, useHostsState } from '../state/hostsState'
 import type { HostsBridge } from '../../../shared/hosts'

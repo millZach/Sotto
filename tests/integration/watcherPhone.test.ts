@@ -19,10 +19,16 @@ import { rawPeer } from '../fixtures/rawHostPeer'
 import { deferred } from '../fixtures/deferred'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 
+const GIB = 1024 ** 3
+/** This computer as its host facts read it: busy, with memory to spare (#1032). */
+const MACHINE_REPORT = { facts: { observedAt: new Date().toISOString(), os: { family: 'linux' as const, name: 'Omarchy', version: null }, architecture: 'x64',
+  totalMemoryBytes: 64 * GIB, freeMemoryBytes: null, logicalCpuCount: 24 }, runningThreads: 0, placedNotStarted: 0,
+  get load() { const at = new Date().toISOString(); return { observedAt: at, windowMs: 2_000, cpuBusyPercent: 93, loadAverage: null, availableMemoryBytes: 41 * GIB,
+    windowStartAvailableMemoryBytes: 41 * GIB, memoryPressurePercent: null } } }
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 /** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
-async function fixture(phoneFeature = true, usageEnabled = false, steers = false) {
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
   if (steers) workspace.adapters.codex.state.capabilities.steer = true
@@ -33,7 +39,8 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
-  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true })
+  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true,
+    ...machines ? { crossMachine: true, machineFacts: async () => MACHINE_REPORT, workerMachine: () => 'this-computer' as const } : {} })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); usage?.close(); await workspace.stop() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
@@ -42,7 +49,7 @@ async function fixture(phoneFeature = true, usageEnabled = false, steers = false
   const project = f.control.shell().host.projects.find(row => row.providerId === 'codex')!
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const target = watcher.state().current!.target
-  const phone = new WatcherPhoneService(f.control, watcher)
+  const phone = new WatcherPhoneService(f.control, watcher, machines)
   const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
   const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer })
@@ -826,4 +833,31 @@ it('refuses a send without a steer while Watcher works, saying why, and keeps an
   expect(read.state.followups).toBeUndefined()
   expect(read.state.current?.steers).toBeUndefined()
   expect(f.control.shell().error).toBeNull()
+})
+
+it('sends the machines line only to a phone that accepts it, where Work across machines is on, and reads it afresh only when asked (#1032)', async () => {
+  const MACHINES = [...STEER, 'watcher-phone-machines']
+  // Without Work across machines, the feature is not offered and a fresh read is refused.
+  const off = await fixture(), plain = await off.pair(MACHINES)
+  expect((plain.hello.result as { features: string[] }).features).not.toContain('watcher-phone-machines')
+  expect((plain.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await plain.call('fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  const f = await fixture(true, false, false, true), phone = await f.pair(MACHINES), older = await f.pair(STEER)
+  expect(phone.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-machines']) } })
+  // Before any read, This computer stands alone with its count and nothing of its load.
+  expect((phone.hello.result as { shell: { watcher: unknown } }).shell.watcher).toMatchObject({ machines: { readAt: null,
+    rows: [{ hostId: f.target.hostId, name: 'This computer', thisComputer: true, connected: true, working: 0, cpuState: null, memoryState: null, unknownWhy: null }] } })
+  // An iPhone that did not accept it is sent none, and may not ask for a fresh read.
+  expect((older.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await older.call('older-fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // An ordinary read does not read the machines; a fresh one does, and every page after it carries that read.
+  const ordinary = watcherPhoneResultSchema.parse((await phone.call('read', { op: 'watcher-phone-read' })).result)
+  expect(ordinary).toMatchObject({ status: 'ok', state: { machines: { readAt: null } } })
+  const fresh = watcherPhoneResultSchema.parse((await phone.call('fresh', { op: 'watcher-phone-read', machines: true })).result)
+  if (fresh.status !== 'ok') throw new Error('The page was not read')
+  expect(fresh.state.machines?.readAt).toEqual(expect.any(String))
+  expect(fresh.state.machines?.rows).toEqual([expect.objectContaining({ name: 'This computer', cpuState: 'busy', memoryState: 'enough', system: 'Omarchy (Linux)',
+    logicalCpuCount: 24, cpuBusyPercent: 93, windowMs: 2_000, availableMemoryBytes: 41 * GIB, totalMemoryBytes: 64 * GIB, isDefault: true, unknownWhy: null, threads: [] })])
+  expect(watcherPhoneResultSchema.parse((await phone.call('again', { op: 'watcher-phone-read' })).result)).toMatchObject({ state: { machines: { readAt: fresh.state.machines!.readAt } } })
 })

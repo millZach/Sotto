@@ -209,12 +209,17 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
+ * `watcher-phone-machines`: offered with `watcher-phone` on the Owl desktop's phone listener while Work across machines is
+ * on (#1032). A phone that accepts it is sent `machines` on its page, each machine with its working threads, its work
+ * placed but not started and its load as last read, and may send `watcher-phone-read` with `machines: true`, which reads
+ * the machines afresh before answering: when the user opens a machine's numbers or Watcher has placed work, never on a
+ * timer.
  * `project-origins`: the host answers `project-origins` with the GitHub repository each of its projects' `origin` remote
  * names, host, owner and name only, so a desktop placing a worker can find the same project on this machine (#1032). Only
  * a host whose Owl answer turns on Work across machines lists it, and only to a desktop; one that does not cannot be
  * matched by repository, and a start must name one of its projects instead.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'project-origins'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'project-origins', 'watcher-phone-machines'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -351,7 +356,8 @@ export const hostAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMA
 /** Just enough of a request to answer it: a request the host cannot otherwise read is refused by its id. */
 export const hostRequestEnvelopeSchema = z.object(base)
 export const hostRequestSchema = z.discriminatedUnion('op', [
-  z.object({ ...base, op: z.literal('watcher-phone-read') }).strict(),
+  // `machines`: only from a phone that negotiated `watcher-phone-machines`, which has the machines read afresh first.
+  z.object({ ...base, op: z.literal('watcher-phone-read'), machines: z.literal(true).optional() }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-set-permission'), request: watcherPhoneSetPermissionSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-watch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-unwatch'), request: watcherPhoneWatchSchema }).strict(),

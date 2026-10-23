@@ -1,8 +1,8 @@
-import { MACHINE_LOAD_THRESHOLDS } from '../../../shared/hostFacts'
-import { MACHINE_FACTS_OLDER } from '../../../shared/watcher'
-import type { NewWorkersStart } from '../../../shared/workerMachine'
-import type { WatcherMachine } from '../../../shared/watcherRoom'
-import { THIS_COMPUTER, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX } from '../../../shared/workingThreads'
+import { MACHINE_LOAD_THRESHOLDS } from './hostFacts'
+import { MACHINE_FACTS_OLDER } from './watcher'
+import type { NewWorkersStart } from './workerMachine'
+import type { WatcherMachine } from './watcherRoom'
+import { THIS_COMPUTER, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX } from './workingThreads'
 
 /**
  * The machines line under Watcher's header (#1032, Zach's pick D "Names" on October 23, 2026): "This computer 2 working ·

@@ -2,6 +2,10 @@ import type { AgentCommand, AgentThread } from '../../shared/agents'
 import { WATCHER_PHONE_FOLLOWUPS_MAX, WATCHER_PHONE_LEGACY_LIMIT, WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
   type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup } from '../../shared/watcherPhone'
 import type { WatcherRefusal } from '../../shared/watcher'
+import { WATCHER_PHONE_MACHINE_THREADS_MAX, watcherPhoneMachinesSchema, type WatcherPhoneMachines } from '../../shared/watcherPhone'
+import { machineEntries, systemWords, unknownWhy } from '../../shared/machineLine'
+import { THIS_COMPUTER, countMachineWorkingThreads } from '../../shared/workingThreads'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { WatcherCommandOrigin } from './watcherCommands'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { AgentControl } from './control'
@@ -17,7 +21,50 @@ function plainWords(text: string): boolean {
 }
 /** A phone reads the room, never the persisted control record or the desktop's aggregate shell. */
 export class WatcherPhoneService {
-  constructor(private readonly control: AgentControl, private readonly watcher: WatcherService) {}
+  /** `machinesOn`: Work across machines is on, read once at start, so a phone may be shown the machines line (#1032). */
+  constructor(private readonly control: AgentControl, private readonly watcher: WatcherService, private readonly machinesOn = false) {}
+  /** Whether a phone may be offered the machines line: only with Work across machines on (#1032). */
+  get offersMachines(): boolean { return this.machinesOn }
+  /** Reads every machine afresh, for a phone whose user opened a machine's numbers or whose Watcher placed work. */
+  async readMachines(): Promise<void> { if (this.machinesOn) await this.watcher.machines() }
+  /**
+   * The machines line for a phone (#1032): each machine as the desktop's line counts it, with its load as last read and,
+   * for its panel, what the desktop's panel says. Threads are counted from each machine's own list, read in place.
+   */
+  machines(): WatcherPhoneMachines {
+    const listed = this.watcher.lastMachines(), localId = this.control.hostId()
+    const paired = this.watcher.pairedMachines()
+    const working = new Map<string, number>([[THIS_COMPUTER, countMachineWorkingThreads(this.watcher.machineThreads(localId ?? ''))]])
+    for (const host of paired) working.set(host.hostId, countMachineWorkingThreads(this.watcher.machineThreads(host.hostId)))
+    const entries = machineEntries(listed?.machines ?? null, working, listed?.newWorkersStart, paired)
+    const room = this.watcher.state()
+    const startedByWatcher = new Set<string>()
+    for (const request of room.requests) for (const part of request.participants) {
+      if (part.startedBy === 'watcher') startedByWatcher.add(`${part.target.hostId}\n${part.target.threadId}`)
+    }
+    const now = Date.now()
+    const rows = entries.map(entry => {
+      const hostId = entry.thisComputer ? localId ?? entry.hostId : entry.hostId
+      const machine = entry.machine, load = machine?.load ?? null
+      const threads: WatcherPhoneMachines['rows'][number]['threads'] = []
+      if (entry.connected) {
+        const list = this.watcher.machineThreads(hostId)
+        for (const thread of list) {
+          if (threads.length >= WATCHER_PHONE_MACHINE_THREADS_MAX) break
+          if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !isThreadTurnRunning(thread)) continue
+          const who = startedByWatcher.has(`${hostId}\n${thread.id}`) ? 'Watcher'
+            : thread.delegatedBy !== undefined ? `delegated by ${list.find(row => row.id === thread.delegatedBy)?.title ?? 'another thread'}` : 'your thread'
+          threads.push({ title: thread.title, who })
+        }
+      }
+      return { hostId, name: entry.name, thisComputer: entry.thisComputer, connected: entry.connected, working: entry.working, starting: entry.starting,
+        isDefault: entry.isDefault, cpuState: machine === null ? null : machine.cpuState ?? 'unknown', memoryState: machine === null ? null : machine.memoryState ?? 'unknown',
+        system: machine === null ? null : systemWords(machine), logicalCpuCount: machine?.facts?.logicalCpuCount ?? null, totalMemoryBytes: machine?.facts?.totalMemoryBytes ?? null,
+        cpuBusyPercent: load?.cpuBusyPercent ?? null, windowMs: load?.windowMs ?? null, availableMemoryBytes: load?.availableMemoryBytes ?? null,
+        loadObservedAt: load?.observedAt ?? null, unknownWhy: unknownWhy(entry, now), threads }
+    })
+    return watcherPhoneMachinesSchema.parse({ readAt: listed?.observedAt ?? null, rows })
+  }
   /**
    * `standing`: whether this phone negotiated Watcher management, and with it knows standing watches. `steer`: whether it
    * negotiated steering, and with it is shown whether Watcher's provider steers and the follow-ups waiting for Watcher (#1229).
