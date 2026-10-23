@@ -383,13 +383,24 @@ it('tells a Muse Watcher its profile’s instructions once, again after a compac
   const compacted = watcherRequestNote(randomUUID(), randomUUID(), true)
   expect(compacted).toContain(WATCHER_COMPACTED_NOTE)
   await send('Synthetic after a compaction Muse made', compacted)
+  // The line stays in each note until Watcher reads its state, and asks for the instructions only once.
+  await send('Synthetic before reading state', watcherRequestNote(randomUUID(), randomUUID(), true))
   const turns = (await f.driver.requests()).filter(record => record.method === 'turn/start').map(record => record.params!.input as { type: string; text: string }[])
   expect(turns[0]).toEqual([instructions, { type: 'text', text: 'Synthetic first' + watcherRequestLine(first) }])
   expect(turns[0]![0]!.text).toContain(WATCHER_ROLES_PROMPT)
   expect(turns[1]).toEqual([{ type: 'text', text: 'Synthetic second' + watcherRequestLine(second) }])
-  expect(turns.map(input => input[0]!.text === instructions.text)).toEqual([true, false, true, false, true])
+  expect(turns.map(input => input[0]!.text === instructions.text)).toEqual([true, false, true, false, true, false])
   const shown = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)
-  expect(shown).toEqual(['Synthetic first', 'Synthetic second', 'Synthetic after compaction', 'Synthetic fourth', 'Synthetic after a compaction Muse made'])
+  expect(shown).toEqual(['Synthetic first', 'Synthetic second', 'Synthetic after compaction', 'Synthetic fourth', 'Synthetic after a compaction Muse made', 'Synthetic before reading state'])
+})
+
+it('keeps words a user typed that look like Watcher’s instructions in a Muse message shown from its wire text', async () => {
+  const f = await museFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  const { ordinary } = await watcherBesideOrdinary(f, 'muse')
+  // An ordinary thread's message has no display text, so it is shown from the wire text; the digest proves the words typed.
+  const typed = `${MUSE_WATCHER_INSTRUCTIONS}Synthetic question about that block`
+  expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: ordinary, messageId: randomUUID(), text: typed })).accepted).toBe(true)
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === ordinary)?.messages.find(message => message.role === 'user')?.text).toBe(typed)
 })
 
 it.each([

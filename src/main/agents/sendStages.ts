@@ -28,6 +28,16 @@ export const SEND_STAGE_FIELDS = ['admissionMs', 'readBeforeSendMs', 'preparatio
 export type SendStageField = typeof SEND_STAGE_FIELDS[number]
 export type SendStageTimings = Record<SendStageField, number | null>
 
+/** A wait a record makes, resolved by what it waits for or by `onLimit` once `limitMs` passes. */
+interface Waiter { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> }
+function waiter(limitMs: number, onLimit: () => void): Waiter {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  const timer = setTimeout(onLimit, limitMs)
+  timer.unref?.()
+  return { promise, resolve, timer }
+}
+
 /** How long a send's turn record waits for its first output before it is written without one. */
 export const FIRST_OUTPUT_LIMIT_MS = 120_000
 
@@ -53,10 +63,11 @@ export class SendStageClock {
   private readonly marks = new Map<SendStageMark, number>()
   private readMs: number | undefined
   private watching = true
-  private waiting: { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> } | undefined
+  private waiting: Waiter | undefined
   private readonly closedListeners = new Set<() => void>()
   private closed = false
-  private turnEnd: { held: boolean; timings?: TurnEndTimings; waiting?: { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> } } | undefined
+  private turnEnd: { held: boolean; timings?: TurnEndTimings; waiting?: Waiter } | undefined
+  private readonly heldListeners = new Set<() => void>()
 
   /** `receivedAt` is when the coordinator received the send; without it the record has no admission time. */
   constructor(private readonly receivedAt?: number, private readonly now: () => number = () => performance.now()) {}
@@ -79,13 +90,7 @@ export class SendStageClock {
   /** Resolves once the first output is marked or watching stops, and at the latest `limitMs` from now. */
   untilFirstOutput(limitMs = FIRST_OUTPUT_LIMIT_MS): Promise<void> {
     if (!this.awaitsFirstOutput()) { this.stopWatching(); return Promise.resolve() }
-    if (!this.waiting) {
-      let resolve!: () => void
-      const promise = new Promise<void>(done => { resolve = done })
-      const timer = setTimeout(() => this.stopWatching(), limitMs)
-      timer.unref?.()
-      this.waiting = { promise, resolve, timer }
-    }
+    this.waiting ??= waiter(limitMs, () => this.stopWatching())
     return this.waiting.promise
   }
 
@@ -95,7 +100,10 @@ export class SendStageClock {
    * waiting is dropped.
    */
   holdTurnEnd(): (timings: TurnEndTimings) => void {
-    if (!this.turnEnd && !this.closed) this.turnEnd = { held: true }
+    if (!this.turnEnd && !this.closed) {
+      this.turnEnd = { held: true }
+      for (const listener of this.heldListeners) listener()
+    }
     const hold = this.turnEnd
     return timings => {
       try {
@@ -107,17 +115,13 @@ export class SendStageClock {
   }
   /** True while a record should wait for the end of a turn an adapter is timing. */
   awaitsTurnEnd(): boolean { return this.turnEnd?.held === true }
+  /** Called when an adapter holds the record for its turn's end, which may come after the first output. */
+  onTurnEndHeld(listener: () => void): void { this.heldListeners.add(listener) }
   /** Resolves once the adapter reports the turn's end or the clock is closed, and at the latest `limitMs` from now. */
   untilTurnEnd(limitMs = TURN_END_LIMIT_MS): Promise<void> {
     const hold = this.turnEnd
     if (!hold?.held) return Promise.resolve()
-    if (!hold.waiting) {
-      let resolve!: () => void
-      const promise = new Promise<void>(done => { resolve = done })
-      const timer = setTimeout(() => this.releaseTurnEnd(), limitMs)
-      timer.unref?.()
-      hold.waiting = { promise, resolve, timer }
-    }
+    hold.waiting ??= waiter(limitMs, () => this.releaseTurnEnd())
     return hold.waiting.promise
   }
   /** What the adapter reported of its turn's end, or nothing when no adapter timed it or the record stopped waiting first. */
@@ -126,12 +130,14 @@ export class SendStageClock {
     const hold = this.turnEnd
     if (!hold?.held) return
     hold.held = false
+    this.heldListeners.clear()
     if (hold.waiting) { clearTimeout(hold.waiting.timer); hold.waiting.resolve() }
   }
 
   /** Stop watching for the first output and for a turn's end. What was marked stays; a later output is not marked. */
   close(): void {
     this.closed = true
+    this.heldListeners.clear()
     this.stopWatching()
     this.releaseTurnEnd()
   }
@@ -238,6 +244,9 @@ export class FirstOutputWatches {
     this.watches.get(threadId)?.clock.close()
     this.watches.set(threadId, watch)
     clock.onClosed(() => { if (this.watches.get(threadId) === watch && !clock.awaitsTurnEnd()) this.watches.delete(threadId) })
+    // An adapter may hold the record only once its client answers, after the first output already ended this watch:
+    // watched again, the hold is given up when the turn shows ended or Sotto stops, never left to its limit.
+    clock.onTurnEndHeld(() => { if (!this.watches.has(threadId)) this.watches.set(threadId, watch) })
   }
 
   /**

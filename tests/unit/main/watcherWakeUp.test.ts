@@ -1673,7 +1673,9 @@ it('carries the start of the newest turn’s own reply, in the worker’s words,
       { id: 'reply', role: 'assistant', text: 'é'.repeat(WATCHER_NEWS_REPLY_CHARS + 20), createdAt: centerTime }] }
   const long = watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))!
   expect(long).toContain(`Its reply begins, in the worker's words: "${'é'.repeat(WATCHER_NEWS_REPLY_CHARS)}"`)
-  expect(long).toContain('(cut; read_operation has the rest)')
+  // The rest is read_operation's for a turn that answers an operation, and read_thread's for one that does not.
+  expect(long).toContain('(cut; read_thread has the rest)')
+  expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread), true)).toContain('(cut; read_operation has the rest)')
   // A reply given whole says so: that is what lets Watcher act on it without reading the thread (#1419).
   thread.messages[1]!.text = 'Done. PR #12 is open.'
   expect(watcherReplyStart(thread, 'turn-1', watcherNewestTurnReply(thread))).toBe('Its whole reply, in the worker\'s words: "Done. PR #12 is open.".')

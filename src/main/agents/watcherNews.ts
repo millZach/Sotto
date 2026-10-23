@@ -90,7 +90,7 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
     const lines = shown.slice(0, count).map((event, index) => line(event, index, index < detailed ? details[index] : undefined))
     const omitted = news.omitted + shown.length - count
     return [opening, ...lines, ...(omitted ? [`${omitted} more events omitted. Read list_threads for the current roster.`] : []),
-      'A reply given whole here is enough to act on. Use read_operation for a brief’s receipt and outcome, and for a reply cut or left out here. Use read_thread only for what a reply does not say: evidence and other worker messages. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
+      'A reply given whole here is enough to act on. Use read_operation for a brief’s receipt and outcome, and for a reply cut or left out here. Use read_thread only for what a reply does not say, such as evidence and other worker messages, or for a cut reply whose line names no operation. A standing watch requestId authorizes a bounded continuation for that watched thread. Share four prompts per target within this Watcher turn across request and standing-watch IDs.'].join('\n')
   }
   for (let detailed = shown.length; detailed >= 0; detailed--) {
     const text = compose(shown.length, detailed)
@@ -108,14 +108,14 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
 /**
  * The start of a finished turn's reply, for its news (#1190): `reply`, the newest turn's own reply (watcherNewestTurnReply),
  * while that turn is the one the news is of and nothing runs. Labelled as the worker's words, and cut at
- * WATCHER_NEWS_REPLY_CHARS characters; read_operation has the rest. A reply given whole says so, since that is what lets
- * Watcher act on it without a read (#1419).
+ * WATCHER_NEWS_REPLY_CHARS characters; read_operation has the rest when the turn answers an operation (`operation`), and
+ * read_thread when it does not. A reply given whole says so, since that is what lets Watcher act on it without a read (#1419).
  */
-export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined): string | undefined {
+export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false): string | undefined {
   if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId || !reply?.text.trim()) return undefined
   const characters = [...reply.text.trim()]
   const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
-  return `${cut ? 'Its reply begins' : 'Its whole reply'}, in the worker's words: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ' (cut; read_operation has the rest)' : ''}.`
+  return `${cut ? 'Its reply begins' : 'Its whole reply'}, in the worker's words: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ` (cut; ${operation ? 'read_operation' : 'read_thread'} has the rest)` : ''}.`
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',

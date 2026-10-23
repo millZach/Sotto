@@ -210,7 +210,8 @@ const MUSE_WATCHER_NOTE = /\n\n\[Sotto Watcher request: [^\]\n]{1,500}\]$/u
  * A message Sotto sent, as it was typed, from the wire text when Muse kept no whole display text: Watcher's instructions
  * ahead of it and the note after it come off (ADR-0079). Only a message that begins with the instructions or ends with
  * the note is touched. The words are proved by the digest Sotto kept when it sent them, so words the user typed that look
- * like a note stay; when Muse cut the message short there is nothing to prove them by, and only Sotto's own parts come off.
+ * like instructions or a note stay; when Muse cut the message short there is nothing to prove them by, and only Sotto's
+ * own parts come off.
  */
 function museWatcherTyped(text: string, typedDigest: string): string | undefined {
   const block = MUSE_WATCHER_BLOCK.exec(text)
@@ -218,7 +219,7 @@ function museWatcherTyped(text: string, typedDigest: string): string | undefined
   const body = block ? text.slice(block[0].length).replace(/^\n{1,2}/u, '') : text
   const note = MUSE_WATCHER_NOTE.exec(body)
   if (!block && !note) return undefined
-  const candidates = [body, ...(note ? [body.slice(0, note.index)] : [])]
+  const candidates = [text, body, ...(note ? [body.slice(0, note.index)] : [])]
   return candidates.find(candidate => digest(candidate) === typedDigest) ?? (note ? body.slice(0, note.index) : body)
 }
 
@@ -243,6 +244,11 @@ interface ThreadProcess {
    * starts without, so the session it resumes is told them again.
    */
   instructed?: boolean
+  /**
+   * The last note sent said the conversation is new or was compacted. That line stays in each note until Watcher reads
+   * its state, so only the first note to carry it, after one that did not, asks for the instructions again.
+   */
+  reminded?: boolean
   /**
    * Set once this host has built the thread's session runtime, by a start or the first resume, with the names of the
    * Sotto tools it was given. Later resumes on the same host send no servers: Muse keeps the ones it was built with,
@@ -1737,7 +1743,11 @@ export class MuseMspHost implements AgentHost {
           this.assertGeneration(generation)
           // Once per conversation, not with every message (#1418): with the first send on this host, and again when the
           // note says the conversation is new or was compacted, which also catches a compaction Muse made by itself.
-          if (watcherProfile && watcherNote?.includes(WATCHER_COMPACTED_NOTE)) entry.instructed = false
+          const reminder = watcherNote?.includes(WATCHER_COMPACTED_NOTE) === true
+          if (watcherProfile && command.type === 'send') {
+            if (reminder && !entry.reminded) entry.instructed = false
+            entry.reminded = reminder
+          }
           const instructing = watcherProfile !== undefined && command.type === 'send' && !entry.instructed
           if (instructing) parts.unshift({ type: 'text', text: museWatcherInstructions(watcherProfile.instructions) })
           alias.origins.push(origin)

@@ -223,6 +223,16 @@ describe('first output', () => {
     watches.observe([replied('open', 'running')])
     watches.closeAll()
     expect(open.awaitsTurnEnd()).toBe(false)
+
+    // A hold that comes after the first output ended the watch is watched again, so Sotto stopping still ends it.
+    const { clock: late } = clock(0)
+    late.mark('acknowledged')
+    watches.watch('late', late, thread)
+    watches.observe([replied('late', 'running')])
+    expect([late.has('firstOutput'), late.awaitsTurnEnd()]).toEqual([true, false])
+    late.holdTurnEnd()
+    watches.closeAll()
+    expect(late.awaitsTurnEnd()).toBe(false)
   })
 
   it('is seen in the summary of a thread no pane shows, whose messages are not held', () => {

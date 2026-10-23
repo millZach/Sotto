@@ -36,7 +36,7 @@ The Muse sample is one hour and 19 turns, so treat the ratios as rough. User tur
 
 - Tool execution: 53 s (2%). Median tool run is 0.1 to 0.8 s. The one `start_thread` took 11.9 s.
 - Explicit reasoning items: 131 s (5%). 22 of 105 calls thought at all; the longest took 31.6 s.
-- Post-output tail: about 350 s (14%). Median 21.6 s, minimum 7.3 s, between Muse's last output, tool or token record and the turn being marked finished. Claude's median is 0.5 s. A news turn that streamed its answer by 12 s did not finish until 32.5 s.
+- Finish wait: about 350 s (14%). Median 21.6 s, minimum 7.3 s, between Muse's last output, tool or token record and the turn being marked finished. Claude's median is 0.5 s. A news turn that streamed its answer by 12 s did not finish until 32.5 s.
 - The remaining ~80% is model calls: about 20 s per call overall.
 
 ### Per model call
@@ -66,11 +66,11 @@ The Muse sample is one hour and 19 turns, so treat the ratios as rough. User tur
 2. **Watcher's instructions are sent again with every message to a Muse Watcher.** MSP takes no system prompt, so the 3.7k-character prompt (about 0.9k tokens) is prepended to every send, wake-up news included (`muse.ts:196`, `:1656`). That was 19 copies, about 17k tokens, in a 240k-token conversation. It is cached, so it costs little time, but it fills the context and brings compaction closer. The other providers send it once.
 3. **Muse ignores the profile's instructions.** Claude, Codex and Grok use `profile.instructions ?? WATCHER_SYSTEM_PROMPT`. Muse always sends the base prompt, so with worker roles on a Muse Watcher never gets the roles lines. This is a correctness gap, not a speed one.
 4. **Large one-off results land in context.** `list_working_copies` 25k characters, `list_projects` 20k, `read_skill` 7 to 10k each. Small next to item 1, and not Muse-specific.
-5. **No measurement of where the post-output wait comes from.** Sotto records the turn completing but not when the last output arrived, so the 21 s tail can only be inferred from activities.
+5. **No measurement of where the post-output wait comes from.** Sotto records the turn completing but not when the last output arrived, so the 21 s finish wait can only be inferred from activities.
 
 ## Not established
 
-- **Why the tail is 21 s.** Probes show Muse runs a second task stream after the answer, which takes 1.8 to 4.3 s on a 30k prompt. With a 200k-token conversation it may take much longer, but I could not see inside Muse. This is for Muse's side to explain.
+- **Why the finish wait is 21 s.** Probes show Muse runs a second task stream after the answer, which takes 1.8 to 4.3 s on a 30k prompt. With a 200k-token conversation it may take much longer, but I could not see inside Muse. This is for Muse's side to explain.
 - **Why first-word latency varies from about 5 s to 27 s** on an identical prompt. I did not look into the cause; repeating the probe at different times of day would show whether it follows load.
 - **Whether Wonder at medium would be faster in a real Watcher conversation.** The probe says effort barely changes reasoning on trivial prompts. Hard turns were not tested.
 
@@ -79,10 +79,10 @@ The Muse sample is one hour and 19 turns, so treat the ratios as rough. User tur
 1. **Cut the round trips.** Add a line to Watcher's prompt, or a Muse-specific one, that a news line carrying the worker's reply is enough to act on and `read_thread` is for when it is not. Longer term, #1142's design (news carries the thread's state) removes the reason to read. This is the largest change Sotto can make itself: if a Muse news turn matched Claude's one call with no tool, it would drop from about four calls to one. Untested.
 2. **Send Watcher's instructions to Muse once,** with the first message and again after a compaction or resume, not with every send. Keep `museWatcherTyped` able to strip them from history.
 3. **Use `profile.instructions ?? WATCHER_SYSTEM_PROMPT` for Muse,** as the other adapters do.
-4. **Record the tail.** Stamp turn start, first item, last item and `turn/completed` arrival in the Muse adapter and write the gaps into `turns.jsonl` timings. That settles item 5 and gives Muse something concrete to look at.
+4. **Record the finish wait.** Stamp turn start, first item, last item and `turn/completed` arrival in the Muse adapter and write the gaps into `turns.jsonl` timings. That settles item 5 and gives Muse something concrete to look at.
 5. **Report to Muse's maintainers:** model-step latency of about 5 to 27 s on a 30k prompt, and a median 21.6 s between the last output and `turn/completed` in a long session.
 6. **Until then,** run Watcher on Claude Code or Codex. Medium instead of xhigh on Muse is worth a try but is not expected to help.
 
 ## Method notes
 
-Turn durations and tails come from the `turn`, `tool` and `reasoning` activity records and message events (`threads.sqlite`); per-call tokens and cache reads from `token_rows`; send timings from `turns.jsonl`. News turns are the user messages listed in `wake_ups`. Probes ran from an empty temporary folder with the Muse 1.4.12 and Claude Code 2.1.309 binaries Sotto uses; no Watcher thread was started or changed.
+Turn durations and finish waits come from the `turn`, `tool` and `reasoning` activity records and message events (`threads.sqlite`); per-call tokens and cache reads from `token_rows`; send timings from `turns.jsonl`. News turns are the user messages listed in `wake_ups`. Probes ran from an empty temporary folder with the Muse 1.4.12 and Claude Code 2.1.309 binaries Sotto uses; no Watcher thread was started or changed.
