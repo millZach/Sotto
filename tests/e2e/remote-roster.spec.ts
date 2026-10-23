@@ -87,7 +87,8 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-remote-roster-' })).directory
   const hostData = join(profile, 'remote-host')
   // Codex's own app server, faked as a child process, which takes Sotto's tool servers at each launch as the real one does.
-  const native = await codexFixture(join(profile, 'codex'), false, 10_000)
+  // The fake keeps its own folder under the system's temporary folder, which its cleanup checks before removing it.
+  const native = await codexFixture(undefined, false, 10_000)
   const provider = { tools: [] as readonly ScopedThreadTools[] }
   const useThreadTools = native.adapter.useThreadTools.bind(native.adapter)
   native.adapter.useThreadTools = list => { provider.tools = list; useThreadTools(list) }
@@ -249,12 +250,14 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
         themes: ['dark', 'light'], reducedMotion: true, errors }, null, 2))
     })
   } catch (error) {
+    await mkdir(evidence, { recursive: true }).catch(() => undefined)
     if (launched) await launched.page.screenshot({ path: join(evidence, 'failure.png') }).catch(() => undefined)
     throw error
   } finally {
-    if (launched) await closeSotto(launched)
-    await host?.close()
-    await native.cleanup()
+    // Each step of the cleanup runs whatever the one before it did, and none hides the journey's own failure.
+    if (launched) await closeSotto(launched).catch(() => undefined)
+    await host?.close().catch(() => undefined)
+    await native.cleanup().catch(() => undefined)
     await removeOwnedE2EProfile(profile)
   }
 })
