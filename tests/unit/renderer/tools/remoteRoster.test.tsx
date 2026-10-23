@@ -103,6 +103,17 @@ describe('a remote parent\'s roster', () => {
     expect(rosterMachine(remoteState().connections, reconnecting).connected).toBe(false)
   })
 
+  it('reads Unknown for a thread both of whose reads answered from its host without it, and stands in the snapshot otherwise', () => {
+    const state = remoteState(true)
+    const machineOf = (thread: AgentThread) => rosterMachine(state.connections, thread)
+    const tests = (given: Map<string, DelegationReadOf>) => delegatedRoster(PARENT, state.host.threads, given, state.host, machineOf).flat().find(row => row.thread.id === TESTS)!
+    // The host's record trimmed its ended start: both reads answered, neither holds it.
+    expect(tests(new Map([[PARENT, { made: [], received: [] }], [TESTS, { made: [], received: [] }]])).status).toBe('unknown')
+    // An older host, or a read not answered yet: the snapshot stands in (idle, so no word).
+    expect(tests(new Map([[PARENT, { made: [], received: [], unread: 'older-host' }], [TESTS, { made: [], received: [], unread: 'older-host' }]])).status).toBeUndefined()
+    expect(tests(new Map([[PARENT, { made: [], received: [] }]])).status).toBeUndefined()
+  })
+
   it('greys a row read from what Sotto last read even while its machine stays connected, as when a read there failed', () => {
     const state = remoteState(true)
     const rows = delegatedRoster(PARENT, state.host.threads, reads(LOST), state.host, thread => rosterMachine(state.connections, thread)).flat()

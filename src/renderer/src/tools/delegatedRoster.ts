@@ -148,9 +148,12 @@ function rowOf(thread: AgentThread, level: 1 | 2, delegatedBy: string | undefine
   const work = start?.work ?? newest?.work
   const meta = [provider, work ? DELEGATION_WORK_TITLES[work] : undefined, model, thread.reasoningEffort ? effortLabel(thread.reasoningEffort) : undefined,
     Number.isFinite(startedAt) ? clockLabel(startedAt) : undefined].filter((fact): fact is string => fact !== undefined && fact !== '')
-  // A thread on another host keeps its delegation on that host, which this computer cannot read: what the snapshot
-  // says of it stands in, Working while its turn runs, and nothing at all otherwise.
-  const remote = thread.remoteHost === true && newest === undefined
+  // A thread on another host keeps its delegation on that host. Where this computer cannot read it there (no Work across
+  // machines, an older host, a host away with nothing read, or a read not answered yet), what the snapshot says of it
+  // stands in, Working while its turn runs, and nothing at all otherwise. Where both reads answered from that host's own
+  // record and neither holds it, as once its ended records are trimmed, its outcome is unknown, as on this computer.
+  const readThere = machine.remote && parent !== undefined && own !== undefined && parent.unread === undefined && own.unread === undefined
+  const remote = thread.remoteHost === true && newest === undefined && !readThere
   const outcome = remote ? (isThreadTurnRunning(thread) ? 'working' : undefined)
     : newest?.outcome ?? (parent !== undefined && own !== undefined ? 'unknown' : undefined)
   const status = threadNeedsYou(thread) ? 'needs' : outcome
