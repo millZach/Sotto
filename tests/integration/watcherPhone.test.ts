@@ -855,5 +855,11 @@ it('pushes a phone no shell whose only news is when Watcher\'s page was read, an
     expect(second!.state.clientCapabilities).toEqual({ mayAnswer: true })
     expect(() => watcherPhoneStateSchema.parse(second!.state.watcher)).not.toThrow()
     expect(Date.parse(second!.state.watcher!.observedAt)).toBeGreaterThan(Date.parse(first!.state.watcher!.observedAt))
+    // A page the phone was answered with replaces the one its last shell carried, so the next shell goes though it repeats.
+    expect(await peer.call('read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(3)
+    await publish()
+    expect(shells()).toHaveLength(3)
   } finally { vi.useRealTimers() }
 })

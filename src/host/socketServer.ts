@@ -1217,7 +1217,8 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code], ...error instanceof Refusal && error.reason ? { reason: error.reason } : {} } } }
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
-      if (carried) peer.shellSent = null
+      // So does one that carries Watcher's page: a phone shows the page it was answered with until a shell replaces it.
+      if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
       else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
