@@ -166,6 +166,11 @@ export interface AppSettings {
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
    */
   watcherSettlesFinishedThreads: boolean
+  /**
+   * On by default (ADR-0123): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
+   * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
+   */
+  compactIdleThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -362,6 +367,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
   roomTransitionSpeed: z.number().min(0.5).max(2),
@@ -459,6 +465,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  compactIdleThreads: true,
   reducedMotion: 'system',
   roomTransition: true,
   roomTransitionSpeed: 1,
@@ -617,6 +624,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
     roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),

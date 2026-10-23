@@ -136,6 +136,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Thread providers', section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { label: 'Check for client updates', section: 'settings-providers', words: 'agent clients' },
     { label: 'Shell sandbox', section: 'settings-providers', words: 'muse', fallback: 'Thread providers', gate: 'muse' },
+    { label: 'Compact idle threads', section: 'settings-providers', words: 'claude code cache compaction context cost idle', fallback: 'Thread providers' },
     { label: 'Run the local host', section: 'settings-hosts', words: 'this computer' },
     { label: 'Remote hosts', section: 'settings-hosts', words: 'ssh tailscale add host computers' },
     { label: 'Let phones connect', section: 'settings-phones', words: 'iphone' },

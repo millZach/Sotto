@@ -45,6 +45,7 @@ const customSettings = {
   resumeThreadsAfterRestart: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
+  compactIdleThreads: false,
   reducedMotion: 'on',
   roomTransition: false,
   roomTransitionSpeed: 1.5,
@@ -147,6 +148,11 @@ describe('settings', () => {
     expect(parseSettings({}).resumeThreadsAfterRestart).toBe(true)
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
+  })
+  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0123)', () => {
+    expect(parseSettings({}).compactIdleThreads).toBe(true)
+    expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
+    expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
@@ -340,6 +346,7 @@ describe('settings', () => {
       visualsInThreads: true,
       babysitPullRequests: true,
       resumeThreadsAfterRestart: true,
+      compactIdleThreads: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',

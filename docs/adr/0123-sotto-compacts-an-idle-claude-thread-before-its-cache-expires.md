@@ -1,0 +1,43 @@
+# Sotto compacts an idle Claude thread before its cache expires
+
+## Status
+
+Accepted October 23, 2026, at Zach's request. **Number provisional until merge** (docs/agents/domain.md). It goes straight to stable, on by default; it is not an Owl feature (ADR-0072). It adds to [ADR-0065](0065-claude-threads-steer-and-the-iphone-queues-steers-and-compacts.md)'s Compact context, which stays the user's own press, and changes nothing about the suggestion to compact a large context that has been quiet for over an hour, which stays for the threads this decision does not reach.
+
+Zach put the problem this way: threads go quiet for a while, and when he next sends one a message it re-reads everything that is no longer cached, which costs a great deal of his usage limits. He asked that a thread idle for about 54 minutes be compacted while its cache is still warm. Asked on a question card, he chose 54 minutes, Claude threads with at least 100,000 tokens of context, an automatic policy with a setting rather than a Watcher tool, and stable, on by default. Of three directions in an HTML prototype (captured as the tag `prototype/idle-compaction`), he chose B: the switch on Claude Code's page in Settings › Providers, and a line under the composer saying Sotto compacted the thread, with **Turn off**. He kept the existing suggestion card for threads idle compaction did not reach.
+
+## Context
+
+Claude caches a thread's prompt for an hour after its last request. The first message after that sends the whole conversation again, written to the cache at twice the input price. This computer's own Claude Code session logs for the 30 days to October 23, 2026 (56,421 requests) show it:
+
+- 99.5% of cache writes used the one-hour cache, not the five-minute one, so the cliff is at an hour.
+- A message sent up to 55 minutes after the one before mostly read from cache (92% to 100%), including after Sotto had stopped the thread's CLI at 30 minutes and started it again. Between 55 and 65 minutes only 55% did. After 65 minutes, 97% wrote the whole conversation again: about 259,000 tokens on average, 189,000 at the median.
+- A compaction left about 42,000 tokens for the next message to read (median of 100 manual compactions), from a summary of about 13,000 characters.
+- Of 636 times a thread with more than 60,000 tokens of context went quiet for 54 minutes, it came back 424 times (67%).
+
+Counting Opus input as one unit, a 260,000-token thread that comes back cold costs about 520,000 units on its first message. Compacted at 54 minutes, it costs about 26,000 to read the conversation from cache, about 20,000 for the summary and about 84,000 for the next message: roughly 130,000. A compaction for a thread that never comes back is about 46,000 units wasted, so the trade pays from about 60,000 tokens of context; 100,000 leaves room for what a summary loses. Whether Claude Code's compaction request itself reads from cache is not visible in its logs; if it does not, the saving falls to about 30%.
+
+Codex differs. In this computer's Codex logs, 81% of messages sent one to three hours after the one before still read from cache, and an uncached read costs the ordinary input price, so there is no hour to beat. Muse compacts but reports no cache. Grok Build, Devin and OpenCode cannot compact.
+
+## Decision
+
+1. **What is compacted.** A Claude Code project thread, on the computer that runs it, whose context holds at least 100,000 tokens measured on the thread's own model, last used between 54 and 59 minutes ago. Its provider must offer native compaction and its session must have started. It must be idle: no turn running, no question or permission waiting, no confirmed background work or watch, no compaction running or unconfirmed, no draft in its composer, and nothing queued, sending or unconfirmed. Settled and archived threads, threads in a settled project, and Watcher's own thread are left alone. Past 59 minutes the cache has likely gone, so a thread whose window was missed, because Sotto or the computer was asleep, is not compacted late; the suggestion card covers it.
+2. **Once per quiet stretch.** The coordinator's host looks every 30 seconds and compacts a thread at most once for the context time it saw; the next turn starts a new stretch. A refusal or failure is not retried. At most two run at once, so a set of threads that went quiet together starts its CLIs a few at a time. Nothing is saved: after a restart, a thread inside its window may be compacted, and one outside it is not.
+3. **Sotto's own command, through the thread's lane.** It is the same native compaction as Compact context (`/compact` for Claude Code), sent on the thread's lane as one of the coordinator's machine commands, with a guard asked at admission and again just before the provider write: the setting is still on, the thread is still due, and its context time has not moved. It never reaches Watcher or delegation as the user's command, so it fences nothing. It neither raises nor clears the window's error. A message the user sends while it runs queues behind it, as it does behind the user's own compaction.
+4. **The thread says so.** The compaction record carries an `idle` mark from the request to its result. The line under the composer reads "Sotto compacted this idle thread before its cache expired." with **Turn off**, which opens Settings › Providers at Claude Code with the switch in focus. A failure reads "Sotto could not compact this idle thread. Its full history is kept." The transcript's boundary stays "Context compacted" with what it reclaimed.
+5. **The switch.** `compactIdleThreads`, on by default, is a setting of each computer (a headless host reads its own, at start), shown on Claude Code's Configuration tab as **Compact idle threads**, and reached by Find a setting. The desktop reads it at every look, so turning it off stops the next compaction without a restart.
+
+## Considered Options
+
+- **A Watcher tool.** Watcher runs only while it is asked to do something and watches only some threads, so most quiet threads would be missed. A tool that compacts could be added later on the same command.
+- **Leaving quiet threads alone.** Cheaper only for a thread that never comes back, which is a third of them; the other two thirds pay the whole conversation again.
+- **Keeping the cache warm without compacting.** A request that only refreshes the cache would need a turn in the conversation, which the user did not write and would see.
+- **Codex and Muse too.** No one-hour cliff was found for Codex, and no write premium; Muse reports no cache. Both can join if their numbers change.
+- **Settings › Agents, with a per-thread opt-out (prototype A and C).** Zach chose the Claude Code page, since only Claude threads are compacted, and one switch.
+
+## Consequences
+
+- A thread that comes back after an hour keeps a summary instead of its full history in the model's context. Sotto's own transcript is unchanged, and the user can scroll back through it.
+- A compaction the user did not ask for can fail or go unconfirmed. Either is said on the thread, as for the user's own; an unconfirmed one holds the thread's sends until it is reconciled, as before.
+- The thresholds come from one computer's logs in October 2026. If Claude's cache lifetime or pricing changes, these numbers are the place to start again.
+- Settings requests (`navigate('settings', section, settings)`) can now name a setting to bring into view, as Find a setting does.

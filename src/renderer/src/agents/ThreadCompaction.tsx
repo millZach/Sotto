@@ -3,6 +3,8 @@ import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shar
 import { compactionPending } from '../../../shared/compaction'
 import { providerRecommendsCompaction } from '../../../shared/providerProfile'
 import { Button } from '../components/Button'
+import { useOptionalApp } from '../state/AppContext'
+import { aimProviderSettings, COMPACT_IDLE_SETTING } from '../features/settings/settingsTarget'
 import './threadCompaction.css'
 
 const AGE = 70 * 60_000
@@ -29,6 +31,14 @@ export function compactionBusy(thread: AgentThread, blocked = false): boolean {
   return blocked || compactionPending(thread.compaction) || thread.status === 'running' || thread.requests.length > 0
     || !thread.messages.some(message => message.role === 'user' && !/^\/compact(?:\s|$)/u.test(message.text.trim()))
 }
+/** A finished compaction in one line, naming Sotto when it compacted an idle thread on its own (ADR-0123). */
+export function compactionResult(compaction: NonNullable<AgentThread['compaction']>): string {
+  if (compaction.idle) return compaction.status === 'completed' ? 'Sotto compacted this idle thread before its cache expired.'
+    : compaction.status === 'failed' ? 'Sotto could not compact this idle thread. Its full history is kept.'
+    : 'Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result.'
+  return compaction.status === 'completed' ? 'Context compacted'
+    : compaction.error ?? (compaction.status === 'failed' ? 'Native compaction failed.' : 'Native compaction is unconfirmed. Reconnect to observe its result.')
+}
 /** Recommendations describe context age and size, never inferred cache expiry. */
 export function ThreadCompaction({ thread, supported, connected, command, blocked = false }: {
   readonly thread: AgentThread; readonly supported: boolean; readonly connected: boolean
@@ -38,6 +48,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const sending = useRef(false)
+  const app = useOptionalApp()
   const usage = thread.usage
   const snapshot = JSON.stringify([thread.id, usage?.contextUpdatedAt])
   const dismissed = useSyncExternalStore(subscribeDismissals, () => dismissedSnapshots.has(snapshot))
@@ -65,8 +76,10 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
       <Button variant="secondary" onClick={() => void compact()}>Compact</Button>
       <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>Keep full history</Button></> : null}
     {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
-    {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{thread.compaction.status === 'completed' ? 'Context compacted'
-      : thread.compaction.error ?? (thread.compaction.status === 'failed' ? 'Native compaction failed.' : 'Native compaction is unconfirmed. Reconnect to observe its result.')}</p> : null}
+    {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{compactionResult(thread.compaction)}
+      {/* Sotto did this on its own (ADR-0123), so the line says so and leads to the switch that stops it. */}
+      {thread.compaction.idle && app ? <> <button type="button" className="thread-compaction__link" aria-label="Turn off idle compaction in Settings"
+        onClick={() => { aimProviderSettings('claude'); app.actions.navigate('settings', 'settings-providers', [COMPACT_IDLE_SETTING]) }}>Turn off</button></> : null}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>
 }

@@ -109,7 +109,7 @@ export interface SettingsViewProps {
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
   /** Opens Settings at a page or group instead of its first page: an Open Settings press elsewhere (settingsPages.ts). */
-  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number } | null
+  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number; readonly settings?: readonly string[] } | null
 }
 
 type RailIcon = React.ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
@@ -486,7 +486,7 @@ export function SettingsView({
   useEffect(() => {
     if (!openSection || openRequest.current === openSection.key || !isSettingsSection(openSection.section)) return
     openRequest.current = openSection.key
-    openAt(openSection.section)
+    openAt(openSection.section, openSection.settings)
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
@@ -698,7 +698,7 @@ export function SettingsView({
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 
-              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings /></Card>
+              <Card className="settings-section" id="settings-providers" {...panelProps('settings-providers')}><div className="settings-section__heading"><h2>Providers</h2><p>Accounts & connections</p></div><ProvidersSettings compactIdle={{ checked: settings.compactIdleThreads, onChange: checked => void save({ compactIdleThreads: checked }) }} /></Card>
 
               <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
                 <div className="settings-section__heading"><h2>Hosts & phones</h2><p>This computer, other computers, and your iPhone</p></div>

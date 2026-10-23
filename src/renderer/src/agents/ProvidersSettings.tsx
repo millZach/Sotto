@@ -12,6 +12,7 @@ import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
+import { COMPACT_IDLE_SETTING, takeAimedProvider } from '../features/settings/settingsTarget'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
@@ -36,10 +37,17 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   return `${update.installed} is installed; ${update.published} is published. Your threads keep working while it installs.${past}`
 }
 
-export function ProvidersSettings(): ReactNode {
+/** Idle compaction's switch (ADR-0123): a setting of this computer's rather than the provider's, shown on Claude Code's page. */
+export interface CompactIdleSetting {
+  readonly checked: boolean
+  readonly onChange: (checked: boolean) => void
+}
+
+export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: CompactIdleSetting } = {}): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
-  const [selected, setSelected] = useState<ProviderId>('codex')
+  // A link elsewhere, such as a thread's Turn off, can open this page at one provider's setting.
+  const [selected, setSelected] = useState<ProviderId>(() => takeAimedProvider() ?? 'codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
@@ -223,6 +231,13 @@ export function ProvidersSettings(): ReactNode {
                 <Toggle label="Shell sandbox" checked={!museDisableSandbox}
                   onCheckedChange={value => void saveMuseSandbox(!value)} />
               </div>
+            </div>}
+            {selected === 'claude' && compactIdle && <div className="provider-client">
+              <div>
+                <h4>{COMPACT_IDLE_SETTING}</h4>
+                <p>After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history.</p>
+              </div>
+              <div className="provider-client__actions"><Toggle label={COMPACT_IDLE_SETTING} checked={compactIdle.checked} onCheckedChange={compactIdle.onChange} /></div>
             </div>}
             {selected === 'opencode' && (openCodeInstall || checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged')) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}

@@ -195,3 +195,16 @@ it('Codex clears the context figure its compaction leaves out of date, unless a 
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.activities?.filter(record => record.kind === 'compaction' && record.status === 'completed').length).toBe(2)
   expect((await usage())?.contextUsed).toBe(20000)
 })
+
+it('Claude carries Sotto’s idle mark from the request to the compaction’s result (ADR-0123)', async () => {
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  expect(await f.host.execute({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true })).toEqual({ accepted: true })
+  expect((await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'running', idle: true })
+  await expect.poll(async () => (await f.driver.requests()).filter(row => row.method === 'user').at(-1)?.params?.frame).toMatchObject({ message: { content: '/compact' } })
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 262000, post_tokens: 41000 } } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'completed', idle: true })
+})
