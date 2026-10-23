@@ -3062,8 +3062,6 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
-      // The host answers a start with its thread only once it has made it.
-      if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
       if (parsed.status === 'refused' && !receipt) await this.options.control.updateWatcher(record => {
         this.recordRemoteRefusal(record, operation.id, parsed.code)
       })
@@ -3071,6 +3069,8 @@ ${operation.draftId}`)
         // Control may already have reached the host; an unverified reply cannot prove that it failed.
         if (!receipt || receipt.operationId !== operation.id || receipt.requestId !== operation.requestId
           || key(receipt.target) !== key(operation.target)) throw new Error('The host returned another operation receipt. Nothing was reconciled.')
+        // The host answers a start with its thread only once it has made it, and only an answer about this start says so.
+        if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
         await this.options.control.updateWatcher(record => this.copyRemoteReceipt(record, record.operations.find(item => item.id === operation.id)!,
           { ...receipt, ...(parsed.status === 'refused' && receipt.deliveryState === 'failed' ? { refusalCode: parsed.code } : {}), updatedAt: now() }))
         await this.reconcileRemote(operation.target.hostId).catch(() => {

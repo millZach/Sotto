@@ -1657,6 +1657,37 @@ it('counts the new start by its own turn once the paired machine lists it, so a 
   expect(warning()).toEqual({ warning: '11 threads are working on Synthetic remote. Synthetic remote may slow down.' })
 })
 
+it('does not take an answer about another operation as the paired machine having made a start (#1032)', async () => {
+  const f = await acrossMachines(), hostId = f.pairing.hostId
+  const remoteHosts = (f.watcher as unknown as { remote: { snapshot(id: string): ReturnType<SocketHostService['shell']>['host'] | undefined } }).remote
+  const real = remoteHosts.snapshot.bind(remoteHosts), shape = f.control.shell().host.threads.find(thread => thread.kind === 'watcher')!
+  const nine = Array.from({ length: 9 }, (_, index) => ({ ...shape, id: `synthetic-working-${index}`, kind: undefined, status: 'running' as const, title: 'Synthetic busy thread' }))
+  vi.spyOn(remoteHosts, 'snapshot').mockImplementation(id => {
+    const snapshot = real(id)
+    return snapshot && id === hostId ? { ...snapshot, threads: [...snapshot.threads.filter(thread => thread.title !== 'Synthetic held worker'), ...nine] } : snapshot
+  })
+  // The host answers the first start "ok", but its receipt names another operation, and the start's own receipt cannot be read.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
+    const answer = await control(...args) as { receipt: { operationId: string } }
+    return { ...answer, receipt: { ...answer.receipt, operationId: randomUUID() } }
+  })
+  const reads = f.socket.watcherRead.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherRead').mockImplementation(async request => {
+    if ((request as { call?: { name?: string } }).call?.name === 'read_operation') throw new Error('synthetic-connection-lost')
+    return reads(request)
+  })
+  const held = () => ({ ...f.start(), machine: hostId, title: 'Synthetic held worker' })
+  const mismatched = await f.call('start_thread', held())
+  expect(mismatched).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  const operationId = 'receipt' in mismatched ? mismatched.receipt?.operationId : undefined
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+  // Nine working and the new start make ten: an answer that was not about the first start proves nothing of it.
+  const next = await f.call('start_thread', held())
+  expect(next).toMatchObject({ status: 'ok', target: { hostId } })
+  expect(next).not.toHaveProperty('warning')
+})
+
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
