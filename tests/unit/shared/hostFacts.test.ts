@@ -128,30 +128,36 @@ describe('machineLoadStates', () => {
 })
 
 describe('a paired machine’s work placed but not started as the desktop reads it (#1311)', () => {
-  const idle = () => false
-
   it('adds a start this desktop admitted there before the host can count it', () => {
-    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'], idle)).toBe(1)
-    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['a', 'b'] }, ['started', 'next'], idle)).toBe(4)
+    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'])).toBe(1)
+    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['a', 'b'] }, ['started', 'next'])).toBe(4)
   })
 
   it('counts a start once the host counts it, by its Sotto thread ID', () => {
-    expect(placedNotStartedWith({ placedNotStarted: 1, placedThreadIds: ['started'] }, ['started'], idle)).toBe(1)
-    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['started', 'other'] }, ['started', 'started'], idle)).toBe(2)
+    expect(placedNotStartedWith({ placedNotStarted: 1, placedThreadIds: ['started'] }, ['started'])).toBe(1)
+    expect(placedNotStartedWith({ placedNotStarted: 2, placedThreadIds: ['started', 'other'] }, ['started', 'started'])).toBe(2)
   })
 
-  it('does not count a start the desktop already sees running there: its work has begun', () => {
-    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'], threadId => threadId === 'started')).toBe(0)
+  it('adds a start the host did not name even when it has begun there: an extra count, never a lost one', () => {
+    // The reservations were read before the host answered, and the answer's own counts are all that is read of the host.
+    expect(placedNotStartedWith({ placedNotStarted: 0, placedThreadIds: [] }, ['started'])).toBe(1)
   })
 
-  it('keeps an unknown count unknown, and takes an answer without IDs at its count', () => {
-    expect(placedNotStartedWith({ placedNotStarted: null }, ['started'], idle)).toBeNull()
-    expect(placedNotStartedWith({}, ['started'], idle)).toBeNull()
-    expect(placedNotStartedWith({ placedNotStarted: 1 }, ['started'], idle)).toBe(1)
-    expect(placedNotStartedWith({ placedNotStarted: 3, placedThreadIds: [] }, [], idle)).toBe(3)
+  it('keeps an unknown count unknown', () => {
+    expect(placedNotStartedWith({ placedNotStarted: null }, ['started'])).toBeNull()
+    expect(placedNotStartedWith({}, ['started'])).toBeNull()
+    expect(placedNotStartedWith({ placedNotStarted: 3, placedThreadIds: [] }, [])).toBe(3)
+  })
+
+  it('adds every start on its way to a host that names none: one it counts may count twice, and none is lost', () => {
+    // A host built before the IDs: its 1 may or may not be the desktop's start, so the start is added either way.
+    expect(placedNotStartedWith({ placedNotStarted: 1 }, ['started'])).toBe(2)
+    expect(placedNotStartedWith({ placedNotStarted: 0 }, ['started', 'next', 'next'])).toBe(2)
+    expect(placedNotStartedWith({ placedNotStarted: 4 }, [])).toBe(4)
+    expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX }, ['started'])).toBeNull()
   })
 
   it('reads unknown above the most threads any machine holds', () => {
-    expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX, placedThreadIds: [] }, ['started'], idle)).toBeNull()
+    expect(placedNotStartedWith({ placedNotStarted: HOST_RUNNING_THREADS_MAX, placedThreadIds: [] }, ['started'])).toBeNull()
   })
 })

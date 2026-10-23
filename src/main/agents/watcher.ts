@@ -195,6 +195,11 @@ interface CallProgress {
 }
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
 const LATE: unique symbol = Symbol('late')
+/**
+ * Whether a paired host's request failed by timing out (`HostRequestTimeoutError`) rather than by its connection closing.
+ * Read by its mark, so Watcher need not take in the socket client to ask.
+ */
+const requestTimedOut = (error: unknown): boolean => error instanceof Error && (error as { readonly timedOut?: unknown }).timedOut === true
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
@@ -239,22 +244,39 @@ interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests
 const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
   participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
 
-/** A start Watcher holds a reservation for, and whether its first prompt is still to go (`queued` or `dispatching`). */
+/**
+ * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
+ * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
+ */
 interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
 /**
- * The record's reserved starts. The file holds at most eight reservations (#1183), and a reservation's start is usually among
- * the newest operations, so the walk goes back from the newest and stops once every reservation is found.
+ * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
+ * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
+ * reservation with one read. Only a reservation not seen before is looked for, walking back from the newest, where a
+ * reservation just made has its operation, so the cost does not grow with Watcher's history. `timedOut` holds the
+ * remote starts whose request timed out rather than had its connection close: the host may still start them, so they
+ * count until their receipt is read (#1311). Both let go of what the record no longer reserves.
  */
-function reservedStarts(record: Readonly<WatcherRecord>): ReservedStart[] {
-  if (record.reservations.length === 0) return []
-  const waiting = new Map(record.reservations.map(item => [item.operationId, item.target]))
+function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, number>, timedOut: Set<string>): ReservedStart[] {
+  const operations = record.operations, reserved = new Map(record.reservations.map(item => [item.operationId, item.target]))
+  for (const id of positions.keys()) if (!reserved.has(id)) positions.delete(id)
+  for (const id of timedOut) if (!reserved.has(id)) timedOut.delete(id)
+  const found = new Map<string, Readonly<WatcherOperation>>(), unseen = new Set<string>()
+  for (const id of reserved.keys()) {
+    const at = positions.get(id), operation = at === undefined ? undefined : operations[at]
+    if (operation?.id === id) found.set(id, operation); else unseen.add(id)
+  }
+  for (let index = operations.length - 1; index >= 0 && unseen.size > 0; index--) {
+    const operation = operations[index]!
+    if (unseen.delete(operation.id)) { positions.set(operation.id, index); found.set(operation.id, operation) }
+  }
   const starts: ReservedStart[] = []
-  for (let index = record.operations.length - 1; index >= 0 && waiting.size > 0; index--) {
-    const operation = record.operations[index]!, target = waiting.get(operation.id)
-    if (target === undefined) continue
-    waiting.delete(operation.id)
-    if (operation.action === 'start') starts.push({ target, operationId: operation.id,
-      notYetSent: operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' })
+  for (const [operationId, target] of reserved) {
+    const operation = found.get(operationId)
+    if (!operation) { positions.delete(operationId); continue }
+    if (operation.deliveryState === 'accepted' || operation.deliveryState === 'failed') timedOut.delete(operationId)
+    if (operation.action === 'start') starts.push({ target, operationId, notYetSent: operation.deliveryState === 'queued'
+      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId) })
   }
   return starts
 }
@@ -837,7 +859,10 @@ export class WatcherService implements WatcherControlHooks {
     const hostId = this.options.control.hostId()
     return hostId ? this.startsNotYetSentOn(hostId) : []
   }
-  /** The threads of the starts Watcher has admitted on a machine, any machine, whose first prompt has not gone yet. */
+  /**
+   * The threads of the starts Watcher has admitted on a machine, any machine, whose first prompt has not gone yet, or
+   * whose paired host did not answer in time and may still start them (`timedOutStarts`).
+   */
   private startsNotYetSentOn(hostId: string): string[] {
     return this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
   }
@@ -849,15 +874,23 @@ export class WatcherService implements WatcherControlHooks {
   /**
    * Watcher's reserved starts, worked out once per record. The record is replaced on every change and never edited
    * (`watcherRecordView`), so the index stands until the next change, and every read between changes, such as a machine
-   * report or the phone's page, reads it without walking the operations.
+   * report or the phone's page, reads it without walking the operations. A change finds each reservation it already
+   * knows where it was before (`reservedPositions`), so working the index out again costs one read per reservation.
    */
   private reservedStarts(): readonly ReservedStart[] {
     const record = this.view()
     let starts = this.reservedStartIndex.get(record)
-    if (!starts) { starts = reservedStarts(record); this.reservedStartIndex.set(record, starts) }
+    if (!starts) { starts = reservedStarts(record, this.reservedPositions, this.timedOutStarts); this.reservedStartIndex.set(record, starts) }
     return starts
   }
   private readonly reservedStartIndex = new WeakMap<Readonly<WatcherRecord>, readonly ReservedStart[]>()
+  /** Where each reservation's operation sits in the record, kept across records (`reservedStarts`). */
+  private readonly reservedPositions = new Map<string, number>()
+  /**
+   * Remote starts made uncertain because their request timed out, not because their connection closed: the host may
+   * still carry them out, so they count as placed until their receipt is read. In memory only, as the merge turns are.
+   */
+  private readonly timedOutStarts = new Set<string>()
   /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
   private workingWarning(threadId: string): { warning: string } | Record<string, never> {
     const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
@@ -3149,7 +3182,11 @@ ${operation.draftId}`)
         return { ...error.result, receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
       }
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
-        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') saved.deliveryState = 'uncertain' })
+        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') {
+          saved.deliveryState = 'uncertain'
+          // A request that timed out is still alive on the host, which may start it later; a closed connection fences it.
+          if (saved.action === 'start' && requestTimedOut(error)) this.timedOutStarts.add(saved.id)
+        } })
       return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
     }
   }
@@ -3654,22 +3691,22 @@ ${operation.draftId}`)
     // wherever the facts do, or where a host does not send them.
     const live = this.options.crossMachine === true
     const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
-    // A paired machine's count gains the starts this desktop has admitted there that it has not counted yet. This
+    // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
+    // read before the host is asked, so they and its answer are one observation (`placedNotStartedWith`). This
     // computer's own report already holds this Watcher's starts here (`startsNotYetSent`).
-    const placedOf = (report: HostMachineReport, remote: string | undefined) => remote === undefined ? report.placedNotStarted ?? null
-      : placedNotStartedWith(report, this.startsNotYetSentOn(remote),
-        threadId => this.owningSnapshot(remote)?.threads.some(thread => thread.id === threadId && thread.status === 'running') === true)
-    const loadOf = (report: HostMachineReport, remote: string | undefined) => {
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
-      return { load, placedNotStarted: placedOf(report, remote), memoryState: states.memory, cpuState: states.cpu }
+      const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
       try {
+        const reserved = live && remote !== undefined ? this.startsNotYetSentOn(remote) : undefined
         const report = await facts()
         if (!report) return unknown(older)
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, remote) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

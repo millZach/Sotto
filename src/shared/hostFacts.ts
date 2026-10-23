@@ -131,8 +131,8 @@ export const hostMachineReportSchema = z.object({
   placedNotStarted: threadCount.optional().catch(null),
   /**
    * The Sotto thread IDs `placedNotStarted` counts, so a desktop that has admitted a start there can tell whether the
-   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; an answer without
-   * it is taken at its count.
+   * host has counted it yet (`placedNotStartedWith`). Sent with the count while it is within bounds; to an answer without
+   * it the desktop adds every start it has on its way there.
    */
   placedThreadIds: z.array(z.string().min(1).max(200)).max(HOST_RUNNING_THREADS_MAX).optional().catch(undefined),
 })
@@ -143,16 +143,22 @@ export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
  * start this desktop's Watcher has admitted there reaches the host only as its thread is created and its first prompt
  * queued, so until then the host cannot count it, and the desktop adds its own reservation. A start and its thread share
  * one Sotto thread ID on both sides (the desktop names the thread in its create-thread), so the rule is keyed by it: a
- * reserved thread counts once, by the host when it echoes the ID in `placedThreadIds`, and otherwise by the desktop,
- * unless the desktop already sees it running there, which is work begun, not placed. A host's unknown count stays
- * unknown, and an answer without the IDs is taken at its count, since which starts it holds cannot be told.
+ * reserved thread the host echoes in `placedThreadIds` is the host's to count, and every other is added.
+ *
+ * `reserved` is read before the host is asked, so the two are one observation: a start still on its way then either
+ * reaches the host before it answers, and is echoed or running there, or it does not, and is added here. Nothing is read
+ * from the desktop's later copy of the host, which could show a start running that the answer's counts never saw. The
+ * price is an extra count, never a lost one: a start whose turn began on the host before it answered is counted there as
+ * running and here as placed, until the desktop's own record of the start catches up.
+ *
+ * An answer without the IDs (a host built before them) cannot say which starts it holds, so every reservation is added
+ * to its count: a start it already counts may count twice, and none is missed. A host's unknown count stays unknown.
  */
-export function placedNotStartedWith(report: Pick<HostMachineReport, 'placedNotStarted' | 'placedThreadIds'>, reserved: readonly string[],
-  runningThere: (threadId: string) => boolean): number | null {
+export function placedNotStartedWith(report: Pick<HostMachineReport, 'placedNotStarted' | 'placedThreadIds'>, reserved: readonly string[]): number | null {
   const counted = report.placedNotStarted
   if (counted === null || counted === undefined) return null
-  if (reserved.length === 0 || !report.placedThreadIds) return counted
-  const echoed = new Set(report.placedThreadIds)
-  const extra = new Set(reserved.filter(threadId => !echoed.has(threadId) && !runningThere(threadId))).size
+  if (reserved.length === 0) return counted
+  const echoed = new Set(report.placedThreadIds ?? [])
+  const extra = new Set(reserved.filter(threadId => !echoed.has(threadId))).size
   return counted + extra <= HOST_RUNNING_THREADS_MAX ? counted + extra : null
 }

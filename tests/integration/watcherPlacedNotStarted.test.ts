@@ -106,3 +106,40 @@ it('reads Watcher’s admitted starts from an index of the record, however long 
   // A change replaces the record, so the index is worked out again and the start has gone from it.
   expect(f.service.startsNotYetSent()).toEqual([])
 }, 60_000)
+
+it('finds an old reserved start again in one read on every change, however much history follows it', async () => {
+  const f = await fixture()
+  const gate = deferred()
+  let held = 0
+  const command = f.control.commandFromWatcher.bind(f.control)
+  vi.spyOn(f.control, 'commandFromWatcher').mockImplementation(async (sent, origin) => {
+    if (sent.type === 'create-thread') { held += 1; await gate.promise }
+    return command(sent, origin)
+  })
+  const started = f.start('Synthetic long-running worker')
+  await vi.waitFor(() => expect(held).toBe(1))
+  // A worker reserved long ago: five thousand newer operations follow its start, and every element read is counted.
+  const record = f.control.watcherRecordView(), older = record.operations[0]!
+  const newer = () => ({ ...older, id: randomUUID(), action: 'send' as const, deliveryState: 'accepted' as const })
+  let reads = 0
+  const counted = (operations: typeof record.operations) => new Proxy(operations, { get(target, property, receiver) {
+    if (typeof property === 'string' && /^\d+$/u.test(property)) reads += 1
+    return Reflect.get(target, property, receiver) as unknown
+  } })
+  let operations = [...record.operations, ...Array.from({ length: 5_000 }, newer)]
+  const view = vi.spyOn(f.control, 'watcherRecordView').mockReturnValue({ ...record, operations: counted(operations) })
+  // The first record walks back to it at most once.
+  expect(f.service.startsNotYetSent()).toHaveLength(1)
+  reads = 0
+  // Every change replaces the record and appends to its history; each finds the reservation where it was, in one read.
+  for (let change = 0; change < 50; change++) {
+    operations = [...operations, newer()]
+    view.mockReturnValue({ ...record, operations: counted(operations) })
+    expect(f.service.startsNotYetSent()).toHaveLength(1)
+  }
+  expect(reads).toBeLessThanOrEqual(50 * record.reservations.length)
+  view.mockRestore()
+  gate.resolve()
+  expect(await started).toMatchObject({ status: 'ok' })
+  expect(f.service.startsNotYetSent()).toEqual([])
+}, 60_000)
