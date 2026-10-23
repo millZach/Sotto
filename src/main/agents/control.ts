@@ -1061,6 +1061,23 @@ export class AgentControl {
   hasPendingThreadWork(threadId: string, options: { readonly setAsideIgnored?: boolean } = {}): boolean {
     return this.pendingThreadWorkReason(threadId, options) !== null
   }
+  /**
+   * Whether a Watcher send's prompt still in its thread's queue waits there for the user: its queue is paused, or holds a
+   * prompt that failed. Null once it has left the queue, or while it waits only for the thread's turn.
+   */
+  watcherQueuedSendHeld(operationId: string): 'paused-followups' | 'failed-followups' | null {
+    const own = this.followupStore.peek().items.find(item => item.watcherOperationId === operationId)
+    return own ? this.queueAwaitsReview(own.threadId) : null
+  }
+  /**
+   * Whether a thread's queue waits for the user's review, a prompt in it paused or failed, whatever else holds it: an
+   * unconfirmed send ahead of it does not hide it, since what queues behind waits for that review all the same.
+   */
+  queueAwaitsReview(threadId: string): 'paused-followups' | 'failed-followups' | null {
+    const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
+    if (items.some(item => item.status === 'failed')) return 'failed-followups'
+    return items.some(item => item.status === 'paused') ? 'paused-followups' : null
+  }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
   pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
     const released = (item: { readonly setAside?: boolean | undefined; readonly updatesResumed?: boolean | undefined }): boolean => item.setAside === true && (setAsideIgnored || item.updatesResumed === true)
@@ -3362,6 +3379,7 @@ export class AgentControl {
         if (command.type === 'queue-followup') {
           if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before queuing a prompt.')
           if (this.state.threadDrafts?.find(d => d.threadId === thread.id)?.requestId) throw new Error('Send or clear the existing answer before queuing a prompt.')
+          if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
           const receivedAt = performance.now()
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
@@ -3818,6 +3836,8 @@ export class AgentControl {
       validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
     }
     validate()
+    // A thread settled while its turn ran is restored by the steer, as by any new work.
+    if (this.settledForWork(this.thread(command.threadId))) await this.reopenForWork(command.threadId)
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
@@ -4877,6 +4897,27 @@ export class AgentControl {
     const latest = this.state.deliveries?.find(matches)
     this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
   }
+  /**
+   * New work reopens a settled thread before it is sent or queued (October 23, 2026): a thread working while settled is
+   * taken for put aside, so its queue never sends and Settle finished threads, a request's end and the cleanup's on-settle
+   * rule act on work still under way. Sotto's own news is not new work and never reopens one.
+   */
+  private settledForWork(thread: AgentThread): boolean {
+    return isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
+  /** Asked only of a settled thread, so a send to any other awaits nothing more than it did. */
+  private async reopenForWork(threadId: string): Promise<void> {
+    // Its own provider first: a send that thread's connection refuses restores nothing.
+    this.canAct(threadId)
+    const host = this.dependencies.host
+    if (!host.reopenThreadForWork) throw new Error('This thread is settled. Restore it before sending it a prompt.')
+    this.acceptSnapshot(await host.reopenThreadForWork(threadId))
+  }
+  /** A delegated brief queued for a thread still working restores it as it is queued, as a queued prompt does. */
+  async reopenSettledForWork(threadId: string): Promise<void> {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (thread && this.settledForWork(thread)) await this.reopenForWork(threadId)
+  }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))?.id
@@ -4926,7 +4967,8 @@ export class AgentControl {
       if (latest.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish.')
     }
     validate()
-    const thread = this.thread(threadId)
+    let thread = this.thread(threadId)
+    if (this.settledForWork(thread)) { await this.reopenForWork(threadId); thread = this.thread(threadId) }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId, this.localClient, undefined, origin)
     this.say(`Sent to ${thread.title}.`)
     this.observe()
@@ -4984,6 +5026,7 @@ export class AgentControl {
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
     this.sendStages(turn)?.addRead(readMs)
+    if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
     this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()

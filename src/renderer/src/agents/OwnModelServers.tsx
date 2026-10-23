@@ -132,7 +132,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
 
   return <SettingsGroup title={OWN_SERVERS_TITLE} icon={Server} rows={false}
     note="Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it.">
-    <div className="own-servers" aria-busy={servers === null}>
+    <div className="own-servers" data-setting="own-model-servers" aria-busy={servers === null}>
       {servers === null ? <p className="own-servers__empty" role="status">Reading your servers…</p>
         : readFailed ? <div className="own-servers__failed"><p className="provider-detail__error" role="alert">Sotto could not read your saved servers. Nothing was changed. Try again.</p>
           <Button variant="secondary" aria-label="Read your saved servers again" onClick={() => { setServers(null); setReads(count => count + 1) }}>Try again</Button></div>
