@@ -148,8 +148,9 @@
 .thread-workspace__compose > * { flex: none; }
 /* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
    around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
-   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
-.thread-pane:has(> .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose:not(:has(> .thread-questions))) { --thread-compose-height: var(--thread-compose-measured, 0px); }
+   questions keep their scroll above the message bar and nothing in the transcript hides under them. The two tests sit
+   side by side because a :has() inside another is not valid CSS, and the browser drops the whole rule. */
+.thread-pane:has(> .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose):not(:has(> .thread-workspace__compose > .thread-questions)) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
