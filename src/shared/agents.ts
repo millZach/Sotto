@@ -658,7 +658,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
-   * Models tab's "Agent setting".
+   * open row's "Agent setting" in Settings > Providers.
    */
   enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
   agentModelId: z.string().max(512).optional() })
