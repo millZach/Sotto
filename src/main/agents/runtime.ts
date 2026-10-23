@@ -45,6 +45,7 @@ import type { AgentHost } from './host'
 import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport } from './hostFacts'
+import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -76,6 +77,11 @@ export interface AgentRuntimeOptions {
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
+  /**
+   * The Owl list's answer for Work across machines (#1032), read once by the process owner. Absent fails closed: a start
+   * names no machine or system, nothing reads where new workers start, and the host does not report its projects' origins.
+   */
+  crossMachineEnabled?: boolean
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -234,22 +240,31 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
+  // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
+  // host that has it on, the desktop's own included, reports its projects' origins.
+  const crossMachine = options.crossMachineEnabled === true
+  const placing = crossMachine && options.runsAs !== 'headless-host'
+    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.shell().host.projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts: () => hostMachineReport(facts, agentControl.shell().host.threads),
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
-      ...roles }) : undefined
+      ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()
+    // A delegating thread lists and names machines through Watcher's own reads (#1032), so only while Watcher runs too.
+    const placingWatcher = 'workerMachine' in placing ? watcher : undefined
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
+      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
+      ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
+        name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {} })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -377,6 +392,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+    ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.

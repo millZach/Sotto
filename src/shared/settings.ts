@@ -4,6 +4,7 @@ import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './theme
 import { DEFAULT_HOTKEY } from './constants'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -161,6 +162,12 @@ export interface AppSettings {
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
    */
   watcherSettlesFinishedThreads: boolean
+  /**
+   * Where new workers start (#1032), under Settings, Watcher, part of the Owl feature `cross-machine-work`: This computer
+   * by default, Watcher's own choice, or a connected machine by its saved host ID. A start that names a machine or a
+   * system overrides it for that start. Read when a start or a delegation is placed.
+   */
+  newWorkerMachine: WorkerMachineSetting
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -345,6 +352,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  newWorkerMachine: workerMachineSettingSchema,
   reducedMotion: z.enum(['system', 'on']),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
@@ -437,6 +445,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  newWorkerMachine: DEFAULT_WORKER_MACHINE,
   reducedMotion: 'system',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
@@ -590,6 +599,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),

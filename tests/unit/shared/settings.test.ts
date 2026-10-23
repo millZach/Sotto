@@ -44,6 +44,7 @@ const customSettings = {
   resumeThreadsAfterRestart: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
+  newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
   reducedMotion: 'on',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
@@ -142,6 +143,13 @@ describe('settings', () => {
     expect(parseSettings({}).resumeThreadsAfterRestart).toBe(true)
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
+  })
+  it('starts new workers on This computer for older profiles, keeps Watcher\'s choice or a machine, and recovers anything else (#1032)', () => {
+    expect(parseSettings({}).newWorkerMachine).toBe('this-computer')
+    expect(parseSettings({ newWorkerMachine: 'watcher' }).newWorkerMachine).toBe('watcher')
+    const forge = '6b8f1c2d-3e4a-4b5c-8d6e-7f8091a2b3c4'
+    expect(parseSettings({ newWorkerMachine: forge }).newWorkerMachine).toBe(forge)
+    for (const damaged of ['forge', 7, null, '../hosts']) expect(parseSettings({ newWorkerMachine: damaged }).newWorkerMachine).toBe('this-computer')
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
@@ -326,6 +334,7 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
       watcherSettlesFinishedThreads: true,
+      newWorkerMachine: 'this-computer',
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',

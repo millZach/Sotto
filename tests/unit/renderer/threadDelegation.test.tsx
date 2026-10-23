@@ -118,6 +118,9 @@ describe('delegation words', () => {
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROMPT_LIMIT' })).toBe('That thread already had 4 briefs from this thread in this turn. Your next message to this thread renews the limit. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^That thread's provider or model was not available/u)
     expect(delegationRefusalLine({ action: 'start', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^The model it asked for was not ready on this computer/u)
+    // #1032: a machine or system a new thread named could not take it.
+    expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' })).toBe('The machine or system it asked for could not take it: none was connected, '
+      + 'it had no copy of this project, or it was not This computer, where delegated threads start for now. Nothing was started.')
     // Every rule main records has its own words, and none is an error code.
     for (const refusal of ['NOT_ADMITTED', 'NO_USER_MESSAGE', 'PERMISSION_NOT_COMPARABLE', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'] as const) {
       const line = delegationRefusalLine({ action: 'send', refusal })

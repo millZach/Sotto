@@ -6,7 +6,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -22,6 +22,7 @@ import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
+import type { ProjectOrigins } from '../../shared/workerMachine'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
@@ -100,6 +101,12 @@ export interface HostService {
   /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
   readonly supportsHostFacts?: boolean
   hostFacts?(): Promise<HostMachineReport>
+  /**
+   * The host reports the GitHub repository of each of its projects (#1032), present only when its Owl answer turns on Work
+   * across machines; without it a desktop cannot match this machine's projects by repository.
+   */
+  readonly supportsProjectOrigins?: boolean
+  projectOrigins?(): Promise<ProjectOrigins>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -280,7 +287,9 @@ export class LocalHostService implements HostService {
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
      */
-    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations } }) {
+    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
+    /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
+    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins> }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -292,6 +301,12 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  /** Read from the projects as the host last published them, without copying them. */
+  projectOrigins(): Promise<ProjectOrigins> {
+    if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
+    return this.options.projectOrigins(this.control.shell().host.projects)
+  }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   /** Reads the threads as the host last published them, without copying them. */

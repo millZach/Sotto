@@ -27,7 +27,17 @@ Name a role in every start_thread and leave out the model, effort and permission
 When the user asks for a model, effort or permission in a request, name it in that request's starts: it overrides the role for those starts only.
 In your reply, say which role and which model each thread you started is on.`
 
-/** Watcher's system prompt: the base one, and the worker-role lines when that Owl feature is on. */
-export function watcherSystemPrompt(roles: boolean): string {
-  return roles ? `${WATCHER_SYSTEM_PROMPT}\n${WATCHER_ROLES_PROMPT}` : WATCHER_SYSTEM_PROMPT
+/**
+ * What Watcher is told while Work across machines is on (#1032): where new workers start, how a start names a machine or a
+ * system, and that a project's own notes say where its checks run. Sotto supplies the facts; Watcher judges.
+ */
+export const WATCHER_MACHINES_PROMPT = `Workers can run on This computer or on another machine the user connected. list_machines gives each machine's system, memory and running threads, and newWorkersStart, where new workers start.
+A start_thread in a project on This computer that names no machine goes where new workers start, to that machine's copy of the project; one in a project on another machine starts there. Name machine or os when the work needs one, as when the user asks for it ("spawn these on forge") or its checks need a system. An os never falls back to another system: Sotto refuses rather than start it elsewhere. The user's words in a request decide over where new workers start, for that request.
+When newWorkersStart leaves the choice to you, choose for each worker: the system its checks need, then a machine with room.
+Read the project's own notes, such as its AGENTS.md, on where checks run, and follow them.
+When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.`
+
+/** Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines. */
+export function watcherSystemPrompt(roles: boolean, machines = false): string {
+  return [WATCHER_SYSTEM_PROMPT, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : []].join('\n')
 }
