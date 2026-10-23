@@ -72,7 +72,7 @@
 .threads-view .thread-panes__drops[data-layout='boxes'] > .thread-panes__drop { position: absolute; }
 .threads-view .thread-panes__drop::before { position: absolute; inset: 10px; border: 1px dashed color-mix(in srgb, var(--tt-activity) 45%, transparent); border-radius: 16px; content: ''; transition: background-color .16s ease, border-color .16s ease; }
 .threads-view .thread-panes__drop[data-over]::before { border-style: solid; border-color: var(--tt-activity); background: var(--tt-activity-wash); }
-.threads-view .thread-panes__drop-label { position: relative; padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: 999px; background: var(--threads-field); color: var(--tt-text); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+.threads-view .thread-panes__drop-label { position: relative; padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); color: var(--tt-text); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
 .threads-view .thread-panes__drop[data-over] .thread-panes__drop-label { opacity: 1; }
 /* A preview of a new arrangement covers the panes it rearranges, and names the thread each box keeps. */
 .threads-view .thread-panes__drops[data-preview] { background: var(--tt-surface); }

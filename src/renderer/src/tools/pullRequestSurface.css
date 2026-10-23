@@ -13,7 +13,7 @@
 .pr-surface__name:focus { outline: none; }
 .pr-surface__name:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
 .pr-surface__number { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
-.pr-surface__tag { flex: none; padding: 1px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-pill); color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
+.pr-surface__tag { flex: none; padding: 1px 8px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
 .tools-panel .pr-surface__menu > .pane-action { width: 30px; height: 30px; border-radius: var(--tt-radius-sm); }
 
 .pr-surface__notice { flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
