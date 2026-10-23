@@ -111,6 +111,12 @@ export class HostBranchMoves {
           return await this.bundles.copy({ from, source, repository, moveId: request.moveId, fence })
         } finally { this.release(request.moveId, holding) }
       }
+      case 'forget': {
+        // A move under way keeps its ref; the desktop forgets only a move that has finished.
+        const folder = this.folders.projectFolder(request.projectId)
+        if (folder && !this.transfers.has(request.moveId)) await this.bundles.forget(folder, request.moveId)
+        return null
+      }
       case 'send-chunk': {
         const outgoing = this.own(request.moveId, owner)?.outgoing
         if (!outgoing || request.offset >= outgoing.size) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)

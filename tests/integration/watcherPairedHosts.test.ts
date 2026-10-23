@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { DesktopBranchMoves } from '../../src/main/agents/branchMoves'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { registerIpc } from '../../src/main/ipc/registerIpc'
 import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, type WatcherPrepareStopAllResult, type WatcherRoomState, type WatcherStopAllResult } from '../../src/shared/watcherRoom'
@@ -1604,6 +1605,31 @@ it('refuses a start from a thread with uncommitted work in the move’s words, a
   // Watcher never names a move itself.
   expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
 })
+
+for (const where of ['paired', 'here'] as const) {
+  it(`lets go of a moved branch when its start is stopped after the branch arrived, ${where === 'paired' ? 'on the paired machine' : 'on This computer'} (#1033)`, async () => {
+    const f = await fromBranch()
+    // The branch arrives, then the user stops Watcher's request before the start goes.
+    const move = DesktopBranchMoves.prototype.forStart
+    const forStart = vi.spyOn(DesktopBranchMoves.prototype, 'forStart').mockImplementation(async function (this: DesktopBranchMoves, input) {
+      const moved = await move.call(this, input)
+      expect(moved.type).toBe('moved')
+      await f.control.updateWatcher(record => {
+        for (const request of record.requests) if (request.state === 'active') { request.state = 'stopped'; request.closedAt = new Date().toISOString() }
+      })
+      return moved
+    })
+    try {
+      const started = where === 'paired'
+        ? await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+        : await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+      expect(started).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+      expect(forStart).toHaveBeenCalledTimes(1)
+      const repository = where === 'paired' ? f.project.path : f.local.path
+      await expect.poll(async () => (await git('git', ['-C', repository, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+    } finally { forStart.mockRestore() }
+  })
+}
 
 it('warns when starts the paired machine answered before its list holds them leave more than ten working there (#1032)', async () => {
   const f = await acrossMachines(), hostId = f.pairing.hostId

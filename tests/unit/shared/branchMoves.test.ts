@@ -38,5 +38,7 @@ describe('a worker started from a thread’s branch (#1033)', () => {
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'send-begin', moveId, threadId: 't', bases: [], snapshot: true }).success).toBe(true)
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', snapshot: false }).success).toBe(true)
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', path: '/tmp' }).success).toBe(false)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'forget', moveId, projectId: 'p' }).success).toBe(true)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'forget', moveId, projectId: 'p', ref: 'refs/heads/main' }).success).toBe(false)
   })
 })

@@ -248,6 +248,17 @@ export class DesktopBranchMoves {
     return from.hostId === to.hostId ? this.onHost({ ...common, hostId: from.hostId }) : this.betweenHosts({ ...common, fromHostId: from.hostId, toHostId: to.hostId })
   }
 
+  /**
+   * Lets go of the incoming ref a move landed for a start that then never made its thread, on whichever machine it landed:
+   * this computer's project, or a connected host's. Best effort: a host that cannot be asked keeps the ref.
+   */
+  async forget(input: { readonly hostId: string; readonly projectId: string; readonly moveId: string; readonly here: string }): Promise<void> {
+    if (input.hostId === input.here) return this.forgetHere(input)
+    const connection = this.connected(input.hostId)
+    if ('type' in connection) return
+    await connection.host.branchMove({ action: 'forget', moveId: input.moveId, projectId: input.projectId }).catch(() => undefined)
+  }
+
   /** Asks the host to discard what it staged for a move, and answers with `receipt` whether or not it could. */
   private async ended(host: BranchMoveHost, moveId: string, receipt: BranchMoveRefusal): Promise<BranchMoveRefusal> {
     await host.branchMove({ action: 'end', moveId }).catch(() => undefined)

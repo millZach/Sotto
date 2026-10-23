@@ -52,7 +52,8 @@ export const outgoingRef = (moveId: string): string => `refs/sotto/outgoing/${mo
  * whatever the move staged, either way. Each step names its move; a retry of a finished move answers as done.
  * `copy` lands a thread's branch in a project on the same machine, for a worker started there from it, with nothing sent.
  * `snapshot`, on `send-begin` and `copy`, is a test run's (#1033, #1312): uncommitted work goes too, as a commit object
- * made from a temporary index, instead of being refused.
+ * made from a temporary index, instead of being refused. `forget` removes the incoming ref a move landed in a project, for a
+ * start the desktop knows never made its thread there, so no ref holds the branch for nothing.
  */
 export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('tips'), projectId: id }).strict(),
@@ -65,6 +66,7 @@ export const hostBranchMoveRequestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('send-chunk'), moveId: branchMoveIdSchema, offset: z.number().int().nonnegative().max(BRANCH_BUNDLE_MAX_BYTES) }).strict(),
   z.object({ action: z.literal('end'), moveId: branchMoveIdSchema }).strict(),
   z.object({ action: z.literal('copy'), moveId: branchMoveIdSchema, threadId: id, projectId: id, snapshot: z.boolean().optional() }).strict(),
+  z.object({ action: z.literal('forget'), moveId: branchMoveIdSchema, projectId: id }).strict(),
 ])
 export type HostBranchMoveRequest = z.infer<typeof hostBranchMoveRequestSchema>
 
