@@ -105,7 +105,7 @@ for (const provider of ['claude', 'codex', 'grok', 'devin', 'muse'] as const) de
     const directory = join(f.root, 'workspace')
     await fs.mkdir(directory); await fs.writeFile(join(directory, 'agents.json'), '{}')
     const registry = new ThreadRegistry(directory)
-    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }
+    const hosts = { claude: new FakeProviderHost(), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() }
     const native = new ConfiguredProviderHost({ directory, provider: () => provider, enabledProviders: () => [provider],
       threadProvider: id => registry.byThread(id)?.provider,
       hosts: { ...hosts, [provider]: new SottoThreadHost(provider, f.host, registry) } })
@@ -186,7 +186,7 @@ it.each(['send', 'refresh', 'skills', 'short text', 'rollback'] as const)('stops
   const native = new ConfiguredProviderHost({ directory, provider: () => 'claude', enabledProviders: () => ['claude', 'codex'],
     threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', claude.host, registry), codex: new SottoThreadHost('codex', codex.host, registry),
-      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() } })
+      grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() } })
   const host = new WorkspaceHost(native, directory, undefined, undefined, true)
   cleanups.push(async () => { await host.close(); await registry.flush() })
   await host.connect('claude')

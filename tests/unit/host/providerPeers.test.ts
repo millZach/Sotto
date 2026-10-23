@@ -39,10 +39,12 @@ function hostState(): AgentState {
 
 describe('a client that does not know OpenCode', () => {
   it('is a client whose hello does not accept provider-opencode', () => {
-    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode' })
-    expect([...providersUnknownTo(undefined)]).toEqual(['opencode'])
-    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode'])
-    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual([])
+    expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor' })
+    expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor'])
+    expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor'])
+    // A phone that knows OpenCode but not Cursor (ADR-0123) is sent OpenCode and nothing of Cursor's.
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor'])
+    expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual([])
   })
 
   it('is sent a shell that names OpenCode nowhere: no row, model, project, thread, draft, client update or setting', () => {

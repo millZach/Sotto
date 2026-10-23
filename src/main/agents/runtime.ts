@@ -148,6 +148,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
+    // Cursor's adapter lands after its provider ID (ADR-0123); until then it is held everywhere, Owl included.
+    cursor: options.providers?.cursor ?? new HeldProviderHost('cursor'),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -158,6 +160,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
+      cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },

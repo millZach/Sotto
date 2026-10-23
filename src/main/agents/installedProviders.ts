@@ -20,6 +20,8 @@ export async function detectInstalledProviders(options: { heldProviders?: HeldPr
   const finders: Readonly<Record<ProviderId, () => Promise<unknown>>> = {
     codex: findCodexExecutable, claude: () => claude.findExecutable(), grok: findGrokExecutable, devin: findDevinExecutable,
     muse: findMuseExecutable, opencode: findOpenCodeExecutable,
+    // Cursor's adapter lands after its provider ID; until then its client is not looked for.
+    cursor: async () => null,
   }
   const ids = providerIdSchema.options.filter(id => !held.has(id))
   const found = await Promise.all(ids.map(id => finders[id]()))

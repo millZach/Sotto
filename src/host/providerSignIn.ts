@@ -48,7 +48,7 @@ const EXPIRES = /expires in (\d{1,2}) minutes?/iu
 
 /** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, and Claude Code's subscription only. */
 export const PROVIDER_SIGN_IN_ARGS: Readonly<Record<ProviderId, readonly string[] | null>> = {
-  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null,
+  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: null,
 }
 
 /** Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. */
