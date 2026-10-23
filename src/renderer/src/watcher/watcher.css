@@ -399,14 +399,19 @@
   font-family: var(--tt-font-mono); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- New Watcher ---------- */
-/* Zach's pick A of the New Watcher prototype: one of the composer's own chips, first in its footer where an ordinary
-   thread says where it runs. Unavailable, its words keep the muted text colour, which holds 4.5:1 on the composer, and
-   it says so by its edge instead: a dashed hairline, its icon dimmed, no hover fill and the not-allowed cursor. Its focus
-   ring keeps full strength, and it stays in the Tab order so its reason can be heard. */
-.thread-chip.watcher-new { flex: none; padding: 0 10px 0 9px; }
-.thread-chip.watcher-new[aria-disabled='true'], .thread-chip.watcher-new[aria-disabled='true']:hover {
-  border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); cursor: not-allowed; }
+/* Zach's pick A of the New Watcher prototype: first in the composer's footer, where an ordinary thread says where it runs.
+   Like the composer's other controls it is a text button (ADR-0112), in the secondary text with its icon, and a faint dot
+   parts it from the model after it. Unavailable, its words keep the muted text colour, which holds 4.5:1 on the composer,
+   and it says so without an edge: its icon dimmed, a dotted underline under the words that carry its reason in the
+   tooltip, no hover wash and the not-allowed cursor. Its focus ring keeps full strength, and it stays in the Tab order
+   so its reason can be heard. */
+.thread-chip.watcher-new { flex: none; }
+.thread-prompt .thread-chip.watcher-new { color: var(--tt-text-2); }
+.thread-chip.watcher-new[aria-disabled='true'], .thread-prompt .thread-chip.watcher-new[aria-disabled='true'], .thread-prompt .thread-chip.watcher-new[aria-disabled='true']:hover {
+  border-color: transparent; background: transparent; color: var(--tt-text-muted); cursor: not-allowed; }
+.thread-chip.watcher-new[aria-disabled='true'] > span { text-decoration: underline dotted; text-underline-offset: 3px; }
 .thread-chip.watcher-new[aria-disabled='true'] > svg { color: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+.watcher-new__separator { flex: none; margin: 0 -4px 0 -6px; color: var(--tt-text-faint); }
 
 /* ---------- The handover after a provider change or New Watcher (ADR-0073) ---------- */
 /* Zach's pick B of the continue prototype, in place: a strip over the new Watcher's composer, edged in the accent, says

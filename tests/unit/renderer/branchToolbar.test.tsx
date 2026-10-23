@@ -249,6 +249,12 @@ describe('BranchToolbar', () => {
     expect(screen.queryByRole('combobox', { name: 'Workspace' })).toBeNull()
     expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveTextContent('feat/x')
   })
+  it('parts the line with faint dots the screen reader never hears (ADR-0112)', () => {
+    mount(thread())
+    const dots = [...screen.getByRole('group', { name: 'Branch toolbar' }).querySelectorAll('.branch-toolbar__separator')]
+    expect(dots).toHaveLength(2)
+    for (const dot of dots) expect(dot).toHaveAttribute('aria-hidden', 'true')
+  })
   it('lets a draft choose its workspace, another thread worktree included, without creating anything', async () => {
     const other = thread({ id: 'other', nativeSessionStarted: true, worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/other', branch: 'feat/other' } })
     const { command } = mount(thread(), { others: [other] })
