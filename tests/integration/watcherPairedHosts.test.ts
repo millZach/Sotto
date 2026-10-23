@@ -303,7 +303,8 @@ it.each([
 it('leaves a timed-out paired start to the host once the host’s own receipt shows it holds it, even as uncertain (#1311)', async () => {
   const f = await master(undefined, false, true)
   const machines = async () => { const result = await f.call('list_machines', {}); if (result.status !== 'ok') throw new Error('list-refused'); return result.machines }
-  let operationId: string | undefined
+  // The start's operation, once its answer names it.
+  const own: { operationId?: string } = {}
   // Until the host answers, nothing of the start can be read back.
   let readable = false
   const read = f.socket.watcherRead.bind(f.socket)
@@ -311,8 +312,8 @@ it('leaves a timed-out paired start to the host once the host’s own receipt sh
     if (!readable) throw new Error('lost-projection')
     // The host holds the start, and its own receipt says the start's delivery is uncertain there.
     const answer = await read(request, ...rest) as { operations?: { id: string; deliveryState: string }[]; receipt?: { operationId: string; deliveryState: string } }
-    return { ...answer, ...answer.operations ? { operations: answer.operations.map(item => item.id === operationId ? { ...item, deliveryState: 'uncertain' } : item) } : {},
-      ...answer.receipt?.operationId === operationId ? { receipt: { ...answer.receipt, deliveryState: 'uncertain' } } : {} }
+    return { ...answer, ...answer.operations ? { operations: answer.operations.map(item => item.id === own.operationId ? { ...item, deliveryState: 'uncertain' } : item) } : {},
+      ...answer.receipt?.operationId === own.operationId ? { receipt: { ...answer.receipt, deliveryState: 'uncertain' } } : {} }
   })
   const control = f.socket.watcherControl.bind(f.socket)
   vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => {
@@ -322,14 +323,14 @@ it('leaves a timed-out paired start to the host once the host’s own receipt sh
   const started = await f.call('start_thread', f.start())
   expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
   if (!('receipt' in started) || !started.receipt) throw new Error('no-receipt')
-  operationId = started.receipt.operationId
+  own.operationId = started.receipt.operationId
   expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
   readable = true
   await expect.poll(async () => {
     await (f.watcher as unknown as { reconcileRemote: (hostId: string) => Promise<void> }).reconcileRemote(f.pairing.hostId).catch(() => undefined)
     return (await machines())[1]!.placedNotStarted
   }).toBe(0)
-  expect(f.control.watcherRecordView().operations.find(item => item.id === operationId)?.deliveryState).toBe('uncertain')
+  expect(f.control.watcherRecordView().operations.find(item => item.id === own.operationId)?.deliveryState).toBe('uncertain')
 })
 
 it('starts, reads positions, sends, stops and settles through the owning host without selecting it', async () => {
