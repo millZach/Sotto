@@ -32,6 +32,20 @@ export type SendStageTimings = Record<SendStageField, number | null>
 export const FIRST_OUTPUT_LIMIT_MS = 120_000
 
 /**
+ * What an adapter that times its provider's own turn reports of it when the turn ends (#1420), in whole milliseconds,
+ * from when its client said each thing arrived. Null where the turn showed no output, or its start was not seen.
+ *
+ * - `turnFirstOutputMs`: from the provider starting the turn to its first output.
+ * - `turnFinishWaitMs`: from the turn's last output to the provider saying the turn finished.
+ */
+export const TURN_END_FIELDS = ['turnFirstOutputMs', 'turnFinishWaitMs'] as const
+export type TurnEndField = typeof TURN_END_FIELDS[number]
+export type TurnEndTimings = Record<TurnEndField, number | null>
+
+/** How long a send's turn record waits for its adapter's turn end, once it has its first output, before it is written without it. */
+export const TURN_END_LIMIT_MS = 30 * 60_000
+
+/**
  * One send's stopwatch, carried by its turn and lent to the layers below by command ID. Marks are monotonic times
  * (`performance.now()`) and the first mark of each name wins. It holds no text, path or identity.
  */
@@ -41,6 +55,8 @@ export class SendStageClock {
   private watching = true
   private waiting: { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> } | undefined
   private readonly closedListeners = new Set<() => void>()
+  private closed = false
+  private turnEnd: { held: boolean; timings?: TurnEndTimings; waiting?: { promise: Promise<void>; resolve: () => void; timer: ReturnType<typeof setTimeout> } } | undefined
 
   /** `receivedAt` is when the coordinator received the send; without it the record has no admission time. */
   constructor(private readonly receivedAt?: number, private readonly now: () => number = () => performance.now()) {}
@@ -48,7 +64,7 @@ export class SendStageClock {
   mark(name: SendStageMark): void {
     if (this.marks.has(name) || (name === 'firstOutput' && !this.watching)) return
     this.marks.set(name, this.now())
-    if (name === 'firstOutput') this.close()
+    if (name === 'firstOutput') this.stopWatching()
   }
   has(name: SendStageMark): boolean { return this.marks.has(name) }
   /** Add a read the coordinator made before the send. */
@@ -62,19 +78,64 @@ export class SendStageClock {
 
   /** Resolves once the first output is marked or watching stops, and at the latest `limitMs` from now. */
   untilFirstOutput(limitMs = FIRST_OUTPUT_LIMIT_MS): Promise<void> {
-    if (!this.awaitsFirstOutput()) { this.close(); return Promise.resolve() }
+    if (!this.awaitsFirstOutput()) { this.stopWatching(); return Promise.resolve() }
     if (!this.waiting) {
       let resolve!: () => void
       const promise = new Promise<void>(done => { resolve = done })
-      const timer = setTimeout(() => this.close(), limitMs)
+      const timer = setTimeout(() => this.stopWatching(), limitMs)
       timer.unref?.()
       this.waiting = { promise, resolve, timer }
     }
     return this.waiting.promise
   }
 
-  /** Stop watching for the first output. What was marked stays; a later output is not marked. */
+  /**
+   * Called by an adapter while the clock is lent to it, for a turn its provider started: the record waits for the turn's
+   * end as well, which the returned function reports (#1420). It never throws, and a report after the record stopped
+   * waiting is dropped.
+   */
+  holdTurnEnd(): (timings: TurnEndTimings) => void {
+    if (!this.turnEnd && !this.closed) this.turnEnd = { held: true }
+    const hold = this.turnEnd
+    return timings => {
+      try {
+        if (!hold?.held || hold !== this.turnEnd) return
+        hold.timings = Object.fromEntries(TURN_END_FIELDS.map(field => [field, wholeMs(timings[field])])) as TurnEndTimings
+        this.releaseTurnEnd()
+      } catch { /* Timing must never change what a turn does. */ }
+    }
+  }
+  /** True while a record should wait for the end of a turn an adapter is timing. */
+  awaitsTurnEnd(): boolean { return this.turnEnd?.held === true }
+  /** Resolves once the adapter reports the turn's end or the clock is closed, and at the latest `limitMs` from now. */
+  untilTurnEnd(limitMs = TURN_END_LIMIT_MS): Promise<void> {
+    const hold = this.turnEnd
+    if (!hold?.held) return Promise.resolve()
+    if (!hold.waiting) {
+      let resolve!: () => void
+      const promise = new Promise<void>(done => { resolve = done })
+      const timer = setTimeout(() => this.releaseTurnEnd(), limitMs)
+      timer.unref?.()
+      hold.waiting = { promise, resolve, timer }
+    }
+    return hold.waiting.promise
+  }
+  /** What the adapter reported of its turn's end, or nothing when no adapter timed it or the record stopped waiting first. */
+  turnEndTimings(): TurnEndTimings | undefined { return this.turnEnd?.timings }
+  private releaseTurnEnd(): void {
+    const hold = this.turnEnd
+    if (!hold?.held) return
+    hold.held = false
+    if (hold.waiting) { clearTimeout(hold.waiting.timer); hold.waiting.resolve() }
+  }
+
+  /** Stop watching for the first output and for a turn's end. What was marked stays; a later output is not marked. */
   close(): void {
+    this.closed = true
+    this.stopWatching()
+    this.releaseTurnEnd()
+  }
+  private stopWatching(): void {
     if (!this.watching) return
     this.watching = false
     if (this.waiting) { clearTimeout(this.waiting.timer); this.waiting.resolve() }
@@ -125,6 +186,18 @@ export function markSendStage(commandId: string, mark: SendStageMark): void {
   try { lentClocks.get(commandId)?.mark(mark) } catch { /* Timing must never change what a send does. */ }
 }
 
+/**
+ * Hold the record of the send with this command ID open for the end of the turn it started, when the coordinator is
+ * timing it (`SendStageClock.holdTurnEnd`). Call it while the send is lent; the returned function reports the end later.
+ * Otherwise it returns nothing. It never throws.
+ */
+export function holdTurnEnd(commandId: string): ((timings: TurnEndTimings) => void) | undefined {
+  try { return lentClocks.get(commandId)?.holdTurnEnd() } catch { return undefined }
+}
+
+const wholeMs = (value: number | null | undefined): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.round(value)) : null
+
 /** Activity that counts as the reply showing itself. A turn starting or a status line does not. */
 const OUTPUT_ACTIVITY = new Set<AgentActivity['kind']>(['reasoning', 'tool', 'command', 'file-change', 'plan', 'subagent'])
 
@@ -153,7 +226,8 @@ type WatchedThread = Pick<AgentThread, 'id' | 'messages' | 'activities' | 'summa
 
 /**
  * The sends whose reply's first output the coordinator is watching for, one per thread, each with what its thread
- * showed when the send went out. The coordinator hands it every snapshot it accepts.
+ * showed when the send went out, and then the end of the turn where its adapter times it. The coordinator hands it
+ * every snapshot it accepts.
  */
 export class FirstOutputWatches {
   private readonly watches = new Map<string, { clock: SendStageClock; baseline: FirstOutputBaseline; sawRunning: boolean; turnAtSend: string | undefined }>()
@@ -163,25 +237,32 @@ export class FirstOutputWatches {
     const watch = { clock, baseline: firstOutputBaseline(thread), sawRunning: false, turnAtSend: thread?.lastTurn?.id }
     this.watches.get(threadId)?.clock.close()
     this.watches.set(threadId, watch)
-    clock.onClosed(() => { if (this.watches.get(threadId) === watch) this.watches.delete(threadId) })
+    clock.onClosed(() => { if (this.watches.get(threadId) === watch && !clock.awaitsTurnEnd()) this.watches.delete(threadId) })
   }
 
-  /** Mark the first output of each watched reply these threads show, and stop watching a reply whose turn ended without one. */
+  /**
+   * Mark the first output of each watched reply these threads show, and stop watching a reply whose turn ended without
+   * one. A turn end its adapter has not reported by the time its thread shows the turn ended is given up then.
+   */
   observe(threads: readonly WatchedThread[]): void {
     if (!this.watches.size) return
     for (const [threadId, watch] of [...this.watches]) {
       const thread = threads.find(item => item.id === threadId)
       if (!thread) continue
-      if (showsFirstOutput(thread, watch.baseline)) { watch.clock.mark('firstOutput'); continue }
+      if (!watch.clock.has('firstOutput') && showsFirstOutput(thread, watch.baseline)) watch.clock.mark('firstOutput')
+      if (watch.clock.has('firstOutput') && !watch.clock.awaitsTurnEnd()) { this.watches.delete(threadId); continue }
       const running = thread.status === 'running' || thread.lastTurn?.status === 'running'
       watch.sawRunning ||= running
       // The reply's turn ended having shown nothing, so there is no first output to wait for. A turn that ended
       // before any snapshot showed it running is known by a finished turn the thread did not have at the send.
       const ended = watch.sawRunning || (thread.lastTurn !== undefined && thread.lastTurn.id !== watch.turnAtSend)
-      if (ended && !running && watch.clock.has('acknowledged')) watch.clock.close()
+      if (ended && !running && watch.clock.has('acknowledged')) {
+        watch.clock.close()
+        if (this.watches.get(threadId) === watch) this.watches.delete(threadId)
+      }
     }
   }
 
-  /** Stop watching every reply; their records are written now, without a first output. */
+  /** Stop watching every reply; their records are written now, without a first output or a turn end not yet reported. */
   closeAll(): void { for (const { clock } of [...this.watches.values()]) clock.close() }
 }

@@ -28,7 +28,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { providerTakesNoSkills } from './providerSwitch'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { ReadsBeforeSend } from './readsBeforeSend'
-import { markSendStage } from './sendStages'
+import { holdTurnEnd, markSendStage, type TurnEndTimings } from './sendStages'
 import { SessionReaper } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -254,6 +254,11 @@ interface ThreadProcess {
   admitted?: Map<string, MuseApproval>
 }
 type Pending = MusePending & { rpc: MuseRpc; answerCommandId?: string }
+/**
+ * When a thread's running turn showed itself on this connection (#1420), as monotonic times, so its send's record can
+ * hold how long Muse took to its first output and from its last output to saying the turn finished. Numbers only.
+ */
+interface TurnTimes { turnId: string; startedAt?: number; firstOutputAt?: number; lastOutputAt?: number; report?: (timings: TurnEndTimings) => void }
 interface Fold {
   /** The newest copy of each item, so a delta or an update folds onto what came before it. */
   readonly items: Map<string, MuseItem>
@@ -359,7 +364,7 @@ export class MuseMspHost implements AgentHost {
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.folds.delete(id); this.reaper.forget(id)
     this.requestChanges.delete(id); this.requestReads.delete(id)
-    this.activePrompts.delete(id); this.activeTurns.delete(id); this.log.release(id)
+    this.activePrompts.delete(id); this.activeTurns.delete(id); this.turnTimes.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
     if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
@@ -478,6 +483,7 @@ export class MuseMspHost implements AgentHost {
   private readonly modelWants = new Map<string, number>()
   /** The turn each thread is running, by MSP turn ID, with the Sotto ID of the message that opened it. */
   private readonly activeTurns = new Map<string, { turnId: string; messageId?: string }>()
+  private readonly turnTimes = new Map<string, TurnTimes>()
   private readonly folds = new Map<string, Fold>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
@@ -682,7 +688,7 @@ export class MuseMspHost implements AgentHost {
       delivery.reject(new MuseUncertain('Muse stopped before confirming this prompt.'))
       this.deliveries.delete(messageId)
     }
-    const active = this.activeTurns.get(id); this.activeTurns.delete(id)
+    const active = this.activeTurns.get(id); this.activeTurns.delete(id); this.turnTimes.delete(id)
     const thread = this.threads.get(id), alias = this.aliases[id]
     if (thread) {
       thread.requests = []
@@ -1275,6 +1281,24 @@ export class MuseMspHost implements AgentHost {
     }
   }
   /** Settle a turn Muse ended: its record, the thread's state, and any work it left showing as running. */
+  /** Output of the thread's running turn arrived: an item, a delta or a token record, never the user's own message. */
+  private turnOutput(id: string, turnId?: string | null): void {
+    const times = this.turnTimes.get(id)
+    if (!times || (turnId && turnId !== times.turnId)) return
+    const now = performance.now()
+    times.firstOutputAt ??= now; times.lastOutputAt = now
+  }
+  /** Muse said the turn finished: its send's record gets how long Muse took to its first output and after its last. */
+  private reportTurnTimes(id: string, turnId: string): void {
+    const times = this.turnTimes.get(id)
+    if (!times || times.turnId !== turnId) return
+    this.turnTimes.delete(id)
+    const now = performance.now()
+    times.report?.({
+      turnFirstOutputMs: times.startedAt !== undefined && times.firstOutputAt !== undefined ? times.firstOutputAt - times.startedAt : null,
+      turnFinishWaitMs: times.lastOutputAt !== undefined ? now - times.lastOutputAt : null,
+    })
+  }
   private settleTurn(id: string, turnId: string, outcome: 'completed' | 'interrupted' | 'failed', error?: string): void {
     const thread = this.thread(id)
     const messageId = this.fold(id).turnMessages.get(turnId) ?? this.activeTurns.get(id)?.messageId
@@ -1317,6 +1341,7 @@ export class MuseMspHost implements AgentHost {
         case 'item/started': case 'item/updated': case 'item/completed': {
           const parsed = museItemEventSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          if (parsed.item.kind !== 'userMessage') this.turnOutput(owner, parsed.item.turnId)
           // A compaction's summary may have dropped Watcher's instructions, so its next message carries them again (#1418).
           if (parsed.item.kind === 'compaction') entry.instructed = false
           this.fold(owner).viewCursor = parsed.viewCursor
@@ -1327,6 +1352,7 @@ export class MuseMspHost implements AgentHost {
         case 'item/delta': {
           const parsed = museItemDeltaSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          this.turnOutput(owner)
           this.fold(owner).viewCursor = parsed.viewCursor
           this.foldDelta(owner, parsed)
           this.emit(true)
@@ -1339,6 +1365,8 @@ export class MuseMspHost implements AgentHost {
           this.fold(owner).viewCursor = parsed.viewCursor
           const messageId = this.fold(owner).turnMessages.get(parsed.turnId)
           this.activeTurns.set(owner, { turnId: parsed.turnId, ...(messageId ? { messageId } : {}) })
+          const held = this.turnTimes.get(owner)
+          this.turnTimes.set(owner, { turnId: parsed.turnId, startedAt: performance.now(), ...(held?.turnId === parsed.turnId && held.report ? { report: held.report } : {}) })
           if (this.observedUsage) this.usageTurnStarts.set(parsed.turnId, new Date().toISOString())
           const thread = this.thread(owner)
           thread.status = 'running'; thread.lastTurn = { id: messageId ?? parsed.turnId, status: 'running' }
@@ -1352,6 +1380,8 @@ export class MuseMspHost implements AgentHost {
           entry.turnRevision++
           this.fold(owner).viewCursor = parsed.viewCursor
           const outcome = parsed.terminal === 'completed' ? 'completed' : parsed.terminal === 'cancelled' ? 'interrupted' : 'failed'
+          // Before the turn shows finished, so its send's record has the times when the coordinator sees it end.
+          this.reportTurnTimes(owner, parsed.turnId)
           this.usageTurnStarts.delete(parsed.turnId); this.readQuotaAfterTurn(rpc)
           const said = parsed.error?.kind === 'authRequired' ? 'Muse is not signed in on this machine. Run muse login, then send again.'
             : outcome === 'failed' ? 'Muse could not finish this turn. Nothing else was lost. Send a message to carry on.' : undefined
@@ -1436,6 +1466,8 @@ export class MuseMspHost implements AgentHost {
         case 'session/tokenUsage': {
           const parsed = tokenUsageSchema.parse(frame.params)
           if (!sessionOf(parsed)) return
+          // A model call's token record is the last word of that call, so it counts as output for the turn's times.
+          this.turnOutput(owner)
           this.observeTokenCall(owner, frame.params, parsed.modelId)
           const thread = this.thread(owner), before = thread.usage
           thread.usage = {
@@ -1735,7 +1767,13 @@ export class MuseMspHost implements AgentHost {
               : await entry.rpc.request('turn/start', { commandId: origin.nativeCommandId, sessionId: alias.museSessionId, input: parts, ...display, ...effort })
             const started = turnStartSchema.parse(ack)
             if (instructing) entry.instructed = true
-            if (command.type === 'send') this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
+            if (command.type === 'send') {
+              this.activeTurns.set(command.threadId, { turnId: started.turnId, messageId: command.messageId })
+              const report = holdTurnEnd(command.commandId)
+              const times = this.turnTimes.get(command.threadId)
+              if (report && times?.turnId === started.turnId) times.report = report
+              else if (report) this.turnTimes.set(command.threadId, { turnId: started.turnId, report })
+            }
             thread.status = 'running'
             thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
             if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
