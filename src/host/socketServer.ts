@@ -260,6 +260,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
     && (feature !== 'thread-starts' || service.supportsThreadStarts === true && service.startHandover !== undefined)
+    // The message scrubber's prompts above a pane's window (ADR-0109) are for a desktop; the desktop's own phone listener serves none.
+    && (feature !== 'thread-prompts' || service.threadPrompts !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A host that keeps which failed threads were seen publishes it and takes Dismiss all (ADR-0092).
     && (feature !== 'failure-seen' || service.supportsFailureSeen === true)
     // The iPhone's pull request sheet (#1281) only where the host's Owl answer turns it on.
@@ -1102,6 +1104,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'thread-starts') || !service.startHandover) throw new Refusal('invalid_request')
         if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
         return toolRead(async () => ({ handover: await service.startHandover!(request.threadId) }))
+      case 'thread-prompts':
+        if (!offers(peer, 'thread-prompts') || !service.threadPrompts) throw new Refusal('invalid_request')
+        if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
+        return toolRead(() => service.threadPrompts!(request.threadId, request.beforeMessageId))
       case 'thread-delegations': {
         if (!offers(peer, 'agents-view') || !service.threadDelegations) throw new Refusal('invalid_request')
         if (hiddenThread(peer, request.threadId)) throw new Refusal('forbidden')
