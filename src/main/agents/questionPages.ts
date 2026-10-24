@@ -300,6 +300,8 @@ export class QuestionPages {
       const named = replyOf?.(thread)
       if (Array.isArray(named)) for (const reply of named as readonly ReplyToSearch[]) look(thread, reply)
       else if (named) look(thread, named as ReplyToSearch)
+      // Most threads ask nothing: they are read without making anything, on every snapshot.
+      if (!thread.requests.length) return thread
       let threadChanged = false
       const requests = thread.requests.map(request => {
         const asked = request.kind === 'question' && !isSottoRequest(request.id)

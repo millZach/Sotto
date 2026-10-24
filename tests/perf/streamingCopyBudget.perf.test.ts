@@ -164,9 +164,16 @@ async function measure(threads: number, owl: boolean) {
  * The budgets stay at 10 copies and 9 objects on Owl and 9.5 and 11 on stable: anything tighter is within a run's
  * spread.
  */
+/*
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copied everything but the threads on every broadcast, in two
+ * calls, and it now reads that part against the last broadcast's frozen copy and copies only what changed. Owl makes 7.3 to
+ * 7.8 copies per update, from 9.3 to 9.7, and stable 6.8 to 6.9, from 8.9; Owl's objects per thread per update stay within
+ * their spread (7.5 to 8.0) and stable's are 9.2 to 9.4, from 9.5 to 9.8. The budgets are 8.5 copies on Owl and 7.5 on
+ * stable, and 10 objects on stable.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 10, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 11, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 8.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 10, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {
