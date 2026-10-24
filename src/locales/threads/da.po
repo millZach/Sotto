@@ -147,6 +147,10 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history."
+msgstr ""
+
 #. A model server that answers the OpenAI API but did not say which program it is.
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "An OpenAI-compatible server"
@@ -204,6 +208,10 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Close without adding a server"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Compact idle threads"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -498,6 +506,14 @@ msgstr ""
 msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto compacted this idle thread before its cache expired."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto could not compact this idle thread. Its full history is kept."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish that, so nothing was changed. Try again."
 msgstr ""
@@ -524,6 +540,10 @@ msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -611,6 +631,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again, sending your last message to {name} again"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Turn off idle compaction in Settings"
 msgstr ""
 
 #. 128K means 128 times 1,024 tokens; keep 131072 and 128K as they are.
