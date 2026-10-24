@@ -629,7 +629,8 @@ describe('night falls settings', () => {
   it('falls back to the band for a look it does not know, or a saved file from before the look', () => {
     expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'wing' }).roomTransitionLook).toBe('band')
     expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 1 }).roomTransitionLook).toBe('band')
-    const { roomTransitionLook: _left, ...older } = DEFAULT_SETTINGS
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.roomTransitionLook
     expect(parseSettings(older).roomTransitionLook).toBe('band')
   })
 
