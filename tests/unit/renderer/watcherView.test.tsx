@@ -677,7 +677,7 @@ describe("Watcher's room", () => {
       const { unmount } = renderRoom(stateWithWatcher(), roomState({ watchedThreads: watched(count) }))
       const pane = await screen.findByRole('region', { name: 'Watcher' })
       const tab = await within(pane).findByRole('tab', { name })
-      expect(tab).toHaveAttribute('title', 'Watched')
+      expect(tab).toHaveAttribute('title', name)
       expect(badge(pane)).toBe(shown)
       unmount()
     }
@@ -685,7 +685,8 @@ describe("Watcher's room", () => {
     const pane = await screen.findByRole('region', { name: 'Watcher' })
     const tabs = within(pane).getAllByRole('tab')
     expect(tabs.map(tab => [tab.getAttribute('aria-label'), tab.getAttribute('title'), tab.textContent])).toEqual([
-      ['Conversation', 'Conversation', ''], ['Watched, 1 thread', 'Watched', '1'], ['Visualize', 'Visualize', '']])
+      ['Conversation', 'Conversation', ''], ['Watched, 1 thread', 'Watched, 1 thread', '1'], ['Visualize', 'Visualize', '']])
+    for (const tab of tabs) expect(tab.querySelector('svg.watcher-tabs__icon[aria-hidden="true"]'), tab.getAttribute('aria-label')!).not.toBeNull()
     expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1])
     fireEvent.click(tabs[1]!)
     expect(tabs[1]).toHaveAttribute('aria-selected', 'true')

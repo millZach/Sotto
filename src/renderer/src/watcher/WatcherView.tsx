@@ -72,6 +72,8 @@ interface TabIds { readonly watchedTab: string; readonly watchedPanel: string; r
 function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: number; readonly ids: TabIds }): ReactNode {
   const list = useRef<HTMLDivElement>(null)
   const show = (next: RoomTab): void => roomView.set({ tab: next })
+  // The badge stops at 99+, so the name on hover says the exact count.
+  const watchedName = `Watched, ${count} ${count === 1 ? 'thread' : 'threads'}`
   return <div ref={list} className="watcher-tabs" role="tablist" aria-label="Watcher’s view"
     onKeyDown={event => {
       const move = TAB_KEYS[event.key]
@@ -86,7 +88,7 @@ function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: 
       <MessageSquare size={16} className="watcher-tabs__icon" aria-hidden="true" />
     </button>
     <button type="button" role="tab" data-tab="watched" id={ids.watchedTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'watched'} tabIndex={tab === 'watched' ? 0 : -1}
-      aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={`Watched, ${count} ${count === 1 ? 'thread' : 'threads'}`} title="Watched" onClick={() => show('watched')}>
+      aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={watchedName} title={watchedName} onClick={() => show('watched')}>
       <Eye size={16} className="watcher-tabs__icon" aria-hidden="true" />
       {count > 0 ? <span className="watcher-tabs__count" aria-hidden="true">{count > 99 ? '99+' : count}</span> : null}
     </button>
