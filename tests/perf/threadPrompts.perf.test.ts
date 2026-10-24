@@ -48,10 +48,10 @@ describe('the message scrubber’s read of a very long thread', () => {
   it('reads every prompt above the window at the size of its prompts, not their words, within its budget', () => {
     const before = `u${TURNS - 10}`
     const times: number[] = []
-    let prompts = store.promptsBefore('long', before, new Set())
+    let prompts = store.promptsBefore('long', before, new Set()).prompts
     for (let sample = 0; sample < SAMPLES; sample += 1) {
       const started = performance.now()
-      prompts = store.promptsBefore('long', before, new Set())
+      prompts = store.promptsBefore('long', before, new Set()).prompts
       times.push(performance.now() - started)
     }
     expect(prompts).toHaveLength(TURNS - 10)

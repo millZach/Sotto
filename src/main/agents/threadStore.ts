@@ -10,7 +10,7 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
-import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt } from '../../shared/threadPrompts'
+import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt, type AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
@@ -797,13 +797,16 @@ export class ThreadStore {
   /**
    * The messages the user sent before this one, oldest first, each with its turn's last reply with words: what the message
    * scrubber marks above a pane's window (ADR-0109). Only the start of each message and the start and end of each reply
-   * are read. A message the store does not hold has nothing before it.
+   * are read, a page of the newest at a time: `next` is the message the next page is read before, absent once the page
+   * reaches the first. A message the store does not hold has nothing before it.
    */
-  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompt[] {
+  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompts {
     const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
-    if (before === null || before === undefined) return []
-    // Only the newest prompts an answer carries are read, so a longer history costs no more.
-    const from = this.statement(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)?.position ?? 0
+    if (before === null || before === undefined) return { prompts: [] }
+    // Only the newest prompts an answer carries are read, so a longer history costs no more. The page is counted in the
+    // messages the user's role sent, wake-ups among them, so where it starts says whether there is more.
+    const start = this.statement(`SELECT position, message_id FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)
+    const from = start?.position ?? 0
     const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
     const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
       CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
@@ -824,7 +827,7 @@ export class ThreadStore {
         if (tail !== null || String(row.head).trim().length > 0) current.reply = { id, text: promptReplyText(String(row.head), tail) }
       }
     }
-    return prompts
+    return { prompts, ...(start !== undefined && Number(from) > 0 ? { next: String(start.message_id) } : {}) }
   }
 
   /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */

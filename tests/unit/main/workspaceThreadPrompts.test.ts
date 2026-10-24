@@ -77,7 +77,7 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
     expect(reply).not.toContain('Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words.')
   })
 
-  it('reads the newest prompts an answer carries and no further back', () => {
+  it('reads a page of the newest prompts and no further back, and names where the next page is read before', () => {
     const store = new ThreadStore(':memory:')
     store.open({ ephemeral: true })
     try {
@@ -86,10 +86,18 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
         { id: `u${index}`, role: 'user' as const, text: `Prompt ${index}`, createdAt: at(index * 2) },
         { id: `a${index}`, role: 'assistant' as const, text: `Reply ${index}`, createdAt: at(index * 2 + 1) },
       ]).flat())
-      const prompts = store.promptsBefore('long', `u${turns - 1}`, new Set())
+      const first = turns - 1 - THREAD_PROMPTS_MOST
+      const { prompts, next } = store.promptsBefore('long', `u${turns - 1}`, new Set())
       expect(prompts).toHaveLength(THREAD_PROMPTS_MOST)
-      expect(prompts[0]).toMatchObject({ id: `u${turns - 1 - THREAD_PROMPTS_MOST}`, reply: { id: `a${turns - 1 - THREAD_PROMPTS_MOST}` } })
+      expect(prompts[0]).toMatchObject({ id: `u${first}`, reply: { id: `a${first}` } })
       expect(prompts.at(-1)!.id).toBe(`u${turns - 2}`)
+      expect(next).toBe(`u${first}`)
+      expect(store.promptsBefore('long', next!, new Set())).toEqual({ prompts: Array.from({ length: first }, (_, index) => ({ id: `u${index}`, createdAt: at(index * 2), text: `Prompt ${index}`, reply: { id: `a${index}`, text: `Reply ${index}` } })) })
+      // A page whose wake-ups are left out is shorter, and still says there is more before it.
+      const wakeUps = new Set([`u${turns - 2}`, `u${turns - 3}`])
+      const short = store.promptsBefore('long', `u${turns - 1}`, wakeUps)
+      expect(short.prompts).toHaveLength(THREAD_PROMPTS_MOST - 2)
+      expect(short.next).toBe(`u${first}`)
     } finally { store.close() }
   })
 

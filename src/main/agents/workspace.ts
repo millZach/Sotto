@@ -2458,7 +2458,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try {
       const skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
         ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
-      return { prompts: this.threadStore.promptsBefore(threadId, beforeMessageId, skip) }
+      return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
     } catch { return null }
   }
   /** A thread no pane is looking at goes back to its summary alone. */

@@ -12,7 +12,7 @@ export const THREAD_PROMPT_TEXT = 400
 /** The start of the turn's last reply, of which the card shows 220 characters, and its end, where a question it closes on sits. */
 export const THREAD_PROMPT_REPLY_HEAD = 300
 export const THREAD_PROMPT_REPLY_TAIL = 300
-/** The most prompts one answer carries: the newest this many above the window, which still fits one of a host's frames. */
+/** The most messages the user sent one answer covers, wake-ups among them: a page of the newest, which still fits one of a host's frames. */
 export const THREAD_PROMPTS_MOST = 5_000
 
 const id = z.string().min(1).max(512)
@@ -28,7 +28,11 @@ export type AgentThreadPrompt = z.infer<typeof agentThreadPromptSchema>
 /** The thread by the window's own key, and the first message of the window it holds: the prompts before it are read. */
 export const agentThreadPromptsRequestSchema = z.object({ threadId: id, beforeMessageId: id }).strict()
 export type AgentThreadPromptsRequest = z.infer<typeof agentThreadPromptsRequestSchema>
-export const agentThreadPromptsSchema = z.object({ prompts: z.array(agentThreadPromptSchema).max(THREAD_PROMPTS_MOST) }).strict()
+export const agentThreadPromptsSchema = z.object({
+  prompts: z.array(agentThreadPromptSchema).max(THREAD_PROMPTS_MOST),
+  /** The message the next page is read before, when this page does not reach the thread's first. */
+  next: id.optional(),
+}).strict()
 export type AgentThreadPrompts = z.infer<typeof agentThreadPromptsSchema>
 
 /**

@@ -83,6 +83,17 @@ export function storedMarks(prompts: readonly AgentThreadPrompt[], notTheUsers: 
   return marks
 }
 
+/**
+ * The ticks above the window: the store's, then those of the turns the window let go since the store was read. A turn the
+ * store was read past is the store's.
+ */
+export function aboveWindow(stored: readonly ScrubberMark[], slid: readonly ScrubberMark[]): readonly ScrubberMark[] {
+  if (slid.length === 0) return stored
+  const read = new Set(stored.map(mark => mark.messageId))
+  const after = slid.filter(mark => !read.has(mark.messageId))
+  return after.length === 0 ? stored : stored.length === 0 ? after : [...stored, ...after]
+}
+
 /** The store's ticks, then the window's: a message the window has loaded since the store was read is the window's tick. */
 export function joinedMarks(stored: readonly ScrubberMark[], window: readonly ScrubberMark[]): readonly ScrubberMark[] {
   if (stored.length === 0) return window

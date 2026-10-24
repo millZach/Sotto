@@ -42,8 +42,8 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
 import { readsBack, typesIntoComposer } from './slimComposer'
-import { joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
-import { useStoredPrompts } from './useStoredPrompts'
+import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
+import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -696,8 +696,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // thread's store above it.
   const scrubberOn = useOwlFeature('message-scrubber')
   const windowMarks = useMemo(() => scrubberOn ? scrubberMarks(thread.messages, briefs?.ids) : [], [scrubberOn, thread.messages, briefs])
-  const stored = useStoredPrompts(thread.id, thread.messages[0]?.id, thread.earlierAvailable === true, thread.historyEpoch, thread.summary?.messageCount, scrubberOn)
-  const aboveMarks = useMemo(() => storedMarks(stored.prompts, briefs?.ids), [stored.prompts, briefs])
+  const windowIds = useMemo(() => windowMarks.map(mark => mark.messageId), [windowMarks])
+  const stored = useStoredPrompts(thread.id, thread.messages[0]?.id, windowIds, thread.earlierAvailable === true, thread.historyEpoch, thread.summary?.messageCount, scrubberOn)
+  const slidMarks = useSlidMarks(`${thread.id}\n${thread.historyEpoch ?? ''}`, windowMarks)
+  const aboveMarks = useMemo(() => aboveWindow(storedMarks(stored.prompts, briefs?.ids), slidMarks), [stored.prompts, briefs, slidMarks])
   const joined = useMemo(() => joinedMarks(aboveMarks, windowMarks), [aboveMarks, windowMarks])
   // While the thread's messages load again, as they do when the pane comes back to it, and while the store is read again
   // for a window that moved, the ticks it had stand.
