@@ -88,6 +88,13 @@ type Pending = GrokPending & { rpc: GrokRpc; reasked?: boolean }
  * ask. Usage refreshes on its own only readings over a minute old, so a shorter window would never be used (#1456).
  */
 const QUOTA_REUSE_MS = 5 * 60_000
+/**
+ * How long a running thread's process has to answer a limits read before a process is started to ask instead. A remote
+ * host's whole refresh must answer within the desktop's 15-second call deadline, and starting a process to ask took
+ * 2.1 seconds on a busy Windows computer (#1456). Five seconds leaves room for that start even at three times as slow,
+ * and is several times what one billing request takes on a process that is not stuck.
+ */
+const LIVE_BILLING_TIMEOUT_MS = 5_000
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
@@ -165,6 +172,8 @@ export interface GrokAcpOptions {
   executable?: string; args?: string[]; environment?: NodeJS.ProcessEnv; requestTimeoutMs?: number; pollIntervalMs?: number
   /** Session reaper cadence and idle threshold; see `sessionReaper.ts`. */
   reaperSweepMs?: number; sessionIdleMs?: number
+  /** How long a running thread's process has to answer a limits read; tests whose answer is held shorten it. */
+  liveBillingTimeoutMs?: number
   /** Test-only admission injection; desktop and host production wiring never supplies it. */
 }
 
@@ -412,7 +421,7 @@ export class GrokAcpHost implements AgentHost {
     const live = this.liveProcess()
     if (live) {
       try {
-        const answer = await this.askBilling(live)
+        const answer = await this.askBilling(live, this.options.liveBillingTimeoutMs ?? LIVE_BILLING_TIMEOUT_MS)
         if (gone()) return unavailableProviderQuota('grok', 'not-connected')
         return this.settleQuota(start, answer)
       } catch {
@@ -465,12 +474,14 @@ export class GrokAcpHost implements AgentHost {
   /**
    * Ask one process for the account's credit use. A reader that throws ends the process it reads from, which may be a
    * thread's own, so an answer Sotto cannot read fails this read after the reply is in and leaves the process alone.
+   * `timeoutMs` bounds this one request; when it passes, the read fails, the process keeps running, and a reply that
+   * comes later is ignored.
    */
-  private async askBilling(rpc: GrokRpc): Promise<UsageQuotaRead> {
+  private async askBilling(rpc: GrokRpc, timeoutMs?: number): Promise<UsageQuotaRead> {
     let answer = unavailableProviderQuota('grok', 'not-reported', true), unreadable = false
     await rpc.request('_x.ai/billing', {}, value => {
       try { answer = parseGrokQuota(value, new Date().toISOString()) } catch { unreadable = true }
-    })
+    }, false, timeoutMs)
     if (unreadable) throw new Error('Grok sent limits Sotto could not read.')
     return answer
   }

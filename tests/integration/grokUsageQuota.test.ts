@@ -2,7 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
-import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
+import { grokFixture, LOST_REPLY_DEADLINE_MS } from '../fixtures/fakeGrokThreadFixture'
+import type { GrokAcpOptions } from '../../src/main/agents/grok'
 
 // Usage reads Grok's limits through `_x.ai/billing` on a signed-in Grok process (ADR-0083). Starting a process held
 // main for seconds on a busy Windows computer (#1456), so a refresh asks a thread's process that is already running and
@@ -19,8 +20,8 @@ const billing = async () => (await records()).filter(record => record.method ===
 const thread = async (id: string) => (await f!.host.snapshot()).threads.find(item => item.id === id)!
 const quota = (refresh: boolean, background?: boolean) => f!.host.readProviderQuota!('grok', refresh, background)
 
-async function open(): Promise<void> {
-  f = await grokFixture(undefined, undefined, undefined, {}, { usageEnabled: true }); await f.host.connect()
+async function open(options: GrokAcpOptions = {}): Promise<void> {
+  f = await grokFixture(undefined, undefined, undefined, {}, { usageEnabled: true, ...options }); await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
 }
 async function working(): Promise<{ id: string; process: number }> {
@@ -105,6 +106,30 @@ it('keeps the newer reading when an older read finishes after it', async () => {
   // The older answer arrives last, and neither it nor what it hands back takes the newer reading's place.
   expect(await opened).toEqual(asked)
   expect(await quota(false)).toEqual(asked)
+})
+
+it('asks a process of its own when a running thread\'s process is slow to answer, and leaves that thread alone', async () => {
+  // The held answer is lost for good, so the test waits out the live ask's deadline; the short one is safe here.
+  await open({ liveBillingTimeoutMs: LOST_REPLY_DEADLINE_MS })
+  const { id, process } = await working()
+  await f!.script({ holdBillingResident: true })
+  const processes = await started(), calls = await sessionCalls()
+  const read = await quota(true)
+  expect(read).toMatchObject({ providerId: 'grok', status: 'available' })
+  expect(read.windows[0]).toMatchObject({ usedPercent: 42 })
+  // The thread's process was asked first and held its answer; a process started for the question answered it.
+  const asked = (await billing()).map(record => record.process)
+  expect(asked[0]).toBe(process)
+  expect(asked).toHaveLength(2)
+  expect(asked[1]).not.toBe(process)
+  expect(await started()).toBe(processes + 1)
+  expect(await sessionCalls()).toBe(calls)
+  // The late answer, once it comes, changes nothing, and the thread's turn carries on and finishes.
+  await f!.action(id, { type: 'release-billing' })
+  expect((await thread(id)).status).toBe('running')
+  await f!.driver.completeTurn(id, 'Finished after the slow read')
+  await expect.poll(async () => (await thread(id)).status).toBe('idle')
+  expect(await quota(false)).toEqual(read)
 })
 
 it('says Grok is not connected before it connects', async () => {

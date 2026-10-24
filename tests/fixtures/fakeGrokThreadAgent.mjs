@@ -235,7 +235,8 @@ createInterface({input:process.stdin}).on('line', line => {
   const answer = script.rejectBilling ? {id:frame.id,error:{code:-32603,message:'Billing unavailable'}}
    : {id:frame.id,result:{config:{creditUsagePercent:script.billingPercent ?? 42,currentPeriod:{type:'USAGE_PERIOD_TYPE_WEEKLY',start:'2026-10-19T00:00:00Z',end:'2026-10-26T00:00:00Z'}}}}
   // `holdBilling` keeps the answer, worked out now, until a `release-billing` command, so a later read can finish first.
-  if (script.holdBilling) { heldBilling.push(() => send(answer)); record({method:'fixture/billing-held'}) } else send(answer)
+  // `holdBillingResident` holds it only on a process holding a thread's session, so a process started to ask answers.
+  if (script.holdBilling || (script.holdBillingResident && resident.size)) { heldBilling.push(() => send(answer)); record({method:'fixture/billing-held'}) } else send(answer)
  }
  else send({id:frame.id,error:{code:-32601,message:'Unknown method'}})
 }).on('close', () => {
