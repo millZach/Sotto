@@ -552,11 +552,14 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
+/** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
+  // The transcript's scroll padding is the floating composer's height, and nothing while the composer stacks.
+  const bottom = view.bottom - (parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
-    return box.bottom > view.bottom - JUMP_BAND_PX && box.top < view.bottom
+    return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom
   })
 }
 

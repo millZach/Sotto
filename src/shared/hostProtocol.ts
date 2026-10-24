@@ -197,6 +197,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `usage-muse-opencode`: Usage reads and refreshes may name Muse and OpenCode, and their rows come back (October 21, 2026,
  * ADR-0083). A desktop names neither to a host that does not list it, and a host reads and sends a desktop whose hello does
  * not accept it only the providers Usage counted before, since that desktop's strict schemas refuse a read naming another.
+ * `usage-background-refresh`: `usage-refresh` takes `background`, a refresh the desktop's Usage made on its own when it
+ * opened, which a provider whose read is costly may answer from a reading of the last few minutes (#1456). Read again
+ * never sends it. A desktop strips the field for a host that does not list it, which then reads that refresh afresh.
  * `watcher-phone-steer`: offered with `watcher-phone` on the Owl desktop's phone listener. A phone that accepts it may send
  * `watcher-phone-send` with `delivery: 'steer'`, which steers into Watcher's running turn, or queues the message to go next
  * when Watcher's provider takes no steer or the turn ended first; its page carries `current.steers` and `followups`, the
@@ -213,7 +216,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'client-update-not-listed'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -410,7 +413,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
     file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-read'), query: usageLocalQuerySchema }).strict(),
-  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional() }).strict(),
+  z.object({ ...base, op: z.literal('usage-refresh'), providerIds: z.array(usageProviderIdSchema).max(usageProviderIdSchema.options.length).optional(),
+    background: z.literal(true).optional() }).strict(),
   z.object({ ...base, op: z.literal('usage-clear'), request: usageLocalClearRequestSchema }).strict(),
   /**
    * A provider's sign-in on the host, for the client that asks and for no other (ADR-0037): start one, read where it

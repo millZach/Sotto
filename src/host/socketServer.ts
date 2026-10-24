@@ -253,6 +253,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Usage's place and window filters (ADR-0083) arrived with history import: an older host's strict query refuses them.
     && (feature !== 'usage-history' || (service.supportsUsage === true && service.usageRead !== undefined))
     && (feature !== 'usage-muse-opencode' || (service.supportsUsage === true && service.usageRead !== undefined))
+    && (feature !== 'usage-background-refresh' || (service.supportsUsage === true && service.usageRefresh !== undefined))
     && (feature !== 'pull-request-babysit' || service.supportsBabysitting === true)
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
@@ -1134,7 +1135,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'usage-dashboard') || !service.usageRefresh) throw new Refusal('invalid_request')
         {
           const providerIds = peer.usageMuseOpenCode ? request.providerIds : usageProvidersBeforeMuse(request.providerIds)
-          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await service.usageRefresh(providerIds))) } catch { throw new Refusal('unavailable') }
+          const background = request.background === true && offers(peer, 'usage-background-refresh')
+          try { return usageForPeer(peer, usageLocalHostReadSchema.parse(await (background ? service.usageRefresh(providerIds, true) : service.usageRefresh(providerIds)))) } catch { throw new Refusal('unavailable') }
         }
       case 'usage-clear':
         if (!offers(peer, 'usage-dashboard') || !service.usageClear) throw new Refusal('invalid_request')

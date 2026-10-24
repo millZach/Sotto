@@ -174,7 +174,7 @@ describe('host version and features', () => {
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
    */
   const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
-    'usage-muse-opencode': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view' }
+    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view' }
   const offered = (always: readonly HostFeature[]): HostFeature[] => {
     const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
     return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
