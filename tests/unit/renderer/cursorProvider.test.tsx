@@ -230,6 +230,14 @@ describe('Cursor’s request cards', () => {
     expect(onSubmit).toHaveBeenCalledWith({ answer: 'Accept plan', approved: true, permissionChoice: 'accept-plan' })
   })
 
+  it('reads a plan’s parts from its context, even when its steps repeat its overview', () => {
+    const plan = cursorPending(4, 'cursor/create_plan', { toolCallId: 'plan_2', name: 'Steady', overview: 'Run the suite.', plan: 'Run the suite.' }, 'thread-a')!
+    card(plan.request)
+    const shown = screen.getByRole('region', { name: 'Cursor’s plan' })
+    expect(within(shown).getByText('Steady')).toBeVisible()
+    expect(within(shown).getAllByText('Run the suite.')).toHaveLength(2)
+  })
+
   it('asks Cursor’s questions with their own options, several where Cursor allows several, and skips them when none is chosen', async () => {
     const asked = cursorPending('q', 'cursor/ask_question', { toolCallId: 'call_q', title: 'Pick', questions: [
       { id: 'q1', prompt: 'Which runner?', options: [{ id: 'vitest', label: 'Vitest' }, { id: 'playwright', label: 'Playwright' }] },

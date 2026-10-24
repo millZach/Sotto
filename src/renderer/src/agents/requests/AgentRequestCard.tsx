@@ -216,18 +216,15 @@ function PermissionActions({ request, disabled, pressed, onChoose, names }: {
 const CURSOR_PLAN_TOOL = 'cursor/create_plan'
 
 /**
- * A Cursor plan's parts, or null for any other permission. Main sends the plan's name, overview and steps as the text,
- * a blank line apart, and the steps alone, in Markdown, as the details; the parts before the steps are the name and the
- * overview, in that order.
+ * A Cursor plan's parts, or null for any other permission. Main sends them typed in the request's context: the plan's
+ * name, its overview and its steps in Markdown. A plan without them, from a host older than that, shows its text whole.
  */
 export function cursorPlan(request: AgentRequest): { readonly title?: string; readonly overview?: string; readonly steps?: string } | null {
   if (request.kind !== 'permission' || request.context?.toolName !== CURSOR_PLAN_TOOL) return null
-  const steps = request.context.details?.trim() || undefined
-  const at = steps ? request.text.indexOf(steps.slice(0, 200)) : -1
-  const lead = (at >= 0 ? request.text.slice(0, at) : steps ? '' : request.text).trim()
-  const [title, ...rest] = lead ? lead.split(/\n{2,}/u) : []
-  const overview = rest.join('\n\n').trim()
-  return { ...(title?.trim() ? { title: title.trim() } : {}), ...(overview ? { overview } : {}), ...(steps ? { steps } : {}) }
+  const plan = request.context.plan
+  if (!plan) return { steps: request.text }
+  const title = plan.name?.trim(), overview = plan.overview?.trim(), steps = plan.steps?.trim()
+  return { ...(title ? { title } : {}), ...(overview ? { overview } : {}), ...(steps ? { steps } : {}) }
 }
 
 /** Only a recommendation present in the provider's label is called one. IDs and answers stay untouched. */

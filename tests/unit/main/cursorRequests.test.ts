@@ -79,7 +79,9 @@ describe('Cursor’s questions', () => {
 describe('Cursor’s plans', () => {
   const pending = cursorPending('p', 'cursor/create_plan', { toolCallId: 'call_p', name: 'contrib-doc', overview: 'Add a guide.', plan: '1. Draft\n2. Review', todos: [{ id: 'a', content: 'Draft', status: 'pending' }] }, 'thread')!
   it('shows a plan as a request to accept or reject, named as Cursor’s plan', () => {
-    expect(pending.request).toMatchObject({ kind: 'permission', text: 'contrib-doc\n\nAdd a guide.\n\n1. Draft\n2. Review', context: { toolName: CURSOR_PLAN_TOOL, toolCallId: 'call_p', details: '1. Draft\n2. Review' } })
+    expect(pending.request).toMatchObject({ kind: 'permission', text: 'contrib-doc\n\nAdd a guide.\n\n1. Draft\n2. Review', context: { toolName: CURSOR_PLAN_TOOL, toolCallId: 'call_p',
+      plan: { name: 'contrib-doc', overview: 'Add a guide.', steps: '1. Draft\n2. Review' } } })
+    expect(pending.request.context?.details).toBeUndefined()
     expect(pending.request.permissionChoices?.map(choice => [choice.id, choice.label, choice.kind])).toEqual([['accept-plan', 'Accept plan', 'allow-once'], ['reject-plan', 'Reject', 'deny']])
   })
   it('answers accepted or rejected, and cancelled when the thread stops', () => {

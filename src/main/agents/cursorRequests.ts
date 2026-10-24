@@ -127,10 +127,13 @@ export function cursorPending(wireId: string | number, method: string, params: u
     const parsed = planSchema.safeParse(params)
     if (!parsed.success) return undefined
     const plan = parsed.data
-    const text = [plan.name, plan.overview, plan.plan].filter(part => part?.trim()).join('\n\n') || 'Cursor has a plan.'
+    // The parts travel typed for the plan card, and joined as the text for every surface that shows a request as words.
+    const name = plan.name?.trim(), overview = plan.overview?.trim(), steps = plan.plan.trim()
+    const text = [name, overview, steps].filter(Boolean).join('\n\n') || 'Cursor has a plan.'
     return { wireId, threadId, kind: 'plan', toolCallId: plan.toolCallId, request: { id, kind: 'permission', text: text.slice(0, TEXT_LIMIT), options: [],
       permissionChoices: CURSOR_PLAN_CHOICES.map(choice => ({ ...choice })),
-      context: { toolName: CURSOR_PLAN_TOOL, ...(plan.toolCallId ? { toolCallId: plan.toolCallId } : {}), ...(plan.plan ? { details: plan.plan.slice(0, 100_000) } : {}) } } }
+      context: { toolName: CURSOR_PLAN_TOOL, ...(plan.toolCallId ? { toolCallId: plan.toolCallId } : {}),
+        plan: { ...(name ? { name } : {}), ...(overview ? { overview } : {}), ...(steps ? { steps: steps.slice(0, 100_000) } : {}) } } } }
   }
   return undefined
 }
