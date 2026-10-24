@@ -18,6 +18,6 @@ Checked on Windows on October 23, 2026, for #1426 (ADR-0124), in two halves: the
 
 ## Not checked here
 
-- A thread's turn on a real model. The stand-in OpenCode in the built app does not read `OPENCODE_CONFIG_CONTENT`, so the added server's models did not reach its model menu there; the live test covers that half. A real run against Ollama or the Sparks waits for a server Zach can reach.
+- A thread's turn on a real model. The stand-in OpenCode in the built app did not read `OPENCODE_CONFIG_CONTENT` at the time, so the added server's models did not reach its model menu there; the live test covers that half. It reads it since phase 2 (`own-server-turn-errors.md`). A real run against Ollama or the Sparks waits for a server Zach can reach.
 - macOS and Linux.
 - Pinned OpenCode 2.0.31, which was not on this computer; its source for everything used here is the same as 2.1.4's (`docs/plans/local-inference.md`).
