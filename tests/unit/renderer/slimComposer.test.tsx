@@ -107,6 +107,26 @@ describe('the slim composer in a thread pane', () => {
     expect(view.textbox()).toBeInTheDocument()
   })
 
+  it('learns what shows of the slim composer while the effort border’s own transition runs', () => {
+    // The pane measures through a ResizeObserver; a still one is enough, since slimming measures by itself.
+    vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} unobserve(): void {} })
+    // The card's 2.4-second highest-effort border transition, still running: only the slim motion holds a measure back.
+    const effort = { id: '', playState: 'running' } as unknown as Animation
+    const getAnimations = vi.fn(() => [effort])
+    Object.defineProperty(HTMLElement.prototype, 'getAnimations', { configurable: true, value: getAnimations })
+    try {
+      const view = mount()
+      const pane = view.compose.parentElement!
+      pane.style.removeProperty('--thread-compose-shown')
+      view.readBack(400)
+      expect(view.compose).toHaveAttribute('data-slim', 'true')
+      expect(pane.style.getPropertyValue('--thread-compose-shown')).not.toBe('')
+    } finally {
+      delete (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('hands a key typed in the transcript to the composer', () => {
     const view = mount()
     view.readBack(400)

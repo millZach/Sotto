@@ -11,6 +11,13 @@ import { prefersReducedMotion } from '../state/reducedMotion'
 export const READING_BACK_PX = 160
 /** How long the card takes to change height, slim or full. */
 export const SLIM_MS = 200
+/** The card's own move between slim and full, by which a measure of the card knows to wait for it and for nothing else. */
+export const SLIM_MOTION_ID = 'slim-composer'
+
+/** Whether the card is moving between slim and full, when its box is neither. Its other motions, as the effort border's, do not count. */
+export function slimMoving(card: Element): boolean {
+  return typeof card.getAnimations === 'function' && card.getAnimations().some(motion => motion.id === SLIM_MOTION_ID && motion.playState === 'running')
+}
 
 export interface SlimFacts {
   /** The Owl feature is on (and, in Watcher's pane, Watcher too). */
@@ -77,7 +84,7 @@ export function useSlimMotion(compose: RefObject<HTMLElement | null>, slim: bool
     const motion = card.animate([
       { height: `${from.height}px`, transform: `translateY(${from.top - to.top}px)`, clipPath: clip },
       { height: `${to.height}px`, transform: 'none', clipPath: clip },
-    ], { duration: SLIM_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' })
+    ], { id: SLIM_MOTION_ID, duration: SLIM_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' })
     motion.addEventListener('finish', onSettled)
     return () => { motion.removeEventListener('finish', onSettled); motion.cancel() }
   }, [compose, slim, onSettled])

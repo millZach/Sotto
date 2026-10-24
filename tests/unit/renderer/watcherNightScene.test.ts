@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   addRipple, along, boxDistance, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
-  LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, WORD_CONTRAST,
+  glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
 import { contrastRatio } from '../../../src/shared/themes/color'
@@ -263,6 +263,16 @@ describe('the night scene’s pace, stars and ripples', () => {
     }
   })
 
+  it('never puts two stars in one cell, so a capped star is never painted over itself', () => {
+    // Two capped draws in one cell composite to more than the cap: at 25% twice, about 44%.
+    for (const [width, height] of [[1600, 900], [1600, 1000], [1280, 800], [1920, 1080], [2560, 1440]] as const) {
+      const layout = layoutScene(room(width, height))
+      const grid = gridFor(layout.width, layout.height)
+      const stars = placeStars(layout, grid, new Float32Array(grid.cols * grid.rows))
+      expect(new Set(stars.map(star => star.i)).size, `${width}x${height}`).toBe(stars.length)
+    }
+  })
+
   it('turns a press into a spot that brightens in place and fades when motion is reduced, with nothing bent', () => {
     const out = { ring: 0, dx: 0, dy: 0 }
     const ripples = [{ x: 100, y: 100, t: 0 }]
@@ -337,6 +347,37 @@ describe('the night scene’s pace, stars and ripples', () => {
 
 describe('the night scene’s ink', () => {
   const ink = { r: 20, g: 22, b: 30 }, paper = { r: 250, g: 249, b: 246 }, accent = { r: 20, g: 120, b: 110 }
+
+  it('counts a translucent word as it shows, laid over what is under it', () => {
+    const night = { r: 18, g: 18, b: 17 }, white = { r: 255, g: 255, b: 255 }
+    const faded = { ...white, a: 0.8 }
+    const solid = columnCeiling(night, white, 1, [white]), translucent = columnCeiling(night, white, 1, [faded])
+    // A word at 80% reads weaker than the same word solid, so it allows less ink under it.
+    expect(translucent).toBeLessThan(solid)
+    const pixel = over(night, white, translucent)
+    expect(wordContrast(faded, pixel)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+    expect(wordContrast(faded, pixel)).toBeCloseTo(contrastRatio(over(pixel, white, 0.8), pixel), 6)
+    const past = over(night, white, translucent + 0.05)
+    expect(wordContrast(faded, past)).toBeLessThan(WORD_CONTRAST)
+    expect(sceneInk(night, white, white, [faded]).column.ink).toBe(translucent)
+  })
+
+  it('keeps the glass card thick enough that its words hold 4.5:1 over pure white or pure black', () => {
+    const card = { r: 34, g: 34, b: 33 }, text = { r: 250, g: 247, b: 236 }, muted = { r: 163, g: 161, b: 151 }
+    const alpha = glassOpacity(card, [text, muted])
+    expect(alpha).toBeGreaterThanOrEqual(0.72)
+    expect(alpha).toBeLessThanOrEqual(1)
+    for (const behind of [{ r: 255, g: 255, b: 255 }, { r: 0, g: 0, b: 0 }]) {
+      const surface = over(behind, card, alpha)
+      for (const word of [text, muted]) expect(wordContrast(word, surface)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+    }
+    // A step thinner, the muted word over white falls under it.
+    expect(wordContrast(muted, over({ r: 255, g: 255, b: 255 }, card, alpha - 0.01))).toBeLessThan(WORD_CONTRAST)
+    // A light card over black.
+    const paperCard = { r: 236, g: 234, b: 228 }, quiet = { r: 104, g: 102, b: 94 }
+    const day = glassOpacity(paperCard, [quiet])
+    expect(wordContrast(quiet, over({ r: 0, g: 0, b: 0 }, paperCard, day))).toBeGreaterThanOrEqual(WORD_CONTRAST)
+  })
 
   it('stops the column’s ink where the weakest word over it would fall under 4.5:1, by day and by night', () => {
     const night = { r: 12, g: 13, b: 16 }, text = { r: 247, g: 247, b: 250 }, muted = { r: 168, g: 170, b: 176 }, yellow = { r: 242, g: 208, b: 36 }

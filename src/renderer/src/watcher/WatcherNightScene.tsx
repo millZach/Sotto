@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
-  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState,
+  addRipple, frameDelay, frameDue, frameSleep, glassOpacity, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
@@ -66,6 +66,14 @@ export function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | nul
   pixel.fillRect(0, 0, 1, 1)
   const [r = 0, g = 0, b = 0, a = 0] = pixel.getImageData(0, 0, 1, 1).data
   return a === 0 ? null : { r, g, b }
+}
+
+/** A colour words are written in, with its opacity, so a translucent one is counted as it shows. */
+export function toWord(value: string, pixel: CanvasRenderingContext2D): Word | null {
+  const rgb = toRgb(value, pixel)
+  if (rgb === null) return null
+  const a = pixel.getImageData(0, 0, 1, 1).data[3]! / 255
+  return a >= 1 ? rgb : { ...rgb, a }
 }
 
 /** The surface the scene is drawn on: the first painted background at or above the pane. */
@@ -293,16 +301,23 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
-      // The words over the column are written in the text colour, its secondary tier (the probe's border; the names and
-      // times take it there) and the link colour (the probe's outline).
+      // Every colour the conversation's words can take, each with its opacity: the text, its secondary tier (the names and
+      // times take it there), and links at rest and pointed at (the probe's borders, nightScene.css).
       const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(pane, pixel)
       if (text === null || accent === null || surface === null) return
-      const words = [text, toRgb(style.borderTopColor, pixel), toRgb(style.outlineColor, pixel)].filter((word): word is Rgb => word !== null)
-      const key = JSON.stringify([text, accent, words, surface, style.fontFamily])
+      const present = (word: Word | null): word is Word => word !== null
+      const words = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderRightColor, pixel), toWord(style.borderBottomColor, pixel)].filter(present)
+      // The glass composer's own words, its text, secondary and muted tiers, and its card (the probe's outline).
+      const card = toRgb(style.outlineColor, pixel)
+      const cardWords = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderLeftColor, pixel)].filter(present)
+      const key = JSON.stringify([text, accent, words, card, cardWords, surface, style.fontFamily])
       if (key === inked) return
       inked = key
       const scene = sceneInk(surface, text, accent, words)
       painter.setInk(scene, style.fontFamily)
+      // The glass is as thick as its words need over pure white or pure black, so nothing passing under it, a picture in
+      // the conversation included, takes a word on it under 4.5:1. It stays set when the scene steps away.
+      if (card !== null) pane.style.setProperty('--watcher-glass', `${Math.round(glassOpacity(card, cardWords) * 100)}%`)
       // An end-to-end run reads the column's ceiling off the pane, to report it beside the contrast it measures.
       if (counted) pane.dataset.nightSceneCap = JSON.stringify(scene.column)
       wake()

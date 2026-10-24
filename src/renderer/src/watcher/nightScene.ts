@@ -591,18 +591,43 @@ export function over(surface: Rgb, ink: Rgb, alpha: number): Rgb {
   return { r: mix(surface.r, ink.r), g: mix(surface.g, ink.g), b: mix(surface.b, ink.b) }
 }
 
+/** A colour words are written in, with its opacity where a theme makes it translucent (1 when left out). */
+export type Word = Rgb & { readonly a?: number }
+
+/** A word's contrast against the pixel under it, the word laid over that pixel as the screen shows it when translucent. */
+export function wordContrast(word: Word, pixel: Rgb): number {
+  const alpha = word.a ?? 1
+  return contrastRatio(alpha >= 1 ? word : over(pixel, word, alpha), pixel)
+}
+
 /**
  * The highest of an ink's 21 steps, as a share from 0 to 1, at which every one of `words` keeps WORD_CONTRAST against the
  * ink laid over `surface`. Steps are tried from the faintest; the first that fails ends it.
  */
-export function columnCeiling(surface: Rgb, ink: Rgb, boost: number, words: readonly Rgb[]): number {
+export function columnCeiling(surface: Rgb, ink: Rgb, boost: number, words: readonly Word[]): number {
   let best = 0
   for (let k = 1; k <= 20; k++) {
     const pixel = over(surface, ink, Math.min(1, k / 20 * boost))
-    if (words.some(word => contrastRatio(word, pixel) < WORD_CONTRAST)) break
+    if (words.some(word => wordContrast(word, pixel) < WORD_CONTRAST)) break
     best = k / 20
   }
   return best
+}
+
+/** The glass card's least opacity, the user's pick of 72%, below which nothing is thinned. */
+export const GLASS_FLOOR = 0.72
+
+/**
+ * How opaque Watcher's glass composer must be, from GLASS_FLOOR up in hundredths, for every one of `words` written on it
+ * to keep WORD_CONTRAST whatever passes under it: the card's colour laid over pure white and over pure black, the two
+ * worst a picture in the conversation can put there. Solid when nothing thinner holds.
+ */
+export function glassOpacity(card: Rgb, words: readonly Word[], floor: number = GLASS_FLOOR): number {
+  const extremes: readonly Rgb[] = [{ r: 255, g: 255, b: 255 }, { r: 0, g: 0, b: 0 }]
+  for (let k = Math.ceil(floor * 100); k < 100; k++) {
+    if (extremes.every(behind => { const surface = over(behind, card, k / 100); return words.every(word => wordContrast(word, surface) >= WORD_CONTRAST) })) return k / 100
+  }
+  return 1
 }
 
 /**
@@ -611,7 +636,7 @@ export function columnCeiling(surface: Rgb, ink: Rgb, boost: number, words: read
  * are written in (the text, its secondary tier, which the names and times take there, and links), and none of them may
  * fall under 4.5:1 against a glyph's core.
  */
-export function sceneInk(surface: Rgb, text: Rgb, accent: Rgb, words: readonly Rgb[] = [text]): SceneInk {
+export function sceneInk(surface: Rgb, text: Rgb, accent: Rgb, words: readonly Word[] = [text]): SceneInk {
   const light = isLightSurface(surface)
   const inkBoost = light ? LIGHT_INK_BOOST : 1, accentBoost = light ? LIGHT_ACCENT_BOOST : 1
   const ramp = ({ r, g, b }: Rgb, boost: number): string[] => Array.from({ length: 21 }, (_, k) => `rgba(${r}, ${g}, ${b}, ${Math.min(1, k / 20 * boost).toFixed(2)})`)
@@ -651,14 +676,19 @@ export function gridFor(width: number, height: number): Grid {
  * quiet and the gaps around words decide how much of each shows.
  */
 export function placeStars(layout: SceneLayout, grid: Grid, ink: Float32Array): Star[] {
-  const S = seeded(5), count = Math.round(layout.width * layout.height / 6000), stars: Star[] = []
+  const S = seeded(5), count = Math.round(layout.width * layout.height / 6000), stars: Star[] = [], taken = new Set<number>()
   for (let k = 0; k < count; k++) {
     const c = Math.floor(S() * grid.cols), r = Math.floor(S() * grid.rows), y = r * grid.ch
     if (y < layout.header + 6 || y > layout.horizon - layout.sky * 0.08) continue
     const i = r * grid.cols + c
     if ((ink[i] ?? 1) > 0.05) continue
     const tier = S()
-    stars.push({ i, base: tier > 0.93 ? 0.9 : tier > 0.7 ? 0.55 : 0.3, phase: S() * 6.28, speed: 0.5 + S() * 1.2, accent: S() > 0.86 })
+    const star: Star = { i, base: tier > 0.93 ? 0.9 : tier > 0.7 ? 0.55 : 0.3, phase: S() * 6.28, speed: 0.5 + S() * 1.2, accent: S() > 0.86 }
+    // One star to a cell: two would paint the cell twice, past the column's ceiling. The draws are made either way, so
+    // every other star stays where it was.
+    if (taken.has(i)) continue
+    taken.add(i)
+    stars.push(star)
   }
   return stars
 }

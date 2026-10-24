@@ -23,11 +23,13 @@
 /* An owl just under the header shows its tip below it, so the tip never covers the header. */
 .watcher-scene__tip[data-below] { transform: translate(-50%, 6px); }
 .watcher-scene__tip b { overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-/* The scene's inks, read and never seen: the text colour for its ink, the accent for its accent, the secondary text
-   and the link colour the conversation's quieter words are written in, which set how strong the column's ink may go
-   (ADR-0126), and the glyph face. */
+/* The scene's inks, read and never seen: the text colour for its ink and the accent for its accent; on its borders the
+   other colours the conversation's words take, the secondary tier and links at rest and pointed at, which with the text
+   set how strong the column's ink may go (ADR-0126), and the muted tier the glass composer writes in; on its outline
+   the composer's card, which sets how thick the glass must be; and the glyph face. */
 .watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
-  color: var(--tt-text); background-color: var(--tt-accent); border-top-color: var(--tt-text-2); outline-color: var(--tt-link); font-family: var(--tt-font-mono); }
+  color: var(--tt-text); background-color: var(--tt-accent); border-top-color: var(--tt-text-2); border-right-color: var(--tt-link); border-bottom-color: var(--watcher-link-hover);
+  border-left-color: var(--tt-text-muted); outline-color: var(--tt-card); font-family: var(--tt-font-mono); }
 
 /* ---------- The column over the scene ---------- */
 /* The user's pick on October 23, 2026 (variant D of docs/prototypes/watcher-floating-composer-prototype.html, ADR-0126):
@@ -35,14 +37,21 @@
    so it stays clear of the glyphs it passes over; the words keep 4.5:1 without it, by the column's ink ceiling.
    What draws its own surface keeps its text plain. The names, times and other words the conversation writes in the
    muted tier take the secondary tier here, so the column's ink can go about twice as strong before any word falls
-   under 4.5:1 (the user's pick D2 on October 24, 2026). */
+   under 4.5:1 (the user's pick D2 on October 24, 2026).
+   A link pointed at keeps the link colour there and shows the pointer by its underline alone: the theme's hover colour
+   sits nearer the canvas and would hold the column's ink to about a tenth by day. The probe reads the same property. */
+.watcher-pane { --watcher-link-hover: var(--tt-link); }
 .watcher-pane .thread-workspace__transcript { --tt-text-muted: var(--tt-text-2); }
+.watcher-pane .thread-workspace__transcript .rich-message { --rich-link-hover: var(--watcher-link-hover); }
 .watcher-pane .thread-workspace__transcript { text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
 .watcher-pane .thread-workspace__transcript :is(.thread-message[data-role='user'], pre, code, button, input, textarea, table, .agent-request, [class*='card'], [class*='chip']) { text-shadow: none; }
 /* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
-   blurred, with a faint hairline at rest. Its running and highest-effort edges are its own (threads.css). This is the
+   blurred, with a faint hairline at rest. It is never thinner than lets every word on it keep 4.5:1 over pure white or
+   pure black, whatever a picture in the conversation puts under it: the scene works that out from the theme and sets
+   --watcher-glass on the pane (72% at least; about 80 to 91% in the built-in themes), and until it has, the card is
+   92%, which holds for every built-in theme. Its running and highest-effort edges are its own (threads.css). This is the
    one composer that is not solid (ADR-0084, amended by ADR-0126); asking for less transparency makes it solid again. */
-.watcher-pane > .thread-workspace__compose > .thread-prompt { background: color-mix(in srgb, var(--tt-card) 72%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
+.watcher-pane > .thread-workspace__compose > .thread-prompt { background: color-mix(in srgb, var(--tt-card) var(--watcher-glass, 92%), transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
 .watcher-pane > .thread-workspace__compose > .thread-prompt:not([data-running]):not(:has(.thread-chip[data-effort-top='true'])) { border-color: color-mix(in srgb, var(--tt-hairline) 70%, transparent); }
 @media (prefers-reduced-transparency: reduce) {
   .watcher-pane > .thread-workspace__compose > .thread-prompt { background: var(--tt-card); -webkit-backdrop-filter: none; backdrop-filter: none; }

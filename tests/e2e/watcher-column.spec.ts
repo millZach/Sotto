@@ -118,6 +118,10 @@ async function columnDigest(page: Page): Promise<string> {
 
 interface ColumnReading {
   readonly pixels: number
+  /** The glass card's opacity, and the lowest contrast of its words over pure white and over pure black behind it. */
+  readonly glassAlpha: number
+  readonly backdrop: Record<string, number>
+  readonly worstBackdrop: number
   /** The lowest contrast of each colour the conversation's words are written in, against the scene's pixels in the column. */
   readonly words: Record<string, number>
   /** The lowest contrast of the composer's placeholder and words against the glass over the brightest of the scene. */
@@ -132,8 +136,8 @@ interface ColumnReading {
  * colour over each of those pixels, unblurred (the blur only evens them out), against the placeholder and the composer's
  * own words.
  */
-async function columnContrast(page: Page): Promise<ColumnReading> {
-  return page.evaluate(() => {
+async function columnContrast(page: Page, extra: readonly string[] = []): Promise<ColumnReading> {
+  return page.evaluate(extra => {
     const pane = document.getElementById('watcher-pane')!
     const pixel = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
     const rgba = (css: string): number[] => { pixel.clearRect(0, 0, 1, 1); pixel.fillStyle = 'rgba(0, 0, 0, 0)'; pixel.fillStyle = css; pixel.fillRect(0, 0, 1, 1); const d = pixel.getImageData(0, 0, 1, 1).data; return [d[0]!, d[1]!, d[2]!, d[3]! / 255] }
@@ -152,6 +156,8 @@ async function columnContrast(page: Page): Promise<ColumnReading> {
       const colour = getComputedStyle(element).color
       colours.set(colour, rgba(colour))
     }
+    // Colours words take only for a moment, such as a link under the pointer.
+    for (const colour of extra) colours.set(`${colour} (pointed at)`, rgba(colour))
     const formEl = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose > .thread-prompt')!
     const cardColour = rgba(getComputedStyle(formEl).backgroundColor)
     const inCard = new Map<string, number[]>()
@@ -190,9 +196,16 @@ async function columnContrast(page: Page): Promise<ColumnReading> {
       const p = i / 4
       visit(over(surface, [data[i]!, data[i + 1]!, data[i + 2]!], alpha), x0 + (p % w), y0 + Math.floor(p / w))
     }
+    // Whatever passes under the glass, a white or black picture at worst, its words keep their contrast.
+    const backdrop: Record<string, number> = {}
+    for (const [name, behind] of [['white', [255, 255, 255]], ['black', [0, 0, 0]]] as const) {
+      const surfaceUnder = over([...behind], cardColour, cardColour[3]!)
+      for (const [key, word] of inCard) backdrop[`${key} over ${name}`] = ratio(over(surfaceUnder, word, word[3]!), surfaceUnder)
+    }
     const round = (record: Record<string, number>): Record<string, number> => Object.fromEntries(Object.entries(record).map(([key, value]) => [key, Math.round(value * 100) / 100]))
-    return { pixels, words: round(words), glass: round(glass), worstWord: Math.min(...Object.values(words)), worstGlass: Math.min(...Object.values(glass)) }
-  })
+    return { pixels, glassAlpha: Math.round(cardColour[3]! * 100) / 100, backdrop: round(backdrop), worstBackdrop: Math.min(...Object.values(backdrop)),
+      words: round(words), glass: round(glass), worstWord: Math.min(...Object.values(words)), worstGlass: Math.min(...Object.values(glass)) }
+  }, extra)
 }
 
 test.describe("Watcher's conversation column on the built app", () => {
@@ -234,7 +247,10 @@ test.describe("Watcher's conversation column on the built app", () => {
           expect(float.lastClear, context).toBe(true)
           expect(float.dockClear, context).toBe(true)
           expect(float.glass.filter, context).toContain('blur(14px)')
-          expect(float.glass.background, context).toMatch(/\/ 0\.72\)|, 0\.72\)/)
+          // At least the picked 72%, and thicker where the card's words need it over pure white or black.
+          const glassAlpha = await page.evaluate(css => { const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return ctx.getImageData(0, 0, 1, 1).data[3]! / 255 }, float.glass.background)
+          expect(glassAlpha, context).toBeGreaterThanOrEqual(0.71)
+          expect(glassAlpha, context).toBeLessThan(1)
           await capture(launched, `full-${appearance}-${width}x${height}.png`)
 
           // Reading back: the slim line, and the scene keeps every glyph where it was.
@@ -286,7 +302,13 @@ test.describe("Watcher's conversation column on the built app", () => {
             await expect(page.locator('html')).toHaveAttribute('data-theme-id', new RegExp(theme))
             await readBack(page, 0)
             await settle(page)
-            const reading = await columnContrast(page)
+            // A link under the pointer takes its hover colour, which counts as one of the conversation's words.
+            const link = page.locator('#watcher-pane .thread-workspace__transcript a').last()
+            await link.hover()
+            const pointedAt = await link.evaluate(element => getComputedStyle(element).color)
+            await page.mouse.move(0, 0)
+            await settle(page)
+            const reading = await columnContrast(page, [pointedAt])
             // Watcher's names and times are in the secondary tier, never the muted one (pick D2), and a link is among the words.
             const tiers = await page.evaluate(() => {
               const log = document.querySelector('#watcher-pane .thread-workspace__transcript')!
@@ -305,6 +327,8 @@ test.describe("Watcher's conversation column on the built app", () => {
             expect(reading.pixels, context).toBeGreaterThan(0)
             expect(reading.worstWord, context).toBeGreaterThanOrEqual(4.5)
             expect(reading.worstGlass, context).toBeGreaterThanOrEqual(4.5)
+            expect(reading.worstBackdrop, context).toBeGreaterThanOrEqual(4.5)
+            expect(Object.keys(reading.words).some(key => key.endsWith('(pointed at)')), context).toBe(true)
           }
         }
       }))

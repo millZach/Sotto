@@ -28,38 +28,46 @@ Watcher's pane is a `section.thread-pane` with Watcher's header, the transcript,
 
 With the composer's focus edge gone, the card's border stays clear while the caret is in it; Tab still reaches the composer's controls, which keep their focus rings.
 
-`slimComposer.test.tsx` holds the rule (reading back, focus, draft, a waiting question, the feature off), the 160px line, which keys count as typing, and the pane's behaviour in jsdom. `jumpBand.test.tsx` checks that a request card under the button is found above what shows of a slim composer.
+`slimComposer.test.tsx` holds the rule (reading back, focus, draft, a waiting question, the feature off), the 160px line, which keys count as typing, and the pane's behaviour in jsdom. `jumpBand.test.tsx` checks that a request card under the button is found above what shows of a slim composer, and `slimComposer.test.tsx` that slimming measures what shows while the effort border's transition runs. `tests/unit/release/evidenceFolders.test.ts` checks that `artifacts/composer-shrink/` and `artifacts/watcher-column/` are registered in `.gitignore` and `eslint.config.mjs`.
 
 Captures, dark and light, at 1280x860 and 820x560: `artifacts/composer-shrink/thread-full-*.png` and `artifacts/composer-shrink/thread-slim-*.png`.
 
 ## Watcher's column
 
-`watcher-column.spec.ts` seeds a Watcher with twenty-four messages and three watched threads. At 1600x1000, 1280x800 and 820x560, dark and light, Watcher's composer floats (its top margin is minus its height, the transcript keeps that much padding, the last message comes clear at the end), stays above the floating switch, and is glass: the card's colour at 72% with `blur(14px)`. Reading back slims it, and the landscape under the column, the glass card included, stays pixel for pixel the same as the composer slims and as the words scroll a further 480px. Watched keeps the floating composer, Visualize keeps its one line until focused and never slims, and a key typed in the conversation goes to Watcher's composer.
+`watcher-column.spec.ts` seeds a Watcher with twenty-four messages and three watched threads. At 1600x1000, 1280x800 and 820x560, dark and light, Watcher's composer floats (its top margin is minus its height, the transcript keeps that much padding, the last message comes clear at the end), stays above the floating switch, and is glass: the card's colour at 72% or more with `blur(14px)`. Reading back slims it, and the landscape under the column, the glass card included, stays pixel for pixel the same as the composer slims and as the words scroll a further 480px. Watched keeps the floating composer, Visualize keeps its one line until focused and never slims, and a key typed in the conversation goes to Watcher's composer.
 
 ### Names and times in the secondary colour (pick D2)
 
 On October 24, 2026 the user picked D2 on round 3 of the prototype. As first built, the column's ink ceiling was held down by the muted tier the conversation's names and times are written in: it sits only 6.3 to 9.5:1 on the canvas, so no glyph under the column could go past about a sixth to a quarter of the text colour by night and a tenth by day, and the column read faint. In Watcher's conversation the muted tier now takes the secondary tier (`--tt-text-muted` is set to `--tt-text-2` on the conversation), and the ceiling is worked out from the text colour, the secondary tier and the link colour. The strength stays at 85%. The spec checks that a reply's time is in the secondary colour, and the fixture now has a link in each reply so the link colour is measured too.
 
-Contrast is read from the canvas. Every pixel the landscape draws in the column below the header is laid over the pane's surface as the screen shows it and compared with every colour a word in the conversation is written in, the glow left out; under the composer, the glass card's colour over each of those pixels, unblurred, is compared with the placeholder and the composer's own words. A decorative mark (the faint dot between New Watcher and the model, which is hidden from screen readers) is not counted as a word. In all six built-in themes, at 1600x1000 and 1280x800 (`artifacts/watcher-column/readings.json`). The ceiling is the highest step each ink may take in the column, with the alpha a glyph's core is drawn at in brackets (by day the ink is made stronger, 1.9 times for the text colour and 1.5 times for the accent):
+Contrast is read from the canvas. Every pixel the landscape draws in the column below the header is laid over the pane's surface as the screen shows it and compared with every colour a word in the conversation is written in, the glow left out, including a link's colour while the pointer is on it; under the composer, the glass card's colour over each of those pixels, unblurred, is compared with the placeholder and the composer's own words; and the glass card over pure white and over pure black, the worst a picture in the conversation can put under it, is compared with the same words. A decorative mark (the faint dot between New Watcher and the model, which is hidden from screen readers) is not counted as a word. In all six built-in themes, at 1600x1000 and 1280x800 (`artifacts/watcher-column/readings.json`). The ceiling is the highest step each ink may take in the column, with the alpha a glyph's core is drawn at in brackets (by day the ink is made stronger, 1.9 times for the text colour and 1.5 times for the accent):
 
-| Theme | Mode | Lowest word over the scene | Lowest composer word over the glass | Ceiling, text ink | Ceiling, accent ink |
-| --- | --- | --- | --- | --- | --- |
-| Sotto | dark | 5.14:1 | 7.34:1 | 0.30 (0.30) | 0.45 (0.45) |
-| Hush | dark | 4.99:1 | 5.46:1 | 0.25 (0.25) | 0.35 (0.35) |
-| Linen | dark | 4.95:1 | 5.46:1 | 0.25 (0.25) | 0.35 (0.35) |
-| Nocturne | dark | 5.01:1 | 5.36:1 | 0.25 (0.25) | 0.40 (0.40) |
-| Tropic | dark | 4.87:1 | 5.49:1 | 0.25 (0.25) | 0.45 (0.45) |
-| Citrine | dark | 4.97:1 | 5.28:1 | 0.25 (0.25) | 0.30 (0.30) |
-| Sotto | light | 4.82:1 | 5.67:1 | 0.10 (0.19) | 0.20 (0.30) |
-| Hush | light | 5.28:1 | 5.04:1 | 0.15 (0.28) | 0.35 (0.52) |
-| Linen | light | 5.31:1 | 5.03:1 | 0.15 (0.28) | 0.35 (0.52) |
-| Nocturne | light | 5.27:1 | 5.02:1 | 0.15 (0.28) | 0.30 (0.45) |
-| Tropic | light | 5.11:1 | 5.14:1 | 0.15 (0.28) | 0.30 (0.45) |
-| Citrine | light | 5.07:1 | 5.06:1 | 0.15 (0.28) | 0.40 (0.60) |
+| Theme | Mode | Lowest word over the scene | Composer word over the glass and scene | Composer word over the glass and white or black | Glass | Ceiling, text ink | Ceiling, accent ink |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Sotto | dark | 5.14:1 | 7.74:1 | 4.67:1 | 80% | 0.30 (0.30) | 0.45 (0.45) |
+| Hush | dark | 4.99:1 | 6.07:1 | 4.71:1 | 90% | 0.25 (0.25) | 0.35 (0.35) |
+| Linen | dark | 4.95:1 | 6.01:1 | 4.67:1 | 90% | 0.25 (0.25) | 0.35 (0.35) |
+| Nocturne | dark | 5.01:1 | 5.97:1 | 4.66:1 | 90% | 0.25 (0.25) | 0.40 (0.40) |
+| Tropic | dark | 4.87:1 | 6.00:1 | 4.69:1 | 90% | 0.25 (0.25) | 0.45 (0.45) |
+| Citrine | dark | 4.97:1 | 5.85:1 | 4.70:1 | 91% | 0.25 (0.25) | 0.30 (0.30) |
+| Sotto | light | 4.82:1 | 5.94:1 | 4.67:1 | 88% | 0.10 (0.19) | 0.20 (0.30) |
+| Hush | light | 5.28:1 | 5.51:1 | 4.64:1 | 90% | 0.15 (0.28) | 0.35 (0.52) |
+| Linen | light | 5.31:1 | 5.49:1 | 4.63:1 | 90% | 0.15 (0.28) | 0.35 (0.52) |
+| Nocturne | light | 5.27:1 | 5.49:1 | 4.70:1 | 91% | 0.15 (0.28) | 0.30 (0.45) |
+| Tropic | light | 5.11:1 | 5.61:1 | 4.73:1 | 90% | 0.15 (0.28) | 0.30 (0.45) |
+| Citrine | light | 5.07:1 | 5.53:1 | 4.66:1 | 90% | 0.15 (0.28) | 0.40 (0.60) |
 
 No theme needed its share lowered from 85%. The ceiling targets 4.6:1 so rounding never lands under 4.5:1. By night the ceiling rose from 0.15 to 0.25 of the text colour to 0.25 to 0.30; by day from about 0.10 to about 0.28. Sotto by day is the exception at 0.19: its link colour sits at 7.2:1 on the canvas, below its secondary tier, so its links set its ceiling. The scene in the column now reads as clear dotted hills, still quieter than the margins.
 
-`watcherNightScene.test.ts` checks the 85% share in both modes, that the scene runs under the composer, that a point in the column shows the same share however the conversation scrolls, and the ceiling: at it every word keeps 4.6:1, a step past it one falls under, the muted tier would hold it lower than the secondary one, and a word already under 4.5:1 on the bare surface leaves no ink. `watcher-night-scene.spec.ts` now expects the landscape in the column under words as well as between them, and still none of the owls.
+### What the review found
+
+- A picture in the conversation passing under the glass card could take its placeholder to about 2.6:1 at 72% (a white screenshot under Hush's dark card). The card's opacity is now worked out from the theme: the least, from 72% up, at which every word on the card keeps 4.6:1 over pure white and pure black. The Glass column above is what that came to; until the scene has worked it out, the card is 92%.
+- A link pointed at took the theme's hover colour, which the ceiling did not count, and fell to about 3.7:1 in Hush dark. In Watcher's conversation a link pointed at now keeps the link colour, with its underline to show the pointer, and the ceiling reads that colour; the theme's hover colour would have held it to about a tenth by day. The spec points at a link and counts its colour.
+- A word colour a theme makes translucent was read as solid. Each word is now laid over what is under it before its contrast is counted.
+- Two stars could land in one cell and paint it twice, past the ceiling (about 44% from two 25% draws). One star is drawn to a cell; the others keep their places.
+- While the highest-effort border's 2.4-second transition ran, slimming never measured what shows of the composer, and Jump to latest sat at the full height. Only the card's own slim motion holds the measure back now.
+
+`watcherNightScene.test.ts` checks the 85% share in both modes, that the scene runs under the composer, that a point in the column shows the same share however the conversation scrolls, and the ceiling: at it every word keeps 4.6:1, a step past it one falls under, the muted tier would hold it lower than the secondary one, a word already under 4.5:1 on the bare surface leaves no ink, a translucent word allows less than the same word solid, the glass is thick enough for its words over white and black and no thinner, and no two stars share a cell. `watcher-night-scene.spec.ts` now expects the landscape in the column under words as well as between them, and still none of the owls.
 
 Captures, dark and light, at 1600x1000, 1280x800 and 820x560: `artifacts/watcher-column/full-*.png` and `artifacts/watcher-column/slim-*.png`.
 

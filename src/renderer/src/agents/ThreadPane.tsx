@@ -38,7 +38,7 @@ import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 import { useOwlFeature } from '../state/owlFeature'
-import { composerSlim, useSlimMotion } from './slimComposer'
+import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 
 type Command = AgentConnection['command']
 
@@ -115,7 +115,7 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
       pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`)
       // While the card moves between slim and full its box is neither; it is read again once it has settled.
       const card = element.querySelector<HTMLElement>(':scope > .thread-prompt')
-      if (typeof card?.getAnimations === 'function' && card.getAnimations().some(animation => animation.playState === 'running')) return
+      if (card != null && slimMoving(card)) return
       pane.style.setProperty('--thread-compose-shown', `${shownHeight(element)}px`)
       if (card != null && !element.hasAttribute('data-slim')) pane.style.setProperty('--thread-prompt-full', `${card.offsetHeight}px`)
     }
