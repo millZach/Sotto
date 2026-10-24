@@ -569,3 +569,8 @@
 :root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
 :root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] { view-transition-name: room-owl; }
 :root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }
+
+/* Any pressed owl toggle: the owl's eyes glow in the theme's accent; reduced motion keeps the glow and drops its pulse. */
+[aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { filter: drop-shadow(0 0 1.5px var(--tt-accent)) drop-shadow(0 0 3px var(--tt-accent)); animation: watch-eyes-glow 2.4s ease-in-out infinite; }
+@keyframes watch-eyes-glow { 50% { opacity: .65; } }
+@media (prefers-reduced-motion: reduce) { [aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { animation: none; } }
