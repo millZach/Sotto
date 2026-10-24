@@ -1,0 +1,24 @@
+/* The next prompt (ADR-0131, Drake's pick 6 "Picker" of docs/prototypes/next-prompt-prototype.html). The ghost sits after the
+   typed text in placeholder ink with a small Tab keycap and is never part of the draft. The Next list opens over the
+   transcript like the skills list (`.composer-picker` in composer.css), so it never takes height from the composer.
+   Colour comes only from theme roles; the intent marks are ink, with no hue of their own. */
+.thread-prompt .prompt-editor[data-empty='true'][data-ghosted='true']::before { content: none; }
+.prompt-editor__ghost { color: var(--tt-text-muted); pointer-events: none; user-select: none; }
+.prompt-editor__ghost-key { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-border); border-radius: 5px; color: var(--tt-text-muted); font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1; vertical-align: 1px; }
+
+.next-list__headline { margin: 4px 8px 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; line-height: 1.4; }
+.next-list .composer-picker__option.next-list__row { grid-template-columns: 28px minmax(0, max-content) minmax(0, 1fr); gap: 10px; min-height: 34px; padding: 7px 8px; }
+.next-list__key { color: var(--tt-text-muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.next-list__label { display: inline-flex; align-items: baseline; gap: 6px; max-width: 34ch; overflow: hidden; color: var(--tt-text); font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.next-list__label > svg { flex: none; align-self: center; color: var(--tt-text-muted); }
+.next-list__row[data-kind='answer'] .next-list__label { color: var(--tt-accent-text); }
+/* The next prompt is its own words, so it takes the label's column and the description's together. */
+.next-list__row[data-kind='ghost'] .next-list__label { display: block; grid-column: 2 / -1; max-width: none; }
+.next-list__text { overflow: hidden; color: var(--tt-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.next-list__foot { padding-right: 8px; }
+/* Seven rows at most: the list may stand taller than the skills list, still over the transcript and never past the window. */
+.next-list .composer-picker__list.next-list__rows { max-height: clamp(80px, calc(100vh - 380px), 320px); }
+
+@container thread-pane (max-width: 560px) {
+  .next-list__label { max-width: 20ch; }
+}

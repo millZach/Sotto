@@ -61,7 +61,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -144,6 +144,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'project-defaults', label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
     { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
+    { id: 'next-prompt', label: msg`Suggest a next prompt after each turn`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },
     { id: 'browser-previews', label: msg`Show the browser when an agent opens a page`, section: 'settings-browser', words: 'test iphone' },

@@ -365,6 +365,8 @@ export interface SottoBridge {
   readonly delegations?: import('./delegation').DelegationsBridge
   /** Continuing a thread on another provider (ADR-0089), present only while the Owl list turns it on. */
   readonly continueThread?: import('./continueThread').ContinueBridge
+  /** Next prompts after a finished turn (ADR-0131), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
+  readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */

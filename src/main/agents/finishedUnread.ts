@@ -36,7 +36,12 @@ export class FinishedUnread {
   /** Marked thread IDs, oldest first: a set keeps the order things were added in. */
   private readonly marks = new Set<string>()
 
-  constructor(saved: readonly string[] = [], private readonly dormant?: (threadId: string) => boolean) { this.restore(saved) }
+  /**
+   * `turns` hears each thread start and finish as this reads it, from the same pass over the threads (the next prompt,
+   * ADR-0131), so nothing else walks every thread on every update for it.
+   */
+  constructor(saved: readonly string[] = [], private readonly dormant?: (threadId: string) => boolean,
+    private readonly turns?: { started(threadId: string): void; finished(thread: AgentThread): void }) { this.restore(saved) }
 
   /** Takes the saved marks back at start, keeping what clients have said they show since. */
   restore(saved: readonly string[]): void {
@@ -56,10 +61,14 @@ export class FinishedUnread {
       if (settled(thread)) { changed = this.marks.delete(thread.id) || changed; continue }
       // A disconnect neither finishes a thread nor clears what it finished; it only stops counting as work.
       if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) continue
-      if (busy(thread)) { live.add(thread.id); changed = this.marks.delete(thread.id) || changed; continue }
+      if (busy(thread)) {
+        if (this.turns && thread.status === 'running' && !this.working.has(thread.id)) this.turns.started(thread.id)
+        live.add(thread.id); changed = this.marks.delete(thread.id) || changed; continue
+      }
       // A turn that failed did not finish, and one that stopped to ask you something is waiting on you, not finished.
       // Either way a mark it had is not true any more.
       if (thread.status !== 'idle' || thread.requests.length > 0) { changed = this.marks.delete(thread.id) || changed; continue }
+      if (this.turns && this.working.has(thread.id)) this.turns.finished(thread)
       if (this.working.has(thread.id) && !this.shown.has(thread.id)) {
         this.marks.delete(thread.id); this.marks.add(thread.id); changed = true
       }

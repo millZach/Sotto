@@ -1,7 +1,7 @@
 import type { AppSettings } from '../../shared/settings'
 import type { ShortTextPrompt } from '../agents/host'
 
-export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text'
+export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt'
 export type ShortTextFailureReason = 'unavailable' | 'failed' | 'empty'
 
 export interface ShortTextRequest {
@@ -17,8 +17,9 @@ export interface ShortTextRequest {
    * 'line' (the default) keeps the first non-empty line, which is what a name
    * or a subject is. 'text' keeps every line, for the callers that ask for
    * a written body; the cut and the emptiness rule are the same either way.
+   * 'raw' only trims it and cuts it at the ceiling, for a caller that reads structured text itself (the next prompt's JSON).
    */
-  readonly shape?: 'line' | 'text'
+  readonly shape?: 'line' | 'text' | 'raw'
 }
 
 export interface ShortTextFailure {
@@ -82,7 +83,8 @@ export class ShortTextWriter {
     catch { return this.shutdown.signal.aborted ? null : this.fail(request.purpose, 'failed') }
     if (this.shutdown.signal.aborted) return null
     if (content === null) return this.fail(request.purpose, 'unavailable')
-    const text = request.shape === 'text' ? trimToText(content, request.maxCharacters) : trimToLine(content, request.maxCharacters)
+    const text = request.shape === 'raw' ? content.trim().slice(0, request.maxCharacters) || null
+      : request.shape === 'text' ? trimToText(content, request.maxCharacters) : trimToLine(content, request.maxCharacters)
     return text ?? this.fail(request.purpose, 'empty')
   }
 

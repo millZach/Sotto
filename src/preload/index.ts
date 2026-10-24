@@ -28,6 +28,7 @@ import {
   addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
@@ -364,6 +365,8 @@ export function createSottoBridge(
   interfaceLanguage: InterfaceLanguageState | null = null,
   /** The user's own model servers (ADR-0124): only while the `own-model-servers` Owl feature is on and OpenCode runs here. */
   ownServersEnabled = false,
+  /** Next prompts after a finished turn (ADR-0131): only while the `next-prompt` Owl feature is on and this computer runs threads. */
+  nextPromptEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -447,6 +450,10 @@ export function createSottoBridge(
     ...(desktopNotificationsEnabled ? { notifications: Object.freeze<NotificationsBridge>({
       test: () => invokeParsed(renderer, NOTIFICATION_TEST, notificationTestResultSchema),
       onOpened: listener => subscribe(renderer, NOTIFICATION_OPENED, z.null(), () => listener()),
+    }) } : {}),
+    ...(nextPromptEnabled ? { nextPrompt: Object.freeze<NextPromptBridge>({
+      read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
+      onChanged: listener => subscribe(renderer, NEXT_PROMPT_CHANGED, nextPromptEntrySchema, listener),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({
@@ -699,7 +706,7 @@ export function exposeRendererBridge(
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
       arguments_.includes(CURSOR_RENDERER_ARGUMENT),
-      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT)))
+      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { asActivityPublication } from '../../src/main/agents/activitySnapshots'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
+import { NextPrompts } from '../../src/main/agents/nextPrompts'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
 import { HeldProviderHost } from '../../src/main/agents/heldProviderGate'
 import { desktopWindowClient, LocalHostService } from '../../src/main/agents/hostService'
@@ -151,8 +152,11 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
   const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
   usage?.start()
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
-    ...(usage ? { usage } : {}) })
+  // Next prompts are an Owl feature (ADR-0131): they hear each thread start and finish from the coordinator's own pass, as
+  // runtime.ts wires them. Nothing here ends a turn on an answer, so no side call is asked.
+  const nextPrompts = owl ? new NextPrompts({ write: async () => null, thread: id => control.liveThread(id), history: thread => control.historyOf(thread), publish: () => undefined }) : undefined
+  const control: AgentControl = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
+    ...(usage ? { usage } : {}), ...(nextPrompts ? { nextPrompts } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
   const localHostId = control.hostId()!
