@@ -247,7 +247,7 @@ const loadedServers = new Map()
 // `compactedToolsBug` plays Muse 1.4.12: a compacted session whose runtime a new host builds with tool servers fails
 // every turn at once with a config error. A fork of it builds cleanly; the fork's runtime loads, without servers, in the
 // host that made it, and its history is rebuilt: the compaction's summary takes the first message's item, and an
-// assistant item Muse writes itself follows it.
+// assistant item Muse writes itself follows it. `rejectFork` refuses session/fork.
 const auditBroken = new Set()
 const AUDIT_FAILED = { kind: 'configError', message: 'invalid run configuration: MCP startup audit failed; MCP is disabled for this runtime', retryable: false }
 /** The servers themselves, by session, for the model's tool calls. */
@@ -463,8 +463,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     result({ outcome })
   } else if (frame.method === 'session/compact') {
     const session = hold(p.sessionId)
-    if (session && script.compactedToolsBug) { session.compacted = true; save(); result({ outcome: 'compacted' }) } else result({ outcome: 'noop' })
+    if (session && script.compactedToolsBug) { session.compacted = true; addItem(session, { itemId: `item-${randomUUID()}`, kind: 'compaction', status: 'completed', revision: 1, turnId: null, recordedAt: stamp() }); result({ outcome: 'compacted' }) } else result({ outcome: 'noop' })
   } else if (frame.method === 'session/fork') {
+    if (script.rejectFork) { fail('commandRejected', 'Scripted fork refusal'); return }
     const source = hold(p.sessionId); if (!source) { fail('sessionNotFound', 'Unknown session'); return }
     const sessionId = randomUUID(), first = source.items.findIndex(item => item.kind === 'userMessage')
     const items = source.items.filter(item => !source.activeTurnId || item.turnId !== source.activeTurnId).map((item, index) => index === first ? { ...item, text: 'summary: what the conversation held', displayText: undefined } : item)
@@ -472,6 +473,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     const session = { ...globalThis.structuredClone(source), sessionId, items, compacted: false, activeTurnId: undefined, pendingApprovals: [], pendingInputs: [], forkedFrom: source.sessionId }
     sessions[sessionId] = session; save(); held.add(sessionId); holding(sessionId, true); load(sessionId, undefined)
     result({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : items, totalItemCount: items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
+  }
   else if (frame.method === 'usage/read' && !script.noUsageRead) result(hostUsage ? { usage: hostUsage } : {})
   else if (frame.id !== undefined) fail('methodNotFound', 'Not in this fixture')
 }).on('close', () => process.exit(0))

@@ -233,8 +233,7 @@ it('moves a compacted thread onto a copy of its conversation when a new host can
   await expect.poll(async () => (await records(g, 'session/fork')).length).toBe(1)
   await expect.poll(async () => g.realId(id)).not.toBe(before)
   const forked = await g.realId(id)
-  await expect.poll(async () => (await thread(g, id)).status).toBe('error')
-  expect((await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/copy of its conversation/u)
+  await expect.poll(async () => (await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/copy of the conversation/u)
   // The next send runs on the copy, which a new host built with the thread's servers.
   await send(g, 'Sent again')
   await g.driver.completeTurn(id, 'Second reply')
@@ -245,4 +244,22 @@ it('moves a compacted thread onto a copy of its conversation when a new host can
   expect(await texts(g)).toEqual(['Before the compaction', 'First reply', 'After the restart', 'Sent again', 'Second reply'])
   // Once per thread in a run: the copy is not copied again.
   expect(await records(g, 'session/fork')).toHaveLength(1)
+})
+
+it('says so, and keeps the thread on its session, when Muse will not copy a compacted conversation', async () => {
+  const { f, id } = await open({ compactedToolsBug: true })
+  await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before the compaction' })
+  await f.driver.completeTurn(id, 'First reply')
+  await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  await f.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })
+  const before = await f.realId(id)
+  const g = await f.driver.restart() as unknown as Fixture
+  closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
+  equip(g)
+  await g.script({ compactedToolsBug: true, rejectFork: true })
+  await g.host.connect()
+  await g.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After the restart' })
+  await expect.poll(async () => (await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/could not copy the conversation/u)
+  expect((await thread(g, id)).status).toBe('error')
+  expect(await g.realId(id)).toBe(before)
 })
