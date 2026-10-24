@@ -32,7 +32,7 @@ for (const provider of ['claude', 'grok'] as const) it(`${provider} does not rep
 })
 
 it('grok raises session permissions only on the process that holds the session', async () => {
-  const f = await grokFixture(undefined, 2000, 60000); const threadId = randomUUID()
+  const f = await grokFixture(undefined, undefined, 60000); const threadId = randomUUID()
   let probe: GrokRpc | undefined
   try {
     await f.host.connect(); await f.host.execute({ type: 'create-project', commandId: 'p', projectId: 'p', title: 'P', path: f.root })

@@ -85,7 +85,7 @@ async function openPanel(): Promise<{ tile: HTMLElement; panel: HTMLElement }> {
 beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); localStorage.clear(); sessionStorage.clear(); roomView.set({ besideId: null, share: 0.5, tab: 'conversation' }); firstMessage.clear() })
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
-describe('the Sotto Owl tile in Watcher’s room', () => {
+describe('the Sotto tile in Watcher’s room', () => {
   it('is a button named for Watcher’s context and state, with a tooltip saying the same, once Watcher runs', async () => {
     renderRoom(roomState())
     const tile = await screen.findByRole('button', { name: TILE })
@@ -98,7 +98,8 @@ describe('the Sotto Owl tile in Watcher’s room', () => {
 
   it('stays a picture before Watcher starts', async () => {
     renderRoom(roomState({ current: null, currentOptions: null, context: null }))
-    expect(await screen.findByRole('img', { name: 'Sotto Owl' })).toBeInTheDocument()
+    // Named for the running build, as the sidebar's mark is: a stable run here.
+    expect(await screen.findByRole('img', { name: 'Sotto' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: TILE })).toBeNull()
   })
 

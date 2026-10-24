@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Marked } from '../components/marks'
 import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
+import { useReleaseTrack } from '../state/useReleaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -105,16 +107,17 @@ interface HeaderParts {
 }
 
 /**
- * Watcher's header: the Sotto Owl tile in the window's corner, as on every other Owl page, then Watcher's name and
+ * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
  * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). The night sky
  * spreads behind the corner. The row is the window's drag strip.
  */
 function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
+  const track = useReleaseTrack()
   return <header className="thread-workspace__head watcher-head">
     {started && room !== null ? <WatcherContextTile room={room} />
-      : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>}
+      : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName(track)}><SottoMark className="thread-nav__tile" /></span>}
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
       <button ref={listButton} type="button" className="watcher-head__list tt-focusable" aria-haspopup="dialog" aria-expanded={listOpen}
@@ -377,7 +380,7 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
 }
 
 /**
- * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto Owl tile and its night sky
+ * Watcher's room (ADR-0073), with no sidebar (Zach's picks on October 11, 2026): the Sotto tile and its night sky
  * in the corner, Watcher's conversation centred under its header and the needs-you line, a thread opened beside it in
  * its own real pane, the Overview over the room on All threads, and the switch and page links floating at the bottom.
  * The room keeps its own view: it never selects a thread or a project on the Threads page, except through Open in
@@ -560,7 +563,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   </>
   let watcherContent: ReactNode
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
-  if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto Owl build adds it.')
+  if (room === null || room.status === 'unavailable') watcherContent = status('This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.')
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? 'Opening Watcher…')
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
@@ -582,18 +585,18 @@ export function WatcherView({ now: fixedNow, updateControl }: {
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
-  return <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined}>
+  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} {...marks}>
     <section className="thread-workspace" aria-label="Watcher’s room">
-      <div className="thread-workspace__body">
+      <div className="thread-workspace__body" data-panes>
         <div className="thread-panes">
           <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
               <OwlRoomSky />
               {watcherContent}
-            </section>
+            </section>}</Marked>
             {beside ? <>
               <BesideDivider width={width} share={view.share} controls={BESIDE_PANE_ID} />
               <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
@@ -607,5 +610,5 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
-  </div>
+  </div>}</Marked>
 }

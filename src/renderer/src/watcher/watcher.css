@@ -252,8 +252,29 @@
 
 /* ---------- The floating switch ---------- */
 /* History, Settings and Help, the switch, and the update control, in a pill centred in the band under the room. */
+/* At rest the pill shrinks to a small tab with an up arrow (Drake's pick on October 23, 2026, variant B of
+   docs/prototypes/watcher-bar-collapse.html). It keeps its place in the band, so open or shut it never covers the room,
+   and it opens while the pointer is anywhere in the band, while focus is inside it, and while an update has news. */
 .watcher-dock { grid-row: 2; display: flex; justify-content: center; align-items: flex-start; min-width: 0; padding: 2px 8px 0; }
-.watcher-dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); -webkit-app-region: no-drag; }
+.watcher-dock__pill { position: relative; z-index: 0; display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; -webkit-app-region: no-drag; }
+.watcher-dock__pill::before { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); clip-path: inset(21px calc(50% - 28px) 0 round 10px); pointer-events: none; }
+/* Open, the pill sets --watcher-dock-open and its controls read it. A :has() test followed by a part with no class, such
+   as `:has(...) > :not(.watcher-dock__tab)`, made Chromium restyle every element in the window after any change to the
+   page, on every page, which slowed each of the terminal's text size steps to seconds (#1423). */
+.watcher-dock__pill > :not(.watcher-dock__tab) { opacity: var(--watcher-dock-open, 0); }
+/* A touch tap has no hover first, so on a touch screen the shut bar's unseen controls take no tap; the first opens it. */
+@media (any-pointer: coarse) { .watcher-dock__pill > :not(.watcher-dock__tab) { pointer-events: var(--watcher-dock-press, none); } }
+.watcher-dock__tab { position: absolute; left: 50%; bottom: 0; width: 56px; height: 21px; display: grid; place-items: center; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text-muted); transform: translateX(-50%); pointer-events: none; }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill::before,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking'])::before { clip-path: inset(0 0 0 0 round 10px); }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking']) { --watcher-dock-open: 1; --watcher-dock-press: auto; }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__tab,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking']) > .watcher-dock__tab { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-dock__pill::before { transition: clip-path 220ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) .watcher-dock__pill > * { transition: opacity 120ms; }
+}
 .watcher-dock__pill .thread-nav__page { border-radius: 6px; }
 .watcher-dock__switch { width: 236px; }
 .watcher-dock__switch.thread-nav__seg button { height: 30px; padding: 0 8px; }
@@ -555,3 +576,17 @@
 .watcher-stop__result[data-result='uncertain'] > svg { color: var(--watcher-needs-ink); }
 .watcher-stop__said { display: block; color: var(--tt-text-2); }
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
+
+/* ---------- Night falls: the move between Threads and Watcher's room (nightFalls.ts) ---------- */
+/* The pages' own crossfade is off: the page being left stays whole underneath, and the script clips the opened one in
+   behind the band. The band is a canvas of its own above both, and the room switch's owl rides it from the foot to the
+   dock. Only while a run plays (data-room-transition on the root). */
+:root[data-room-transition]::view-transition-old(root),
+:root[data-room-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+/* Presses go through to the page underneath while a run plays, rather than to the transition's own layer. */
+:root[data-room-transition]::view-transition { pointer-events: none; }
+:root[data-room-transition] .night-falls-band { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; view-transition-name: night-falls-band; }
+:root[data-room-transition]::view-transition-group(night-falls-band),
+:root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
+:root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] { view-transition-name: room-owl; }
+:root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }

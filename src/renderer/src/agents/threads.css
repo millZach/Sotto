@@ -21,7 +21,7 @@
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
-.threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
+.threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 /* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
    The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
@@ -146,6 +146,16 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
+/* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
+   around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
+   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
+.thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
+.thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
+.thread-workspace__compose > * { pointer-events: auto; }
+.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
+.thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
+.thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
 /* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
 .thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }
@@ -243,14 +253,19 @@
    narrower, until the first send (Zach, October 14: docs/prototypes/new-thread-greeting-prototype.html, variant a). The
    empty transcript above and the balance below share the room equally. */
 .thread-pane__balance { display: none; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-transcript { flex: 1 1 0; min-height: 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-pane__balance { display: block; flex: 1 1 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
+.thread-pane[data-greeting] > .thread-transcript { flex: 1 1 0; min-height: 0; }
+.thread-pane[data-greeting] > .thread-pane__balance { display: block; flex: 1 1 0; }
+.thread-pane[data-greeting] > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
 .thread-greeting { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 24px 18px; text-align: center; }
 .thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
 .thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__where svg { flex: none; }
+.thread-greeting__project { min-width: 0; max-width: 100%; }
+.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
 @container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }
 @container thread-pane (max-height: 600px) {
   .thread-greeting { gap: 4px; padding-bottom: 10px; }

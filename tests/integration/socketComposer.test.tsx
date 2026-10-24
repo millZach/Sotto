@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { startHeadlessHost } from '../../src/host'
+import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import { ThreadComposer } from '../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../src/renderer/src/agents/threadFacts'
@@ -31,8 +31,8 @@ function manualComposer(state: AgentState, command: (request: AgentCommand) => P
 async function remoteDraftFixture() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-retained-composer-')), directory = join(root, 'desktop')
   const native = new E2EAgentHost()
-  const host = await startHeadlessHost({ dataDirectory: join(root, 'host'), port: 0,
-    providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  const host = await startFixtureHeadlessHost({ dataDirectory: join(root, 'host'), port: 0,
+    providers: { codex: native } })
   const url = 'http://127.0.0.1:' + host.descriptor!.port
   const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Retained composer')
   const clients: SocketHostService[] = [], stores: RetainedDraftStore[] = []
@@ -358,8 +358,8 @@ it('keeps a newer off-wire local revision when another client accepts the earlie
 
 it('retains the latest manual edit when a held autosave loses its connection', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
-  const host = await startHeadlessHost({ dataDirectory: root, port: 0,
-    providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0,
+    providers: {} })
   let client: SocketHostService | undefined
   const { promise: held, resolve: release } = deferred<void>()
   try {
@@ -410,8 +410,8 @@ it('keeps successive socket edits active in the manual composer and sends the pi
   const root = await mkdtemp(join(tmpdir(), 'sotto-socket-composer-'))
   const native = new E2EAgentHost()
   const writes = vi.spyOn(native, 'execute')
-  const host = await startHeadlessHost({ dataDirectory: root, port: 0,
-    providers: { codex: native, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }, reasoner: e2eAgentReasoner })
+  const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0,
+    providers: { codex: native } })
   let client: SocketHostService | undefined
   try {
     const url = 'http://127.0.0.1:' + host.descriptor!.port

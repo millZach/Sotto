@@ -35,6 +35,7 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
   send_to_thread: { input: { ...mutation, target: centerTarget, text: 'Continue the inspection', delivery: 'now' }, output: { status: 'ok', receipt, limits, delivery: 'now' } },
   stop_thread: { input: { ...mutation, target: centerTarget }, output: { status: 'ok', receipt, limits, stopRequested: true, state } },
   settle_thread: { input: { ...mutation, target: centerTarget }, output: { status: 'ok', receipt, limits, state } },
+  unsettle_thread: { input: { ...mutation, target: centerTarget }, output: { status: 'ok', target: centerTarget, settled: false } },
   list_projects: { input: {}, output: { status: 'ok', projects: [{ target: centerProject, title: 'Project', displayRoot: 'D:/Project',
     workers: [{ provider: 'devin', modelId: 'model', reasoningEfforts: [], defaultPermission: null, permissionComparable: false }],
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
