@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { t } from '@lingui/core/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
@@ -26,6 +27,10 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
     : `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'queued') return `Waiting to update to ${update.published ?? 'the published version'}. Your threads keep working.${past}`
+  if (update.state === 'failed' && update.failure === 'not-listed') {
+    const to = update.published ?? t`the published version`, installed = update.installed
+    return `${t`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`}${past}`
+  }
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
@@ -203,7 +208,7 @@ export function ProvidersSettings(): ReactNode {
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
                 <h4>Installed client</h4>
-                <p role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
+                <p className="tt-paragraph" role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
               </div>
               <div className="provider-client__actions">
                 {checkClientUpdates && update?.canInstall && update.state !== 'updating' && update.state !== 'queued'

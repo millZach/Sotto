@@ -45,6 +45,10 @@ export function failedShort(update: ProviderClientUpdate, host: string): string 
   const installed = update.installed
   if (update.state === 'unchanged') return t`The update ran, but ${host} still starts ${installed}.`
   if (update.failure === 'install-step') return t`The install step did not finish, so ${host} still starts ${installed}.`
+  if (update.failure === 'not-listed') {
+    const to = targetVersion(update)
+    return t`mise does not list ${to} yet. ${installed} is still installed.`
+  }
   if (update.failure === 'download') return t`The download dropped partway. ${installed} is still installed.`
   return byMise(update) ? t`mise stopped with an error. ${installed} is still installed.` : t`The installer stopped with an error. ${installed} is still installed.`
 }
@@ -55,6 +59,7 @@ export function failedLong(update: ProviderClientUpdate, host: string): string {
   // The host's own sentence, when it sent one.
   if (update.state === 'unchanged') return update.error ?? t`The update finished, but ${name} on ${host} still reports ${installed}. Nothing was lost, and your threads kept working.`
   if (update.failure === 'install-step') return t`mise installed ${to}, but ${name}'s install step did not finish, so ${host} still starts ${installed}. Nothing was lost, and your threads kept working.`
+  if (update.failure === 'not-listed') return t`mise on ${host} does not list ${name} ${to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: ${installed} is still installed, and your threads kept working. Try again later.`
   if (update.failure === 'download') return byMise(update)
     ? t`mise could not download ${name} ${to} on ${host}. The connection dropped partway. Nothing was changed: ${installed} is still installed, and your threads kept working.`
     : t`The installer could not download ${name} ${to} on ${host}. The connection dropped partway. Nothing was changed: ${installed} is still installed, and your threads kept working.`

@@ -208,18 +208,21 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * run said about a client while it still describes the client (the same version installed, the same release), so a
  * desktop may ask it to check afresh whatever its readings hold (ADR-0077, October 21 amendment). A host that does not
  * list it may set those findings aside when it checks.
+ * `client-update-not-listed`: offered with `client-updates`. A client update's `failure` may be `not-listed`, when mise's
+ * version list did not have the published version and nothing was installed (October 23, 2026). A desktop whose hello does
+ * not accept it reads that failure as `installer`, since its strict schema refuses a value it does not know.
  * `agents-view`: the host offers the iPhone's Agents view (ADR-0103) and answers `thread-delegations` with what delegation's
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -243,7 +246,11 @@ export type HostUpdateRequestAction = typeof HOST_UPDATE_REQUEST_ACTIONS[number]
  * other field it does not know is optional and ignored.
  */
 export function clientUpdateForOlderClient(update: ProviderClientUpdate): ProviderClientUpdate {
-  return { ...update, ...(update.channel === 'mise' ? { channel: 'unknown' as const } : {}), ...(update.state === 'queued' ? { state: 'idle' as const } : {}) }
+  return clientUpdateWithoutNotListed({ ...update, ...(update.channel === 'mise' ? { channel: 'unknown' as const } : {}), ...(update.state === 'queued' ? { state: 'idle' as const } : {}) })
+}
+/** A client update as a client that does not accept `client-update-not-listed` reads it: that failure as the installer's. */
+export function clientUpdateWithoutNotListed(update: ProviderClientUpdate): ProviderClientUpdate {
+  return update.failure === 'not-listed' ? { ...update, failure: 'installer' } : update
 }
 /**
  * An activity record as a summary row reads it, for a client that accepts `activity-summaries` (#701): what it is, how
