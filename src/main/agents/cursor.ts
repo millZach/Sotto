@@ -69,6 +69,64 @@ const aliasSchema = z.object({
   origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
 })
 type Alias = z.infer<typeof aliasSchema>
+/**
+ * How many answered request IDs a thread keeps. A request's ID carries the nonce of the process that asked, so one from
+ * a process that has ended can never come again; the window covers every request a running process can hold open
+ * (`pending` takes at most 128), and the rest are let go so a thread's record does not grow with its history.
+ */
+const ANSWERED_KEPT = 128
+/**
+ * A thread's saved origins and answered requests, indexed when the thread's record is read and kept beside the saved
+ * arrays, so a send, an answer or a replayed message looks one up by its key rather than scanning the thread's history
+ * (AGENTS.md: work per action must not grow with the user's history).
+ */
+class ThreadIndex {
+  private readonly byCommand = new Map<string, Origin>()
+  private readonly byMessage = new Map<string, Origin>()
+  private readonly byTurn = new Map<string, Origin>()
+  private readonly byDigest = new Map<string, Origin[]>()
+  private readonly answered: Set<string>
+  constructor(readonly alias: Alias) {
+    for (const origin of alias.origins) this.index(origin)
+    if (alias.answeredRequestIds.length > ANSWERED_KEPT) alias.answeredRequestIds = alias.answeredRequestIds.slice(-ANSWERED_KEPT)
+    this.answered = new Set(alias.answeredRequestIds)
+  }
+  private index(origin: Origin): void {
+    this.byCommand.set(origin.commandId, origin); this.byMessage.set(origin.messageId, origin)
+    const turn = `${origin.turn}:${origin.digest}`
+    if (!this.byTurn.has(turn)) this.byTurn.set(turn, origin)
+    const same = this.byDigest.get(origin.digest)
+    if (same) same.push(origin); else this.byDigest.set(origin.digest, [origin])
+  }
+  /** The origin a send names by its command or its message, if either was sent before. */
+  sent(commandId: string, messageId: string): Origin | undefined { return this.byCommand.get(commandId) ?? this.byMessage.get(messageId) }
+  /** The origin of a replayed user message: the one sent at that turn with that digest, else the first with that digest not yet placed. */
+  replayed(turn: number, hash: string, placed: { has(messageId: string): boolean }): Origin | undefined {
+    return this.byTurn.get(`${turn}:${hash}`) ?? this.byDigest.get(hash)?.find(origin => !placed.has(origin.messageId))
+  }
+  add(origin: Origin): void { this.alias.origins.push(origin); this.index(origin) }
+  remove(origin: Origin): void {
+    const at = this.alias.origins.lastIndexOf(origin)
+    if (at >= 0) this.alias.origins.splice(at, 1)
+    if (this.byCommand.get(origin.commandId) === origin) this.byCommand.delete(origin.commandId)
+    if (this.byMessage.get(origin.messageId) === origin) this.byMessage.delete(origin.messageId)
+    const turn = `${origin.turn}:${origin.digest}`
+    if (this.byTurn.get(turn) === origin) this.byTurn.delete(turn)
+    const same = this.byDigest.get(origin.digest)?.filter(item => item !== origin)
+    if (same?.length) this.byDigest.set(origin.digest, same); else this.byDigest.delete(origin.digest)
+  }
+  wasAnswered(requestId: string): boolean { return this.answered.has(requestId) }
+  answer(requestId: string): void {
+    if (this.answered.has(requestId)) return
+    this.answered.add(requestId); this.alias.answeredRequestIds.push(requestId)
+    while (this.alias.answeredRequestIds.length > ANSWERED_KEPT) this.answered.delete(this.alias.answeredRequestIds.shift()!)
+  }
+  unanswer(requestId: string): void {
+    if (!this.answered.delete(requestId)) return
+    const at = this.alias.answeredRequestIds.lastIndexOf(requestId)
+    if (at >= 0) this.alias.answeredRequestIds.splice(at, 1)
+  }
+}
 const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabilities: z.object({ loadSession: z.literal(true),
   mcpCapabilities: z.object({ http: z.boolean().optional() }).passthrough().optional(),
   promptCapabilities: z.object({ image: z.boolean().optional() }).passthrough().optional() }).passthrough() }).passthrough()
@@ -124,8 +182,11 @@ class TurnPlaces {
     return key
   }
 }
-/** A thread's conversation as `session/load` replays it, built before it is handed to the log. */
-interface Replay { messages: AgentMessage[]; activities: AgentActivity[]; turns: number; turn: TurnPlaces | undefined; createdAt: string; userCreatedAt: string }
+/**
+ * A thread's conversation as `session/load` replays it, built before it is handed to the log. `byId` holds the same
+ * messages by ID, so a reply's next chunk finds its message without scanning the conversation.
+ */
+interface Replay { messages: AgentMessage[]; byId: Map<string, AgentMessage>; activities: AgentActivity[]; turns: number; turn: TurnPlaces | undefined; createdAt: string; userCreatedAt: string }
 /** The turn a thread is on, as its own stream reports it. `taken` once Cursor showed it is working on a prompt Sotto sent. */
 interface LiveTurn {
   readonly places: TurnPlaces
@@ -186,6 +247,8 @@ export class CursorAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Each thread's origins and answered requests by key, built from its saved record once (`ThreadIndex`). */
+  private readonly indexes = new Map<string, ThreadIndex>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly connections = new Map<string, Connection>()
   private readonly loading = new Map<string, Promise<Connection>>()
@@ -260,7 +323,14 @@ export class CursorAcpHost implements AgentHost {
   useLaunchProfiles(profiles: ThreadLaunchProfiles): void { this.launchProfiles = profiles }
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
-  private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /** The store serializes what it is given before it returns, so the aliases are written as they are, never copied. */
+  private persist(): Promise<void> { this.writing = this.aliasStore.write(this.aliases); return this.writing }
+  /** The thread's origins and answered requests by key, indexed from its saved record the first time they are needed. */
+  private indexOf(id: string, alias: Alias): ThreadIndex {
+    let index = this.indexes.get(id)
+    if (!index || index.alias !== alias) { index = new ThreadIndex(alias); this.indexes.set(id, index) }
+    return index
+  }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]
     if (!alias) throw new Error('This Cursor thread does not exist.')
@@ -412,7 +482,7 @@ export class CursorAcpHost implements AgentHost {
       if (!this.state.models.length) throw new ProviderUnavailable('signed-out', 'Cursor listed no models. Sign in to Cursor, then connect it again. Your threads are kept.', version)
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
       this.assertGeneration(generation)
-      this.aliases = aliases; this.state.projects = projects; this.program = program
+      this.aliases = aliases; this.indexes.clear(); this.state.projects = projects; this.program = program
       this.threads.clear(); this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
       this.state.connected = true; this.state.version = `${version} / ACP ${CURSOR_ACP_VERSION}`
@@ -530,7 +600,7 @@ export class CursorAcpHost implements AgentHost {
     try {
       const mcpServers = await this.toolServers(id, connection.watcher)
       this.assertGeneration(generation)
-      connection.replay = { messages: [], activities: [], turns: 0, turn: undefined, createdAt: alias.createdAt, userCreatedAt: alias.createdAt }
+      connection.replay = { messages: [], byId: new Map(), activities: [], turns: 0, turn: undefined, createdAt: alias.createdAt, userCreatedAt: alias.createdAt }
       await connection.rpc.request('session/load', { sessionId: alias.cursorSessionId, cwd: alias.cwd, mcpServers }, value => { this.readSettings(connection, value) })
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new CursorUncertain('Cursor’s connection changed while the thread was opening.')
       const replay = connection.replay
@@ -620,7 +690,7 @@ export class CursorAcpHost implements AgentHost {
       if (!params || (alias.cursorSessionId && params.sessionId !== alias.cursorSessionId)) return
       const update = record(params.update)
       if (!update) return
-      if (connection.replay) { this.replayUpdate(alias, connection.replay, update); return }
+      if (connection.replay) { this.replayUpdate(id, alias, connection.replay, update); return }
       if (this.connections.get(id) !== connection) return
       this.liveUpdate(id, alias, connection, update)
       return
@@ -660,7 +730,7 @@ export class CursorAcpHost implements AgentHost {
       try { await this.launchProfile(id, connection.rpc) } catch { return }
       if (this.connections.get(id) !== connection || connection.closing) return
     }
-    if (alias.answeredRequestIds.includes(requestId)) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
+    if (this.indexOf(id, alias).wasAnswered(requestId)) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     if (this.pending.size >= 128) { void connection.rpc.reply(frame.id, cursorDecline(pending)).catch(() => undefined); return }
     this.pending.set(requestId, pending)
     this.thread(id).requests.push(pending.request)
@@ -719,7 +789,7 @@ export class CursorAcpHost implements AgentHost {
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
   }
   /** One update of a `session/load` replay: whole messages and finished work, in order, with no time or ID of Cursor's own. */
-  private replayUpdate(alias: Alias, replay: Replay, update: Record<string, unknown>): void {
+  private replayUpdate(id: string, alias: Alias, replay: Replay, update: Record<string, unknown>): void {
     const kind = String(update.sessionUpdate)
     const content = record(update.content)
     const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : undefined
@@ -727,16 +797,16 @@ export class CursorAcpHost implements AgentHost {
       if (words === undefined) return
       const index = replay.turns++
       const hash = digest(words)
-      const origin = alias.origins.find(item => item.turn === index && item.digest === hash)
-        ?? alias.origins.find(item => item.digest === hash && !replay.messages.some(message => message.id === item.messageId))
+      const origin = this.indexOf(id, alias).replayed(index, hash, replay.byId)
       const key = origin?.messageId ?? `cursor-user-${index}-${hash.slice(0, 16)}`
       const createdAt = origin?.createdAt ?? replay.userCreatedAt
       replay.userCreatedAt = createdAt
       // A message to Watcher comes back as it was sent, its digest proving it: Sotto's own parts come off by their counts.
       const head = origin?.sottoHead ?? 0, tail = origin?.sottoTail ?? 0
       const typed = head + tail > 0 && words.length >= head + tail ? words.slice(head, words.length - tail) : words
-      replay.messages.push({ id: key, role: 'user', text: typed, createdAt, ...(origin ? { commandId: origin.commandId } : {}),
-        ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) })
+      const message: AgentMessage = { id: key, role: 'user', text: typed, createdAt, ...(origin ? { commandId: origin.commandId } : {}),
+        ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) }
+      replay.messages.push(message); replay.byId.set(key, message)
       replay.turn = new TurnPlaces(key)
       return
     }
@@ -744,9 +814,9 @@ export class CursorAcpHost implements AgentHost {
     if (kind === 'agent_message_chunk') {
       if (words === undefined) return
       const reply = turn.reply()
-      const held = replay.messages.find(message => message.id === reply.id)
+      const held = replay.byId.get(reply.id)
       if (held) held.text += words
-      else replay.messages.push({ id: reply.id, role: 'assistant', text: words, createdAt: replay.userCreatedAt, turnMessageId: turn.key })
+      else { const message: AgentMessage = { id: reply.id, role: 'assistant', text: words, createdAt: replay.userCreatedAt, turnMessageId: turn.key }; replay.messages.push(message); replay.byId.set(reply.id, message) }
       return
     }
     const key = kind === 'agent_thought_chunk' ? turn.thought()
@@ -934,7 +1004,8 @@ export class CursorAcpHost implements AgentHost {
     const current = (): void => {
       if (generation !== this.generation || this.connections.get(id) !== connection || !this.state.connected) throw new CursorUncertain('Cursor’s connection changed. Delivery has not been confirmed.')
     }
-    const previous = alias.origins.find(origin => origin.commandId === command.commandId || origin.messageId === command.messageId)
+    const index = this.indexOf(id, alias)
+    const previous = index.sent(command.commandId, command.messageId)
     if (previous) {
       if (previous.messageId !== command.messageId || previous.commandId !== command.commandId) throw new Error('This Cursor message identity is already in use.')
       return this.log.has(id, previous.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
@@ -970,10 +1041,10 @@ export class CursorAcpHost implements AgentHost {
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
       attachments: attachments.map(({ id: attachmentId, name, mimeType, sizeBytes }) => ({ id: attachmentId, name, mimeType, sizeBytes })),
       ...(profile ? { sottoHead: head.length, sottoTail: tail.length } : {}) }
-    alias.origins.push(origin); alias.turns++
+    index.add(origin); alias.turns++
     await this.persist()
     current()
-    try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); alias.turns--; await this.persist(); throw error }
+    try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
     // A prompt Cursor did not take keeps the instructions owed.
@@ -1030,8 +1101,9 @@ export class CursorAcpHost implements AgentHost {
     if (pending.answering) return { accepted: false, uncertain: true }
     const result = cursorAnswer(pending, command.answer, command.approved, command.questionAnswers, command.permissionChoice)
     pending.answering = true
-    alias.answeredRequestIds.push(pending.request.id)
-    try { await this.persist() } catch (error) { alias.answeredRequestIds = alias.answeredRequestIds.filter(item => item !== pending.request.id); pending.answering = false; throw error }
+    const index = this.indexOf(command.threadId, alias)
+    index.answer(pending.request.id)
+    try { await this.persist() } catch (error) { index.unanswer(pending.request.id); pending.answering = false; throw error }
     if (this.pending.get(command.requestId) !== pending || this.connections.get(command.threadId) !== connection) return { accepted: false, uncertain: true }
     try { await connection.rpc.reply(pending.wireId, result); this.removeRequest(command.requestId) }
     catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
@@ -1080,8 +1152,10 @@ export class CursorAcpHost implements AgentHost {
   }
   /**
    * Sotto's short text on Cursor (ADR-0026): one prompt in a session of its own, on a process of its own, in Cursor's
-   * `ask` mode, which edits nothing and runs nothing, on the thread's model at its least effort. The thread's session
-   * never hears of it, and the side session stays in Sotto's Cursor folder.
+   * `ask` mode, on the thread's model at its least effort. The thread's session never hears of it. A side call uses no
+   * tools, and Cursor's `ask` mode still reads the project, so its process runs with Sotto's side-call Cursor folder,
+   * whose rules deny every tool, and the side session stays there; every request it makes is answered `cancelled`; and
+   * a tool call that shows anyway stops the call, which then writes nothing.
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation

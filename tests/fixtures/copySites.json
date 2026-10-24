@@ -28,7 +28,6 @@
     "clonePlainData(": 2
   },
   "src/main/agents/cursor.ts": {
-    "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
