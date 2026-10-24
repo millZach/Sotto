@@ -648,6 +648,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A press on the scrubber that needs an earlier page drawn first: where it goes, and whether focus goes with it.
   const landing = useRef<{ readonly messageId: string; readonly focus: boolean } | null>(null)
   const [landingSeq, setLandingSeq] = useState(0)
+  /** A press on a prompt only the thread's store holds, waiting for the window to widen back to it. */
+  const far = useRef<{ readonly threadId: string; readonly messageId: string; readonly focus: boolean } | null>(null)
   const submissions = useSubmissions(store)
   const pending = submissions.filter(item => item.threadId === thread.id)
     .map(item => ({ item, ...submissionStatus(item, state) })).filter(item => item.visible)
@@ -694,12 +696,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // thread's store above it.
   const scrubberOn = useOwlFeature('message-scrubber')
   const windowMarks = useMemo(() => scrubberOn ? scrubberMarks(thread.messages, briefs?.ids) : [], [scrubberOn, thread.messages, briefs])
-  const storedPrompts = useStoredPrompts(thread.id, thread.messages[0]?.id, thread.earlierAvailable === true, thread.historyEpoch, scrubberOn)
-  const aboveMarks = useMemo(() => storedMarks(storedPrompts, briefs?.ids), [storedPrompts, briefs])
+  const stored = useStoredPrompts(thread.id, thread.messages[0]?.id, thread.earlierAvailable === true, thread.historyEpoch, thread.summary?.messageCount, scrubberOn)
+  const aboveMarks = useMemo(() => storedMarks(stored.prompts, briefs?.ids), [stored.prompts, briefs])
   const joined = useMemo(() => joinedMarks(aboveMarks, windowMarks), [aboveMarks, windowMarks])
-  // While the thread's messages load again, as they do when the pane comes back to it, the ticks it had stand.
+  // While the thread's messages load again, as they do when the pane comes back to it, and while the store is read again
+  // for a window that moved, the ticks it had stand.
   const lastMarks = useRef<{ readonly threadId: string; readonly marks: readonly ScrubberMark[] } | null>(null)
-  const marksHeld = thread.historyStatus === 'loading' && lastMarks.current?.threadId === thread.id && lastMarks.current.marks.length > joined.length
+  const marksHeld = (thread.historyStatus === 'loading' || stored.reading) && lastMarks.current?.threadId === thread.id && lastMarks.current.marks.length > joined.length
   const marks = marksHeld ? lastMarks.current!.marks : joined
   if (!marksHeld) lastMarks.current = { threadId: thread.id, marks: joined }
   // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
@@ -770,6 +773,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const toEnd = useCallback((): void => {
     const element = scroller.current
     if (element === null) return
+    // Jump to latest, a send or another thread is somewhere else to be, so a pressed prompt still loading is not.
+    far.current = null
     element.scrollTop = element.scrollHeight
     following.current = true
     setAway(false)
@@ -880,8 +885,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     markSought(message)
     if (focus) { message.tabIndex = -1; message.focus({ preventScroll: true }) }
   }, [])
-  /** A press on a prompt only the thread's store holds, waiting for the window to widen back to it. */
-  const far = useRef<{ readonly threadId: string; readonly messageId: string; readonly focus: boolean } | null>(null)
   /**
    * The scrubber's press: a message above the first one drawn widens the window to it first, then lands there. One only
    * the thread's store holds has the window loaded back to it first; until it arrives the reader stays where they are.
@@ -958,7 +961,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true || marksHeld}
-      who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
+      who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} onReaderWheel={onReaderInput} /> : null}
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>

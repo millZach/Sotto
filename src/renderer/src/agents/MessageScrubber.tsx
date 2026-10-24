@@ -33,7 +33,7 @@ type Via = 'pointer' | 'keys' | 'touch'
  * each card, Home and End go to the ends, Enter or Space goes there and puts focus on the message, and Escape closes the
  * card and then returns to the transcript.
  */
-export function MessageScrubber({ marks, scroller, content, moreAbove, who, running, requests, onJump }: {
+export function MessageScrubber({ marks, scroller, content, moreAbove, who, running, requests, onJump, onReaderWheel }: {
   readonly marks: readonly ScrubberMark[]
   readonly scroller: RefObject<HTMLDivElement | null>
   readonly content: RefObject<HTMLDivElement | null>
@@ -45,6 +45,8 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   readonly requests: readonly AgentRequest[]
   /** Brings a message into view, and into focus when the keyboard asked. */
   readonly onJump: (messageId: string, focus: boolean) => void
+  /** The reader's wheel over the lane, which scrolls the transcript as the reader's own wheel over it does. */
+  readonly onReaderWheel?: ((event: React.WheelEvent) => void) | undefined
 }): ReactNode {
   const [geometry, setGeometry] = useState<Geometry | null>(null)
   // The card's tick and the focused tick are held by message, so loading earlier messages or a rewind, which shift the
@@ -215,6 +217,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const onWheel = (event: React.WheelEvent): void => {
     const element = scroller.current
     if (element === null) return
+    onReaderWheel?.(event)
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1
     element.scrollTop += event.deltaY * unit
   }

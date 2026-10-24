@@ -227,7 +227,7 @@ export type HostFeature = typeof HOST_FEATURES[number]
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so

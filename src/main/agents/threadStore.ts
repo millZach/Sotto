@@ -802,10 +802,12 @@ export class ThreadStore {
   promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompt[] {
     const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
     if (before === null || before === undefined) return []
+    // Only the newest prompts an answer carries are read, so a longer history costs no more.
+    const from = this.statement(`SELECT position FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)?.position ?? 0
     const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
     const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
       CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
-      FROM messages WHERE thread_id = ? AND position < ? AND (role = 'user' OR trim(text) <> '') ORDER BY position`).all(threadId, before)
+      FROM messages WHERE thread_id = ? AND position >= ? AND position < ? AND (role = 'user' OR trim(text, char(32, 9, 10, 11, 12, 13)) <> '') ORDER BY position`).all(threadId, from, before)
     const prompts: { -readonly [K in keyof AgentThreadPrompt]: AgentThreadPrompt[K] }[] = []
     let current: typeof prompts[number] | undefined
     for (const row of rows) {
@@ -816,9 +818,13 @@ export class ThreadStore {
         const attached = row.attachments === null || row.attachments === undefined ? 0 : (JSON.parse(String(row.attachments)) as unknown[]).length
         current = { id, createdAt: String(row.created_at), text: clipText(String(row.head), THREAD_PROMPT_TEXT), ...(attached > 0 ? { attachments: Math.min(attached, 1000) } : {}) }
         prompts.push(current)
-      } else if (current) current.reply = { id, text: promptReplyText(String(row.head), row.tail === null || row.tail === undefined ? null : String(row.tail)) }
+      } else if (current) {
+        const tail = row.tail === null || row.tail === undefined ? null : String(row.tail)
+        // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
+        if (tail !== null || String(row.head).trim().length > 0) current.reply = { id, text: promptReplyText(String(row.head), tail) }
+      }
     }
-    return prompts.slice(-THREAD_PROMPTS_MOST)
+    return prompts
   }
 
   /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */

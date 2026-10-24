@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { agentThreadPromptsSchema, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_TEXT } from '../../../src/shared/threadPrompts'
+import { agentThreadPromptsSchema, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST } from '../../../src/shared/threadPrompts'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -36,10 +36,10 @@ const at = (index: number): string => new Date(Date.UTC(2026, 9, 24, 10, 0, inde
 function conversation(turns: number, reply: (index: number) => string = index => `Reply ${index}`): AgentMessage[] {
   return Array.from({ length: turns }, (_, index) => [
     { id: `u${index}`, role: 'user' as const, text: `Prompt ${index}`, createdAt: at(index * 3) },
-    // A turn's working note comes before the reply with words; an empty message is no reply.
+    // A turn's working note comes before the reply with words; a message of space alone is no reply.
     { id: `n${index}`, role: 'assistant' as const, text: `Working on ${index}`, createdAt: at(index * 3 + 1) },
     { id: `a${index}`, role: 'assistant' as const, text: reply(index), createdAt: at(index * 3 + 2) },
-    { id: `e${index}`, role: 'assistant' as const, text: '  ', createdAt: at(index * 3 + 2) },
+    { id: `e${index}`, role: 'assistant' as const, text: ' \n\t\u00a0\n', createdAt: at(index * 3 + 2) },
   ]).flat()
 }
 
@@ -75,6 +75,22 @@ describe('the prompts above a pane’s window, for the message scrubber (ADR-010
     expect(reply.length).toBeLessThan(THREAD_PROMPT_REPLY_HEAD * 2 + 3)
     expect(reply.endsWith('Should the pill wait 150 ms before it shows, for turn 0?')).toBe(true)
     expect(reply).not.toContain('Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words. Middle words.')
+  })
+
+  it('reads the newest prompts an answer carries and no further back', () => {
+    const store = new ThreadStore(':memory:')
+    store.open({ ephemeral: true })
+    try {
+      const turns = THREAD_PROMPTS_MOST + 5
+      store.replaceThreadMessages('long', Array.from({ length: turns }, (_, index) => [
+        { id: `u${index}`, role: 'user' as const, text: `Prompt ${index}`, createdAt: at(index * 2) },
+        { id: `a${index}`, role: 'assistant' as const, text: `Reply ${index}`, createdAt: at(index * 2 + 1) },
+      ]).flat())
+      const prompts = store.promptsBefore('long', `u${turns - 1}`, new Set())
+      expect(prompts).toHaveLength(THREAD_PROMPTS_MOST)
+      expect(prompts[0]).toMatchObject({ id: `u${turns - 1 - THREAD_PROMPTS_MOST}`, reply: { id: `a${turns - 1 - THREAD_PROMPTS_MOST}` } })
+      expect(prompts.at(-1)!.id).toBe(`u${turns - 2}`)
+    } finally { store.close() }
   })
 
   it('leaves a wake-up out, with the reply that answered it', async () => {
