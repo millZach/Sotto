@@ -97,7 +97,7 @@ export function useOwnServerTurns(row: ThreadRow, state: AgentState, command: Co
     : tryAgainBy === 'send' && row.connected && !busy && thread.status !== 'running' && !thread.archivedAt && capabilities.submit
   const canStop = row.connected && !busy && thread.status === 'running' && capabilities.interrupt === true
   const tryAgain = useCallback(() => { const { row: current, command: send, store: drafts } = latest.current; tryLastMessageAgain(current, send, drafts) }, [])
-  const navigate = app?.actions.navigate
+  const navigate = app?.actions?.navigate
   const openSettings = useCallback(() => { navigate?.('settings', 'settings-providers', 'own-model-servers') }, [navigate])
   const threadId = thread.id
   const stop = useCallback(() => { void latest.current.command({ type: 'interrupt', threadId }) }, [threadId])
