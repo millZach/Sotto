@@ -4,13 +4,18 @@
     "configFolder": "profile/cursor/config",
     "noOpenBrowser": true
   },
+  "settingsMakers": [
+    "Cursor",
+    "Anthropic",
+    "OpenAI"
+  ],
   "makers": [
     "Cursor",
     "Anthropic",
     "OpenAI"
   ],
   "stable": {
-    "cursorTile": false,
+    "cursorRow": false,
     "recordsKept": true
   }
 }

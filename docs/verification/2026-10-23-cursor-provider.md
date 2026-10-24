@@ -2,7 +2,7 @@
 
 October 23, 2026. [ADR-0128](../adr/0128-cursor-is-a-thread-provider.md) and its amendment "Watcher, hosts and phones, as built". Every live check ran on the Windows laptop against Cursor's CLI **2026.10.22-27dcf5f**, the version installed and signed in there and Sotto's floor, on **GPT-5.4 Nano** at low effort, the cheapest model checked. Every live Cursor process ran with `CURSOR_CONFIG_DIR` pointed at a scratch folder, never the user's own `~/.cursor`, and no live run signed in or out. The research note's [Appendix B](../research/cursor-cli.md#appendix-b-live-checks-against-20261022-27dcf5f-2026-10-23) has the wire facts checked before the adapter was built.
 
-This note has no screenshots: the Settings tile, model menu and request cards were checked by the UI work in its own commit.
+Cursor's row in Settings → Providers and its model menu were checked in the built app, below; the request cards by their unit tests.
 
 ## Live, against Cursor's own CLI
 
@@ -25,17 +25,21 @@ This note has no screenshots: the Settings tile, model menu and request cards we
 
 ## In the built app
 
-`tests/e2e/cursor-provider.spec.ts` runs the built Owl app with Cursor's real adapter over the fake Cursor client (`SOTTO_E2E_CURSOR_ROOT`), in a profile of its own, dark with reduced motion on, and passed on October 24, 2026 after main was merged in. Its captures are in [`artifacts/cursor-provider/`](../../artifacts/cursor-provider/):
+`tests/e2e/cursor-provider.spec.ts` runs the built Owl app with Cursor's real adapter over the fake Cursor client (`SOTTO_E2E_CURSOR_ROOT`), in a profile of its own, dark with reduced motion on. It passed on October 24, 2026, after main's Providers list (`docs/verification/2026-10-23-providers-list.md`) was merged in and Cursor's Settings parts were rebuilt on it: Cursor has a row in the list, as every provider does, rather than the tile and detail card it had before. Its captures are in [`artifacts/cursor-provider/`](../../artifacts/cursor-provider/), each with Cursor's row scrolled to the top of Settings:
 
-- `signed-out-1600-dark.png`: Cursor switched on and connected while signed out. The tile says Sotto uses Cursor's own sign-in and offers **Sign in**, with no alert repeating it.
-- `signing-in-1280-dark.png`: after **Sign in** (variant A). Main wrote the `https://cursor.com/` page down instead of opening a browser, Cursor's `login` ran with `NO_OPEN_BROWSER=1` and Sotto's own Cursor folder under the profile, and the tile says to finish on cursor.com, with **Open the page again** and **Cancel**. Writing the fixture's `login-done` connected Cursor by itself.
-- `connected-820-light.png`: connected, at the minimum window in light. The panel was also captured at 1600x1000 and 1280x800 in dark; nothing in it was cut off at any size.
+- `signed-out-1600-dark.png`: from Codex's header, End reached Cursor's, the last, and Enter opened it. Switched on and connected while signed out, the row's header says Not signed in, and its connection column says Sotto uses Cursor's own sign-in and offers **Sign in**. No alert repeats it, under the header or in the row. The badge is Cursor's cube in the shared ink on `--tt-provider-cursor-badge`.
+- `signing-in-1280-dark.png`: after **Sign in** (variant A). Main wrote the `https://cursor.com/` page down instead of opening a browser, and Cursor's `login` ran with `NO_OPEN_BROWSER=1` and Sotto's own Cursor folder under the profile. The column says to finish on cursor.com, with the waiting line, **Open the page again** (focused) and **Cancel**. The header says **Signing in…** with its dot pulsing as a connect's does, and the switch is held. Writing the fixture's `login-done` connected Cursor by itself.
+- `connected-820-light.png`: connected, at the minimum window in light: Disconnect, refresh and **Sign out of Cursor**, the installed client, and the models under their makers (Cursor, Anthropic, OpenAI), each maker a small heading. The row was also captured at 1600x1000, 1280x800 and 820x560 in dark. Nothing in Settings → Providers was cut off sideways at any size, and Escape from inside the open row closed it and gave focus back to its header.
 - `makers-1280-dark.png` and `anthropic-820-light.png`: the model menu opens on Cursor's model makers (Cursor, Anthropic, OpenAI) with the foot saying every model runs through Cursor on the user's plan; Anthropic's models show under **Makers**; Escape steps back to the maker's row and then to the chip. The chip reads Anthropic / Claude Fixture with "Claude Fixture from Anthropic, in Cursor" as its title and Cursor's mark.
 - `permissions-1280-dark.png`: Provider default, then exactly Cursor's three modes with Cursor's own descriptions, and no Allow edits.
-- `stable-providers.png`: the same profile with Cursor's Owl feature off. No Cursor tile, and `cursor-projects.json` kept.
-- `contrast.json`: every text measured is at least 4.5:1, the lowest the menu foot in light at 6.1:1.
+- `stable-providers.png`: the same profile with Cursor's Owl feature off. The list ends at OpenCode, with no Cursor row or switch, the update sentence names no Cursor, and `cursor-projects.json` is kept.
+- `contrast.json`: every text measured is at least 4.5:1, the lowest the menu foot in light at 6.1:1; the row's words and maker headings are 8.6:1 in dark and 6.1:1 in light.
 
-The first run found two faults, both fixed in this change: while a sign-in waited, the tile still showed the Connect press's error telling the user to sign in and connect again, and the tile's sign-in found Cursor's program by itself rather than the one the adapter runs, so a fixture's sign-in would have started the real `agent login`.
+Cursor's badge colour is `#f2b9c9` by night, the same pale rose as its mark, and `#eaaabd` by day, since its day mark (`#94405a`) is too dark under the ink (2.9:1). Over the six built-in themes the ink reads on the badge at 11.8:1 or more by night and 10.2:1 by day, and the badge stands off the card at 9.0:1 by night and 1.5:1 by day, where the other badges stand at 1.1:1 to 1.6:1. `themeTokens.test.ts` holds the ink on it at 4.5:1 and Cursor's mark at 3:1 on every surface it is drawn on, and the Omarchy readability check holds the ink on it too.
+
+The first run on the list found one fault, fixed in the same change: the switch's refused connect ("Sign in to Cursor, then connect it again") stayed hidden while the row explained signing in, then came back under the header once the sign-in connected Cursor. A sign-in press now clears the row's last error, as every other press on the page clears its own provider's. The run before the list found two, both fixed then: while a sign-in waited, the tile still showed the Connect press's error, and the tile's sign-in found Cursor's program by itself rather than the one the adapter runs, so a fixture's sign-in would have started the real `agent login`.
+
+Still open: at 1280 and 1600 wide, the header's version column, 64 pixels for every provider, cuts Cursor's `2026.10.22-27dcf5f` to "2026.10…" (the version needs 119 pixels, and its date alone 68). The open row's Installed client line shows it whole, and below 600 pixels of list the version goes under the name and shows whole. Widening the column changes every provider's row, and the Providers design baselines with it.
 
 ## The flaky adapter tests
 

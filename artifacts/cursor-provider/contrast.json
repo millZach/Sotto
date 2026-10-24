@@ -12,6 +12,60 @@
     "ratio": 17.839715135899358
   },
   {
+    "surface": "waiting status",
+    "width": 1280,
+    "appearance": "dark",
+    "ratio": 11.410669659959686
+  },
+  {
+    "surface": "connected lead",
+    "width": 1600,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "maker heading",
+    "width": 1600,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "connected lead",
+    "width": 1280,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "maker heading",
+    "width": 1280,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "connected lead",
+    "width": 820,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "maker heading",
+    "width": 820,
+    "appearance": "dark",
+    "ratio": 8.653670121028247
+  },
+  {
+    "surface": "connected lead",
+    "width": 820,
+    "appearance": "light",
+    "ratio": 6.14681741936082
+  },
+  {
+    "surface": "maker heading",
+    "width": 820,
+    "appearance": "light",
+    "ratio": 6.14681741936082
+  },
+  {
     "surface": "menu foot",
     "width": 1280,
     "appearance": "dark",

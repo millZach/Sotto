@@ -1,8 +1,9 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultAgentConfiguration, type AgentCommand, type AgentModel, type AgentProviderStatus, type AgentState } from '../../../src/shared/agents'
+import { defaultAgentConfiguration, type AgentCommand, type AgentModel, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../src/shared/agents'
 import type { CursorSignInBridge, CursorSignInView } from '../../../src/shared/cursorSignIn'
 import type { HostSignInRequest, ProviderSignInView } from '../../../src/shared/hostProviders'
 import { cursorPending } from '../../../src/main/agents/cursorRequests'
@@ -41,108 +42,169 @@ function cursorBridge(patch: Partial<CursorSignInBridge> = {}): CursorSignInBrid
     cancel: vi.fn(async () => ({ ok: true })), signOut: vi.fn(async () => ({ ok: true, message: 'Cursor is signed out on this computer.' })), ...patch }
 }
 
-async function mount(cursor: Partial<AgentProviderStatus>, owl = true) {
+async function mount(cursor: Partial<AgentProviderStatus>, { owl = true, enabled = ['codex', 'cursor'], answer }: { owl?: boolean; enabled?: ProviderId[]; answer?: (command: AgentCommand, state: AgentState) => AgentState | null } = {}) {
   const state: AgentState = threadsStateFixture({
-    configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'cursor'] },
+    configuration: { ...defaultAgentConfiguration(), enabledProviders: enabled },
     host: { connected: true, name: 'Providers', version: '', capabilities, projects: [], threads: [],
       providers: [{ id: 'codex', name: 'Codex', version: '0.155.1', connection: 'connected', capabilities },
         { id: 'cursor', name: 'Cursor', version: '2026.10.22-27dcf5f', connection: 'connected', capabilities, ...cursor }],
       models: CURSOR_MODELS },
   })
-  const command = vi.fn<(command: AgentCommand) => Promise<AgentState | null>>().mockResolvedValue(state)
+  const command = vi.fn<(command: AgentCommand) => Promise<AgentState | null>>(async sent => answer?.(sent, state) ?? state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
   render(<AppProvider bridge={createBridge({ getUpdateStatus: async () => ({ currentVersion: '0.1.37-owl.20261023.1', releaseTrack: 'owl', owlFeatures: { watcher: false, cursor: owl }, phase: { phase: 'unsupported' }, checkedAt: null }) as never })} createController={createController}><ProvidersSettings /></AppProvider>)
   await screen.findByRole('button', { name: 'Codex' })
-  return { command }
+  return { command, state }
 }
 const signedOut: Partial<AgentProviderStatus> = { connection: 'error', problem: 'signed-out', error: 'Cursor is not signed in on this computer. Sign in to Cursor, then connect it again. Your threads are kept.' }
+/** Opens Cursor's row, once the Owl answer has shown it, and returns what it shows. */
+async function openCursor(): Promise<HTMLElement> {
+  const header = await screen.findByRole('button', { name: 'Cursor' })
+  if (header.getAttribute('aria-expanded') !== 'true') fireEvent.click(header)
+  return screen.getByRole('region', { name: 'Cursor details' })
+}
+const cursorStatus = () => screen.getByRole('button', { name: 'Cursor' }).querySelector('.provider-row__status')
 
-describe('Cursor’s provider tile', () => {
-  it('signs in on cursor.com from the tile, waits with Open the page again and Cancel, and stops waiting once Cursor says it signed in', async () => {
+describe('Cursor’s provider row', () => {
+  it('signs in on cursor.com from its row, waits with Open the page again and Cancel, and stops waiting once Cursor says it signed in', async () => {
     const bridge = cursorBridge({ read: vi.fn().mockResolvedValueOnce(waiting).mockResolvedValue({ ...waiting, stage: 'connected' }) })
     vi.stubGlobal('sotto', { ...window.sotto, cursor: bridge })
     await mount(signedOut)
-    const row = await screen.findByRole('button', { name: 'Cursor' })
-    expect(row).toHaveTextContent('Not signed in')
-    // Sotto's own mark for Cursor, a cube of three faces: not Cursor's logo and not the placeholder outline.
-    expect(row.querySelector('svg.provider-mark[data-provider="cursor"] path')?.getAttribute('d')).toMatch(/^M12 2\.4L19\.51 6\.74/u)
-    fireEvent.click(row)
-    expect(screen.getByText('Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account.')).toBeVisible()
-    // The tile says what to do, so main's sentence about connecting again is not repeated under it.
+    const header = await screen.findByRole('button', { name: 'Cursor' })
+    expect(header).toHaveTextContent('Not signed in')
+    expect(cursorStatus()).toHaveAttribute('data-status', 'error')
+    // Sotto's own mark for Cursor, a cube of three faces, in the ink on Cursor's own badge: not Cursor's logo and not the placeholder outline.
+    expect(header.querySelector('.provider-badge[data-provider="cursor"] svg.provider-mark[data-provider="cursor"] path')?.getAttribute('d')).toMatch(/^M12 2\.4L19\.51 6\.74/u)
+    // The row says what to do, so main's sentence about connecting again is not repeated under its header, open or closed.
     expect(screen.queryByText(/then connect it again/u)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' }))
-    expect(await screen.findByText('Finish signing in on cursor.com in your browser.')).toBeVisible()
-    expect(screen.getByText('Waiting for Cursor. This connects by itself.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Cursor' })).toHaveTextContent('Signing in…')
+    const details = await openCursor()
+    expect(within(details).getByText('Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account.')).toBeVisible()
+    expect(screen.queryByText(/then connect it again/u)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(within(details).getByRole('button', { name: 'Sign in to Cursor in your browser' }))
+    expect(await within(details).findByText('Finish signing in on cursor.com in your browser.')).toBeVisible()
+    expect(within(details).getByText('Waiting for Cursor. This connects by itself.')).toBeVisible()
+    // The header says so, live as a connect is, and holds the switch.
+    expect(header).toHaveTextContent('Signing in…')
+    expect(cursorStatus()).toHaveAttribute('data-status', 'busy')
     expect(screen.getByRole('switch', { name: 'Enable Cursor' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Open Cursor’s sign-in page in your browser again' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(within(details).getByRole('button', { name: 'Open Cursor’s sign-in page in your browser again' }))
     await waitFor(() => expect(bridge.reopen).toHaveBeenCalledWith({ id: SIGN_IN }))
-    // Looking at Cursor's models, or another provider, while it waits keeps the sign-in waiting.
-    fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
+    // Opening another row, which closes Cursor's, keeps the sign-in waiting; opening Cursor's again shows where it stands.
     fireEvent.click(screen.getByRole('button', { name: 'Codex' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cursor' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }))
-    expect(screen.getByText('Finish signing in on cursor.com in your browser.')).toBeVisible()
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(header).toHaveTextContent('Signing in…')
+    expect(within(await openCursor()).getByText('Finish signing in on cursor.com in your browser.')).toBeVisible()
     await waitFor(() => expect(screen.queryByText('Finish signing in on cursor.com in your browser.')).toBeNull(), { timeout: 5000 })
+    expect(header).not.toHaveTextContent('Signing in…')
+    expect(screen.getByRole('switch', { name: 'Enable Cursor' })).toBeEnabled()
     expect(bridge.read).toHaveBeenCalledWith({ id: SIGN_IN })
     expect(bridge.cancel).not.toHaveBeenCalled()
   })
 
-  it('cancels a waiting sign-in on Cancel or Escape, and says why one that ended did not connect', async () => {
+  it('cancels a waiting sign-in on Cancel or Escape, then closes the row on the next Escape, and says why one that ended did not connect', async () => {
     const bridge = cursorBridge()
     vi.stubGlobal('sotto', { ...window.sotto, cursor: bridge })
     await mount(signedOut)
-    fireEvent.click(await screen.findByRole('button', { name: 'Cursor' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' }))
-    const again = await screen.findByRole('button', { name: 'Open Cursor’s sign-in page in your browser again' })
+    const details = await openCursor()
+    fireEvent.click(within(details).getByRole('button', { name: 'Sign in to Cursor in your browser' }))
+    const again = await within(details).findByRole('button', { name: 'Open Cursor’s sign-in page in your browser again' })
+    // Escape while it waits is the sign-in's own: it cancels, and the row stays open with Sign in focused.
     fireEvent.keyDown(again, { key: 'Escape' })
     await waitFor(() => expect(bridge.cancel).toHaveBeenCalledWith({ id: SIGN_IN }))
-    expect(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' })).toBeVisible()
+    const signIn = within(details).getByRole('button', { name: 'Sign in to Cursor in your browser' })
+    await waitFor(() => expect(signIn).toHaveFocus())
+    expect(screen.getByRole('button', { name: 'Cursor' })).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(signIn, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Cursor' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: 'Cursor' })).toHaveFocus()
     vi.mocked(bridge.read).mockResolvedValue({ ...waiting, stage: 'failed', message: 'Cursor’s sign-in stopped before it finished. Nothing was signed in.' })
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' }))
+    fireEvent.click(within(await openCursor()).getByRole('button', { name: 'Sign in to Cursor in your browser' }))
     expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent('Cursor’s sign-in stopped before it finished. Nothing was signed in.')
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' })).toBeVisible()
   })
 
   it('says why a sign-in could not start', async () => {
     vi.stubGlobal('sotto', { ...window.sotto, cursor: cursorBridge({ start: vi.fn(async () => ({ message: 'Cursor’s sign-in is not available right now. Nothing was changed.' })) }) })
     await mount(signedOut)
-    fireEvent.click(await screen.findByRole('button', { name: 'Cursor' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in to Cursor in your browser' }))
+    fireEvent.click(within(await openCursor()).getByRole('button', { name: 'Sign in to Cursor in your browser' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Cursor’s sign-in is not available right now. Nothing was changed.')
+  })
+
+  it('keeps a Connect press’s own error from repeating the sign-in under a signed-out row or after it, and shows it for any other trouble', async () => {
+    const refused = 'Could not connect Cursor. Sign in to Cursor, then connect it again.'
+    vi.stubGlobal('sotto', { ...window.sotto, cursor: cursorBridge({ read: vi.fn().mockResolvedValue({ ...waiting, stage: 'connected' }) }) })
+    const { command, state } = await mount(signedOut, { enabled: ['codex'], answer: (sent, current) => sent.type === 'connect' ? { ...current, error: refused } : null })
+    // Switching Cursor on connects it, and Cursor refuses: it is signed out.
+    fireEvent.click(await screen.findByRole('switch', { name: 'Enable Cursor' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'cursor', notice: false }))
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Enable Cursor' })).toBeEnabled())
+    expect(screen.queryByText(refused)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    const details = await openCursor()
+    // Signing in answers that refusal, so it does not come back under the row once Cursor connects.
+    fireEvent.click(within(details).getByRole('button', { name: 'Sign in to Cursor in your browser' }))
+    expect(await within(details).findByText('Finish signing in on cursor.com in your browser.')).toBeVisible()
+    const connected: AgentState = { ...state, host: { ...state.host, providers: state.host.providers!.map(provider => provider.id === 'cursor'
+      ? { id: 'cursor' as const, name: 'Cursor', version: '2026.10.22-27dcf5f', connection: 'connected' as const, capabilities } : provider) } }
+    vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(connected, command))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cursor' })).toHaveTextContent('Connected'), { timeout: 5000 })
+    expect(screen.queryByText(refused)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    cleanup()
+    // Not installed, Cursor's row offers its install guide, and the error stays under its header.
+    const missing = 'Cursor’s CLI is not installed on this computer.'
+    await mount({ connection: 'error', problem: 'not-installed', error: missing })
+    expect(await screen.findByRole('alert')).toHaveTextContent(missing)
+    expect(within(await openCursor()).getByRole('button', { name: 'Open Cursor’s install guide in your browser' })).toBeVisible()
   })
 
   it('offers Sign out of Cursor beside Disconnect when connected, then Sign in', async () => {
     const bridge = cursorBridge()
     vi.stubGlobal('sotto', { ...window.sotto, cursor: bridge })
     await mount({})
-    fireEvent.click(await screen.findByRole('button', { name: 'Cursor' }))
-    expect(screen.getByRole('button', { name: 'Disconnect Cursor' })).toBeVisible()
-    fireEvent.click(screen.getByRole('button', { name: 'Sign out of Cursor on this computer' }))
-    expect(await screen.findByText('Cursor is signed out on this computer.')).toBeVisible()
+    const details = await openCursor()
+    expect(within(details).getByRole('button', { name: 'Disconnect Cursor' })).toBeVisible()
+    fireEvent.click(within(details).getByRole('button', { name: 'Sign out of Cursor on this computer' }))
+    expect(await within(details).findByText('Cursor is signed out on this computer.')).toBeVisible()
     expect(bridge.signOut).toHaveBeenCalledOnce()
   })
 
   it('lists Cursor’s models under their makers, in Cursor’s order', async () => {
     vi.stubGlobal('sotto', { ...window.sotto, cursor: cursorBridge() })
     await mount({})
-    fireEvent.click(await screen.findByRole('button', { name: 'Cursor' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    const list = screen.getByRole('group', { name: 'Cursor available models' })
-    expect(within(list).getAllByRole('heading').map(heading => heading.textContent)).toEqual(['Cursor', 'Anthropic', 'OpenAI'])
-    expect(within(within(list).getByRole('region', { name: 'Cursor' })).getAllByRole('listitem').map(item => item.querySelector('strong')?.textContent)).toEqual(['Auto', 'Composer 2.5'])
+    const list = within(await openCursor()).getByRole('group', { name: 'Cursor available models' })
+    expect(within(list).getAllByRole('heading', { level: 5 }).map(heading => heading.textContent)).toEqual(['Cursor', 'Anthropic', 'OpenAI'])
+    const names = (maker: string) => within(within(list).getByRole('list', { name: maker })).getAllByRole('listitem').map(item => item.querySelector('strong')?.textContent)
+    // Cursor's own order, not newest first: Auto before Composer, and Sonnet 4.5 before 5.5.
+    expect(names('Cursor')).toEqual(['Auto', 'Composer 2.5'])
+    expect(names('Anthropic')).toEqual(['Claude Sonnet 4.5', 'Claude Sonnet 5.5'])
+    expect(names('OpenAI')).toEqual(['GPT-5.4 Nano', 'GPT-6'])
   })
 
   it('offers nothing of Cursor while its Owl feature is off', async () => {
-    await mount({}, false)
+    await mount({}, { owl: false })
     expect(screen.queryByRole('button', { name: 'Cursor' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Enable Cursor' })).toBeNull()
     expect(screen.queryByText(/Cursor uses its install script/u)).toBeNull()
   })
 
-  it('says Cursor’s published version comes from its install script', async () => {
+  it('says Cursor’s published version comes from its install script, and what its threads do', async () => {
     vi.stubGlobal('sotto', { ...window.sotto, cursor: cursorBridge() })
     await mount({})
-    expect(screen.getByText(/Cursor uses its install script; the other clients use the npm registry\. No thread text is sent\./u)).toBeVisible()
+    expect(await screen.findByText(/Cursor uses its install script; the other clients use the npm registry\. No thread text is sent\./u)).toBeVisible()
+    const details = await openCursor()
+    expect(within(details).getByText('Threads with Cursor')).toBeVisible()
+    expect(within(details).getByText(/Cursor has no fork of its own and cannot be steered/u)).toBeInTheDocument()
+  })
+
+  it('draws its badge from a colour of its own, defined in both modes', () => {
+    const providers = readFileSync('src/renderer/src/agents/providers.css', 'utf8')
+    expect(providers).toMatch(/\.provider-badge\[data-provider='cursor'\] \{ --provider-badge: var\(--tt-provider-cursor-badge\); \}/u)
+    const tokens = readFileSync('src/renderer/src/styles/tokens.css', 'utf8')
+    expect(tokens.match(/--tt-provider-cursor-badge: #[\da-f]{6};/gu)).toHaveLength(2)
   })
 })
 

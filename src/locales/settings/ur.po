@@ -669,8 +669,8 @@ msgid "500 entries"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr ""
+msgid "A band of text characters sweeps across the window."
+msgstr "متن کے حروف کی ایک پٹی ونڈو کے آر پار گزرتی ہے۔"
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
@@ -687,6 +687,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "ستاروں کی ایک لکیر ونڈو کے آر پار گزرتی ہے، اور اس کے پیچھے ہلکا سا نشان رہ جاتا ہے۔"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -1056,6 +1060,11 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr ""
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "پٹی"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -2787,6 +2796,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Night falls کا انداز"
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr ""
 
@@ -3983,8 +3997,8 @@ msgid "Signing in…"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr ""
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "گزرتے دیکھنے کے لیے آہستہ، جلد پہنچنے کے لیے تیز۔ 1x میں ایک سیکنڈ سے کم لگتا ہے۔"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4287,6 +4301,11 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr ""
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "ستارے"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"
@@ -4948,6 +4967,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "جب آپ Watcher کا کمرہ کھولتے ہیں یا Threads پر واپس جاتے ہیں تو ونڈو Threads اور Watcher کے کمرے کے درمیان گزرتی ہے، اور الو اسی گزر کے ساتھ اپنی نئی جگہ پہنچتا ہے۔ بند ہو تو ونڈو فوراً بدل جاتی ہے۔ کم حرکت میں یہ ہمیشہ فوراً بدلتی ہے۔"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

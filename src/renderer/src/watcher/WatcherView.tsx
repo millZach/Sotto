@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
+import { ArrowUp, ChevronDown, Eye, List, MessageSquare, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { useReleaseTrack } from '../state/useReleaseTrack'
@@ -66,11 +66,14 @@ interface TabIds { readonly watchedTab: string; readonly watchedPanel: string; r
  * Conversation, Watched and Visualize, beside All threads, once Watcher runs (Zach's picks on October 13, 2026, watch B,
  * and October 22, the picture as a third tab): what Watcher's pane shows, its conversation, the threads it watches with
  * how many, or its picture of them (#1339). The count replaces "2 of 4 watched", since watching has no limit; the arrow
- * keys move between the tabs, as the room switch's do.
+ * keys move between the tabs, as the room switch's do. Each tab is its icon alone, named on hover and to assistive
+ * technology, with the count as a badge on Watched's eye (Drake's pick on October 24, 2026, `watcher-tabs-prototype.html`).
  */
 function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: number; readonly ids: TabIds }): ReactNode {
   const list = useRef<HTMLDivElement>(null)
   const show = (next: RoomTab): void => roomView.set({ tab: next })
+  // The badge stops at 99+, so the name on hover says the exact count.
+  const watchedName = `Watched, ${count} ${count === 1 ? 'thread' : 'threads'}`
   return <div ref={list} className="watcher-tabs" role="tablist" aria-label="Watcher’s view"
     onKeyDown={event => {
       const move = TAB_KEYS[event.key]
@@ -81,14 +84,17 @@ function RoomTabs({ tab, count, ids }: { readonly tab: RoomTab; readonly count: 
       list.current?.querySelector<HTMLButtonElement>(`[data-tab="${next}"]`)?.focus()
     }}>
     <button type="button" role="tab" data-tab="conversation" className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'conversation'} tabIndex={tab === 'conversation' ? 0 : -1}
-      onClick={() => show('conversation')}>Conversation</button>
+      aria-label="Conversation" title="Conversation" onClick={() => show('conversation')}>
+      <MessageSquare size={16} className="watcher-tabs__icon" aria-hidden="true" />
+    </button>
     <button type="button" role="tab" data-tab="watched" id={ids.watchedTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'watched'} tabIndex={tab === 'watched' ? 0 : -1}
-      aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={`Watched, ${count} ${count === 1 ? 'thread' : 'threads'}`} onClick={() => show('watched')}>
-      Watched<span className="watcher-tabs__count" aria-hidden="true">{count}</span>
+      aria-controls={tab === 'watched' ? ids.watchedPanel : undefined} aria-label={watchedName} title={watchedName} onClick={() => show('watched')}>
+      <Eye size={16} className="watcher-tabs__icon" aria-hidden="true" />
+      {count > 0 ? <span className="watcher-tabs__count" aria-hidden="true">{count > 99 ? '99+' : count}</span> : null}
     </button>
     <button type="button" role="tab" data-tab="visualize" id={ids.pictureTab} className="watcher-tabs__tab tt-focusable" aria-selected={tab === 'visualize'} tabIndex={tab === 'visualize' ? 0 : -1}
-      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} aria-label="Visualize" title="See what Watcher is doing as a picture" onClick={() => show('visualize')}>
-      <Waypoints size={14} className="watcher-tabs__icon" aria-hidden="true" /><span className="watcher-tabs__label">Visualize</span>
+      aria-controls={tab === 'visualize' ? ids.picturePanel : undefined} aria-label="Visualize" title="Visualize" onClick={() => show('visualize')}>
+      <Waypoints size={16} className="watcher-tabs__icon" aria-hidden="true" />
     </button>
   </div>
 }

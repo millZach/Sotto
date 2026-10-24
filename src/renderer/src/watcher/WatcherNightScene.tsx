@@ -4,6 +4,7 @@ import {
   addRipple, frameDelay, frameDue, frameSleep, glassOpacity, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
   type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
+import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
 import { watchResolution } from './watchResolution'
@@ -56,16 +57,6 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const scrubber = pane.querySelector('.message-scrubber')
   const lane = scrubber === null ? undefined : at(scrubber)
   return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words, ...lane !== undefined && shown(lane) ? { lane } : {} }
-}
-
-/** A colour as the canvas paints it, whatever form the style gave it in. */
-export function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
-  pixel.clearRect(0, 0, 1, 1)
-  pixel.fillStyle = 'rgba(0, 0, 0, 0)'
-  pixel.fillStyle = value
-  pixel.fillRect(0, 0, 1, 1)
-  const [r = 0, g = 0, b = 0, a = 0] = pixel.getImageData(0, 0, 1, 1).data
-  return a === 0 ? null : { r, g, b }
 }
 
 /** A colour words are written in, with its opacity, so a translucent one is counted as it shows. */

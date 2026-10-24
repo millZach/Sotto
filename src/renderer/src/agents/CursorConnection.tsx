@@ -7,11 +7,11 @@ import type { ProviderProblem } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 
-/** How often the tile asks main where a sign-in stands while it waits for the user on cursor.com. */
+/** How often the row asks main where a sign-in stands while it waits for the user on cursor.com. */
 const READ_EVERY_MS = 1500
 const running = (view: CursorSignInView | null | undefined): boolean =>
   view !== null && view !== undefined && (view.stage === 'starting' || view.stage === 'waiting' || view.stage === 'finishing')
-/** What the tile says when a sign-in ended without connecting and main gave no sentence of its own. */
+/** What the row says when a sign-in ended without connecting and main gave no sentence of its own. */
 const SIGN_IN_ENDED = msg`Cursor did not finish signing in, so Sotto is not connected to it. Nothing was saved. Sign in again to try once more.`
 const REOPEN_FAILED = msg`The sign-in page could not open. Nothing was changed. Try again.`
 /**
@@ -28,34 +28,34 @@ export const CURSOR_SIGN_IN_MESSAGES: Readonly<Record<keyof typeof CURSOR_SIGN_I
 }
 const MAIN_SENTENCES = new Map<string, MessageDescriptor>((Object.keys(CURSOR_SIGN_IN_WORDS) as (keyof typeof CURSOR_SIGN_IN_WORDS)[])
   .map(key => [CURSOR_SIGN_IN_WORDS[key], CURSOR_SIGN_IN_MESSAGES[key]]))
-/** A sentence main sent, as the tile shows it: one of main's own as a message, anything else as written. */
+/** A sentence main sent, as the row shows it: one of main's own as a message, anything else as written. */
 const heard = (sentence: string): LaterWords => MAIN_SENTENCES.get(sentence) ?? sentence
 
-/** Where Cursor's sign-in from its tile stands, and the presses that move it. */
+/** Where Cursor's sign-in from its row stands, and the presses that move it. */
 export interface CursorSignIn {
   readonly view: CursorSignInView | null
   readonly pending: 'start' | 'reopen' | 'sign-out' | null
   /** A message of Sotto's, read in the interface language when shown, or a sentence someone else wrote. */
   readonly error: LaterWords | null
   readonly notice: LaterWords | null
-  /** Signed out from the tile: until Cursor connects again, the tile offers Sign in rather than a Connect that would fail. */
+  /** Signed out from the row: until Cursor connects again, the row offers Sign in rather than a Connect that would fail. */
   readonly signedOut: boolean
   /** A sign-in is under way: started, or waiting on cursor.com. */
   readonly signing: boolean
-  /** Each answers what the tile should put focus on next, if anything. */
+  /** Each answers what the row should put focus on next, if anything. */
   readonly start: () => Promise<'again' | 'sign-in' | null>
   readonly reopen: () => Promise<'sign-in' | null>
   readonly cancel: () => void
   readonly signOut: () => Promise<'sign-in' | null>
-  /** Cursor connected: whatever the tile said about signing out no longer holds. */
+  /** Cursor connected: whatever the row said about signing out no longer holds. */
   readonly connected: () => void
 }
 
 /**
- * Cursor's sign-in from its tile (ADR-0128, variant A of the prototype), held by the Providers page so moving between
- * its tabs and providers keeps a sign-in waiting. Main runs Cursor's own sign-in and opens its cursor.com page; this
- * follows it until Cursor says it signed in or it ends, and stops one still waiting when the page goes. The page's
- * address never reaches the window.
+ * Cursor's sign-in from its row in Settings → Providers (ADR-0128, variant A of the prototype), held by the Providers
+ * page so opening another row, or closing Cursor's, keeps a sign-in waiting. Main runs Cursor's own sign-in and opens its
+ * cursor.com page; this follows it until Cursor says it signed in or it ends, and stops one still waiting when the page
+ * goes. The page's address never reaches the window.
  */
 export function useCursorSignIn(bridge: CursorSignInBridge | undefined): CursorSignIn {
   const [view, setView] = useState<CursorSignInView | null>(null)
@@ -135,8 +135,8 @@ export function useCursorSignIn(bridge: CursorSignInBridge | undefined): CursorS
 }
 
 /**
- * Cursor's Local connection on its tile (ADR-0128, variant A of the prototype): Sign in runs Cursor's own sign-in, main
- * opens its cursor.com page in the browser, and the tile waits with Open the page again and Cancel until Cursor says it
+ * Cursor's Local connection in its row (ADR-0128, variant A of the prototype): Sign in runs Cursor's own sign-in, main
+ * opens its cursor.com page in the browser, and the row waits with Open the page again and Cancel until Cursor says it
  * signed in, when it connects by itself. Connected, it offers Sign out of Cursor beside Disconnect. Escape while it
  * waits cancels, as Cancel does.
  */
@@ -161,7 +161,7 @@ export function CursorConnection({ signIn, problem: reported, connected, connect
     if (target) requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(`[data-cursor="${target}"]`)?.focus())
   }
   const cancel = (): void => { signIn.cancel(); focus('sign-in') }
-  // A sign-in that ends while focus is on its own controls (they go with it) hands focus to what the tile offers next.
+  // A sign-in that ends while focus is on its own controls (they go with it) hands focus to what the row offers next.
   const wasSigning = useRef(signing)
   useEffect(() => {
     if (wasSigning.current && !signing && (!document.activeElement || document.activeElement === document.body)) {

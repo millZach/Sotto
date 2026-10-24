@@ -853,8 +853,8 @@ export class WatcherService implements WatcherControlHooks {
     })) refuse('BACKGROUND_WORK_RUNNING', 'A thread this one delegated to is still working or waits on the user. Wait for it before settling.')
   }
   /**
-   * Watcher's starts still working, on every machine: what the phone's page counts as Watcher working, and sends where
-   * host protocol version 1 has a count. Nothing is held back at any number (#1183).
+   * Watcher's starts still working, on every machine: the count the phone's page and sends carry where host protocol
+   * version 1 has one. Nothing is held back at any number (#1183).
    */
   startsInFlight(): number { return this.inFlight() }
   /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */

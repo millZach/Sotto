@@ -9,10 +9,16 @@ import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto 
 
 const evidence = evidenceDirectory('artifacts/cursor-provider')
 
-async function providerPanel(page: Page): Promise<Locator> {
+/** Settings > Providers: the list of providers, one row each. */
+async function providerList(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('region', { name: 'Provider configuration', exact: true })
+  return page.getByRole('list', { name: 'Thread providers', exact: true })
+}
+
+/** Scrolls Cursor's row to the top of Settings, as someone reading it would, before a capture. */
+async function showRow(header: Locator): Promise<void> {
+  await header.evaluate(element => element.closest('.provider-row')?.scrollIntoView({ block: 'start' }))
 }
 
 /** Nothing in these surfaces is cut off sideways at the window's width. */
@@ -22,7 +28,7 @@ async function clipped(page: Page, selector: string): Promise<string[]> {
     .map(element => `${element.tagName.toLowerCase()}.${[...element.classList].join('.')}`))
 }
 
-test('signs Cursor in on its tile, groups its models by maker, offers its three modes, and stays out of stable', async () => {
+test('signs Cursor in from its row, groups its models by maker, offers its three modes, and stays out of stable', async () => {
   test.setTimeout(300_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-cursor-' })).directory
   const root = join(profile, 'cursor-fixture')
@@ -51,37 +57,53 @@ test('signs Cursor in on its tile, groups its models by maker, offers its three 
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
 
-    // Settings > Providers > Cursor, signed out: one Sign in, and Sotto keeps no Cursor key.
-    const panel = await providerPanel(page)
-    await page.getByRole('button', { name: 'Cursor', exact: true }).focus()
+    // Settings > Providers > Cursor's row, signed out: one Sign in, and Sotto keeps no Cursor key.
+    const list = await providerList(page)
+    const row = list.getByRole('button', { name: 'Cursor', exact: true })
+    const panel = page.getByRole('region', { name: 'Cursor details', exact: true })
+    // Codex's row is open to begin with; End from its header goes to the last, Cursor's, and Enter opens it.
+    await list.getByRole('button', { name: 'Codex', exact: true }).focus()
+    await page.keyboard.press('End')
+    await expect(row).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(panel.locator('svg[data-provider="cursor"]').first()).toBeVisible()
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
+    // Sotto's cube for Cursor, in the shared ink on Cursor's own badge.
+    await expect(row.locator('.provider-badge[data-provider="cursor"] svg[data-provider="cursor"]')).toBeVisible()
     // A new provider starts switched off; turning Cursor on and connecting finds it signed out.
     const enable = page.getByRole('switch', { name: 'Enable Cursor', exact: true })
     if (await enable.getAttribute('aria-checked') !== 'true') await enable.click()
     await expect(enable).toHaveAttribute('aria-checked', 'true')
     // Switching it on connects by itself; press Connect only once that has settled and Cursor still offers it.
-    const row = page.getByRole('button', { name: 'Cursor', exact: true })
     await expect(row).not.toContainText('Connecting…')
     const connect = panel.getByRole('button', { name: 'Connect Cursor', exact: true })
     if (await connect.isVisible()) await connect.click()
     const signIn = panel.getByRole('button', { name: 'Sign in to Cursor in your browser', exact: true })
     await expect(signIn).toBeVisible()
-    await expect(panel.getByRole('alert')).toHaveCount(0)
+    await expect(row).toContainText('Not signed in')
+    // The row says what to do, so no alert repeats it, under its header or in it.
+    await expect(list.getByRole('alert')).toHaveCount(0)
     await resizeWindow(launched, 1600, 1000)
+    await showRow(row)
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'signed-out-1600-dark.png') })
     await measure('signed-out lead', panel.locator('.provider-connection p').first(), 1600, 'dark')
 
-    // Sign in (variant A): the page opens in the browser from main, the tile waits, and connects by itself.
+    // Sign in (variant A): the page opens in the browser from main, the row waits, and connects by itself.
     await signIn.focus()
     await page.keyboard.press('Enter')
     await expect(panel.getByText('Finish signing in on cursor.com in your browser.', { exact: true })).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Open Cursor’s sign-in page in your browser again', exact: true })).toBeVisible()
+    await expect(panel.getByText('Waiting for Cursor. This connects by itself.', { exact: true })).toBeVisible()
+    // Focus goes to Open the page again, the next thing someone waiting might press.
+    await expect(panel.getByRole('button', { name: 'Open Cursor’s sign-in page in your browser again', exact: true })).toBeFocused()
     await expect(panel.getByRole('button', { name: 'Cancel signing in to Cursor', exact: true })).toBeVisible()
-    await expect(panel.getByRole('alert')).toHaveCount(0)
+    await expect(row).toContainText('Signing in…')
+    await expect(row.locator('.provider-row__status')).toHaveAttribute('data-status', 'busy')
+    await expect(enable).toBeDisabled()
+    await expect(list.getByRole('alert')).toHaveCount(0)
     await resizeWindow(launched, 1280, 800)
+    await showRow(row)
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'signing-in-1280-dark.png') })
     await measure('waiting lead', panel.getByText('Finish signing in on cursor.com in your browser.', { exact: true }), 1280, 'dark')
+    await measure('waiting status', row.locator('.provider-row__status'), 1280, 'dark')
     await expect.poll(async () => (await readFile(join(root, 'opened-pages.txt'), 'utf8').catch(() => '')).trim()).toMatch(/^https:\/\/cursor\.com\//u)
     const login = (await readFile(join(root, 'commands.jsonl'), 'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { command: string; env: Record<string, string | undefined> })
       .find(entry => entry.command === 'login')
@@ -90,18 +112,37 @@ test('signs Cursor in on its tile, groups its models by maker, offers its three 
     expect(login?.env.CURSOR_CONFIG_DIR).toBe(join(profile, 'cursor', 'config'))
     await writeFile(join(root, 'login-done'), '')
     await expect(panel.getByRole('button', { name: 'Sign out of Cursor on this computer', exact: true })).toBeVisible({ timeout: 30_000 })
-    await expect(panel).toContainText('2026.10.22')
+    await expect(panel.getByRole('button', { name: 'Disconnect Cursor', exact: true })).toBeVisible()
+    await expect(row).toContainText('Connected')
+    await expect(row).toContainText('2026.10.22')
+    await expect(enable).toBeEnabled()
+    // Signing in answered the switch's refused connect, so its sentence does not come back now Cursor is connected.
+    await expect(list.getByRole('alert')).toHaveCount(0)
     journey.signIn = { page: 'https://cursor.com/', configFolder: 'profile/cursor/config', noOpenBrowser: true }
     expect(existsSync(join(root, 'signed-out'))).toBe(false)
+
+    // Its models under their makers, in Cursor's order, each maker a small heading.
+    const models = panel.getByRole('group', { name: 'Cursor available models', exact: true })
+    await expect(models.getByRole('heading', { level: 5 })).toHaveText(['Cursor', 'Anthropic', 'OpenAI'])
+    await expect(models.getByRole('list', { name: 'Anthropic', exact: true }).getByRole('listitem')).toContainText(['Claude Fixture'])
+    journey.settingsMakers = await models.getByRole('heading', { level: 5 }).allTextContents()
 
     // Connected, at every size and in light.
     for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1280, 800, 'dark'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
       await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), appearance)
       await resizeWindow(launched, width, height)
       await expect(panel.getByRole('button', { name: 'Sign out of Cursor on this computer', exact: true })).toBeVisible()
+      await showRow(row)
       await page.screenshot({ animations: 'disabled', path: join(evidence, `connected-${width}-${appearance}.png`) })
-      expect(await clipped(page, '.provider-panel'), `provider panel at ${width} in ${appearance}`).toEqual([])
+      expect(await clipped(page, '.providers-settings'), `Providers at ${width} in ${appearance}`).toEqual([])
+      await measure('connected lead', panel.locator('.provider-connection p').first(), width, appearance)
+      await measure('maker heading', models.getByRole('heading', { level: 5 }).first(), width, appearance)
     }
+    // Escape inside the open row closes it and gives focus back to its header.
+    await panel.getByRole('button', { name: 'Sign out of Cursor on this computer', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(row).toBeFocused()
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
 
     // A Cursor project whose new thread starts on Anthropic's model.
@@ -181,12 +222,17 @@ test('signs Cursor in on its tile, groups its models by maker, offers its three 
     // Stable: Cursor's Owl feature is off, so nothing of Cursor shows, and its records are kept for Owl.
     process.env.SOTTO_OWL_FEATURES = 'cursor=0'
     launched = await launchSotto('success', profile)
-    const stable = await providerPanel(launched.page)
-    await expect(stable).toBeVisible()
+    const stable = await providerList(launched.page)
+    await expect(stable.getByRole('button', { name: 'Codex', exact: true })).toBeVisible()
+    await expect(stable.getByRole('button', { name: 'OpenCode', exact: true })).toBeVisible()
     await expect(launched.page.getByRole('button', { name: 'Cursor', exact: true })).toHaveCount(0)
+    await expect(launched.page.getByRole('switch', { name: 'Enable Cursor', exact: true })).toHaveCount(0)
+    await expect(launched.page.getByText(/Cursor uses its install script|Cursor its install script/u)).toHaveCount(0)
+    // OpenCode's is the last row stable has: the capture shows the list's end, where Cursor's row would be, and the note after it.
+    await showRow(stable.getByRole('button', { name: 'OpenCode', exact: true }))
     await launched.page.screenshot({ animations: 'disabled', path: join(evidence, 'stable-providers.png') })
     expect(existsSync(join(profile, 'cursor-projects.json'))).toBe(true)
-    journey.stable = { cursorTile: false, recordsKept: true }
+    journey.stable = { cursorRow: false, recordsKept: true }
   } finally {
     await writeFile(join(evidence, 'contrast.json'), `${JSON.stringify(contrasts, null, 2)}\n`)
     await writeFile(join(evidence, 'journey.json'), `${JSON.stringify(journey, null, 2)}\n`)

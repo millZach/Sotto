@@ -44,6 +44,10 @@ msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the 
 msgstr "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+msgstr "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
 msgstr "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
 
@@ -55,6 +59,10 @@ msgstr "{host} turned down the key. Nothing was saved. Check the key with whoeve
 msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
 msgstr "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{label} details"
+msgstr "{label} details"
+
 #. {maker} is the company that made the models, such as Anthropic.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "{maker} models in Cursor"
@@ -63,6 +71,30 @@ msgstr "{maker} models in Cursor"
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
 msgstr "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+
+#. {name} is the user’s own model server, such as Sparks.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} didn’t answer."
+msgstr "{name} didn’t answer."
+
+#. {five} is the number 5.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} didn’t start answering within {five} minutes."
+msgstr "{name} didn’t start answering within {five} minutes."
+
+#. {name} is the user’s own model server, such as Sparks. "(3 of 10)": the try OpenCode is on, of how many it makes.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} isn’t answering. Trying again ({tried} of {of})."
+msgstr "{name} isn’t answering. Trying again ({tried} of {of})."
+
+#. {model} is a model’s name, such as DeepSeek V4.1 Flash.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} no longer has {model}."
+msgstr "{name} no longer has {model}."
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} turned down its key."
+msgstr "{name} turned down its key."
 
 #. {who} is a server program such as Ollama; {count} is a number of models, as in "2 models".
 #: src/renderer/src/agents/ownServerWords.ts
@@ -73,6 +105,11 @@ msgstr "{who} answered in {ms} ms with {count}."
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{who} answered in {ms} ms."
 msgstr "{who} answered in {ms} ms."
+
+#. {five} is the number 5.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
+msgstr "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Accept Cursor’s plan"
@@ -253,6 +290,10 @@ msgstr "Install guide"
 msgid "It runs with OpenCode."
 msgstr "It runs with OpenCode."
 
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
+msgstr "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
+
 #. A secret the model server checks before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key"
@@ -284,6 +325,10 @@ msgstr "mise does not list {to} yet"
 msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
 msgstr "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Models"
+msgstr "Models"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Models found"
 msgstr "Models found"
@@ -304,6 +349,15 @@ msgstr "Not signed in"
 msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 msgstr "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 
+#. Settings › Providers › Your own model servers is where the server is kept; translate each name as the Settings page does.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove {name} and add it again with the right key, then try again."
+msgstr "Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove {name} and add it again with the right key, then try again."
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
+msgstr "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr "Only if the server was started with one"
@@ -315,6 +369,14 @@ msgstr "Open Cursor’s install guide in your browser"
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Open Cursor’s sign-in page in your browser again"
 msgstr "Open Cursor’s sign-in page in your browser again"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Open Settings"
+msgstr "Open Settings"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Open Settings at Your own model servers"
+msgstr "Open Settings at Your own model servers"
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Open the page again"
@@ -339,6 +401,11 @@ msgstr "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
 msgstr "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
+
+#. {ten} is the number 10. {host} is the server’s address and port, such as spark-head:8888; keep it as it is.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
+msgstr "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 
 #. The heading of a card that shows a plan Cursor made and waits for the user to accept.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -467,6 +534,20 @@ msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothi
 msgid "Starting Cursor’s sign-in…"
 msgstr "Starting Cursor’s sign-in…"
 
+#. {name} is the user’s own model server, such as Sparks.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Still waiting for {name} to start answering."
+msgstr "Still waiting for {name} to start answering."
+
+#. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Stop"
+msgstr "Stop"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Stop agent"
+msgstr "Stop agent"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Takes images."
 msgstr "Takes images."
@@ -478,6 +559,10 @@ msgstr "That is not an address Sotto can reach. Type it like http://localhost:11
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That server is no longer saved. Nothing was changed."
 msgstr "That server is no longer saved. Nothing was changed."
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "The images in your last message were not kept. Attach them again, then send."
+msgstr "The images in your last message were not kept. Attach them again, then send."
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -502,6 +587,10 @@ msgstr "Thinking"
 msgid "Thinking for {model}"
 msgstr "Thinking for {model}"
 
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "This thread is too long for {model}."
+msgstr "This thread is too long for {model}."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Threads on this server send your code and messages to it, so whoever runs it can read them."
 msgstr "Threads on this server send your code and messages to it, so whoever runs it can read them."
@@ -510,14 +599,40 @@ msgstr "Threads on this server send your code and messages to it, so whoever run
 msgid "Threads with Cursor"
 msgstr "Threads with Cursor"
 
+#. Button under a failed turn: sends the user’s last message again.
 #: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again"
 msgstr "Try again"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, putting your last message back in the composer"
+msgstr "Try again, putting your last message back in the composer"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, sending your last message to {name} again"
+msgstr "Try again, sending your last message to {name} again"
 
 #. 128K means 128 times 1,024 tokens; keep 131072 and 128K as they are.
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
 msgstr "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update {label} to {version}"
+msgstr "Update {label} to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update to {version}"
+msgstr "Update to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating {label} to {version}"
+msgstr "Updating {label} to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating…"
+msgstr "Updating…"
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
@@ -531,6 +646,10 @@ msgstr "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a fold
 msgid "Waiting for Cursor. This connects by itself."
 msgstr "Waiting for Cursor. This connects by itself."
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Waiting to update"
+msgstr "Waiting to update"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "What the model menu calls it."
 msgstr "What the model menu calls it."
@@ -538,6 +657,10 @@ msgstr "What the model menu calls it."
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Where the server listens, on this computer, your network or your tailnet."
 msgstr "Where the server listens, on this computer, your network or your tailnet."
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread."
+msgstr "Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Your own model servers"

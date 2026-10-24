@@ -113,7 +113,7 @@ export interface SettingsViewProps {
   readonly onDownloadUpdate: () => Promise<boolean>
   readonly onInstallUpdate: () => Promise<boolean>
   /** Opens Settings at a page or group instead of its first page: an Open Settings press elsewhere (settingsPages.ts). */
-  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number } | null
+  readonly openSection?: { readonly section: SettingsSectionId; readonly key: number; readonly setting?: string | undefined } | null
 }
 
 type RailIcon = React.ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: 'true' }>
@@ -506,7 +506,7 @@ export function SettingsView({
   useEffect(() => {
     if (!openSection || openRequest.current === openSection.key || !isSettingsSection(openSection.section)) return
     openRequest.current = openSection.key
-    openAt(openSection.section)
+    openAt(openSection.section, openSection.setting === undefined ? [] : [openSection.setting])
   })
   const openFound = (entry: SettingEntry): void => {
     setFindQuery('')
