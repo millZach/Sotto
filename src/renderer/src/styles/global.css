@@ -2131,10 +2131,8 @@ textarea.tt-input {
 .voice-wave--listening[data-size="hero"] .widget-bars { transform: scale(3); transform-origin: center; }
 .voice-wave--listening[data-size="deck"] .widget-bars { transform: scale(1.5); }
 
-/* The effort colourway motion (ADR-0019), shared by the effort card, the composer outline and the Appearance sample, so
-   whichever surface loads first has them. The ring angle is registered so the conic gradient can turn. */
-@property --effort-ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-@keyframes effort-ring { to { --effort-ring-angle: 360deg; } }
+/* The effort colourway motion (ADR-0019), shared by the effort card, the composer and the Appearance sample, so
+   whichever surface loads first has them. */
 @keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
 /* The letters take the colour in turn and the word lifts as one. Nothing inside the word may move: a colourway
    that paints the word as a gradient clips it to the glyphs, and a transformed or positioned descendant drops
