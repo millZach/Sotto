@@ -30,7 +30,9 @@ npx vitest run tests/unit/renderer/cssSelectors.test.ts
 
 `composer-float.spec.ts` gives three threads twelve messages each, scrolls each transcript to its end and checks that the composer's top margin is minus its height, that it covers the transcript by its full height, that the transcript's bottom padding keeps the last message clear of the card, and that a press in the strip right of the card lands in the transcript. It checks this for one pane at 1280x860 and at 820x560, for three panes side by side at 1280x620 (each a short pane), and with a permission card in a pane's transcript, whose Deny button it focuses and finds uncovered. A question waiting in one pane stacks that pane's composer under its transcript again, with a zero margin, while the pane beside it keeps floating. On the build before the fix the same spec fails at its first check (`marginTop 0`, `overlap 0`).
 
-`cssSelectors.test.ts` reads every stylesheet under `src/` and fails on any `:has()` nested in another. Run against the old rule it names it; there are no others.
+The spec also walks the short pane's transcript back from its end, 16px at a time, and checks that Jump to latest, which rides above the floating composer, never covers the permission card. The button steps aside while a card reaches its band, and that band is now measured from above the composer too; `tests/unit/renderer/jumpBand.test.tsx` checks a card that ends behind the composer, which the fixture's layout cannot reach, and fails on the band measured from the foot.
+
+`cssSelectors.test.ts` reads every stylesheet under `src/` and fails on any `:has()` nested in another, leaving comments and quoted strings out. Run against the old rule it names it; there are no others.
 
 ## What the captures show
 
