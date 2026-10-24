@@ -257,6 +257,38 @@ Owl they rose from 6,002 to 6,114 per streamed update, 13,904 to 14,490 per thre
 send, and those budgets are today's counts exactly. On stable they fell, for example 13,847 to 13,172 per thread opened
 and 25,846 to 24,664 per send, and those budgets fell with them. Both sides count #1350's host router reuse.
 
+### October 23: the shell a broadcast carries is prepared from what changed (#1334)
+
+A recording of the owner's Owl build (0.1.38-owl.20261023.3, main up 3 h 17 min, 44.7 s busy in a 61 s profile) had the
+coordinator's `shellOf` at 1.85 s and the rest of `acceptSnapshot` at 2.9 s, about 11% of main's busy time. Every
+broadcast copied everything in the shell but the threads, in two `clonePlainData` calls, and made a new record for every
+thread.
+
+The broadcast shell now reads what is not threads against the last broadcast's frozen copy (`immutableUpdates`) and
+copies only what changed, since the coordinator writes parts of its state in place. A thread whose record, finish and
+failure marks and summary display have not moved is listed as the very record the last broadcast listed, frozen. A list
+the Watcher filter takes nothing from is kept as it is. `shell()` still copies all of it for a caller that changes what
+it is handed. The question pages' decoration no longer makes a new request list for a thread that asks nothing.
+
+With 200 threads and one streaming, per coordinator update: Owl makes 7.3 to 7.8 copier calls, from 9.3 to 9.7, and its
+objects per thread stay within their spread of 7.5 to 8.0; stable makes 6.8 to 6.9 calls, from 8.9, and copies 9.2 to
+9.4 objects per thread, from 9.5 to 9.8. The budgets are 8.5 calls on Owl and 7.5 on stable, and 10 objects per thread
+on stable. The copy-site list loses one `clonePlainData` call in `control.ts`.
+
+At the owner's scale (`ownerScaleWorkBudget.perf.test.ts`, before and after on the same `main`):
+
+| | Owl copies | Owl objects | Stable copies | Stable objects |
+| --- | ---: | ---: | ---: | ---: |
+| One thread streaming | 9.85 to 7.85 | 4,372 to 4,329 | 9.58 to 7.58 | 2,176 to 2,138 |
+| Three threads streaming | 13.62 to 11.62 | 4,466 to 4,421 | 12.69 to 10.69 | 2,106 to 2,066 |
+| Saving an answer draft | 15 to 11 | 5,342 to 5,252 | 17 to 13 | 12,943 to 12,863 |
+| Typing in a composer | 21 to 13 | 16,034 to 15,894 | 19 to 10 | 9,955 to 9,829 |
+| Opening a thread | 34 to 23 | 26,945 to 26,799 | 32 to 20 | 20,829 to 20,697 |
+| Sending a message | 136 to 121 | 59,923 to 59,635 | 130 to 114 | 49,805 to 49,546 |
+
+What Owl's copied objects grow by along the history is unchanged, 1,896 per streamed update on one thread, and is now
+1.78 times streaming on one thread, so `KNOWN_HISTORY_GROWTH` moves with it.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state
