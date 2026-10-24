@@ -1,0 +1,614 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything. No network, nothing saved.
+
+  Question: What should an OpenCode thread on your own model server say, and where, while the server will not
+  answer a turn and when it lets the turn down? (docs/plans/local-inference.md, phase 2; ADR-0124 decision 7.)
+
+  Zach's behaviour, already decided:
+   1. While OpenCode retries a server that does not answer (10 tries over about 90 s), a live line says so, with
+      Stop. If every try fails, the plain failure with Try again.
+   2. A server that took the request but has not started answering: the 300 s limit stays; after 30 s the thread
+      says it is still waiting, with Stop.
+   3. Four failures, each saying what happened, that nothing in the thread was lost and what to do next, each with
+      Try again (sends the last message again): no answer, key turned down (Open Settings beside it), model gone,
+      prompt too long.
+
+  Two variants on ?variant=A|B, and the bar at the bottom (Left and Right arrows too, unless the focus is in a
+  field or the State menu):
+   A  In the transcript. The retry line and the still-waiting note sit where the reply would appear, under the
+      user's message, as the quiet live line; a failure is the turn's Failed line with its reason and the buttons.
+   B  Above the composer. The transcript stays as it is (its live line keeps saying Working); the retry line, the
+      still-waiting note and a failure sit in one notice above the composer, where FailedTurnNotice is today.
+
+  Prototype chrome (not design): State, Pause or Resume ticking, Skip ahead, Light/Dark, Reduce motion and a
+  readout. URL switches for captures: variant=A|B, state=working|retrying|waiting|fail-noanswer|fail-timeout|
+  fail-key|fail-model|fail-long|stopped, attempt=1..10, still=1 (skip the 30 s), theme=light, motion=reduce,
+  frozen=1 (no ticking), settings=1.
+
+  Data is SAMPLE: Sparks (four DGX Sparks at spark-head:8888) running DeepSeek V4.1 Flash, under OpenCode.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto prototype - when your own model server lets a turn down</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* SOTTO_DARK/LIGHT_THEME_COLORS (src/shared/themes) through the --tt-* names tokens.css gives them. */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-sidebar: oklch(0.235 0.003 265);
+  --tt-sidebar-row-active: oklch(0.32 0.025 190);
+  --tt-card: oklch(0.185 0.008 265);
+  --tt-card-inset: oklch(0.115 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-text-faint: oklch(0.675 0.012 270);
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092);
+  --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-activity: var(--tt-accent-text);
+  --tt-on-activity: oklch(0.115 0.008 265);
+  --tt-focus-ring: oklch(0.714403 0.104089 183.092);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--tt-canvas);
+  --tt-error: oklch(0.702184 0.189226 22.228);
+  --tt-warning: oklch(0.829017 0.171221 81.038);
+  --tt-attention: var(--tt-warning);
+  --tt-warning-surface: oklch(0.315 0.032 80);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 64%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-scrollbar: oklch(0.315 0.008 265);
+  --tt-message: oklch(0.205 0.014 265);
+  --tt-provider-opencode: #ece3d0;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --strip-h: 26px;
+  --chrome-h: 52px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-sidebar: oklch(0.955 0.008 85);
+  --tt-sidebar-row-active: oklch(0.915 0.02 190);
+  --tt-card: color-mix(in oklab, oklch(0.235 0.014 75) 4%, oklch(0.978 0.004 85));
+  --tt-card-inset: oklch(0.978 0.004 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-text-faint: oklch(0.505 0.015 78);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.53 0.095 186);
+  --tt-accent-text: oklch(0.43 0.08 186);
+  --tt-on-activity: oklch(0.99 0.003 85);
+  --tt-focus-ring: oklch(0.53 0.095 186);
+  --tt-hover: color-mix(in srgb, oklch(0.92 0.03 186) 70%, transparent);
+  --tt-error: oklch(0.509494 0.208583 28.513);
+  --tt-warning: oklch(0.530927 0.155556 45.359);
+  --tt-warning-surface: oklch(0.955 0.018 80);
+  --tt-overlay: color-mix(in srgb, var(--tt-canvas) 60%, transparent);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-scrollbar: oklch(0.84 0.01 85);
+  --tt-message: oklch(0.93 0.012 85);
+  --tt-provider-opencode: #625843;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+button, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+svg.mark { flex: none; fill: currentColor; color: var(--tt-provider-opencode); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 3px; background: var(--tt-scrollbar) padding-box; }
+code { font-family: var(--tt-font-mono); font-size: .88em; }
+
+/* ---- controls: soft squares, never pills (ADR-0110) ---- */
+.tt-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--tt-field-border); border-radius: 6px; padding: 0 11px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+.tt-button:hover:not(:disabled) { border-color: var(--tt-text-faint); color: var(--tt-text); background: var(--tt-hover); }
+/* A text button (ADR-0113): no edge, no fill at rest. Stop on a live line. */
+.tbtn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.tbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tbtn svg { width: 10px; height: 10px; }
+
+/* ---- the app frame, under the prototype's strip ---- */
+.app { position: fixed; top: var(--strip-h); left: 0; right: 0; bottom: 0; overflow: hidden; }
+.threads { display: grid; grid-template-columns: 268px minmax(0, 1fr); height: 100%; }
+.tside { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-text-muted); font-size: 14.5px; overflow: hidden; }
+.nav-top { display: flex; flex: none; align-items: center; gap: 8px; height: 44px; padding: 0 6px; color: var(--tt-text); font-weight: 600; }
+.nav-top i { width: 18px; height: 18px; border-radius: 5px; background: linear-gradient(135deg, var(--tt-accent), color-mix(in srgb, var(--tt-accent) 45%, var(--tt-text))); }
+.tside__group { padding: 12px 8px 4px; font-size: 12.5px; color: var(--tt-text-faint); }
+.trow { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 8px; border-radius: 6px; color: var(--tt-text-2); white-space: nowrap; overflow: hidden; }
+.trow > span:first-of-type { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.trow[aria-current] { background: var(--tt-sidebar-row-active); color: var(--tt-text); }
+.trow .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+.trow .dot[data-tone='attention'] { background: var(--tt-attention); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane__head { display: flex; align-items: center; gap: 10px; flex: none; height: 44px; padding: 0 14px 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.pane__head h1 { margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.pane__crumb { color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 22px max(20px, calc((100% - 760px) / 2)) 8px; }
+
+/* Messages (threads.css): the user's bubble on the message fill; the agent's reply open on the room. */
+.msg { max-width: 760px; margin: 0 auto 28px; font-size: 15px; line-height: 1.6; }
+.msg p { margin: 0; }
+.msg--user { width: fit-content; max-width: min(80%, 620px); margin-right: 0; padding: 10px 14px; border-radius: 12px 12px 4px 12px; background: var(--tt-message); }
+.msg header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header time { font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* The turn fold and the live line (activity.css). */
+.turn { max-width: 760px; margin: -14px auto 24px; }
+.fold { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin: 0 0 0 -6px; padding: 0 10px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 14px; }
+.fold__headline { flex: none; color: var(--tt-text-2); font-weight: 500; font-variant-numeric: tabular-nums; }
+.fold__counts { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold[data-status='failed'] svg { color: var(--tt-error); }
+.fold[data-status='stopped'] svg { color: var(--tt-text-muted); }
+.live { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; min-height: 32px; color: var(--tt-text-2); font-size: 14px; }
+.live__state { flex: none; font-variant-numeric: tabular-nums; }
+.live__action { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.live__action::before { content: '·'; margin-right: 8px; }
+.live__note { flex-basis: 100%; margin: 0 0 0 14px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
+.live .tbtn { margin-left: -2px; }
+.pulse { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); }
+.pulse[data-tone='attention'] { background: var(--tt-attention); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+:root:not([data-motion='reduce']) .pulse { animation: pulse 1.6s ease-in-out infinite; }
+.tick { font-variant-numeric: tabular-nums; }
+
+/* Variant A: the failed turn's reason under its Failed line, then what to press. */
+.reason { margin: 2px 0 0; max-width: 64ch; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.reason strong { color: var(--tt-error); font-weight: 500; }
+.reason-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+
+/* ---- the composer and what sits above it ---- */
+.compose { flex: none; padding: 6px max(20px, calc((100% - 760px) / 2)) calc(var(--chrome-h) + 16px); }
+.compose > * { max-width: 760px; margin-left: auto; margin-right: auto; }
+/* Variant B: one notice above the composer, where FailedTurnNotice is (threads.css .thread-failed-notice). */
+.notice { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 10px; margin: 0 auto 10px; padding: 10px 10px 10px 12px; border-radius: 8px; background: var(--tt-card); color: var(--tt-text-2); }
+.notice[data-tone='failed'] { border: 1px solid var(--tt-hairline); background: var(--tt-warning-surface); }
+.notice__lead { display: grid; place-items: center; flex: none; width: 15px; height: 21px; }
+.notice__lead svg { color: var(--tt-attention); }
+.notice > p { flex: 1 1 300px; min-width: 0; margin: 0; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.notice strong { color: var(--tt-text); font-weight: 500; }
+.notice .muted { color: var(--tt-text-muted); }
+.notice__actions { display: flex; flex: none; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.notice[data-tone='live'] { align-items: center; padding: 5px 6px 5px 12px; }
+.notice[data-tone='live'] > p { flex-basis: 260px; }
+@media (max-width: 640px) { .notice__actions { margin-left: 25px; } .notice[data-tone='live'] .notice__actions { margin-left: auto; } }
+
+.composer { position: relative; padding: 12px 14px 8px; border-radius: 14px; background: var(--tt-card); }
+.composer textarea { display: block; width: 100%; min-height: 48px; resize: none; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: 15px/1.5 var(--tt-font-ui); }
+.composer textarea::placeholder { color: var(--tt-text-muted); }
+.composer:focus-within { box-shadow: 0 0 0 1px var(--tt-field-border); }
+.composer__foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+.chips { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; }
+.sel { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.sel:hover { background: var(--tt-hover); color: var(--tt-text); }
+.sel__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sel__svc { color: var(--tt-text-muted); }
+.sel--muted { color: var(--tt-text-muted); }
+.disc { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: var(--tt-activity); color: var(--tt-on-activity); }
+.disc:disabled { opacity: .45; cursor: default; }
+.disc svg.sq { width: 11px; height: 11px; fill: currentColor; stroke: none; }
+
+/* ---- Settings, opened by Open Settings (stand-in; the real group is in the local-model-server prototype) ---- */
+.backdrop { position: fixed; top: var(--strip-h); left: 0; right: 0; bottom: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: var(--tt-overlay); }
+.sheet { width: min(560px, 100%); max-height: calc(100dvh - var(--strip-h) - 32px); overflow: auto; padding: 20px 22px 18px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface); box-shadow: var(--tt-shadow-lg); }
+.sheet__crumb { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 12.5px; }
+.sheet h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
+.srv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 12px 14px; border-radius: 8px; background: var(--tt-card); }
+.srv b { font-weight: 600; }
+.srv p { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.srv__acts { display: flex; gap: 8px; grid-row: 1 / span 2; grid-column: 2; }
+.sheet__foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+.sheet .quiet { margin: 12px 0 0; color: var(--tt-text-muted); font-size: 13px; }
+
+/* ---- the prototype's own chrome: not part of the design ---- */
+.strip { position: fixed; top: 0; left: 0; right: 0; z-index: 90; display: flex; align-items: center; gap: 8px; min-height: var(--strip-h); padding: 3px 12px; background: #fff3c4; color: #2b2300; font: 12.5px/1.35 var(--tt-font-ui); }
+.strip b { flex: none; font-weight: 700; letter-spacing: .04em; }
+.strip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chrome { position: fixed; left: 50%; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 99; display: flex; width: max-content; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; max-width: calc(100vw - 16px); padding: 5px 8px; border-radius: 12px; background: #f4f4f4; color: #111; font: 12.5px/1 var(--tt-font-ui); box-shadow: 0 8px 30px rgb(0 0 0 / 40%); transform: translateX(-50%); }
+.chrome button, .chrome select { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; background: none; color: #111; font: 12.5px/1 var(--tt-font-ui); }
+.chrome select { border: 1px solid #999; background: #fff; padding: 0 6px; }
+.chrome button:hover { background: #ddd; }
+.chrome button[aria-pressed='true'] { background: #d2d2d2; font-weight: 600; }
+.chrome .grp { display: inline-flex; align-items: center; gap: 2px; }
+.chrome .lbl { padding: 0 4px; white-space: nowrap; }
+.chrome .lbl b { font-weight: 700; }
+.chrome .sep { width: 1px; height: 18px; background: #ccc; }
+.chrome label { display: inline-flex; align-items: center; gap: 5px; color: #333; }
+.chrome .readout { max-width: 260px; overflow: hidden; padding: 0 6px; color: #333; font: 11.5px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chrome :focus-visible { outline: 2px solid #0a6; outline-offset: 1px; }
+.chrome .short { display: none; }
+
+/* ---- narrow windows: 820 wide down to a phone ---- */
+@media (max-width: 1100px) { .threads { grid-template-columns: 220px minmax(0, 1fr); } }
+@media (max-width: 900px) {
+  .threads { grid-template-columns: 196px minmax(0, 1fr); }
+  .chrome .long { display: none; } .chrome .short { display: inline; }
+  .chrome .readout { max-width: 170px; }
+}
+@media (max-height: 600px) { .transcript { padding-top: 14px; } .msg { margin-bottom: 22px; } }
+@media (max-width: 640px) {
+  :root { --strip-h: 40px; }
+  .strip span { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .threads { grid-template-columns: minmax(0, 1fr); }
+  .tside { display: none; }
+  .pane__head { padding: 0 12px; }
+  .transcript { padding: 14px 14px 6px; }
+  .msg { font-size: 15px; }
+  .msg--user { max-width: 88%; }
+  .compose { padding: 6px 10px calc(var(--chrome-h) + 14px); }
+  .chrome { left: 8px; right: 8px; width: auto; transform: none; max-width: none; padding: 6px; gap: 4px; }
+  .chrome button, .chrome select { min-height: 36px; padding: 0 8px; }
+  .chrome select { max-width: 190px; }
+  .chrome .readout { flex-basis: 100%; max-width: none; text-align: center; }
+  .chrome .hide-narrow { display: none; }
+  .srv { grid-template-columns: minmax(0, 1fr); }
+  .srv__acts { grid-row: auto; grid-column: 1; }
+  .backdrop { align-items: end; padding: 8px 8px calc(var(--chrome-h) + 12px); }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+:root[data-motion='reduce'] *, :root[data-motion='reduce'] *::before { animation: none !important; transition: none !important; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 8v4.5M12 16h.01"/></symbol>
+  <symbol id="i-stopped" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+  <symbol id="m-opencode" viewBox="0 0 32 40"><path fill-rule="evenodd" d="M24 8H8V32H24V8ZM32 40H0V0H32V40Z"/></symbol>
+</svg>
+
+<div class="strip" role="note" aria-label="Prototype"><b>PROTOTYPE</b><span title="What should an OpenCode thread on your own model server say, and where, while the server won't answer and when it lets the turn down?">What should an OpenCode thread on your own model server say, and where, while the server won’t answer and when it lets the turn down?</span></div>
+<div class="app" id="app"></div>
+<div id="layer"></div>
+<div class="chrome" id="chrome" role="group" aria-label="Prototype controls"></div>
+
+<script>
+/* PROTOTYPE - throwaway. Every action is a stub; nothing leaves this page. */
+
+/* ---------- The words being asked about ---------- */
+const SERVER = 'Sparks', ADDRESS = 'spark-head:8888', MODEL = 'DeepSeek V4.1 Flash'
+const WORDS = {
+  retrying: n => ({ title: `${SERVER} isn’t answering. Trying again (${n} of 10).` }),
+  waiting: { title: `Still waiting for ${SERVER} to start answering.`, body: 'A long prompt can take a few minutes. The turn stops waiting at 5 minutes.' },
+  'fail-noanswer': { took: 89_400, title: `${SERVER} didn’t answer.`,
+    body: `OpenCode tried it 10 times over about a minute and a half. Nothing in the thread was lost. Check that ${SERVER} is on and this computer can reach ${ADDRESS}, then try again.` },
+  'fail-timeout': { took: 300_000, title: `${SERVER} didn’t start answering within 5 minutes.`,
+    body: 'It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check ' + SERVER + ', then try again.' },
+  'fail-key': { took: 420, settings: true, title: `${SERVER} turned down its key.`,
+    body: `Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove ${SERVER} and add it again with the right key, then try again.` },
+  'fail-model': { took: 310, title: `${SERVER} no longer has ${MODEL}.`,
+    body: `Nothing in the thread was lost. Pick another model in the model menu below, or load ${MODEL} on ${SERVER} again, then try again.` },
+  'fail-long': { took: 1_240, title: `This thread is too long for ${MODEL}.`,
+    body: `Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread.` }
+}
+const TRY_AGAIN_NAME = 'Try again, sending your last message to ' + SERVER + ' again'
+const SETTINGS_NAME = 'Open Settings at Your own model servers'
+const STOP_NAME = 'Stop agent'
+
+/* ---------- State ---------- */
+const STATES = [
+  ['working', 'Working normally'], ['retrying', 'Retrying'], ['waiting', 'Still waiting'],
+  ['fail-noanswer', 'Failed: no answer'], ['fail-timeout', 'Failed: no answer after 5 minutes'], ['fail-key', 'Failed: key refused'],
+  ['fail-model', 'Failed: model gone'], ['fail-long', 'Failed: too long'], ['stopped', 'Stopped']
+]
+const VARIANTS = { A: { name: 'In the transcript', short: 'Transcript' }, B: { name: 'Above the composer', short: 'Composer' } }
+const LAST_PROMPT = 'Now write the guide section on adding a server, with the Sparks setup as the example.'
+const sim = {
+  variant: 'A', scenario: 'working', phase: 'working', attempt: 1, ticking: true, startedAt: Date.now(),
+  failure: null, took: 0, history: [], tries: 0, settingsOpen: false, last: 'Opened the prototype'
+}
+let retryTimer = null, opener = null
+
+/* ---------- Helpers ---------- */
+const $ = s => document.querySelector(s)
+function el(tag, attrs, kids) {
+  const n = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue
+    if (k === 'text') n.textContent = v
+    else if (k === 'on') for (const [ev, fn] of Object.entries(v)) n.addEventListener(ev, fn)
+    else n.setAttribute(k, v === true ? '' : v)
+  }
+  for (const kid of [].concat(kids ?? [])) if (kid !== null && kid !== undefined && kid !== false) n.append(kid)
+  return n
+}
+const NS = 'http://www.w3.org/2000/svg'
+function icon(name, cls) {
+  const s = document.createElementNS(NS, 'svg'); s.setAttribute('class', 'i' + (cls ? ' ' + cls : '')); s.setAttribute('aria-hidden', 'true')
+  const u = document.createElementNS(NS, 'use'); u.setAttribute('href', '#i-' + name); s.append(u); return s
+}
+function mark(size) {
+  const s = document.createElementNS(NS, 'svg'); s.setAttribute('class', 'mark'); s.setAttribute('width', size); s.setAttribute('height', size); s.setAttribute('aria-hidden', 'true')
+  const u = document.createElementNS(NS, 'use'); u.setAttribute('href', '#m-opencode'); s.append(u); return s
+}
+function fmt(ms) {
+  if (ms < 10_000) return (Math.floor(ms / 100) / 10).toFixed(1) + 's'
+  const s = Math.floor(ms / 1000); if (s < 60) return s + 's'
+  return Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's'
+}
+const elapsedMs = () => Math.max(0, Date.now() - sim.startedAt)
+const elapsedText = () => { const s = Math.floor(elapsedMs() / 1000); return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's' }
+const reduced = () => document.documentElement.dataset.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches
+const failed = () => sim.phase === 'failed'
+const live = () => ['working', 'retrying', 'waiting'].includes(sim.phase)
+const stillWaiting = () => sim.phase === 'waiting' && elapsedMs() >= 30_000
+
+/* ---------- Transcript ---------- */
+function userMsg(text) { return el('div', { class: 'msg msg--user' }, el('p', { text })) }
+function earlier() {
+  return [
+    userMsg('Tidy the README’s privacy section so it names your own model servers.'),
+    el('div', { class: 'turn' }, el('p', { class: 'fold' }, [icon('chev-r', 'sm'), el('span', { class: 'fold__headline', text: 'Worked for 52s' }), el('span', { class: 'fold__counts', text: 'Changed 1 file' })])),
+    el('article', { class: 'msg', 'aria-label': 'OpenCode reply' }, [el('header', {}, [mark(12), 'OpenCode · ' + SERVER + ' / ' + MODEL, el('time', { text: '10:42' })]),
+      el('p', { text: 'Done. The privacy section now names your own model servers: Sotto contacts one only when you press Check or Add, and OpenCode talks to it during your threads.' })])
+  ]
+}
+/* A turn that has ended: its fold line, and in variant A the failure's reason (with buttons only on the newest). */
+function endedTurn(t, current) {
+  const w = t.failure ? WORDS[t.failure] : null
+  const head = el('p', { class: 'fold', 'data-status': t.failure ? 'failed' : 'stopped' },
+    [icon(t.failure ? 'alert' : 'stopped', 'sm'), el('span', { class: 'fold__headline', text: (t.failure ? 'Failed after ' : 'Stopped after ') + fmt(t.took) })])
+  const kids = [head]
+  if (w && sim.variant === 'A') {
+    kids.push(el('div', current ? { role: 'alert' } : {}, el('p', { class: 'reason' }, [el('strong', { text: w.title }), ' ' + w.body])))
+    if (current) kids.push(failureButtons(w, 'a'))
+  }
+  return el('div', { class: 'turn', 'data-ended': t.failure ? 'failed' : 'stopped' }, kids)
+}
+function failureButtons(w, where) {
+  return el('div', { class: where === 'a' ? 'reason-actions' : 'notice__actions' }, [
+    w.settings ? el('button', { type: 'button', class: 'tt-button', 'aria-label': SETTINGS_NAME, 'data-k': 'settings-' + where, on: { click: e => openSettings(e.currentTarget) } }, [icon('settings', 'sm'), 'Open Settings']) : null,
+    el('button', { type: 'button', class: 'tt-button', 'aria-label': TRY_AGAIN_NAME, 'data-k': 'retry-' + where, on: { click: tryAgain } }, [icon('retry', 'sm'), 'Try again'])
+  ])
+}
+const stopButton = where => el('button', { type: 'button', class: 'tbtn', 'aria-label': STOP_NAME, title: 'Stop agent', 'data-k': 'stop-' + where, on: { click: stop } }, [icon('square'), 'Stop'])
+
+/* The line at the end of a running turn. Variant B keeps today's line whatever the server is doing. */
+function liveLine() {
+  const plain = () => el('div', { class: 'live', 'data-testid': 'live' }, [el('i', { class: 'pulse', 'aria-hidden': 'true' }),
+    el('span', { class: 'live__state' }, ['Working for ', el('span', { class: 'tick', 'data-elapsed': '' }, elapsedText())]),
+    sim.phase === 'working' && elapsedMs() > 4000 ? el('span', { class: 'live__action', text: 'Reading docs/guide.md' }) : null])
+  if (sim.variant === 'B' || sim.phase === 'working' || (sim.phase === 'waiting' && !stillWaiting())) return plain()
+  if (sim.phase === 'retrying') {
+    return el('div', { class: 'live', 'data-testid': 'live' }, [el('i', { class: 'pulse', 'data-tone': 'attention', 'aria-hidden': 'true' }),
+      el('span', { class: 'live__state', role: 'status', id: 'retry-status', text: WORDS.retrying(sim.attempt).title }), stopButton('a')])
+  }
+  return el('div', { class: 'live', 'data-testid': 'live' }, [el('i', { class: 'pulse', 'aria-hidden': 'true' }),
+    el('span', { class: 'live__state' }, [el('span', { role: 'status', text: WORDS.waiting.title }), ' ', el('span', { class: 'tick', style: 'color:var(--tt-text-muted)', 'data-elapsed': '' }, elapsedText())]),
+    stopButton('a'), el('p', { class: 'live__note', text: WORDS.waiting.body })])
+}
+
+function transcript() {
+  const kids = [...earlier()]
+  sim.history.forEach(t => { kids.push(userMsg(LAST_PROMPT)); kids.push(endedTurn(t, false)) })
+  kids.push(userMsg(LAST_PROMPT))
+  if (live()) kids.push(el('div', { class: 'turn' }, liveLine()))
+  else kids.push(endedTurn({ failure: sim.failure, took: sim.took }, true))
+  return el('div', { class: 'transcript', id: 'transcript', tabindex: '-1', 'aria-label': 'Transcript' }, kids)
+}
+
+/* Variant B's notice above the composer. */
+function notice() {
+  if (sim.variant !== 'B') return null
+  if (sim.phase === 'retrying') {
+    return el('div', { class: 'notice', 'data-tone': 'live' }, [el('span', { class: 'notice__lead', 'aria-hidden': 'true' }, el('i', { class: 'pulse', 'data-tone': 'attention' })),
+      el('p', {}, el('strong', { role: 'status', id: 'retry-status', text: WORDS.retrying(sim.attempt).title })), el('div', { class: 'notice__actions' }, stopButton('b'))])
+  }
+  if (stillWaiting()) {
+    return el('div', { class: 'notice', 'data-tone': 'live' }, [el('span', { class: 'notice__lead', 'aria-hidden': 'true' }, el('i', { class: 'pulse' })),
+      el('p', {}, [el('strong', { role: 'status', text: WORDS.waiting.title }), ' ', el('span', { class: 'muted tick', 'data-elapsed': '' }, elapsedText()), el('br'), WORDS.waiting.body]),
+      el('div', { class: 'notice__actions' }, stopButton('b'))])
+  }
+  if (failed()) {
+    const w = WORDS[sim.failure]
+    return el('div', { class: 'notice', 'data-tone': 'failed', role: 'alert' }, [el('span', { class: 'notice__lead' }, icon('alert', 'sm')),
+      el('p', {}, [el('strong', { text: w.title }), ' ' + w.body]), failureButtons(w, 'b')])
+  }
+  return null
+}
+
+function composer() {
+  const running = live()
+  return el('div', { class: 'composer' }, [
+    el('label', { class: 'vh', for: 'prompt', text: 'Message' }),
+    el('textarea', { id: 'prompt', rows: '2', 'data-k': 'prompt', placeholder: running ? 'Queue a message for when OpenCode finishes' : 'Ask for a change, or press the dictation key to speak' }),
+    el('div', { class: 'composer__foot' }, [
+      el('div', { class: 'chips' }, [
+        el('button', { type: 'button', class: 'sel', 'aria-label': 'Thread model', title: MODEL + ' from ' + SERVER + ', in OpenCode (the menu is not drawn in this prototype)' },
+          [mark(13), el('span', { class: 'sel__txt' }, [el('span', { class: 'sel__svc', text: SERVER + ' / ' }), MODEL]), icon('chev-d', 'sm')]),
+        el('button', { type: 'button', class: 'sel sel--muted', 'aria-label': 'Thread reasoning', title: 'Not drawn in this prototype' }, ['Medium', icon('chev-d', 'sm')]),
+        el('button', { type: 'button', class: 'sel sel--muted', 'aria-label': 'Thread permissions', title: 'Not drawn in this prototype' }, ['Ask first', icon('chev-d', 'sm')])]),
+      running
+        ? el('button', { type: 'button', class: 'disc', 'aria-label': STOP_NAME, title: STOP_NAME, 'data-k': 'stop-composer', on: { click: stop } }, icon('square', 'sq'))
+        : el('button', { type: 'button', class: 'disc', 'aria-label': 'Send (not wired in this prototype)', disabled: true }, icon('up'))
+    ])
+  ])
+}
+
+function threadView() {
+  const attention = failed()
+  return el('div', { class: 'threads' }, [
+    el('aside', { class: 'tside', 'aria-hidden': 'true' }, [el('div', { class: 'nav-top' }, [el('i'), 'Sotto']), el('div', { class: 'tside__group', text: 'sotto' }),
+      el('div', { class: 'trow', 'aria-current': 'page' }, [el('span', { text: 'Guide: your own model servers' }), live() ? el('span', { class: 'dot' }) : attention ? el('span', { class: 'dot', 'data-tone': 'attention' }) : null]),
+      el('div', { class: 'trow' }, el('span', { text: 'Fix the tray icon on Linux' })), el('div', { class: 'trow' }, el('span', { text: 'Release notes for 0.1.42' })),
+      el('div', { class: 'tside__group', text: 'plant-net' }), el('div', { class: 'trow' }, el('span', { text: 'Rack 4 loop check' }))]),
+    el('section', { class: 'pane', 'aria-label': 'Thread' }, [
+      el('header', { class: 'pane__head' }, [mark(15), el('h1', { text: 'Guide: your own model servers' }), el('span', { class: 'pane__crumb', text: '/ sotto' })]),
+      transcript(),
+      el('div', { class: 'compose' }, [notice(), composer()])
+    ])
+  ])
+}
+
+/* ---------- Settings stand-in ---------- */
+function settingsSheet() {
+  if (!sim.settingsOpen) return null
+  return el('div', { class: 'backdrop', on: { mousedown: e => { if (e.target === e.currentTarget) closeSettings() } } },
+    el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'sheet-title' }, [
+      el('p', { class: 'sheet__crumb', text: 'Settings › Providers' }),
+      el('h2', { id: 'sheet-title', text: 'Your own model servers' }),
+      el('div', { class: 'srv' }, [el('b', { text: SERVER }), el('div', { class: 'srv__acts' }, [
+        el('button', { type: 'button', class: 'tt-button', 'aria-label': 'Check ' + SERVER + ' again (stub)' }, 'Check again'),
+        el('button', { type: 'button', class: 'tt-button', 'aria-label': 'Remove ' + SERVER + ' (stub)', 'data-k': 'remove' }, 'Remove')]),
+        el('p', {}, [el('code', { text: 'http://' + ADDRESS + '/v1' }), ' · ' + MODEL])]),
+      el('p', { class: 'quiet', text: 'Prototype stand-in. The real group, and Add a server, are in the local-model-server prototype. Escape closes this.' }),
+      el('div', { class: 'sheet__foot' }, el('button', { type: 'button', class: 'tt-button', 'data-k': 'close-settings', on: { click: closeSettings } }, 'Close Settings'))
+    ]))
+}
+function openSettings(btn) { opener = btn?.dataset.k ?? null; sim.settingsOpen = true; sim.last = 'Pressed Open Settings'; render(); $('.sheet [data-k="remove"]')?.focus() }
+function closeSettings() { sim.settingsOpen = false; sim.last = 'Closed Settings'; render(); if (opener) document.querySelector(`[data-k="${opener}"]`)?.focus() }
+
+/* ---------- Actions ---------- */
+function stopRetry() { clearInterval(retryTimer); retryTimer = null }
+function armRetry() {
+  stopRetry()
+  if (sim.phase !== 'retrying' || !sim.ticking || frozen) return
+  retryTimer = setInterval(() => {
+    if (sim.attempt >= 10) { fail('fail-noanswer', 'All 10 tries failed'); return }
+    sim.attempt++
+    // The live region stays put; only its words change, so it is announced politely and nothing moves.
+    const s = document.getElementById('retry-status'); if (s) s.textContent = WORDS.retrying(sim.attempt).title
+    drawChrome()
+  }, 2000)
+}
+function fail(kind, why) { stopRetry(); sim.phase = 'failed'; sim.failure = kind; sim.took = WORDS[kind].took; sim.last = why; render() }
+function stop() {
+  stopRetry(); sim.took = sim.phase === 'retrying' ? sim.attempt * 9_000 : elapsedMs()
+  sim.phase = 'stopped'; sim.failure = null; sim.last = 'Pressed Stop: the turn stopped, nothing lost'
+  render(); $('#prompt')?.focus()
+}
+function tryAgain() {
+  sim.history.push({ failure: sim.failure, took: sim.took }); sim.tries++
+  sim.phase = 'working'; sim.failure = null; sim.startedAt = Date.now(); sim.last = 'Pressed Try again: the last message went again'
+  render(); $('#prompt')?.focus()
+  const t = $('#transcript'); if (t) t.scrollTop = t.scrollHeight
+}
+function setScenario(kind, opts = {}) {
+  stopRetry()
+  Object.assign(sim, { scenario: kind, history: [], failure: null, attempt: opts.attempt ?? 1, startedAt: Date.now(), tries: 0 })
+  if (kind === 'working') sim.phase = 'working'
+  else if (kind === 'retrying') { sim.phase = 'retrying'; sim.startedAt = Date.now() - (sim.attempt - 1) * 9000 }
+  else if (kind === 'waiting') { sim.phase = 'waiting'; if (opts.still) sim.startedAt = Date.now() - 42_000 }
+  else if (kind === 'stopped') { sim.phase = 'stopped'; sim.took = 24_300 }
+  else { sim.phase = 'failed'; sim.failure = kind; sim.took = WORDS[kind].took }
+  sim.last = 'State: ' + STATES.find(s => s[0] === kind)[1]
+  render(); armRetry()
+}
+function skipAhead() { sim.startedAt = Math.min(sim.startedAt, Date.now() - 30_000); sim.last = 'Skipped ahead to 30 seconds'; render() }
+
+/* ---------- Chrome ---------- */
+const keys = Object.keys(VARIANTS)
+function go(step) {
+  sim.variant = keys[(keys.indexOf(sim.variant) + step + keys.length) % keys.length]
+  sim.last = 'Switched to variant ' + sim.variant
+  const u = new URL(location.href); u.searchParams.set('variant', sim.variant); history.replaceState(null, '', u)
+  render()
+}
+function readout() {
+  const p = sim.phase
+  const what = p === 'retrying' ? `retrying, try ${sim.attempt} of 10${sim.ticking && !frozen ? '' : ' (paused)'}`
+    : p === 'waiting' ? (stillWaiting() ? 'still waiting, ' : 'waiting, ') + elapsedText()
+    : p === 'failed' ? 'failed: ' + sim.failure.slice(5) : p
+  return `${sim.variant} · ${what}${sim.tries ? ' · tries ' + (sim.tries + 1) : ''} · ${sim.last}`
+}
+function drawChrome() {
+  const c = $('#chrome'), focusK = document.activeElement?.closest('#chrome') ? document.activeElement.dataset.k : null
+  c.replaceChildren(...[
+    el('div', { class: 'grp' }, [
+      el('button', { type: 'button', 'aria-label': 'Previous variant', 'data-k': 'prev', on: { click: () => go(-1) } }, icon('left', 'sm')),
+      el('span', { class: 'lbl' }, [el('b', { text: sim.variant }), ' ', el('span', { class: 'long', text: VARIANTS[sim.variant].name }), el('span', { class: 'short', text: VARIANTS[sim.variant].short })]),
+      el('button', { type: 'button', 'aria-label': 'Next variant', 'data-k': 'next', on: { click: () => go(1) } }, icon('right', 'sm'))]),
+    el('span', { class: 'sep', 'aria-hidden': 'true' }),
+    el('label', {}, [el('span', { class: 'hide-narrow', text: 'State' }),
+      el('select', { 'aria-label': 'Prototype state', 'data-k': 'state', on: { change: e => setScenario(e.target.value) } },
+        STATES.map(([v, t]) => { const o = el('option', { value: v, text: t }); if (v === sim.scenario) o.selected = true; return o }))]),
+    sim.phase === 'retrying' ? el('button', { type: 'button', 'aria-pressed': String(!sim.ticking), 'data-k': 'pause', on: { click: () => { sim.ticking = !sim.ticking; sim.last = sim.ticking ? 'Ticking again' : 'Paused the count'; armRetry(); drawChrome() } } }, sim.ticking ? 'Pause count' : 'Resume count') : null,
+    sim.phase === 'waiting' && !stillWaiting() ? el('button', { type: 'button', 'data-k': 'skip', 'aria-label': 'Skip ahead to 30 seconds', on: { click: skipAhead } }, 'Skip to 30 s') : null,
+    el('span', { class: 'sep', 'aria-hidden': 'true' }),
+    el('button', { type: 'button', 'data-k': 'theme', 'aria-label': 'Switch to ' + (isLight() ? 'dark' : 'light') + ' theme', on: { click: () => { setTheme(!isLight()); drawChrome() } } }, isLight() ? 'Dark' : 'Light'),
+    el('button', { type: 'button', class: 'hide-narrow', 'data-k': 'motion', 'aria-pressed': String(document.documentElement.dataset.motion === 'reduce'), on: { click: () => { const r = document.documentElement.dataset.motion === 'reduce'; if (r) delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = 'reduce'; drawChrome() } } }, 'Reduce motion'),
+    el('span', { class: 'readout', title: readout(), text: readout() })
+  ].filter(Boolean))
+  if (focusK) c.querySelector(`[data-k="${focusK}"]`)?.focus()
+  document.documentElement.style.setProperty('--chrome-h', Math.ceil(c.getBoundingClientRect().height + 8) + 'px')
+}
+const isLight = () => document.documentElement.dataset.theme === 'light'
+function setTheme(light) { if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme }
+
+/* ---------- Render ---------- */
+function render() {
+  const k = document.activeElement?.dataset?.k
+  const t = $('#transcript'), atEnd = !t || t.scrollHeight - t.scrollTop - t.clientHeight < 40
+  $('#app').replaceChildren(threadView())
+  $('#layer').replaceChildren(...[settingsSheet()].filter(Boolean))
+  drawChrome()
+  const nt = $('#transcript'); if (nt && atEnd) nt.scrollTop = nt.scrollHeight
+  if (k && !document.activeElement?.dataset?.k) document.querySelector(`[data-k="${k}"]`)?.focus()
+}
+
+/* A once-a-second tick updates the clocks in place and moves Still waiting on at 30 s and to the failure at 5 minutes. */
+let wasStill = false
+setInterval(() => {
+  if (frozen) return
+  document.querySelectorAll('[data-elapsed]').forEach(n => { n.textContent = elapsedText() })
+  if (sim.phase === 'waiting') {
+    if (elapsedMs() >= 300_000) { fail('fail-timeout', 'Reached the 5-minute limit'); return }
+    if (stillWaiting() !== wasStill) { wasStill = stillWaiting(); render(); return }
+  }
+  const r = $('#chrome .readout'); if (r) { r.textContent = readout(); r.title = readout() }
+}, 1000)
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && sim.settingsOpen) { e.preventDefault(); closeSettings(); return }
+  if (e.key === 'Tab' && sim.settingsOpen) {
+    const f = [...document.querySelectorAll('.sheet button')]
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus() }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus() }
+    else if (!document.activeElement.closest('.sheet')) { e.preventDefault(); f[0].focus() }
+    return
+  }
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' || sim.settingsOpen) return
+  const n = document.activeElement
+  if (n && (n.tagName === 'SELECT' || n.tagName === 'TEXTAREA' || n.tagName === 'INPUT')) return
+  go(e.key === 'ArrowLeft' ? -1 : 1)
+})
+addEventListener('resize', drawChrome)
+
+/* ---------- Start, with URL switches for captures ---------- */
+const q = new URL(location.href).searchParams
+const frozen = q.get('frozen') === '1'
+sim.variant = keys.includes((q.get('variant') || '').toUpperCase()) ? q.get('variant').toUpperCase() : 'A'
+setTheme(q.get('theme') === 'light')
+if (q.get('motion') === 'reduce') document.documentElement.dataset.motion = 'reduce'
+const startState = STATES.some(s => s[0] === q.get('state')) ? q.get('state') : 'working'
+setScenario(startState, { attempt: Math.min(10, Math.max(1, +(q.get('attempt') || 1))), still: q.get('still') === '1' })
+wasStill = stillWaiting()
+if (q.get('tries') === '1' && failed()) { sim.history.push({ failure: sim.failure, took: sim.took }); sim.tries = 1; render() }
+if (q.get('settings') === '1') openSettings(null)
+</script>
+</body>
+</html>
