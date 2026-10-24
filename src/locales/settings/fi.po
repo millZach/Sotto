@@ -668,6 +668,10 @@ msgstr ""
 msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
 msgstr ""
 
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A band of text characters sweeps across the window."
+msgstr "Tekstimerkkien nauha pyyhkäisee ikkunan poikki."
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
 msgstr ""
@@ -683,6 +687,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "Tähtien rivi pyyhkäisee ikkunan poikki, ja sen perässä näkyy himmeä vana."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -1052,6 +1060,11 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr ""
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "Nauha"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -2783,6 +2796,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Night falls -ulkoasu"
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr ""
 
@@ -4283,6 +4301,11 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr ""
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "Tähdet"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"

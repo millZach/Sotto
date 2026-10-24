@@ -668,6 +668,10 @@ msgstr ""
 msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
 msgstr ""
 
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A band of text characters sweeps across the window."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
 msgstr ""
@@ -682,6 +686,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
+msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -1051,6 +1059,11 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
+msgstr ""
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -2783,6 +2796,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr ""
 
@@ -4282,6 +4300,11 @@ msgstr ""
 #. A diff layout: removed lines above added ones
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
+msgstr ""
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx

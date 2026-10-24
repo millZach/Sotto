@@ -78,6 +78,9 @@
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
 .segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; }
 .segmented-control button:hover { color: var(--tt-text); }
+/* Night falls' look: a line for each choice under the row's name, the choice's name leading its line. */
+.night-falls-look__line { display: block; }
+.night-falls-look__line > strong { color: var(--tt-text); font-weight: 600; }
 .segmented-control button[aria-checked='true'] { color: var(--tt-text); background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); }
 @media (max-width: 620px) { .settings-rows .tt-field { grid-template-areas: 'label' 'description' 'control' 'error'; } .segmented-control { justify-self: start; } }
 
