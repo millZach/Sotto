@@ -13,7 +13,8 @@ import { SAVE_SYNCHRONOUS } from './sqliteDurability'
  * worker's own connection runs a PASSIVE checkpoint `CHECKPOINT_INTERVAL_MS` after its last one finished, which takes no
  * lock a save waits for. While saves keep coming, a passive checkpoint can fall behind and the log never starts over, so
  * once it holds `RESTART_PAGES` the worker also runs a RESTART, which holds the next save for as long as it takes to copy
- * and flush what the passive one just before it left. Where the worker cannot be had (no built file beside this module,
+ * and flush what the passive one just before it left. That puts the whole log in the file, so the save after it starts
+ * the log over, as SQLite always does once a save finds the log all in the file. Where the worker cannot be had (no built file beside this module,
  * as under the test runner, or a worker that failed), main's connection keeps SQLite's own automatic checkpoint.
  */
 export const BUILT_CHECKPOINT_WORKER = join(__dirname, 'walCheckpointWorker.js')

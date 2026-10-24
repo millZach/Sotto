@@ -42,7 +42,7 @@ Taken on the Windows development laptop (Node v24.14.1, Windows Defender on, the
 
 No save on main runs a checkpoint any more, and the time main spends held by saves fell to about a third, the worst
 save to under half. The log grows past SQLite's 4 MB while saves keep coming, up to the 16 MB at which the worker
-runs a RESTART, and starts over there.
+runs a RESTART, and starts over at the save after it.
 
 It is not the whole of #1451's first expectation, no disk wait on main longer than a frame or two. Main still writes its
 saves to the log on its own thread, and on this laptop a write on one thread waits while another thread flushes a
@@ -55,9 +55,10 @@ fewer pieces. Taking those waits off main means taking the saves off main, which
 That worker ran PASSIVE checkpoints only, and while main committed in every publish window a passive checkpoint never
 caught up, so the log never started over (74 MB in 2,000 commits). This one adds a RESTART once the log holds 4,096
 pages. The RESTART holds main's next save while it copies and flushes the pages the passive checkpoint just before it
-left, which is far less than the whole log, and then starts the log over.
+left, which is far less than the whole log. That puts the whole log in the file, and the save after it starts the log
+over, as SQLite does whenever a save finds the log all in the file.
 
 A run of the benchmark with the RESTART turned off reproduced the October 19 finding, the log reaching 122 to 230 MB,
 and held main no less: 3.4 to 6.1 s held and a worst save of 0.28 to 0.73 s, beside 15.0 to 16.0 s held with SQLite's
-own checkpoint in the same run. The RESTART's integration test, with a restart size of 200 pages, writes some 12,000
-pages back to back, and the log starts over and never holds 4,000.
+own checkpoint in the same run. The RESTART's integration test, with a restart size of 200 pages, makes one save for
+each of the worker's passes as the pass starts, and the log never held more than 220 pages on Windows or Linux.

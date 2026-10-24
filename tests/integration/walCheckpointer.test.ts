@@ -207,30 +207,44 @@ describe('thread store checkpoints off main', () => {
     expect(Atomics.load(control, 1)).toBe(2)
   }, 60_000)
 
-  it('starts the log over while saves keep coming, rather than letting it grow', async () => {
+  it('starts the log over while saves keep landing during its checkpoints, rather than letting it grow', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-')); roots.push(root)
     const path = join(root, 'threads.sqlite')
     const db = new DatabaseSync(path, { timeout: 5_000 })
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE rows (text TEXT NOT NULL)')
     const checkpointer = WalCheckpointer.start(path, worker.path, () => undefined, { intervalMs: 10, restartPages: 200 })!
+    const control = (checkpointer as unknown as { control: Int32Array }).control
     const insert = db.prepare('INSERT INTO rows (text) VALUES (?)')
     let most = 0, restarts = 0, last = 0
     try {
-      // Saves back to back, each a few pages, with the event loop turning between them as main's does.
-      for (let index = 0; index < 3_000; index++) {
+      // One save of a few pages for each of the worker's passes, made as the pass starts, the way saves keep landing
+      // while a checkpoint runs. SQLite starts a log over only inside a save that finds it all in the file; a RESTART
+      // takes the write lock to get it all there, so the save after it starts the log over. The saves are paced by the
+      // worker's own passes rather than a clock: a loop of saves runs a hundred times faster on Linux than on Windows,
+      // and an earlier version of this test, racing 3,000 saves against the worker's timer, finished on Linux before
+      // the worker had checkpointed at all.
+      for (let save = 0; save < 150; save++) {
+        for (;;) {
+          let spins = 0
+          while (Atomics.load(control, 0) !== 1 && spins++ < 100_000) { /* The worker's next pass. */ }
+          if (Atomics.load(control, 0) === 1) break
+          await nextTask()
+        }
         insert.run(randomBytes(9_000).toString('base64'))
         const { frames } = walIndex(path)
         if (frames < last) restarts++
         last = frames
         most = Math.max(most, frames)
-        await nextTask()
+        // The next save waits for a pass that starts after this one.
+        while (Atomics.load(control, 0) === 1) await nextTask()
       }
     } finally {
       checkpointer.stop()
       db.close()
     }
-    // Some 12,000 pages were written. Without a restart the log would hold all of them.
+    // About 500 pages were saved. With the RESTART at 200, the log starts over at the save after it passes 200: it held
+    // at most 220 pages on Windows and Linux alike, where without the RESTART it reached 240 to 485.
     expect(restarts).toBeGreaterThan(0)
-    expect(most).toBeLessThan(4_000)
+    expect(most).toBeLessThan(300)
   }, 120_000)
 })
