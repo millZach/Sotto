@@ -438,21 +438,6 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
   return shown.length === groups.length ? groups : shown
 }
 
-/**
- * Whether the newest turn of Watcher's conversation is the one Watcher is working on. A news turn's wake-up is left out
- * of the conversation (`watcherWakeUpsAsShown`), so until its first reply nothing of it is drawn, and the newest turn
- * drawn may be one that already finished. The turn's own lifecycle decides, over every message the window holds
- * (`ActivityPlacement.newestTurn`): running is live, and finished is not, whatever the live turn's ID says while the news
- * turn's lifecycle has not arrived. With no lifecycle to go on, the turn is live unless running work that no drawn message
- * holds is another turn's. Otherwise the finished turn would open into the running turn's layout while the news turn runs
- * and fold again when it ends, moving what a reader higher up was reading (#1452).
- */
-function watcherTurnLive(placement: ActivityPlacement, liveTurn: string | null): boolean {
-  const newest = placement.newestTurn
-  if (newest?.lifecycle !== undefined) return newest.lifecycle === 'running'
-  return !(liveTurn !== null && !newest?.turnIds.includes(liveTurn) && placement.trailing.some(group => group.turnId === liveTurn))
-}
-
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
 
@@ -473,9 +458,12 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
-  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that
-  // turn has finished: Watcher is then working on news, whose own message is left out, so its turn has nothing drawn yet.
-  const live = running && (speaker !== 'watcher' || watcherTurnLive(placement, context.liveTurn))
+  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that turn
+  // ended and another turn's lifecycle runs: Watcher is then working on news, whose wake-up the conversation leaves out
+  // (`watcherWakeUpsAsShown`), so the news turn has nothing drawn until its first reply. Drawn as the running turn, the
+  // finished one would open while the news turn runs and fold again when it ends (#1452). Without that evidence on both
+  // sides, the newest turn is the running one, as in every other thread.
+  const live = running && !(speaker === 'watcher' && placement.newestTurnEnded === true)
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written.
   const newest = turns.at(-1)
@@ -568,6 +556,42 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
     <MessageContent text={submission.text} /><AttachmentPreviews attachments={submission.attachments} />
     {delivery}
   </article>
+}
+
+/** Where a reader is reading: the first messages reaching into the view, and how far below its top each one starts. */
+interface ReadingPlace { readonly threadId: string; readonly marks: readonly { readonly messageId: string; readonly offset: number }[] }
+/** How many messages in view the place is kept by, for when the first of them is folded away by the update. */
+const READING_MARKS = 3
+const readingMessages = (scroller: HTMLElement): HTMLElement[] => [...scroller.querySelectorAll<HTMLElement>('.thread-message[data-message-id]')]
+
+/** The place of a reader in this transcript, or null when no message reaches into the view. */
+function readingPlace(scroller: HTMLElement, threadId: string): ReadingPlace | null {
+  const view = scroller.getBoundingClientRect()
+  const bottom = view.top + scroller.clientHeight
+  const drawn = readingMessages(scroller)
+  // Messages are drawn top to bottom, so the first one still in view is found by halves, whatever the history's length.
+  let low = 0, high = drawn.length
+  while (low < high) {
+    const middle = (low + high) >> 1
+    if (drawn[middle]!.getBoundingClientRect().bottom > view.top) high = middle
+    else low = middle + 1
+  }
+  const marks: { messageId: string; offset: number }[] = []
+  for (const message of drawn.slice(low, low + READING_MARKS)) {
+    const box = message.getBoundingClientRect()
+    if (box.top >= bottom) break
+    marks.push({ messageId: message.dataset['messageId']!, offset: box.top - view.top })
+  }
+  return marks.length ? { threadId, marks } : null
+}
+
+/** Scrolls the first of the place's messages still drawn back to where it was. */
+function keepReadingPlace(scroller: HTMLElement, place: ReadingPlace): void {
+  const drawn = new Map(readingMessages(scroller).map(message => [message.dataset['messageId'], message] as const))
+  const mark = place.marks.find(item => drawn.has(item.messageId))
+  if (mark === undefined) return
+  const moved = drawn.get(mark.messageId)!.getBoundingClientRect().top - scroller.getBoundingClientRect().top - mark.offset
+  if (Math.abs(moved) >= 1) scroller.scrollTop += moved
 }
 
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
@@ -704,6 +728,22 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const handoverFrom = useMemo(() => handoverSource === undefined ? null : { title: handoverSource }, [handoverSource])
   const pendingKey = [...sending.map(item => `${item.item.draftId}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
+
+  // A reader who is not following the end stays where they are reading, whatever an update folds, opens or resizes above
+  // them (#1452). The window's own scroll anchoring holds an element only while it lives, and a turn that changes between
+  // its running and finished layouts draws its messages again as new elements, so the transcript holds the place itself, by
+  // message: where the first messages in view were just before this update is committed, and where they are after it.
+  // Show earlier, Load earlier and the scrubber's landing put the reader somewhere on purpose, so they are left alone.
+  const reading = useRef<ReadingPlace | null>(null)
+  reading.current = !following.current && anchor.current === null && landing.current === null && scroller.current !== null
+    ? readingPlace(scroller.current, thread.id) : null
+  useLayoutEffect(() => {
+    const place = reading.current
+    reading.current = null
+    const element = scroller.current
+    if (place === null || element === null || place.threadId !== thread.id || following.current || anchor.current !== null || landing.current !== null) return
+    keepReadingPlace(element, place)
+  })
 
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null

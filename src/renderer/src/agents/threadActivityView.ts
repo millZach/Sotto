@@ -33,20 +33,12 @@ export interface ActivityPlacement {
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
   /**
-   * The newest turn of every message the window holds, drawn or not, as its own records tell it. Absent with no records.
+   * The newest turn of the messages the window holds, drawn or not, ended, and another turn is running: its own lifecycle
+   * completed, failed or stopped, and a lifecycle record of a turn that is not its own says it runs. Only then is the work
+   * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
    */
-  readonly newestTurn?: NewestTurn
+  readonly newestTurnEnded?: true
 }
-
-/**
- * The newest turn: its opening message and the turns its records name, and what their lifecycle says. Its own are the turns whose records follow its
- * messages, the unshown turn a reply of it opens, and the turns its messages' IDs, or the message its replies name as the
- * start of their turn, stand for. `running` while one of them runs or has running work; `finished` when one ended and
- * nothing in the turn was written after it ended, so a reply the provider began on its own afterwards, with no lifecycle of
- * its own, does not read as finished; absent when the turn has no lifecycle to go on.
- */
-// A list rather than a set, so the placement that holds it keeps its identity across updates (`useShared`).
-export interface NewestTurn { readonly turnIds: readonly string[]; readonly lifecycle?: 'running' | 'finished' }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
 
@@ -181,34 +173,32 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing, newestTurn: newestTurn(messages, sorted, anchors, named, places) }
+  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
 }
 
 /**
- * The newest turn over every message the window holds, so a window that starts inside it still finds the records that follow
- * its first message. It reads from the newest turn's opening to the end: the last user message or reply that opens an
- * unshown turn.
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
+ * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
+ * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
+ * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
+ * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
  */
-function newestTurn(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
-  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): NewestTurn {
+function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
   const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
   const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
-  const turn = messages.slice(from)
-  const ids = new Set(turn.flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
-  const turnIds = new Set(ids)
-  for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) turnIds.add(record.turnId) }
-  for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) turnIds.add(turnId)
-  const own = sorted.filter(record => turnIds.has(record.turnId))
-  // What a caller asks of it: the turns its records name, and the message that opens it, which a live turn with no
-  // lifecycle yet goes by. Not every message of a long turn.
-  const found = [...new Set([...turn.slice(0, 1).map(message => message.id), ...own.map(record => record.turnId)])]
-  const lifecycles = new Map(own.filter(isTurnRecord).map(record => [record.turnId, record] as const))
-  if ([...lifecycles.values()].some(record => record.status === 'running') || own.some(record => !isTurnRecord(record) && record.status === 'running')) return { turnIds: found, lifecycle: 'running' }
-  const ended = [...lifecycles.values()].filter(record => isTerminalActivity(record.status)).map(record => record.completedAt ? Date.parse(record.completedAt) : Number.NaN)
-  if (!ended.length) return { turnIds: found }
-  const last = Math.max(...ended)
-  const writtenAfter = Number.isFinite(last) && turn.some(message => message.role !== 'user' && Date.parse(message.createdAt) > last + REPLY_SLACK_MS)
-  return writtenAfter ? { turnIds: found } : { turnIds: found, lifecycle: 'finished' }
+  const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
+  const own = new Set(ids)
+  for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
+  for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
+  const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
+  let ended = false, going = false, another = false
+  for (const [turnId, status] of lifecycles) {
+    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
+    else if (status === 'running') another = true
+  }
+  return ended && !going && another
 }
 
 

@@ -180,15 +180,48 @@ describe('Watcher working on news before its first reply', () => {
 
   for (const streamText of [true, false]) {
     describe(streamText ? 'with replies shown as they are written' : 'with replies shown once complete', () => {
-      it('leaves your finished turn folded while Watcher runs before the news turn’s lifecycle arrives', () => {
-        // Running, with no running lifecycle yet: the live turn falls back to your last message, the finished turn's own.
+      it('draws the newest turn as every thread does until the news turn’s lifecycle says another turn runs', () => {
+        // Running, with no running lifecycle yet: nothing says the work is not the newest turn's, so it is drawn as running,
+        // as in every other thread, and the transcript keeps the reader's place. The news turn's lifecycle folds it again.
         const view = render(list(messages, activities, false, streamText))
-        const before = drawnMessages()
         view.rerender(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, activities)}
           context={{ ...finished, liveTurn: 'you-2', running: true }} streamText={streamText} speaker="watcher" />)
+        expect(screen.queryByRole('button', { name: 'Worked for 27s' })).not.toBeInTheDocument()
+        view.rerender(list(messages, [...activities, ...news], true, streamText))
+        expect(screen.getByRole('button', { name: 'Worked for 27s' })).toHaveAttribute('aria-expanded', 'false')
+        finishedReply('answer-2', 'Sent it the merge.')
+      })
+
+      it.each([
+        ['a plan Grok leaves running though every step is done', 'plan' as const],
+        ['a background agent Claude keeps running after its turn', 'subagent' as const],
+      ])('leaves your finished turn folded when news starts after %s', (_, kind) => {
+        const left: AgentActivity = { id: `you-2-${kind}`, turnId: 'you-2', afterMessageId: 'you-2', sequence: 49, kind, status: 'running', title: kind, startedAt: clock('59:10.000') }
+        const view = render(list(messages, [...activities, left], false, streamText))
+        const before = drawnMessages()
+        view.rerender(list(messages, [...activities, left, lifecycle('news-4', 50, 'running', '59:50.000')], true, streamText))
         expect(screen.getByRole('button', { name: 'Worked for 27s' })).toHaveAttribute('aria-expanded', 'false')
         finishedReply('answer-2', 'Sent it the merge.')
         for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
+      })
+
+      it('shows a report Claude starts a second after your turn ended as being written, as in every thread', () => {
+        const plain = messages.slice(0, 2)
+        const report = said('report', 'assistant', '56:51.600', 'The review found')
+        const records = [lifecycle('you-1', 0, 'completed', '56:41.291', '56:50.600')]
+        render(<MessageList messages={[...plain, report]} provider="Claude Code" running placement={placeActivities([...plain, report], [...plain, report], records)}
+          context={{ ...finished, liveTurn: 'you-1', running: true }} streamText={streamText} speaker="watcher" />)
+        if (streamText) expect(document.querySelector('[data-message-id="report"] [data-streaming]')).not.toBeNull()
+        else expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+      })
+
+      it('leaves your finished turn folded when its reply is stamped after the turn’s observed end', () => {
+        // Grok stamps replies with the provider's clock and ends the turn by Sotto's: here the reply reads 5s after the end.
+        const skewed = messages.map(message => message.id === 'answer-2' ? { ...message, createdAt: clock('59:38.500') } : message)
+        const view = render(list(skewed, activities, false, streamText))
+        view.rerender(list(skewed, [...activities, lifecycle('news-4', 50, 'running', '59:50.000')], true, streamText))
+        expect(screen.getAllByRole('button', { name: /^Worked for/u }).at(-1)).toHaveAttribute('aria-expanded', 'false')
+        finishedReply('answer-2', 'Sent it the merge.')
       })
 
       it('shows a report Claude starts on its own after a finished answer as being written', () => {

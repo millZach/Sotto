@@ -603,6 +603,59 @@ describe('Thread transcript scrolling', () => {
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
   })
 
+  it('keeps a reader above the end where they are reading while the turn above opens and folds again (#1452)', () => {
+    // Lays each message out one row for each paragraph of the answer, so the answer can be read from its middle.
+    const height = (element: HTMLElement): number => [...element.querySelectorAll('.thread-message')].reduce((sum, message) => sum + rows(message), 0) * ROW
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
+    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+    const rows = (message: Element): number => Math.max(1, (message.textContent ?? '').split('Answer paragraph').length - 1)
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const log = this.closest<HTMLElement>('.thread-workspace__transcript')
+      const drawn = log === null ? [] : [...log.querySelectorAll('.thread-message')]
+      const index = drawn.indexOf(this)
+      const top = index < 0 ? 0 : drawn.slice(0, index).reduce((sum, message) => sum + rows(message), 0) * ROW - log!.scrollTop
+      const height = index < 0 ? VIEW : rows(this) * ROW
+      return { top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
+    const state = manualState()
+    const at = (minute: number): string => new Date(NOW - (30 - minute) * 60_000).toISOString()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.status = 'idle'
+    thread.messages = [
+      { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
+      ...[1, 2, 3].map(step => ({ id: `step-${step}`, role: 'assistant' as const, text: `Looking at part ${step}.`, createdAt: at(step) })),
+      { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
+    ]
+    thread.activities = [
+      { id: 'turn-ask', turnId: 'ask', afterMessageId: 'ask', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(5) },
+      { id: 'ask-tool', turnId: 'ask', afterMessageId: 'ask', sequence: 1, kind: 'tool', status: 'completed', title: 'read_file', startedAt: at(0), completedAt: at(1) },
+    ]
+    const { live } = mount(state)
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+    expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+    // Reading the answer's third paragraph: the answer begins two rows above the view's top.
+    transcript.scrollTop = 3 * ROW
+    fireEvent.scroll(transcript)
+    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    const status = (next: 'running' | 'idle'): void => act(() => {
+      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, status: next } : item) } })
+    })
+    // The thread runs again with nothing new of its own (as Claude does to report background work): its last turn opens.
+    status('running')
+    expect(transcript.querySelector('[data-message-id="step-1"]')).not.toBeNull()
+    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    status('idle')
+    expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    // At the end, the transcript still follows what arrives.
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews'
+      ? { ...item, messages: [...item.messages, { id: 'later', role: 'user' as const, text: 'Now the header links.', createdAt: at(6) }] } : item) } }) })
+    expect(transcript.scrollHeight).toBe(12 * ROW)
+    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+  })
+
   it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {
     const state = manualState()
     const thread = state.host.threads.find(item => item.id === 'grok-previews')!

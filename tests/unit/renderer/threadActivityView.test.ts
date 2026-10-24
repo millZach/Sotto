@@ -158,15 +158,26 @@ describe('the newest turn the placement reads', () => {
   const messages: AgentMessage[] = [{ id: 'you', role: 'user', text: 'Check the threads.', createdAt: at(0) }, { id: 'answer', role: 'assistant', text: 'All quiet.', createdAt: at(1) }]
   const activities: AgentActivity[] = [{ id: 'turn-you', turnId: 'you', afterMessageId: 'you', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(1) }]
 
-  it('says the newest turn finished from a lifecycle that draws nothing, until a reply is written after it ended', () => {
-    expect(placeActivities(messages, messages, activities).newestTurn).toEqual({ turnIds: ['you'], lifecycle: 'finished' })
-    const report: AgentMessage = { id: 'report', role: 'assistant', text: 'The review found', createdAt: at(5) }
-    expect(placeActivities([...messages, report], [...messages, report], activities).newestTurn).toEqual({ turnIds: ['you'] })
+  const news: AgentActivity = { id: 'turn-news', turnId: 'news', afterMessageId: 'news', sequence: 1, kind: 'turn', status: 'running', title: 'Turn', startedAt: at(3) }
+
+  it('says the newest turn ended only when its own lifecycle ended and another turn’s lifecycle runs', () => {
+    expect(placeActivities(messages, messages, [...activities, news]).newestTurnEnded).toBe(true)
+    // Ended, with nothing else running: a turn the provider began on its own, such as Claude's report, may be the work going on.
+    expect(placeActivities(messages, messages, activities).newestTurnEnded).toBeUndefined()
+    // Another turn runs, but the newest turn's own lifecycle says nothing yet.
+    expect(placeActivities(messages, messages, [news]).newestTurnEnded).toBeUndefined()
+  })
+
+  it('reads work a provider leaves running after its turn ended as saying nothing about which turn is going', () => {
+    const left: AgentActivity[] = [{ id: 'plan', turnId: 'you', afterMessageId: 'you', sequence: 2, kind: 'plan', status: 'running', title: 'Plan', startedAt: at(0) },
+      { id: 'agent', turnId: 'you', afterMessageId: 'you', sequence: 3, kind: 'subagent', status: 'running', title: 'Review', startedAt: at(0) }]
+    expect(placeActivities(messages, messages, [...activities, ...left]).newestTurnEnded).toBeUndefined()
+    expect(placeActivities(messages, messages, [...activities, ...left, news]).newestTurnEnded).toBe(true)
   })
 
   it('is the same value on every update that changes nothing, so the placement that holds it is shared', () => {
-    const first = placeActivities(messages, messages, activities)
-    expect(share(first, placeActivities(messages, messages, activities.map(record => ({ ...record }))))).toBe(first)
+    const first = placeActivities(messages, messages, [...activities, news])
+    expect(share(first, placeActivities(messages, messages, [...activities, news].map(record => ({ ...record }))))).toBe(first)
   })
 })
 
