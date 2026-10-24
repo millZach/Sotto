@@ -54,6 +54,18 @@ describe('diffing the detail of one thread', () => {
     expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
   })
 
+  it('carries a turn on the user’s own server that is tried again or let down while its status stays the same (ADR-0124)', () => {
+    const server = { name: 'Sparks', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
+    const old = record('turn', { kind: 'turn', title: 'Working', ownServer: server })
+    for (const ownServer of [{ ...server, attempt: 1, attempts: 10 }, { ...server, attempt: 3, attempts: 10 }]) {
+      const next = { ...old, ownServer }
+      const delta = diffAgentThreadDetail(base([], [old]), { messages: [], activities: [next] }, 5)!
+      expect(delta.activityDeltas).toEqual([{ record: next }])
+    }
+    const failed = { ...old, status: 'failed' as const, ownServer: { ...server, failure: 'unreachable' as const } }
+    expect(diffAgentThreadDetail(base([], [{ ...failed, ownServer: { ...server, failure: 'timeout' } }]), { messages: [], activities: [failed] }, 5)!.activityDeltas).toEqual([{ record: failed }])
+  })
+
   it('copies what it carries, so the snapshot it builds never references the live thread', () => {
     const live = message('a', 'Indigo it is.')
     const delta = diffAgentThreadDetail(base([]), { messages: [live] }, 5)!

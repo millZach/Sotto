@@ -138,3 +138,21 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-boundary__label { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .thread-boundary__icon { flex-shrink: 0; }
 .thread-boundary__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+
+/* A turn waiting on one of the user's own model servers (ADR-0124): its words and Stop, and under them what the wait means. */
+.thread-activity-live--own-server { flex-wrap: wrap; row-gap: 2px; }
+.thread-activity-live--own-server .thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.thread-activity-live--own-server .thread-activity__clock { color: var(--tt-text-muted); }
+.thread-activity__pulse[data-connected][data-tone='attention'] { background: var(--tt-attention); }
+.thread-activity-live__stop {
+  display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-left: -2px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.thread-activity-live__stop:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-activity-live__stop:disabled { color: var(--tt-text-muted); cursor: default; }
+.thread-activity-live__note { flex-basis: 100%; margin: 0 0 0 14px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
+/* A turn the user's own server let down: what happened in the error colour, the rest in ordinary text, then what to press. */
+.thread-own-failure { margin: 2px 0 4px; }
+.thread-own-failure__reason { max-width: 64ch; margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.thread-own-failure__reason strong { color: var(--tt-error); font-weight: 500; }
+.thread-own-failure__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
