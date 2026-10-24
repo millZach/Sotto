@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import type { SottoPlatform } from '../../shared/platform'
 
 /**
@@ -65,9 +67,9 @@ function appMenu(
     label: appName,
     submenu: [
       { role: 'about' },
-      ...(onCheckForUpdates ? [{ label: 'Check for Updates…', click: onCheckForUpdates }] : []),
+      ...(onCheckForUpdates ? [{ label: t`Check for Updates…`, click: onCheckForUpdates }] : []),
       separator(),
-      { label: 'Settings…', accelerator: 'Command+,', click: onShowSettings },
+      { label: t`Settings…`, accelerator: 'Command+,', click: onShowSettings },
       separator(),
       { role: 'services' },
       { role: 'hide' },
@@ -82,7 +84,7 @@ function appMenu(
 // Without these roles macOS delivers no ⌘C/⌘V/⌘A to Sotto's own text fields.
 function editMenu(): ApplicationMenuItem {
   return {
-    label: 'Edit',
+    label: t`Edit`,
     submenu: [
       { role: 'undo' },
       { role: 'redo' },
@@ -100,14 +102,14 @@ function editMenu(): ApplicationMenuItem {
 // Zoom and full screen match the View menu Electron gives the Windows build by default.
 function viewMenu(includeDeveloperTools: boolean, onShowTurnRecords?: () => void): ApplicationMenuItem {
   return {
-    label: 'View',
+    label: t`View`,
     submenu: [
       ...(includeDeveloperTools
         ? [
             { role: 'reload' as const },
             { role: 'toggleDevTools' as const },
             ...(onShowTurnRecords
-              ? [separator(), { label: 'Show recent turn records', click: onShowTurnRecords }]
+              ? [separator(), { label: t`Show recent turn records`, click: onShowTurnRecords }]
               : []),
             separator(),
           ]
@@ -123,7 +125,7 @@ function viewMenu(includeDeveloperTools: boolean, onShowTurnRecords?: () => void
 
 function windowMenu(): ApplicationMenuItem {
   return {
-    label: 'Window',
+    label: t`Window`,
     submenu: [
       { role: 'minimize' },
       { role: 'zoom' },
@@ -134,8 +136,10 @@ function windowMenu(): ApplicationMenuItem {
 }
 
 /**
- * Builds macOS's application menu. Windows and Linux return null so the caller
- * retains Electron's default menu and its zoom and developer-tool accelerators.
+ * Builds macOS's application menu in the interface language shown now; main builds it again when that
+ * changes (ADR-0123). Role items take their words from Electron and macOS, and the app menu keeps the
+ * app's name. Windows and Linux return null so the caller retains Electron's default menu and its zoom
+ * and developer-tool accelerators.
  */
 export function buildApplicationMenuTemplate(
   options: ApplicationMenuTemplateOptions,

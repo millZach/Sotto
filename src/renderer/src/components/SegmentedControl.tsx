@@ -1,10 +1,12 @@
 import React, { type ReactNode } from 'react'
 
-export function SegmentedControl({ label, value, options, onChange, disabled = false }: {
+export function SegmentedControl({ label, value, options, onChange, disabled = false, setting }: {
   readonly label: string; readonly value: string; readonly options: ReadonlyArray<{ value: string; label: string }>
   readonly onChange: (value: string) => void; readonly disabled?: boolean
+  /** The setting it changes, for Find a setting (`data-setting`, settingsPages.ts). */
+  readonly setting?: string
 }): ReactNode {
-  return <div className="segmented-control" role="radiogroup" aria-label={label}>{options.map((option, index) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} disabled={disabled} tabIndex={value === option.value ? 0 : -1} onClick={() => onChange(option.value)} onKeyDown={event => {
+  return <div className="segmented-control" role="radiogroup" aria-label={label} data-setting={setting}>{options.map((option, index) => <button key={option.value} type="button" role="radio" aria-checked={value === option.value} disabled={disabled} tabIndex={value === option.value ? 0 : -1} onClick={() => onChange(option.value)} onKeyDown={event => {
     const delta = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
     if (!delta) return
     event.preventDefault()
