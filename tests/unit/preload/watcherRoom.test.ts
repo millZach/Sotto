@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { WATCHER_CHANGED, WATCHER_OPEN, WATCHER_SET_PERMISSION, WATCHER_START_NEW, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, watcherRoomStateSchema,
+import { WATCHER_CHANGED, WATCHER_GET, WATCHER_OPEN, WATCHER_SET_PERMISSION, WATCHER_START_NEW, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, watcherRoomStateSchema,
   type WatcherRoomState } from '../../../src/shared/watcherRoom'
 
 it('offers the private Watcher bridge only behind the main renderer gate and validates inputs and results', async () => {
@@ -60,4 +60,40 @@ it('hands every Watcher room update to the page as main sent it and drops a mess
   receive({}); receive({}, room, room)
   expect(listener).toHaveBeenCalledOnce()
   unsubscribe(); expect(ipc.removeListener).toHaveBeenCalledWith(WATCHER_CHANGED, expect.any(Function))
+})
+
+it('puts main\'s room updates back into the whole room once for every listener, and reads the room when it cannot (#1450)', async () => {
+  const ipc = preloadElectron().ipcRenderer
+  const bridge = createSottoBridge(ipc, 'win32', true).watcher!
+  const first = vi.fn(), second = vi.fn(), offFirst = bridge.onChanged(first), offSecond = bridge.onChanged(second)
+  expect(ipc.on.mock.calls.filter(call => call[0] === WATCHER_CHANGED)).toHaveLength(1)
+  const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
+  const hostId = randomUUID(), at = '2026-10-23T00:00:00.000Z', later = '2026-10-23T00:00:01.000Z'
+  const room: WatcherRoomState = { current: null, currentOptions: null, history: [], requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at }
+  receive({}, { revision: 1, base: null, room })
+  expect(first).toHaveBeenLastCalledWith(room); expect(second).toHaveBeenLastCalledWith(room)
+  const request = { id: randomUUID(), watcher: { hostId, threadId: 'watcher' }, rootUserMessageId: 'prompt', state: 'active', createdAt: at, closedAt: null, participants: [] }
+  receive({}, { revision: 2, base: 1, room: { recoveryNotice: 'Reconnect.', observedAt: later }, lists: { requests: { length: 1, at: [[0, request]] } } })
+  const assembled = first.mock.calls.at(-1)![0] as WatcherRoomState
+  expect(assembled).toEqual({ ...room, recoveryNotice: 'Reconnect.', observedAt: later, requests: [request] })
+  // What did not change is what the page already held.
+  expect(assembled.watchedThreads).toBe(room.watchedThreads)
+  expect(second.mock.calls.at(-1)![0]).toBe(assembled)
+  // An update measured from a room it does not hold changes nothing it holds: it reads the room once and hands that on.
+  const read = { ...room, recoveryNotice: 'read', observedAt: later }
+  let answer!: (value: unknown) => void
+  ipc.invoke.mockReturnValueOnce(new Promise(resolve => { answer = resolve }))
+  receive({}, { revision: 9, base: 8, room: { observedAt: later } })
+  receive({}, { revision: 10, base: 9, room: { observedAt: later } })
+  expect(ipc.invoke).toHaveBeenCalledOnce(); expect(ipc.invoke).toHaveBeenCalledWith(WATCHER_GET)
+  expect(first).toHaveBeenCalledTimes(2)
+  answer({ status: 'ok', state: read })
+  await vi.waitFor(() => expect(first).toHaveBeenLastCalledWith(read))
+  // Main sends the next update whole, and the page holds it again.
+  receive({}, { revision: 11, base: null, room })
+  receive({}, { revision: 12, base: 11, room: { observedAt: later }, removed: ['recoveryNotice'] })
+  expect(first.mock.calls.at(-1)![0]).not.toHaveProperty('recoveryNotice')
+  expect(ipc.invoke).toHaveBeenCalledOnce()
+  offFirst(); expect(ipc.removeListener).not.toHaveBeenCalled()
+  offSecond(); expect(ipc.removeListener).toHaveBeenCalledWith(WATCHER_CHANGED, expect.any(Function))
 })

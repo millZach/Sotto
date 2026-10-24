@@ -7,7 +7,8 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { registerIpc } from '../../src/main/ipc/registerIpc'
-import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, type WatcherPrepareStopAllResult, type WatcherRoomState, type WatcherStopAllResult } from '../../src/shared/watcherRoom'
+import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, applyWatcherRoomUpdate, type WatcherPrepareStopAllResult, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomUpdate,
+  type WatcherStopAllResult } from '../../src/shared/watcherRoom'
 import { createIpcHarness } from '../fixtures/ipcHarness'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { LocalHostService } from '../../src/main/agents/hostService'
@@ -784,7 +785,9 @@ it('refuses a model without an asking mode on a host where this computer may not
 })
 
 it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
-  const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
+  // The window's room, put back together from the updates main sends it (#1450).
+  let held: WatcherRoomHeld | null = null
+  const f = await master(), sent = vi.fn<(payload: WatcherRoomState | WatcherRoomUpdate) => boolean>(payload => { held = applyWatcherRoomUpdate(held, payload as WatcherRoomUpdate); return true })
   const timers: (() => void)[] = []
   const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher,
     send: sent, schedule: run => { timers.push(run); return () => undefined } })!
@@ -817,11 +820,9 @@ it('keeps remote Stop all ownership while desktop room IPC is held and flushes b
   expect(answer).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
   expect(answer).toBe(ownResult)
   if (ownResult?.status !== 'ok') throw new Error('stop-refused')
-  const last = sent.mock.calls.at(-1)![0]
-  expect(last).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
+  // The window holds what the operation's own answer says, from a room built when its update went (#1450).
+  expect((held as WatcherRoomHeld | null)?.room).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
     currentOptions: ownResult.state.currentOptions })
-  // publish() and the operation's own state() are distinct captures; keep both original timestamps.
-  expect(Date.parse(last.observedAt)).toBeLessThanOrEqual(Date.parse(ownResult.state.observedAt))
   const count = sent.mock.calls.length
   for (const run of timers.splice(0)) run()
   expect(sent).toHaveBeenCalledTimes(count)

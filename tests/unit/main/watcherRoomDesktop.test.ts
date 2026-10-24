@@ -5,8 +5,9 @@ import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDe
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
-  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW,
-  type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomState, type WatcherRoomResult, type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
+  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, applyWatcherRoomUpdate,
+  type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomResult, type WatcherRoomUpdate,
+  type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
 import { deferred } from '../../fixtures/deferred'
 
@@ -23,12 +24,13 @@ class Clock {
   tick(): void { const entry = this.entries.shift(); if (entry && !entry.cancelled) entry.run() }
 }
 function fixture(watcherEnabled = true, streamingPublishCost = true) {
-  let listener: ((state: WatcherRoomState) => void) | undefined
-  let current = room('complete'), available = true
-  const clock = new Clock(), order: string[] = []
+  let listener: (() => void) | undefined
+  let current = room('complete'), available = true, held: WatcherRoomHeld | null = null
+  const clock = new Clock(), order: string[] = [], rooms: WatcherRoomState[] = []
   const off = vi.fn(() => { listener = undefined })
   const service = {
-    subscribe: vi.fn((fn: (state: WatcherRoomState) => void) => { listener = fn; return off }),
+    subscribe: vi.fn((fn: () => void) => { listener = fn; return off }),
+    state: vi.fn(() => current),
     get: vi.fn((): WatcherRoomResult => ({ status: 'ok', state: current })),
     open: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
     setPermission: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
@@ -42,16 +44,23 @@ function fixture(watcherEnabled = true, streamingPublishCost = true) {
     startNew: vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: current })),
     readMergeTurns: vi.fn((): WatcherMergeTurnsRead => ({ status: 'ok', queue: [], turns: [] })),
   }
-  const send = vi.fn((state: WatcherRoomState) => { order.push(`send:${state.recoveryNotice}`); return available })
+  // The window's room: an update put back together as the preload does, or the room itself without the publish window.
+  const send = vi.fn((payload: WatcherRoomState | WatcherRoomUpdate) => {
+    // A window that is not there receives nothing, so it keeps the room it held.
+    const assembled = 'base' in payload ? applyWatcherRoomUpdate(held, payload)! : undefined
+    if (assembled && available) held = assembled
+    const state = assembled ? assembled.room : payload as WatcherRoomState
+    rooms.push(state); order.push(`send:${state.recoveryNotice}`); return available
+  })
   const desktop = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost, watcher: service, send, schedule: clock.schedule })
-  return { desktop, service, clock, send, order, off,
-    publish: (state: WatcherRoomState) => listener?.(state), current: (state: WatcherRoomState) => { current = state },
+  return { desktop, service, clock, send, order, off, rooms,
+    publish: (state: WatcherRoomState) => { current = state; listener?.() }, current: (state: WatcherRoomState) => { current = state },
     available: (value: boolean) => { available = value } }
 }
 afterEach(() => vi.restoreAllMocks())
 
 describe('desktop Watcher room publication', () => {
-  it.each([[false, false], [false, true], [true, false], [true, true]])('checks both startup answers (%s, %s) before capture or scheduling', (watcher, cost) => {
+  it.each([[false, false], [false, true], [true, false], [true, true]])('checks both startup answers (%s, %s) before building updates or scheduling', (watcher, cost) => {
     const f = fixture(watcher, cost), state = room('event')
     try {
       f.publish(state)
@@ -60,48 +69,84 @@ describe('desktop Watcher room publication', () => {
       expect(f.clock.entries).toHaveLength(watcher && cost ? 1 : 0)
       expect(f.send).toHaveBeenCalledTimes(watcher ? 1 : 0)
       if (watcher && !cost) expect(f.send.mock.calls[0]![0]).toBe(state)
-      // With the publish window on, the room sends a capture of the state, never the state itself.
-      if (watcher && cost) { expect(f.send.mock.calls[0]![0]).not.toBe(state); expect(f.send.mock.calls[0]![0]).toEqual(state) }
+      // With the publish window on, the first update is the whole room, the very room built for it, never a copy (#1450).
+      if (watcher && cost) { expect(f.send.mock.calls[0]![0]).toEqual({ revision: 1, base: null, room: state }); expect((f.send.mock.calls[0]![0] as WatcherRoomUpdate).room).toBe(state) }
     } finally { f.desktop?.dispose() }
   })
 
-  it('sends leading/latest trailing rooms, retains captured nested facts and closes quietly', () => {
-    const f = fixture(), first = room('first'), pending = room('pending')
-    const target = { hostId: randomUUID(), threadId: 'worker' }, requestId = randomUUID()
-    pending.requests.push({ id: requestId, watcher: target, rootUserMessageId: 'prompt', state: 'active', createdAt: at, closedAt: null,
-      displayPrompt: { originalLength: 3, wireDigest: 'a'.repeat(64) },
-      userFollowups: [{ draftId: randomUUID(), displayPrompt: { originalLength: 2, wireDigest: 'b'.repeat(64) } }], participants: [] })
-    pending.watchedThreads.push({ target, title: 'Worker', status: 'running', connected: true, settled: false, backgroundWorkCount: 0,
-      waitsOn: [{ id: 'permission', kind: 'permission', openTarget: target }], participation: [],
-      evidence: [{ id: 'proof', target, source: 'checkpoint', observedAt: at, freshness: 'fresh', availability: 'available', fact: 'files-changed', changedFiles: 3 }],
-      observation: { observedAt: at, fresh: true } })
-    pending.news = [{ id: 'news', kind: 'evidence-changed', requestId, target, generation: 0, observedAt: at, evidenceIds: ['proof'] }]
-    pending.runtimeMode = 'full-access'
-    pending.standingWatches = [{ id: randomUUID(), target: { ...target }, createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
-    pending.ownChanges = [{ replyMessageId: 'reply', turnId: 'turn', files: ['README.md'], fileCount: 1, reason: 'Fix the wording', source: 'provider-file-change' }]
-    const expected = structuredClone(pending)
+  it('builds the room only when an update goes: the leading one at once, the newest at the trailing send, none between', () => {
+    const f = fixture(), first = room('first'), last = room('last')
     try {
       f.publish(first)
+      expect(f.service.state).toHaveBeenCalledOnce()
       for (let i = 0; i < 40; i++) f.publish(room(`intermediate-${i}`))
-      f.publish(pending)
-      pending.requests[0]!.displayPrompt!.originalLength = 99
-      pending.requests[0]!.userFollowups![0]!.displayPrompt!.originalLength = 99
-      pending.watchedThreads[0]!.evidence![0]!.changedFiles = 99
-      pending.watchedThreads[0]!.waitsOn[0]!.openTarget.threadId = 'later'
-      pending.watchedThreads[0]!.observation!.fresh = false
-      pending.news[0]!.evidenceIds![0] = 'later proof'
-      pending.runtimeMode = 'approval-required'
-      pending.standingWatches[0]!.target.threadId = 'later watch'
-      pending.standingWatches[0]!.pausedByUserMessageId = null
-      pending.ownChanges[0]!.files[0] = 'later file'
-      pending.ownChanges[0]!.reason = 'later reason'
+      f.publish(last)
+      // Forty-one changes in the window built nothing and sent nothing (#1450).
+      expect(f.service.state).toHaveBeenCalledOnce()
       expect(f.send).toHaveBeenCalledTimes(1)
       f.clock.tick()
-      expect(f.send.mock.calls.map(([state]) => state)).toEqual([first, expected])
+      expect(f.service.state).toHaveBeenCalledTimes(2)
+      expect(f.rooms).toEqual([first, last])
       f.clock.tick()
       expect(f.send).toHaveBeenCalledTimes(2)
       expect(f.clock.entries).toHaveLength(0)
     } finally { f.desktop!.dispose() }
+  })
+
+  it('sends nothing for a room that changed only the time it was read at', () => {
+    const f = fixture()
+    try {
+      f.publish(room('same')); f.clock.tick()
+      f.publish({ ...room('same'), observedAt: '2026-10-14T00:00:01.000Z' }); f.clock.tick()
+      expect(f.service.state).toHaveBeenCalledTimes(2)
+      expect(f.send).toHaveBeenCalledOnce()
+    } finally { f.desktop!.dispose() }
+  })
+
+  it('sends only the fields and list entries that changed, by place, and the window puts back the room main built', () => {
+    const f = fixture(), hostId = randomUUID(), target = { hostId, threadId: 'worker' }
+    const request = (n: number, state: 'active' | 'closed' = 'closed') => ({ id: randomUUID(), watcher: { hostId, threadId: 'watcher' }, rootUserMessageId: `prompt-${n}`,
+      state, createdAt: at, closedAt: state === 'closed' ? at : null, participants: [] }) as WatcherRoomState['requests'][number]
+    const history = Array.from({ length: 50 }, (_, n) => request(n))
+    const active = request(50, 'active'), row = { target, title: 'Worker', status: 'running' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [], participation: [] }
+    const before: WatcherRoomState = { ...room('before'), requests: [...history, active], watchedThreads: [row], news: [], handover: null }
+    // A new room as Watcher builds one: new arrays and rows, the closed requests the record's own, one request closed and one added.
+    const after: WatcherRoomState = { ...room('before'), requests: [...history, { ...active, state: 'closed', closedAt: at }, request(51, 'active')],
+      watchedThreads: [{ ...row }], news: [], observedAt: '2026-10-14T00:00:01.000Z', creationStopped: false }
+    try {
+      f.publish(before); f.clock.tick()
+      f.publish(after)
+      const update = structuredClone(f.send.mock.calls[1]![0]) as WatcherRoomUpdate
+      expect(update).toEqual({ revision: 2, base: 1, room: { creationStopped: false, observedAt: after.observedAt },
+        lists: { requests: { length: 52, at: [[50, after.requests[50]], [51, after.requests[51]]] } }, removed: ['handover'] })
+      // The window's room is the room main built, and keeps the closed requests it already held.
+      expect(f.rooms[1]).toEqual(after)
+      expect(f.rooms[1]!.requests[0]).toBe(f.rooms[0]!.requests[0])
+      expect(f.rooms[1]!.watchedThreads).toBe(f.rooms[0]!.watchedThreads)
+    } finally { f.desktop!.dispose() }
+  })
+
+  it('measures from the last update the window was sent, and sends the room whole after the window read it', async () => {
+    const f = fixture()
+    try {
+      f.publish(room('first')); f.clock.tick()
+      f.available(false); f.publish(room('lost')); f.clock.tick()
+      f.available(true); f.publish(room('second')); f.clock.tick()
+      // The lost update never became a base: the next one is measured from the first.
+      expect((f.send.mock.calls[2]![0] as WatcherRoomUpdate).base).toBe(1)
+      await f.desktop!.bridge.get()
+      f.publish(room('third'))
+      expect(f.send.mock.calls[3]![0]).toMatchObject({ revision: 4, base: null, room: room('third') })
+    } finally { f.desktop!.dispose() }
+  })
+
+  it('cannot apply an update measured from another, or one that would leave a gap in a list', () => {
+    const held: WatcherRoomHeld = { revision: 3, room: room('held') }
+    expect(applyWatcherRoomUpdate(held, { revision: 5, base: 4, room: {} })).toBeNull()
+    expect(applyWatcherRoomUpdate(null, { revision: 5, base: 4, room: {} })).toBeNull()
+    expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 2, at: [[1, 'one']] } } })).toBeNull()
+    expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [[1, 'one']] } } })).toBeNull()
+    expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [[0, 'zero']] } } })?.room.requests).toEqual(['zero'])
   })
 
   it('does not retry an absent window and recovers with a complete get before any older trailing send', async () => {
@@ -113,13 +158,14 @@ describe('desktop Watcher room publication', () => {
       f.available(true); f.publish(room('leading')); f.publish(room('old'))
       const current = room('fresh'); f.current(current)
       expect(await f.desktop!.bridge.get()).toEqual({ status: 'ok', state: current })
-      expect(f.order).toEqual(['send:missed', 'send:leading', 'send:old'])
+      // The trailing room is built when it goes, from what is true then (#1450).
+      expect(f.order).toEqual(['send:missed', 'send:leading', 'send:fresh'])
       f.clock.tick()
       expect(f.send).toHaveBeenCalledTimes(3)
     } finally { f.desktop!.dispose() }
   })
 
-  it('unsubscribes and drops a pending capture even if the cancelled timer escapes', () => {
+  it('unsubscribes and drops a pending update even if the cancelled timer escapes', () => {
     const f = fixture(); f.publish(room('first')); f.publish(room('pending'))
     const escaped = f.clock.entries[0]!.run
     f.desktop!.dispose(); escaped(); f.publish(room('after'))
@@ -175,7 +221,7 @@ describe('desktop Watcher room publication', () => {
       const own = room('own answer'); f.current(own)
       const invocation = input === undefined ? ipc.ipc.invoke(channel as string) : ipc.ipc.invoke(channel as string, input)
       const result = await invocation.then(value => { f.order.push('answer'); return value })
-      expect(f.order).toEqual(['send:leading', 'send:pending', 'answer'])
+      expect(f.order).toEqual(['send:leading', 'send:own answer', 'answer'])
       if (channel !== WATCHER_PREPARE_STOP_ALL) expect(result).toMatchObject({ status: 'ok', state: { recoveryNotice: 'own answer', observedAt: at } })
       f.clock.tick()
       expect(f.send).toHaveBeenCalledTimes(2)
@@ -207,7 +253,7 @@ describe('desktop Watcher room publication', () => {
     }
   })
 
-  it.each(['open', 'stopAll'] as const)('returns %s own captured result when a newer tied room arrives while it is pending', async operation => {
+  it.each(['open', 'stopAll'] as const)('returns %s own result when a newer tied room arrives while it is pending', async operation => {
     const f = fixture(), held = deferred<WatcherRoomResult & { results: [] }>()
     const own = { status: 'ok' as const, state: { ...room('own result'), recoveryNotice: 'own result' }, results: [] as [] }
     if (operation === 'open') f.service.open.mockImplementation(() => held.promise)
@@ -217,7 +263,7 @@ describe('desktop Watcher room publication', () => {
       const answer = operation === 'open' ? f.desktop!.bridge.open({ provider: 'codex', modelId: 'model' }) : f.desktop!.bridge.stopAll({ confirmationId: randomUUID() })
       held.resolve(own); f.publish(room('later event')); f.current(room('later read'))
       expect(await answer).toBe(own)
-      expect(f.order).toEqual(['send:leading', 'send:later event'])
+      expect(f.order).toEqual(['send:leading', 'send:later read'])
       expect(f.service.get).not.toHaveBeenCalled()
       f.clock.tick(); expect(f.send).toHaveBeenCalledTimes(2)
     } finally { f.desktop!.dispose() }

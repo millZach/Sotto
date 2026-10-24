@@ -27,6 +27,7 @@ import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdenti
 import type { HeldProviders } from '../../src/shared/heldProviders'
 import { requestDraftProvider, type RequestDraft, type RequestDraftOwner, type RequestDraftTarget } from '../../src/shared/requestDrafts'
 import type { WatcherThreadTarget } from '../../src/shared/watcher'
+import type { WatcherRoomState, WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { FakeProviderHost } from './fakeProviderHost'
 import { addWatcherHistory, ownerRequestDrafts, ownerScaleCounts, type OwnerScale, type OwnerScaleCounts } from './ownerScale'
 import { syntheticModelCatalog } from './modelCatalog'
@@ -94,6 +95,8 @@ export interface OwnerScalePipeline {
   broadcasts(): number
   /** The draft store's look-ups of an answer's thread since the last reset. */
   ownerLookups(): number
+  /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
+  watcherRoomRecords(): number
   resetCounts(): void
   /** The user's actions, as the window sends them to main. */
   readonly actions: {
@@ -159,7 +162,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
   await watcher?.recover()
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
+  let roomRecords = 0
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: payload => { roomRecords += historyRecords(payload); return true } })
   const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
   const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
@@ -298,7 +302,15 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
     broadcasts: () => broadcasts,
     ownerLookups: () => lookups,
-    resetCounts: () => { broadcasts = 0; lookups = 0 },
+    watcherRoomRecords: () => roomRecords,
+    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
     stop,
   }
+}
+
+/** The records of Watcher's history a room or a room update carries to the window: whole lists, or the entries that changed (#1450). */
+function historyRecords(payload: WatcherRoomState | WatcherRoomUpdate): number {
+  const update = 'base' in payload && 'revision' in payload ? payload : undefined
+  const room: Partial<WatcherRoomState> = update ? update.room : payload as WatcherRoomState
+  return (['requests', 'receipts', 'history'] as const).reduce((records, key) => records + (room[key]?.length ?? 0) + (update?.lists?.[key]?.at.length ?? 0), 0)
 }

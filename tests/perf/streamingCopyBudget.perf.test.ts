@@ -164,8 +164,13 @@ async function measure(threads: number, owl: boolean) {
  * The budgets stay at 10 copies and 9 objects on Owl and 9.5 and 11 on stable: anything tighter is within a run's
  * spread.
  */
+/*
+ * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, and
+ * copied for none of them, where the desktop room copied every room it kept for its window. Owl makes 8.5 to 9.45 copies
+ * per update, from 9.3 to 9.8. The Owl budget is 9.5 copies.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 10, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
   stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 11, parsesPerUpdate: 5 },
 } as const
 

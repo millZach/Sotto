@@ -8,7 +8,8 @@ import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, W
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema, watcherMergeTurnsReadSchema,
   WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
-  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge, type WatcherRoomState } from '../shared/watcherRoom'
+  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, applyWatcherRoomUpdate, type WatcherBridge, type WatcherRoomHeld, type WatcherRoomState,
+  type WatcherRoomUpdate } from '../shared/watcherRoom'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -235,6 +236,60 @@ const trustedWatcherRoom: PayloadCheck<WatcherRoomState> = {
     : { success: false },
 }
 
+/** An update rather than a room (#1450): what the streaming-publish-cost answer sends. Its parts are checked as it is applied. */
+const isWatcherRoomUpdate = (value: unknown): value is WatcherRoomUpdate => typeof value === 'object' && value !== null && !Array.isArray(value)
+  && typeof (value as { revision?: unknown }).revision === 'number' && ((value as { base?: unknown }).base === null || typeof (value as { base?: unknown }).base === 'number')
+  && typeof (value as { room?: unknown }).room === 'object' && (value as { room?: unknown }).room !== null && !Array.isArray((value as { room?: unknown }).room)
+  && ((value as { lists?: unknown }).lists === undefined || typeof (value as { lists?: unknown }).lists === 'object' && (value as { lists?: unknown }).lists !== null)
+  && ((value as { removed?: unknown }).removed === undefined || Array.isArray((value as { removed?: unknown }).removed))
+
+/**
+ * Watcher's room as the page sees it: always whole (#1450). Main sends the room itself without the streaming-publish-cost
+ * answer, and with it updates measured from the last it sent, which this puts back into the whole room before any listener
+ * sees it, one assembly for every listener. An update it cannot apply, measured from a room it does not hold, as after a
+ * reload, changes nothing it holds: it reads the whole room once, which also tells main to send the next update whole,
+ * and hands that room on. An update that arrives during the read is dropped the same way.
+ */
+function watcherRoomChanges(renderer: IpcRendererAdapter): WatcherBridge['onChanged'] {
+  const listeners = new Set<(state: WatcherRoomState) => void>()
+  let held: WatcherRoomHeld | null = null, reading = false
+  const deliver = (state: WatcherRoomState): void => { for (const listener of [...listeners]) listener(state) }
+  const read = (): void => {
+    held = null
+    if (reading) return
+    reading = true
+    void invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema).then(result => {
+      reading = false
+      if (result.status === 'ok' && listeners.size) deliver(result.state)
+    }, () => { reading = false })
+  }
+  const received: RendererListener = (_event, ...args) => {
+    if (args.length !== 1) return
+    const payload = args[0]
+    if (!isWatcherRoomUpdate(payload)) {
+      const room = trustedWatcherRoom.safeParse(payload)
+      if (room.success) deliver(room.data)
+      return
+    }
+    const next = reading && payload.base !== null ? null : applyWatcherRoomUpdate(held, payload)
+    if (next === null || !trustedWatcherRoom.safeParse(next.room).success) { read(); return }
+    held = next
+    deliver(next.room)
+  }
+  return listener => {
+    if (!listeners.size) renderer.on(WATCHER_CHANGED, received)
+    const own = (state: WatcherRoomState) => listener(state)
+    listeners.add(own)
+    let subscribed = true
+    return () => {
+      if (!subscribed) return
+      subscribed = false
+      listeners.delete(own)
+      if (!listeners.size) { renderer.removeListener(WATCHER_CHANGED, received); held = null }
+    }
+  }
+}
+
 function subscribe<Output>(
   renderer: IpcRendererAdapter,
   channel: string,
@@ -433,6 +488,7 @@ export function createSottoBridge(
       start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
+      onChanged: watcherRoomChanges(renderer),
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
       prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
@@ -445,7 +501,6 @@ export function createSottoBridge(
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
       startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
       readMergeTurns: () => invokeParsed(renderer, WATCHER_READ_MERGE_TURNS, watcherMergeTurnsReadSchema),
-      onChanged: listener => subscribe(renderer, WATCHER_CHANGED, trustedWatcherRoom, listener),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,

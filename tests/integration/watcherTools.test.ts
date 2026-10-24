@@ -1422,7 +1422,7 @@ it('waits while this computer has no host ID, refusing nothing, and does what it
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const worker = started.target.threadId, watch = () => f.control.watcherRecord().watches!.find(item => item.target.threadId === worker)!
   expect(f.service.watchedThreadIds()).toContain(worker)
-  const rooms: unknown[] = [], unsubscribe = f.service.subscribe(room => rooms.push(room))
+  const rooms: unknown[] = [], unsubscribe = f.service.subscribe(() => { rooms.push(f.service.state()) })
   const observed = vi.spyOn(f.workspace.host, 'observeThreads')
   // Registered after Watcher's own listener, so each broadcast it counts has already reached Watcher's.
   let broadcasts = 0

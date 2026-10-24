@@ -257,6 +257,26 @@ Owl they rose from 6,002 to 6,114 per streamed update, 13,904 to 14,490 per thre
 send, and those budgets are today's counts exactly. On stable they fell, for example 13,847 to 13,172 per thread opened
 and 25,846 to 24,664 per send, and those budgets fell with them. Both sides count #1350's host router reuse.
 
+### October 23: Watcher's room built when its update goes (#1450)
+
+The desktop room no longer builds and copies the room on every coordinator broadcast. It builds the room when the window's
+update goes, at most once a publish window, and the update carries only what changed, so the copy for the publish window
+went. The owner-scale gate counts two more kinds of work for it: builds of the room and records of Watcher's history sent
+to the window. Owl, owner's scale, before and after:
+
+| | Copier calls | Objects copied | Reads of a thread | Room builds | History records sent |
+| --- | --- | --- | --- | --- | --- |
+| One thread streaming, per update | 9.85 to 8.85 | 4,372 to 1,772 | 6,114 to 4,996 | 1 to 0.38 | 119 to 0 |
+| Three threads streaming, per update | 13.62 to 12.62 | 4,466 to 1,866 | 6,169 to 5,184 | 1 to 0.46 | 143 to 0 |
+| Saving an answer draft | 15 to 13 | 5,342 to 142 | 15,593 | 2 | 620 to 0 |
+| Typing in a composer | 21 to 19 | 16,034 to 10,834 | 12,148 | 2 | 620 to 0 |
+| Opening a thread | 34 to 32 | 26,945 to 21,745 | 14,490 | 2 | 620 to 0 |
+| Sending a message | 136 to 131 | 59,923 to 46,923 | 37,733 to 34,077 | 5 to 3 | 930 to 0 |
+
+Owl's copied objects no longer grow with the history while threads stream or when an answer draft is saved; what still
+grows is a command copying Watcher's whole record (#1248). Stable is unchanged. In the streaming copy budget Owl makes
+8.5 to 9.45 copies per update, from 9.3 to 9.8, and its budget is 9.5.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state

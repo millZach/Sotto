@@ -12,7 +12,7 @@ import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from 
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
-import { watcherRoomStateSchema, type WatcherRoomState } from '../../src/shared/watcherRoom'
+import { applyWatcherRoomUpdate, watcherRoomStateSchema, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { stack, STREAMING_CHUNKS, STREAMING_CHUNK_GAP_MS, STREAMING_ROUNDS, records } from './windowThreadShellPipeline'
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
@@ -88,12 +88,18 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     let latestProjected: WatcherRoomState | undefined
     control.shell = () => { if (projecting) counts.projectionShellReads++; return originalShell() }
     watcher.state = () => { counts.projections++; projecting = true; try { const state = originalState(); latestProjected = state; revisions.set(state, ++sourceRevision); return state } finally { projecting = false } }
-    let sentRooms: WatcherRoomState[] = []
-    const send = (state: WatcherRoomState) => {
+    let sentRooms: (WatcherRoomState | WatcherRoomUpdate)[] = []
+    // With the publish window on, main sends updates (#1450), built from the room it projected just before. The window
+    // here is handed the room they make, and the bytes counted are those of the updates.
+    let assembled: WatcherRoomHeld | null = null
+    const send = (payload: WatcherRoomState | WatcherRoomUpdate) => {
       counts.attemptedSends++
-      const revision = revisions.get(state)
-      if (revision === undefined) throw new Error('Room send lost its source revision')
-      window.webContents.send('room', state, revision); counts.successfulSends++; sentRooms.push(state)
+      const update = 'base' in payload && 'revision' in payload ? payload : undefined
+      if (update) assembled = applyWatcherRoomUpdate(assembled, update)
+      const state = update ? assembled?.room : payload as WatcherRoomState
+      const revision = update ? sourceRevision : revisions.get(payload)
+      if (revision === undefined || state === undefined) throw new Error('Room send lost its source revision')
+      window.webContents.send('room', state, revision); counts.successfulSends++; sentRooms.push(payload)
     }
     // Earlier steps remain true in stack/router; only this desktop room seam varies off/on.
     const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: enabled, watcher,
