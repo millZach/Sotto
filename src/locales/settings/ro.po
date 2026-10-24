@@ -665,10 +665,6 @@ msgid "500 entries"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr ""
-
-#: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "A band of text characters sweeps across the window."
 msgstr "O bandă de caractere de text străbate fereastra."
 
@@ -3997,8 +3993,8 @@ msgid "Signing in…"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr ""
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "Mai încet ca să vezi măturarea, mai repede ca să ajungi mai curând. 1x durează sub o secundă."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4967,6 +4963,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "Fereastra trece cu o măturare între Fire și camera lui Watcher când deschizi camera lui Watcher sau te întorci la Fire, iar bufnița merge cu măturarea până la noul ei loc. Oprit, fereastra se schimbă imediat. Cu mișcare redusă se schimbă mereu imediat."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

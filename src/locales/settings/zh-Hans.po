@@ -665,10 +665,6 @@ msgid "500 entries"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr ""
-
-#: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "A band of text characters sweeps across the window."
 msgstr "一条由文字字符组成的条带扫过窗口。"
 
@@ -3997,8 +3993,8 @@ msgid "Signing in…"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr ""
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "调慢可以看清扫过的过程，调快可以更早到达。1x 用时不到一秒。"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4967,6 +4963,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "打开 Watcher 的房间或回到会话时，窗口会在会话和 Watcher 的房间之间扫过，猫头鹰随之移到新的位置。关闭后，窗口立即切换。减少动态效果时，总是立即切换。"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
