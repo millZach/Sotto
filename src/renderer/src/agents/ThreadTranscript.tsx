@@ -39,7 +39,7 @@ import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
-import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, SCROLL_KEYS, scrolledSince, type ReadingPlace } from './readingPlace'
+import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
 import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -717,7 +717,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (anchor.current !== null || landing.current !== null) return
     // Scrolled since the place was read or put back, by the reader before their scroll was heard or by the window's own
     // anchoring: that is where they read now, held or not.
-    reading.current = scrolledSince(element, place) ? readingPlace(element, rows, messages, thread.id) : keepReadingPlace(element, rows, messages, place)
+    reading.current = scrolledSince(element, place) ? readingPlace(element, rows, thread.id) : keepReadingPlace(element, rows, place)
   })
 
   useLayoutEffect(() => {
@@ -785,11 +785,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // The reader's own scroll, or the window's anchoring, says where they read now; the transcript's own does not.
     const place = reading.current
     if (following.current) reading.current = null
-    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, messages, thread.id)
+    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, thread.id)
   }
   /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
   const onReaderInput = (event: React.SyntheticEvent): void => {
-    if (reading.current?.held !== true || event.type === 'keydown' && !SCROLL_KEYS.has((event as React.KeyboardEvent).key)) return
+    if (reading.current?.held !== true || event.type === 'keydown' && !scrollsTranscript(event as React.KeyboardEvent)) return
     reading.current = null
     onScroll()
   }

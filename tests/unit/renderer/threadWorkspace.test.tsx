@@ -12,6 +12,7 @@ import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadCompo
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { MessageRows } from '../../../src/renderer/src/agents/readingPlace'
+import { WatcherConversationContext, type WatcherConversation } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
@@ -651,12 +652,15 @@ describe('Thread transcript scrolling', () => {
         walks(this, selectors)
         return one.call(this, selectors)
       })
-      // Each row the transcript looks up by its message's ID.
-      const element = MessageRows.prototype.element
-      vi.spyOn(MessageRows.prototype, 'element').mockImplementation(function (this: MessageRows, messageId: string) {
-        visits++
-        return element.call(this, messageId)
-      })
+      // Each row the transcript reads through its rows, by its message's ID or by its place among the rows drawn.
+      for (const name of ['element', 'at'] as const) {
+        const read = (MessageRows.prototype as unknown as Record<string, ((...args: unknown[]) => unknown) | undefined>)[name]
+        if (read === undefined) continue
+        vi.spyOn(MessageRows.prototype as unknown as Record<string, (...args: unknown[]) => unknown>, name).mockImplementation(function (this: MessageRows, ...args: unknown[]) {
+          visits++
+          return read.apply(this, args)
+        })
+      }
       const byClass = Element.prototype.getElementsByClassName
       vi.spyOn(Element.prototype, 'getElementsByClassName').mockImplementation(function (this: Element, names: string) {
         walks(this, names)
@@ -665,14 +669,14 @@ describe('Thread transcript scrolling', () => {
     })
     const at = (minute: number): string => new Date(NOW - (30 - minute) * 60_000).toISOString()
     /** Your message, three replies on the way and a ten-paragraph answer, folded under the turn's line once it ended. */
-    function answered(earlier = 0): AgentState {
+    function answered(earlier = 0, steps = 3): AgentState {
       const state = manualState()
       const thread = state.host.threads.find(item => item.id === 'grok-previews')!
       thread.status = 'idle'
       thread.messages = [
         ...Array.from({ length: earlier }, (_, index) => ({ id: `earlier-${index}`, role: 'user' as const, text: `Earlier ${index}.`, createdAt: at(0) })),
         { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
-        ...[1, 2, 3].map(step => ({ id: `step-${step}`, role: 'assistant' as const, text: `Looking at part ${step}.`, createdAt: at(step) })),
+        ...Array.from({ length: steps }, (_, index) => ({ id: `step-${index + 1}`, role: 'assistant' as const, text: `Looking at part ${index + 1}.`, createdAt: at(1 + index / steps) })),
         { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
       ]
       thread.activities = [
@@ -682,10 +686,11 @@ describe('Thread transcript scrolling', () => {
       return state
     }
     type Thread = AgentState['host']['threads'][number]
-    function mountWith(state: AgentState, responseStreaming: 'live' | 'complete' = 'live') {
+    function mountWith(state: AgentState, responseStreaming: 'live' | 'complete' = 'live', keptInView: readonly string[] = []) {
       const live = liveAgentState(state)
       vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), responseStreaming }))
-      render(<ThreadsView now={NOW} />)
+      const conversation = { receipts: new Map(keptInView.map(id => [id, []])), takeovers: new Map() } as unknown as WatcherConversation
+      render(keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />)
       const transcript = screen.getByRole('log', { name: 'Thread transcript' })
       const update = (change: (thread: Thread) => Partial<Thread>): void => act(() => {
         live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, ...change(item) } : item) } })
@@ -761,6 +766,64 @@ describe('Thread transcript scrolling', () => {
       update(item => ({ messages: [...item.messages, { id: 'late', role: 'user' as const, text: 'And the header?', createdAt: LATE }] }))
       expect(armed).toBe(false)
       expect(transcript.scrollTop).toBe(7 * ROW)
+    })
+
+    it('keeps the message the reader sees first, in the order the transcript shows them, not the order they were written', () => {
+      // A reply that carries receipt cards stays in view after the open fold, so the fold shows step 1 and step 3, then step 2.
+      const { transcript, update, scrollTo } = mountWith(answered(), 'live', ['step-2'])
+      fireEvent.click(screen.getByRole('button', { name: /^Worked for/u }))
+      const order = drawnIn(transcript).map(message => message.getAttribute('data-message-id'))
+      expect(order).toEqual(['ask', 'step-1', 'step-3', 'step-2', 'answer'])
+      const step = (): Element => transcript.querySelector('[data-message-id="step-3"]')!
+      // Reading step 3, which starts half a row above the view.
+      scrollTo(2.5 * ROW)
+      expect(step().getBoundingClientRect().top).toBe(-ROW / 2)
+      // Step 3 grows below where the reader is reading.
+      update(item => ({ messages: item.messages.map(message => message.id === 'step-3' ? { ...message, text: 'Answer paragraph 1. Answer paragraph 2.' } : message) }))
+      expect(step().getBoundingClientRect().top).toBe(-ROW / 2)
+    })
+
+    it('keeps the hold through Space and the arrow keys typed into a field in the transcript', () => {
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(3 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(0)
+      // A field inside the transcript, as a request card's answer is.
+      const field = document.createElement('textarea')
+      transcript.querySelector('.thread-transcript__content')!.append(field)
+      for (const key of [' ', 'ArrowDown', 'ArrowUp', 'PageDown']) fireEvent.keyDown(field, { key })
+      update(() => ({ status: 'idle' }))
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    })
+
+    it('lets the hold go for a scrolling key pressed on the transcript itself', () => {
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      scrollTo(3 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(0)
+      // The reader took the scroll back where it was: the answer comes back below them, and nothing scrolls them to it.
+      fireEvent.keyDown(transcript, { key: 'PageDown' })
+      update(() => ({ status: 'idle' }))
+      expect(transcript.scrollTop).toBe(0)
+      expect(transcript.querySelector('[data-message-id="answer"]')!.getBoundingClientRect().top).toBe(ROW)
+    })
+
+    it('reads no more rows for an update when the drawn turn folds many more replies', () => {
+      // Your message and the answer are drawn; the replies on the way fold under the turn's line, however many there are.
+      const visitsFolding = (steps: number): number => {
+        const { transcript, update, scrollTo } = mountWith(answered(0, steps))
+        while (screen.queryByRole('button', { name: /^Show earlier messages/u })) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
+        expect(drawnIn(transcript).map(message => message.getAttribute('data-message-id'))).toEqual(['ask', 'answer'])
+        scrollTo(3 * ROW)
+        visits = 0
+        update(item => ({ title: `${item.title}.` }))
+        cleanup()
+        return visits
+      }
+      const few = visitsFolding(60)
+      const many = visitsFolding(600)
+      expect(many - few).toBeLessThanOrEqual(2)
     })
 
     it('reads no more messages for an update when more of the history is drawn', () => {
