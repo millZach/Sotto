@@ -381,8 +381,14 @@ export async function detectClientChannel(provider: ProviderId, executable: stri
 export const GROK_INSTALL_STEP = 'node bin/postinstall.js'
 /** A published version Sotto will pass to mise as `<tool>@<version>`: `2.1.310`, `1.4.12-R6909.1`, nothing that reads as an option. */
 const MISE_VERSION = /^\d[0-9A-Za-z.+_-]{0,63}$/u
-/** The version a mise update installs, when Sotto knows one it can pass. */
-const misePin = (version: string | undefined): string | undefined => version !== undefined && MISE_VERSION.test(version) ? version : undefined
+/**
+ * What a mise update asks mise for: `install <tool>@<version>` when Sotto knows a published version it can pass, else
+ * `upgrade <tool>`. Both the lines to run by hand and the arguments Sotto runs are made from it, so they cannot disagree.
+ */
+interface MiseTarget { readonly verb: 'install' | 'upgrade'; readonly tool: string; readonly version?: string }
+function miseTarget(miseTool: string, version: string | undefined): MiseTarget {
+  return version !== undefined && MISE_VERSION.test(version) ? { verb: 'install', tool: `${miseTool}@${version}`, version } : { verb: 'upgrade', tool: miseTool }
+}
 /**
  * The command to run on the machine by hand, a line each, or undefined when Sotto cannot name one. `version` is the
  * published version Sotto found, which a mise install asks for by name (see `updateActionFor`).
@@ -402,15 +408,15 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       : provider === 'opencode' ? ['opencode upgrade'] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
-      const pinned = misePin(version), tool = pinned ? `${install.miseTool}@${pinned}` : install.miseTool
-      const command = `mise ${pinned ? 'install' : 'upgrade'} ${tool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
+      const target = miseTarget(install.miseTool, version)
+      const command = `mise ${target.verb} ${target.tool}${releaseAgeFlag ? ' --minimum-release-age 0s' : ''}`
       // A child cmd keeps the Windows override inside this one command, in either PowerShell or cmd.
       const upgrade = platform === 'win32' ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& ${command}"`
         : `MISE_MINIMUM_RELEASE_AGE=0s ${command}`
-      const lines = pinned ? [`mise cache clear ${install.miseTool}`, upgrade] : [upgrade]
+      const lines = target.version ? [`mise cache clear ${install.miseTool}`, upgrade] : [upgrade]
       // Checked on forge on September 29, 2026: the package's install step, run in the folder mise installed it in.
       return needsInstallStep(provider, install.miseTool) && packageName
-        ? [...lines, `cd "$(mise where ${tool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : lines
+        ? [...lines, `cd "$(mise where ${target.tool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : lines
     }
     default: return install.byHand?.length ? [...install.byHand] : undefined
   }
@@ -426,8 +432,8 @@ export function shellArgument(value: string, platform: NodeJS.Platform): string 
 }
 const needsInstallStep = (provider: ProviderId, miseTool: string): boolean => provider === 'grok' && miseTool === `npm:${CLIENT_PACKAGES.grok}`
 /** The line a card names as the update: the first, or for a mise install by version the install after its cache clear. */
-const commandOf = (install: ClientInstall, lines: readonly string[]): string =>
-  lines[install.channel === 'mise' && lines.length > 1 && lines[0]!.startsWith('mise cache clear ') ? 1 : 0]!
+const commandOf = (install: ClientInstall, lines: readonly string[], version: string | undefined): string =>
+  lines[install.channel === 'mise' && install.miseTool && miseTarget(install.miseTool, version).version ? 1 : 0]!
 
 export interface UpdateAction {
   readonly command: string; readonly executable: string; readonly args: readonly string[]; readonly asNode?: boolean
@@ -487,17 +493,16 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     if (!mise) return undefined
     const packageName = CLIENT_PACKAGES[provider]
     const supportsFlag = await miseReleaseAgeFlag(mise)
-    const pinned = misePin(version)
-    const commands = byHandFor(provider, found, process.platform, supportsFlag, pinned)!
-    const tool = pinned ? `${found.miseTool}@${pinned}` : found.miseTool
+    const target = miseTarget(found.miseTool, version)
+    const commands = byHandFor(provider, found, process.platform, supportsFlag, version)!
     // Update is an explicit request to install now. mise's release-age delay can otherwise exit successfully
     // without changing the client. Older mise rejects the CLI flag but ignores this environment variable.
     // The flag also overrides a per-tool delay, which takes precedence over the global environment setting.
     // Override only this process, on desktops and hosts alike; leave the app and mise's saved policy alone.
-    return { command: commandOf(found, commands), byHand: commands, executable: mise,
-      args: [pinned ? 'install' : 'upgrade', tool, ...(supportsFlag ? ['--minimum-release-age', '0s'] : [])], cwd: homedir(), env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
-      ...(pinned ? { miseList: { tool: found.miseTool, version: pinned, releaseAge: supportsFlag } } : {}),
-      ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool, packageName } } : {}) }
+    return { command: commandOf(found, commands, version), byHand: commands, executable: mise,
+      args: [target.verb, target.tool, ...(supportsFlag ? ['--minimum-release-age', '0s'] : [])], cwd: homedir(), env: { MISE_MINIMUM_RELEASE_AGE: '0s' },
+      ...(target.version ? { miseList: { tool: found.miseTool, version: target.version, releaseAge: supportsFlag } } : {}),
+      ...(needsInstallStep(provider, found.miseTool) && packageName ? { installStep: { mise, tool: target.tool, packageName } } : {}) }
   }
   return undefined
 }
@@ -679,7 +684,7 @@ export class ProviderClients {
     const makerUpdate = provider === 'muse' && Boolean(install.muse)
     return {
       id: provider, installed, ...(latest ? { published: latest } : {}), behind, channel: install.channel,
-      ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: commandOf(install, byHand) } : {}),
+      ...(makerUpdate ? { steps: 1 } : action ? { command: action.command, steps: action.installStep ? 2 : 1 } : byHand ? { command: commandOf(install, byHand, target) } : {}),
       ...(byHand ? { byHand: [...byHand] } : {}), canInstall: Boolean((action || makerUpdate) && behind),
       checkedAt: new Date(this.now()).toISOString(), state: 'idle',
     }

@@ -7,6 +7,10 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: ar\n"
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
 msgstr ""
@@ -16,5 +20,6 @@ msgid "mise does not list {to} yet"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
+#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "the published version"
 msgstr ""

@@ -140,7 +140,7 @@ export function ClientUpdateCard(): ReactNode {
           <small>
             {update.state === 'updated' ? `Now ${update.installed}`
               : update.state === 'unchanged' ? update.error ?? `Still ${update.installed}. Try again.`
-              : update.state === 'failed' && update.failure === 'not-listed' ? notListed(update)
+              : update.state === 'failed' && update.failure === 'not-listed' ? <span className="tt-paragraph">{notListed(update)}</span>
               : update.state === 'failed' ? (update.error ?? 'The installer reported a failure')
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}
