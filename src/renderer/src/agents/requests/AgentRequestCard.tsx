@@ -130,7 +130,8 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           {plan.overview ? <p className="agent-request__plan-overview"><LinkedText text={plan.overview} /></p> : null}
           {plan.steps ? <div className="agent-request__plan-steps"><MessageContent text={plan.steps} /></div> : null}
         </div>
-        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} names={{ 'accept-plan': t`Accept Cursor’s plan`, 'reject-plan': t`Reject Cursor’s plan` }} />
+        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} names={{ 'accept-plan': t`Accept Cursor’s plan`, 'reject-plan': t`Reject Cursor’s plan` }}
+          labels={{ 'accept-plan': t`Accept plan`, 'reject-plan': t({ message: 'Reject', comment: 'Rejects a plan the coding agent proposed.' }) }} />
       </> : summary ? <>
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
@@ -184,11 +185,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   </section>
 }
 
-function PermissionActions({ request, disabled, pressed, onChoose, names }: {
+function PermissionActions({ request, disabled, pressed, onChoose, names, labels }: {
   readonly request: AgentRequest; readonly disabled: boolean; readonly pressed: string | null
   readonly onChoose: (choice: string, answer: RequestAnswer) => void
   /** Each choice's accessible name by its ID, where its label alone would not say what a press does. */
   readonly names?: Readonly<Record<string, string>>
+  /** Each choice's shown label by its ID, where Sotto wrote the choice and so translates it; a provider's own labels show as sent. */
+  readonly labels?: Readonly<Record<string, string>>
 }): ReactNode {
   const choices = request.permissionChoices
   // Only absent choices mean a legacy Allow/Deny request. An empty list is the provider offering nothing Sotto can send.
@@ -201,7 +204,7 @@ function PermissionActions({ request, disabled, pressed, onChoose, names }: {
       <div className="agent-request__actions">
         {choices.map(choice => <Button key={choice.id} variant={choice.id === primary ? 'primary' : 'secondary'} disabled={disabled}
           aria-label={names?.[choice.id]} aria-pressed={pressed === choice.id || undefined} data-choice-kind={choice.kind}
-          onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{choice.label}</Button>)}
+          onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{labels?.[choice.id] ?? choice.label}</Button>)}
       </div>
       {described.length > 0 ? <dl className="agent-request__choices">{described.map(choice => <div key={choice.id}><dt>{choice.label}</dt><dd><LinkedText text={choice.description!} /></dd></div>)}</dl> : null}
     </>

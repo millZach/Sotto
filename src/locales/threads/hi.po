@@ -78,6 +78,10 @@ msgstr ""
 msgid "Accept Cursor’s plan"
 msgstr ""
 
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Accept plan"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Add a server"
 msgstr ""
@@ -351,6 +355,11 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Reading your servers…"
+msgstr ""
+
+#. Rejects a plan the coding agent proposed.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Reject"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
