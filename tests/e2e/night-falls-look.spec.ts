@@ -6,7 +6,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { onReleaseTrack } from './support/releaseTrack'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -142,6 +142,28 @@ test.describe('night falls in the Stars look', () => {
             else await expect(page.locator('.threads-view')).toBeVisible()
             expect(await pageBoundProblems(page)).toEqual([])
           }
+        }
+      }
+    }, 'system')
+  })
+
+  test('shows the look and what both looks do in Settings, in dark and light', async () => {
+    await launchOwl(async launched => {
+      const { page } = launched
+      await mkdir(evidence, { recursive: true })
+      await openPage(page, 'Settings')
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+      const night = page.locator('#settings-night-falls')
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+        for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+          await resizeContentWindow(launched, width, height, [800, 540])
+          await expect(night).toBeVisible()
+          await expect(night).toContainText('The window sweeps between Threads and Watcher\'s room')
+          await expect(night).toContainText('A line of stars sweeps across, with a faint trail behind it.')
+          await night.scrollIntoViewIfNeeded()
+          await page.screenshot({ path: join(evidence, `settings-night-falls-${appearance}-${width}x${height}.png`) })
         }
       }
     }, 'system')
