@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
@@ -39,6 +39,7 @@ import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
+import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, SCROLL_KEYS, scrolledSince, type ReadingPlace } from './readingPlace'
 import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -260,6 +261,12 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly activity?: ActivityContext | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
+  // The transcript finds this message's row by its ID, without searching the page (#1452).
+  const rows = useContext(MessageRowsContext)
+  const placeRow = useCallback((element: HTMLElement | null): (() => void) | undefined => {
+    article.current = element
+    return element !== null && rows !== null ? rows.add(message.id, element) : undefined
+  }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
   const [workOpen, setWorkOpen] = useState(false)
   const workId = useId()
@@ -286,7 +293,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
     data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
@@ -559,64 +566,6 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   </article>
 }
 
-/**
- * Where a reader is reading: the first messages reaching into the view and how far below its top each one starts, and
- * how far the transcript was scrolled then. `held` while the transcript was too short to put the place back.
- */
-interface ReadingPlace {
-  readonly threadId: string
-  readonly marks: readonly { readonly messageId: string; readonly offset: number }[]
-  readonly top: number
-  readonly held?: true
-}
-/** How many messages in view the place is kept by, for when the first of them is folded away by an update. */
-const READING_MARKS = 3
-
-/**
- * The place of a reader in this transcript, or null when no message reaches into the view. It reads the messages as the
- * window keeps them, without copying the list, and finds the first one in view by halves, so what it reads does not grow
- * with how much of the history is drawn.
- */
-function readingPlace(scroller: HTMLElement, threadId: string): ReadingPlace | null {
-  const view = scroller.getBoundingClientRect()
-  const bottom = view.top + scroller.clientHeight
-  const drawn = scroller.getElementsByClassName('thread-message')
-  let low = 0, high = drawn.length
-  while (low < high) {
-    const middle = (low + high) >> 1
-    if (drawn[middle]!.getBoundingClientRect().bottom > view.top) high = middle
-    else low = middle + 1
-  }
-  const marks: { messageId: string; offset: number }[] = []
-  for (let index = low; index < drawn.length && marks.length < READING_MARKS; index++) {
-    const message = drawn[index]!
-    const messageId = message.getAttribute('data-message-id')
-    if (messageId === null) continue
-    const box = message.getBoundingClientRect()
-    if (box.top >= bottom) break
-    marks.push({ messageId, offset: box.top - view.top })
-  }
-  return marks.length ? { threadId, marks, top: scroller.scrollTop } : null
-}
-
-/**
- * Scrolls the first of the place's messages still drawn back to where it was, looking each one up by its ID. The place
- * that stands after: read afresh once it is back, or held, at the scroll the transcript allows, while the transcript is too
- * short to put it back, so a later update can.
- */
-function keepReadingPlace(scroller: HTMLElement, place: ReadingPlace): ReadingPlace | null {
-  for (const mark of place.marks) {
-    const message = scroller.querySelector(`[data-message-id="${mark.messageId.replace(/["\\]/gu, '\\$&')}"]`)
-    if (message === null) continue
-    const offset = (): number => message.getBoundingClientRect().top - scroller.getBoundingClientRect().top
-    const moved = offset() - mark.offset
-    if (Math.abs(moved) >= 1) scroller.scrollTop += moved
-    if (Math.abs(offset() - mark.offset) >= 1) return { ...place, top: scroller.scrollTop, held: true }
-    break
-  }
-  return readingPlace(scroller, place.threadId)
-}
-
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
@@ -759,18 +708,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // the transcript too short to put it back holds it for the next. Show earlier, Load earlier and the scrubber's landing put
   // the reader somewhere on purpose, and a scroll the transcript did not make is where the reader now is.
   const reading = useRef<ReadingPlace | null>(null)
+  const [rows] = useState(() => new MessageRows())
   useLayoutEffect(() => {
     const element = scroller.current
     const place = reading.current
     if (element === null || place === null) return
     if (place.threadId !== thread.id || following.current) { reading.current = null; return }
     if (anchor.current !== null || landing.current !== null) return
-    // Scrolled since the place was read, by the reader before their scroll was heard or by the window's own anchoring. A
-    // transcript cut short pulls the scroll up to its end, which is not the reader's doing.
-    const top = element.scrollTop
-    const cutShort = top < place.top && top >= element.scrollHeight - element.clientHeight - 1
-    if (Math.abs(top - place.top) >= 1 && place.held !== true && !cutShort) { reading.current = readingPlace(element, thread.id); return }
-    reading.current = keepReadingPlace(element, place)
+    // Scrolled since the place was read or put back, by the reader before their scroll was heard or by the window's own
+    // anchoring: that is where they read now, held or not.
+    reading.current = scrolledSince(element, place) ? readingPlace(element, rows, messages, thread.id) : keepReadingPlace(element, rows, messages, place)
   })
 
   useLayoutEffect(() => {
@@ -825,6 +772,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const onScroll = (): void => {
     const element = scroller.current
     if (element === null) return
+    // The window's own scroll after an update cut the transcript short, at the end it was cut to: the place stays held for
+    // the update that brings the room back, and a reader who did not scroll is not following the end they were pulled to.
+    const held = reading.current
+    if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight
     following.current = distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
@@ -834,7 +785,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // The reader's own scroll, or the window's anchoring, says where they read now; the transcript's own does not.
     const place = reading.current
     if (following.current) reading.current = null
-    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, thread.id)
+    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, messages, thread.id)
+  }
+  /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
+  const onReaderInput = (event: React.SyntheticEvent): void => {
+    if (reading.current?.held !== true || event.type === 'keydown' && !SCROLL_KEYS.has((event as React.KeyboardEvent).key)) return
+    reading.current = null
+    onScroll()
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
@@ -930,7 +887,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
-    <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
+    <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
+      onPointerDown={onReaderInput} onKeyDown={onReaderInput} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
@@ -946,8 +904,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
+          <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} /></MessageRowsContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null

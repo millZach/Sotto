@@ -11,6 +11,7 @@ import { composerEnterIntent } from '../../../src/renderer/src/agents/composerKe
 import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { MessageRows } from '../../../src/renderer/src/agents/readingPlace'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
@@ -608,7 +609,13 @@ describe('Thread transcript scrolling', () => {
     // each message the transcript reads: its box, its ID, or its place in a list of every message drawn.
     const select = Element.prototype.querySelectorAll
     const rows = (message: Element): number => Math.max(1, (message.textContent ?? '').split('Answer paragraph').length - 1)
-    const drawnIn = (element: Element): Element[] => [...select.call(element, '.thread-message')]
+    // The layout's own reading of the page is not the transcript's, and is not counted.
+    let laying = false
+    const drawnIn = (element: Element): Element[] => {
+      const outer = laying
+      laying = true
+      try { return [...select.call(element, '.thread-message')] } finally { laying = outer }
+    }
     const height = (element: HTMLElement): number => drawnIn(element).reduce((sum, message) => sum + rows(message), 0) * ROW
     let visits = 0
     beforeEach(() => {
@@ -629,19 +636,41 @@ describe('Thread transcript scrolling', () => {
         if (this.classList.contains('thread-message')) visits++
         return dataset.call(this) as DOMStringMap
       })
+      // A search of the transcript for messages walks every message drawn, however few it returns.
+      const walks = (element: Element, selectors: string): void => {
+        if (laying || !/message/u.test(selectors)) return
+        const log = element.closest('.thread-workspace__transcript') ?? (() => { laying = true; try { return select.call(element, '.thread-workspace__transcript')[0] } finally { laying = false } })()
+        if (log) visits += drawnIn(log).length
+      }
       vi.spyOn(Element.prototype, 'querySelectorAll').mockImplementation(function (this: Element, selectors: string) {
-        const found = select.call(this, selectors)
-        if (selectors.includes('thread-message')) visits += found.length
-        return found
+        walks(this, selectors)
+        return select.call(this, selectors)
+      })
+      const one = Element.prototype.querySelector
+      vi.spyOn(Element.prototype, 'querySelector').mockImplementation(function (this: Element, selectors: string) {
+        walks(this, selectors)
+        return one.call(this, selectors)
+      })
+      // Each row the transcript looks up by its message's ID.
+      const element = MessageRows.prototype.element
+      vi.spyOn(MessageRows.prototype, 'element').mockImplementation(function (this: MessageRows, messageId: string) {
+        visits++
+        return element.call(this, messageId)
+      })
+      const byClass = Element.prototype.getElementsByClassName
+      vi.spyOn(Element.prototype, 'getElementsByClassName').mockImplementation(function (this: Element, names: string) {
+        walks(this, names)
+        return byClass.call(this, names)
       })
     })
     const at = (minute: number): string => new Date(NOW - (30 - minute) * 60_000).toISOString()
     /** Your message, three replies on the way and a ten-paragraph answer, folded under the turn's line once it ended. */
-    function answered(): AgentState {
+    function answered(earlier = 0): AgentState {
       const state = manualState()
       const thread = state.host.threads.find(item => item.id === 'grok-previews')!
       thread.status = 'idle'
       thread.messages = [
+        ...Array.from({ length: earlier }, (_, index) => ({ id: `earlier-${index}`, role: 'user' as const, text: `Earlier ${index}.`, createdAt: at(0) })),
         { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
         ...[1, 2, 3].map(step => ({ id: `step-${step}`, role: 'assistant' as const, text: `Looking at part ${step}.`, createdAt: at(step) })),
         { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
@@ -696,9 +725,25 @@ describe('Thread transcript scrolling', () => {
       update(() => ({ status: 'running' }))
       expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
       expect(transcript.scrollTop).toBe(0)
+      // The window says it scrolled, to the end the transcript was cut to: that is neither the reader's scroll nor following.
+      fireEvent.scroll(transcript)
       update(() => ({ status: 'idle' }))
       expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
       expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    })
+
+    it('lets a held place go for a scroll the reader made while the transcript was cut short', () => {
+      // Eight messages above: cut short, the transcript can still scroll, only not as far as the place.
+      const { transcript, update, scrollTo } = mountWith(answered(8), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(11 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(8 * ROW)
+      // The reader scrolls up before their scroll is heard; the answer comes back with the next update.
+      tops.set(transcript, 6 * ROW)
+      update(() => ({ status: 'idle' }))
+      expect(transcript.scrollTop).toBe(6 * ROW)
     })
 
     it('keeps a scroll the reader made while an update was on its way', () => {
@@ -720,7 +765,7 @@ describe('Thread transcript scrolling', () => {
 
     it('reads no more messages for an update when more of the history is drawn', () => {
       const state = manualState()
-      state.host.threads.find(item => item.id === 'grok-previews')!.messages = Array.from({ length: 500 }, (_, index) => ({
+      state.host.threads.find(item => item.id === 'grok-previews')!.messages = Array.from({ length: 300 }, (_, index) => ({
         id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: new Date(NOW).toISOString() }))
       const { transcript, update, scrollTo } = mountWith(state)
       const visitsForAnUpdate = (): number => {
@@ -730,8 +775,8 @@ describe('Thread transcript scrolling', () => {
         return visits
       }
       const few = visitsForAnUpdate()
-      for (let page = 0; page < 4; page++) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
-      expect(drawnIn(transcript)).toHaveLength(400)
+      for (let page = 0; page < 3; page++) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
+      expect(drawnIn(transcript)).toHaveLength(300)
       const many = visitsForAnUpdate()
       expect(many - few).toBeLessThanOrEqual(8)
     })
