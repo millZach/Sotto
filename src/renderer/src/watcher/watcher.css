@@ -131,7 +131,7 @@
 .watcher-tabs__tab:hover { color: var(--tt-text); }
 .watcher-tabs__tab[aria-selected='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-tabs__icon { display: block; }
-.watcher-tabs__count { position: absolute; top: 1px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--tt-surface-sunken, var(--tt-hover));
+.watcher-tabs__count { position: absolute; top: 1px; right: 0; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-surface-sunken, var(--tt-hover));
   box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 @container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } }
 /* Off macOS a label comes back only where the whole row holds it with three-digit counts on All threads and Watched,
