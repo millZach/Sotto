@@ -12,7 +12,7 @@ import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { testCredentials } from '../../fixtures/testCredentials'
 
-/** Idle compaction's command through the coordinator (ADR-0123): Sotto's own, guarded to the provider write, and quiet. */
+/** Idle compaction's command through the coordinator (ADR-0127): Sotto's own, guarded to the provider write, and quiet. */
 const roots: string[] = []; const controls: AgentControl[] = []
 afterEach(async () => {
   for (const c of controls.splice(0)) { c.dispose(); await c.privacyChanged() }

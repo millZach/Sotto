@@ -606,10 +606,11 @@ export const clientChannelSchema = z.enum(['npm', 'self-update', 'mise', 'devin-
 export type ClientChannel = z.infer<typeof clientChannelSchema>
 /**
  * Why an update did not finish, as a code the tile words for itself: `download` when the installer could not fetch the
- * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish, and
- * `installer` for anything else the installer refused.
+ * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish,
+ * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it,
+ * so nothing was installed, and `installer` for anything else the installer refused.
  */
-export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer'])
+export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer', 'not-listed'])
 export type ClientUpdateFailure = z.infer<typeof clientUpdateFailureSchema>
 export const providerClientUpdateSchema = z.object({
   id: providerIdSchema,
@@ -658,7 +659,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
-   * Models tab's "Agent setting".
+   * open row's "Agent setting" in Settings > Providers.
    */
   enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
   agentModelId: z.string().max(512).optional() })

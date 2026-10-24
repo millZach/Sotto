@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isOpenCodeSignInPage, type ModelSource, type ModelSourceField, type ModelSourceMethod, type SignInAttempt } from '../../shared/opencodeSignIn'
+import { OWN_SERVER_ID_PREFIX } from '../../shared/ownModelServers'
 
 /**
  * OpenCode 2's model sources as Sotto shows them (#1104). OpenCode calls a model source an integration and lists every
@@ -134,7 +135,16 @@ function howSignedIn(integration: Integration, methods: readonly ModelSourceMeth
   return kind === 'key' ? 'API key' : kind === 'external' ? 'Sign-in on this computer' : 'Browser sign-in'
 }
 
-/** Every source as the dialog lists it, with how it is signed in and how many models it has in the catalog. */
+/**
+ * Whether a source is one of the user's own model servers (ADR-0124). OpenCode lists them as sources too; the sign-in
+ * reads them like any other, and the dialog's list leaves them out, since they have their own group, added and removed
+ * there, apart from any one provider.
+ */
+export function isOwnServerSource(id: string): boolean { return id.startsWith(OWN_SERVER_ID_PREFIX) }
+/** The sources as the dialog lists them: every one but the user's own model servers. */
+export function dialogSources(sources: readonly ModelSource[]): ModelSource[] { return sources.filter(source => !isOwnServerSource(source.id)) }
+
+/** Every source OpenCode lists, with how it is signed in and how many models it has in the catalog. */
 export function modelSourcesOf(integrations: readonly Integration[], modelProviders: readonly string[]): { zenModels: number; sources: ModelSource[] } {
   const counts = new Map<string, number>()
   for (const provider of modelProviders) counts.set(provider, (counts.get(provider) ?? 0) + 1)

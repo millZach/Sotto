@@ -35,6 +35,12 @@ function provide(state = fixture()) {
   return { state, command }
 }
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+/** Opens a provider's row, leaving it open if it already is, and returns what it shows. */
+function openRow(provider: string): HTMLElement {
+  const header = screen.getByRole('button', { name: provider })
+  if (header.getAttribute('aria-expanded') !== 'true') fireEvent.click(header)
+  return screen.getByRole('region', { name: `${provider} details` })
+}
 
 describe('independent provider settings', () => {
   it('shows and acts on this computer’s clients while another host is selected for new work', async () => {
@@ -67,7 +73,7 @@ describe('independent provider settings', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'Check for client updates' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { checkClientUpdates: false }, hostId: LOCAL }))
   })
-  it('tags this computer’s agent setting on the Models tab, never the selected host’s', () => {
+  it('tags this computer’s agent setting in an open row’s models, never the selected host’s', () => {
     const LOCAL = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
     const base = fixture()
     // Forge's agent setting would start threads on Claude Code; this computer's starts them on Codex.
@@ -79,11 +85,7 @@ describe('independent provider settings', () => {
       ] } }
     provide(state)
     render(<ProvidersSettings />)
-    const models = (provider: string) => {
-      fireEvent.click(screen.getByRole('button', { name: provider }))
-      fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-      return screen.getByRole('list', { name: `${provider} available models` })
-    }
+    const models = (provider: string) => within(openRow(provider)).getByRole('list', { name: `${provider} available models` })
     expect(models('Codex')).toHaveTextContent('Agent setting')
     expect(models('Claude Code')).not.toHaveTextContent('Agent setting')
   })
@@ -153,17 +155,72 @@ describe('independent provider settings', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'devin', notice: false }))
     expect(state.configuration.reasoning).toBe('claude')
   })
-  it("marks each provider and the selected detail with that provider's mark", () => {
+  it('opens one row at a time in place, and closes the open row from its header or with Escape', () => {
     provide()
-    const { container } = render(<ProvidersSettings />)
+    render(<ProvidersSettings />)
+    const codex = screen.getByRole('button', { name: 'Codex' })
+    const claude = screen.getByRole('button', { name: 'Claude Code' })
+    // Codex's row is open to begin with, showing its connection, client and models in place; the others are closed.
+    expect(codex).toHaveAttribute('aria-expanded', 'true')
+    const panel = screen.getByRole('region', { name: 'Codex details' })
+    expect(codex).toHaveAttribute('aria-controls', panel.id)
+    expect(within(panel).getByRole('button', { name: 'Disconnect Codex' })).toBeVisible()
+    expect(within(panel).getByText('Installed client')).toBeVisible()
+    expect(within(panel).getByRole('list', { name: 'Codex available models' })).toHaveTextContent('codex model')
+    expect(claude).toHaveAttribute('aria-expanded', 'false')
+    expect(claude).not.toHaveAttribute('aria-controls')
+    expect(screen.queryByRole('tablist')).toBeNull()
+    // Opening another row closes the first.
+    fireEvent.click(claude)
+    expect(claude).toHaveAttribute('aria-expanded', 'true')
+    expect(codex).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('region', { name: 'Codex details' })).toBeNull()
+    expect(within(screen.getByRole('region', { name: 'Claude Code details' })).getByText('claude model')).toBeVisible()
+    // Its header closes it again, leaving none open.
+    fireEvent.click(claude)
+    expect(screen.queryByRole('region', { name: /details$/u })).toBeNull()
+    // Escape inside an open row closes it and gives focus back to its header.
+    fireEvent.click(claude)
+    const disconnect = screen.getByRole('button', { name: 'Disconnect Claude Code' })
+    disconnect.focus()
+    fireEvent.keyDown(disconnect, { key: 'Escape' })
+    expect(claude).toHaveAttribute('aria-expanded', 'false')
+    expect(claude).toHaveFocus()
+  })
+  it('moves between the rows’ headers with Up and Down, Home and End', () => {
+    provide()
+    render(<ProvidersSettings />)
+    const shown = providerIdSchema.options.filter(id => !HELD.has(id)).map(id => screen.getByRole('button', { name: PROVIDER_LABELS[id] }))
+    shown[0]!.focus()
+    fireEvent.keyDown(shown[0]!, { key: 'ArrowDown' })
+    expect(shown[1]).toHaveFocus()
+    fireEvent.keyDown(shown[1]!, { key: 'ArrowUp' })
+    expect(shown[0]).toHaveFocus()
+    // Up from the first goes round to the last, and Down from the last back to the first.
+    fireEvent.keyDown(shown[0]!, { key: 'ArrowUp' })
+    expect(shown.at(-1)).toHaveFocus()
+    fireEvent.keyDown(shown.at(-1)!, { key: 'ArrowDown' })
+    expect(shown[0]).toHaveFocus()
+    fireEvent.keyDown(shown[0]!, { key: 'End' })
+    expect(shown.at(-1)).toHaveFocus()
+    fireEvent.keyDown(shown.at(-1)!, { key: 'Home' })
+    expect(shown[0]).toHaveFocus()
+    // Moving opens nothing, and the switch beside a header keeps its own keys.
+    expect(screen.getAllByRole('region', { name: /details$/u })).toHaveLength(1)
+    const toggle = screen.getByRole('switch', { name: 'Enable Codex' })
+    toggle.focus()
+    fireEvent.keyDown(toggle, { key: 'ArrowDown' })
+    expect(toggle).toHaveFocus()
+  })
+  it("marks each provider's row with that provider's mark on its own badge", () => {
+    provide()
+    render(<ProvidersSettings />)
     for (const provider of providerIdSchema.options.filter(id => !HELD.has(id))) {
       // Every provider Sotto ships draws its own mark; the initial is the fallback for one it has none for.
-      const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`svg.provider-mark[data-provider="${provider}"]`)
+      const drawn = screen.getByRole('button', { name: PROVIDER_LABELS[provider] }).querySelector(`.provider-badge[data-provider="${provider}"] > svg.provider-mark[data-provider="${provider}"]`)
       expect(drawn, `${provider} needs its own mark rather than its initial`).not.toBeNull()
       expect(drawn!.querySelector('path')?.getAttribute('d')).toBeTruthy()
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Grok Build' }))
-    expect(container.querySelector('.provider-detail__header svg.provider-mark[data-provider="grok"]')).not.toBeNull()
   })
   it('offers Muse in Sotto Owl with its own sign-in guidance (ADR-0079)', async () => {
     provide()
@@ -178,18 +235,20 @@ describe('independent provider settings', () => {
     state.host.providers![1] = { ...state.host.providers![1]!, connection: 'error', error: 'Sign in to Claude Code.' }
     const { command } = provide(state)
     render(<ProvidersSettings />)
-    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
+    // The error shows under Claude Code's row while it is closed, with Codex's open.
+    expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
+    expect(within(screen.getByRole('button', { name: 'Claude Code' })).getByText('Needs attention')).toBeInTheDocument()
+    openRow('Claude Code')
     expect(screen.getByRole('alert')).toHaveTextContent('Sign in to Claude Code.')
     fireEvent.click(screen.getByRole('button', { name: 'Retry Claude Code' }))
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'connect', provider: 'claude', notice: false }))
     expect(state.host.providers![0]!.connection).toBe('connected')
   })
-  it('shows only the selected provider catalog and keeps new-thread defaults in Agents settings', () => {
+  it('shows only the open provider catalog and keeps new-thread defaults in Agents settings', () => {
     provide()
     const view = render(<ProvidersSettings />)
-    fireEvent.click(screen.getByRole('button', { name: 'Claude Code' }))
-    fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    const panel = screen.getByRole('tabpanel')
+    const panel = openRow('Claude Code')
     expect(within(panel).getByText('claude model')).toBeVisible()
     expect(within(panel).queryByText('codex model')).toBeNull()
     expect(screen.queryByLabelText('Reasoning account')).toBeNull()
@@ -255,6 +314,39 @@ describe('the installed client, in provider settings', () => {
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'codex' }))
   })
 
+  it('offers Update to the published version on a closed row, and updates from it', async () => {
+    const state = fixture()
+    state.clientUpdates = [{ id: 'claude', installed: '2.1.4', published: '2.1.7', behind: true, channel: 'npm',
+      command: 'npm install -g @anthropic-ai/claude-code@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
+    const { command } = provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.getByRole('button', { name: 'Claude Code' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: /^Update Codex/u })).toBeNull()
+    const chip = screen.getByRole('button', { name: 'Update Claude Code to 2.1.7' })
+    expect(chip).toHaveTextContent('Update to 2.1.7')
+    fireEvent.click(chip)
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'update-client', provider: 'claude' }))
+  })
+
+  it('offers no Update chip while client update checks are off', () => {
+    const state = fixture()
+    state.configuration.checkClientUpdates = false
+    state.clientUpdates = [{ id: 'claude', installed: '2.1.4', published: '2.1.7', behind: true, channel: 'npm',
+      canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }]
+    provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.queryByRole('button', { name: /^Update Claude Code/u })).toBeNull()
+  })
+
+  it('says mise does not list the published version yet, in its own words rather than main’s', () => {
+    const state = fixture()
+    state.clientUpdates = [{ id: 'codex', installed: '0.163.0', published: '0.164.0', behind: true, channel: 'mise', command: 'mise install codex@0.164.0',
+      canInstall: true, checkedAt: new Date().toISOString(), state: 'failed', step: 1, failure: 'not-listed', error: 'mise does not list Codex 0.164.0 yet.' }]
+    provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.getByText('0.163.0 is installed. mise does not list 0.164.0 yet, even with its cache cleared, so Sotto did not install it. Try again later.')).toBeTruthy()
+  })
+
   it('says when a client is newer than the version Sotto checked', () => {
     const state = fixture()
     state.host.providers = state.host.providers!.map(provider => provider.id === 'codex' ? { ...provider, verifiedVersion: '0.150.0' } : provider)
@@ -286,7 +378,7 @@ describe('the installed client, in provider settings', () => {
   })
 })
 
-describe('idle compaction on Claude Code’s page (ADR-0123)', () => {
+describe('idle compaction on Claude Code’s page (ADR-0127)', () => {
   it('shows the switch only for Claude Code and saves what the user chooses', () => {
     provide()
     const onChange = vi.fn()

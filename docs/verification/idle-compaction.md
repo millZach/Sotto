@@ -1,6 +1,6 @@
 # Idle compaction
 
-[ADR-0123](../adr/0123-sotto-compacts-an-idle-claude-thread-before-its-cache-expires.md), checked on the Windows development laptop on October 23, 2026.
+[ADR-0127](../adr/0127-sotto-compacts-an-idle-claude-thread-before-its-cache-expires.md), checked on the Windows development laptop on October 23, 2026.
 
 ## The numbers behind it
 

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import {
@@ -20,6 +21,9 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
 export type ReducedMotion = 'system' | 'on'
+/** Night falls' two looks (ADR-0119, decision 6): the shipped band, or a line of stars. */
+export type RoomTransitionLook = 'band' | 'stars'
+export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -132,6 +136,11 @@ export interface AppSettings {
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
   showCreature: boolean
+  /**
+   * The interface language (ADR-0123): `system` follows the computer's language, a code chooses one. Read only while its
+   * Owl feature is on; elsewhere Sotto is English and the choice is kept for when the feature returns.
+   */
+  interfaceLanguage: InterfaceLanguageSetting
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -167,7 +176,7 @@ export interface AppSettings {
    */
   watcherSettlesFinishedThreads: boolean
   /**
-   * On by default (ADR-0123): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
+   * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
    * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
    */
   compactIdleThreads: boolean
@@ -218,6 +227,8 @@ export interface AppSettings {
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
   roomTransitionSpeed: number
+  /** How that transition looks: `band`, a band of flickering text characters, or `stars`, a line of stars with a faint trail (ADR-0119, decision 6). */
+  roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
@@ -356,6 +367,7 @@ const fieldSchemas = {
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
+  interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -371,6 +383,7 @@ const fieldSchemas = {
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
   roomTransitionSpeed: z.number().min(0.5).max(2),
+  roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
@@ -455,6 +468,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
   showCreature: true,
+  interfaceLanguage: 'system',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -469,6 +483,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   reducedMotion: 'system',
   roomTransition: true,
   roomTransitionSpeed: 1,
+  roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
@@ -613,6 +628,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
+    interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
@@ -628,6 +644,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
     roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
+    roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),

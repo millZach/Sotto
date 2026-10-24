@@ -115,7 +115,7 @@ it('never offers compaction for Grok Build, Devin, OpenCode or a thread that nam
   }
 })
 
-it('names Sotto on an idle compaction and leads to the switch that stops it (ADR-0123)', async () => {
+it('names Sotto on an idle compaction and leads to the switch that stops it (ADR-0127)', async () => {
   const navigate = vi.fn()
   const appContext = await import('../../../src/renderer/src/state/AppContext')
   const spy = vi.spyOn(appContext, 'useOptionalApp').mockReturnValue({ actions: { navigate } } as unknown as ReturnType<typeof appContext.useOptionalApp>)

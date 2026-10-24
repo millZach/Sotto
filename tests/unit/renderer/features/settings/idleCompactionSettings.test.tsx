@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 import { threadsStateFixture } from '../../../../fixtures/agentState'
 
-/** Idle compaction's switch (ADR-0123): on Claude Code's page in Settings › Providers, saved as this computer's setting. */
+/** Idle compaction's switch (ADR-0127): on Claude Code's page in Settings › Providers, saved as this computer's setting. */
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true }
 function provideAgents(): void {
   const state = threadsStateFixture({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex', 'claude'] },

@@ -680,7 +680,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
@@ -1771,7 +1771,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.initialize()
       // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.
@@ -3431,6 +3431,41 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       this.publish(); return this.workspaceSnapshot()
     }, this.organizationLanes)
+  }
+  /**
+   * New work reopens a settled thread before it goes (October 23, 2026), so no thread works while settled, where Settle
+   * finished threads, a request's end and the cleanup's on-settle rule would take it for put aside. Its own settlement is
+   * restored as Restore does, with the delegated threads settled with it. A settled project returns with this thread
+   * alone, as a new thread there returns it: the project's other threads keep its timestamp as their own.
+   */
+  async reopenThreadForWork(threadId: string, guard?: () => void): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const projectId = this.thread(threadId).projectId
+    let projectRestored = false
+    await this.onLane(projectId, async () => {
+      guard?.()
+      const project = this.state.snapshot.projects.find(item => item.id === projectId)
+      const projectSettledAt = project?.workspaceSettledAt ?? null
+      if (!project || projectSettledAt === null) return
+      const inherited = this.state.snapshot.threads.filter(thread => thread.projectId === projectId && thread.id !== threadId && thread.workspaceSettledAt == null)
+      for (const thread of inherited) thread.workspaceSettledAt = projectSettledAt
+      project.workspaceSettledAt = null
+      this.dirty = true
+      try { await this.flush() }
+      catch (error) {
+        // A snapshot taken while the write waited replaced these records: the rollback finds them again by ID.
+        const current = this.state.snapshot.projects.find(item => item.id === projectId)
+        if (current) current.workspaceSettledAt = projectSettledAt
+        const ids = new Set(inherited.map(thread => thread.id))
+        for (const thread of this.state.snapshot.threads) if (ids.has(thread.id)) thread.workspaceSettledAt = null
+        throw error
+      }
+      projectRestored = true
+      this.publish()
+    }, this.organizationLanes)
+    // The guard decides once: having let the project return, it does not stop the thread's own restore halfway.
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, projectRestored ? undefined : guard)
+    return this.workspaceSnapshot()
   }
   /**
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own

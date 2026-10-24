@@ -2,7 +2,7 @@ import { capabilitiesForThread, type AgentHostSnapshot, type AgentThread } from 
 import { compactionPending } from '../../shared/compaction'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 
-/** Idle this long, a large Claude thread is compacted while its one-hour prompt cache is still warm (ADR-0123). */
+/** Idle this long, a large Claude thread is compacted while its one-hour prompt cache is still warm (ADR-0127). */
 export const IDLE_COMPACTION_AFTER_MS = 54 * 60_000
 /** Past this the cache has likely gone, so compacting would re-read the whole conversation it was meant to save. */
 export const IDLE_COMPACTION_UNTIL_MS = 59 * 60_000
@@ -48,7 +48,7 @@ export function idleCompactionDue(host: Readonly<AgentHostSnapshot>, thread: Rea
 }
 
 /**
- * Idle compaction (ADR-0123). Claude keeps a thread's prompt cache for an hour after its last request; the first
+ * Idle compaction (ADR-0127). Claude keeps a thread's prompt cache for an hour after its last request; the first
  * message after that re-sends the whole conversation at twice the input price. While the setting is on, each sweep
  * compacts a due thread once per quiet stretch, through the same native compaction the user's Compact context runs,
  * so the next message re-reads a short summary instead. It saves nothing: a thread that has moved on, or a missed

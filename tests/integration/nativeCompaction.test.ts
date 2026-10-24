@@ -196,7 +196,7 @@ it('Codex clears the context figure its compaction leaves out of date, unless a 
   expect((await usage())?.contextUsed).toBe(20000)
 })
 
-it('Claude carries Sotto’s idle mark from the request to the compaction’s result (ADR-0123)', async () => {
+it('Claude carries Sotto’s idle mark from the request to the compaction’s result (ADR-0127)', async () => {
   const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
   await f.host.connect()
@@ -209,7 +209,7 @@ it('Claude carries Sotto’s idle mark from the request to the compaction’s re
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'completed', idle: true })
 })
 
-it('Claude asks a machine compaction’s guard again once its CLI is up, and writes nothing when it refuses (ADR-0123)', async () => {
+it('Claude asks a machine compaction’s guard again once its CLI is up, and writes nothing when it refuses (ADR-0127)', async () => {
   const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
   await f.host.connect()

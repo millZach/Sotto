@@ -1,6 +1,6 @@
 import { fillPrompt, promptField } from './support/prompt'
 /**
- * Idle compaction in the built app (ADR-0123). The real Claude adapter runs over the fake CLI in `tests/fixtures/`. A turn
+ * Idle compaction in the built app (ADR-0127). The real Claude adapter runs over the fake CLI in `tests/fixtures/`. A turn
  * ends with a reply whose context is 250,000 tokens, dated 54½ minutes ago, as a thread left quiet that long would read.
  * Sotto's own sweep sends `/compact` with nobody pressing anything, the line under the composer says Sotto did it, and
  * its Turn off opens Claude Code's page in Settings › Providers with the switch in focus.

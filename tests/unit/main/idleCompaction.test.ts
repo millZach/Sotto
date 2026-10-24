@@ -5,7 +5,7 @@ import type { AgentHostSnapshot, AgentThread } from '../../../src/shared/agents'
 import { agentThread } from '../../fixtures/agentState'
 
 /**
- * Idle compaction (ADR-0123): a large Claude thread quiet for 54 minutes is compacted once, before its one-hour prompt
+ * Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted once, before its one-hour prompt
  * cache expires, and never while anything is running, waiting on the user or queued, or once the window has passed.
  */
 const NOW = Date.parse('2026-10-23T12:00:00.000Z')

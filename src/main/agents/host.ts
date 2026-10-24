@@ -82,7 +82,7 @@ export type AgentHostCommand =
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
-  /** `idle` marks Sotto's own idle compaction (ADR-0123), which the transcript names as such. */
+  /** `idle` marks Sotto's own idle compaction (ADR-0127), which the transcript names as such. */
   | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string; readonly idle?: true }
 export interface AgentHostResult {
   readonly accepted: boolean
@@ -255,7 +255,12 @@ export interface AgentHost {
   /** Owl-only numeric observations. Adapters own native IDs; wrappers translate to Sotto IDs. */
   subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
-  readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
+  /**
+   * A provider's limits: the last reading, or with `refresh` a new one. `background` marks a refresh Usage made on its
+   * own when it opened, which a provider whose read is costly may answer from a recent reading (#1456). Read again
+   * never sets it.
+   */
+  readProviderQuota?(providerId: ProviderId, refresh: boolean, background?: boolean): Promise<UsageQuotaRead>
   /**
    * Owl-only (ADR-0083): read this computer's own provider records into Usage, numbers only. Each native adapter reads
    * its own provider's files, reports a session it owns under its own thread ID, and every other session under a
@@ -326,6 +331,8 @@ export interface AgentHost {
   /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
   dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
+  /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
+  reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>

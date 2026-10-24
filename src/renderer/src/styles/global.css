@@ -542,6 +542,19 @@ textarea.tt-input {
   }
 }
 
+/* ---- interface language ---- */
+
+/*
+ * A translated paragraph or description (ADR-0123): in Arabic and Urdu it runs right to left from the right edge of its
+ * box, while the window keeps its English layout and short labels keep the English label's place. Every paragraph a
+ * message fills carries this class; docs/translation-glossary.md says so for the pull requests that add them.
+ */
+:root:is(:lang(ar), :lang(ur)) .tt-paragraph {
+  direction: rtl;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+
 /* ---- motion ---- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -2133,5 +2146,5 @@ textarea.tt-input {
 /* High contrast drops fills, so a card that has no transparent border to show keeps an edge in the text colour
    (ADR-0110). The cards with a transparent border already get theirs from it. */
 @media (forced-colors: active) {
-  :is(.usage-index, .usage-stage, .settings-view .settings-rows, .settings-view .provider-detail) { outline: 1px solid; outline-offset: -1px; }
+  :is(.usage-index, .usage-stage, .settings-view .settings-rows, .providers-list) { outline: 1px solid; outline-offset: -1px; }
 }

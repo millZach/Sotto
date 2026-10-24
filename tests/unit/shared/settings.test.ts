@@ -35,6 +35,7 @@ const customSettings = {
   menuBarOwlEyes: 'amber',
   creature: 'claude',
   showCreature: false,
+  interfaceLanguage: 'ja',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -49,6 +50,7 @@ const customSettings = {
   reducedMotion: 'on',
   roomTransition: false,
   roomTransitionSpeed: 1.5,
+  roomTransitionLook: 'stars',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
@@ -149,7 +151,7 @@ describe('settings', () => {
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
-  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0123)', () => {
+  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0127)', () => {
     expect(parseSettings({}).compactIdleThreads).toBe(true)
     expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
     expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
@@ -358,10 +360,12 @@ describe('settings', () => {
       menuBarOwlEyes: 'teal',
       creature: 'sotto',
       showCreature: true,
+      interfaceLanguage: 'system',
       customThemes: [],
       reducedMotion: 'system',
       roomTransition: true,
       roomTransitionSpeed: 1,
+      roomTransitionLook: 'band',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
       pressShortcuts: [],
@@ -621,6 +625,20 @@ describe('night falls settings', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
     expect(parsed.roomTransition).toBe(false)
     expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('looks like the band by default and keeps Stars once chosen', () => {
+    expect(DEFAULT_SETTINGS.roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' }).roomTransitionLook).toBe('stars')
+    expect(parseSettings(JSON.parse(JSON.stringify(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' })))).roomTransitionLook).toBe('stars')
+  })
+
+  it('falls back to the band for a look it does not know, or a saved file from before the look', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'wing' }).roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 1 }).roomTransitionLook).toBe('band')
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.roomTransitionLook
+    expect(parseSettings(older).roomTransitionLook).toBe('band')
   })
 
   it('falls back to the default for a speed outside the dial', () => {

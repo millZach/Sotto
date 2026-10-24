@@ -929,7 +929,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
-        // A machine compaction, such as Sotto's idle one (ADR-0123), asks its guard again once the CLI is up: starting it
+        // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
         // can take long enough for the user to type, send or turn the setting off.
         watcherGuard?.()
         const inputId = randomUUID()

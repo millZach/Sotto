@@ -7,7 +7,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -87,6 +87,9 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
+/** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
+const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
+const BROADCAST_ACTIVITIES = Object.freeze([]) as unknown as AgentActivity[]
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'interrupt',
@@ -420,7 +423,7 @@ export class AgentControl {
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
   private readonly delegationOrigins = new WeakSet<object>()
-  /** Idle compaction's own commands (ADR-0123), among the machine commands above: Sotto's, never the user's or Watcher's. */
+  /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly idleCompactions = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
@@ -500,7 +503,7 @@ export class AgentControl {
     return this.admitCommandShell(parsed)
   }
   /**
-   * Idle compaction's own command (ADR-0123): native compaction of one quiet thread, on that thread's lane. It carries a
+   * Idle compaction's own command (ADR-0127): native compaction of one quiet thread, on that thread's lane. It carries a
    * main-owned guard, asked again as it dispatches, is never taken for the user's own command, and neither raises nor
    * clears the window's error. A refusal or failure rejects, and the thread shows a failed compaction as it shows any.
    */
@@ -1076,6 +1079,23 @@ export class AgentControl {
   hasPendingThreadWork(threadId: string, options: { readonly setAsideIgnored?: boolean } = {}): boolean {
     return this.pendingThreadWorkReason(threadId, options) !== null
   }
+  /**
+   * Whether a Watcher send's prompt still in its thread's queue waits there for the user: its queue is paused, or holds a
+   * prompt that failed. Null once it has left the queue, or while it waits only for the thread's turn.
+   */
+  watcherQueuedSendHeld(operationId: string): 'paused-followups' | 'failed-followups' | null {
+    const own = this.followupStore.peek().items.find(item => item.watcherOperationId === operationId)
+    return own ? this.queueAwaitsReview(own.threadId) : null
+  }
+  /**
+   * Whether a thread's queue waits for the user's review, a prompt in it paused or failed, whatever else holds it: an
+   * unconfirmed send ahead of it does not hide it, since what queues behind waits for that review all the same.
+   */
+  queueAwaitsReview(threadId: string): 'paused-followups' | 'failed-followups' | null {
+    const items = this.followupStore.peek().items.filter(item => item.threadId === threadId && !isWaitingWakeUp(item))
+    if (items.some(item => item.status === 'failed')) return 'failed-followups'
+    return items.some(item => item.status === 'paused') ? 'paused-followups' : null
+  }
   /** The existing pending-work guard's reason, so a refusal offers the recovery this work actually needs. */
   pendingThreadWorkReason(threadId: string, { setAsideIgnored = false }: { readonly setAsideIgnored?: boolean } = {}): CheckoutPendingWork | null {
     const released = (item: { readonly setAside?: boolean | undefined; readonly updatesResumed?: boolean | undefined }): boolean => item.setAside === true && (setAsideIgnored || item.updatesResumed === true)
@@ -1187,16 +1207,29 @@ export class AgentControl {
     return { host: this.state.host, provider: this.state.configuration.provider }
   }
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
+  /** Watcher's own workspace folder, and each project folder as `resolve` spells it, worked out once rather than on every shell. */
+  private watcherFolder: string | undefined
+  private readonly resolvedProjectPaths = new Map<string, string>()
   private hideWatcher(state: AgentState): void {
-    const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
-    state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)
+    const folder = this.watcherFolder ??= resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
+    const resolved = (path: string): string => {
+      let known = this.resolvedProjectPaths.get(path)
+      if (known === undefined) {
+        if (this.resolvedProjectPaths.size >= 1_000) this.resolvedProjectPaths.clear()
+        this.resolvedProjectPaths.set(path, known = resolve(path))
+      }
+      return known
+    }
+    // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
+    const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder)
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
     for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
       const records = state[key]
-      if (records) (state as Record<string, unknown>)[key] = records.filter(item => this.threadAvailable(item.threadId))
+      if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
     // Stable can retain dormant receipts beside a full ordinary ledger. Public shells keep their usual bound on either track.
     for (const key of ['deliveredDrafts', 'obsoleteDrafts', 'followupReceipts'] as const) {
@@ -1218,18 +1251,23 @@ export class AgentControl {
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
-    const shown = threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish({
-      ...thread, messages: shareThreads ? [] : EMPTY_MESSAGES,
-      ...(thread.activities === undefined ? {} : { activities: shareThreads ? [] : EMPTY_ACTIVITIES }),
-      summary: this.presentedSummary(thread),
-    })))
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
-      threads: shareThreads ? EMPTY_THREADS : shown } }
-    // Every shell copies containers and keeps strings: several times faster than structuredClone.
-    const state = clonePlainData(bare)
-    if (shared) state.host.models = models
-    if (shareThreads) state.host.threads = shown
-    state.obsoleteDrafts = clonePlainData(this.persistedObsoleteDrafts)
+      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES)))) },
+      obsoleteDrafts: this.persistedObsoleteDrafts }
+    let state: AgentState
+    if (shareThreads) {
+      // Everything but the threads, copied only where it changed since the last broadcast (#1334). The coordinator writes
+      // parts of its state in place, so what changed is found by reading it against the last copy rather than by identity;
+      // that reads without making anything, where a copy on every broadcast made every object again. The copy is frozen,
+      // so the broadcasts that share it are read and never written into, as their thread records already are.
+      const [base] = immutableUpdates([bare], [this.broadcastBase])
+      this.broadcastBase = base
+      state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: this.broadcastThreads(threads) } }
+    } else {
+      // Every other shell is its caller's to change: it copies containers and keeps strings, several times faster than structuredClone.
+      state = clonePlainData(bare)
+      if (shared) state.host.models = models
+    }
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
@@ -1238,6 +1276,44 @@ export class AgentControl {
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     this.hideWatcher(state)
     return state
+  }
+  /** A thread as the shell lists it: its summary in place of its history. */
+  private shellThread(thread: AgentThread, messages: AgentMessage[], activities: AgentActivity[]): AgentThread {
+    return { ...thread, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
+  }
+  /** The non-thread part of the last broadcast's shell, frozen, which the next one is read against. */
+  private broadcastBase: AgentState | undefined
+  /**
+   * Each thread as the last broadcast listed it, by thread, with the record it was made from and how that record's summary
+   * was shown. Watcher's conversations and continued threads are shown through displays the coordinator holds, so a
+   * summary made from their messages is made again whenever a display moves.
+   */
+  private readonly broadcastRecords = new Map<string, { source: AgentThread; display: unknown; revision: number; hostId: string | undefined; record: AgentThread }>()
+  /**
+   * Every thread as a broadcast lists it. A thread whose record is the one the last broadcast listed, with the same finish
+   * and failure marks, is listed as the very record that broadcast carried: frozen, never written into, and made again only
+   * when its thread, a mark or the display its summary came from moved (#1334). It was a new record for every thread on
+   * every broadcast, and the router and the window's encoder then worked out again that most had not changed.
+   */
+  private broadcastThreads(threads: readonly AgentThread[]): AgentThread[] {
+    const records = this.broadcastRecords
+    const display = this.continuationDisplay, revision = this.watcherMessageDisplay?.revision ?? 0, hostId = this.state.host.hostId
+    const shown = threads.map(thread => {
+      let held = records.get(thread.id)
+      if (!held || held.source !== thread || held.display !== display || held.revision !== revision || held.hostId !== hostId) {
+        held = { source: thread, display, revision, hostId, record: Object.freeze(this.shellThread(thread, BROADCAST_MESSAGES, BROADCAST_ACTIVITIES)) }
+        records.set(thread.id, held)
+      }
+      // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
+      const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+      if (marked !== held.record) held.record = Object.freeze(marked)
+      return held.record
+    })
+    if (records.size > threads.length) {
+      const present = new Set(threads.map(thread => thread.id))
+      for (const id of records.keys()) if (!present.has(id)) records.delete(id)
+    }
+    return shown
   }
   /**
    * One thread's history — its messages and the activity beside them — for a window looking at it.
@@ -2253,13 +2329,15 @@ export class AgentControl {
     try {
       const result = await this.clients.install(provider, await this.clientPath(provider), process.env, step => {
         if (step > 1 && !this.disposed) { this.setClientUpdate(provider, { step }); this.publish() }
-      })
+      }, record.behind ? record.published : undefined)
       if (!result.ok) {
         this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}),
           ...(result.step && record.steps && record.steps > 1 ? { step: result.step } : {}), ...(result.failure ? { failure: result.failure } : {}),
           ...(result.printed ? { printed: result.printed } : {}) }, false)
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
+          : result.failure === 'not-listed'
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto did not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
@@ -2309,6 +2387,22 @@ export class AgentControl {
    */
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
+  }
+  /**
+   * The Watcher sends whose prompts still wait in their threads' queues for those threads' turns, which only the turn
+   * holds, by operation, in one pass over the queue. Not one that has left the queue or whose send is unconfirmed, nor one
+   * that waits instead on the user, its queue holding a paused or failed item, a wake-up included, nor one for a thread
+   * settled or archived. A provider change waits only for these (#1325).
+   */
+  watcherQueuedSendsWaiting(): ReadonlySet<string> {
+    const items = this.followupStore.peek().items, blocked = new Set<string>(), waiting = new Set<string>()
+    for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
+    for (const item of items) {
+      if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
+      const thread = this.state.host.threads.find(candidate => candidate.id === item.threadId)
+      if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
+    }
+    return waiting
   }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
@@ -3378,6 +3472,7 @@ export class AgentControl {
         if (command.type === 'queue-followup') {
           if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before queuing a prompt.')
           if (this.state.threadDrafts?.find(d => d.threadId === thread.id)?.requestId) throw new Error('Send or clear the existing answer before queuing a prompt.')
+          if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
           const receivedAt = performance.now()
           this.setDelivery(thread.id, command.draftId, 'queued')
           this.publish({ receivedAt, threadId: thread.id, draftId: command.draftId })
@@ -3834,6 +3929,8 @@ export class AgentControl {
       validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
     }
     validate()
+    // A thread settled while its turn ran is restored by the steer, as by any new work.
+    if (this.settledForWork(this.thread(command.threadId))) await this.reopenForWork(command.threadId)
     if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
@@ -4895,6 +4992,27 @@ export class AgentControl {
     const latest = this.state.deliveries?.find(matches)
     this.setDelivery(threadId, draftId, latest?.status ?? 'uncertain', { ...recovery, ...latest, setAside: true })
   }
+  /**
+   * New work reopens a settled thread before it is sent or queued (October 23, 2026): a thread working while settled is
+   * taken for put aside, so its queue never sends and Settle finished threads, a request's end and the cleanup's on-settle
+   * rule act on work still under way. Sotto's own news is not new work and never reopens one.
+   */
+  private settledForWork(thread: AgentThread): boolean {
+    return isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
+  }
+  /** Asked only of a settled thread, so a send to any other awaits nothing more than it did. */
+  private async reopenForWork(threadId: string): Promise<void> {
+    // Its own provider first: a send that thread's connection refuses restores nothing.
+    this.canAct(threadId)
+    const host = this.dependencies.host
+    if (!host.reopenThreadForWork) throw new Error('This thread is settled. Restore it before sending it a prompt.')
+    this.acceptSnapshot(await host.reopenThreadForWork(threadId))
+  }
+  /** A delegated brief queued for a thread still working restores it as it is queued, as a queued prompt does. */
+  async reopenSettledForWork(threadId: string): Promise<void> {
+    const thread = this.state.host.threads.find(item => item.id === threadId)
+    if (thread && this.settledForWork(thread)) await this.reopenForWork(threadId)
+  }
   private async sendManual(threadId: string, text: string, turn?: ActiveTurn, retryId?: string, attachments: AgentAttachmentHandle[] = [], draftId?: string, skills?: AgentSkillReference[], files?: AgentFileReference[], origin?: WatcherCommandOrigin): Promise<void> {
     if (draftId && this.state.deliveredDrafts?.some(receipt => receipt.threadId === threadId && receipt.draftId === draftId)) return
     const pendingId = retryId ?? this.outbox.find(item => item.threadId === threadId && this.blocksExplicitPrompt(item, draftId, Boolean(origin)))?.id
@@ -4944,7 +5062,8 @@ export class AgentControl {
       if (latest.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish.')
     }
     validate()
-    const thread = this.thread(threadId)
+    let thread = this.thread(threadId)
+    if (this.settledForWork(thread)) { await this.reopenForWork(threadId); thread = this.thread(threadId) }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId, this.localClient, undefined, origin)
     this.say(`Sent to ${thread.title}.`)
     this.observe()
@@ -5002,6 +5121,7 @@ export class AgentControl {
     if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
     if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
     this.sendStages(turn)?.addRead(readMs)
+    if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
     this.clearEmptyDraftBinding(thread.id, draftId)
     if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
