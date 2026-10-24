@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Room front: Threads to Watcher's room</title>
+<!--
+  Throwaway prototype (October 23, 2026). One question: would the move between Threads and Watcher's room read better
+  if the sweeping band's front were drawn from an authored glyph shape, instead of the procedural ragged edge it has today?
+  A is src/renderer/src/watcher/nightFalls.ts as shipped. B is an owl wing drawn from six ASCII keyframes. C is a line of stars.
+  ?variant=A|B|C picks one; the left and right arrow keys cycle. ?theme=light starts light.
+-->
+<style>
+:root {
+  --bg: #121211; --ink: #faf7ec; --accent: #e3c95b;
+  --side: #1c1c1c; --muted: #d0cdc0; --dim: #a39d82; --line: #383838; --bar: #2a2a28; --field: #181817;
+  --font-ui: Figtree, ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'Spline Sans Mono', ui-monospace, Consolas, Menlo, monospace;
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  --bg: #f7f6f0; --ink: #1b1606; --accent: #7a5f00;
+  --side: #e9e7e1; --muted: #4f4a38; --dim: #6b6551; --line: #d6d4ca; --bar: #e3e1d9; --field: #fdfcf9;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--font-ui); padding-bottom: 48px; }
+button { font: inherit; color: inherit; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--side); flex: none; }
+.controls h1 { font-size: 13px; font-weight: 600; margin: 0 6px 0 0; color: var(--muted); }
+.btn { border: 1px solid var(--line); background: var(--bg); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+.btn:hover { border-color: var(--dim); }
+.btn:focus-visible, .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: block; padding: 4px 9px; color: var(--dim); }
+.seg input:checked + span { background: var(--bar); color: var(--ink); }
+.group { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
+
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.room { position: absolute; inset: 0; background: var(--bg); overflow: hidden; visibility: hidden; }
+.stage[data-view='threads'] .room--threads, .stage[data-view='watcher'] .room--watcher { visibility: visible; }
+.stage[data-run] .room { visibility: visible; }
+.room.is-new { z-index: 2; }
+.band { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; }
+
+/* Threads: a sidebar and a thread pane. */
+.room--threads { display: flex; }
+.nav { width: 248px; flex: none; background: var(--side); border-right: 1px solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 4px; }
+.nav h2 { font-size: 12px; font-weight: 600; color: var(--dim); margin: 2px 6px 8px; letter-spacing: .02em; }
+.nav .item { padding: 7px 8px; border-radius: 7px; }
+.nav .item.on { background: var(--bar); }
+.nav .item b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav .item i { display: block; height: 6px; width: 70%; margin-top: 6px; border-radius: 3px; background: var(--line); }
+.nav .foot { margin-top: auto; display: flex; gap: 6px; padding: 6px; border-top: 1px solid var(--line); color: var(--dim); font-size: 12px; }
+.nav .foot span { padding: 3px 8px; border-radius: 6px; }
+.nav .foot span.on { background: var(--bar); color: var(--ink); }
+.pane { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 18px 28px 16px; gap: 14px; }
+.pane h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.msg { max-width: 640px; }
+.msg p { margin: 0 0 6px; color: var(--muted); }
+.msg.me { align-self: flex-end; background: var(--bar); padding: 8px 12px; border-radius: 10px; max-width: 420px; }
+.msg.me p { color: var(--ink); }
+.lines i { display: block; height: 8px; border-radius: 4px; background: var(--line); margin: 9px 0; }
+.composer { margin-top: auto; border: 1px solid var(--line); background: var(--field); border-radius: 12px; padding: 12px 14px; color: var(--dim); min-height: 64px; }
+
+/* Watcher's room: one centred column, the owl at the bottom right. */
+.room--watcher .col { max-width: 560px; margin: 0 auto; padding: 48px 24px; }
+.room--watcher h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+.room--watcher .sub { color: var(--dim); margin: 0 0 22px; font-size: 13px; }
+.room--watcher p { color: var(--muted); margin: 0 0 12px; }
+.owl { position: absolute; right: 22px; bottom: 16px; margin: 0; font: 13px/1.1 var(--font-mono); color: var(--accent); }
+
+.variants { position: fixed; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; justify-content: center; gap: 12px; background: var(--side); border-top: 1px solid var(--line); padding: 0 10px; z-index: 10; }
+.variants .label { min-width: 0; flex: 0 1 360px; text-align: center; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.variants .label em { font-style: normal; color: var(--dim); }
+.variants .btn { width: 36px; padding: 4px 0; }
+
+@media (max-width: 640px) {
+  .nav { width: 112px; padding: 10px 6px; }
+  .nav .item b { font-size: 12px; }
+  .pane { padding: 12px 12px; gap: 10px; }
+  .controls { gap: 6px 8px; padding: 6px 8px; }
+  .controls h1, .variants .label em { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="controls">
+  <h1>Room front</h1>
+  <button class="btn" id="to-watcher" type="button">Play to Watcher</button>
+  <button class="btn" id="to-threads" type="button">Play back to Threads</button>
+  <span class="group" role="radiogroup" aria-label="Speed">
+    <span class="seg">
+      <label><input type="radio" name="speed" value="0.5"><span>0.5x</span></label>
+      <label><input type="radio" name="speed" value="1" checked><span>1x</span></label>
+      <label><input type="radio" name="speed" value="2"><span>2x</span></label>
+    </span>
+  </span>
+  <span class="group" role="radiogroup" aria-label="Theme">
+    <span class="seg">
+      <label><input type="radio" name="theme" value="dark" checked><span>Dark</span></label>
+      <label><input type="radio" name="theme" value="light"><span>Light</span></label>
+    </span>
+  </span>
+</div>
+
+<main class="stage" id="stage" data-view="threads">
+  <section class="room room--threads" aria-label="Threads">
+    <nav class="nav">
+      <h2>Threads</h2>
+      <div class="item on"><b>Fix the release notes</b><i></i></div>
+      <div class="item"><b>Owl dock spacing</b><i style="width:50%"></i></div>
+      <div class="item"><b>Checkpoint size refusal</b><i style="width:62%"></i></div>
+      <div class="item"><b>Usage flush batch</b><i style="width:40%"></i></div>
+      <div class="item"><b>Model picker tile</b><i style="width:58%"></i></div>
+      <div class="foot"><span class="on">Threads</span><span>{o,o}</span></div>
+    </nav>
+    <div class="pane">
+      <h3>Fix the release notes</h3>
+      <div class="msg me"><p>The notes for 1.4 still mention the old hotkey. Can you fix them?</p></div>
+      <div class="msg"><p>Found it in docs/guide.md and the README. Both now name the new chord, and the changelog says why it moved.</p><div class="lines"><i style="width:92%"></i><i style="width:78%"></i><i style="width:55%"></i></div></div>
+      <div class="msg"><p>Typecheck and lint pass. Want me to open a pull request?</p></div>
+      <div class="composer">Ask for a change</div>
+    </div>
+  </section>
+  <section class="room room--watcher" aria-label="Watcher's room">
+    <div class="col">
+      <h2>Watcher's room</h2>
+      <p class="sub">Three threads are working. One is waiting for you.</p>
+      <p>Fix the release notes has finished and wants a pull request.</p>
+      <p>Owl dock spacing is running its checks. It has been quiet for four minutes.</p>
+      <p>Checkpoint size refusal asked a question an hour ago and is waiting on your answer.</p>
+      <div class="lines"><i style="width:84%"></i><i style="width:66%"></i></div>
+    </div>
+    <pre class="owl" aria-hidden="true">{o,o}
+/)__)
+ " " </pre>
+  </section>
+  <canvas class="band" id="band" aria-hidden="true"></canvas>
+</main>
+
+<div class="variants">
+  <button class="btn" id="prev" type="button" aria-label="Previous variant">&larr;</button>
+  <div class="label" id="label" aria-live="polite"></div>
+  <button class="btn" id="next" type="button" aria-label="Next variant">&rarr;</button>
+</div>
+
+<script>
+'use strict';
+// ---- Shared with nightFalls.ts, copied as shipped. ----
+const NIGHT_FALLS_MS = 840;
+const BAND = 90;
+const CELL_W = 7;
+const CELL_H = 12;
+const RAMP = ' .:-=+*#%@';
+const FLICKER_MS = 45;
+
+function hash(a, b, c) {
+  let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(c + 0x27d4eb2f, 0x165667b1);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+  return (h ^ (h >>> 13)) >>> 0;
+}
+const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => t * t * (3 - 2 * t);
+
+/** The clip that shows the opened room behind the front, from any variant's per-row edge. */
+function revealPolygon(edgeFn, u, width, height, forward) {
+  const rows = Math.ceil(height / CELL_H);
+  const edge = edgeFn(u, width, rows, forward).map(x => clamp(x, -1, width + 1));
+  const side = forward ? 0 : width;
+  const points = [`${side}px 0px`];
+  edge.forEach((x, row) => { points.push(`${x}px ${row * CELL_H}px`, `${x}px ${Math.min(height, (row + 1) * CELL_H)}px`); });
+  points.push(`${side}px ${height}px`);
+  return `polygon(${points.join(', ')})`;
+}
+
+// ---- A: the shipped band. ----
+function frontEdgeA(u, width, rows, forward) {
+  const travel = width + BAND * 2;
+  const x = forward ? -BAND + u * travel : width + BAND - u * travel;
+  return Array.from({ length: rows }, (_, row) => Math.round(x + ((hash(row, 7, 11) % 3) - 1) * CELL_W));
+}
+function paintA(ctx, u, elapsed, width, height, forward, inks) {
+  ctx.clearRect(0, 0, width, height);
+  const rows = Math.ceil(height / CELL_H);
+  const edge = frontEdgeA(u, width, rows, forward);
+  const bucket = Math.floor(elapsed / FLICKER_MS);
+  ctx.font = `11px ${inks.font}`;
+  ctx.textBaseline = 'top';
+  for (let row = 0; row < rows; row++) {
+    const front = edge[row];
+    const from = Math.floor((front - BAND / 2) / CELL_W), to = Math.ceil((front + BAND / 2) / CELL_W);
+    for (let col = Math.max(0, from); col <= to && col * CELL_W < width; col++) {
+      const x = col * CELL_W, y = row * CELL_H;
+      const near = 1 - Math.min(1, Math.abs(x + CELL_W / 2 - front) / (BAND / 2));
+      const roll = hash(col, row, bucket);
+      if ((roll % 100) / 100 > near * 0.9 + 0.1) continue;
+      ctx.fillStyle = inks.ground;
+      ctx.fillRect(x, y, CELL_W, CELL_H);
+      const index = Math.min(RAMP.length - 1, Math.floor(near * (RAMP.length - 1) * (0.6 + ((roll >>> 8) % 40) / 100)));
+      const glyph = RAMP[index];
+      if (glyph === ' ') continue;
+      ctx.globalAlpha = 0.35 + near * 0.55;
+      ctx.fillStyle = inks.ink;
+      ctx.fillText(glyph, x, y + 1);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// ---- B: an owl wing. Six hand-authored keyframes, drawn sweeping left to right (mirrored on the way back).
+// The rightmost glyph of each line is the wing's leading edge; the glyphs behind it are its density, from RAMP.
+// Top line is the shoulder, bottom line the wingtip; the alternating long and short lines at the foot are the primaries.
+// Frame 0 has the tip swept back; by frame 5 the tip has whipped forward and leads. ----
+const WING = [
+  [
+    '        .:-=*#%@        ',
+    '        .:-=+*#%@@      ',
+    '        .:-=+*#%@@@@    ',
+    '       .:-=+*#%@@@@@@   ',
+    '        .:-=+*#%@@@@@@  ',
+    '       .:-=+*#%@@@@@@   ',
+    '       .:-=+*#%@@@@     ',
+    '     .:-=+*#%@@@@       ',
+    '     .:-=+*#%@@         ',
+    '    .:-=+*#%@@          ',
+    '   .:-=+*#%@@           ',
+    '    .-*%@               ',
+    '   .:-=*#%@             ',
+    '   .=#@                 ',
+    '   .:=*%@               ',
+    '   :#@                  ',
+  ],
+  [
+    '       .:-=*#%@         ',
+    '       .:-=+*#%@@       ',
+    '       .:-=+*#%@@@@     ',
+    '       .:-=+*#%@@@@@@   ',
+    '        .:-=+*#%@@@@@@  ',
+    '        .:-=+*#%@@@@@@  ',
+    '       .:-=+*#%@@@@@@   ',
+    '       .:-=+*#%@@@@     ',
+    '      .:-=+*#%@@@@      ',
+    '       .:-=+*#%@@       ',
+    '      .:-=+*#%@@        ',
+    '      .:=*%@            ',
+    '       .:-=*#%@         ',
+    '      .-*%@             ',
+    '      .:-+#%@           ',
+    '      .=#@              ',
+  ],
+  [
+    '        .:=*%@          ',
+    '        .:-=*#%@        ',
+    '        .:-=+*#%@@      ',
+    '        .:-=+*#%@@@@    ',
+    '       .:-=+*#%@@@@@@   ',
+    '        .:-=+*#%@@@@@@  ',
+    '        .:-=+*#%@@@@@@  ',
+    '        .:-=+*#%@@@@@@  ',
+    '         .:-=+*#%@@@@   ',
+    '        .:-=+*#%@@@@    ',
+    '          .:-=+*#%@@    ',
+    '         .:-+#%@        ',
+    '         .:-=+*#%@@     ',
+    '         .:=*%@         ',
+    '          .:-=*#%@      ',
+    '         .-*%@          ',
+  ],
+  [
+    '       .:=*%@           ',
+    '       .:-=*#%@         ',
+    '       .:-=+*#%@@       ',
+    '       .:-=+*#%@@@@     ',
+    '        .:-=+*#%@@@@    ',
+    '       .:-=+*#%@@@@@@   ',
+    '        .:-=+*#%@@@@@@  ',
+    '        .:-=+*#%@@@@@@  ',
+    '        .:-=+*#%@@@@@@  ',
+    '          .:-=+*#%@@@@  ',
+    '           .:-=+*#%@@@@ ',
+    '           .:-=*#%@     ',
+    '             .:-=+*#%@@ ',
+    '            .:-+#%@     ',
+    '              .:-=*#%@  ',
+    '             .:=*%@     ',
+  ],
+  [
+    '      .-*%@             ',
+    '      .:-+#%@           ',
+    '       .:-=*#%@         ',
+    '       .:-=+*#%@@       ',
+    '      .:-=+*#%@@@@      ',
+    '       .:-=+*#%@@@@     ',
+    '      .:-=+*#%@@@@@@    ',
+    '       .:-=+*#%@@@@@@   ',
+    '        .:-=+*#%@@@@@@  ',
+    '           .:-=+*#%@@@@ ',
+    '            .:-=+*#%@@@@',
+    '             .:-=*#%@   ',
+    '              .:-=+*#%@@',
+    '              .:-+#%@   ',
+    '               .:-=*#%@ ',
+    '               .:=*%@   ',
+  ],
+  [
+    '     .=#@               ',
+    '     .:=*%@             ',
+    '      .:-+#%@           ',
+    '       .:-=*#%@         ',
+    '      .:-=+*#%@@        ',
+    '     .:-=+*#%@@@@       ',
+    '      .:-=+*#%@@@@      ',
+    '     .:-=+*#%@@@@@@     ',
+    '      .:-=+*#%@@@@@@    ',
+    '         .:-=+*#%@@@@   ',
+    '          .:-=+*#%@@@@  ',
+    '            .:-=*#%@    ',
+    '             .:-=+*#%@@ ',
+    '              .:-+#%@   ',
+    '                .:-=*#%@',
+    '                 .:=*%@ ',
+  ],
+];
+const WING_COLS = 24, WING_ROWS = WING[0].length;
+// Each line becomes its leading edge (a column) and its densities counted back from that edge, so frames morph by
+// moving edges rather than cross-fading glyphs.
+const WING_FRAMES = WING.map(frame => frame.map(line => {
+  const lead = line.trimEnd().length - 1;
+  const strip = [];
+  for (let k = 0; k <= lead; k++) strip.push(Math.max(0, RAMP.indexOf(line[lead - k])));
+  let run = 0; while (run < strip.length && strip[run] > 0) run++;
+  return { lead, strip, run };
+}));
+/** Art columns are this many cells wide, so the wing is big enough to read as one on a wide window. */
+const wingScale = width => (width >= 900 ? 2 : 1);
+
+/** The wing at progress u, one entry per window row: its leading edge and density in art columns. */
+function wingPose(u, rows) {
+  const at = clamp(u, 0, 1) * (WING.length - 1);
+  const f0 = Math.min(WING.length - 2, Math.floor(at)), s = smooth(at - f0);
+  const a = WING_FRAMES[f0], b = WING_FRAMES[f0 + 1];
+  const lines = a.map((la, r) => {
+    const lb = b[r];
+    return { lead: lerp(la.lead, lb.lead, s), run: lerp(la.run, lb.run, s), level: k => lerp(la.strip[k] || 0, lb.strip[k] || 0, s) };
+  });
+  return Array.from({ length: rows }, (_, row) => {
+    const y = rows === 1 ? 0 : (row / (rows - 1)) * (WING_ROWS - 1);
+    const r0 = Math.floor(y), r1 = Math.min(WING_ROWS - 1, r0 + 1), f = y - r0;
+    const p = lines[r0], q = lines[r1];
+    return { lead: lerp(p.lead, q.lead, f), run: lerp(p.run, q.run, f), level: k => lerp(p.level(k), q.level(k), f) };
+  });
+}
+/** In travel coordinates (the direction of motion is +x): the wing's left edge at progress u. */
+function wingBase(u, width) {
+  const span = WING_COLS * wingScale(width) * CELL_W;
+  return -span + u * (width + span);
+}
+function frontEdgeB(u, width, rows, forward) {
+  const cp = wingScale(width) * CELL_W, x0 = wingBase(u, width);
+  // The opened room shows from the middle of each line's solid run, so half the wing lies over each room.
+  return wingPose(u, rows).map(line => {
+    const local = x0 + (line.lead + 1 - line.run / 2) * cp;
+    return Math.round(forward ? local : width - local);
+  });
+}
+function paintB(ctx, u, elapsed, width, height, forward, inks) {
+  ctx.clearRect(0, 0, width, height);
+  const rows = Math.ceil(height / CELL_H);
+  const cp = wingScale(width) * CELL_W, x0 = wingBase(u, width);
+  const pose = wingPose(u, rows);
+  const bucket = Math.floor(elapsed / FLICKER_MS);
+  ctx.font = `11px ${inks.font}`;
+  ctx.textBaseline = 'top';
+  for (let row = 0; row < rows; row++) {
+    const line = pose[row];
+    const leadLocal = x0 + (line.lead + 1) * cp, tailLocal = leadLocal - (line.lead + 1) * cp;
+    const a = forward ? tailLocal : width - leadLocal, b = forward ? leadLocal : width - tailLocal;
+    for (let col = Math.max(0, Math.floor(a / CELL_W)); col <= Math.ceil(b / CELL_W) && col * CELL_W < width; col++) {
+      const x = col * CELL_W, y = row * CELL_H;
+      const centre = forward ? x + CELL_W / 2 : width - (x + CELL_W / 2);
+      const behind = (leadLocal - centre) / cp;
+      if (behind < 0) continue;
+      const level = line.level(Math.floor(behind));
+      if (level < 0.5) continue;
+      const near = level / 9;
+      const roll = hash(col, row, bucket);
+      if ((roll % 100) / 100 > near * 0.85 + 0.15) continue;
+      ctx.fillStyle = inks.ground;
+      ctx.fillRect(x, y, CELL_W, CELL_H);
+      const index = clamp(Math.round(level * (0.75 + ((roll >>> 8) % 30) / 100)), 0, RAMP.length - 1);
+      const glyph = RAMP[index];
+      if (glyph === ' ') continue;
+      ctx.globalAlpha = 0.35 + near * 0.55;
+      ctx.fillStyle = inks.ink;
+      ctx.fillText(glyph, x, y + 1);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// ---- C: a line of stars, with a faint trail of the ramp behind it. ----
+const TRAIL = 140;
+const STARS = ['*', '+', '·'];
+function starLocal(u, width, row) {
+  const x = -CELL_W * 3 + u * (width + CELL_W * 3 + TRAIL);
+  // A loose line: a slow wave down the window, and a cell of jitter either way.
+  const wave = 1.7 * Math.sin(row * 0.21 + 1.3) + 0.9 * Math.sin(row * 0.57 + 0.4);
+  return x + (wave + ((hash(row, 7, 11) % 3) - 1) * 0.6) * CELL_W;
+}
+function frontEdgeC(u, width, rows, forward) {
+  return Array.from({ length: rows }, (_, row) => {
+    const local = starLocal(u, width, row);
+    return Math.round(forward ? local : width - local);
+  });
+}
+function paintC(ctx, u, elapsed, width, height, forward, inks) {
+  ctx.clearRect(0, 0, width, height);
+  const rows = Math.ceil(height / CELL_H);
+  const bucket = Math.floor(elapsed / FLICKER_MS);
+  const steps = Math.ceil(TRAIL / CELL_W);
+  ctx.font = `11px ${inks.font}`;
+  ctx.textBaseline = 'top';
+  for (let row = 0; row < rows; row++) {
+    const y = row * CELL_H;
+    const local = starLocal(u, width, row);
+    const toCol = l => Math.floor((forward ? l : width - l) / CELL_W);
+    // The trail: sparse and faint, thinning with distance behind the front.
+    for (let k = 1; k <= steps; k++) {
+      const col = toCol(local - k * CELL_W + CELL_W / 2);
+      if (col < 0 || col * CELL_W >= width) continue;
+      const p = 1 - (k * CELL_W) / TRAIL;
+      const roll = hash(col, row, bucket);
+      if ((roll % 100) / 100 > p * 0.5) continue;
+      const x = col * CELL_W;
+      if (k <= 2 || (roll >>> 5) % 3 === 0) { ctx.fillStyle = inks.ground; ctx.fillRect(x, y, CELL_W, CELL_H); }
+      const index = clamp(Math.floor(p * 5 * (0.5 + ((roll >>> 8) % 50) / 100)), 1, 5);
+      ctx.globalAlpha = 0.14 + p * 0.3;
+      ctx.fillStyle = inks.ink;
+      ctx.fillText(RAMP[index], x, y + 1);
+      ctx.globalAlpha = 1;
+    }
+    // The front: a cell of ground on every row, so the edge is crisp, and a star on most rows.
+    const col = toCol(local - CELL_W / 2);
+    if (col < 0 || col * CELL_W >= width) continue;
+    const x = col * CELL_W;
+    ctx.fillStyle = inks.ground;
+    ctx.fillRect(x, y, CELL_W, CELL_H);
+    if (hash(row, 3, 5) % 4 === 0) continue;
+    const roll = hash(row, bucket, 9);
+    ctx.globalAlpha = roll % 5 === 0 ? 0.45 : 0.95;
+    ctx.fillStyle = inks.accent;
+    ctx.fillText(STARS[roll % 3], x, y + 1);
+    ctx.globalAlpha = 1;
+  }
+}
+
+const VARIANTS = {
+  A: { name: 'A  Shipped band', note: 'procedural ragged edge, nightFalls.ts', edge: frontEdgeA, paint: paintA, lead: (u, w, f) => frontEdgeA(u, w, 1, f)[0] },
+  B: { name: 'B  Owl wing', note: 'six authored keyframes', edge: frontEdgeB, paint: paintB, lead: (u, w, f) => frontEdgeB(u, w, 1, f)[0] },
+  C: { name: 'C  Star front', note: 'stars and a faint trail', edge: frontEdgeC, paint: paintC, lead: (u, w, f) => frontEdgeC(u, w, 1, f)[0] },
+};
+const ORDER = ['A', 'B', 'C'];
+
+// ---- Page state. ----
+const params = new URLSearchParams(location.search);
+let variant = ORDER.includes((params.get('variant') || '').toUpperCase()) ? params.get('variant').toUpperCase() : 'A';
+let speed = 1;
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('band');
+const rooms = { threads: stage.querySelector('.room--threads'), watcher: stage.querySelector('.room--watcher') };
+const label = document.getElementById('label');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+
+function setTheme(theme) {
+  if (theme === 'light') document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  document.querySelector(`input[name=theme][value=${theme}]`).checked = true;
+}
+setTheme(params.get('theme') === 'light' ? 'light' : 'dark');
+
+function showVariant() {
+  const v = VARIANTS[variant];
+  label.innerHTML = `${v.name} <em>${v.note}</em>`;
+  const next = new URLSearchParams(location.search); next.set('variant', variant);
+  history.replaceState(null, '', `?${next}`);
+}
+function cycle(step) { variant = ORDER[(ORDER.indexOf(variant) + step + ORDER.length) % ORDER.length]; finish(); showVariant(); }
+
+let run = null;
+function finish() {
+  if (!run) return;
+  cancelAnimationFrame(run.frame);
+  run.clip.cancel();
+  rooms[run.to].classList.remove('is-new');
+  delete stage.dataset.run;
+  stage.dataset.view = run.to;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  run = null;
+}
+
+/** Plays the move to `to`. A press while a run plays finishes it at once and starts the next from where the room is. */
+function play(to, options = {}) {
+  finish();
+  const from = to === 'watcher' ? 'threads' : 'watcher';
+  stage.dataset.view = from;
+  if (reduced.matches) { stage.dataset.view = to; return; }
+  const v = VARIANTS[variant];
+  const forward = to === 'watcher';
+  const duration = Math.round(NIGHT_FALLS_MS / clamp(speed, 0.5, 2));
+  const rect = stage.getBoundingClientRect();
+  const width = Math.round(rect.width), height = Math.round(rect.height);
+  const scale = devicePixelRatio || 1;
+  canvas.width = Math.round(width * scale); canvas.height = Math.round(height * scale);
+  canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const css = getComputedStyle(document.documentElement);
+  const inks = { ground: css.getPropertyValue('--bg').trim(), ink: css.getPropertyValue('--ink').trim(), accent: css.getPropertyValue('--accent').trim(), font: css.getPropertyValue('--font-mono').trim() };
+  stage.dataset.run = '';
+  rooms[to].classList.add('is-new');
+  const frames = 36;
+  const keyframes = Array.from({ length: frames + 1 }, (_, i) => ({ clipPath: revealPolygon(v.edge, easeInOut(i / frames), width, height, forward), offset: i / frames }));
+  const clip = rooms[to].animate(keyframes, { duration, easing: 'linear', fill: 'both' });
+  const state = { to, clip, frame: 0 };
+  run = state;
+  let painted = '';
+  const drawAt = elapsed => {
+    const u = easeInOut(Math.min(1, elapsed / duration));
+    // Paint only when the flicker or the front's cell column has moved.
+    const key = `${Math.floor(elapsed / FLICKER_MS)}:${v.lead(u, width, forward) / CELL_W | 0}`;
+    if (key !== painted) { painted = key; v.paint(ctx, u, elapsed, width, height, forward, inks); }
+  };
+  if (options.freezeAt !== undefined) {
+    clip.pause();
+    clip.currentTime = options.freezeAt * duration;
+    drawAt(options.freezeAt * duration);
+    return;
+  }
+  const start = performance.now();
+  const draw = now => {
+    const elapsed = now - start;
+    drawAt(elapsed);
+    if (elapsed < duration) state.frame = requestAnimationFrame(draw);
+    else if (run === state) finish();
+  };
+  state.frame = requestAnimationFrame(draw);
+}
+
+document.getElementById('to-watcher').addEventListener('click', () => play('watcher'));
+document.getElementById('to-threads').addEventListener('click', () => play('threads'));
+document.getElementById('prev').addEventListener('click', () => cycle(-1));
+document.getElementById('next').addEventListener('click', () => cycle(1));
+document.querySelectorAll('input[name=speed]').forEach(input => input.addEventListener('change', () => { speed = Number(input.value); }));
+document.querySelectorAll('input[name=theme]').forEach(input => input.addEventListener('change', () => setTheme(input.value)));
+addEventListener('keydown', event => {
+  if (event.target instanceof Element && event.target.closest('input, select, textarea, [contenteditable]')) return;
+  if (event.key === 'ArrowLeft') { event.preventDefault(); cycle(-1); }
+  else if (event.key === 'ArrowRight') { event.preventDefault(); cycle(1); }
+});
+addEventListener('resize', finish);
+showVariant();
+
+/** For screenshots: hold a run at a fraction of its time. */
+window.roomFront = { freeze: (to, at) => play(to, { freezeAt: at }) };
+</script>
+</body>
+</html>

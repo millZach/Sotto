@@ -1,7 +1,0 @@
-# Stale host-lock fixture (#406)
-
-Windows reused an exited child's PID during repeated stale-lock contention. The production lock correctly refused a live PID, but the test still called that lease stale. A deterministic probe of the old assumption failed both affected cases. The fixture now fixes only the exited PID's signal-zero probe to `ESRCH`; every other PID and signal still reaches the real process API, and mocks are restored after each test. Real filesystem races, exactly one owner, the winning lease, live-owner refusal and cleanup remain unchanged.
-
-At `3b1a03a0`, typecheck, lint, notices and the full `npm test -- --maxWorkers=2` gate passed: 5,735 tests passed and 131 skipped across 435 passing and 38 skipped files. The full invocation explicitly set `SOTTO_PERF_DATA` to a verified-absent owned artifact path. Focused lock checks passed all 16 tests, repeated contention checks passed three times, and 51 neighboring host lifecycle checks passed. The successful bounded dependency install followed an initial host-memory failure; that failed install is not a test result.
-
-Independent native Astra Standards and Spec reviews and the parent production-safety check reported no findings. Current main was integrated afterward with additive ignore/documentation resolutions only; the fixture correction did not change. Generated runtime files were restored. This is a test-only process/ownership correction with no rendered surface or production behavior change, so no Electron screenshot was regenerated.
