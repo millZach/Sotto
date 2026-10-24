@@ -32,6 +32,13 @@ export interface ActivityPlacement {
   readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
+  /**
+   * The turns placed at each message, by message ID: those whose records follow it and the unshown turn a reply opens.
+   * Unlike the groups, it counts a turn whose only record is its lifecycle, which draws nothing. Absent with no records.
+   */
+  readonly turnsAt?: ReadonlyMap<string, readonly string[]>
+  /** Each turn's lifecycle status by turn ID, from its newest lifecycle record, drawn or not. Absent with no records. */
+  readonly lifecycles?: ReadonlyMap<string, AgentActivity['status']>
 }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
@@ -167,7 +174,20 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing }
+  const turnsAt = new Map<string, string[]>()
+  const placeTurn = (messageId: string, turnId: string): void => {
+    const turns = turnsAt.get(messageId)
+    if (!turns) turnsAt.set(messageId, [turnId])
+    else if (!turns.includes(turnId)) turns.push(turnId)
+  }
+  const lifecycles = new Map<string, AgentActivity['status']>()
+  for (const record of sorted) {
+    const anchor = anchors.get(record)
+    if (anchor) placeTurn(anchor, record.turnId)
+    if (isTurnRecord(record)) lifecycles.set(record.turnId, record.status)
+  }
+  for (const [turnId, place] of places) if (place.reply !== undefined) placeTurn(place.reply, turnId)
+  return { after, unshown, before, leading, trailing, turnsAt, lifecycles }
 }
 
 /**

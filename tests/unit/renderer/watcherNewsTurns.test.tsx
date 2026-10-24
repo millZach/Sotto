@@ -168,6 +168,42 @@ describe('Watcher working on news before its first reply', () => {
     expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
   })
 
+  /** Whether a reply is drawn whole and finished: its words, not being written. */
+  const finishedReply = (id: string, words: string): void => {
+    const reply = document.querySelector(`[data-message-id="${id}"]`)!
+    expect(reply, id).toHaveTextContent(words)
+    expect(reply.querySelector('[data-streaming]'), `${id} is not being written`).toBeNull()
+    expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
+  }
+  const lifecycle = (turnId: string, sequence: number, status: AgentActivity['status'], from: string, to?: string): AgentActivity =>
+    ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status, title: 'Turn', startedAt: clock(from), ...to ? { completedAt: clock(to) } : {} })
+
+  for (const streamText of [true, false]) {
+    describe(streamText ? 'with replies shown as they are written' : 'with replies shown once complete', () => {
+      it('leaves a plain answer as it was when the news turn has only its lifecycle record so far', () => {
+        // An answer with no tools and no thinking: its turn's only record is its lifecycle, which draws nothing.
+        const plain = messages.slice(0, 2)
+        const records = [lifecycle('you-1', 0, 'completed', '56:41.291', '56:50.600')]
+        const view = render(list(plain, records, false, streamText))
+        const before = drawnMessages()
+        view.rerender(list(plain, [...records, lifecycle('news-4', 50, 'running', '59:50.000')], true, streamText))
+        finishedReply('answer-1', 'It is waiting on a permission to run the suite.')
+        for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
+      })
+
+      it('leaves your answer as it was when the news turn opens with an empty reply', () => {
+        // Claude starts the reply empty, naming the turn the wake-up began, before it writes any words.
+        const opening: AgentMessage = { ...said('news-4-reply', 'assistant', '59:51.000', ''), turnMessageId: 'news-4' }
+        const view = render(list(messages, activities, false, streamText))
+        const before = drawnMessages()
+        view.rerender(list([...messages, opening], [...activities, ...news], true, streamText))
+        finishedReply('answer-2', 'Sent it the merge.')
+        expect(screen.getByRole('button', { name: 'Worked for 27s' })).toHaveAttribute('aria-expanded', 'false')
+        for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
+      })
+    })
+  }
+
   it('changes nothing in another thread, whose running turn is always its newest', () => {
     render(list(messages, [...activities, ...news], true, false, false))
     expect(screen.getByText('Writing a reply…')).toBeInTheDocument()

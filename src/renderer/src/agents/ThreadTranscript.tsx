@@ -440,17 +440,18 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
 
 /**
  * Whether a turn of Watcher's conversation finished while Watcher still works: on a news turn, whose wake-up the
- * conversation leaves out (`watcherWakeUpsAsShown`), so nothing of it is drawn until its first reply. The turn's own
- * lifecycle record says it finished; without one, running work that no drawn message holds says another turn is going.
- * Otherwise the finished turn would open into the running turn's layout while the news turn runs and fold again when it
- * ends, moving what a reader higher up was reading (#1452).
+ * conversation leaves out (`watcherWakeUpsAsShown`), so nothing of it is drawn until its first reply. The live turn is
+ * this one when its records or its ID are among the turn's messages. Otherwise the turn's own lifecycle record says it
+ * finished, drawn or not, as it is not for an answer with no other work; with none, running work that no drawn message
+ * holds says another turn is going. Without this the finished turn would open into the running turn's layout while the
+ * news turn runs and fold again when it ends, moving what a reader higher up was reading (#1452).
  */
 function finishedBeforeNews(turn: TranscriptTurn, placement: ActivityPlacement, liveTurn: string | null): boolean {
-  const opening = turn.unshown ? placement.unshown.get(turn.replies[0]!.id) ?? [] : []
-  const own = [...opening, ...[turn.user, ...turn.replies].flatMap(message => message ? placement.after.get(message.id) ?? [] : [])]
-  const lifecycle = own.find(group => group.turn)?.turn
-  if (lifecycle !== undefined) return isTerminalActivity(lifecycle.status)
-  return liveTurn !== null && !own.some(group => group.turnId === liveTurn) && placement.trailing.some(group => group.turnId === liveTurn)
+  const ids = [...turn.user ? [turn.user.id] : [], ...turn.replies.map(message => message.id)]
+  const turns = ids.flatMap(id => placement.turnsAt?.get(id) ?? [])
+  if (liveTurn !== null && (ids.includes(liveTurn) || turns.includes(liveTurn))) return false
+  if (turns.some(turnId => { const status = placement.lifecycles?.get(turnId); return status !== undefined && isTerminalActivity(status) })) return true
+  return liveTurn !== null && placement.trailing.some(group => group.turnId === liveTurn)
 }
 
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
@@ -476,8 +477,10 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation once that
   // turn has finished: Watcher is then working on news, whose own message is left out, so its turn has nothing drawn yet.
   const live = running && !(speaker === 'watcher' && turns.length > 0 && finishedBeforeNews(turns.at(-1)!, placement, context.liveTurn))
-  const last = messages.findLast(drawn)
-  // A visual after the reply means the reply is no longer being written.
+  // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
+  // leaves the reply above it finished. A visual after the reply means the reply is no longer being written.
+  const newest = turns.at(-1)
+  const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
   const writing = live && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
