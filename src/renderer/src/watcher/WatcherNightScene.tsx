@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, CELL, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  addRipple, frameDelay, frameDue, frameSleep, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
   type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from './nightScene'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
@@ -31,8 +31,12 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   if (form == null || compose == null) return null
   const base = pane.getBoundingClientRect(), top = pane.scrollTop
   const at = (element: Element): Box => relative(element.getBoundingClientRect(), base, top)
-  const composer = at(form)
-  if (composer.w < 1 || composer.h < 1) return null
+  const card = at(form)
+  if (card.w < 1 || card.h < 1) return null
+  // While the composer is slim (ADR-0125) the scene keeps the full card's place, which the pane remembers, so it holds
+  // still as the card changes.
+  const full = compose.hasAttribute('data-slim') ? parseFloat(getComputedStyle(compose).getPropertyValue('--thread-prompt-full')) : Number.NaN
+  const composer = Number.isFinite(full) && full > card.h ? { ...card, y: card.y + card.h - full, h: full } : card
   const words: Box[] = []
   const shown = (box: Box): boolean => box.w > 1 && box.h > 1
   const word = (element: Element): void => { const box = at(element); if (shown(box) && element.textContent?.trim()) words.push(box) }
@@ -52,74 +56,6 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const scrubber = pane.querySelector('.message-scrubber')
   const lane = scrubber === null ? undefined : at(scrubber)
   return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words, ...lane !== undefined && shown(lane) ? { lane } : {} }
-}
-
-/**
- * What draws its own surface in a transcript, and is kept clear whole rather than line by line: code, controls,
- * pictures, tables, the user's own messages and the jump button. Anything whose class ends in card, chip, notice,
- * callout, pill, badge or tag is one too.
- */
-const SURFACES = [
-  'pre', 'code', 'button', 'input', 'textarea', 'select', 'img', 'svg', 'canvas', 'video', 'iframe', 'table', 'hr',
-  '[role="button"]', '[contenteditable]', '.thread-transcript__jump', '.thread-message[data-role="user"]',
-].join(', ')
-const SURFACE_CLASS = /(^|\s)[\w-]*(card|chip|notice|callout|pill|badge|tag)(\s|$)/
-
-/**
- * The lines of words in the transcript that shows, in the pane's pixels on the scene's 7 by 12 grid, for the soft gap the
- * scene keeps around each. Only the blocks in view are visited, a run of text is measured by its line boxes, and a part
- * that draws its own surface is kept whole. Null when the transcript holds words and none could be measured: the scene
- * then keeps the column empty, as it did before it reached into it.
- */
-export function measureLines(pane: HTMLElement): Box[] | null {
-  const transcript = pane.querySelector<HTMLElement>('.thread-workspace__transcript')
-  if (transcript === null) return []
-  const view = transcript.getBoundingClientRect()
-  if (view.width < 1 || view.height < 1) return []
-  const base = pane.getBoundingClientRect(), top = pane.scrollTop
-  const cells: Array<[number, number, number, number]> = []
-  // Range rects are where the words are now, scrolled; the pane's own scroll is the only one added.
-  const add = (rect: DOMRect): void => {
-    const y0 = Math.max(rect.top, view.top), y1 = Math.min(rect.bottom, view.bottom)
-    const x0 = Math.max(rect.left, view.left), x1 = Math.min(rect.right, view.right)
-    if (x1 - x0 < 1 || y1 - y0 < 1) return
-    cells.push([Math.floor((x0 - base.left) / CELL.w), Math.floor((y0 - base.top + top) / CELL.h),
-      Math.ceil((x1 - base.left) / CELL.w), Math.ceil((y1 - base.top + top) / CELL.h)])
-  }
-  const range = document.createRange()
-  const visit = (parent: Element): void => {
-    for (const node of parent.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        if (!node.nodeValue?.trim()) continue
-        range.selectNodeContents(node)
-        const rects = range.getClientRects()
-        // Words that give no line boxes, as a part not drawn yet may, are kept clear by the box that holds them.
-        if (rects.length === 0) { add(parent.getBoundingClientRect()); continue }
-        for (const rect of rects) add(rect)
-        continue
-      }
-      if (!(node instanceof Element)) continue
-      const rect = node.getBoundingClientRect()
-      // A box out of view is skipped with all it holds; one with no box of its own (display: contents) is looked into.
-      const boxed = rect.width > 0 || rect.height > 0
-      if (boxed && (rect.bottom <= view.top || rect.top >= view.bottom)) continue
-      if (boxed && (node.matches(SURFACES) || SURFACE_CLASS.test(node.getAttribute('class') ?? ''))) { add(rect); continue }
-      visit(node)
-    }
-  }
-  visit(transcript)
-  range.detach()
-  if (cells.length === 0) return transcript.textContent?.trim() ? null : []
-  // Runs on one line join into that line's box; a box inside another goes.
-  cells.sort((a, b) => a[1] - b[1] || a[3] - b[3] || a[0] - b[0])
-  const merged: Array<[number, number, number, number]> = []
-  for (const cell of cells) {
-    const last = merged[merged.length - 1]
-    if (last !== undefined && last[1] === cell[1] && last[3] === cell[3] && cell[0] <= last[2] + 2) { last[2] = Math.max(last[2], cell[2]); continue }
-    merged.push([...cell])
-  }
-  const kept = merged.filter((a, k) => !merged.some((b, j) => j !== k && b[0] <= a[0] && b[1] <= a[1] && b[2] >= a[2] && b[3] >= a[3] && (j < k || b.some((v, n) => v !== a[n]))))
-  return kept.map(([c0, r0, c1, r1]) => ({ x: c0 * CELL.w, y: r0 * CELL.h, w: (c1 - c0) * CELL.w, h: (r1 - r0) * CELL.h }))
 }
 
 /** A colour as the canvas paints it, whatever form the style gave it in. */
@@ -163,9 +99,10 @@ interface Target {
 /**
  * Watcher's night scene, in the room's side margins (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene`
  * and `prototype/watcher-owl-family`): an ASCII night beside the column with Watcher's owl in its tree and a thread owl
- * for each thread Watcher watches. The sky and the hills run on under the column, quieter there (the user's pick on
- * October 23, 2026, variant A of `docs/prototypes/watcher-column-scene-prototype.html`), with a soft gap kept around
- * every line of words, so nothing is drawn behind or over them. Trees, owls and ripples stay in the margins.
+ * for each thread Watcher watches. The sky and the hills run on under the column and the glass composer at 85% (the
+ * user's pick on October 23, 2026, variant D of `docs/prototypes/watcher-floating-composer-prototype.html`), and never
+ * move for the words passing over them; no glyph there is stronger than the words over it allow (ADR-0126), and each
+ * word carries a soft glow of the canvas (watcher.css). Trees, owls and ripples stay in the margins.
  * Watcher's owl flies now and then, at random, to the other tree or onto a branch off the composer, and back. A new
  * watched thread's owl comes out of a whirlpool in the moon, which sends out a ripple; a settled or unwatched thread's
  * owl flies back into it. A press in the open margin sends out a ripple too, and Watcher's owl looks toward it. Below a
@@ -241,9 +178,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     let timer: number | null = null
     let request: number | null = null
     let layoutRequest: number | null = null
-    let linesRequest: number | null = null
     let measured = ''
-    let transcript: HTMLElement | null = null
     let inked = ''
     let layout: SceneLayout | null = null
     let family: OwlFamily | null = kept.current.family
@@ -358,59 +293,25 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
-      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(pane, pixel)
+      // The words over the column are written in the text colour and its muted tier; the probe's border is the muted one.
+      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), muted = toRgb(style.borderTopColor, pixel), surface = surfaceOf(pane, pixel)
       if (text === null || accent === null || surface === null) return
-      const key = JSON.stringify([text, accent, surface, style.fontFamily])
+      const key = JSON.stringify([text, accent, muted, surface, style.fontFamily])
       if (key === inked) return
       inked = key
-      painter.setInk(sceneInk(surface, text, accent), style.fontFamily)
+      painter.setInk(sceneInk(surface, text, accent, muted === null ? [text] : [text, muted]), style.fontFamily)
       wake()
     }
-    /**
-     * The transcript's lines measured again. They stay out of the room's measure, so a scroll or a streamed word redraws
-     * only the rows its lines left and reached, rather than building the landscape again.
-     */
-    let linesAt = Number.NaN
-    const remeasureLines = (now: number): void => {
-      if (linesRequest !== null) { cancelAnimationFrame(linesRequest); linesRequest = null }
-      // Both the lines' watch and the room's ask in the same display frame; the lines are measured once.
-      if (disposed || layout === null || now === linesAt) return
-      linesAt = now
-      if (!painter.setLines(measureLines(pane))) return
-      // Drawn now, in the frame the words moved in, so the gaps never trail the lines by a frame.
-      if (request !== null) { cancelAnimationFrame(request); request = null }
-      if (timer !== null) { window.clearTimeout(timer); timer = null }
-      delay = 0
-      last = Number.NEGATIVE_INFINITY
-      frame(now)
-    }
-    const scheduleLines = (): void => { if (linesRequest === null && !disposed) linesRequest = requestAnimationFrame(now => { linesRequest = null; remeasureLines(now) }) }
-    // A streamed word changes a text node's data rather than adding one, so the transcript is watched for both.
-    const lineMoves = new MutationObserver(scheduleLines)
-    /** Follows the transcript that shows: a tab change puts another in its place. */
-    const bindTranscript = (): void => {
-      const next = pane.querySelector<HTMLElement>('.thread-workspace__transcript')
-      if (next === transcript) return
-      transcript?.removeEventListener('scroll', scheduleLines)
-      lineMoves.disconnect()
-      transcript = next
-      if (next !== null) {
-        next.addEventListener('scroll', scheduleLines, { passive: true })
-        lineMoves.observe(next, { childList: true, subtree: true, characterData: true })
-      }
-    }
-    const relayout = (now: number = performance.now()): void => {
+    const relayout = (): void => {
       layoutRequest = null
       if (disposed) return
-      bindTranscript()
       const measure = measureRoom(pane)
       const dpr = window.devicePixelRatio || 1
       const key = measure === null ? '' : JSON.stringify([measure, dpr])
-      if (key === measured) { remeasureLines(now); return }
+      if (key === measured) return
       measured = key
       observeParts()
-      if (linesRequest !== null) { cancelAnimationFrame(linesRequest); linesRequest = null }
-      const next = measure === null ? null : painter.resize(measure, dpr, measureLines(pane))
+      const next = measure === null ? null : painter.resize(measure, dpr)
       if (next === null) {
         // No composer to set the column by, such as a first entry whose composer went with the last model: nothing is
         // drawn, and no frame is asked for, until the room can be measured again.
@@ -450,13 +351,14 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       sizes.disconnect()
       laneMoves.disconnect()
       sizes.observe(pane)
-      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-glance, :scope > .watcher-head, .thread-workspace__transcript')) sizes.observe(part)
+      for (const part of pane.querySelectorAll('.thread-workspace__compose, .thread-workspace__compose .thread-prompt, :scope > .watcher-glance, :scope > .watcher-head')) sizes.observe(part)
       const lane = pane.querySelector('.message-scrubber')
       if (lane !== null) { sizes.observe(lane); laneMoves.observe(lane, { attributes: true, attributeFilter: ['style'] }) }
     }
-    // The composer and what stands on it come and go; typing in the composer is left to the size watch.
+    // The composer and what stands on it come and go; typing in the composer is left to the size watch, and the
+    // conversation's words, which the scene never follows, are left alone.
     const parts = new MutationObserver(records => {
-      if (records.some(record => !(record.target instanceof Element && record.target.closest('.thread-prompt')))) scheduleLayout()
+      if (records.some(record => !(record.target instanceof Element && record.target.closest('.thread-prompt, .thread-workspace__transcript')))) scheduleLayout()
     })
     parts.observe(pane, { childList: true, subtree: true })
     // A theme or mode change repaints the scene in the new inks.
@@ -484,8 +386,6 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     // The glyph face may still be loading; the scene is drawn again once it has.
     const font = `10.5px ${getComputedStyle(ink).fontFamily}`
     void document.fonts?.load(font).then(() => { if (!disposed) { inked = ''; readInk() } }, () => undefined)
-    // A face arriving late moves the transcript's lines without resizing anything, so they are measured again.
-    document.fonts?.addEventListener('loadingdone', scheduleLines)
     relayout()
 
     return () => {
@@ -496,11 +396,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       settleRef.current = () => undefined
       halt()
       if (layoutRequest !== null) cancelAnimationFrame(layoutRequest)
-      if (linesRequest !== null) cancelAnimationFrame(linesRequest)
       unwatchResolution()
-      transcript?.removeEventListener('scroll', scheduleLines)
-      document.fonts?.removeEventListener('loadingdone', scheduleLines)
-      sizes.disconnect(); laneMoves.disconnect(); lineMoves.disconnect(); parts.disconnect(); theme.disconnect()
+      sizes.disconnect(); laneMoves.disconnect(); parts.disconnect(); theme.disconnect()
       document.removeEventListener('visibilitychange', visibility)
       window.removeEventListener('resize', scheduleLayout)
       pane.removeEventListener('pointerdown', press)

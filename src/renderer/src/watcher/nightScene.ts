@@ -3,8 +3,10 @@
  * tag `prototype/watcher-owl-scene`) and moved it into the room's side margins on October 22 (`prototype/watcher-owl-family`):
  * where the landscape, the trees, the moon and every owl's perch fall beside the column, how Watcher's own owl flies
  * between them, what a ripple does to a cell, and what ink the scene draws with. On October 23 the user let the sky and
- * the hills run on under the column, quieter there, with a soft gap around each line of words (variant A of
- * `docs/prototypes/watcher-column-scene-prototype.html`). Nothing here touches the DOM or a
+ * the hills run on under the column at 85%, held still whatever the words do, with a soft glow of the canvas behind each
+ * word (variant D of `docs/prototypes/watcher-floating-composer-prototype.html`, which replaced the gaps round each line
+ * of variant A of `docs/prototypes/watcher-column-scene-prototype.html`); the ink there stops where a word would fall
+ * under 4.5:1 (ADR-0126). Nothing here touches the DOM or a
  * canvas, so all of it can be tested on its own; `owlFamily.ts` keeps the thread owls, `nightScenePainter.ts` draws the
  * scene and `WatcherNightScene.tsx` runs it.
  *
@@ -12,7 +14,7 @@
  * started.
  */
 
-import { relativeLuminance, type ThemeRgb } from '../../../shared/themes/color'
+import { contrastRatio, relativeLuminance, type ThemeRgb } from '../../../shared/themes/color'
 
 export interface Box { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 export interface Point { readonly x: number; readonly y: number }
@@ -24,11 +26,15 @@ export interface SceneMeasure {
   readonly height: number
   /** The bottom of the header band: the header, and the needs-you line when it shows. */
   readonly header: number
-  /** Watcher's composer. Its sides are the column's: the trees, the owls and the ripples live only beside it. */
+  /**
+   * Watcher's composer, at its full height even while it is slim (ADR-0125), so the scene holds still as it changes. Its
+   * sides are the column's: the trees, the owls and the ripples live only beside it. The scene runs on under it, since the
+   * card is glass.
+   */
   readonly composer: Box
   /**
    * The words that stand still while the conversation scrolls: the header's, what stands on the composer and the line
-   * under it. Nothing is drawn under them. The transcript's lines move, and the painter takes them on their own.
+   * under it. Nothing is drawn under them. The transcript's words move, and the scene never follows them.
    */
   readonly words: readonly Box[]
   /**
@@ -218,16 +224,13 @@ export function inMargin(layout: SceneLayout, x: number): boolean {
 }
 
 /**
- * How much of the scene shows in the column, as a share of the margins': the user's pick on October 23, 2026 is 35% on a
- * dark surface. On a light one the ink is made stronger (LIGHT_INK_BOOST) and a drawn cell never goes below its floor,
- * so the same share reads darker there; a fifth reads about as quiet.
+ * How much of the scene shows in the column, as a share of the margins': the user's pick on October 23, 2026 is 85%, by
+ * day and by night (variant D). The words keep 4.5:1 by the column's ink ceiling (`SceneInk.column`), not by this share.
  */
-export const COLUMN_QUIET = { dark: 0.35, light: 0.2 } as const
+export const COLUMN_QUIET = { dark: 0.85, light: 0.85 } as const
 /** How far either side of the column's edge the scene blends from the column's share to the margins' whole. */
 export const COLUMN_BLEND = 40
-/** Around a line of words: nothing within `hard` pixels, then the scene comes back by `soft`. */
-export const LINE_GAP = { hard: 12, soft: 32 } as const
-/** Around the words that stand still, in the margins: nothing within this many pixels. */
+/** Around the words that stand still: nothing within this many pixels. */
 const WORD_PAD = 4
 
 /** How far a point is from a box, 0 inside it. */
@@ -242,34 +245,19 @@ export function columnFactor(layout: Pick<SceneLayout, 'column'>, x: number, str
   return lerp(strength, 1, smooth(-COLUMN_BLEND, COLUMN_BLEND, out))
 }
 
-/** The scene's share at `near` pixels from the nearest line of words: nothing within the hard gap, the whole past the soft one. */
-export function lineGap(near: number): number {
-  return smooth(LINE_GAP.hard, LINE_GAP.soft, near)
-}
-
-/** How far a point is from the nearest of `lines`, Infinity with none. Overlapping gaps take the nearest line, never a product. */
-export function nearestLine(lines: readonly Box[], x: number, y: number): number {
-  let near = Number.POSITIVE_INFINITY
-  for (const box of lines) near = Math.min(near, boxDistance(box, x, y))
-  return near
-}
-
 /**
- * How much of the scene shows at a point, 0 to 1, before the transcript's lines are taken out: nothing under the words
- * that stand still or the composer, nor in the column's part of the header band, a band falling to a tenth under the
- * header, and `strength` in the column, blending to the whole in the margins, except along the composer's branches,
- * which grow out of it. In the column the still words and the composer keep the lines' soft gap.
+ * How much of the scene shows at a point, 0 to 1: nothing under the words that stand still, nor in the column's part of
+ * the header band, a band falling to a tenth under the header, and `strength` in the column, blending to the whole in
+ * the margins, except along the composer's branches, which grow out of it. It runs on under the glass composer, and it
+ * never depends on where the conversation's words are, so nothing in it moves as they scroll.
  */
 export function quietAt(layout: SceneLayout, x: number, y: number, strength: number = COLUMN_QUIET.dark): number {
   const inside = !inMargin(layout, x)
   if (inside && y < layout.header) return 0
-  let near = Number.POSITIVE_INFINITY
-  for (const box of layout.words) near = Math.min(near, boxDistance(box, x, y))
-  near = Math.min(near, boxDistance(layout.composer, x, y))
-  if (near <= WORD_PAD) return 0
+  for (const box of layout.words) if (boxDistance(box, x, y) <= WORD_PAD) return 0
   const toColumn = Math.min(Math.abs(x - layout.column.left), Math.abs(x - layout.column.right))
   const onBranch = !inside && Math.abs(y - layout.branches.left.y0) < 16 + 12 * layout.s && toColumn < 64 * layout.s + 52
-  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * (onBranch ? 1 : columnFactor(layout, x, strength)) * (inside ? lineGap(near) : 1)
+  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * (onBranch ? 1 : columnFactor(layout, x, strength))
 }
 
 // ---------- Flights ----------
@@ -579,17 +567,55 @@ export function isLightSurface(surface: Rgb): boolean {
 }
 
 /** The scene's two inks in 21 steps of strength, from nothing to full. */
-export interface SceneInk { readonly light: boolean; readonly ink: readonly string[]; readonly accent: readonly string[] }
+export interface SceneInk {
+  readonly light: boolean
+  readonly ink: readonly string[]
+  readonly accent: readonly string[]
+  /**
+   * The highest step of each ink a cell in the column may take (0 to 1, as `inkAt` reads it): where every word colour
+   * given still reads at WORD_CONTRAST against the ink laid over the surface at its full strength, the core of a glyph.
+   */
+  readonly column: { readonly ink: number; readonly accent: number }
+}
+
+/** What a word over the scene keeps against any pixel the scene draws under it, the glow left out: 4.5:1, and a little over for rounding. */
+export const WORD_CONTRAST = 4.6
 
 /** Dark ink on a light surface needs more of it to be seen as well as light ink on dark does. */
 export const LIGHT_INK_BOOST = 1.9
 export const LIGHT_ACCENT_BOOST = 1.5
 
-/** The scene's inks for a theme: its text and accent colours, made stronger when the surface under them is light. */
-export function sceneInk(surface: Rgb, text: Rgb, accent: Rgb): SceneInk {
+/** A colour laid over a surface at `alpha`, as the canvas and then the page composite it. */
+export function over(surface: Rgb, ink: Rgb, alpha: number): Rgb {
+  const mix = (a: number, b: number): number => Math.round(a + (b - a) * alpha)
+  return { r: mix(surface.r, ink.r), g: mix(surface.g, ink.g), b: mix(surface.b, ink.b) }
+}
+
+/**
+ * The highest of an ink's 21 steps, as a share from 0 to 1, at which every one of `words` keeps WORD_CONTRAST against the
+ * ink laid over `surface`. Steps are tried from the faintest; the first that fails ends it.
+ */
+export function columnCeiling(surface: Rgb, ink: Rgb, boost: number, words: readonly Rgb[]): number {
+  let best = 0
+  for (let k = 1; k <= 20; k++) {
+    const pixel = over(surface, ink, Math.min(1, k / 20 * boost))
+    if (words.some(word => contrastRatio(word, pixel) < WORD_CONTRAST)) break
+    best = k / 20
+  }
+  return best
+}
+
+/**
+ * The scene's inks for a theme: its text and accent colours, made stronger when the surface under them is light, and
+ * how far each may go in the column, where the conversation's words fall over it: `words` are the colours words there
+ * are written in (the text and its muted tier), and none of them may fall under 4.5:1 against a glyph's core.
+ */
+export function sceneInk(surface: Rgb, text: Rgb, accent: Rgb, words: readonly Rgb[] = [text]): SceneInk {
   const light = isLightSurface(surface)
+  const inkBoost = light ? LIGHT_INK_BOOST : 1, accentBoost = light ? LIGHT_ACCENT_BOOST : 1
   const ramp = ({ r, g, b }: Rgb, boost: number): string[] => Array.from({ length: 21 }, (_, k) => `rgba(${r}, ${g}, ${b}, ${Math.min(1, k / 20 * boost).toFixed(2)})`)
-  return { light, ink: ramp(text, light ? LIGHT_INK_BOOST : 1), accent: ramp(accent, light ? LIGHT_ACCENT_BOOST : 1) }
+  return { light, ink: ramp(text, inkBoost), accent: ramp(accent, accentBoost),
+    column: { ink: columnCeiling(surface, text, inkBoost, words), accent: columnCeiling(surface, accent, accentBoost, words) } }
 }
 
 /** One of an ink's steps for a strength between 0 and 1. */

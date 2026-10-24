@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, boxDistance, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
-  LIGHT_INK_BOOST, LINE_GAP, lineGap, MAX_RIPPLES, nearestLine, MOVING_MS, nextPlace, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk,
+  addRipple, along, boxDistance, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
+import { contrastRatio } from '../../../src/shared/themes/color'
 import { RAIL_OWL, spriteCells } from '../../../src/renderer/src/watcher/owlFamily'
 import { watchResolution } from '../../../src/renderer/src/watcher/watchResolution'
 
@@ -81,21 +82,25 @@ describe('the night scene in the margins', () => {
     expect(none.spots).toEqual([])
   })
 
-  it('shows the column at its share, nothing under still words or the composer, and quiets the header band', () => {
+  it('shows the column at 85% under the glass composer too, nothing under still words, and quiets the header band', () => {
     const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }, { x: 500, y: 600, w: 300, h: 20 }] }))
     const { left, right } = layout.column
     const middle = (left + right) / 2
+    // The user's pick on October 23, 2026 (variant D): 85%, by day and by night.
+    expect(COLUMN_QUIET).toEqual({ dark: 0.85, light: 0.85 })
     near(quietAt(layout, middle, 400), COLUMN_QUIET.dark)
     near(quietAt(layout, middle, 400, COLUMN_QUIET.light), COLUMN_QUIET.light)
     // The column's part of the header band stays empty; the margins' fades to a tenth.
     expect(quietAt(layout, middle, 20)).toBe(0)
     near(quietAt(layout, 200, 10), 0.1)
-    // Under the still words and the composer, and in the column within their hard gap, nothing.
+    // Under the still words, and their small pad, nothing.
     expect(quietAt(layout, 100, 310)).toBe(0)
     expect(quietAt(layout, 600, 610)).toBe(0)
-    expect(quietAt(layout, 600, 600 - LINE_GAP.hard + 1)).toBe(0)
-    expect(quietAt(layout, middle, layout.composer.y + 5)).toBe(0)
-    expect(quietAt(layout, middle, layout.composer.y - LINE_GAP.hard + 1)).toBe(0)
+    expect(quietAt(layout, 600, 600 - 4)).toBe(0)
+    expect(quietAt(layout, 600, 600 - 6)).toBeGreaterThan(0)
+    // The composer is glass: the scene runs on under it, right to its edge.
+    near(quietAt(layout, middle, layout.composer.y + 5), COLUMN_QUIET.dark)
+    near(quietAt(layout, middle, layout.composer.y - 2), COLUMN_QUIET.dark)
     // The margins keep only the still words' small pad, as before.
     expect(quietAt(layout, 100, 300 - 6)).toBeGreaterThan(0)
     expect(quietAt(layout, 200, 400)).toBe(1)
@@ -115,24 +120,16 @@ describe('the night scene in the margins', () => {
     near(columnFactor(layout, right + COLUMN_BLEND, 0.35), 1)
     near(columnFactor(layout, right, 0.35), 0.675)
     expect(columnFactor(layout, left - 10, 0.35)).toBeGreaterThan(columnFactor(layout, left + 10, 0.35))
-    // Light's share is lower, since its ink is made stronger.
-    expect(COLUMN_QUIET.light).toBeLessThan(COLUMN_QUIET.dark)
   })
 
-  it('keeps a hard gap around each line of words and lets the scene back by the soft one, nearest line first', () => {
-    const lines = [{ x: 100, y: 100, w: 200, h: 24 }, { x: 100, y: 136, w: 200, h: 24 }]
-    expect(boxDistance(lines[0]!, 150, 110)).toBe(0)
-    expect(boxDistance(lines[0]!, 90, 110)).toBe(10)
-    expect(lineGap(0)).toBe(0)
-    expect(lineGap(LINE_GAP.hard)).toBe(0)
-    expect(lineGap(LINE_GAP.soft)).toBe(1)
-    expect(lineGap(Number.POSITIVE_INFINITY)).toBe(1)
-    near(lineGap((LINE_GAP.hard + LINE_GAP.soft) / 2), 0.5)
-    expect(LINE_GAP.hard).toBeGreaterThanOrEqual(12)
-    // Between two lines 12 pixels apart nothing shows; past both the gap is the nearest's, not the two multiplied.
-    expect(lineGap(nearestLine(lines, 200, 130))).toBe(0)
-    near(lineGap(nearestLine(lines, 200, 160 + 22)), lineGap(22))
-    expect(nearestLine([], 0, 0)).toBe(Number.POSITIVE_INFINITY)
+  it('never follows the words: a point in the column shows the same share wherever the conversation has scrolled', () => {
+    // The scene is laid out from the room alone; the conversation's words are not part of its measure.
+    const layout = layoutScene(room(1280, 800))
+    const middle = (layout.column.left + layout.column.right) / 2
+    const before = [200, 300, 400, 500].map(y => quietAt(layout, middle, y))
+    expect(Object.keys(room(1280, 800))).not.toContain('lines')
+    expect([200, 300, 400, 500].map(y => quietAt(layoutScene(room(1280, 800)), middle, y))).toEqual(before)
+    expect(boxDistance({ x: 100, y: 100, w: 200, h: 24 }, 90, 110)).toBe(10)
   })
 })
 
@@ -340,6 +337,33 @@ describe('the night scene’s pace, stars and ripples', () => {
 
 describe('the night scene’s ink', () => {
   const ink = { r: 20, g: 22, b: 30 }, paper = { r: 250, g: 249, b: 246 }, accent = { r: 20, g: 120, b: 110 }
+
+  it('stops the column’s ink where the weakest word over it would fall under 4.5:1, by day and by night', () => {
+    const night = { r: 12, g: 13, b: 16 }, text = { r: 247, g: 247, b: 250 }, muted = { r: 168, g: 170, b: 176 }, yellow = { r: 242, g: 208, b: 36 }
+    for (const [surface, word, quiet, glow, boost] of [
+      [night, text, muted, yellow, 1], [paper, ink, { r: 92, g: 90, b: 82 }, accent, LIGHT_INK_BOOST],
+    ] as const) {
+      const cap = columnCeiling(surface, word, boost, [word, quiet])
+      expect(cap).toBeGreaterThan(0)
+      // At the ceiling a glyph's core leaves both words at WORD_CONTRAST or more; a step stronger, one falls under it.
+      const at = over(surface, word, Math.min(1, cap * boost))
+      expect(contrastRatio(word, at)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+      expect(contrastRatio(quiet, at)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+      if (cap < 1) {
+        const past = over(surface, word, Math.min(1, (cap + 0.05) * boost))
+        expect(Math.min(contrastRatio(word, past), contrastRatio(quiet, past))).toBeLessThan(WORD_CONTRAST)
+      }
+      expect(WORD_CONTRAST).toBeGreaterThanOrEqual(4.5)
+      // The accent has its own ceiling, by the same words.
+      const scene = sceneInk(surface, word, glow, [word, quiet])
+      expect(scene.column.ink).toBe(cap)
+      expect(scene.column.accent).toBe(columnCeiling(surface, glow, boost === 1 ? 1 : LIGHT_ACCENT_BOOST, [word, quiet]))
+    }
+    // The muted tier is the weaker word: it brings the ceiling down from where the text alone would put it.
+    expect(columnCeiling(night, text, 1, [text, muted])).toBeLessThan(columnCeiling(night, text, 1, [text]))
+    // A word that already falls under 4.5:1 on the bare surface leaves no ink at all.
+    expect(columnCeiling(night, text, 1, [{ r: 40, g: 40, b: 44 }])).toBe(0)
+  })
 
   it('judges light and dark by the surface’s luminance, not a theme’s name', () => {
     expect(isLightSurface(paper)).toBe(true)

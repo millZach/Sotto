@@ -23,6 +23,24 @@
 /* An owl just under the header shows its tip below it, so the tip never covers the header. */
 .watcher-scene__tip[data-below] { transform: translate(-50%, 6px); }
 .watcher-scene__tip b { overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-/* The scene's inks, read and never seen: the text colour for its ink, the accent for its accent, and the glyph face. */
+/* The scene's inks, read and never seen: the text colour for its ink, the accent for its accent, the muted text the
+   conversation's quieter words are written in, which sets how strong the column's ink may go (ADR-0126), and the
+   glyph face. */
 .watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
-  color: var(--tt-text); background-color: var(--tt-accent); font-family: var(--tt-font-mono); }
+  color: var(--tt-text); background-color: var(--tt-accent); border-top-color: var(--tt-text-muted); font-family: var(--tt-font-mono); }
+
+/* ---------- The column over the scene ---------- */
+/* The user's pick on October 23, 2026 (variant D of docs/prototypes/watcher-floating-composer-prototype.html, ADR-0126):
+   the scene runs on under the conversation and never moves for its words. Each word carries a soft glow of the canvas,
+   so it stays clear of the glyphs it passes over; the words keep 4.5:1 without it, by the column's ink ceiling.
+   What draws its own surface keeps its text plain. */
+.watcher-pane .thread-workspace__transcript { text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
+.watcher-pane .thread-workspace__transcript :is(.thread-message[data-role='user'], pre, code, button, input, textarea, table, .agent-request, [class*='card'], [class*='chip']) { text-shadow: none; }
+/* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
+   blurred, with a faint hairline at rest. Its running and highest-effort edges are its own (threads.css). This is the
+   one composer that is not solid (ADR-0084, amended by ADR-0126); asking for less transparency makes it solid again. */
+.watcher-pane > .thread-workspace__compose > .thread-prompt { background: color-mix(in srgb, var(--tt-card) 72%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
+.watcher-pane > .thread-workspace__compose > .thread-prompt:not([data-running]):not(:has(.thread-chip[data-effort-top='true'])) { border-color: color-mix(in srgb, var(--tt-hairline) 70%, transparent); }
+@media (prefers-reduced-transparency: reduce) {
+  .watcher-pane > .thread-workspace__compose > .thread-prompt { background: var(--tt-card); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
