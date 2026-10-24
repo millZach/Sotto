@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
+import { ArrowUp, Laptop, ListPlus, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
 import { capabilitiesForThread, hostForThread, isThreadBusy, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { continueProviderRefusal, continueThreadRefusal, type ContinueStart } from '../../../shared/continueThread'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -14,7 +14,9 @@ import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
 import { answeredChoices, OWN_WORDS } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
+import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewCommentStore } from './reviewComments'
+import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
+import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -43,6 +45,13 @@ import './reviewComments.css'
 type Command = AgentConnection['command']
 
 export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
+
+const NO_QUOTES: readonly ReplyQuote[] = []
+
+/** Under an answer: what waits on the composer goes with the next prompt instead. */
+function heldNote(comments: boolean, quotes: boolean): string {
+  return `${comments && quotes ? 'These comments and quotes go' : comments ? 'These comments go' : 'These quotes go'} with your next prompt, not this answer.`
+}
 
 /**
  * A thread with a prompt still on its way cannot take another: a new send would only reconcile the earlier one.
@@ -135,7 +144,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, watcher = false }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -152,6 +161,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onExplainedError?: ((error: string | null) => void) | undefined
   /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
   readonly reviewComments?: ReviewCommentStore
+  /** Words quoted from the agent's replies that go with this thread's next prompt (ADR-0127); the window's own unless a test passes one. */
+  readonly replyQuotes?: ReplyQuoteStore
   /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
 }): ReactNode {
@@ -161,6 +172,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watchActions = useWatchActions()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
+  // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0127).
+  const quoting = useOwlFeature('reply-quote')
+  const heldQuotes = useReplyQuotes(replyQuotes, threadId)
+  const quotes = quoting ? heldQuotes : NO_QUOTES
   const submissions = useSubmissions(store)
   // Screenshots still being read for this draft hold Send, even ones pasted before the user left the thread and came back.
   const readingImages = useScreenshotReads(store, threadId).pending > 0
@@ -211,9 +226,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // A thread that began from another asks what its agent should do next, before anything of the user's is in it (#1028).
   const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
   const placeholder = continuing !== undefined ? `What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? 'This thread is archived.' : permission ? permissionsOnlyInProvider(row) ? 'Waiting on the request above.' : PERMISSION_INSTRUCTION : answering ? 'Write your answer…' : working ? (row.thread.compaction?.status === 'running' ? 'Compacting the context. Write a follow-up to queue it.' : `${watcher ? 'Watcher' : row.provider} is working. Write a follow-up to queue it.`) : watcher ? 'Ask about your threads, or say what to start or send' : started ? `What should ${row.provider} do next?` : 'What would you like to do next?'
-  // Review comments ride with the next prompt, not with an answer to a question.
+  // Review comments and reply quotes ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
-  const content = hasContent || carried.length > 0
+  const carriedQuotes = answering ? NO_QUOTES : quotes
+  const content = hasContent || carried.length > 0 || carriedQuotes.length > 0
   const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
@@ -236,13 +252,28 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
 
   /**
+   * Writes what rides with the prompt into its own text, quotes first, then the user's message, then the review
+   * comments, so every provider reads the same message, the transcript shows what was sent, and a refused prompt
+   * comes back to the composer with them written out.
+   */
+  const writeCarried = (): void => {
+    if (carried.length === 0 && carriedQuotes.length === 0) return
+    store.edit(threadId, { text: composeReviewMessage(composeQuotedMessage(store.draft(threadId).text, carriedQuotes), carried) })
+  }
+  /** What rode with the prompt has gone with it, so its chips come off. */
+  const sentCarried = (): void => {
+    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    if (carriedQuotes.length > 0) replyQuotes.sent(threadId, carriedQuotes.map(quote => quote.id))
+  }
+
+  /**
    * Sends the continuation: main makes the new thread and sends it the handover with this draft's words as one message.
    * Refused, the draft stays here with why in the strip; sent, the draft empties and the new thread opens.
    */
   const continueSend = async (choice: ContinueChoice): Promise<void> => {
     const bridge = window.sotto?.continueThread
     if (bridge === undefined) return
-    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
+    writeCarried()
     const written = store.draft(threadId)
     if (written.text.trim() === '') { continueStore.update(threadId, { error: `Write what ${continueTarget} should do next. It goes with the handover.` }); return }
     continueStore.update(threadId, { sending: true, error: null })
@@ -262,7 +293,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     // Only the words that went are cleared: anything written while main started the thread stays.
     const now = store.draft(threadId)
     if (now.text === written.text && now.attachments === written.attachments && now.files === written.files) store.edit(threadId, { text: '', attachments: [], skills: [], files: [] })
-    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    sentCarried()
     void command({ type: 'select-thread', threadId: result.threadId })
   }
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
@@ -295,21 +326,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           () => failed('Sotto could not confirm this answer.'))
       return
     }
-    // The comments become part of the prompt's own text, so every provider reads the same message, the transcript
-    // shows what was sent, and a refused prompt comes back to the composer with them written out.
-    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
+    writeCarried()
     onSend()
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
     const first = row.thread.nativeSessionStarted === false
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
       .then(sent => watchAfterSend(threadId, sent, mode, first, watchActions))
-    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    sentCarried()
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */
-  const removeComment = (comment: ReviewComment, button: HTMLElement): void => {
+  const removeChip = (button: HTMLElement, remove: () => void): void => {
     const buttons = [...(button.closest('.review-chips')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
     const next = buttons[buttons.indexOf(button) + 1] ?? buttons[buttons.indexOf(button) - 1]
-    reviewComments.remove(threadId, comment.id)
+    remove()
     if (next) next.focus(); else field.current?.focus()
   }
 
@@ -351,11 +380,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
               <MessageSquare size={13} aria-hidden="true" className="review-chip__icon" />
               <span className="review-chip__label">{label}</span><span className="tt-visually-hidden">: {comment.text}</span>
               <button type="button" className="review-chip__remove tt-focusable" aria-label={`Remove comment on ${label}`} title="Remove comment"
-                onClick={event => removeComment(comment, event.currentTarget)}><X size={13} aria-hidden="true" /></button>
+                onClick={event => removeChip(event.currentTarget, () => reviewComments.remove(threadId, comment.id))}><X size={13} aria-hidden="true" /></button>
             </li>
           })}
         </ul> : null}
-        {comments.length > 0 && answering ? <p className="review-chips__note">These comments go with your next prompt, not this answer.</p> : null}
+        {quotes.length > 0 ? <ul className="review-chips" aria-label="Quotes from replies">
+          {quotes.map(quote => <li key={quote.id} className="review-chip" title={quote.text}>
+            <Quote size={13} aria-hidden="true" className="review-chip__icon" />
+            <span className="review-chip__label">{replyQuoteLabel(quote.text)}</span><span className="tt-visually-hidden">: {quote.text}</span>
+            <button type="button" className="review-chip__remove tt-focusable" aria-label="Remove quote" title="Remove quote"
+              onClick={event => removeChip(event.currentTarget, () => replyQuotes.remove(threadId, quote.id))}><X size={13} aria-hidden="true" /></button>
+          </li>)}
+        </ul> : null}
+        {answering && (comments.length > 0 || quotes.length > 0) ? <p className="review-chips__note">{heldNote(comments.length > 0, quotes.length > 0)}</p> : null}
         <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{answering ? 'Your answer' : watcher ? 'Watcher message' : 'Prompt'}</label>
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
