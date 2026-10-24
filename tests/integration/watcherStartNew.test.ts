@@ -149,8 +149,9 @@ describe('New Watcher', () => {
     const queued = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
       const record = read(); record.operations.at(-1)!.deliveryState = 'queued'; return record
     })
+    const waits = vi.spyOn(f.control, 'watcherQueuedSendsWaiting').mockImplementation(() => new Set(read().operations.map(operation => operation.id)))
     await unchanged('Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then start a new Watcher. Nothing was changed.')
-    queued.mockRestore()
+    queued.mockRestore(); waits.mockRestore()
     // A start still working, whose delivery is not confirmed yet either, holds nothing: it carries on after the replacement.
     expect(f.service.startsInFlight()).toBe(1)
     const uncertain = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {

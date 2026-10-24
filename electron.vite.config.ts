@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { isBuiltin } from 'node:module'
 
+import { lingui } from '@lingui/vite-plugin'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { build as buildVite, type Plugin } from 'vite'
 
@@ -91,6 +92,9 @@ export default defineConfig({
   main: {
     // No public folder: nothing is copied into out/ wholesale; the Linux tray icon is emitted there with ?asset.
     publicDir: false,
+    // Lingui reads NODE_ENV to decide whether to carry its message compiler. Main's catalogs are compiled at build time
+    // (ADR-0123), so the compiler and the warnings beside it stay out of the bundle; nothing else in main reads it.
+    define: { 'process.env.NODE_ENV': JSON.stringify('production') },
     build: { rollupOptions: { external: ['node-pty', 'sherpa-onnx-node'], input: {
       index: resolve(__dirname, 'src/main/index.ts'),
       dictationClient: resolve(__dirname, 'src/main/hotkeys/dictationClient.ts'),
@@ -103,6 +107,8 @@ export default defineConfig({
     // prebuilt binaries relative to its package layout (ADR-0018, ADR-0071). Claude SDK history ships as a reviewed
     // self-contained resource, so SDK peers are not production dependencies.
     plugins: [
+      // Lingui's macros become message lookups and each `.po` catalog a compiled module, at build time (ADR-0123).
+      lingui({ macroTransform: true, failOnCompileError: true }),
       externalizeDepsPlugin({ exclude: ['electron-updater'] }),
       headlessHostBuild(),
       externalDependencyInventory('main'),
@@ -122,7 +128,7 @@ export default defineConfig({
     ],
   },
   renderer: {
-    plugins: [bundledDependencyInventory()],
+    plugins: [lingui({ macroTransform: true, failOnCompileError: true }), bundledDependencyInventory()],
     define: {
       'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },
