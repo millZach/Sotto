@@ -1,7 +1,8 @@
-import React, { createContext, useCallback, useContext, useMemo, useRef, type ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { RotateCcw, Settings2 } from 'lucide-react'
-import type { AgentActivity } from '../../../shared/agentActivity'
-import { capabilitiesForThread, isThreadBusy, type AgentState } from '../../../shared/agents'
+import type { AgentActivity, OwnServerTurn, OwnServerTurnFailure } from '../../../shared/agentActivity'
+import { capabilitiesForThread, isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import { lastTurnRecord } from '../../../shared/threadFailures'
 import { Button } from '../components/Button'
 import { useOptionalApp } from '../state/AppContext'
@@ -10,7 +11,7 @@ import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { hasDraftContent, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
-import { failureWords, openSettingsName, openSettingsWords, tryAgainName, tryAgainWords } from './ownServerTurnWords'
+import { failureWords, imagesNotKept, openSettingsName, openSettingsWords, putBackName, tryAgainName, tryAgainWords } from './ownServerTurnWords'
 
 /**
  * A thread on one of the user's own model servers (ADR-0124, October 24 amendment; the `own-model-servers` Owl feature):
@@ -21,6 +22,11 @@ import { failureWords, openSettingsName, openSettingsWords, tryAgainName, tryAga
 export interface OwnServerTurnActions {
   /** The record ID of the thread's newest turn when it failed: only that failure keeps its buttons. */
   readonly newestFailure: string | null
+  /**
+   * What Try again does with the thread's last message: sends it again, or, when it carried images that cannot be sent
+   * again, puts its words back in the composer for the user to attach them and send. Null when there is none to use.
+   */
+  readonly tryAgainBy: TryAgainBy | null
   readonly canTryAgain: boolean
   readonly canStop: boolean
   readonly tryAgain: () => void
@@ -28,26 +34,42 @@ export interface OwnServerTurnActions {
   readonly stop: () => void
 }
 
+export type TryAgainBy = 'send' | 'put-back'
+
 export const OwnServerTurnContext = createContext<OwnServerTurnActions | null>(null)
 export const useOwnServerTurnActions = (): OwnServerTurnActions | null => useContext(OwnServerTurnContext)
 
 type Command = AgentConnection['command']
 
+/** What Try again can do with the thread's last message from the user. */
+export function tryAgainOf(messages: AgentThread['messages']): TryAgainBy | null {
+  const last = messages.findLast(message => message.role === 'user')
+  if (last === undefined) return null
+  // The transcript keeps an image's name and preview, not the staged image a send needs, so it cannot go again.
+  if (last.attachments?.length) return 'put-back'
+  return last.text.trim() ? 'send' : null
+}
+
 /**
- * Sends the thread's last user message again as a new send, through the composer's own send. Its words go; an image it
- * carried does not, since the transcript keeps only the image's name and preview, not the staged image a send needs.
- * Whatever the composer holds is put back once the message is on its way, so a draft is never lost to the press.
+ * Try again. A message of words only is sent again as a new send, through the composer's own send, and whatever the
+ * composer holds is put back once it is on its way, so a draft is never lost to the press. A message that carried images
+ * has its words put in the composer instead, only when the composer is empty, for the user to attach them and send.
  */
-export function sendLastMessageAgain(row: ThreadRow, command: Command, store: ThreadDraftStore): boolean {
+export function tryLastMessageAgain(row: ThreadRow, command: Command, store: ThreadDraftStore): TryAgainBy | null {
   const threadId = row.thread.id
+  const by = tryAgainOf(row.thread.messages)
   const last = row.thread.messages.findLast(message => message.role === 'user')
-  if (last === undefined || !last.text.trim()) return false
+  if (by === null || last === undefined) return null
+  if (by === 'put-back') {
+    if (last.text.trim()) store.restoreDraft(threadId, { text: last.text, attachments: [], skills: [], files: [], requestId: null }, true)
+    return by
+  }
   const kept = store.draft(threadId)
   store.edit(threadId, { text: last.text, attachments: [], skills: [], files: [], requestId: null })
   // The send takes the composer's revision before its first wait, so the draft can come back at once.
   void sendThreadRevision(store, row, command, performance.now())
   if (hasDraftContent(kept)) store.restoreDraft(threadId, { text: kept.text, attachments: kept.attachments, skills: kept.skills, files: kept.files, requestId: kept.requestId })
-  return true
+  return by
 }
 
 /**
@@ -69,14 +91,18 @@ export function useOwnServerTurns(row: ThreadRow, state: AgentState, command: Co
   const newestFailure = newestTurn?.status === 'failed' && newestTurn.ownServer?.failure !== undefined ? newestTurn.id : null
   const busy = isThreadBusy(state, thread.id)
   const capabilities = capabilitiesForThread(state.host, thread)
-  const canTryAgain = row.connected && !busy && thread.status !== 'running' && !thread.archivedAt && capabilities.submit
+  const tryAgainBy = tryAgainOf(thread.messages)
+  // Putting words back in the composer sends nothing, so it waits on no connection.
+  const canTryAgain = tryAgainBy === 'put-back' ? !thread.archivedAt
+    : tryAgainBy === 'send' && row.connected && !busy && thread.status !== 'running' && !thread.archivedAt && capabilities.submit
   const canStop = row.connected && !busy && thread.status === 'running' && capabilities.interrupt === true
-  const tryAgain = useCallback(() => { const { row: current, command: send, store: drafts } = latest.current; sendLastMessageAgain(current, send, drafts) }, [])
+  const tryAgain = useCallback(() => { const { row: current, command: send, store: drafts } = latest.current; tryLastMessageAgain(current, send, drafts) }, [])
   const navigate = app?.actions.navigate
   const openSettings = useCallback(() => { navigate?.('settings', 'settings-providers', 'own-model-servers') }, [navigate])
   const threadId = thread.id
   const stop = useCallback(() => { void latest.current.command({ type: 'interrupt', threadId }) }, [threadId])
-  const actions = useMemo(() => ({ newestFailure, canTryAgain, canStop, tryAgain, openSettings, stop }), [newestFailure, canTryAgain, canStop, tryAgain, openSettings, stop])
+  const actions = useMemo(() => ({ newestFailure, tryAgainBy, canTryAgain, canStop, tryAgain, openSettings, stop }),
+    [newestFailure, tryAgainBy, canTryAgain, canStop, tryAgain, openSettings, stop])
   return on ? actions : null
 }
 
@@ -90,23 +116,27 @@ export function TurnFailureReason({ turn }: { readonly turn: AgentActivity | und
   const own = turn?.status === 'failed' ? turn.ownServer : undefined
   if (turn === undefined) return null
   if (actions === null || own?.failure === undefined) return turn.error ? <p className="thread-activity__error thread-activity__error--turn">{turn.error}</p> : null
-  return <OwnServerFailure failure={own.failure} name={own.name} model={own.model} host={own.host} newest={actions.newestFailure === turn.id} actions={actions} />
+  return <OwnServerFailure server={{ ...own, failure: own.failure }} newest={actions.newestFailure === turn.id} actions={actions} />
 }
 
-function OwnServerFailure({ failure, name, model, host, newest, actions }: {
-  readonly failure: NonNullable<NonNullable<AgentActivity['ownServer']>['failure']>
-  readonly name: string; readonly model: string; readonly host: string
+function OwnServerFailure({ server, newest, actions }: {
+  readonly server: OwnServerTurn & { readonly failure: OwnServerTurnFailure }
   readonly newest: boolean; readonly actions: OwnServerTurnActions
 }): ReactNode {
-  const words = failureWords(failure, name, model, host)
-  return <div className="thread-own-failure" data-failure={failure}>
+  const { i18n } = useLingui()
+  // Said once, after a press put the message back because its images could not go again.
+  const [putBack, setPutBack] = useState(false)
+  const words = failureWords(i18n, server.failure, server)
+  const byPutBack = actions.tryAgainBy === 'put-back'
+  return <div className="thread-own-failure" data-failure={server.failure}>
     <p className="thread-own-failure__reason tt-paragraph"><strong>{words.title}</strong> {words.body}</p>
     {newest ? <div className="thread-own-failure__actions">
-      {failure === 'key-refused' ? <Button variant="secondary" aria-label={openSettingsName()} onClick={actions.openSettings}>
-        <Settings2 size={14} aria-hidden="true" />{openSettingsWords()}</Button> : null}
-      <Button variant="secondary" aria-label={tryAgainName(name)} disabled={!actions.canTryAgain}
-        onClick={event => { const pressed = event.currentTarget; actions.tryAgain(); focusComposerFrom(pressed) }}>
-        <RotateCcw size={14} aria-hidden="true" />{tryAgainWords()}</Button>
+      {server.failure === 'key-refused' ? <Button variant="secondary" aria-label={openSettingsName(i18n)} onClick={actions.openSettings}>
+        <Settings2 size={14} aria-hidden="true" />{openSettingsWords(i18n)}</Button> : null}
+      <Button variant="secondary" aria-label={byPutBack ? putBackName(i18n) : tryAgainName(i18n, server)} disabled={!actions.canTryAgain}
+        onClick={event => { const pressed = event.currentTarget; actions.tryAgain(); if (byPutBack) setPutBack(true); focusComposerFrom(pressed) }}>
+        <RotateCcw size={14} aria-hidden="true" />{tryAgainWords(i18n)}</Button>
     </div> : null}
+    {newest ? <p className="thread-own-failure__note tt-paragraph" role="status">{putBack && byPutBack ? imagesNotKept(i18n) : null}</p> : null}
   </div>
 }

@@ -39,6 +39,10 @@ msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the 
 msgstr "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+msgstr "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
 msgstr "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
 
@@ -339,6 +343,10 @@ msgstr "That is not an address Sotto can reach. Type it like http://localhost:11
 msgid "That server is no longer saved. Nothing was changed."
 msgstr "That server is no longer saved. Nothing was changed."
 
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "The images in your last message were not kept. Attach them again, then send."
+msgstr "The images in your last message were not kept. Attach them again, then send."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr "The server does not say how much context this model has. Type it from the model’s page."
@@ -366,6 +374,10 @@ msgstr "Threads on this server send your code and messages to it, so whoever run
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again"
 msgstr "Try again"
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, putting your last message back in the composer"
+msgstr "Try again, putting your last message back in the composer"
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again, sending your last message to {name} again"

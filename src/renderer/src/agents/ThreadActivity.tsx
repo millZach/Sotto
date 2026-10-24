@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
-import type { AgentActivity } from '../../../shared/agentActivity'
+import { useLingui } from '@lingui/react/macro'
+import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
@@ -351,17 +352,21 @@ function useStillWaiting(startedAt: string | undefined, active: boolean): boolea
  * The live line of a turn waiting on one of the user's own model servers: what it is waiting for, with Stop, the
  * thread's own interrupt. Only its words are announced, and politely, so a new try does not move anything.
  */
-function OwnServerLine({ actions, words, tone, startedAt, note }: {
-  readonly actions: OwnServerTurnActions; readonly words: string; readonly tone?: 'attention' | undefined
-  readonly startedAt?: string | undefined; readonly note?: string | undefined
+function OwnServerLine({ actions, server, startedAt }: {
+  readonly actions: OwnServerTurnActions; readonly server: OwnServerTurn
+  /** When the turn began: given, the line says it is still waiting and counts from then; absent, it says which try it is. */
+  readonly startedAt?: string | undefined
 }): ReactNode {
-  const name = stopName()
+  const { i18n } = useLingui()
+  const name = stopName(i18n)
+  const words = startedAt === undefined ? retryingWords(i18n, server, server.attempt ?? 1, server.attempts ?? server.attempt ?? 1) : stillWaitingWords(i18n, server)
+  const note = startedAt === undefined ? undefined : stillWaitingNote(i18n)
   return <div className="thread-activity-live thread-activity-live--own-server" data-testid="thread-activity-live" data-connected>
-    <i className="thread-activity__pulse" data-connected data-tone={tone} aria-hidden="true" />
+    <i className="thread-activity__pulse" data-connected data-tone={startedAt === undefined ? 'attention' : undefined} aria-hidden="true" />
     <span className="thread-activity-live__state"><span role="status">{words}</span>{startedAt ? <> <Elapsed startedAt={startedAt} /></> : null}</span>
     <button type="button" className="thread-activity-live__stop tt-focusable" aria-label={name} title={name} disabled={!actions.canStop}
       onClick={event => { const pressed = event.currentTarget; actions.stop(); focusComposerFrom(pressed) }}>
-      <Square size={10} fill="currentColor" aria-hidden="true" />{stopWords()}
+      <Square size={10} fill="currentColor" aria-hidden="true" />{stopWords(i18n)}
     </button>
     {note ? <p className="thread-activity-live__note tt-paragraph">{note}</p> : null}
   </div>
@@ -398,10 +403,10 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
   }
   if (turnId === null && sendingSince === undefined) return null
   if (server !== undefined && own !== null && server.attempt !== undefined) {
-    return <OwnServerLine actions={own} words={retryingWords(server.name, server.attempt, server.attempts ?? server.attempt)} tone="attention" />
+    return <OwnServerLine actions={own} server={server} />
   }
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
-    return <OwnServerLine actions={own} words={stillWaitingWords(server.name)} startedAt={turn.startedAt} note={stillWaitingNote()} />
+    return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} />
   }
   const action = turnId === null ? undefined : currentAction(thread, turnId)
   const label = action && action.id !== adjacentRecordId ? activityLabel(action) : null

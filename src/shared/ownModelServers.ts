@@ -67,6 +67,8 @@ export type FoundModel = z.infer<typeof foundModelSchema>
 export const ownServerRefusalSchema = z.enum([
   'bad-address', 'public-http', 'unreachable', 'key-needed', 'key-refused', 'no-models', 'not-openai', 'opencode-not-running', 'sign-in-failed',
   'not-found', 'full',
+  /** A server at that address is already saved; adding it again would be a second source for the same server. */
+  'already-added',
   /** Something in Sotto went wrong before the request was done, such as the record not being written. */
   'failed',
   /** Remove signed OpenCode out of the server's key but could not take the server off the list; a second Remove finishes it. */
@@ -131,6 +133,7 @@ export const OWN_SERVER_WORDS = {
   signInFailed: (name: string) => `OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`,
   notFound: 'That server is no longer saved. Nothing was changed.',
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
+  alreadyAdded: (host: string) => `${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`,
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
   addPartly: (name: string) => `OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`,
@@ -154,6 +157,7 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'sign-in-failed': return OWN_SERVER_WORDS.signInFailed(serverName)
     case 'not-found': return OWN_SERVER_WORDS.notFound
     case 'full': return OWN_SERVER_WORDS.full
+    case 'already-added': return OWN_SERVER_WORDS.alreadyAdded(host)
     case 'failed': return OWN_SERVER_WORDS.failed
     case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
     case 'added-partly': return OWN_SERVER_WORDS.addPartly(serverName)

@@ -1,4 +1,6 @@
 import React from 'react'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -74,7 +76,7 @@ describe('while the server will not answer', () => {
 })
 
 describe('the still-waiting line', () => {
-  const actions: OwnServerTurnActions = { newestFailure: null, canTryAgain: false, canStop: true, tryAgain: vi.fn(), openSettings: vi.fn(), stop: vi.fn() }
+  const actions: OwnServerTurnActions = { newestFailure: null, tryAgainBy: null, canTryAgain: false, canStop: true, tryAgain: vi.fn(), openSettings: vi.fn(), stop: vi.fn() }
   const waiting = (activities: AgentActivity[], messages: AgentMessage[] = [user('u1', LAST, 0)]) =>
     <OwnServerTurnContext.Provider value={actions}><LiveActivity thread={{ status: 'running', activities, messages }} connected /></OwnServerTurnContext.Provider>
 
@@ -138,6 +140,48 @@ describe('a turn the server let down', () => {
     expect(sent).toEqual([expect.objectContaining({ type: 'manual-send', threadId: 'own', text: LAST })])
     expect(live.threadDrafts.draft('own').text).toBe('A half-written thought')
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus()
+  })
+
+  it('puts a message whose images were not kept back in the empty composer, and says why, rather than sending it without them', async () => {
+    const withImage: AgentMessage = { ...user('u1', LAST, -60), attachments: [{ id: 'img-1', name: 'sparks-rack.png', mimeType: 'image/png', sizeBytes: 2_048 }] }
+    const { live, transcript } = mount({ status: 'error', messages: [withImage], activities: [failed('u1', 'unreachable')], lastTurn: { id: 'u1', status: 'failed' } })
+    expect(within(transcript).queryByRole('button', { name: 'Try again, sending your last message to Sparks again' })).toBeNull()
+    await act(async () => { fireEvent.click(within(transcript).getByRole('button', { name: 'Try again, putting your last message back in the composer' })) })
+    expect(live.command.mock.calls.filter(([request]) => request.type === 'manual-send')).toEqual([])
+    expect(live.threadDrafts.draft('own').text).toBe(LAST)
+    expect(transcript.querySelector('.thread-own-failure__note[role="status"]')).toHaveTextContent('The images in your last message were not kept. Attach them again, then send.')
+    expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveFocus()
+  })
+
+  it('leaves a composer that holds a draft alone when it cannot send the images again, and does the same for a message of images only', async () => {
+    const image = { id: 'img-1', name: 'sparks-rack.png', mimeType: 'image/png', sizeBytes: 2_048 }
+    const { live, transcript } = mount({ status: 'error', messages: [{ ...user('u1', LAST, -60), attachments: [image] }], activities: [failed('u1', 'unreachable')], lastTurn: { id: 'u1', status: 'failed' } },
+      { draft: 'A half-written thought' })
+    await act(async () => { fireEvent.click(within(transcript).getByRole('button', { name: 'Try again, putting your last message back in the composer' })) })
+    expect(live.threadDrafts.draft('own').text).toBe('A half-written thought')
+    expect(transcript.querySelector('.thread-own-failure__note[role="status"]')).toHaveTextContent('The images in your last message were not kept.')
+    cleanup()
+    const only = mount({ status: 'error', messages: [{ ...user('u1', '', -60), attachments: [image] }], activities: [failed('u1', 'unreachable')], lastTurn: { id: 'u1', status: 'failed' } })
+    const button = within(only.transcript).getByRole('button', { name: 'Try again, putting your last message back in the composer' })
+    expect(button).toBeEnabled()
+    await act(async () => { fireEvent.click(button) })
+    expect(only.live.command.mock.calls.filter(([request]) => request.type === 'manual-send')).toEqual([])
+    expect(only.transcript.querySelector('.thread-own-failure__note[role="status"]')).toHaveTextContent('Attach them again, then send.')
+  })
+
+  it('draws its words again in a new interface language at once', () => {
+    const { transcript } = mount({ status: 'error', messages: [user('u1', LAST, -60)], activities: [failed('u1', 'key-refused')], lastTurn: { id: 'u1', status: 'failed' } })
+    expect(transcript.querySelector('.thread-own-failure__reason strong')).toHaveTextContent('Sparks turned down its key.')
+    // A stand-in translation of two of its messages; every other message shows in English.
+    const translated = { '{name} turned down its key.': '{name} hat seinen Schlüssel abgelehnt.', 'Try again': 'Erneut versuchen' }
+    try {
+      act(() => { i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(translated).map(([english, german]) => [generateMessageId(english), german])) }) })
+      expect(transcript.querySelector('.thread-own-failure__reason strong')).toHaveTextContent('Sparks hat seinen Schlüssel abgelehnt.')
+      expect(within(transcript).getByRole('button', { name: 'Try again, sending your last message to Sparks again' })).toHaveTextContent('Erneut versuchen')
+    } finally {
+      act(() => i18n.activate('en'))
+    }
+    expect(transcript.querySelector('.thread-own-failure__reason strong')).toHaveTextContent('Sparks turned down its key.')
   })
 
   it('opens Settings at Your own model servers', () => {

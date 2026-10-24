@@ -156,3 +156,6 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-own-failure__reason { max-width: 64ch; margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .thread-own-failure__reason strong { color: var(--tt-error); font-weight: 500; }
 .thread-own-failure__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+/* Said once, after Try again put a message whose images could not go again back in the composer. Empty, it takes no room. */
+.thread-own-failure__note { max-width: 64ch; margin: 8px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.thread-own-failure__note:empty { margin: 0; }

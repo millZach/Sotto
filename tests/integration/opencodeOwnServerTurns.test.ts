@@ -20,7 +20,8 @@ const FIXTURE_MODEL = { id: 'fixture-model', modelID: 'fixture-model', providerI
 const WORDS = { name: 'Spark', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
 
 async function ownServerThread(modelId = 'own-spark1/deepseek-v4.1-flash', servers: readonly OwnServer[] = [spark]) {
-  const f = await opencodeFixture(undefined, undefined, {}, { ownServers: async () => servers })
+  // A refused stop is asked for again a short while apart; here the while is short.
+  const f = await opencodeFixture(undefined, undefined, {}, { ownServers: async () => servers, ownServerStopRetryMs: 50 })
   await f.script({ models: [FIXTURE_MODEL, OWN_MODEL], providers: [{ id: 'opencode', name: 'OpenCode', activation: 'enabled' }, { id: 'own-spark1', name: 'Spark', activation: 'enabled' }] })
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -89,6 +90,50 @@ it('stops the turn when the server sent nothing within OpenCode’s five minutes
     expect(await turn('first')).toMatchObject({ error: ownServerTurnText('timeout', WORDS), ownServer: { ...WORDS, failure: 'timeout' } })
     expect((await turn('first'))?.ownServer?.attempt).toBeUndefined()
     expect((await f.driver.requests()).filter(record => record.method === 'session.interrupt')).toHaveLength(1)
+  } finally { await f.cleanup() }
+})
+
+it('asks again when OpenCode refuses to stop the turn at the five-minute limit', async () => {
+  const { f, id, turn, send } = await ownServerThread()
+  try {
+    await send('first')
+    await f.scriptAlso({ refuse: { 'session.interrupt': [500, 2] } })
+    await f.action(id, { type: 'retry', attempt: 2, message: 'Timed out waiting for response headers' })
+    await expect.poll(async () => (await turn('first'))?.status).toBe('failed')
+    expect(await turn('first')).toMatchObject({ error: ownServerTurnText('timeout', WORDS), ownServer: { ...WORDS, failure: 'timeout' } })
+    expect((await f.driver.requests()).filter(record => record.method === 'session.interrupt')).toHaveLength(3)
+  } finally { await f.cleanup() }
+})
+
+it('ends the thread’s server as a lost one when OpenCode will not stop the turn, and records the timeout all the same', async () => {
+  const { f, id, thread, turn, send } = await ownServerThread()
+  try {
+    await send('first')
+    await f.scriptAlso({ refuse: { 'session.interrupt': [500, 20] } })
+    await f.action(id, { type: 'retry', attempt: 2, message: 'Timed out waiting for response headers' })
+    await expect.poll(async () => (await turn('first'))?.status).toBe('failed')
+    expect(await turn('first')).toMatchObject({ error: ownServerTurnText('timeout', WORDS), ownServer: { ...WORDS, failure: 'timeout' } })
+    expect((await thread())?.status).toBe('error')
+    expect((await f.driver.requests()).filter(record => record.method === 'session.interrupt')).toHaveLength(4)
+    // The server that would have run on through OpenCode's remaining tries is gone.
+    await expect.poll(async () => f.sessions.stopped(id)).toBe(true)
+  } finally { await f.cleanup() }
+})
+
+it('leaves a server that had started answering to OpenCode’s own tries and words when it then times out', async () => {
+  const { f, id, turn, send } = await ownServerThread()
+  try {
+    await send('first')
+    await f.action(id, { type: 'reply', text: 'Reading the guide.' })
+    await expect.poll(async () => JSON.stringify((await f.host.snapshot()).threads)).toContain('Reading the guide.')
+    await f.action(id, { type: 'retry', attempt: 2, message: 'Timed out waiting for response headers' })
+    await expect.poll(async () => (await turn('first'))?.ownServer?.attempt).toBe(1)
+    expect((await f.driver.requests()).filter(record => record.method === 'session.interrupt')).toEqual([])
+    expect((await turn('first'))?.status).toBe('running')
+    await f.action(id, { type: 'fail', error: 'provider.transport', message: 'Timed out waiting for response headers' })
+    await expect.poll(async () => (await turn('first'))?.status).toBe('failed')
+    expect((await turn('first'))?.ownServer?.failure).toBeUndefined()
+    expect((await turn('first'))?.error).toContain('OpenCode could not finish this turn.')
   } finally { await f.cleanup() }
 })
 

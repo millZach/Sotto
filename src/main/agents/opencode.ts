@@ -192,6 +192,9 @@ const executionEndSchema = ofSession.extend({ error: z.looseObject({ type: z.str
  * will make next, so the first retry is attempt 2 and the last attempt 11, ten retries over about a minute and a half.
  */
 const OPENCODE_RETRIES = 10
+/** How many times Sotto asks OpenCode to stop a turn at the five-minute limit, and how far apart, before ending its server. */
+const OWN_SERVER_STOP_TRIES = 4
+const OWN_SERVER_STOP_RETRY_MS = 1_000
 const retryScheduledSchema = ofSession.extend({ attempt: z.number().int().positive(), error: z.unknown().optional() })
 const tokensSchema = z.looseObject({ input: z.number().default(0), output: z.number().default(0), cache: z.looseObject({ read: z.number().default(0) }).optional() })
 const usageSchema = ofSession.extend({ tokens: tokensSchema })
@@ -300,6 +303,8 @@ export interface OpenCodeHostOptions {
    * while the `own-model-servers` Owl answer is on; a headless host has none.
    */
   ownServers?: () => Promise<readonly OwnServer[]>
+  /** How far apart Sotto asks again to stop a turn at the five-minute limit; tests shorten it. */
+  ownServerStopRetryMs?: number
 }
 
 /**
@@ -328,6 +333,13 @@ export class OpenCodeHost implements AgentHost {
    * silent server three more times, about twenty minutes in all, and the thread says it stops waiting at five.
    */
   private readonly timedOut = new Set<string>()
+  /** Threads whose stop at the five-minute limit is being asked for now, so a second timeout does not ask twice at once. */
+  private readonly stoppingTimedOut = new Set<string>()
+  /**
+   * Threads whose running turn has had something from the model source since it began: reply text, thinking or tool
+   * work. Only a turn that has not is waiting for the server to start answering.
+   */
+  private readonly heard = new Set<string>()
   /** The user's own model servers as last read for a process start, for the words a turn on one needs (ADR-0124). */
   private knownServers: readonly OwnServer[] = []
   private readonly folds = new Map<string, Fold>()
@@ -772,18 +784,53 @@ export class OpenCodeHost implements AgentHost {
     const server = this.ownServerTurn(id)
     const alias = this.aliases[id]
     if (!messageId || !server || !alias) return
-    if (isHeaderTimeout(error)) {
-      // The turn ends here, as the thread said it would; it is recorded as the server's timeout when OpenCode confirms.
-      if (this.timedOut.has(id)) return
+    // A server that has not started answering is waited for five minutes, as the thread says, and no longer. One that had
+    // started and then went quiet is left to OpenCode's own tries and words.
+    if (isHeaderTimeout(error) && !this.heard.has(id)) {
       this.timedOut.add(id); this.retrying.delete(id)
-      void entry.client?.request('POST', `/api/session/${this.sid(alias)}/interrupt`).catch(() => undefined)
+      if (!this.stoppingTimedOut.has(id)) void this.stopTimedOut(id, entry, alias, messageId, server)
       return
     }
     this.retrying.add(id)
     this.markTurn(id, 'running', messageId, undefined, { ...server, attempt: Math.min(Math.max(1, attempt - 1), OPENCODE_RETRIES), attempts: OPENCODE_RETRIES })
   }
-  /** The server answered after a retry: the turn's line goes back to its work. Free on every other update. */
+  /**
+   * Stops a turn whose own server sent nothing within OpenCode's five minutes. The interrupt is asked for again, a short
+   * while apart, if OpenCode refuses it or does not answer; the turn is recorded as the server's timeout when OpenCode
+   * says it ended. If OpenCode cannot be made to stop it, the thread's server is ended as a lost one is, and the turn is
+   * recorded as the timeout then, so it never runs on through OpenCode's remaining tries.
+   */
+  private async stopTimedOut(id: string, entry: ThreadServer, alias: Alias, messageId: string, server: OwnServerTurn): Promise<void> {
+    const current = (): boolean => this.timedOut.has(id) && this.processes.get(id) === entry && !entry.closing && this.activeTurns.get(id)?.messageId === messageId
+    this.stoppingTimedOut.add(id)
+    try {
+      for (let attempt = 0; attempt < OWN_SERVER_STOP_TRIES; attempt++) {
+        if (attempt) await new Promise(resolve => setTimeout(resolve, this.options.ownServerStopRetryMs ?? OWN_SERVER_STOP_RETRY_MS))
+        if (!current()) return
+        try {
+          const reply = z.looseObject({ interrupted: z.boolean().optional() }).parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
+          // Nothing was running, so OpenCode will not say the turn ended: Sotto records it itself.
+          if (reply.interrupted === false && current()) this.endTimedOut(id, messageId, server)
+          return
+        } catch { /* Asked again below. */ }
+      }
+      if (!current()) return
+      this.endTimedOut(id, messageId, server)
+      alias.endedTurn = { messageId, outcome: 'failed' }; void this.persist().catch(() => undefined)
+      this.processLost(id, entry)
+    } finally { this.stoppingTimedOut.delete(id) }
+  }
+  private endTimedOut(id: string, messageId: string, server: OwnServerTurn): void {
+    this.timedOut.delete(id); this.retrying.delete(id); this.activeTurns.delete(id)
+    this.endTurn(id, messageId, 'failed', ownServerTurnText('timeout', server), { ...server, failure: 'timeout' })
+    this.emit()
+  }
+  /**
+   * The model source sent something for the running turn. A turn whose own server is being retried goes back to its
+   * work. Cheap on every other update: one set entry that is already there.
+   */
   private ownServerAnswered(id: string): void {
+    this.heard.add(id)
     if (!this.retrying.delete(id)) return
     const messageId = this.activeTurns.get(id)?.messageId
     const server = this.ownServerTurn(id)
@@ -1369,7 +1416,7 @@ export class OpenCodeHost implements AgentHost {
           }
           const messageId = this.activeTurns.get(id)?.messageId
           thread.status = 'running'
-          this.retrying.delete(id); this.timedOut.delete(id)
+          this.retrying.delete(id); this.timedOut.delete(id); this.heard.delete(id)
           if (messageId) { thread.lastTurn = { id: messageId, status: 'running' }; this.markTurn(id, 'running', messageId, undefined, this.ownServerTurn(id)) }
           this.emit(); return
         }
@@ -1436,11 +1483,14 @@ export class OpenCodeHost implements AgentHost {
           const messageId = this.activeTurns.get(id)?.messageId ?? this.log.lastUserMessageId(id)
           this.activeTurns.delete(id)
           this.retrying.delete(id)
+          const heard = this.heard.delete(id)
           // A turn one of the user's own servers let down says how, in place of OpenCode's general words (ADR-0124); one
-          // Sotto stopped after OpenCode's five minutes without a first byte failed on the server's account too.
+          // Sotto stopped after OpenCode's five minutes without a first byte failed on the server's account too. A
+          // timeout after the server had started answering is not "didn't start answering", so it keeps the general words.
           const timedOut = this.timedOut.delete(id) && outcome !== 'completed'
           const server = outcome === 'failed' || timedOut ? this.ownServerTurn(id) : undefined
-          const failure = server ? timedOut ? 'timeout' : ownServerTurnFailure(data.error) : undefined
+          const found = server ? timedOut ? 'timeout' : ownServerTurnFailure(data.error) : undefined
+          const failure = found === 'timeout' && heard && !timedOut ? undefined : found
           if (messageId && server && failure) this.endTurn(id, messageId, 'failed', ownServerTurnText(failure, server), { ...server, failure })
           else if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? this.sourceRefused(id) : TURN_FAILED : undefined)
           else thread.status = outcome === 'failed' ? 'error' : 'idle'

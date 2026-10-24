@@ -39,6 +39,10 @@ msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the 
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
 msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
 msgstr ""
 
@@ -339,6 +343,10 @@ msgstr ""
 msgid "That server is no longer saved. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "The images in your last message were not kept. Attach them again, then send."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr ""
@@ -365,6 +373,10 @@ msgstr ""
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Try again"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, putting your last message back in the composer"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
