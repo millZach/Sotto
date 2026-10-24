@@ -287,6 +287,13 @@ it('keeps a closed paired copy stopped when a settle the master sent before its 
   const copy = () => owner.state().requests.find(item => item.id === f.requestId)
   expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: targets[0] })).toMatchObject({ status: 'ok' })
   await expect.poll(() => copy()?.state).toBe('closed')
+  // The master reads an unconfirmed operation back on its next reconcile pass, 250 ms after it is left so. On a slow
+  // machine that pass came before the Stop below: the owning host, with no record of the held settle, fenced its ID, and
+  // the settle was refused as unrecorded, which is the other order and its own case. The pass is held here so the Stop
+  // comes first, as this test names; the Stop's own reconcile runs at once and is not held.
+  const passes = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; armRemote(): void }
+  await vi.waitFor(() => { expect(passes.remoteTimer).toBeUndefined(); expect(passes.remoteFlushing).toBe(false) })
+  vi.spyOn(passes, 'armRemote').mockImplementation(() => undefined)
   // The second settle leaves the master but is held on the way, so the owning host has not seen it.
   let held: WatcherHostControl | undefined
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => { held = packet; throw new Error('held-in-transit') })
