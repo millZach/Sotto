@@ -28,7 +28,7 @@ import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries,
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
-import { NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
+import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
@@ -2373,7 +2373,8 @@ export class WatcherService implements WatcherControlHooks {
       // Only a start gives a thread its permission; a send leaves the thread's own as the user set it (#1145).
       if (operation.action === 'start') { this.checkPermission(thread, request); this.checkRemoteCeiling(request.id, thread.runtimeMode) }
       if (operation.expectedLastUserMessageId && operation.expectedLastUserMessageId !== nativeHead(thread)) refuse('TARGET_CHANGED', 'This thread received another instruction. Read it before sending.')
-      if (operation.delivery === 'steer' && (thread.status !== 'running' || operation.expectedTurnId !== thread.lastTurn?.id)) refuse('TURN_CHANGED', 'The running turn changed. Nothing was steered.')
+      // A default steer Sotto could not fence to a confirmed turn goes into the turn that runs (ADR-0130, #1490).
+      if (operation.delivery === 'steer' && (thread.status !== 'running' || operation.expectedTurnId !== undefined && operation.expectedTurnId !== thread.lastTurn?.id)) refuse('TURN_CHANGED', 'The running turn changed. Nothing was steered.')
       if (operation.delivery !== 'queue' && operation.delivery !== 'steer' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD, true)
     }
     if (operation.action === 'settle') {
@@ -2699,6 +2700,14 @@ export class WatcherService implements WatcherControlHooks {
       if (thread && (send || name === 'settle_thread')) this.pending(thread)
       // A paired master decided whether its Watcher turn answers the user; this host cannot read that thread.
       if (thread && name === 'stop_thread') this.checkStopTurn(thread, record, request.id, Boolean(imported) || this.answersUserNow(record, request))
+      // A send that names no delivery steers a running turn and goes now to an idle one (ADR-0130). It is picked here,
+      // after a waiting card refused it, and kept as the operation's own; a retry still matches the call as it was made.
+      const defaulted = Boolean(thread && send && !(input as WatcherToolInput<'send_to_thread'>).delivery)
+      if (thread && defaulted) {
+        const { expectedTurnId, ...sent } = input as WatcherToolInput<'send_to_thread'>
+        // Parsed again so its keys fall in the schema's order, as a paired host parses it before checking the digest.
+        input = watcherToolSchemas.send_to_thread.input.parse({ ...sent, ...defaultDelivery(thread, capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer === true, expectedTurnId) })
+      }
       if (thread && send) {
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)
         // A send gives the thread no permission, so neither the new-thread default nor a host's hold-back limits it (#1145).
@@ -2712,7 +2721,12 @@ export class WatcherService implements WatcherControlHooks {
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
         if (review) refuse('THREAD_BUSY', queueHold(review, false))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
-        if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || !sent.expectedTurnId || sent.expectedTurnId !== thread.lastTurn?.id || thread.status !== 'running')) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
+        // A named steer needs a confirmed running turn. A default one does not: a turn that resumed after the user answered
+        // its card, or began from a queued prompt, runs before Sotto confirms it, and the default steers it unfenced
+        // (#1490). A paired desktop sends an unfenced steer only as its default.
+        const unfenced = !sent.expectedTurnId && (defaulted || Boolean(imported))
+        if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || thread.status !== 'running'
+          || (sent.expectedTurnId ? sent.expectedTurnId !== thread.lastTurn?.id : !unfenced))) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
         this.checkSettlement(thread)
@@ -2725,7 +2739,7 @@ export class WatcherService implements WatcherControlHooks {
         ?? ((start || send) && !imported && (!remote || this.remote?.hosts().find(host => host.hostId === owner)?.standingWatch) ? this.newWatch(target, thread) : undefined)
       const time = now(), id = randomUUID()
       const operation: WatcherOperation = imported ?? { id, requestId: request.id, retryKey: input.retryKey, digest: digest([name, input]),
-        ...(start || offeredWatch ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
+        ...(start || offeredWatch || defaulted ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
         action: start ? 'start' : send ? 'send' : name === 'stop_thread' ? 'stop' : 'settle', target,
         ...(turn ? { promptTurnId: turn.id } : {}), ...(assignment ? { standingWatchId: assignment.id } : {}),
         generation: previous?.generation ?? assignment?.generation ?? 0, anchorMessageId: request.rootUserMessageId, deliveryState: 'queued', createdAt: time, updatedAt: time, receiptId: randomUUID(), cardId: randomUUID(),

@@ -1470,6 +1470,10 @@ msgstr ""
 msgid "Commit subject"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
+msgstr ""
+
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect"

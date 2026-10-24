@@ -44,6 +44,7 @@ import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
@@ -315,11 +316,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
+  // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
+  // The switch is read at every sweep, so turning it off stops the next one without a restart.
+  const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
     if (watcherStopped) return
     watcherStopped = true
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -382,6 +387,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
     await restartResume?.freeze()
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -423,5 +429,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     },
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
+  idleCompaction.start()
   return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
 }
