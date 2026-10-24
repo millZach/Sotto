@@ -171,10 +171,11 @@ describe('Omarchy M3 and readability check', () => {
     // split chart got its series colours (ADR-0083), when the Owl night sky's switch colours went with Terminal mode's
     // switch (ADR-0111), and then when containers became cards, the segmented controls got their raised segment, the
     // pill radius went and three chart series moved a step (ADR-0110), and then when Settings → Providers put each
-    // mark on a badge, which gave Muse and OpenCode's badge a colour of their own; none of them changes a palette.
+    // mark on a badge, which gave Muse and OpenCode's badge a colour of their own, and when Cursor's mark and badge got
+    // theirs (ADR-0128); none of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('18defa9e80c06093d4ffb6fbc1f5f3984bc3bd437e06b9aa9d5028548c5c4e08')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
-    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('f651597ee93a0fe8cf11f42b1375514c843f842d18b2d6066729065d7c6b9ce6')
+    expect(createHash('sha256').update(tokenText).digest('hex')).toBe('66a02ab1b081502e3622ad3e47927046ac730d8fa18ddb50b801c9cb5a3d95dd')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

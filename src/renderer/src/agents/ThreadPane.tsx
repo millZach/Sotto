@@ -394,7 +394,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
     </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
-      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead}>
+      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}

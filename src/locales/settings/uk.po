@@ -369,6 +369,10 @@ msgid "{name} runs it, so it can start the host for {who}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
+msgstr ""
+
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 msgstr ""
 
@@ -1464,6 +1468,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Commit subject"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
 msgstr ""
 
 #. Connects a provider on a host.

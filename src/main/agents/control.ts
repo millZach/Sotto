@@ -423,6 +423,8 @@ export class AgentControl {
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
   private readonly delegationOrigins = new WeakSet<object>()
+  /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
+  private readonly idleCompactions = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -500,6 +502,19 @@ export class AgentControl {
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
   }
+  /**
+   * Idle compaction's own command (ADR-0127): native compaction of one quiet thread, on that thread's lane. It carries a
+   * main-owned guard, asked again as it dispatches, is never taken for the user's own command, and neither raises nor
+   * clears the window's error. A refusal or failure rejects, and the thread shows a failed compaction as it shows any.
+   */
+  async compactIdleThread(threadId: string, guard: () => void): Promise<void> {
+    const parsed = agentCommandSchema.parse({ type: 'compact-thread', threadId })
+    guard(); this.watcherOrigins.set(parsed, { guard }); this.idleCompactions.add(parsed)
+    const shell = await this.admitCommandShell(parsed)
+    if (shell.error) throw new Error(shell.error)
+  }
+  /** This host's snapshot itself, for a reader that only looks. Never changed by its holder, and never copied to reach it. */
+  hostView(): Readonly<AgentHostSnapshot> { return this.state.host }
   /** Whether the user has words or images waiting in this thread's composer: typing there pauses delegated sends (ADR-0081). */
   hasUserDraft(threadId: string): boolean {
     return (this.state.threadDrafts ?? []).some(draft => draft.threadId === threadId && (draft.text.trim() !== '' || (draft.attachments?.length ?? 0) > 0))
@@ -817,7 +832,7 @@ export class AgentControl {
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
-    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')) })
+    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -3356,7 +3371,8 @@ export class AgentControl {
     const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
       else this.state.globalLaneBusy = true
-      if (!privateDraftReply) this.state.error = null
+      // Sotto's own idle compaction leaves the window's error as it found it.
+      if (!privateDraftReply && !this.idleCompactions.has(command)) this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
         ? this.beginTurn({
@@ -4225,7 +4241,7 @@ export class AgentControl {
         this.observe(); return
       case 'load-earlier-messages': {
         if (!this.dependencies.host.loadEarlierMessages) throw new Error('Earlier messages could not be read. Nothing was lost; refresh and open the thread again.')
-        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId))
+        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId, command.throughMessageId))
         return
       }
       case 'retry-thread-worktree':
@@ -4367,9 +4383,11 @@ export class AgentControl {
           const thread = this.thread(command.threadId)
           if (!capabilitiesForThread(this.state.host, thread).compact || thread.manualCompactionSupported === false) throw new Error('Native manual compaction is unavailable for this thread.')
           if (isThreadClosed(thread) || thread.nativeSessionStarted === false || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its requests before compacting.')
+          // Idle compaction asks again whether the thread is still quiet, up to the provider write.
+          if (this.idleCompactions.has(command)) this.watcherOrigins.get(command)?.guard()
         }
         validate()
-        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId }, turn, validate)
+        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId, ...(this.idleCompactions.has(command) ? { idle: true } : {}) }, turn, validate)
         return
       }
       case 'answer': {

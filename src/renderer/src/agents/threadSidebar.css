@@ -113,8 +113,9 @@
 .thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
 .thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
 .thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin, #a5d8f5); }
-/* OpenCode's light token is already the darkened mark, so it is drawn as it is in both modes. */
+/* OpenCode's and Cursor's light tokens are already the darkened mark, so they are drawn as they are in both modes. */
 .thread-nav__mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.thread-nav__mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
 :root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok'], [data-provider='devin']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }

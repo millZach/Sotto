@@ -30,6 +30,7 @@
 .provider-badge[data-provider='devin'] { --provider-badge: var(--tt-provider-devin); }
 .provider-badge[data-provider='muse'] { --provider-badge: var(--tt-provider-muse); }
 .provider-badge[data-provider='opencode'] { --provider-badge: var(--tt-provider-opencode-badge); }
+.provider-badge[data-provider='cursor'] { --provider-badge: var(--tt-provider-cursor-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
 .provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
@@ -55,6 +56,13 @@
 .provider-row__column .provider-client__owed { margin-top: 8px; color: var(--tt-text); }
 .provider-client__actions .tt-toggle { width: auto; grid-template-columns: 36px; gap: 0; padding: 7px 0; }
 .provider-client__actions .tt-toggle__copy { display: none; }
+/* Cursor's connection (ADR-0128, variant A of its prototype): what to do next in the text colour and, while a sign-in
+   waits on cursor.com, a live line whose dot pulses as a busy status's does. Its refusals sit under its words. */
+.provider-row__column p.provider-connection__lead, .provider-row__column p.provider-connection__notice { color: var(--tt-text); }
+.provider-row__column p.provider-connection__waiting { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.provider-row__column p.provider-connection__notice { margin-top: 10px; }
+.provider-connection__waiting i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--tt-accent-text); animation: provider-busy 1s ease-in-out infinite; }
+.provider-connection .provider-detail__error { margin-top: 14px; }
 .provider-login { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 9px; }
 .provider-login code { color: var(--tt-text); font: 13px/1.6 var(--tt-font-mono); user-select: text; }
 .provider-login .tt-button { min-height: 32px; padding: 5px 8px; font-size: 13px; }
@@ -73,6 +81,9 @@
 .provider-models small { color: var(--tt-text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .provider-models li > small { flex: none; }
 .provider-models small[data-agent-setting] { color: var(--tt-accent-text); }
+/* Cursor's models under their makers, in Cursor's order (ADR-0128): each maker a small heading over its own list. */
+.provider-models__maker { margin: 18px 0 6px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; }
+.provider-models__maker:first-child { margin-top: 0; }
 .provider-models__empty { color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
 /* A refusal inside OpenCode's model sources and its sign-in dialog. */
 .provider-detail__error { margin: 22px 0 0; padding: 12px 14px; border-left: 2px solid var(--tt-error); background: var(--tt-error-contrast); color: var(--tt-error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
@@ -108,8 +119,8 @@
 @keyframes provider-arrive { from { opacity: .4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
 @keyframes provider-busy { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) {
-  .provider-row__panel, .provider-row__status[data-status='busy'] i { animation: none; }
+  .provider-row__panel, .provider-row__status[data-status='busy'] i, .provider-connection__waiting i { animation: none; }
   .provider-row__head, .provider-row__chevron { transition: none; }
 }
-[data-reduced-motion='on'] :is(.provider-row__panel, .provider-row__status[data-status='busy'] i) { animation: none; }
+[data-reduced-motion='on'] :is(.provider-row__panel, .provider-row__status[data-status='busy'] i, .provider-connection__waiting i) { animation: none; }
 [data-reduced-motion='on'] :is(.provider-row__head, .provider-row__chevron) { transition: none; }

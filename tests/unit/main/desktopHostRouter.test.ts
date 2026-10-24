@@ -456,6 +456,20 @@ describe('desktop host routing', () => {
     await expect(router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).rejects.toThrow('disconnected')
     expect(activityBody).toHaveBeenCalledTimes(1)
   })
+  it('reads the prompts above a pane’s window on the thread’s own host, and null while it cannot say (ADR-0109)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const prompts = { prompts: [{ id: 'u0', createdAt: '2026-10-24T09:00:00.000Z', text: 'Why?' }] }
+    const threadPrompts = vi.fn(async () => prompts)
+    router.add(local.connection); router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts } })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toEqual(prompts)
+    expect(threadPrompts).toHaveBeenCalledExactlyOnceWith('thread', 'u3')
+    // A host that keeps no store, and one that is disconnected, leave the scrubber the window's ticks.
+    expect(await router.threadPrompts({ threadId: hostEntityKey(LOCAL, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts }, available: () => false })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    expect(threadPrompts).toHaveBeenCalledOnce()
+  })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)

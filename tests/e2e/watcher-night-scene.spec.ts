@@ -326,6 +326,41 @@ test.describe("Watcher's night scene on the built app", () => {
     })
   }
 
+  test('a conversation longer than its window marks every message sent to Watcher and reaches the first', async () => {
+    const turns = 60
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, true, [['footer-links', 'running']])
+      await openRoom(page)
+      await page.evaluate(async ({ thread, now, turns }) => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: turns * 2 }, (_, index) => ({
+          id: `long-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
+          text: index % 2 ? `Watching it. Package (Windows) is still running for message ${(index - 1) / 2 + 1}.` : `Is the release thread green yet? (${index / 2 + 1})`,
+          createdAt: new Date(now - (turns * 2 - index) * 60_000).toISOString() })) })
+      }, { thread: CURRENT, now: E2E_THREADS_NOW, turns })
+      const pane = page.locator('#watcher-pane')
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      // Watcher's conversation comes back from another page on its newest ten turns, from the thread's store.
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+      await expect(pane).toHaveCount(0)
+      await openRoom(page)
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      await expect(pane.getByText('Is the release thread green yet? (1)', { exact: true })).toHaveCount(0)
+      // Everything the window holds is drawn, and the rest is only in the store.
+      await expect(pane.getByRole('button', { name: 'Show earlier messages', exact: true })).toBeVisible()
+      const ticks = pane.getByRole('navigation', { name: 'Messages you sent' }).getByRole('button')
+      await expect(ticks).toHaveCount(turns)
+      await ticks.nth(turns - 1).focus()
+      await page.keyboard.press('Home')
+      await expect(page.locator('.message-scrubber__card')).toContainText(`Message 1 of ${turns}`)
+      await expect(page.locator('.message-scrubber__card')).toContainText('Watcher replied')
+      await page.keyboard.press('Enter')
+      await expect(pane.locator('[data-message-id="long-0"]')).toBeFocused()
+      await expect(ticks).toHaveCount(turns)
+    }))
+  })
+
   test('reduced motion: nothing flies, owls sit from the first frame, and the scene holds still', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { motion: 'reduced', live: true }), async (launched) => {
       const { page } = launched
