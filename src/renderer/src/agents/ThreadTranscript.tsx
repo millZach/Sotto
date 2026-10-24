@@ -439,19 +439,27 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
 }
 
 /**
- * Whether a turn of Watcher's conversation finished while Watcher still works: on a news turn, whose wake-up the
- * conversation leaves out (`watcherWakeUpsAsShown`), so nothing of it is drawn until its first reply. The live turn is
- * this one when its records or its ID are among the turn's messages. Otherwise the turn's own lifecycle record says it
- * finished, drawn or not, as it is not for an answer with no other work; with none, running work that no drawn message
- * holds says another turn is going. Without this the finished turn would open into the running turn's layout while the
- * news turn runs and fold again when it ends, moving what a reader higher up was reading (#1452).
+ * Whether the newest turn of Watcher's conversation is the one Watcher is working on. A news turn's wake-up is left out
+ * of the conversation (`watcherWakeUpsAsShown`), so until its first reply nothing of it is drawn, and the newest turn
+ * drawn may be one that already finished. The turn's own lifecycle decides, drawn or not: running is live, and finished
+ * is not, whatever the live turn's ID says while the news turn's lifecycle has not arrived. Its own are the turns placed at
+ * its messages, the ones named by its messages' IDs, and the user's message its replies name, which may be above the
+ * window. With no lifecycle, the turn is live unless running work that no drawn message holds is another turn's.
+ * Otherwise the finished turn would open into the running turn's layout while the news turn runs and fold again when it
+ * ends, moving what a reader higher up was reading (#1452).
  */
-function finishedBeforeNews(turn: TranscriptTurn, placement: ActivityPlacement, liveTurn: string | null): boolean {
-  const ids = [...turn.user ? [turn.user.id] : [], ...turn.replies.map(message => message.id)]
-  const turns = ids.flatMap(id => placement.turnsAt?.get(id) ?? [])
-  if (liveTurn !== null && (ids.includes(liveTurn) || turns.includes(liveTurn))) return false
-  if (turns.some(turnId => { const status = placement.lifecycles?.get(turnId); return status !== undefined && isTerminalActivity(status) })) return true
-  return liveTurn !== null && placement.trailing.some(group => group.turnId === liveTurn)
+function watcherTurnLive(turn: TranscriptTurn, placement: ActivityPlacement, liveTurn: string | null): boolean {
+  const own = new Set<string>()
+  for (const message of turn.user ? [turn.user, ...turn.replies] : turn.replies) {
+    for (const id of [message.id, ...message.turnMessageId === undefined ? [] : [message.turnMessageId]]) {
+      own.add(id)
+      for (const turnId of placement.turnsAt?.get(id) ?? []) own.add(turnId)
+    }
+  }
+  const statuses = [...own].flatMap(turnId => placement.lifecycles?.get(turnId) ?? [])
+  if (statuses.includes('running')) return true
+  if (statuses.some(isTerminalActivity)) return false
+  return !(liveTurn !== null && !own.has(liveTurn) && placement.trailing.some(group => group.turnId === liveTurn))
 }
 
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
@@ -474,9 +482,9 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
-  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation once that
+  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that
   // turn has finished: Watcher is then working on news, whose own message is left out, so its turn has nothing drawn yet.
-  const live = running && !(speaker === 'watcher' && turns.length > 0 && finishedBeforeNews(turns.at(-1)!, placement, context.liveTurn))
+  const live = running && (speaker !== 'watcher' || turns.length === 0 || watcherTurnLive(turns.at(-1)!, placement, context.liveTurn))
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written.
   const newest = turns.at(-1)

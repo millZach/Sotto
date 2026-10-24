@@ -180,6 +180,31 @@ describe('Watcher working on news before its first reply', () => {
 
   for (const streamText of [true, false]) {
     describe(streamText ? 'with replies shown as they are written' : 'with replies shown once complete', () => {
+      it('leaves your finished turn folded while Watcher runs before the news turn’s lifecycle arrives', () => {
+        // Running, with no running lifecycle yet: the live turn falls back to your last message, the finished turn's own.
+        const view = render(list(messages, activities, false, streamText))
+        const before = drawnMessages()
+        view.rerender(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, activities)}
+          context={{ ...finished, liveTurn: 'you-2', running: true }} streamText={streamText} speaker="watcher" />)
+        expect(screen.getByRole('button', { name: 'Worked for 27s' })).toHaveAttribute('aria-expanded', 'false')
+        finishedReply('answer-2', 'Sent it the merge.')
+        for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
+      })
+
+      it('leaves the last answer finished when the window starts inside your turn and the news turn has only its lifecycle', () => {
+        // 81 replies: the last 80 leave out your message, which the turn's work and lifecycle follow. Each reply names it.
+        const long: AgentMessage[] = [said('you-long', 'user', '50:00.000', 'Go through every watched thread.'),
+          ...Array.from({ length: 81 }, (_, index): AgentMessage => ({ ...said(`step-${index}`, 'assistant', `51:${String(index % 60).padStart(2, '0')}.000`, `Checked thread ${index + 1}.`), turnMessageId: 'you-long' }))]
+        const shown = long.slice(-80)
+        const records: AgentActivity[] = [lifecycle('you-long', 0, 'completed', '50:00.500', '52:30.000'),
+          { id: 'you-long-tool', turnId: 'you-long', afterMessageId: 'you-long', sequence: 1, kind: 'tool', status: 'completed', title: 'read_thread', startedAt: clock('50:01.000'), completedAt: clock('50:02.000') }]
+        const draw = (running: boolean, list: readonly AgentActivity[]) => <MessageList messages={shown} provider="Claude Code" running={running} placement={placeActivities(long, shown, list)}
+          context={running ? { ...finished, liveTurn: 'news-9', running: true } : finished} streamText={streamText} speaker="watcher" />
+        const view = render(draw(false, records))
+        view.rerender(draw(true, [...records, lifecycle('news-9', 50, 'running', '59:50.000')]))
+        finishedReply('step-80', 'Checked thread 81.')
+      })
+
       it('leaves a plain answer as it was when the news turn has only its lifecycle record so far', () => {
         // An answer with no tools and no thinking: its turn's only record is its lifecycle, which draws nothing.
         const plain = messages.slice(0, 2)
