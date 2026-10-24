@@ -231,6 +231,9 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       const before = await grid()
       await input.press('Control+Shift+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
+      // Main has saved the first press; wait until the terminal has drawn it before the native press, so that press
+      // starts from the renderer's settled size rather than racing the first save's reply.
+      await expect(scope.locator('.xterm-rows')).toHaveCSS('font-size', '14px')
       await app.evaluate(({ BrowserWindow }) => {
         const contents = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents
         contents.sendInputEvent({ type: 'keyDown', keyCode: '+', modifiers: ['control'] })

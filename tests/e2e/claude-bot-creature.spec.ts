@@ -233,11 +233,13 @@ test('the readout is words on the room', async () => {
         await monitoring(page)
         await expect(indicator(page)).toBeVisible()
         await expectReadoutUnfilled(readout(page))
-        const [box, scroller] = await Promise.all([readout(page).boundingBox(), pane(page).locator('.thread-workspace__transcript').boundingBox()])
-        // Words with no fill must not sit over the transcript's text either.
-        const overlaps = box!.x < scroller!.x + scroller!.width && scroller!.x < box!.x + box!.width
-          && box!.y < scroller!.y + scroller!.height && scroller!.y < box!.y + box!.height
-        expect(overlaps, JSON.stringify({ box, scroller })).toBe(false)
+        await pane(page).locator('.thread-workspace__transcript').evaluate(scroller => { scroller.scrollTop = scroller.scrollHeight })
+        const [box, last] = await Promise.all([readout(page).boundingBox(), pane(page).locator('.thread-workspace__transcript .thread-message').last().boundingBox()])
+        // The band lies over the transcript, so the conversation shows behind the creature; at the transcript's end the
+        // last message still clears it, so words with no fill never sit over the transcript's text at rest.
+        const overlaps = box!.x < last!.x + last!.width && last!.x < box!.x + box!.width
+          && box!.y < last!.y + last!.height && last!.y < box!.y + box!.height
+        expect(overlaps, JSON.stringify({ box, last })).toBe(false)
         const ratio = await readoutContrast(readout(page))
         ratios[`${appearance}-${width}x${height}`] = ratio
         expect(ratio.label).toBeGreaterThanOrEqual(4.5)

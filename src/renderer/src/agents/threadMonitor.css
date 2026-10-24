@@ -56,3 +56,9 @@
 /* The creature setting's preview in Settings → Appearance: a short track with the creature walking it. */
 .creature-walk { position: relative; width: 100%; height: 64px; }
 .creature-walk .thread-monitor__track { height: 64px; }
+/* In Watcher's room the ornament's band lies over the transcript, not above it, so the conversation shows behind the creature.
+   Only the composer and the readout take clicks there. A thread's pane already floats its whole composer, band included (threads.css).
+   ThreadPane marks both ends with data-creature-overlay, so no :has() rule has to watch the whole room. */
+.thread-workspace__compose[data-creature-overlay] { position: relative; z-index: 1; margin-top: -68px; pointer-events: none; }
+.thread-workspace__compose[data-creature-overlay] > * { pointer-events: auto; }
+.thread-workspace__transcript[data-creature-overlay] { padding-bottom: 96px; }
