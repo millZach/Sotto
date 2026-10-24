@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
@@ -925,6 +926,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const greets = empty && !queueHolds && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
+  useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
