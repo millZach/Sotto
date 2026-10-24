@@ -3,12 +3,13 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentHost } from '../../../src/main/agents/host'
 import { UsageService } from '../../../src/main/agents/usageService'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
-import type { UsagePromptIdentity, UsagePromptSubmission, UsageTokenObservation } from '../../../src/shared/usageDashboard'
+import { USAGE_HISTORY_BATCH_MAX, type UsagePromptIdentity, type UsagePromptSubmission, type UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { parseCodexQuota } from '../../../src/main/agents/providerQuota'
 
 const at = '2026-10-12T12:00:00.000Z'
@@ -115,7 +116,7 @@ describe('host usage collection service', () => {
   it('coalesces whole streaming replacements and flushes the final counts on close', () => {
     vi.useFakeTimers()
     const f = fixture()
-    const write = vi.spyOn(f.store, 'observeTokens')
+    const write = vi.spyOn(f.store, 'observeTokenBatch')
     f.emit(token()); f.emit(token({ tokens: { input: 100, output: 22, cached: 40 } }))
     // A normal snapshot broadcast must not bypass the stream write interval.
     f.fake.emit()
@@ -287,6 +288,55 @@ describe('host usage collection service', () => {
     expect(result.quotas[0]!.windows[0]!.usedPercent).toBe(20)
     await expect(f.service.clear({ expectedRevision: 0 })).rejects.toThrow('could not be saved')
     expect(f.fake.commands).toHaveLength(0)
+  })
+
+  it('saves a backlog of token records in one transaction per batch, with the rows and revision one save per record gives', () => {
+    const f = fixture()
+    // The first snapshot's seed mark goes first, so only the backlog is counted below.
+    f.service.flush()
+    const records = Array.from({ length: USAGE_HISTORY_BATCH_MAX + 500 }, (_, index) => token({ recordKey: hash(`backlog-${index}`),
+      groupKey: hash(`backlog-turn-${index % 7}`), tokens: { input: index, output: 1 } }))
+    for (const record of records) f.emit(record)
+    // A whole replacement still arriving in the buffer, and a row it already holds, change nothing about the batching.
+    f.emit({ ...records[3]!, tokens: { input: 9_999, output: 1 } })
+    const begins = vi.spyOn(DatabaseSync.prototype, 'exec')
+    f.service.flush()
+    expect(begins.mock.calls.filter(([sql]) => sql === 'BEGIN IMMEDIATE')).toHaveLength(Math.ceil(records.length / USAGE_HISTORY_BATCH_MAX))
+    begins.mockRestore()
+
+    const reference = new UsageStore(':memory:', () => at)
+    reference.open()
+    try {
+      reference.markLegacySeedCompleted()
+      for (const record of [records[0]!, records[1]!, records[2]!, { ...records[3]!, tokens: { input: 9_999, output: 1 } }, ...records.slice(4)]) {
+        reference.observeTokens(record)
+      }
+      expect(f.store.metadata().revision).toBe(reference.metadata().revision)
+      expect(f.store.query().totals).toEqual(reference.query().totals)
+    } finally { reference.close() }
+  })
+
+  it('keeps a failed batch buffered for the retry and saves the prompts after the token records', async () => {
+    const f = fixture()
+    f.service.flush()
+    const save = f.store.observeTokenBatch.bind(f.store)
+    const write = vi.spyOn(f.store, 'observeTokenBatch')
+    const prompts = vi.spyOn(f.store, 'submitPrompt')
+    // The first batch commits; the second fails and nothing after it is attempted.
+    write.mockImplementationOnce(save).mockImplementationOnce(() => { throw new Error('synthetic disk failure') })
+    const count = USAGE_HISTORY_BATCH_MAX + 10
+    for (let index = 0; index < count; index++) f.emit(token({ recordKey: hash(`retry-${index}`), tokens: { input: 1, output: 1 } }))
+    f.service.submitPrompt(submission)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(prompts).not.toHaveBeenCalled()
+    expect(f.store.query().totals.tokenRecords).toBe(USAGE_HISTORY_BATCH_MAX)
+    const result = await f.service.read()
+    expect(result.persistence).toBe('saved')
+    expect(result.activity!.totals.tokenRecords).toBe(count)
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls[2]![0]).toHaveLength(10)
+    expect(prompts).toHaveBeenCalledOnce()
+    expect(prompts.mock.invocationCallOrder[0]).toBeGreaterThan(write.mock.invocationCallOrder[2]!)
   })
 })
 

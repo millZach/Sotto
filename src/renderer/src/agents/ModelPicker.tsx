@@ -130,6 +130,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
+  /** Whether the press now ending began on the backdrop, outside every part of the menu. */
+  const pressedBackdrop = useRef(false)
   const groups = useMemo(() => {
     if (!open) return []
     const result = groupModels(models, model => model.provider)
@@ -271,7 +273,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
-      onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
+      // A click outside closes the menu only when its press began outside too. A press on a provider tile can change the
+      // menu's height, and a menu above its chip moves its top edge, so the release may land beyond the menu; the click
+      // then goes to the dialog itself, and closing on it would close the menu on the tile the user pressed.
+      onPointerDown={event => { pressedBackdrop.current = event.target === event.currentTarget }}
+      onClick={event => { if (event.target === event.currentTarget && pressedBackdrop.current) setOpen(false); pressedBackdrop.current = false; event.stopPropagation() }}>
       {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
       {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical"
         onKeyDown={event => moveListboxFocus(event, rail.current)}>

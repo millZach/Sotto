@@ -3,7 +3,7 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId, USAGE_LIMIT_PROVIDERS,
+  isUsageProviderId, USAGE_HISTORY_BATCH_MAX, USAGE_LIMIT_PROVIDERS,
   type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsagePromptIdentity, type UsageProviderId,
@@ -30,7 +30,7 @@ export interface UsagePromptRecorder {
   discardPrompt(threadId: string, messageId: string): void
 }
 
-type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokens' | 'submitPrompt' | 'acceptSubmittedPrompt' |
+type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokenBatch' | 'submitPrompt' | 'acceptSubmittedPrompt' |
   'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
   & Partial<Omit<UsageHistoryStore, 'metadata'>>
 interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
@@ -97,7 +97,7 @@ export class UsageService implements UsagePromptRecorder {
   private startHistory(): void {
     const host = this.options.host
     if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return
-    if (!this.store.observeTokenBatch || !this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
+    if (!this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
     this.history = new UsageHistoryImporter({
       source: {
         ...(host.scanUsageHistory ? { scanUsageHistory: (sink, signal) => host.scanUsageHistory!(sink, signal) } : {}),
@@ -185,7 +185,17 @@ export class UsageService implements UsagePromptRecorder {
     clearTimeout(this.timer); this.timer = undefined
     if (!this.open()) { this.schedule(RETRY_MS); return }
     try {
-      for (const [key, record] of this.tokens) { this.store.observeTokens(record); this.tokens.delete(key) }
+      // A few bounded transactions rather than one per record: a start-up backlog of thousands held main for seconds.
+      // A batch that fails rolls back whole and stays buffered, with everything after it, for the retry.
+      while (this.tokens.size) {
+        const keys: string[] = [], records: UsageTokenObservation[] = []
+        for (const [key, record] of this.tokens) {
+          if (keys.length === USAGE_HISTORY_BATCH_MAX) break
+          keys.push(key); records.push(record)
+        }
+        this.store.observeTokenBatch(records, { revision: 'per-record' })
+        for (const key of keys) this.tokens.delete(key)
+      }
       for (const [key, write] of this.prompts) {
         if (write.submission) this.store.submitPrompt(write.submission)
         if (write.action === 'accept') this.store.acceptSubmittedPrompt(...parsePromptKey(key))
