@@ -132,11 +132,11 @@ function openTurn(session, commandId, text, steered = false, displayText = undef
   addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(displayText !== undefined ? { displayText } : {}), ...(cut ? { truncated: true } : {}), ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !script.suppressUserMessage)
   return turnId
 }
-function endTurn(session, terminal = 'completed') {
+function endTurn(session, terminal = 'completed', error = undefined) {
   const turnId = session.activeTurnId
   if (!turnId) return
   session.activeTurnId = undefined; save()
-  if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session) })
+  if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session), ...(error ? { error, reason: error.message } : {}) })
 }
 /** This host's last-observed subscription window, which only a model call fills, as on Muse's serve host. */
 let hostUsage
@@ -244,6 +244,12 @@ let granted = []
 let experimental = false
 /** What this host built each session's runtime with: the servers' JSON, or null for none. */
 const loadedServers = new Map()
+// `compactedToolsBug` plays Muse 1.4.12: a compacted session whose runtime a new host builds with tool servers fails
+// every turn at once with a config error. A fork of it builds cleanly; the fork's runtime loads, without servers, in the
+// host that made it, and its history is rebuilt: the compaction's summary takes the first message's item, and an
+// assistant item Muse writes itself follows it.
+const auditBroken = new Set()
+const AUDIT_FAILED = { kind: 'configError', message: 'invalid run configuration: MCP startup audit failed; MCP is disabled for this runtime', retryable: false }
 /** The servers themselves, by session, for the model's tool calls. */
 const sessionServers = new Map()
 const capabilityRequired = id => send({ id, error: { code: -32010, message: 'capability required', data: { kind: 'capabilityRequired', capability: 'sessionMcp' } } })
@@ -267,6 +273,7 @@ function load(sessionId, config) {
   const servers = config?.mcpServers && Object.keys(config.mcpServers).length ? config.mcpServers : null
   if (loadedServers.has(sessionId)) return config?.mcpServers === undefined || loadedServers.get(sessionId) === JSON.stringify(servers)
   loadedServers.set(sessionId, JSON.stringify(servers))
+  if (servers && sessions[sessionId]?.compacted && read('script.json', {}).compactedToolsBug) auditBroken.add(sessionId)
   if (servers) { sessionServers.set(sessionId, servers); void listServerTools(sessionId, servers) }
   return true
 }
@@ -381,6 +388,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     const steer = frame.method === 'turn/steer'
     const go = () => {
       const turnId = openTurn(session, p.commandId, textOf(p.input), steer, p.displayText)
+      if (auditBroken.has(session.sessionId)) { setImmediate(() => endTurn(session, 'failed', AUDIT_FAILED)); return turnId }
       if (ephemeral) completeReply(session, read('oneshot.json', {}).text ?? 'Fixture title')
       return turnId
     }
@@ -453,7 +461,17 @@ createInterface({ input: process.stdin }).on('line', line => {
     const outcome = frame.method.endsWith('cancel') ? 'cancelled' : 'answered'
     notify('userInput/settled', { userInputId: p.userInputId, sessionId: session.sessionId, outcome })
     result({ outcome })
-  } else if (frame.method === 'session/compact') result({ outcome: 'noop' })
+  } else if (frame.method === 'session/compact') {
+    const session = hold(p.sessionId)
+    if (session && script.compactedToolsBug) { session.compacted = true; save(); result({ outcome: 'compacted' }) } else result({ outcome: 'noop' })
+  } else if (frame.method === 'session/fork') {
+    const source = hold(p.sessionId); if (!source) { fail('sessionNotFound', 'Unknown session'); return }
+    const sessionId = randomUUID(), first = source.items.findIndex(item => item.kind === 'userMessage')
+    const items = source.items.filter(item => !source.activeTurnId || item.turnId !== source.activeTurnId).map((item, index) => index === first ? { ...item, text: 'summary: what the conversation held', displayText: undefined } : item)
+    if (first >= 0) items.splice(first + 1, 0, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1, turnId: items[first].turnId, recordedAt: stamp(), text: '[Previous turn ended without an assistant reply.]' })
+    const session = { ...globalThis.structuredClone(source), sessionId, items, compacted: false, activeTurnId: undefined, pendingApprovals: [], pendingInputs: [], forkedFrom: source.sessionId }
+    sessions[sessionId] = session; save(); held.add(sessionId); holding(sessionId, true); load(sessionId, undefined)
+    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : items, totalItemCount: items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
   else if (frame.method === 'usage/read' && !script.noUsageRead) result(hostUsage ? { usage: hostUsage } : {})
   else if (frame.id !== undefined) fail('methodNotFound', 'Not in this fixture')
 }).on('close', () => process.exit(0))

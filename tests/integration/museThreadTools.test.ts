@@ -212,3 +212,37 @@ it('answers capabilityRequired when a client sends servers it never asked to att
   expect(refused).toBeInstanceOf(MuseRejected)
   expect((refused as MuseRejected).kind).toBe('capabilityRequired')
 })
+
+// Muse 1.4.12 fails every turn of a compacted session whose runtime a new host builds with tool servers; a fork of it
+// builds cleanly. Sotto moves the thread onto the fork, and the history Muse rebuilt for it stays out of the transcript.
+it('moves a compacted thread onto a copy of its conversation when a new host cannot give it Sotto’s tools', async () => {
+  const { f, id } = await open({ compactedToolsBug: true })
+  const send = (g: Fixture, text: string) => g.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text })
+  const texts = async (g: Fixture) => (await thread(g, id)).messages.map(message => message.text)
+  await send(f, 'Before the compaction')
+  await f.driver.completeTurn(id, 'First reply')
+  await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  expect(await f.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })).toMatchObject({ accepted: true })
+  const before = await f.realId(id)
+  const g = await f.driver.restart() as unknown as Fixture
+  closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
+  equip(g)
+  await g.host.connect()
+  g.host.observeThreads?.([id])
+  await send(g, 'After the restart')
+  await expect.poll(async () => (await records(g, 'session/fork')).length).toBe(1)
+  await expect.poll(async () => g.realId(id)).not.toBe(before)
+  const forked = await g.realId(id)
+  await expect.poll(async () => (await thread(g, id)).status).toBe('error')
+  expect((await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/copy of its conversation/u)
+  // The next send runs on the copy, which a new host built with the thread's servers.
+  await send(g, 'Sent again')
+  await g.driver.completeTurn(id, 'Second reply')
+  await expect.poll(async () => (await thread(g, id)).status).toBe('idle')
+  const resumes = (await records(g, 'session/resume')).filter(record => record.params?.sessionId === forked)
+  expect(resumes.length).toBeGreaterThan(0)
+  expect(Object.keys(servers(resumes[0]) ?? {}).map(name => name.replace(SUFFIX, ''))).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
+  expect(await texts(g)).toEqual(['Before the compaction', 'First reply', 'After the restart', 'Sent again', 'Second reply'])
+  // Once per thread in a run: the copy is not copied again.
+  expect(await records(g, 'session/fork')).toHaveLength(1)
+})
