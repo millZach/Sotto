@@ -1,4 +1,4 @@
-# Reply quotes (ADR-0127)
+# Reply quotes (ADR-0129)
 
 Proved in the built app on October 24, 2026, on an Apple silicon Mac, with `tests/e2e/reply-quote.spec.ts` (both tests pass). The images named here are in `artifacts/reply-quote/`; a run with `SOTTO_E2E_EVIDENCE=publish` writes every capture there, and only these are committed.
 

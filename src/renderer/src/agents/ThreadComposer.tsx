@@ -161,7 +161,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onExplainedError?: ((error: string | null) => void) | undefined
   /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
   readonly reviewComments?: ReviewCommentStore
-  /** Words quoted from the agent's replies that go with this thread's next prompt (ADR-0127); the window's own unless a test passes one. */
+  /** Words quoted from the agent's replies that go with this thread's next prompt (ADR-0129); the window's own unless a test passes one. */
   readonly replyQuotes?: ReplyQuoteStore
   /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
@@ -172,7 +172,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watchActions = useWatchActions()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
-  // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0127).
+  // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
   const quoting = useOwlFeature('reply-quote')
   const heldQuotes = useReplyQuotes(replyQuotes, threadId)
   const quotes = quoting ? heldQuotes : NO_QUOTES

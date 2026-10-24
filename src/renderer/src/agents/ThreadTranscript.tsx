@@ -613,7 +613,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly onReadingBack?: ((reading: boolean) => void) | undefined
   /** A printable key pressed in the transcript: the pane puts focus in the composer, which takes the key. */
   readonly onTypeAhead?: (() => void) | undefined
-  /** Words from a reply went onto the composer as a quote (ADR-0127): the pane puts focus in the composer. */
+  /** Words from a reply went onto the composer as a quote (ADR-0129): the pane puts focus in the composer. */
   readonly onQuoted?: (() => void) | undefined
 }): ReactNode {
   const thread = row.thread
@@ -960,7 +960,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     </div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
-    {/* Add to prompt over words selected in a reply (ADR-0127; Owl only). */}
+    {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}
     {(away || unseen) && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
       <ArrowDown size={16} aria-hidden="true" />{unseen ? 'New messages' : 'Jump to latest'}

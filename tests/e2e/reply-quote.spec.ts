@@ -6,7 +6,7 @@ import { expectPromptText, fillPrompt } from './support/prompt'
 import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// Reply quotes (ADR-0127; Owl only, the user's pick A and 1 of docs/prototypes/reply-quote-prototype.html): words
+// Reply quotes (ADR-0129; Owl only, the user's pick A and 1 of docs/prototypes/reply-quote-prototype.html): words
 // dragged over in an agent's reply offer Add to prompt above them, the press or Ctrl+Shift+A puts them on the composer
 // as a chip, and the next prompt carries them as plain text ahead of the user's message. Captures go to disposable run
 // evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/reply-quote.

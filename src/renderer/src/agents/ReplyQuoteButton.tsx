@@ -13,7 +13,7 @@ export const REPLY_QUOTE_SHORTCUT = 'mod+shift+a'
 const GAP_PX = 8
 
 /**
- * Add to prompt, over words the user selected in one of the agent's replies (ADR-0127). It stands above the selection,
+ * Add to prompt, over words the user selected in one of the agent's replies (ADR-0129). It stands above the selection,
  * or under it where the top of the transcript would cut it off, and follows it as the transcript scrolls. A press puts
  * the words on this thread's composer as a quote and hands focus to the composer; Escape puts the button away.
  */

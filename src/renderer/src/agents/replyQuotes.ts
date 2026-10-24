@@ -3,7 +3,7 @@ import { ThreadListStore, useThreadList } from './threadListStore'
 
 /**
  * Words the user selected in one of the agent's replies, waiting on that thread's composer to go with the next prompt
- * (ADR-0127). The text is what the selection showed when Add to prompt was pressed, as plain text, so a code block in the
+ * (ADR-0129). The text is what the selection showed when Add to prompt was pressed, as plain text, so a code block in the
  * reply arrives as its lines without the fence, and the code block's own controls are left out.
  */
 export interface ReplyQuote {
