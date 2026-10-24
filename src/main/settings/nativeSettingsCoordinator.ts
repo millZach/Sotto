@@ -88,15 +88,13 @@ function shortcutsFit(list: readonly string[], min: number): boolean {
   return list.length >= min && list.length <= MAX_SHORTCUTS_PER_ROLE && list.every((chord) => chord.length >= 1 && chord.length <= 64 && chordTokens(chord).length > 0)
 }
 
-import { zoomDiag, zoomTimed } from '../zoomDiag'
 export class NativeSettingsCoordinator {
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(private readonly dependencies: NativeSettingsCoordinatorDependencies) {}
 
   getSettings(): Promise<AppSettings> {
-    zoomDiag('get:called')
-    return this.enqueue(() => zoomTimed('get:run', () => this.dependencies.repository.get()))
+    return this.enqueue(() => this.dependencies.repository.get())
   }
 
   updateSettings(patch: SettingsPatch): Promise<AppSettings> {
@@ -104,9 +102,7 @@ export class NativeSettingsCoordinator {
       return Promise.reject(new NativeManagedSettingMutationError())
     }
     const patchSnapshot = { ...patch }
-    zoomDiag(`update:called ${Object.keys(patch).join(',')}`)
     return this.enqueue(async () => {
-      zoomDiag('update:run')
       const previous = await this.dependencies.repository.get()
       try {
         // Apply fallible native effects before committing settings and OS-vault credentials.
@@ -124,8 +120,7 @@ export class NativeSettingsCoordinator {
             worktreeCleanup: { ...previous.worktreeCleanup, ...worktreeCleanup },
           }),
         })
-        zoomDiag('update:written')
-        await zoomTimed('update:notify', () => this.notifySettingsChanged(updated))
+        await this.notifySettingsChanged(updated)
         return updated
       } catch {
         await this.restoreSettings(previous)

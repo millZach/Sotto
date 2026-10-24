@@ -1,5 +1,4 @@
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
-import { zoomTimed } from '../zoomDiag'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { WatcherMessageDisplay } from './watcherMessageDisplay'
 import { clonePlainData } from './cloneHostSnapshot'
@@ -1818,7 +1817,7 @@ export class AgentControl {
       () => this.watcherHooks?.privacyChanged?.(),
       () => this.persist(),
     ]
-    const results = await Promise.allSettled(cleanup.map((operation, index) => Promise.resolve().then(() => zoomTimed(`control:${index}`, operation))))
+    const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
     const failure = results.find(result => result.status === 'rejected')
     if (revision === this.privacyRevision) {
       this.privacyCleanupPending = failure !== undefined

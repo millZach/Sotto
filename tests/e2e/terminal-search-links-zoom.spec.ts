@@ -4,7 +4,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { forceDomTerminalRenderer, SHELL_START_TIMEOUT, terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { pageFacts, restoreHasRules, stripHasRules, zoomDiagnostics } from './support/zoomDiag'
 
 // Run after npm run build. These journeys use real ConPTYs; only external browser opening is stubbed.
 const SHOTS = evidenceDirectory('artifacts/terminal-search-links-zoom')
@@ -230,27 +229,18 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await linkControl.press('Escape')
       await expect(search).toBeHidden(); await expect(input).toBeFocused()
       const before = await grid()
-      const fontSize = async (): Promise<number> => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)
-      const zoomFactor = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.getZoomFactor())
-      const nativePress = () => app.evaluate(({ BrowserWindow }) => {
+      await input.press('Control+Shift+=')
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
+      await app.evaluate(({ BrowserWindow }) => {
         const contents = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents
         contents.sendInputEvent({ type: 'keyDown', keyCode: '+', modifiers: ['control'] })
         contents.sendInputEvent({ type: 'keyUp', keyCode: '+', modifiers: ['control'] })
       })
-      await pageFacts(page, 'before-any-zoom')
-      await zoomDiagnostics(app, page, 'ctrl-shift-equals', () => input.press('Control+Shift+='), async () => await fontSize() === 14, { trace: false })
-      await expect.poll(fontSize).toBe(14)
-      await zoomDiagnostics(app, page, 'native-plus-with-has', nativePress, async () => await fontSize() === 15)
-      await expect.poll(fontSize).toBe(15)
-      expect(await zoomFactor()).toBe(1)
-      await pageFacts(page, 'with-has')
-      await stripHasRules(page)
-      await pageFacts(page, 'without-has')
-      await zoomDiagnostics(app, page, 'ctrl-minus-without-has', () => input.press('Control+-'), async () => await fontSize() === 14)
-      await restoreHasRules(page)
-      await pageFacts(page, 'has-restored')
-      await zoomDiagnostics(app, page, 'ctrl-0-has-restored', () => input.press('Control+0'), async () => await fontSize() === 13, { trace: false })
-      await expect.poll(fontSize).toBe(13)
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(15)
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.getZoomFactor())).toBe(1)
+      await input.press('Control+-')
+      await input.press('Control+0')
+      await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(13)
       await input.press('Control+=')
       await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)).toBe(14)
       await expect.poll(grid).toBeLessThan(before)

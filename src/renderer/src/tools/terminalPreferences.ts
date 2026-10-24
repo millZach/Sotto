@@ -9,12 +9,10 @@ let fontSize = DEFAULT_SETTINGS.terminalFontSize
 let save: ((patch: SettingsPatch) => Promise<boolean>) | undefined
 let pending = 0
 const listeners = new Set<() => void>()
-const zoomDiag = (label: string): void => { (window as { __zoomDiag?: [string, number][] }).__zoomDiag?.push([label, Date.now()]) }
 const notify = (): void => { for (const listener of listeners) listener() }
 
 /** App owns settings and serializes saves. Views outlive their panes, so they read the current preferences here. */
 export function setTerminalPreferences(settings: Preferences, update: (patch: SettingsPatch) => Promise<boolean>): void {
-  zoomDiag(`layoutEffect ${settings.terminalFontSize}`)
   confirmed = settings
   save = update
   if (!pending) fontSize = settings.terminalFontSize
@@ -31,14 +29,12 @@ export function followTerminalFontSize(listener: () => void): () => void {
 export async function zoomTerminal(action: 'larger' | 'smaller' | 'reset'): Promise<boolean> {
   if (!save) return false
   const next = action === 'reset' ? DEFAULT_SETTINGS.terminalFontSize : Math.max(8, Math.min(32, fontSize + (action === 'larger' ? 1 : -1)))
-  zoomDiag(`zoom ${action} ${fontSize}->${next} pending${pending}`)
   if (next === fontSize) return true
   fontSize = next
   pending++
   notify()
   try {
     const saved = await save({ terminalFontSize: next })
-    zoomDiag(`saved ${next} ${saved}`)
     if (saved) confirmed = { ...confirmed, terminalFontSize: next }
     return saved
   }
