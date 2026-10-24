@@ -12,7 +12,7 @@
 .attached-file { display: flex; align-items: center; gap: 7px; max-width: min(100%, 240px); height: 32px; padding: 0 4px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); font-size: 12.5px; }
 .attached-file > svg { flex: none; color: var(--tt-text-muted); }
 .attached-file__name { display: flex; min-width: 0; color: var(--tt-text); white-space: nowrap; }
-.attached-file__head { min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; }
+.attached-file__head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .attached-file__tail { flex: none; }
 .attached-file__size { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .attached-file button { position: relative; display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
