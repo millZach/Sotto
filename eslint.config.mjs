@@ -122,6 +122,7 @@ export default tseslint.config(
       'artifacts/composer-float/**',
       'artifacts/composer-shrink/**',
       'artifacts/watcher-column/**',
+      'artifacts/reply-quote/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
       'artifacts/git-settings/**',
