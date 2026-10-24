@@ -80,9 +80,14 @@ export function grokArguments(): string[] {
  * One thread session's own Grok process. `clientRevision` is the client it was started from, which
  * `clientUpdated` moves on; `closing` marks a close Sotto asked for, and `lost` an exit nobody asked for.
  */
-interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; watcher: boolean }
+interface ThreadProcess { rpc: GrokRpc; ready: Promise<ThreadProcess>; clientRevision: number; closing: boolean; lost: boolean; watcher: boolean; signedIn: boolean }
 /** A Grok request as this adapter keeps it: answered on the process that asked, never another. */
 type Pending = GrokPending & { rpc: GrokRpc; reasked?: boolean }
+/**
+ * How long a Grok limits reading stands in for a refresh Usage makes on its own when no Grok process is running to
+ * ask. Usage refreshes on its own only readings over a minute old, so a shorter window would never be used (#1456).
+ */
+const QUOTA_REUSE_MS = 5 * 60_000
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
@@ -167,10 +172,13 @@ export interface GrokAcpOptions {
 export class GrokAcpHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   private quota: UsageQuotaRead | undefined
-  private quotaReading: Promise<UsageQuotaRead> | undefined
-  private quotaProbe: GrokRpc | undefined
+  /** When `quota` was read, by this computer's clock. */
+  private quotaReadAt: number | undefined
+  /** The refresh under way, and whether Usage made it on its own; Read again never waits on one of those. */
+  private quotaReading: { read: Promise<UsageQuotaRead>; background: boolean } | undefined
+  private readonly quotaProbes = new Set<GrokRpc>()
   private readonly usagePromptStarts = new Map<string, string>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
@@ -364,12 +372,15 @@ export class GrokAcpHost implements AgentHost {
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
-      this.readProviderQuota = async (providerId, refresh) => {
+      this.readProviderQuota = async (providerId, refresh, background = false) => {
         if (providerId !== 'grok') return unavailableProviderQuota(providerId, 'unsupported')
         if (!this.state.connected || !this.executable) return unavailableProviderQuota('grok', 'not-connected')
         if (!refresh) return this.quota ?? unavailableProviderQuota('grok', 'not-read', true)
-        this.quotaReading ??= this.readQuota().finally(() => { this.quotaReading = undefined })
-        return this.quotaReading
+        const reading = this.quotaReading
+        if (reading && (background || !reading.background)) return reading.read
+        const read: Promise<UsageQuotaRead> = this.readQuota(background).finally(() => { if (this.quotaReading?.read === read) this.quotaReading = undefined })
+        this.quotaReading = { read, background }
+        return read
       }
     }
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'grok-threads.json'), preserveLegacyAliases(z.record(z.string(), aliasSchema).parse), () => ({}))
@@ -383,26 +394,71 @@ export class GrokAcpHost implements AgentHost {
       stop: id => this.stopSession(id),
     })
   }
-  private async readQuota(): Promise<UsageQuotaRead> {
+  /**
+   * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
+   * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
+   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. With none to ask, a
+   * refresh Usage made on its own takes a reading from the last few minutes, and only then is a process started for
+   * the one question. No session/new, load or prompt is sent on any of them.
+   */
+  private async readQuota(background: boolean): Promise<UsageQuotaRead> {
     const generation = this.generation, executable = this.executable
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
-    // The existing signed-in account is asked for metadata. No session/new, load or prompt is sent.
+    const gone = () => generation !== this.generation || !this.state.connected
+    const live = this.liveProcess()
+    if (live) {
+      try {
+        const answer = await this.askBilling(live)
+        if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+        return this.keepQuota(answer)
+      } catch {
+        // A process that stopped or refused partway is not the account's answer; the read below gives that.
+        if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      }
+    }
+    if (background && this.quota && this.quotaReadAt !== undefined && Date.now() - this.quotaReadAt < QUOTA_REUSE_MS) return this.quota
     const probe = this.spawn(executable, () => undefined)
-    this.quotaProbe = probe
+    this.quotaProbes.add(probe)
     try {
       const client = await this.identify(probe)
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
       if (clientRefusal(client)) return unavailableProviderQuota('grok', 'read-failed', true)
       await this.authenticate(probe)
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      let answer = unavailableProviderQuota('grok', 'not-reported', true)
-      await probe.request('_x.ai/billing', {}, value => { answer = parseGrokQuota(value, new Date().toISOString()) })
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
-      this.quota = answer; return answer
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      const answer = await this.askBilling(probe)
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
+      return this.keepQuota(answer)
     } catch {
-      if (generation !== this.generation || !this.state.connected) return unavailableProviderQuota('grok', 'not-connected')
+      if (gone()) return unavailableProviderQuota('grok', 'not-connected')
       return { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' }
-    } finally { if (this.quotaProbe === probe) this.quotaProbe = undefined; probe.close() }
+    } finally { this.quotaProbes.delete(probe); probe.close() }
+  }
+  private keepQuota(answer: UsageQuotaRead): UsageQuotaRead { this.quota = answer; this.quotaReadAt = Date.now(); return answer }
+  /**
+   * A thread's process that has started, signed in and is not being stopped: one on the current client whose thread
+   * is idle first, then one on the current client whose thread is busy, then an outdated one still running.
+   */
+  private liveProcess(): GrokRpc | undefined {
+    let best: { rpc: GrokRpc; rank: number } | undefined
+    for (const [id, entry] of this.processes) {
+      if (!entry.signedIn || entry.closing || entry.lost) continue
+      const rank = entry.clientRevision !== this.clientRevision ? 2 : this.busy(id) ? 1 : 0
+      if (rank === 0) return entry.rpc
+      if (!best || rank < best.rank) best = { rpc: entry.rpc, rank }
+    }
+    return best?.rpc
+  }
+  /**
+   * Ask one process for the account's credit use. A reader that throws ends the process it reads from, which may be a
+   * thread's own, so an answer Sotto cannot read fails this read after the reply is in and leaves the process alone.
+   */
+  private async askBilling(rpc: GrokRpc): Promise<UsageQuotaRead> {
+    let answer = unavailableProviderQuota('grok', 'not-reported', true), unreadable = false
+    await rpc.request('_x.ai/billing', {}, value => {
+      try { answer = parseGrokQuota(value, new Date().toISOString()) } catch { unreadable = true }
+    })
+    if (unreadable) throw new Error('Grok sent limits Sotto could not read.')
+    return answer
   }
   private usageContext(id: string, params: z.infer<typeof updateSchema>, replay: boolean, at?: string): NativeUsageContext {
     const prompt = typeof params.update.prompt_id === 'string' ? params.update.prompt_id : params._meta?.promptId
@@ -548,7 +604,7 @@ export class GrokAcpHost implements AgentHost {
     const executable = this.executable
     if (!this.state.connected || !executable) return Promise.reject(new Error('Connect Grok before managing threads.'))
     const replacement = this.processes.get(id); if (replacement) return replacement.ready
-    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, watcher: !!profile } as ThreadProcess
+    const entry = { clientRevision: this.clientRevision, closing: false, lost: false, watcher: !!profile, signedIn: false } as ThreadProcess
     entry.rpc = this.spawn(executable, () => this.processLost(id, entry))
     entry.ready = (async () => {
       try {
@@ -565,6 +621,7 @@ export class GrokAcpHost implements AgentHost {
         throw startupError
       }
       if (generation !== this.generation || this.processes.get(id) !== entry) throw new GrokUncertain('Grok connection changed while starting the thread.')
+      entry.signedIn = true
       return entry
     })()
     this.processes.set(id, entry)
@@ -659,7 +716,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
-    if (this.usageEnabled) { this.quota = undefined; this.usagePromptStarts.clear() }
+    if (this.usageEnabled) { this.quota = undefined; this.quotaReadAt = undefined; this.usagePromptStarts.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.usage.load()
@@ -1429,7 +1486,8 @@ export class GrokAcpHost implements AgentHost {
   }
   private finishDisconnect(): void {
     this.generation++; clearInterval(this.pollTimer); this.reaper.dispose(); this.loaded.clear(); this.loading.clear()
-    this.quotaProbe?.close(); this.quotaProbe = undefined
+    for (const probe of this.quotaProbes) probe.close()
+    this.quotaProbes.clear()
     for (const pending of this.pending.values()) { if (pending.answering) continue; try { pending.rpc.write({ jsonrpc: '2.0', id: pending.wireId, result: this.refusal(pending) }) } catch { /* Closed pipes never grant permission. */ } }
     this.pending.clear(); for (const thread of this.threads.values()) thread.requests = []
     for (const delivery of this.deliveries.values()) delivery.reject(new GrokUncertain('Grok disconnected before acknowledgement.'))

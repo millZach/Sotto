@@ -45,6 +45,8 @@ export class UsageService implements UsagePromptRecorder {
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
   private readonly refreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
+  /** Refreshes Usage made on its own, which may be answered from a recent reading, so Read again never joins one. */
+  private readonly backgroundRefreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private readonly reading = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private history: UsageHistoryImporter | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -154,8 +156,9 @@ export class UsageService implements UsagePromptRecorder {
       persistence: this.failed || this.lost ? 'failed' : 'saved' })
   }
 
-  async refresh(providerIds?: readonly UsageProviderId[]): Promise<UsageLocalHostRead> {
-    const quotas = await this.readQuotas(providerIds, true)
+  /** `background` is a refresh Usage made on its own when it opened; Read again leaves it out and always reads afresh. */
+  async refresh(providerIds?: readonly UsageProviderId[], background = false): Promise<UsageLocalHostRead> {
+    const quotas = await this.readQuotas(providerIds, true, background)
     return { status: 'ready', quotas, persistence: this.failed || this.lost ? 'failed' : 'saved' }
   }
 
@@ -278,14 +281,15 @@ export class UsageService implements UsagePromptRecorder {
     }
   }
 
-  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
+  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean, background = false): Promise<UsageQuotaRead[]> {
     const selected = LIMIT_PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
     return Promise.all(selected.map(async providerId => {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')
       if (!this.options.host.readProviderQuota) return unavailableProviderQuota(providerId, 'unsupported')
       const read = async (): Promise<UsageQuotaRead> => {
         try {
-          const quota = usageQuotaReadSchema.parse(await this.options.host.readProviderQuota!(providerId, refresh))
+          const host = this.options.host
+          const quota = usageQuotaReadSchema.parse(await (background ? host.readProviderQuota!(providerId, true, true) : host.readProviderQuota!(providerId, refresh)))
           if (quota.providerId !== providerId) throw new Error('Usage provider does not match')
           this.quotas.set(providerId, quota)
           return quota
@@ -294,8 +298,8 @@ export class UsageService implements UsagePromptRecorder {
           return { ...(previous ?? unavailableProviderQuota(providerId, 'read-failed')), status: 'error', reason: 'read-failed' }
         }
       }
-      const inFlight = refresh ? this.refreshing : this.reading
-      const existing = inFlight.get(providerId)
+      const inFlight = !refresh ? this.reading : background ? this.backgroundRefreshing : this.refreshing
+      const existing = (background ? this.refreshing.get(providerId) : undefined) ?? inFlight.get(providerId)
       if (existing) return refresh ? existing : this.waitForQuota(providerId, existing)
       const pending = read().finally(() => { inFlight.delete(providerId) })
       inFlight.set(providerId, pending)

@@ -680,7 +680,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
@@ -1771,7 +1771,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.initialize()
       // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.

@@ -222,6 +222,30 @@ describe('host usage collection service', () => {
     expect(f.fake.commands).toHaveLength(0)
   })
 
+  it('marks a refresh Usage made on its own, and never lets Read again wait on one (#1456)', async () => {
+    const f = fixture()
+    const quota = parseCodexQuota({ rateLimits: { primary: { usedPercent: 0, windowDurationMins: 300 } } }, at)
+    let finish: (() => void) | undefined
+    const read = vi.fn(async (_provider: string, _refresh: boolean, background?: boolean) => {
+      if (background) await new Promise<void>(resolve => { finish = resolve })
+      return quota
+    })
+    f.host.readProviderQuota = read
+    const background = f.service.refresh(['codex'], true), another = f.service.refresh(['codex'], true)
+    // Read again reads for itself while the one Usage made on its own is still under way.
+    await f.service.refresh(['codex'])
+    expect(read.mock.calls).toEqual([['codex', true, true], ['codex', true]])
+    finish!(); await Promise.all([background, another])
+    expect(read).toHaveBeenCalledTimes(2)
+    // One Usage made on its own joins a Read again under way rather than asking again.
+    let release: (() => void) | undefined
+    read.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve }); return quota })
+    const asked = f.service.refresh(['codex']), quiet = f.service.refresh(['codex'], true)
+    release!(); await Promise.all([asked, quiet])
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(f.fake.commands).toHaveLength(0)
+  })
+
   it('reports a failed store separately while account metadata remains available', async () => {
     const store = new UsageStore(':memory:')
     vi.spyOn(store, 'open').mockImplementation(() => { throw new Error('synthetic open failure') })

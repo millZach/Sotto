@@ -228,6 +228,11 @@ createInterface({input:process.stdin}).on('line', line => {
   if (script.delayPrompt) setTimeout(apply,script.delayPrompt); else apply()
  }
  else if (frame.method === 'session/cancel') complete(p.sessionId,'','cancelled')
+ // The signed-in account's credit use, which Usage reads as Grok's limits. It names no session.
+ else if (frame.method === '_x.ai/billing') {
+  if (script.rejectBilling) send({id:frame.id,error:{code:-32603,message:'Billing unavailable'}})
+  else send({id:frame.id,result:{config:{creditUsagePercent:script.billingPercent ?? 42,currentPeriod:{type:'USAGE_PERIOD_TYPE_WEEKLY',start:'2026-10-19T00:00:00Z',end:'2026-10-26T00:00:00Z'}}}})
+ }
  else send({id:frame.id,error:{code:-32601,message:'Unknown method'}})
 }).on('close', () => {
  // No leader keeps a session once its process ends: what this process held is no longer resident anywhere.
