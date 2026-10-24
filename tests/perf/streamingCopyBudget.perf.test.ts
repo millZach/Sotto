@@ -98,12 +98,16 @@ async function measure(threads: number, owl: boolean) {
     // The thread that delegated is shown without its hidden news, before the stream and while it runs.
     const parentShown = pipeline.control.threadDetail(pipeline.parentId)!.messages.map(message => message.id)
     if (!parentShown.includes('parent-reply') || parentShown.includes('parent-news')) throw new Error(`The delegating thread is not shown as its window would show it: ${JSON.stringify(parentShown)}`)
+    // The workspace saves once a window while the stream changes it; held here and made once at the end, the stream is
+    // counted with one save whatever the machine's speed, rather than one to three.
+    const releaseSaves = pipeline.holdSaves()
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
       pipeline.adapter.publish(true)
       await sleep(5)
     }
     await sleep(400)
+    await releaseSaves()
     counter.measuring = false
     const broadcasts = Math.max(1, pipeline.broadcasts())
     const per = (total: number, by: number) => Math.round(total / by * 100) / 100
@@ -171,9 +175,18 @@ async function measure(threads: number, owl: boolean) {
  * their spread (7.5 to 8.0) and stable's are 9.2 to 9.4, from 9.5 to 9.8. The budgets are 8.5 copies on Owl and 7.5 on
  * stable, and 10 objects on stable.
  */
+/*
+ * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, and
+ * copied for none of them, where the desktop room copied every room it kept for its window. With #1334 in, Owl makes 6.3
+ * to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5. The workspace's saves are held through the stream
+ * and made once at its end: it saves at most once a 250 ms window while anything changes, so one to three saves fell
+ * inside a stream as the machine was fast or slow, and on stable each copies the saved organization. Stable read 8.6 to
+ * 9.6 objects per thread per update by how many saves fell in, near its budget of 10; with one it reads 8.6 every run,
+ * and its budget is 9.5.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 8.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 10, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9.5, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

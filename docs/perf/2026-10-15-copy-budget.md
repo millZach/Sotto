@@ -289,6 +289,34 @@ At the owner's scale (`ownerScaleWorkBudget.perf.test.ts`, before and after on t
 What Owl's copied objects grow by along the history is unchanged, 1,896 per streamed update on one thread, and is now
 1.78 times streaming on one thread, so `KNOWN_HISTORY_GROWTH` moves with it.
 
+### October 23: Watcher's room built when its update goes (#1450)
+
+The desktop room no longer builds and copies the room on every coordinator broadcast. It builds the room when the window's
+update goes, at most once a publish window, and the update carries only what changed, so the copy for the publish window
+went. The owner-scale gate counts two more kinds of work for it: builds of the room and records of Watcher's history sent
+to the window, each watched thread's participations among them. Owl, owner's scale, on `main` with #1334 and with this
+change as well:
+
+| | Copier calls | Objects copied | Reads of a thread | Room builds | History records sent |
+| --- | --- | --- | --- | --- | --- |
+| One thread streaming, per update | 7.85 to 6.85 | 4,329 to 1,729 | 6,114 to 4,996 | 1 to 0.38 | 119 to 0 |
+| Three threads streaming, per update | 11.62 to 10.62 | 4,421 to 1,821 | 6,169 to 5,184 | 1 to 0.46 | 143 to 0 |
+| Saving an answer draft | 11 to 9 | 5,252 to 52 | 15,593 | 2 | 620 to 0 |
+| Typing in a composer | 13 to 11 | 15,894 to 10,694 | 12,148 | 2 | 620 to 0 |
+| Opening a thread | 23 to 21 | 26,799 to 21,599 | 14,490 | 2 | 620 to 0 |
+| Sending a message | 121 to 116 | 59,635 to 46,635 | 37,733 to 34,077 | 5 to 3 | 930 to 0 |
+
+The threads that stream were let go by earlier requests, and a row that changes goes as what changed in it, so none of
+their participations rides again (sent whole, it was 62 records per streamed update on one thread and 320 per save).
+Owl's copied objects no longer grow with the history while threads stream or when an answer draft is saved; what still
+grows is a command copying Watcher's whole record (#1248). Stable is unchanged.
+
+In the streaming copy budget Owl makes 6.3 to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5. That gate
+now holds the workspace's saves through the stream and makes one at its end. The workspace saves at most once a 250 ms
+window while anything changes, so one to three saves fell inside the stream as the machine was fast or slow, and each
+copies the saved organization on stable: stable read 8.6 to 9.6 objects per thread per update by how many fell in, near
+its budget of 10. With one save it reads 8.6 on every run, and its budget is 9.5.
+
 ## When a guard goes red
 
 Read the failure: it says what grew, with the measured numbers. Move the copy off the update path, or read the state
