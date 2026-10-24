@@ -4,7 +4,8 @@
 // Sessions are kept one file each under <root>/sessions, so `session/load` in a later process replays them.
 // script.json may name `models` (Cursor's own list shape) and `commands` (the skills a session lists), and `httpMcp: false`
 // says the client takes no HTTP MCP servers. The `mcp-call` action calls one tool on one of a session's servers over HTTP,
-// as Cursor's model would, and records `fixture/mcp-call` with what the server answered.
+// as Cursor's model would, and records `fixture/mcp-call` with what the server answered. `dropPromptAck` loses the next prompt's
+// acknowledgement. oneshot.json scripts a side call: its `text`, `fail`, or `tool` for a model that reads a file first.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -114,8 +115,19 @@ createInterface({ input: process.stdin }).on('line', line => {
     appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, effort: session.effort, mode: session.mode, material: p.prompt.map(part => part.text ?? '').join('') }) + '\n')
     const script = read('oneshot.json', {})
     if (script.fail) { send({ id: frame.id, error: { code: -32603, message: 'Scripted failure' } }); return }
+    // `tool`: the model reads a file before it answers, as Cursor's ask mode can, and ends its turn as if nothing stopped it.
+    if (script.tool) {
+      const toolCallId = `call_side_${randomUUID()}\nfc_fixture`
+      update(p.sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Read README.md', kind: 'read', status: 'pending', rawInput: { path: join(session.cwd, 'README.md') } })
+      update(p.sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Synthetic file content' } })
+    }
     update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.text ?? 'Fixture title' } })
     send({ id: frame.id, result: { stopReason: 'end_turn' } })
+    return
+  }
+  // A side session stopped by Sotto is recorded apart too, with the Cursor folder its process ran with.
+  if (frame.method === 'session/cancel' && sessions.get(p.sessionId)?.mode === 'ask') {
+    appendFileSync(path('oneshot-cancels.jsonl'), JSON.stringify({ sessionId: p.sessionId, configDirectory: process.env.CURSOR_CONFIG_DIR }) + '\n')
     return
   }
   record(frame)

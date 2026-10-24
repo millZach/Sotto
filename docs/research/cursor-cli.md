@@ -339,3 +339,11 @@ The CLI was installed with Cursor's PowerShell installer and signed in with `age
 **Sessions.** `session/load` replays the whole conversation as `user_message_chunk`, `agent_thought_chunk`, `agent_message_chunk`, `tool_call` and `tool_call_update`, one whole message per chunk, with tool call IDs `replay-<turn>-<n>`, and no timestamps or message IDs. `session/list` answers each session's ID, folder, title and `updatedAt`. The agent implements `unstable_listSessions` and `unstable_setSessionModel` and no fork or resume method.
 
 **Ask mode for short text.** With `mode` set to `ask`, a prompt for a branch name was answered with the name alone and no tool call. It still made a session, saved in the config folder.
+
+**Ask mode still reads (2026-10-24).** Asked in `ask` mode to read `README.md` in a scratch folder and quote its first word, GPT-5.4 Nano ran Cursor's read tool (`tool_call` kind `read`, completed with the file's content) and quoted it, with no permission asked; asked to search the folder, it ran `grep` and found the file. So `ask` mode makes no edits and runs no commands, but reads the project. A config folder whose `cli-config.json` denies tools changes that; deny wins over allow. With `"deny": ["Read(**)", "Write(**)", "Shell(*)", "WebFetch(*)", "Mcp(*:*)"]`:
+
+- `Read(**)` stopped every read: the read tool completed with no content and the model said it could not read the file, `grep` found no matches, and a file listing (`Find *`) found no files. No permission was asked.
+- `Shell(*)` stopped commands and `Write(**)` stopped edits, checked in `agent` mode with every permission answered allow: `node --version` completed with no output, `made.txt` was never written, and no permission was asked. `ask` mode offers neither tool anyway.
+- `WebFetch(*)` did not stop a fetch. A `WebFetch` deny only keeps a domain off the allowlist, so Cursor asked (`session/request_permission`, "Fetch https://example.com"), and the fetch ran once the probe allowed it. An `Mcp` deny is read the same way, as keeping a tool off the allowlist. Nothing in the rules stops a fetch or a tool call; answering the request `cancelled` does.
+
+Each tool call still arrives as `tool_call` and `tool_call_update`, and completes within about 100 ms of the call, before a client could answer anything.

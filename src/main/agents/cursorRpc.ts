@@ -148,6 +148,21 @@ export async function readCursorSignIn(program: CursorProgram, env: NodeJS.Proce
  * every thread, so the rules name every Sotto server; a thread can still reach only the servers it was given.
  */
 export async function writeCursorConfig(configDirectory: string, servers: readonly string[]): Promise<void> {
+  await writeCursorRules(configDirectory, { allow: [...new Set(servers)].sort().map(name => `Mcp(${name}:*)`), deny: [] })
+}
+/**
+ * What Sotto's side-call Cursor folder denies (ADR-0127, ADR-0026): a side call uses no tools. Checked live against
+ * 2026.10.22-27dcf5f in `ask` mode and `agent` mode: `Read(**)` stops reads, searches and file listings (each completes
+ * with nothing), `Shell(*)` stops commands and `Write(**)` edits, with no permission asked. `WebFetch(*)` and `Mcp(*:*)`
+ * only take fetches and tools off the allowlist, so Cursor asks about them, and a side call answers every request
+ * `cancelled`. Deny wins over allow.
+ */
+export const CURSOR_SIDE_DENY = ['Read(**)', 'Write(**)', 'Shell(*)', 'WebFetch(*)', 'Mcp(*:*)'] as const
+/** Sotto's side-call Cursor folder, written before each side call starts: nothing allowed, every tool denied. */
+export async function writeCursorSideConfig(configDirectory: string): Promise<void> {
+  await writeCursorRules(configDirectory, { allow: [], deny: [...CURSOR_SIDE_DENY] })
+}
+async function writeCursorRules(configDirectory: string, permissions: { allow: string[]; deny: string[] }): Promise<void> {
   await mkdir(configDirectory, { recursive: true })
   const path = join(configDirectory, 'cli-config.json')
   let current: Record<string, unknown> = {}
@@ -157,7 +172,7 @@ export async function writeCursorConfig(configDirectory: string, servers: readon
   } catch { /* A missing or unreadable file is written afresh. */ }
   const editor = current.editor && typeof current.editor === 'object' && !Array.isArray(current.editor) ? current.editor as Record<string, unknown> : {}
   const next = { ...current, version: 1, editor: { ...editor, vimMode: false },
-    permissions: { allow: [...new Set(servers)].sort().map(name => `Mcp(${name}:*)`), deny: [] }, approvalMode: 'allowlist' }
+    permissions, approvalMode: 'allowlist' }
   const text = JSON.stringify(next, null, 2) + '\n'
   if (JSON.stringify(current, null, 2) + '\n' === text) return
   // Written beside and moved into place, so a Cursor process starting meanwhile never reads half a file.

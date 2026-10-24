@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
@@ -14,7 +14,7 @@ import { cursorActivities, cursorImage, cursorTask, cursorTodos, CURSOR_THINKING
 import { cursorCatalog, cursorModeArguments, cursorModelListSchema, cursorRuntimeMode, leastEffort, CURSOR_RUNTIME_MODES, type CursorModelFacts, type CursorRuntimeMode } from './cursorModels'
 import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from './cursorRequests'
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
-  readCursorSignIn, readCursorVersion, writeCursorConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
+  readCursorSignIn, readCursorVersion, writeCursorConfig, writeCursorSideConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -436,9 +436,12 @@ export class CursorAcpHost implements AgentHost {
 
   // ---- Processes -----------------------------------------------------------------------------------------------------
 
-  private environment(): NodeJS.ProcessEnv { return cursorEnvironment(this.configDirectory, this.options.environment) }
-  private spawn(program: CursorProgram, args: readonly string[], cwd: string, receive: (frame: CursorFrame, rpc: CursorRpc) => Promise<void> | void, lost: () => void): CursorRpc {
-    const rpc: CursorRpc = new CursorRpc(program, args, cwd, this.environment(), this.options.requestTimeoutMs ?? 30_000, frame => receive(frame, rpc), lost)
+  private environment(configDirectory = this.configDirectory): NodeJS.ProcessEnv { return cursorEnvironment(configDirectory, this.options.environment) }
+  /** Sotto's side-call Cursor folder, beside its Cursor folder: every tool denied, so a side call can use none (ADR-0026). */
+  private get sideConfigDirectory(): string { return join(dirname(this.configDirectory), 'side-config') }
+  private spawn(program: CursorProgram, args: readonly string[], cwd: string, receive: (frame: CursorFrame, rpc: CursorRpc) => Promise<void> | void, lost: () => void,
+    configDirectory = this.configDirectory): CursorRpc {
+    const rpc: CursorRpc = new CursorRpc(program, args, cwd, this.environment(configDirectory), this.options.requestTimeoutMs ?? 30_000, frame => receive(frame, rpc), lost)
     this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
     return rpc
   }
@@ -1164,13 +1167,24 @@ export class CursorAcpHost implements AgentHost {
     if (!this.state.connected || !program || !alias?.cursorSessionId) return null
     const cwd = await existingWorkingDirectory(alias.cwd)
     this.assertGeneration(generation)
+    await writeCursorSideConfig(this.sideConfigDirectory)
+    this.assertGeneration(generation)
     let text = ''
     let sessionId: string | undefined
+    /** The model reached for a tool: the call is stopped once, and writes nothing. */
+    let tooled = false
+    const stop = (rpc: CursorRpc): void => {
+      if (tooled) return
+      tooled = true
+      if (sessionId) { try { rpc.write({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } }) } catch { /* A closed pipe runs nothing more. */ } }
+    }
     const writer = this.spawn(program, ['acp'], cwd, (frame, rpc) => {
-      if (frame.method && frame.id !== undefined) { void rpc.reply(frame.id, { outcome: { outcome: 'cancelled' } }).catch(() => undefined); return }
+      if (frame.method && frame.id !== undefined) { void rpc.reply(frame.id, { outcome: { outcome: 'cancelled' } }).catch(() => undefined); if (sessionId) stop(rpc); return }
       const params = record(frame.params), update = record(params?.update), content = record(update?.content)
-      if (frame.method === 'session/update' && params?.sessionId === sessionId && update?.sessionUpdate === 'agent_message_chunk' && content?.type === 'text' && typeof content.text === 'string') text += content.text
-    }, () => undefined)
+      if (frame.method !== 'session/update' || !sessionId || params?.sessionId !== sessionId) return
+      if (update?.sessionUpdate === 'tool_call' || update?.sessionUpdate === 'tool_call_update') { stop(rpc); return }
+      if (!tooled && update?.sessionUpdate === 'agent_message_chunk' && content?.type === 'text' && typeof content.text === 'string') text += content.text
+    }, () => undefined, this.sideConfigDirectory)
     const abort = (): void => writer.close()
     signal?.addEventListener('abort', abort, { once: true })
     const timer = setTimeout(abort, SIDE_WRITING_TIMEOUT_MS); timer.unref()
@@ -1181,9 +1195,9 @@ export class CursorAcpHost implements AgentHost {
       const side: Connection = { rpc: writer, nonce: '', clientRevision: this.clientRevision, mode: 'approval-required', watcher: false, closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
       await this.applySettings(alias, side, writer, sessionId, alias.modelId, leastEffort(this.model(alias.modelId)))
       await writer.request('session/set_config_option', { sessionId, configId: 'mode', value: 'ask' })
-      let stop = ''
-      await writer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${prompt.instruction}\n\n${prompt.material}` }] }, value => { stop = promptAnswerSchema.parse(value).stopReason }, true)
-      if (stop !== 'end_turn') return null
+      let ended = ''
+      await writer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: `${prompt.instruction}\n\n${prompt.material}` }] }, value => { ended = promptAnswerSchema.parse(value).stopReason }, true)
+      if (tooled || ended !== 'end_turn') return null
       return text.trim() || null
     } catch (error) {
       if (signal?.aborted) return null

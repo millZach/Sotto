@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CURSOR_ALLOW_EDITS_NOTICE, cursorWatcherInstructions } from '../../src/main/agents/cursor'
@@ -145,6 +145,29 @@ describe('Cursor ACP adapter', () => {
     await f!.sideWriting.answer('Short title')
     await expect(f!.host.writeShortText!(id, { instruction: 'Name it.', material: 'Marker' })).resolves.toBe('Short title')
     expect(await f!.sideWriting.calls()).toEqual([{ cwd: expect.any(String), model: 'gpt-fixture', effort: 'none', mode: 'ask', material: 'Name it.\n\nMarker' }])
+  })
+
+  it('runs a side call with Sotto’s side-call Cursor folder, whose rules deny every tool', async () => {
+    const id = await open()
+    await f!.sideWriting.answer('Short title')
+    await expect(f!.host.writeShortText!(id, { instruction: 'Name it.', material: 'Marker' })).resolves.toBe('Short title')
+    const side = join(f!.root, 'side-config')
+    expect((await processes()).filter(process => process.environment.CURSOR_CONFIG_DIR === side)).toHaveLength(1)
+    const config = JSON.parse(await readFile(join(side, 'cli-config.json'), 'utf8')) as Record<string, unknown>
+    expect(config).toMatchObject({ approvalMode: 'allowlist', permissions: { allow: [], deny: ['Read(**)', 'Write(**)', 'Shell(*)', 'WebFetch(*)', 'Mcp(*:*)'] } })
+    // The threads' own folder keeps Sotto's ordinary rules.
+    expect(JSON.parse(await readFile(join(f!.root, 'cursor-config', 'cli-config.json'), 'utf8'))).toMatchObject({ permissions: { deny: [] } })
+  })
+
+  it('stops a side call whose model reaches for a tool, and writes nothing', async () => {
+    const id = await open()
+    await writeFile(join(f!.root, 'oneshot.json'), JSON.stringify({ text: 'Synthetic file content', tool: true }))
+    await expect(f!.host.writeShortText!(id, { instruction: 'Name it.', material: 'Marker' })).resolves.toBeNull()
+    const cancels = async () => (await readFile(join(f!.root, 'oneshot-cancels.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean)
+      .map(line => JSON.parse(line) as { configDirectory: string })
+    await expect.poll(cancels).toEqual([{ sessionId: expect.any(String), configDirectory: join(f!.root, 'side-config') }])
+    // The thread itself heard nothing of it.
+    expect((await f!.requests()).some(record => record.method === 'session/prompt')).toBe(false)
   })
 
   it('reads a signed-out Cursor as signed out', async () => {
