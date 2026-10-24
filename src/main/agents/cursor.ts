@@ -1059,10 +1059,14 @@ export class CursorAcpHost implements AgentHost {
     // A prompt Cursor did not take keeps the instructions owed.
     const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, ...(instructing ? { instructs: connection } : {}), taken: false, ended: false, wake: undefined }
     this.turns.set(id, turn)
-    this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt,
-      ...(origin.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) })
+    // Running goes out before the prompt's own message. The workspace publishes that message as soon as it hears of it,
+    // and the coordinator takes the send it settles as answered and reads nothing after (#765), so a thread published
+    // running only after it could answer its send idle until the next publish.
     thread.status = 'running'; thread.lastTurn = { id: origin.messageId, status: 'running' }
     thread.activities = markTurnActivity(thread.activities, { provider: 'cursor', turnId: origin.messageId, status: 'running', afterMessageId: origin.messageId })
+    this.emit()
+    this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt,
+      ...(origin.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) })
     this.emit()
     markSendStage(command.commandId, 'written')
     const superseded = (): boolean => generation !== this.generation || this.turns.get(id) !== turn
