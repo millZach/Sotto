@@ -355,7 +355,7 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
-  /** Cursor's sign-in from its tile (ADR-0127): only while Cursor's Owl feature is on. */
+  /** Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. */
   cursorEnabled = false,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
@@ -417,7 +417,7 @@ export function createSottoBridge(
       cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
-    // Cursor's sign-in from its tile (ADR-0127): only while Cursor's Owl feature is on. The page's address stays in main.
+    // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
       start: () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
       read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInViewSchema.nullable(), cursorSignInRequestSchema.parse(request)),

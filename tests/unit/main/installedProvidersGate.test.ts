@@ -29,7 +29,7 @@ it('skips every held provider through the one gate, with a test-only held Grok',
   expect(probes.grok).not.toHaveBeenCalled()
   expect(probes.muse).toHaveBeenCalledOnce()
 })
-it('looks for Cursor only where its Owl feature is on (ADR-0127)', async () => {
+it('looks for Cursor only where its Owl feature is on (ADR-0128)', async () => {
   probes.cursor.mockResolvedValue('/synthetic/agent')
   expect(await detectInstalledProviders({ heldProviders: new Set() })).toContain('cursor')
   probes.cursor.mockClear()

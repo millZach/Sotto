@@ -121,7 +121,7 @@ it('negotiates host-v1 features only for recorded desktops and never for stable 
 
 it.each([['muse', 'Muse', 'supportsWatcherMuse'], ['cursor', 'Cursor', 'supportsWatcherCursor']] as const)('reads and directs a paired host for a Watcher on %s only when the host lists its Watcher feature, and says to update one that does not', async (provider, label, feature) => {
   const f = await master()
-  // Watcher on Muse or Cursor: its identity names that provider (ADR-0079, ADR-0127); this host is new enough to take it.
+  // Watcher on Muse or Cursor: its identity names that provider (ADR-0079, ADR-0128); this host is new enough to take it.
   await f.control.updateWatcher(record => { record.current!.provider = provider })
   expect(f.socket[feature]).toBe(true)
   expect(f.hello.features).toContain(`watcher-${provider}`)

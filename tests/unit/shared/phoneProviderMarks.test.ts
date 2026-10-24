@@ -57,7 +57,7 @@ it('draws Muse’s mark on the iPhone from the desktop’s path and view box (#1
   expect(read('apps/ios/Sotto/ProviderMarks.swift')).toContain('"muse": "ProviderMuse"')
 })
 
-it('draws Cursor’s cube on both phones from the desktop’s path and view box (ADR-0127)', () => {
+it('draws Cursor’s cube on both phones from the desktop’s path and view box (ADR-0128)', () => {
   const match = /cursor: \{\s*viewBox: '([^']+)',\s*path: '([^']+)'/u.exec(read('src/renderer/src/agents/ProviderMark.tsx'))
   if (!match) throw new Error('The desktop has no Cursor mark.')
   const [, viewBox, path] = match

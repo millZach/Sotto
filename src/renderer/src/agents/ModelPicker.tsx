@@ -58,7 +58,7 @@ export interface ModelSourceGroup { readonly name: string; readonly models: Agen
  * A provider's models by model source, or undefined for a provider whose models name none, whose menu stays one list.
  * OpenCode Zen comes first, since every OpenCode folder has it, then the rest in the order the provider lists them. A
  * model without a source among ones that have one goes under the provider's own name. Cursor's groups are its model
- * makers (ADR-0127), which arrive in Cursor's order, Cursor's own Auto and Composer first, and are kept in it, models too.
+ * makers (ADR-0128), which arrive in Cursor's order, Cursor's own Auto and Composer first, and are kept in it, models too.
  */
 export function modelSources(models: readonly AgentModel[], provider: string): ModelSourceGroup[] | undefined {
   if (!models.some(model => model.source !== undefined)) return undefined
@@ -67,7 +67,7 @@ export function modelSources(models: readonly AgentModel[], provider: string): M
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
 
-/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0127). */
+/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0128). */
 const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
@@ -149,7 +149,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
   const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
-  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0127).
+  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
   const backToMakers = t`Back to Cursor’s model makers`
   const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
   const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)

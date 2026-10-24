@@ -30,7 +30,7 @@ const MARKS: Readonly<Record<ProviderId, { readonly viewBox: string; readonly pa
     viewBox: '0 0 32 40',
     path: 'M24 8H8V32H24V8ZM32 40H0V0H32V40Z',
   },
-  // Cursor's is a cube drawn for Sotto, not Cursor's own logo (ADR-0127): an isometric cube of three faces, one colour,
+  // Cursor's is a cube drawn for Sotto, not Cursor's own logo (ADR-0128): an isometric cube of three faces, one colour,
   // apart by a gap wide enough to read at the chip's 13px, so it never reads as a plain hexagon.
   cursor: {
     viewBox: '0 0 24 24',

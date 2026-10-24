@@ -25,7 +25,7 @@ export function watcherModeDescriptions(provider: string): Record<AgentRuntimeMo
 /**
  * The modes Watcher's model offers, each with its line, led by the chosen mode as unchoosable when the model does not
  * offer it (a Grok Build model offers three). A model that lists none offers Sotto's four. A Cursor model offers Cursor's
- * three, each with the line a Cursor thread's menu gives it (ADR-0127): Ask for approval still edits inside the project
+ * three, each with the line a Cursor thread's menu gives it (ADR-0128): Ask for approval still edits inside the project
  * without asking, and Auto's classifier runs on Cursor's servers.
  */
 function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provider: string): ChoiceOption[] {

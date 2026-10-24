@@ -82,7 +82,7 @@ final class NewThreadsTests: XCTestCase {
         let command = try Commands.createProject(providerID: "cursor", title: "Panel tools", path: "/home/zach/panel")
         XCTAssertEqual(command["provider"], .string("cursor"))
     }
-    /// Cursor names each model's maker in its source (ADR-0127). A row reads the maker between Cursor and the model, so a
+    /// Cursor names each model's maker in its source (ADR-0128). A row reads the maker between Cursor and the model, so a
     /// Cursor thread on Claude never reads as Claude Code.
     func testACursorModelReadsItsMakerAndIsAChoiceWhileCursorIsConnected() throws {
         let host = try JSONDecoder().decode(HostSnapshot.self, from: Data(#"{"name":"Laptop","threads":[],"projects":[],"models":[{"id":"cursor:claude-sonnet-5-5","name":"Claude Sonnet 5.5","provider":"Cursor","providerId":"cursor","source":"Anthropic","ready":true}],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true},"providers":[{"id":"cursor","connection":"connected","capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"projects":true,"threads":true}}]}"#.utf8))

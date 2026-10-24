@@ -23,7 +23,7 @@ export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { cla
  * needs of the result. Checked September 28, 2026 against code.claude.com/docs/en/setup, github.com/openai/codex,
  * docs.x.ai and npm's @xai-official/grok, and docs.devin.ai/cli; OpenCode's on October 16, 2026 against opencode.ai/v2/docs
  * and npm's @opencode/cli (#1104); Cursor's on October 23, 2026 against cursor.com/docs/cli/installation and cursor.com/install
- * (ADR-0127).
+ * (ADR-0128).
  */
 export const PROVIDER_INSTALL_METHODS: Readonly<Record<HostProviderId, string>> = {
   claude: 'Anthropic\'s native installer, `curl -fsSL https://claude.ai/install.sh | bash`, which puts `claude` in ~/.local/bin (https://code.claude.com/docs/en/setup). npm\'s `npm install -g @anthropic-ai/claude-code` installs the same binary. Update a native install with `claude update`.',

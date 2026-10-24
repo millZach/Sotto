@@ -42,7 +42,7 @@ describe('a client that does not know OpenCode', () => {
     expect(PROVIDER_HOST_FEATURES).toEqual({ opencode: 'provider-opencode', cursor: 'provider-cursor' })
     expect([...providersUnknownTo(undefined)]).toEqual(['opencode', 'cursor'])
     expect([...providersUnknownTo(['detail-delta', 'model-catalog-revision'])]).toEqual(['opencode', 'cursor'])
-    // A phone that knows OpenCode but not Cursor (ADR-0127) is sent OpenCode and nothing of Cursor's.
+    // A phone that knows OpenCode but not Cursor (ADR-0128) is sent OpenCode and nothing of Cursor's.
     expect([...providersUnknownTo(['detail-delta', 'provider-opencode'])]).toEqual(['cursor'])
     expect([...providersUnknownTo(['detail-delta', 'provider-opencode', 'provider-cursor'])]).toEqual([])
   })

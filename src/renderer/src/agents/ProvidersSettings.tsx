@@ -72,7 +72,7 @@ export function ProvidersSettings(): ReactNode {
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
   const [loginFeedback, showLoginFeedback] = useTransientFlag()
-  /** Cursor's sign-in from its tile (ADR-0127), kept while the page shows another tab or provider. */
+  /** Cursor's sign-in from its tile (ADR-0128), kept while the page shows another tab or provider. */
   const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
@@ -207,7 +207,7 @@ export function ProvidersSettings(): ReactNode {
   const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
   const connectButton = <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
     onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
-  // Cursor's models arrive grouped by model maker, in Cursor's order (ADR-0127), and its Models tab keeps them so.
+  // Cursor's models arrive grouped by model maker, in Cursor's order (ADR-0128), and its Models tab keeps them so.
   const makers = selected === 'cursor' ? modelSources(hostModels.filter(model => model.providerId === 'cursor'), PROVIDER_LABELS.cursor) : undefined
   return <div className="providers-settings">
     {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0124, layout B). */}

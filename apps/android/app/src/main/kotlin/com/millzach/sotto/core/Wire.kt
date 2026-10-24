@@ -324,7 +324,7 @@ object Wire {
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs.
     /// `client-liveness` is left out: OkHttp answers the host's own pings, which every other client keeps.
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
-    /// and `provider-cursor` the same for Cursor (ADR-0127).
+    /// and `provider-cursor` the same for Cursor (ADR-0128).
     val snapshotHello: JsonObject = buildJsonObject {
         put("op", JsonPrimitive("hello"))
         put("afterSeq", JsonPrimitive(9_007_199_254_740_991L))

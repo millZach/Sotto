@@ -1,7 +1,7 @@
 // Stands in for a provider client's own sign-in on a host (ADR-0037), printing what the real one prints into a pipe:
 // Codex's and Grok Build's device-code sign-ins, which finish by themselves once the code is entered on the page, Claude
 // Code's subscription sign-in, which waits for the code the page shows to be pasted back, and Cursor's `agent login`, which
-// prints a page and no code and finishes by itself once the user has signed in there (ADR-0127).
+// prints a page and no code and finishes by itself once the user has signed in there (ADR-0128).
 //
 //   node fakeSignInCli.mjs <provider> <the client's own arguments…>
 //

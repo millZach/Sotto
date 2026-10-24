@@ -1,6 +1,6 @@
 # Cursor as a thread provider: what was checked
 
-October 23, 2026. [ADR-0127](../adr/0127-cursor-is-a-thread-provider.md) and its amendment "Watcher, hosts and phones, as built". Every live check ran on the Windows laptop against Cursor's CLI **2026.10.22-27dcf5f**, the version installed and signed in there and Sotto's floor, on **GPT-5.4 Nano** at low effort, the cheapest model checked. Every live Cursor process ran with `CURSOR_CONFIG_DIR` pointed at a scratch folder, never the user's own `~/.cursor`, and no live run signed in or out. The research note's [Appendix B](../research/cursor-cli.md#appendix-b-live-checks-against-20261022-27dcf5f-2026-10-23) has the wire facts checked before the adapter was built.
+October 23, 2026. [ADR-0128](../adr/0128-cursor-is-a-thread-provider.md) and its amendment "Watcher, hosts and phones, as built". Every live check ran on the Windows laptop against Cursor's CLI **2026.10.22-27dcf5f**, the version installed and signed in there and Sotto's floor, on **GPT-5.4 Nano** at low effort, the cheapest model checked. Every live Cursor process ran with `CURSOR_CONFIG_DIR` pointed at a scratch folder, never the user's own `~/.cursor`, and no live run signed in or out. The research note's [Appendix B](../research/cursor-cli.md#appendix-b-live-checks-against-20261022-27dcf5f-2026-10-23) has the wire facts checked before the adapter was built.
 
 This note has no screenshots: the Settings tile, model menu and request cards were checked by the UI work in its own commit.
 

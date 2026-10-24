@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { hostSignInSchema } from './hostProviders'
 
 /**
- * Signing Cursor in and out on this computer from its provider tile (ADR-0127, variant A of the prototype). Main runs
+ * Signing Cursor in and out on this computer from its provider tile (ADR-0128, variant A of the prototype). Main runs
  * Cursor's own `agent login`, opens the cursor.com page it prints in the browser, and connects Cursor once the client
  * says it signed in; the window sees where the sign-in stands and never the page's address. The bridge exists only
  * while Cursor's Owl feature is on.

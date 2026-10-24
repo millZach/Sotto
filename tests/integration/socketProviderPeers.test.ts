@@ -12,7 +12,7 @@ import { rawPeer } from '../fixtures/rawHostPeer'
 
 /**
  * Everything a host sends a client whose hello does not accept `provider-opencode` (#1107, ADR-0087), or `provider-cursor`
- * (ADR-0127): its shell, events, details, Watcher's phone state and operations, and a desktop's Watcher reads and
+ * (ADR-0128): its shell, events, details, Watcher's phone state and operations, and a desktop's Watcher reads and
  * projection, from a host whose state names that provider in every field. None of it names the provider, and a request
  * that names one of its threads or projects is refused before the host acts on it. Cursor's state is OpenCode's with
  * every identifier and name spelt for Cursor.
@@ -184,7 +184,7 @@ function suite(provider: 'opencode' | 'cursor', label: string) {
   })
   return { service, zen }
 }
-// Cursor joins with its own host feature (ADR-0127), filtered the same way.
+// Cursor joins with its own host feature (ADR-0128), filtered the same way.
 describe('Cursor', () => { suite('cursor', 'Cursor') })
 const { service, zen } = suite('opencode', 'OpenCode')
 

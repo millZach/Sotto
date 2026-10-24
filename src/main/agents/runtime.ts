@@ -158,7 +158,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
-    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0127).
+    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
@@ -403,7 +403,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
-  // Signing Cursor in from its tile on this computer (ADR-0127): only where its adapter runs, and never on a headless host, whose
+  // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
   const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({

@@ -140,7 +140,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
       {copied === 'failed' ? <p className="host-sign-in__quiet tt-paragraph"><Trans>The code could not be copied. Type it on the page instead.</Trans></p> : null}
       <span className="tt-visually-hidden" role="status">{copied === 'copied' ? t`Copied the code` : ''}</span>
     </div>
-    // A page with no code (Cursor, ADR-0127): signing in on the page is the whole step, and the host finishes by itself.
+    // A page with no code (Cursor, ADR-0128): signing in on the page is the whole step, and the host finishes by itself.
     if (view.shape === 'page') return <div className="host-sign-in">
       <p className="tt-paragraph"><Trans>{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do.</Trans></p>
       <div className="host-sign-in__row">

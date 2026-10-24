@@ -26,7 +26,7 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
 
 describe('the providers a host offers', () => {
   const HOST = '22222222-2222-4222-8222-222222222222'
-  it('takes OpenCode since hosts and phones took it (#1107), and Cursor with them (ADR-0127), so a headless host holds only what its Owl answers hold', () => {
+  it('takes OpenCode since hosts and phones took it (#1107), and Cursor with them (ADR-0128), so a headless host holds only what its Owl answers hold', () => {
     expect(HOST_PROVIDERS).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
     expect([...heldOnHost(new Set())]).toEqual([])
     expect([...heldOnHost(new Set(['opencode']))]).toEqual(['opencode'])

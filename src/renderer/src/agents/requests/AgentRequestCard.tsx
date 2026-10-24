@@ -84,7 +84,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
   const touched = questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
-  // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0127).
+  // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
   const skipping = mode === 'structured' && questions.length > 0 && !touched && questions.every(question => !isRequired(question))
   const legacySelection = entry.selections[request.id] ?? EMPTY_SELECTION
   const legacyChoice = request.options.find(option => legacySelection.optionIds.includes(option.id))
@@ -212,7 +212,7 @@ function PermissionActions({ request, disabled, pressed, onChoose, names }: {
   </div>
 }
 
-/** The tool Cursor's plans arrive as (main's `CURSOR_PLAN_TOOL`, ADR-0127): a request to accept or reject a plan. */
+/** The tool Cursor's plans arrive as (main's `CURSOR_PLAN_TOOL`, ADR-0128): a request to accept or reject a plan. */
 const CURSOR_PLAN_TOOL = 'cursor/create_plan'
 
 /**

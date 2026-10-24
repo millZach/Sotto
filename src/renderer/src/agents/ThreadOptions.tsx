@@ -28,7 +28,7 @@ export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   'full-access': 'Full access',
 }
 /**
- * What each of Cursor's three modes does, said as Cursor doing it (ADR-0127), in the interface language. Cursor has no
+ * What each of Cursor's three modes does, said as Cursor doing it (ADR-0128), in the interface language. Cursor has no
  * Allow edits: it edits inside the project without asking under every mode, so Ask for approval says so, and Auto says
  * where its judgement runs.
  */

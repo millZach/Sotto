@@ -5,7 +5,7 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 import type { CursorSignIn } from './cursorSignIn'
 
 /**
- * The main window's bridge to Cursor's sign-in (ADR-0127). Cursor's Owl answer decides whether the handlers exist:
+ * The main window's bridge to Cursor's sign-in (ADR-0128). Cursor's Owl answer decides whether the handlers exist:
  * stable registers nothing. Every request is checked, a request that fails its schema answers that the sign-in is not
  * available rather than echoing what was sent, and every answer is checked on the way out, so the page's address never
  * reaches the window.
