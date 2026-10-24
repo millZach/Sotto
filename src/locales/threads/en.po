@@ -50,6 +50,10 @@ msgstr "{host} is on the internet, so Sotto needs https:// to send it a key and 
 msgid "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
 msgstr "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+msgstr "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
 msgstr "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
@@ -182,6 +186,14 @@ msgstr "Key"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key kept by OpenCode"
 msgstr "Key kept by OpenCode"
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+msgid "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
+msgstr "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+msgid "mise does not list {to} yet"
+msgstr "mise does not list {to} yet"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
@@ -346,6 +358,11 @@ msgstr "That server is no longer saved. Nothing was changed."
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "The images in your last message were not kept. Attach them again, then send."
 msgstr "The images in your last message were not kept. Attach them again, then send."
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "the published version"
+msgstr "the published version"
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "The server does not say how much context this model has. Type it from the model’s page."
