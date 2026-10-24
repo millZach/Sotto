@@ -11,6 +11,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
+import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
@@ -325,6 +326,18 @@ export interface AgentHost {
   /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
   dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
+  /**
+   * A cleared thread is gone from the adapter (ADR-0126): its process, if it has one, is stopped, its alias record and
+   * every per-thread record the adapter keeps for it are removed and saved, and its next snapshots leave it out. Wrappers
+   * translate the Sotto thread ID to the adapter's own, as for every other call. The provider's own transcript is kept.
+   * Resolves once the removal is on disk; a thread the adapter does not hold resolves at once.
+   */
+  forgetThread?(threadId: string): Promise<void>
+  /** Why deleting this thread is held back by the workspace, and its own worktree's facts (ADR-0126). WorkspaceHost's. */
+  previewThreadDeletion?(threadId: string, automatic?: boolean): Promise<{ kept: ThreadClearKeptReason | null; worktree: WorktreeReclaimPreview | null }>
+  /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0126). WorkspaceHost's. */
+  deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
+    readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>

@@ -291,6 +291,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/watcher/watcherPicture.css',
       'src/renderer/src/watcher/nightScene.css',
       'src/renderer/src/agents/workingCopy.css',
+      'src/renderer/src/agents/threadClear.css',
       'src/renderer/src/agents/branchToolbar.css',
       'src/renderer/src/agents/gitActionButton.css',
       'src/renderer/src/agents/newThread.css',

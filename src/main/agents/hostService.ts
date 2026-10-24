@@ -107,6 +107,8 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
+  /** The host deletes its settled threads when asked (ADR-0126), present only when its Owl answer turns clearing on. */
+  readonly supportsThreadDelete?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
@@ -276,6 +278,8 @@ export class LocalHostService implements HostService {
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
+    /** Deleting settled threads (ADR-0126), true only when the host's Owl answer turns clearing on. */
+    threadDelete?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -293,6 +297,7 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
+  get supportsThreadDelete(): boolean { return this.options.threadDelete === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   /** Reads the threads as the host last published them, without copying them. */
   async threadDelegations(threadId: string): Promise<HostThreadDelegations> {

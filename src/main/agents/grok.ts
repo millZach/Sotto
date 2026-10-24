@@ -300,6 +300,10 @@ export class GrokAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
   /** Duplicate guards belong to their process and do not retain a process after it closes. */
@@ -641,6 +645,42 @@ export class GrokAcpHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /**
+   * ADR-0126: stop the thread's own process if it has one, remove its alias and every per-thread record this
+   * adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store
+   * before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    const alias = this.aliases[id]
+    if (!alias) return
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.outdated.delete(id)
+    this.holds.delete(id)
+    this.historyReads.delete(id)
+    this.activePrompts.delete(id)
+    this.liveStatus.delete(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
+    for (const [streamId, stream] of [...this.streams]) if (stream.threadId === id) this.streams.delete(streamId)
+    for (const [messageId, authored] of [...this.authored]) if (authored.threadId === id) this.authored.delete(messageId)
+    if (alias.grokSessionId) this.selections.delete(alias.grokSessionId)
+    for (const key of [...this.usagePromptStarts.keys()]) { try { if ((JSON.parse(key) as unknown[])[0] === id) this.usagePromptStarts.delete(key) } catch { /* not this thread's key */ } }
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Grok thread does not exist.')
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.settingsConfirmed ? alias.modelId : alias.nativeModelId ?? '', runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.reasoningEffort && alias.settingsConfirmed ? { reasoningEffort: alias.reasoningEffort } : {}), status: alias.grokSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] })
@@ -668,7 +708,10 @@ export class GrokAcpHost implements AgentHost {
     await sweepLeftoverSessions(join(this.userDataDirectory, 'writing', 'grok'))
     const executable = this.options.executable ?? await findGrokExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install Grok CLI and sign in before connecting Grok.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.histories.clear(); this.readsBeforeSend.clear()
+    const readAliases = await this.aliasStore.read()
+    for (const id of this.forgottenAliasIds) delete readAliases[id]
+    this.aliases = readAliases; this.aliasesLoaded = true
+    this.state.projects = await this.projectStore.read(); this.threads.clear(); this.streams.clear(); this.authored.clear(); this.liveStatus.clear(); this.selections.clear(); this.activePrompts.clear(); this.seenUpdates.clear(); this.histories.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
     this.executable = executable
     /** The client's version when it is older than Sotto supports, which a host's tile names (ADR-0037). */

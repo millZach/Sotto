@@ -322,6 +322,10 @@ export class CodexAppServerHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly providerSessionIds = new Map<string, string>()
   private readonly threads = new Map<string, AgentThread>()
   /** The threads whose provider session is resumed on their own app-server now. */
@@ -691,6 +695,61 @@ export class CodexAppServerHost implements AgentHost {
     this.emit()
   }
   /**
+   * ADR-0126: stop the thread's own app-server if it has one, remove its alias and every per-thread record this
+   * adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store
+   * before this removal reaches disk: that connect() still drops the id from what it loads (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    const alias = this.aliases[id]
+    if (!alias) return
+    try { this.watcherProfiles.get(id)?.revoke('The thread was deleted.') } catch { /* Cleanup failure never blocks deletion. */ }
+    this.watcherProfiles.delete(id)
+    this.stopSession(id)
+    for (const [key, pending] of [...this.requests]) if (pending.sessionId === id) this.removeRequest(key)
+    this.settingsConfirmations.get(id)?.settle(false)
+    this.settingsConfirmations.delete(id)
+    this.reaper.forget(id)
+    this.abandonedForks.delete(id)
+    this.observed.delete(id)
+    this.histories.delete(id)
+    this.runningTurns.delete(id)
+    this.revisions.delete(id)
+    this.roleModes.delete(id)
+    this.dispatching.delete(id)
+    this.unconfirmedDispatchSessionIds.delete(id)
+    this.creating.delete(id)
+    this.threadReads.delete(id)
+    this.pendingLogMessages.delete(id)
+    this.compactionReadings.delete(id)
+    this.purgeThreadKeyedState(id)
+    this.providerSessionIds.delete(alias.codexThreadId)
+    this.watcher?.drop(alias.codexThreadId)
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
+  /** Every map keyed by `turnKey(id, ...)` or `JSON.stringify([id, ...])`, cleared for one forgotten thread. */
+  private purgeThreadKeyedState(id: string): void {
+    const prefix = `${id}\n`
+    for (const key of this.terminalTurns) if (key.startsWith(prefix)) this.terminalTurns.delete(key)
+    for (const key of [...this.turnDates.keys()]) if (key.startsWith(prefix)) this.turnDates.delete(key)
+    for (const key of [...this.fileSummaries.keys()]) if (key.startsWith(prefix)) this.fileSummaries.delete(key)
+    const namesThread = (key: string): boolean => { try { return (JSON.parse(key) as unknown[])[0] === id } catch { return false } }
+    for (const key of [...this.completedMessages]) if (namesThread(key)) this.completedMessages.delete(key)
+    for (const key of [...this.usageTurnStarts.keys()]) if (namesThread(key)) this.usageTurnStarts.delete(key)
+  }
+  /**
    * The client on disk was replaced while Sotto stayed connected (ADR-0042). Every thread runs its own app-server,
    * so nothing is disconnected: the client is found again (an update may have moved it), a new provider app-server
    * reads its version and models, and each thread moves to it as it goes idle. An idle thread's app-server stops
@@ -751,7 +810,8 @@ export class CodexAppServerHost implements AgentHost {
     const [aliases, projects, executable] = await Promise.all([this.aliasStore.read(), this.projectStore.read(), this.options.executable ?? findExecutable()])
     if (generation !== this.generation) throw new Error('Codex connection was cancelled.')
     if (!executable) throw new ProviderUnavailable('not-installed', 'Install Codex and sign in before connecting this provider.')
-    this.aliases = aliases; this.state.projects = projects
+    for (const id of this.forgottenAliasIds) delete aliases[id]
+    this.aliases = aliases; this.aliasesLoaded = true; this.state.projects = projects
     for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) if (alias.kind !== 'personal') this.providerSessionIds.set(alias.codexThreadId, id)

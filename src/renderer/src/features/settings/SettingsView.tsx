@@ -58,6 +58,7 @@ import { AppearanceSettings } from './AppearanceSettings'
 import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
+import { ClearThreadsSettings } from './ClearThreadsSettings'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
@@ -426,8 +427,9 @@ export function SettingsView({
   const nightFallsOn = useOwlFeature('night-falls') && watcherOn
   const creatureToggle = useOwlFeature('creature-toggle')
   const cleanupModelOn = useOwlFeature('cleanup-model')
+  const clearThreadsOn = useOwlFeature('clear-threads')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'clear-threads': clearThreadsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -682,6 +684,8 @@ export function SettingsView({
                   <Toggle label="Let agents use the browser without asking" checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description="Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser." />
                   <Toggle label="Let agents draw visuals in threads" checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description="Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online." />
                 </SettingsGroup>
+                {/* ADR-0126: an Owl feature. Last on the page, since what it does cannot be taken back. */}
+                {clearThreadsOn ? <ClearThreadsSettings settings={settings} onSave={save} onNotice={text => setNotice({ text, error: false })} /> : null}
               </Card>
 
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>

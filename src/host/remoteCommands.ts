@@ -48,6 +48,11 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'retry-thread-worktree': ['threadId'], 'refresh-thread-worktree': ['threadId', 'background'],
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
+  // Deleting a settled thread cannot be taken back, so it takes the remote-answer policy, as clearing Usage does, and only
+  // on a listener that offers `thread-delete` (ADR-0126): see remoteCommandRefusal. Clear now and the automatic rule act
+  // on the computer whose Settings set them, so neither is a remote command.
+  'preview-delete-thread': ['threadId'],
+  'delete-thread': ['threadId', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'reclaim-thread-worktree': ['threadId', 'withUncommittedChanges', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
   'configure-thread-working-copy': ['threadId', 'workingCopy', 'baseBranch', 'startFromOrigin', 'existingWorktreePath'],
   // The Git actions run on the host's own folder and discard nothing: Git refuses a switch that would lose work,
@@ -135,6 +140,7 @@ export function remoteCommandNeedsAnswerPolicy(command: AgentCommand, askingProv
     case 'configure': return command.patch.newThreadRuntimeMode != null && command.patch.newThreadRuntimeMode !== 'approval-required'
     case 'restore-thread-branch': return command.withUncommittedChanges === true
     case 'reclaim-thread-worktree': return command.withUncommittedChanges === true || Boolean(command.confirmedIgnored?.length)
+    case 'delete-thread': return true
     default: return false
   }
 }
@@ -147,13 +153,16 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   /** Whether this listener offers `client-updates`: the headless host does, the desktop's phone listener does not. */
   readonly clientUpdates?: boolean | undefined
   /** Whether this listener offers `thread-starts`: only a host whose Owl answer turns them on (#1028). */
-  readonly threadStarts?: boolean | undefined }): 'forbidden' | null {
+  readonly threadStarts?: boolean | undefined
+  /** Whether this listener offers `thread-delete`: only a host whose Owl answer turns clearing on, to a desktop (ADR-0126). */
+  readonly threadDelete?: boolean | undefined }): 'forbidden' | null {
   if (managementCommandRefusal(command)) return 'forbidden'
   if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'
   const fields = REMOTE_COMMANDS[command.type] as readonly string[] | undefined
   if (!fields) return 'forbidden'
   if ((command.type === 'queue-client-updates' || command.type === 'cancel-client-updates') && context.clientUpdates !== true) return 'forbidden'
   if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
+  if ((command.type === 'delete-thread' || command.type === 'preview-delete-thread') && context.threadDelete !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
   // Muse without its shell sandbox is the host's own Settings' to choose, even for a client that may answer (ADR-0079).

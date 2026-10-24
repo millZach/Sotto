@@ -72,6 +72,10 @@ export interface AgentRuntimeOptions {
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
+  /** Clearing settled threads (ADR-0126): the Owl list's answer, read once at start. Absent, nothing is deleted. */
+  clearThreadsEnabled?: boolean
+  /** What clearing did, as stable event names with a count or a reason's code. */
+  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
   /** The Owl list's answer for the iPhone's pull request sheet (#1281), read once. Absent fails closed. */
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
@@ -209,6 +213,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     directory, host: agentHost, credentials, turns, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.threadStartsEnabled === true ? { threadStartsEnabled: true } : {}),
+    ...(options.clearThreadsEnabled === true ? { clearThreadsEnabled: true } : {}),
+    ...(options.clearLog ? { logClear: options.clearLog } : {}),
     historyEnabled: options.historyEnabled,
     ...(options.observeActiveThread === undefined ? {} : { observeActiveThread: options.observeActiveThread }),
     ...(options.authority ? { authority: options.authority } : {}),
@@ -243,6 +249,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     agentHost.enableDelegation()
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
+    // A cleared thread's finished delegations and links go with it (ADR-0126 decision 4).
+    const record = delegation
+    agentControl.onThreadsDeleted(threadIds => { void record.forgetThreads(new Set(threadIds)) })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
@@ -259,8 +268,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
+  // Clear settled threads after (ADR-0126) rides the same hour, on the computer whose setting it is, and only on Owl.
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    ...options.clearThreadsEnabled === true ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays, clear: (days: number) => agentControl.clearSettledThreads(days) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
@@ -380,6 +391,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),

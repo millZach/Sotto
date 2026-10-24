@@ -468,6 +468,10 @@ export class MuseMspHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly pending = new Map<string, Pending>()
   /** Only the current processes' request facts; a pending-list reply cannot overwrite a newer stream fact. */
@@ -577,6 +581,44 @@ export class MuseMspHost implements AgentHost {
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
+  /**
+   * ADR-0126: stop the thread's own `muse serve` host if it has one, remove its alias and every per-thread record
+   * this adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias
+   * store before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    if (!this.aliases[id]) return
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.outdated.delete(id)
+    this.holds.delete(id)
+    this.activePrompts.delete(id)
+    this.modelChanges.delete(id)
+    this.modelWants.delete(id)
+    this.activeTurns.delete(id)
+    this.turnTimes.delete(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
+    for (const [messageId, delivery] of [...this.deliveries]) {
+      if (delivery.threadId !== id) continue
+      delivery.reject(new MuseUncertain('The thread was deleted.'))
+      this.deliveries.delete(messageId)
+    }
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
   private thread(id: string): AgentThread {
     const alias = this.aliases[id]; if (!alias) throw new Error('The Muse thread does not exist.')
     if (!this.threads.has(id)) this.threads.set(id, {
@@ -751,7 +793,9 @@ export class MuseMspHost implements AgentHost {
     await mkdir(this.userDataDirectory, { recursive: true })
     const executable = this.options.executable ?? await findMuseExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install Muse and run muse login, then connect again. Your threads and drafts are kept.')
-    this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read()
+    const readAliases = await this.aliasStore.read()
+    for (const id of this.forgottenAliasIds) delete readAliases[id]
+    this.aliases = readAliases; this.aliasesLoaded = true; this.state.projects = await this.projectStore.read()
     this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
     this.executable = executable

@@ -821,32 +821,46 @@ export class ThreadStore {
 
   /** Drops one thread's projection and takes the words out of its log, leaving only that it happened. */
   forget(threadId: string): void {
-    flushedCommits(this.requireOpen(), () => this.forgetFlushed(threadId))
+    this.forgetMany([threadId])
   }
 
-  private forgetFlushed(threadId: string): void {
+  /**
+   * The same for several threads at once, as clearing settled threads asks (ADR-0126): one transaction, one commit that
+   * waits for the disk, and one scrub, however many threads go.
+   */
+  forgetMany(threadIds: readonly string[]): void {
+    const ids = [...new Set(threadIds)]
+    if (!ids.length) return
+    flushedCommits(this.requireOpen(), () => this.forgetFlushed(ids))
+  }
+
+  private forgetFlushed(threadIds: readonly string[]): void {
     const db = this.requireOpen()
-    const hashes = this.activityIdentityHashes(threadId)
+    const hashes = threadIds.flatMap(threadId => this.activityIdentityHashes(threadId))
     db.exec('BEGIN IMMEDIATE')
     try {
-      this.statement('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+      for (const threadId of threadIds) {
+        this.statement('DELETE FROM messages WHERE thread_id = ?').run(threadId)
+        this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
+        this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
+        this.statement('DELETE FROM visuals WHERE thread_id = ?').run(threadId)
+        this.statement('DELETE FROM wake_ups WHERE thread_id = ?').run(threadId)
+        redactEvents(db, threadId)
+      }
       for (const hash of hashes) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
-      this.statement('DELETE FROM activities WHERE thread_id = ?').run(threadId)
-      this.statement('DELETE FROM activity_epochs WHERE thread_id = ?').run(threadId)
-      this.statement('DELETE FROM visuals WHERE thread_id = ?').run(threadId)
-      this.statement('DELETE FROM wake_ups WHERE thread_id = ?').run(threadId)
-      redactEvents(db, threadId)
       db.exec('COMMIT')
     } catch (error) {
       db.exec('ROLLBACK')
       throw error
     }
-    this.activityStates.delete(threadId)
-    this.activityMetas.delete(threadId)
-    this.visualCache.delete(threadId)
-    this.wakeUpCache.delete(threadId)
-    this.wakeUpAskCache.delete(threadId)
-    this.hiddenWakeUpCache.delete(threadId)
+    for (const threadId of threadIds) {
+      this.activityStates.delete(threadId)
+      this.activityMetas.delete(threadId)
+      this.visualCache.delete(threadId)
+      this.wakeUpCache.delete(threadId)
+      this.wakeUpAskCache.delete(threadId)
+      this.hiddenWakeUpCache.delete(threadId)
+    }
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()

@@ -232,6 +232,18 @@ export class SottoThreadHost implements AgentHost {
     return this.inner.rollbackThread(binding.sessionId, removedUserMessages, expectedUserMessageIds)
   }
   /**
+   * A cleared thread is forgotten by the adapter under its own session ID (ADR-0126). The binding stays: it holds IDs
+   * alone, and a provider that reports the session again is then read under the same Sotto thread ID, which the
+   * workspace's cleared list refuses, rather than under a new one that would bring the thread back.
+   */
+  async forgetThread(threadId: string): Promise<void> {
+    if (!this.inner.forgetThread) return
+    await this.registry.load()
+    const binding = this.registry.byThread(threadId)
+    if (!binding || binding.provider !== this.provider) return
+    await this.inner.forgetThread(binding.sessionId)
+  }
+  /**
    * A fork names its source by Sotto thread ID (#1028). Both threads reach the adapter by its own session IDs: the new
    * thread's is reserved and saved before the adapter asks the provider, as creation's is, so the copy is bound to it.
    */

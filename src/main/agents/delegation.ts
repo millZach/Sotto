@@ -1298,6 +1298,26 @@ export class DelegationService {
     const kept = new Set(this.records.map(record => record.delegatedThreadId))
     if (this.links.size > RECORDS_MAX) for (const threadId of [...this.links.keys()].slice(0, this.links.size - RECORDS_MAX)) if (!kept.has(threadId)) this.links.delete(threadId)
   }
+  /**
+   * Cleared threads leave the record (ADR-0126 decision 4): every finished delegation either side of them, their links,
+   * their turn roots and the refusals they were told. A delegation still open is kept: clearing never takes a thread
+   * whose delegated threads are working, so one is left only by a race, and its outcome still needs its record.
+   */
+  forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {
+    const named = (record: { readonly delegatingThreadId: string; readonly delegatedThreadId?: string | undefined }): boolean =>
+      threadIds.has(record.delegatingThreadId) || record.delegatedThreadId !== undefined && threadIds.has(record.delegatedThreadId)
+    const records = this.records.filter(record => !named(record) || this.open(record))
+    const refusals = this.refusals.filter(refusal => !named(refusal))
+    let changed = records.length !== this.records.length || refusals.length !== this.refusals.length
+    if (records.length !== this.records.length) this.records = records
+    if (refusals.length !== this.refusals.length) this.refusals = refusals
+    for (const [threadId, link] of [...this.links]) if (threadIds.has(threadId) || threadIds.has(link.delegatingThreadId)) { this.links.delete(threadId); changed = true }
+    for (const threadId of threadIds) {
+      if (this.roots.delete(threadId)) changed = true
+      this.queuedBriefs.delete(threadId); this.paused.delete(threadId); this.untold.delete(threadId); this.lastWorking.delete(threadId); this.viewsChanged.delete(threadId)
+    }
+    return changed ? this.persist() : Promise.resolve()
+  }
   /** Writes the record as it is now; rejects when it could not be saved. */
   private save(): Promise<void> {
     return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX * 2), links: [...this.links.values()].slice(-RECORDS_MAX),

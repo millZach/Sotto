@@ -112,6 +112,26 @@ export class SubagentStore {
     } catch (error) { db.exec('ROLLBACK'); throw error }
     db.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);')
   }
+  /**
+   * Cleared threads' rosters go whole (ADR-0126): their rows, tasks, results and classifications, in one transaction whose
+   * commit waits for the disk, then one scrub. Their identities are remembered as erased, as turning history off does.
+   */
+  forgetMany(threadIds: readonly string[]): void {
+    const ids = [...new Set(threadIds)]
+    if (!ids.length || !this.db) return
+    const db = this.db
+    flushedCommits(db, () => {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const id of ids) {
+          for (const row of db.prepare('SELECT agent_id, assignment_id FROM subagent_assignments WHERE thread_id = ?').all(id)) this.rememberErased(id, String(row.agent_id), String(row.assignment_id))
+          for (const table of ['subagent_assignments', 'subagent_classifications', 'subagent_rows', 'subagent_threads']) db.prepare('DELETE FROM ' + table + ' WHERE thread_id = ?').run(id)
+        }
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    })
+    if (!this.memory) db.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);')
+  }
   private requireOpen(): DatabaseSync {
     if (!this.db) throw new Error('Subagent history is not open')
     return this.db

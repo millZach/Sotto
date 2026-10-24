@@ -34,7 +34,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'supportsThreadDelete' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -280,7 +280,9 @@ export class DesktopHostRouter {
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
     /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
-    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean } = {}) {
+    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
+    /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0126). */
+    threadsDeleted?: (threadIds: readonly string[]) => void } = {}) {
     this.held = heldProvidersOption(options)
   }
 
@@ -649,6 +651,8 @@ export class DesktopHostRouter {
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
+          // Delete thread… is on only for a host that deletes its threads (ADR-0126 decision 7).
+          ...(connection.service.supportsThreadDelete === true ? { threadDelete: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
           mayAnswer: connection.kind === 'local' || (original as HostClientShell).clientCapabilities?.mayAnswer === true,
@@ -1058,6 +1062,8 @@ export class DesktopHostRouter {
       if (left.length) this.notice = { message: dismissLeft(left) }
       return this.shell()
     }
+    // Clear now acts on this computer's own threads, whichever host is selected (ADR-0126 decision 7).
+    if (type === 'preview-clear-threads' || type === 'clear-threads') return this.clearLocalThreads(input, client)
     const { connection, command, hostNamed } = this.route(input)
     if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       return { ...this.shell(), error: LEGACY_MANAGEMENT_UPDATE }
@@ -1086,6 +1092,18 @@ export class DesktopHostRouter {
       throw new Error(`${connection.name} is disconnected. Nothing was sent. Try again once it reconnects.`)
     }
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error('This folder is on the host machine. Open it there.')
+    if ((command.type === 'preview-delete-thread' || command.type === 'delete-thread') && connection.kind === 'remote' && connection.service.supportsThreadDelete !== true) {
+      return this.answer({ error: `Update ${connection.name} to delete its threads. Nothing was deleted.` })
+    }
+    if (command.type === 'preview-delete-thread') {
+      try {
+        const result = await connection.service.command(command, client)
+        if (result.error || !result.threadDeletePreview) return this.answer({ error: result.error ? this.refusal(connection, result.error) : 'This host could not check the thread. Nothing was deleted. Try again.' })
+        return this.answer({ error: null, threadDeletePreview: mapHostReferences(result.threadDeletePreview, id => hostEntityKey(connection.hostId, id)) })
+      } catch (error) {
+        return this.answer({ error: error instanceof HostConnectionError ? error.message : 'This host could not check the thread. Nothing was deleted. Check its connection and try again.' })
+      }
+    }
     if (command.type === 'preview-reclaim-thread-worktree') {
       try {
         const result = await connection.service.command(command, client)
@@ -1154,6 +1172,10 @@ export class DesktopHostRouter {
       await this.openCreated(connection, command.threadId, client)
     }
     if (startsThread(command) && connection.kind === 'remote' && !refused && unmoved) await this.openCreated(connection, command.newThreadId, client)
+    // A delete the host did not refuse deleted the thread: it answers an error for every thread it keeps.
+    if (command.type === 'delete-thread' && connection.kind === 'remote' && !refused) {
+      try { this.options.threadsDeleted?.([hostEntityKey(connection.hostId, command.threadId)]) } catch { /* Each listener keeps its own record. */ }
+    }
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())
     // A settings save, or a command that named its host, may go to a host other than the selected one, so it answers with
@@ -1161,6 +1183,28 @@ export class DesktopHostRouter {
     // as a thread answers in the agent's row with its own refusal alone (#1028).
     return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
+  }
+  /** A clearing or deleting command's answer (ADR-0126): the shell as it is now, built only when one answers, with its outcome. */
+  private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {
+    const shell = this.shell()
+    return { ...withoutHistory ? agentShell(shell) : shell, ...outcome }
+  }
+  /**
+   * Clear now (ADR-0126): this computer's own settled threads, listed or cleared by its own coordinator, with every thread ID
+   * in the answer as this window's key. Threads the window names on another host are not this computer's and are left.
+   */
+  private async clearLocalThreads(input: unknown, client: ClientIdentity): Promise<AgentState> {
+    const local = [...this.hosts.values()].find(entry => entry.connection.kind === 'local')?.connection
+    if (!local) return this.answer({ error: 'This computer runs no threads of its own here, so there is nothing to clear. Nothing was deleted.' })
+    const command = agentCommandSchema.parse(mapHostReferences(input, id => { const key = parseHostEntityKey(id); return key?.hostId === local.hostId ? key.id : id }))
+    if (command.type !== 'preview-clear-threads' && command.type !== 'clear-threads') throw new Error('This clear could not be read. Nothing was deleted.')
+    const result = await local.service.command(command, client)
+    this.emit()
+    const keyed = (id: string): string => hostEntityKey(local.hostId, id)
+    return this.answer({ error: result.error,
+      ...(result.notice ? { notice: result.notice } : {}),
+      ...(result.threadClearPreview ? { threadClearPreview: mapHostReferences(result.threadClearPreview, keyed) } : {}),
+      ...(result.threadClearResult ? { threadClearResult: mapHostReferences(result.threadClearResult, keyed) } : {}) }, true)
   }
   /** Refuses, before it is sent, a command that chooses, owns or would enumerate a held provider on that host. */
   private refuseHeld(command: AgentCommand, connection: DesktopHostConnection): void {

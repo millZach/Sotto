@@ -15,7 +15,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
 import { immutableActivities, immutableModels, immutableUpdates, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { readdir, unlink } from 'node:fs/promises'
+import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
 import { AGENT_THREAD_EXCERPT_MAX, agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
@@ -62,6 +62,7 @@ import { WatcherLaunchProfiles, WATCHER_DISABLED } from './watcherLaunchProfiles
 import { WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
 import type { WatcherProfileTools, WorkerRoleSource } from './host'
+import type { ThreadClearKeptReason } from '../../shared/threadClear'
 
 /**
  * Fold a run of appends to one message into the first of them, so a reply streamed over one write
@@ -248,10 +249,34 @@ function organizationOnly(thread: AgentThread, keepActivities = false, keepTaskW
   return { ...rest, messages: [], ...(keepActivities && activities ? { activities: keepTaskWords ? activities : retainedActivities(activities) } : {}) }
 }
 
+/**
+ * A thread that pointed at threads now deleted (ADR-0126 decision 5): it keeps its own history and loses only the links,
+ * the thread that delegated to it, the thread it continues or that continues it, and the thread it began from. Unchanged,
+ * the same record comes back.
+ */
+function unlinkedFrom(thread: AgentThread, gone: ReadonlySet<string>): AgentThread {
+  const delegated = thread.delegatedBy !== undefined && gone.has(thread.delegatedBy)
+  const from = thread.continuedFrom !== undefined && gone.has(thread.continuedFrom.threadId)
+  const into = thread.continuedIn?.some(item => gone.has(item.threadId)) === true
+  const started = thread.startedFrom !== undefined && gone.has(thread.startedFrom.threadId)
+  if (!delegated && !from && !into && !started) return thread
+  const next: AgentThread = { ...thread }
+  if (delegated) delete next.delegatedBy
+  if (from) delete next.continuedFrom
+  if (started) delete next.startedFrom
+  if (into) {
+    const continuedIn = thread.continuedIn!.filter(item => !gone.has(item.threadId))
+    if (continuedIn.length) next.continuedIn = continuedIn; else delete next.continuedIn
+  }
+  return next
+}
+
 const workspaceSchema = z.object({
   snapshot: z.preprocess(migrateWorkspaceThreadKinds, agentHostSnapshotSchema),
   projectAliases: z.array(z.object({ providerProjectId: z.string(), projectId: z.string() })).default([]),
   creations: z.array(z.object({ threadId: z.string(), projectId: z.string(), commandId: z.string(), phase: z.enum(['unstarted', 'starting', 'retryable', 'started']) })),
+  /** The Sotto thread IDs of cleared threads (ADR-0126 decision 6): IDs alone, never a title or a word. */
+  clearedThreadIds: z.array(z.string().min(1).max(512)).default([]),
 })
 type Workspace = z.infer<typeof workspaceSchema>
 /**
@@ -682,7 +707,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
-  private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
+  private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [], clearedThreadIds: [] }
+  /**
+   * The cleared threads' IDs as a set (ADR-0126 decision 6), read from `clearedThreadIds`: every provider snapshot and
+   * thread event naming one is refused, so a provider that still reports it cannot bring it back. Asking costs the same
+   * however many threads were cleared.
+   */
+  private readonly clearedIds = new Set<string>()
   /**
    * What each thread babysits, with what it was last told, by thread (ADR-0061 decision 10). Saved on the thread's record
    * in `workspace.json`; the thread itself carries only the published part, `babysitting`, so no client is sent the rest.
@@ -1456,6 +1487,152 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } finally { releaseStatus?.(); release() }
     })
   }
+  /** Whether this thread was cleared (ADR-0126): its ID is refused in every snapshot and event from now on. */
+  isThreadCleared(threadId: string): boolean { return this.clearedIds.has(threadId) }
+  /**
+   * What holds a thread back from deletion that only the workspace can see (ADR-0126 decision 3): work it is doing, a
+   * request waiting on the user, a working copy being prepared, or a Git action running. The coordinator asks the rest.
+   */
+  private deletionHold(thread: AgentThread): ThreadClearKeptReason | null {
+    if (thread.requests.length) return 'waiting-on-you'
+    if (thread.status === 'running' || thread.lastTurn?.status === 'running' || thread.compaction?.status === 'running'
+      || thread.backgroundWork?.length || thread.monitoring?.length || thread.subagentSummary?.working
+      || this.preparations.has(thread.id) || thread.gitAction?.status === 'running') return 'working'
+    return null
+  }
+  /** The thread's own worktree folder, when it has one on the disk to remove: never a shared checkout or a reused folder. */
+  private async ownWorktreeToRemove(thread: AgentThread): Promise<AgentWorktree | undefined> {
+    const worktree = thread.worktree
+    if (worktree?.mode !== 'independent' || !worktree.path || worktree.reused || worktree.reclaimedAt) return undefined
+    return await stat(worktree.path).then(() => worktree, () => undefined)
+  }
+  /**
+   * Why the thread's own worktree keeps the thread, read from the folder (ADR-0126 decision 3), with the facts read. A
+   * folder another thread or a terminal uses, one with uncommitted changes, and one with a link out of it are always
+   * kept; ignored files besides dependencies and nested work keep it only for a rule or Clear now (`automatic`), since
+   * Delete thread… lists them for the user to tick.
+   */
+  private async worktreeDeletionHold(thread: AgentThread, worktree: AgentWorktree, automatic: boolean): Promise<{ reason: ThreadClearKeptReason | null; facts?: WorktreeReclaimPreview }> {
+    if (!await this.ownsCheckoutAlone(thread.id) || this.worktreeInUse(thread.id)) return { reason: 'worktree-in-use' }
+    let facts: WorktreeReclaimPreview
+    try {
+      const read = await this.worktrees.reclaimFacts(worktree)
+      facts = { ...read, ignored: [...read.ignored], items: [...read.items], repositories: [...read.repositories], untracked: [...read.untracked] }
+    } catch { return { reason: 'worktree-error' } }
+    if (facts.dirty) return { reason: 'uncommitted', facts }
+    if (facts.outsideLink || !facts.branch) return { reason: 'worktree-error', facts }
+    if (automatic && (facts.ignored.length || facts.repositories.length)) return { reason: 'worktree-files', facts }
+    return { reason: null, facts }
+  }
+  /**
+   * What deleting this thread would do (ADR-0126), checked in its lane: why it is kept, or null, and the facts of its own
+   * worktree folder when it has one to remove. `automatic` is Clear now's and the rule's question, which keeps a folder
+   * holding ignored files or nested work rather than listing them.
+   */
+  async previewThreadDeletion(threadId: string, automatic = false): Promise<{ kept: ThreadClearKeptReason | null; worktree: WorktreeReclaimPreview | null }> {
+    return this.onLane(threadId, async () => {
+      await this.initialize()
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      if (!thread || !this.visible(thread)) return { kept: 'hidden' as const, worktree: null }
+      const held = this.deletionHold(thread)
+      const worktree = await this.ownWorktreeToRemove(thread)
+      if (!worktree) return { kept: held, worktree: null }
+      const folder = await this.worktreeDeletionHold(thread, worktree, automatic)
+      return { kept: held ?? folder.reason, worktree: folder.facts ?? null }
+    })
+  }
+  /**
+   * Deletes threads, finally (ADR-0126 decision 4). Each is checked again in its own lane, the coordinator's `hold`
+   * first, and its own worktree folder is removed under ADR-0041's guards before anything else of it goes; one that
+   * fails a check is kept and says why. Then all that passed go together: their IDs join the cleared list, their rows
+   * leave `threads.sqlite` and `subagents.sqlite` in one transaction each, their records and creation records leave the
+   * workspace, other threads lose their links to them, and each adapter forgets its alias. Branches, Usage's numbers and
+   * the providers' own transcripts are kept. `worktree` carries Delete thread…'s ticked items, for one thread alone.
+   */
+  async deleteThreads(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
+    readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }> {
+    await this.initialize()
+    const passed: string[] = []
+    const kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] = []
+    for (const threadId of [...new Set(threadIds)]) {
+      if (this.stopping) break
+      if (this.clearedIds.has(threadId)) continue
+      await this.onLane(threadId, async () => {
+        const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+        if (!thread) return
+        const reason = !this.visible(thread) ? 'hidden' : options.hold(threadId) ?? this.deletionHold(thread)
+        if (reason) { kept.push({ threadId, reason }); return }
+        const worktree = await this.ownWorktreeToRemove(thread)
+        if (worktree) {
+          const folder = await this.worktreeDeletionHold(thread, worktree, options.automatic)
+          if (folder.reason) { kept.push({ threadId, reason: folder.reason }); return }
+          const release = await this.checkoutMutations.acquire(this.threadCheckoutFolder(threadId), 'mutation', { kind: 'remove-folder' })
+          const releaseStatus = this.gitStatus?.hold?.(worktree.path!)
+          try {
+            await this.gitStatus?.idle?.(worktree.path!)
+            // Asked once more with the folder held: a turn or a request that began meanwhile keeps the thread.
+            const late = options.hold(threadId) ?? this.deletionHold(this.thread(threadId))
+            if (late) { kept.push({ threadId, reason: late }); return }
+            const reclaimed = await this.worktrees.reclaim(worktree, options.automatic ? { automatic: true }
+              : { ...options.worktree?.confirmedIgnored ? { confirmedIgnored: options.worktree.confirmedIgnored } : {},
+                ...options.worktree?.confirmedItems ? { confirmedItems: options.worktree.confirmedItems } : {},
+                ...options.worktree?.confirmedRepositories ? { confirmedRepositories: options.worktree.confirmedRepositories } : {} })
+            this.thread(threadId).worktree = reclaimed
+            this.dirty = true
+          } catch (error) {
+            kept.push({ threadId, reason: 'worktree-error', ...error instanceof Error ? { error: error.message } : {} })
+            return
+          } finally { releaseStatus?.(); release() }
+        }
+        passed.push(threadId)
+      })
+    }
+    // Whatever began in the moment between a thread's lane and this removal keeps it.
+    const deleted = passed.filter(threadId => {
+      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      const late = thread ? options.hold(threadId) ?? this.deletionHold(thread) : null
+      if (late) kept.push({ threadId, reason: late })
+      return thread !== undefined && !late
+    })
+    if (!deleted.length) {
+      if (this.dirty) {
+        try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+        this.publish()
+      }
+      return { deleted, kept }
+    }
+    const gone = new Set(deleted)
+    // From here no snapshot or event can bring them back, even before the list is on the disk.
+    for (const threadId of deleted) {
+      this.clearedIds.add(threadId)
+      this.pendingEvents.delete(threadId); this.failedEventThreads.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
+    }
+    try {
+      if (!this.storeUnavailable) this.threadStore.forgetMany(deleted)
+      if (!this.subagentUnavailable) this.subagentStore.forgetMany(deleted)
+    } catch {
+      for (const threadId of deleted) this.clearedIds.delete(threadId)
+      throw new Error('Sotto could not erase the history of the threads it was deleting, so it kept them. Restore access to local storage and try again.')
+    }
+    this.state.snapshot.threads = this.state.snapshot.threads.filter(thread => !gone.has(thread.id)).map(thread => unlinkedFrom(thread, gone))
+    this.state.creations = this.state.creations.filter(item => !gone.has(item.threadId))
+    this.state.clearedThreadIds = [...this.state.clearedThreadIds, ...deleted]
+    for (const threadId of deleted) this.forgetThreadState(threadId)
+    this.dirty = true
+    try { await this.flush() } catch { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.' }
+    // The cleared list already refuses each one; an adapter that cannot forget its alias leaves only that behind.
+    for (const threadId of deleted) await this.inner.forgetThread?.(threadId).catch(() => { console.warn('thread-forget-alias-failed') })
+    this.publish()
+    return { deleted, kept }
+  }
+  /** Every record this host holds in memory for one deleted thread, beside its record. */
+  private forgetThreadState(threadId: string): void {
+    this.babysitRecords.delete(threadId); this.wakeUpRecords.delete(threadId); this.hiddenWakeUpRecords.delete(threadId); this.wakeUpAskRecords.delete(threadId)
+    this.privateLegacyMessages.delete(threadId); this.storedActivity.delete(threadId); this.storedInputs.delete(threadId); this.heldForInput.delete(threadId)
+    this.activityInputs.delete(threadId); this.publishedThreads.delete(threadId); this.known.delete(threadId); this.watched.delete(threadId); this.hidden.delete(threadId)
+    this.storedAnchors.delete(threadId); this.inspectionsQueued.delete(threadId); this.fullCheckDue.delete(threadId)
+    this.subagentSummaries.delete(threadId); this.subagentInputs.delete(threadId); this.subagentChanges.delete(threadId); this.subagentLiveSince.delete(threadId)
+  }
   async workingCopyOptions(projectId: string): Promise<AgentWorkingCopyOptions> {
     await this.initialize()
     const project = this.state.snapshot.projects.find(item => item.id === projectId)
@@ -1839,6 +2016,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // Read the release-gated kinds before either store applies an offline privacy change.
       this.state = await this.store.peek()
       this.state.snapshot = stampHostSnapshot(this.state.snapshot, this.hostId)
+      for (const id of this.state.clearedThreadIds) this.clearedIds.add(id)
+      if (this.clearedIds.size && this.state.snapshot.threads.some(thread => this.clearedIds.has(thread.id))) {
+        this.state.snapshot.threads = this.state.snapshot.threads.filter(thread => !this.clearedIds.has(thread.id))
+      }
       try { this.threadStore.open({ ephemeral: !this.historyEnabled() }) }
       catch { this.storeUnavailable = true; this.saveError = HISTORY_OPEN_ERROR }
       try { this.subagentStore.open({ ephemeral: !this.historyEnabled() }) }
@@ -2197,6 +2378,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * at the next publish rather than per event, which keeps a streamed reply at one publish per window.
    */
   private recordEvent(threadId: string, event: ThreadEvent): void {
+    if (this.clearedIds.has(threadId)) return
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
     if (thread && !this.visible(thread)) return
     if (!this.historyEnabled()) this.pendingEventsPrivate = true
@@ -2953,6 +3135,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     const threads = new Map(previous.threads.map(thread => [thread.id, this.visible(thread) ? { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread : thread]))
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
+      // A cleared thread stays cleared, whatever its provider still reports (ADR-0126 decision 6).
+      if (this.clearedIds.has(thread.id)) continue
       const old = threads.get(thread.id)
       if (old && !this.visible(old)) continue
       const connected = isThreadProviderConnected(snapshot, thread)

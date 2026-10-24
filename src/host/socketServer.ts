@@ -267,7 +267,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Cut bodies are for a desktop on a slow link (ADR-0025, October 18 amendment); the desktop's own phone listener serves none.
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
-    && (feature !== 'agents-view' || service.supportsAgentsView === true))
+    && (feature !== 'agents-view' || service.supportsAgentsView === true)
+    // Deleting settled threads (ADR-0126) only where the host's Owl answer turns clearing on, and only for a desktop: the
+    // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
+    && (feature !== 'thread-delete' || service.supportsThreadDelete === true && (options.admin !== false || options.tailnet !== undefined)))
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
    * `remote-answer` policy lets it answer (ADR-0088). Read afresh each time, so `--deny-answers` takes it away at once.
@@ -743,11 +746,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     // shape and this peer's exact selected owner are still checked here; Send stays conservative.
     const refusal = remoteCommandRefusal(input, { mayAnswer: options.mayAnswer?.(peer.client) ?? false, askingProviderModes: askingProviderModes(input),
       draftRequestId: input.type === 'send' || input.type === 'compose' && input.threadId === undefined ? draftRequestId : undefined,
-      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates'), threadStarts: offers(peer, 'thread-starts') })
+      selectedThreadId: targetThreadId, clientUpdates: options.clientUpdates === true && offers(peer, 'client-updates'), threadStarts: offers(peer, 'thread-starts'),
+      threadDelete: offers(peer, 'thread-delete') })
     if (refusal) throw new Refusal(refusal)
     if (input.type === 'preview-reclaim-thread-worktree') {
       const result = await service.command(input, peer.client)
       return { ...shell(peer), error: result.error, ...(result.worktreeReclaimPreview ? { worktreeReclaimPreview: result.worktreeReclaimPreview } : {}) }
+    }
+    if (input.type === 'preview-delete-thread') {
+      const result = await service.command(input, peer.client)
+      return { ...shell(peer), error: result.error, ...(result.threadDeletePreview ? { threadDeletePreview: result.threadDeletePreview } : {}) }
     }
     const recorded = !UNRECEIPTED.has(input.type)
     if (recorded && !receipts.makeRoom()) throw new Refusal('busy')

@@ -45,7 +45,7 @@ The record keeps `path`, `branch` and `repositoryRoot` and gains `reclaimedAt`. 
 - **Keep removing by hand.** It is what happened for two months, and it produced the 107 GB and a near miss with a junction. The app that makes the folders should be able to give them back.
 - **Share `node_modules` between worktrees with a link.** It is what the by-hand attempts did (82 of the 160 worktrees held one), and it is exactly what makes removal dangerous on Windows. Refused; the outside-link guard is the opposite decision.
 - **Remove on settle without asking.** A settle is filing, not a confirmation. Offered only as the opt-in `onSettle` rule, and even then a dirty folder still asks.
-- **A Remove thread command that deletes the thread as well.** T3 has one; Sotto's threads are its history and there is no delete. Reclaiming the folder alone gets the disk back and keeps every thread.
+- **A Remove thread command that deletes the thread as well.** T3 has one; Sotto's threads are its history and there is no delete. Reclaiming the folder alone gets the disk back and keeps every thread. Amended October 23, 2026: [ADR-0126](0126-settled-threads-can-be-cleared.md) lets the user delete settled threads, on Owl. A cleared thread's own worktree is reclaimed under the guards here, and its branch stays.
 - **Fetch before the `unchanged` rule**, as T3 does. An hourly background fetch is a new periodic network action Sotto has not documented; comparing with the local default branch is enough for a repository the user pulls anyway. If it proves too conservative, that is a README change and an amendment here.
 
 ## Consequences

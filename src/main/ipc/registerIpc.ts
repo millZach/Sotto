@@ -160,6 +160,7 @@ const settingKeys = [
   'gitWritingInstructions',
   'followPullRequestTemplates',
   'autoSettleMergedThreads',
+  'clearSettledThreadsAfterDays',
   'proactivePanels',
   'commitMessages',
   'pullRequestText',

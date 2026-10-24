@@ -71,6 +71,8 @@ import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hos
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
+import { threadClearHold, threadDelegators, type ThreadClearFacts } from './threadClearing'
+import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
@@ -744,6 +746,9 @@ export class AgentControl {
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
+  /** Clearing commands and the automatic rule, one at a time (ADR-0126). */
+  private clearing: Promise<unknown> = Promise.resolve()
+  private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
   private readonly titleWrites = new Set<Promise<void>>()
   /** Set once closing has stopped waiting for title writes: a title that comes back after the final save is let go. */
   private titleWritesLetGo = false
@@ -806,6 +811,10 @@ export class AgentControl {
     installedProviders?: () => Promise<readonly ProviderId[]>
     /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, read once at start. Absent fails closed. */
     threadStartsEnabled?: boolean
+    /** Clearing settled threads (ADR-0126): the Owl list's answer, read once at start. Absent fails closed. */
+    clearThreadsEnabled?: boolean
+    /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
+    logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
   }) {
@@ -1053,6 +1062,174 @@ export class AgentControl {
     if (!this.failuresSeen.dismiss(failures.filter(item => this.threadAvailable(item.threadId)), this.state.host.threads)) return
     this.publish()
     void this.persist().catch(() => undefined)
+  }
+  /**
+   * Called with the IDs of threads deleted on this host (ADR-0126), once their records are gone, so a service that keeps
+   * something of them (delegation, answer drafts) lets it go too.
+   */
+  onThreadsDeleted(listener: (threadIds: readonly string[]) => void): () => void {
+    this.deletedListeners.add(listener)
+    return () => { this.deletedListeners.delete(listener) }
+  }
+  /** What the clearing check needs of the coordinator, read once for a whole list. */
+  private clearFacts(): ThreadClearFacts {
+    const watched = new Set(this.watcherHooks?.watchedThreadIds?.() ?? [])
+    return { threads: this.state.host.threads, delegators: threadDelegators(this.state.host.threads), projects: this.state.host.projects,
+      hidden: id => !this.threadAvailable(id),
+      pending: id => this.hasPendingThreadWork(id) || this.outbox.some(item => item.threadId === id),
+      watched: id => watched.has(id) }
+  }
+  /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0126 decision 3). */
+  private clearHold(threadId: string, facts = this.clearFacts()): ThreadClearKeptReason | null {
+    return threadClearHold(this.state.host.threads.find(thread => thread.id === threadId), facts)
+  }
+  private clearKept(item: { readonly threadId: string; readonly reason: ThreadClearKeptReason }, titles: ReadonlyMap<string, { title: string; projectTitle: string }>): ThreadClearKept {
+    const named = titles.get(item.threadId)
+    return { threadId: item.threadId, title: named?.title ?? '', projectTitle: named?.projectTitle ?? '', reason: item.reason }
+  }
+  private clearTitles(): Map<string, { title: string; projectTitle: string }> {
+    const projects = new Map(this.state.host.projects.map(project => [project.id, project.title]))
+    return new Map(this.state.host.threads.map(thread => [thread.id, { title: thread.title.slice(0, 512), projectTitle: (projects.get(thread.projectId) ?? '').slice(0, 512) }]))
+  }
+  /**
+   * This host's settled threads quiet longer than `days`, oldest first, with when each went quiet (ADR-0126 decision 2).
+   * Hidden threads are not among them: they are not this run's to show or clear.
+   */
+  private settledThreadsOlderThan(days: number): { thread: AgentThread; quietSince: number }[] {
+    const now = Date.now()
+    const projects = new Map(this.state.host.projects.map(project => [project.id, project]))
+    return this.state.host.threads.flatMap(thread => {
+      if (!this.threadAvailable(thread.id) || thread.kind === 'watcher' || thread.kind === 'watcher-history') return []
+      const quietSince = threadQuietSince(thread, projects.get(thread.projectId))
+      return quietSince !== undefined && quietLongerThan(quietSince, days, now) ? [{ thread, quietSince }] : []
+    }).sort((a, b) => a.quietSince - b.quietSince)
+  }
+  /** One clearing command at a time, outside every lane: the workspace takes each thread's own lane as it deletes it. */
+  private clearSerially<T>(work: () => Promise<T>): Promise<T> {
+    const task = this.clearing.then(work, work)
+    this.clearing = task.catch(() => undefined)
+    return task
+  }
+  /** A clearing command's answer: the shell as it is now, built only when a clearing command answers, with its outcome. */
+  private clearReply(outcome: Partial<AgentState>): AgentState { return { ...this.shell(), ...outcome } }
+  private clearCommand(command: Extract<AgentCommand, { type: 'preview-delete-thread' | 'delete-thread' | 'preview-clear-threads' | 'clear-threads' }>): Promise<AgentState> {
+    if (this.dependencies.clearThreadsEnabled !== true) return Promise.resolve(this.clearReply({ error: 'Deleting threads is not available in this version of Sotto. Nothing was deleted.' }))
+    const host = this.dependencies.host
+    if (!host.deleteThreads || !host.previewThreadDeletion) return Promise.resolve(this.clearReply({ error: 'This host cannot delete threads. Nothing was deleted. Update it and try again.' }))
+    return this.clearSerially(async () => {
+      try {
+        if (command.type === 'preview-delete-thread') {
+          const kept = this.clearHold(command.threadId)
+          const preview = kept ? { kept, worktree: null } : await host.previewThreadDeletion!(command.threadId, false)
+          return this.clearReply({ error: null, threadDeletePreview: { threadId: command.threadId, kept: preview.kept, worktree: preview.worktree } })
+        }
+        if (command.type === 'preview-clear-threads') {
+          const titles = this.clearTitles()
+          const facts = this.clearFacts()
+          const go: ThreadClearPreview['go'] = []
+          const kept: ThreadClearKept[] = []
+          for (const { thread, quietSince } of this.settledThreadsOlderThan(command.olderThanDays)) {
+            if (go.length + kept.length >= THREAD_CLEAR_MAX) break
+            const held = this.clearHold(thread.id, facts)
+            const preview = held ? { kept: held, worktree: null } : await host.previewThreadDeletion!(thread.id, true)
+            if (preview.kept) { kept.push(this.clearKept({ threadId: thread.id, reason: preview.kept }, titles)); continue }
+            const named = titles.get(thread.id)
+            go.push({ threadId: thread.id, title: named?.title ?? '', projectTitle: named?.projectTitle ?? '', quietSince: new Date(quietSince).toISOString(), removesWorktree: preview.worktree !== null })
+          }
+          return this.clearReply({ error: null, threadClearPreview: { olderThanDays: command.olderThanDays, go, kept } })
+        }
+        if (command.type === 'delete-thread') {
+          const titles = this.clearTitles()
+          const title = titles.get(command.threadId)?.title ?? ''
+          const result = await host.deleteThreads!([command.threadId], { automatic: false, hold: id => this.clearHold(id),
+            worktree: { ...command.confirmedIgnored ? { confirmedIgnored: command.confirmedIgnored } : {}, ...command.confirmedItems ? { confirmedItems: command.confirmedItems } : {},
+              ...command.confirmedRepositories ? { confirmedRepositories: command.confirmedRepositories } : {} } })
+          if (!result.deleted.length) {
+            const kept = result.kept[0]
+            if (kept) this.logClear('thread-clear-kept', kept.reason)
+            const error = !kept ? `Sotto could not find “${title}”. Nothing was deleted.`
+              : kept.error ? `“${title}” was not deleted. ${kept.error}`
+                : `“${title}” was not deleted: ${threadClearKeptWords(kept.reason)}. Nothing was deleted.`
+            this.publish()
+            return this.clearReply({ error })
+          }
+          await this.forgetDeletedThreads(result.deleted)
+          this.logClear('threads-cleared', String(result.deleted.length))
+          this.state.notice = `Deleted “${title}”.`
+          this.publish()
+          return this.clearReply({ error: null })
+        }
+        return await this.clearThreads(command.threadIds, command.olderThanDays, false)
+      } catch (error) {
+        return this.clearReply({ error: error instanceof Error ? error.message : 'Sotto could not delete these threads. Nothing was deleted. Try again.' })
+      }
+    })
+  }
+  /**
+   * Deletes those of `threadIds` that still qualify: settled, quiet longer than `olderThanDays`, and kept back by nothing
+   * (ADR-0126). Each is checked again as it is deleted. `automatic` is the rule's run, which says nothing on screen.
+   */
+  private async clearThreads(threadIds: readonly string[], olderThanDays: number, automatic: boolean): Promise<AgentState> {
+    const host = this.dependencies.host
+    const titles = this.clearTitles()
+    const old = new Set(this.settledThreadsOlderThan(olderThanDays).map(item => item.thread.id))
+    // One that changed since the list was made is kept and says why; one already gone is no one's to report.
+    const known = new Set(this.state.host.threads.map(thread => thread.id))
+    const asked = [...new Set(threadIds)].filter(id => known.has(id) && (old.has(id) || this.clearHold(id) !== null))
+    // Checked again as each goes: a thread active again since the list was made is no longer old, and is kept as working.
+    const stillOld = (id: string): boolean => {
+      const thread = this.state.host.threads.find(item => item.id === id)
+      const quietSince = thread ? threadQuietSince(thread, this.state.host.projects.find(project => project.id === thread.projectId)) : undefined
+      return quietSince !== undefined && quietLongerThan(quietSince, olderThanDays, Date.now())
+    }
+    const result = await host.deleteThreads!(asked, { automatic: true, hold: id => this.clearHold(id) ?? (stillOld(id) ? null : 'working') })
+    if (result.deleted.length) await this.forgetDeletedThreads(result.deleted)
+    // The hourly rule keeps the same threads back hour after hour, so it logs only a run that cleared something.
+    if (!automatic || result.deleted.length) this.logClear('threads-cleared', String(result.deleted.length))
+    if (!automatic) for (const item of result.kept) this.logClear('thread-clear-kept', item.reason)
+    const count = result.deleted.length
+    if (!automatic) this.state.notice = count === 1 ? 'Cleared 1 thread.' : `Cleared ${count} threads.`
+    this.publish()
+    return this.clearReply({ error: null, threadClearResult: { cleared: count, kept: result.kept.slice(0, THREAD_CLEAR_MAX).map(item => this.clearKept(item, titles)) } })
+  }
+  /**
+   * Clear settled threads after (ADR-0126 decision 2): this host's settled threads quiet longer than `days` are cleared on
+   * their own. It runs nothing while the Owl feature is off, and says nothing on screen; the log has the count.
+   */
+  clearSettledThreads(days: number): Promise<void> {
+    if (this.dependencies.clearThreadsEnabled !== true || this.disposed || !this.dependencies.host.deleteThreads || days <= 0) return Promise.resolve()
+    return this.clearSerially(async () => {
+      const ids = this.settledThreadsOlderThan(days).map(item => item.thread.id)
+      if (ids.length) await this.clearThreads(ids, days, true)
+    }).catch(() => { this.logClear('threads-cleared', 'failed') })
+  }
+  private logClear(event: 'threads-cleared' | 'thread-clear-kept', detail: string): void {
+    try { this.dependencies.logClear?.(event, detail) } catch { /* Logging never stops a clear. */ }
+  }
+  /**
+   * What the coordinator kept of deleted threads goes too (ADR-0126 decision 4): their drafts, delivery receipts, queued
+   * wake-ups and queue receipts, attachment previews, and the composer when it was theirs.
+   * Listeners then forget their own records of them.
+   */
+  private async forgetDeletedThreads(threadIds: readonly string[]): Promise<void> {
+    const gone = new Set(threadIds)
+    const kept = <T extends { readonly threadId?: string | undefined | null }>(items: T[] | undefined): T[] | undefined => items?.filter(item => !item.threadId || !gone.has(item.threadId))
+    this.state.threadDrafts = kept(this.state.threadDrafts)
+    this.state.deliveries = kept(this.state.deliveries)
+    this.state.deliveredDrafts = kept(this.state.deliveredDrafts)
+    this.state.obsoleteDrafts = kept(this.state.obsoleteDrafts)
+    if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
+    this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
+    for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titled.delete(threadId) }
+    if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
+    if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
+    this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
+    await this.followupStore.forgetThreads(gone).catch(() => undefined)
+    this.syncFollowups()
+    await this.attachmentPreviews.forgetThreads(gone).catch(() => undefined)
+    await this.maintainAttachments().catch(() => undefined)
+    for (const listener of this.deletedListeners) { try { listener(threadIds) } catch { /* Each listener keeps its own record. */ } }
+    await this.persist().catch(() => { this.state.error = 'Agent state could not be saved. Restore access to local storage and retry.' })
   }
   /**
    * `setAsideIgnored` is for a change the user makes, such as Watcher's model or provider: a prompt the user set aside is
@@ -2955,7 +3132,9 @@ export class AgentControl {
   command(command: AgentCommand, client: ClientIdentity = this.localClient): Promise<AgentState> {
     const reply = this.commandShell(command, client)
     let whole = this.sharedWholeStateReplies.get(reply)
-    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error, ...(shell.worktreeReclaimPreview ? { worktreeReclaimPreview: shell.worktreeReclaimPreview } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
+    if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error, ...(shell.worktreeReclaimPreview ? { worktreeReclaimPreview: shell.worktreeReclaimPreview } : {}),
+      ...(shell.threadDeletePreview ? { threadDeletePreview: shell.threadDeletePreview } : {}), ...(shell.threadClearPreview ? { threadClearPreview: shell.threadClearPreview } : {}),
+      ...(shell.threadClearResult ? { threadClearResult: shell.threadClearResult } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
     return whole
   }
   /**
@@ -3174,6 +3353,7 @@ export class AgentControl {
     if (command.type === 'update-client' || command.type === 'queue-client-updates' || command.type === 'cancel-client-updates' || command.type === 'check-client-updates' || command.type === 'dismiss-client-updates') return this.providerCommand(command)
     if (command.type === 'refresh-thread-skills') return this.refreshThreadSkills(command.threadId, command.forceReload)
     if (command.type === 'start-thread-session') return this.startThreadSession(command.threadId)
+    if (command.type === 'preview-delete-thread' || command.type === 'delete-thread' || command.type === 'preview-clear-threads' || command.type === 'clear-threads') return this.clearCommand(command)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
       if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })

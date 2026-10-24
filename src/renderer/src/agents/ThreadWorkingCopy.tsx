@@ -163,6 +163,38 @@ export function isReclaimable(thread: Pick<AgentThread, 'worktree'>): boolean {
   return worktree?.mode === 'independent' && worktree.status === 'ready' && Boolean(worktree.path) && !worktree.reused && !worktree.reclaimedAt
 }
 
+/** What a worktree folder holds that Git ignores, and its nested repositories and worktrees, each once. */
+export function worktreeListedPaths(preview: Pick<WorktreeReclaimPreview, 'ignored' | 'repositories'>): string[] {
+  return [...new Set([...preview.ignored, ...preview.repositories.map(repository => repository.path)])]
+}
+
+/**
+ * ADR-0041's List and tick: the ignored items and nested work a worktree folder holds, and the tick that agrees to delete
+ * them with it. Remove worktree and Delete thread… (ADR-0126) both ask it. Nothing is drawn for a folder with none.
+ */
+export function WorktreeFilesToTick({ preview, tickable, acknowledged, onAcknowledge }: {
+  readonly preview: WorktreeReclaimPreview
+  /** False while the folder cannot be removed at all: the list still shows, with nothing to tick. */
+  readonly tickable: boolean
+  readonly acknowledged: boolean
+  readonly onAcknowledge: (acknowledged: boolean) => void
+}): ReactNode {
+  const listedPaths = worktreeListedPaths(preview)
+  if (!listedPaths.length) return null
+  const nestedKinds = [...new Set(preview.repositories.map(item => item.kind))]
+  const nestedName = nestedKinds.length === 1 ? (preview.repositories.length === 1 ? `${nestedKinds[0]}’s` : `${nestedKinds[0] === 'repository' ? 'repositories' : 'worktrees'}’`) : 'repositories and worktrees’'
+  return <>
+    <div className="working-copy__callout">These files are ignored by Git and are deleted with the folder:</div>
+    <ul className="working-copy__ignored">{listedPaths.map(path => {
+      const repository = preview.repositories.find(item => item.path === path)
+      const item = preview.items.find(item => item.path === path)
+      const size = item ? `${Math.max(1, Math.ceil(item.bytes / 1024)).toLocaleString()} KB${path.endsWith('/') ? `, ${item.fileCount} ${item.fileCount === 1 ? 'file' : 'files'}` : ''}, ignored` : 'Ignored'
+      return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{repository ? `Nested ${repository.kind} · ${repository.changeCount} uncommitted ${repository.changeCount === 1 ? 'change' : 'changes'}${repository.kind === 'repository' ? ` · ${repository.unpushedCommitCount ?? 0} ${(repository.unpushedCommitCount ?? 0) === 1 ? 'commit' : 'commits'} not on any remote` : ''}` : size}</span></li>
+    })}</ul>
+    {tickable ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => onAcknowledge(event.target.checked)} />{listedPaths.length === 1 ? 'Delete this 1 ignored item' : `Delete these ${listedPaths.length} ignored items`} with the folder{preview.repositories.length ? `, including the nested ${nestedName} uncommitted work` : ''}</label> : null}
+  </>
+}
+
 /** The one question before a worktree folder goes: what is in it, and that the branch stays (ADR-0041). */
 export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, onConfirm, onCancel, fallbackFocusRef, removalError }: {
   readonly facts: Pick<WorkingCopyFacts, 'branch'>
@@ -190,9 +222,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
   }, [command, threadId])
   const hasChanges = dirty || preview?.dirty === true
   const blocked = Boolean(preview?.outsideLink || (preview && !preview.branch))
-  const nestedKinds = preview ? [...new Set(preview.repositories.map(item => item.kind))] : []
-  const nestedName = nestedKinds.length === 1 ? (preview!.repositories.length === 1 ? `${nestedKinds[0]}’s` : `${nestedKinds[0] === 'repository' ? 'repositories' : 'worktrees'}’`) : 'repositories and worktrees’'
-  const listedPaths = preview ? [...new Set([...preview.ignored, ...preview.repositories.map(repository => repository.path)])] : []
+  const listedPaths = preview ? worktreeListedPaths(preview) : []
   return <ConfirmationDialog title={title ?? 'Remove this worktree?'} danger
     confirmDisabled={!preview || blocked || (preview.ignored.length > 0 && !acknowledged)}
     description={<>
@@ -200,16 +230,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
       {!preview && !failure ? <p role="status">Checking the folder…</p> : null}
       {failure ? <p role="alert">{failure}</p> : null}
       {hasChanges ? <p><strong>This folder has uncommitted changes.</strong> They are lost with it.</p> : null}
-      {preview && listedPaths.length ? <>
-        <div className="working-copy__callout">These files are ignored by Git and are deleted with the folder:</div>
-        <ul className="working-copy__ignored">{listedPaths.map(path => {
-          const repository = preview.repositories.find(item => item.path === path)
-          const item = preview.items.find(item => item.path === path)
-          const size = item ? `${Math.max(1, Math.ceil(item.bytes / 1024)).toLocaleString()} KB${path.endsWith('/') ? `, ${item.fileCount} ${item.fileCount === 1 ? 'file' : 'files'}` : ''}, ignored` : 'Ignored'
-          return <li key={path}><span className="working-copy__path">{path}</span><span className={repository ? 'working-copy__nested-note' : 'working-copy__file-note'}>{repository ? `Nested ${repository.kind} · ${repository.changeCount} uncommitted ${repository.changeCount === 1 ? 'change' : 'changes'}${repository.kind === 'repository' ? ` · ${repository.unpushedCommitCount ?? 0} ${(repository.unpushedCommitCount ?? 0) === 1 ? 'commit' : 'commits'} not on any remote` : ''}` : size}</span></li>
-        })}</ul>
-        {!blocked ? <label className="working-copy__acknowledge"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />{listedPaths.length === 1 ? 'Delete this 1 ignored item' : `Delete these ${listedPaths.length} ignored items`} with the folder{preview.repositories.length ? `, including the nested ${nestedName} uncommitted work` : ''}</label> : null}
-      </> : null}
+      {preview ? <WorktreeFilesToTick preview={preview} tickable={!blocked} acknowledged={acknowledged} onAcknowledge={setAcknowledged} /> : null}
       {preview && !preview.branch ? <p role="alert">This folder has no branch checked out. Switch it to a branch before removing it. Nothing was changed.</p> : null}
       {preview?.outsideLink ? <p role="alert">Remove the link to another folder ({preview.outsideLink}) before removing this folder. Nothing was changed.</p> : null}
     </>}

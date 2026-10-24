@@ -51,7 +51,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'main-freeze' | 'resume-after-restart' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'clear-threads'
 
 export interface SettingEntry {
   /** The name Find a setting shows and matches. */
@@ -110,6 +110,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { label: 'Show the browser when an agent opens a page', section: 'settings-browser', words: 'test iphone' },
     { label: 'Let agents use the browser without asking', section: 'settings-browser', words: 'permission' },
     { label: 'Let agents draw visuals in threads', section: 'settings-browser', words: 'diagrams' },
+    { label: 'Clear settled threads after', section: 'settings-agents', words: 'delete old threads history automatically', gate: 'clear-threads' },
+    { label: 'Clear now', section: 'settings-agents', words: 'delete old settled threads history', gate: 'clear-threads' },
 
     { label: 'Remove idle worktrees after', section: 'settings-worktrees', words: 'cleanup days' },
     { label: 'Remove a worktree when its thread is settled', section: 'settings-worktrees', words: 'cleanup' },

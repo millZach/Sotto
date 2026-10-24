@@ -332,6 +332,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private readonly client: ClaudeSubscriptionClient
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly runtimes = new Map<string, Runtime>()
   private readonly starting = new Map<string, Promise<Runtime>>()
@@ -553,7 +557,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // Without this the version is only known once a session runs, so an idle provider could not be
     // compared against what its channel publishes (ADR-0042).
     this.state.version = await this.client.version(executable) || this.state.version
-    this.executable = executable; this.aliases = aliases; this.state.projects = projects
+    for (const id of this.forgottenAliasIds) delete aliases[id]
+    this.executable = executable; this.aliases = aliases; this.aliasesLoaded = true; this.state.projects = projects
     this.savedCursors.clear()
     for (const [id, alias] of Object.entries(aliases)) if (alias.transcriptCursor) this.savedCursors.set(id, alias.transcriptCursor)
     for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
@@ -2102,6 +2107,44 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const pending = [...runtime.requests.values()].filter(request => !runtime.answered.has(request.id)); runtime.requests.clear()
     const thread = this.threads.get(id); if (thread) thread.requests = []
     await Promise.all(pending.map(request => this.reply(runtime, request.id, request.resumeDialog ? { behavior: 'cancelled' } : claudeDenial())))
+  }
+  /**
+   * ADR-0126: stop the thread's own CLI if it has one, remove its alias and every per-thread record this adapter
+   * keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store before
+   * this removal reaches disk (see there); `inAliasOrder` already serializes this against `persist()`/`readAliases()`.
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      await this.inAliasOrder(async () => {
+        const current = await this.aliasStore.read()
+        if (!(id in current)) return
+        const next = { ...current }
+        delete next[id]
+        await this.aliasStore.write(next)
+      })
+      return
+    }
+    if (!this.aliases[id]) return
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.clearMonitoring(id)
+    this.dropSteers(id)
+    this.selfTurns.delete(id); this.queries.delete(id); this.interrupting.delete(id); this.toolsRunning.delete(id)
+    this.streaming.delete(id); this.compacting.delete(id)
+    this.activityHistoryPending.delete(id); this.logs.delete(id); this.activity.delete(id)
+    this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id)
+    this.nativeTakeovers.delete(id); this.completedOrigins.delete(id); this.assistantBlocks.delete(id)
+    this.configuring.delete(id); this.configurationGuards.delete(id); this.configurationLaunches.delete(id)
+    this.dispatching.delete(id); this.outdated.delete(id); this.savedCursors.delete(id)
+    this.turnFailures.delete(id); this.assistantErrors.delete(id); this.usageGroups.delete(id)
+    this.restoredHistory.delete(id)
+    this.messageLog.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
   }
   /**
    * Writes every thread's record whole, then clears the origin journal, whose origins that write now holds. Calls

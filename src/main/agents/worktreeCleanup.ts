@@ -23,6 +23,11 @@ export interface WorktreeCleanupDependencies {
   readonly rules: () => WorktreeCleanupRules
   /** The Auto-settle merged threads setting, read at every sweep; absent, no thread is settled on its own. */
   readonly autoSettleMerged?: () => boolean
+  /**
+   * Clear settled threads after (ADR-0126), given only while the Owl feature is on: the setting, read at every sweep, and
+   * the coordinator's clear. It runs after the folders, so a folder a rule removes first is not read twice.
+   */
+  readonly clearSettledThreads?: { readonly afterDays: () => number | null; readonly clear: (days: number) => Promise<void> }
   readonly git?: RunGit
   /** Whether GitHub reports this branch's pull request merged. Absent, neither the merged rule nor auto-settle fires. */
   readonly pullRequestMerged?: (repositoryRoot: string, branch: string, github?: SharedGitHub) => Promise<boolean>
@@ -108,7 +113,7 @@ export class WorktreeCleanup {
     const rules = this.dependencies.rules()
     let settle = false
     try { settle = this.dependencies.autoSettleMerged?.() === true } catch { /* Read as off, as the sweep does. */ }
-    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle])
+    return JSON.stringify([rules.afterDays, rules.merged, rules.onSettle, rules.unchanged, settle, this.clearAfterDays()])
   }
   dispose(): void { this.disposed = true; if (this.timer) clearInterval(this.timer); this.unsubscribe?.() }
   /** Stops sweeping and waits for a sweep already under way, which stops before its next worktree. */
@@ -172,7 +177,16 @@ export class WorktreeCleanup {
   private settledThreads(snapshot: AgentHostSnapshot): Set<string> {
     return new Set(snapshot.threads.filter(thread => isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))).map(thread => thread.id))
   }
+  /** Clear settled threads after's days, or null for Never or when the feature is off. */
+  private clearAfterDays(): number | null {
+    try { return this.dependencies.clearSettledThreads?.afterDays() ?? null } catch { return null }
+  }
   async sweep(): Promise<void> {
+    await this.sweepWorktrees()
+    const days = this.clearAfterDays()
+    if (days !== null && !this.disposed) await this.dependencies.clearSettledThreads!.clear(days).catch(() => undefined)
+  }
+  private async sweepWorktrees(): Promise<void> {
     const rules = this.dependencies.rules()
     const settle = this.autoSettleOn()
     if (!rulesOn(rules) && !settle) return
