@@ -15,9 +15,9 @@ function stylesheets(directory: string): string[] {
   })
 }
 
-/** Each :has() whose argument holds another, as the text of the outer one. Comments are left out. */
+/** Each :has() whose argument holds another, as the text of the outer one. Comments and quoted strings are left out. */
 function nestedHas(css: string): string[] {
-  const text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  const text = css.replace(/\/\*[\s\S]*?\*\/|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, '""')
   const found: string[] = []
   for (let start = text.indexOf(':has('); start !== -1; start = text.indexOf(':has(', start + 1)) {
     let depth = 0
@@ -37,6 +37,10 @@ describe('stylesheet selectors', () => {
     expect(nestedHas('.a:has(> .b:not(:has(> .c))) { color: red }')).toHaveLength(1)
     expect(nestedHas('.a:has(> .b):not(:has(> .b > .c)) { color: red }')).toEqual([])
     expect(nestedHas('/* .a:has(.b:has(.c)) */ .a { color: red }')).toEqual([])
+    // Brackets and :has( inside a quoted attribute value are text, not selectors.
+    expect(nestedHas('.a:has([data-label=":has(.b)"]) { color: red }')).toEqual([])
+    expect(nestedHas('.a:has([data-label=")"] :has(.b)) { color: red }')).toHaveLength(1)
+    expect(nestedHas(".a:has([data-label='(']) .b:has(.c) { color: red }")).toEqual([])
   })
 
   it('never nests :has() in any stylesheet', () => {
