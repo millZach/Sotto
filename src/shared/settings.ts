@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import {
@@ -132,6 +133,11 @@ export interface AppSettings {
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
   showCreature: boolean
+  /**
+   * The interface language (ADR-0123): `system` follows the computer's language, a code chooses one. Read only while its
+   * Owl feature is on; elsewhere Sotto is English and the choice is kept for when the feature returns.
+   */
+  interfaceLanguage: InterfaceLanguageSetting
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -351,6 +357,7 @@ const fieldSchemas = {
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
+  interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -449,6 +456,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   creature: 'sotto',
   showCreature: true,
+  interfaceLanguage: 'system',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -606,6 +614,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
+    interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
