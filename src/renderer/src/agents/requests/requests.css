@@ -115,7 +115,8 @@
 
 /* The compact pane normally keeps its composer fixed. A question makes that area shrinkable instead. */
 .threads-view .thread-pane .thread-workspace__compose:has(> .thread-questions) { flex: 0 1 auto; }
-.agent-request[data-placement='composer'] .agent-request__footer { position: sticky; bottom: 0; z-index: 1; padding-block: 8px; background: var(--tt-card); }
+/* The footer spans the card's padding so options, which overhang the content box, scroll fully behind it. */
+.agent-request[data-placement='composer'] .agent-request__footer { position: sticky; bottom: 0; z-index: 1; margin-inline: -18px; padding: 8px 18px; background: var(--tt-card); }
 
 /* A short split gives history space to the question, but keeps pending approvals and saved-answer recovery reachable. */
 @container thread-pane (max-height: 420px) {
