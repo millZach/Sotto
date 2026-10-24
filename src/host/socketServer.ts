@@ -273,8 +273,15 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
     // Attached files (ADR-0127) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined))
-  /** Each client's file on its way here, one at a time per client (ADR-0127). */
-  const uploads = new FileUploads<Peer>()
+  /**
+   * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
+   * sockets it opens (ADR-0127). A part may come on any of its sockets; the upload goes when the last of them closes.
+   */
+  const uploads = new FileUploads<string>()
+  const connected = (clientId: string): boolean => {
+    for (const peer of peers) if (peer.client.clientId === clientId) return true
+    return false
+  }
   /**
    * Whether a client may have its host update itself: one the launch script recorded as a desktop, on either listener, whose
    * `remote-answer` policy lets it answer (ADR-0088). Read afresh each time, so `--deny-answers` takes it away at once.
@@ -1165,12 +1172,13 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       case 'stage-file-part': {
         if (!offers(peer, 'file-staging') || !service.stageAttachment) throw new Refusal('invalid_request')
-        // Up to about 11 MB of base64 in, and at most one 25 MiB upload held per peer: one part at a time, on the preview's guard.
+        // Up to about 11 MB of base64 in, one part at a time per socket on the preview's guard, and at most one 25 MiB
+        // upload held per paired client across all its sockets.
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try {
           let file
-          try { file = uploads.receive(peer, request.part) }
+          try { file = uploads.receive(peer.client.clientId, request.part) }
           catch (error) { if (error instanceof FileUploadRefusal) throw new Refusal('invalid_request', error.message); throw error }
           if (!file) return null
           try { return await service.stageAttachment({ name: file.name, mimeType: file.mimeType, bytes: file.bytes }) }
@@ -1382,7 +1390,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map() }
     peers.add(peer)
     frames.startHeartbeat()
-    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); uploads.drop(peer); peers.delete(peer); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
+    frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })
     frames.feed(head)
     options.onPeersChanged?.()
   }

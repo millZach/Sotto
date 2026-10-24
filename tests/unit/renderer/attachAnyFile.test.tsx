@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ATTACHED_FILE_TOO_LARGE, ATTACHED_IMAGE_TOO_LARGE, ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL, ATTACHMENTS_TOO_LARGE_IN_TOTAL, ATTACHMENTS_TOO_MANY,
-  HOST_CANNOT_STAGE_FILES, imagesNotReadRefusal, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentAttachmentStageRequest } from '../../../src/shared/agents'
+  FILE_UPLOAD_INCOMPLETE, HOST_CANNOT_STAGE_FILES, imagesNotReadRefusal, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentAttachmentStageRequest } from '../../../src/shared/agents'
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
 import { AttachmentPreviews } from '../../../src/renderer/src/agents/MessageContent'
 import { attachmentKind, fileTypeLabel, splitAttachmentName } from '../../../src/renderer/src/agents/attachmentKinds'
@@ -128,6 +130,32 @@ describe('attaching any file in the composer (ADR-0127)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(HOST_CANNOT_STAGE_FILES)
   })
 
+  it('says a host’s refusal in the interface language, not in its English (ADR-0123)', async () => {
+    // A stand-in translation; every other message shows in English.
+    const translated = {
+      [HOST_CANNOT_STAGE_FILES]: 'Dieser Host kann noch keine Dateien behalten. Aktualisiere Sotto dort. Nichts wurde angehängt.',
+      [FILE_UPLOAD_INCOMPLETE]: 'Diese Datei kam nicht vollständig an. Nichts wurde angehängt. Hänge sie erneut an.',
+      'Nothing was attached.': 'Nichts wurde angehängt.',
+      'Could not add {name}, so it and the {after} after it were not attached. {next}': '{name} konnte nicht hinzugefügt werden, {after} weitere auch nicht. {next}',
+    }
+    i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(translated).map(([english, german]) => [generateMessageId(english), german])) })
+    try {
+      vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async () => { throw new Error(`Error invoking remote method 'sotto:agents:stage-attachment': Error: ${HOST_CANNOT_STAGE_FILES}`) }) } })
+      render(<Harness />)
+      pick(pdf())
+      expect(await screen.findByRole('alert')).toHaveTextContent(translated[HOST_CANNOT_STAGE_FILES])
+      cleanup()
+      // With others after it, the sentence loses its "Nothing was attached." in the interface language too.
+      vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async () => { throw new Error(FILE_UPLOAD_INCOMPLETE) }) } })
+      render(<Harness />)
+      pick(pdf('a.pdf'), pdf('b.pdf'))
+      expect(await screen.findByRole('alert')).toHaveTextContent('a.pdf konnte nicht hinzugefügt werden, 1 weitere auch nicht. Diese Datei kam nicht vollständig an. Hänge sie erneut an.')
+      expect(screen.getByRole('alert')).not.toHaveTextContent('Nothing was attached')
+    } finally {
+      act(() => i18n.activate('en'))
+    }
+  })
+
   it('names the file that could not be added, adds the ones before it, and says the rest were not attached', async () => {
     let calls = 0
     vi.stubGlobal('sotto', { agents: { stageAttachment: vi.fn(async (request: AgentAttachmentStageRequest) => {
@@ -192,6 +220,19 @@ describe('a sent file\'s tile (ADR-0127)', () => {
       'firmwareFile · 900 B',
     ])
     expect(screen.queryByText(/No preview for this file type/u)).not.toBeInTheDocument()
+  })
+
+  it('shows an SVG, a BMP or a HEIC as a file, never as an image waiting for its preview', () => {
+    const others = [
+      { id: 'svg', name: 'logo.svg', mimeType: 'image/svg+xml', sizeBytes: 3 * 1024 },
+      { id: 'bmp', name: 'scan.bmp', mimeType: 'image/bmp', sizeBytes: 2 * MB },
+      { id: 'heic', name: 'IMG_0001.HEIC', mimeType: 'image/heic', sizeBytes: Math.round(1.5 * MB) },
+      { id: 'png', name: 'shot.png', mimeType: 'image/png', sizeBytes: 2048 },
+    ]
+    render(<AttachmentPreviews attachments={others} />)
+    const items = within(screen.getByRole('list', { name: '4 attachments' })).getAllByRole('listitem')
+    expect(items.map(item => item.textContent)).toEqual(['shot.pngPNG · 2 KB · Preview unavailable', 'logo.svgSVG · 3 KB', 'scan.bmpBMP · 2.0 MB', 'IMG_0001.HEICHEIC · 1.5 MB'])
+    for (const item of items.slice(1)) expect(item).toHaveClass('rich-attachment--file')
   })
 
   it('keeps today\'s tile with the Owl feature off', () => {

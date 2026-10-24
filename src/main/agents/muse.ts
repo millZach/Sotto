@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -33,7 +33,7 @@ import { SessionReaper } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
 import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
-import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -1223,8 +1223,9 @@ export class MuseMspHost implements AgentHost {
       if (turnOnly) return
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
       // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
-      // The note naming attached files comes off first: it is the last thing Sotto put in the words (ADR-0127).
-      const wire = merged.text === undefined ? undefined : stripAttachedFilesNote(merged.text)
+      // The note naming attached files comes off first, when the origin recorded one: it is the last thing Sotto put in
+      // the words (ADR-0127).
+      const wire = merged.text === undefined ? undefined : readBackUserText(merged.text, () => origin).text
       const text = !origin ? wire : merged.displayText !== undefined && !merged.truncated ? merged.displayText
         : museWatcherTyped(wire ?? '', origin.digest) ?? wire
       const message: AgentMessage = {
@@ -1817,7 +1818,7 @@ export class MuseMspHost implements AgentHost {
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, nativeCommandId: museCommandId(),
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
+            attachments: attachmentReferences(attachments),
           }
           const entry = await this.threadProcess(command.threadId)
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.

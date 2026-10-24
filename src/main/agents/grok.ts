@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -30,7 +30,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
-import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
@@ -1031,8 +1031,7 @@ export class GrokAcpHost implements AgentHost {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
               delete history.assistant; history.status = 'running'
-              const text = stripAttachedFilesNote(content.text)
-              const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
+              const { text, origin } = readBackUserText(content.text, words => messageOrigin(alias, key, words, Date.parse(createdAt)))
               history.lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
               history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
@@ -1313,7 +1312,7 @@ export class GrokAcpHost implements AgentHost {
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
           if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
           const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(),
-            ...(command.attachments?.length ? { attachments: command.attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })) } : {}) }
+            ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           // The prompt now holds the process itself.
@@ -1451,8 +1450,7 @@ export class GrokAcpHost implements AgentHost {
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
         const key = eventKey(parsed.data, Date.now())
-        const text = stripAttachedFilesNote(content.text)
-        const origin = messageOrigin(this.aliases[id]!, key, text, parsed.data._meta?.agentTimestampMs ?? Date.now())
+        const { text, origin } = readBackUserText(content.text, words => messageOrigin(this.aliases[id]!, key, words, parsed.data._meta?.agentTimestampMs ?? Date.now()))
         const messageId = origin?.messageId ?? key
         if (messageId && !this.authored.has(messageId) && !this.log.has(id, messageId)) {
           const message: AgentMessage = { id: messageId, role: 'user', text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) }

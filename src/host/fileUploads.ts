@@ -1,12 +1,11 @@
 import { createHash } from 'node:crypto'
+import { FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH } from '../shared/agents'
 import { HOST_FILE_PART_BYTES, type HostFilePart } from '../shared/hostProtocol'
+
+export { FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH }
 
 /** How long an upload waits for its next part before the host lets it go (ADR-0127). */
 export const FILE_UPLOAD_IDLE_MS = 2 * 60_000
-/** A part that is not the one its upload expects: out of order, from an upload the host no longer holds, or too large. */
-export const FILE_UPLOAD_INCOMPLETE = 'This file did not reach the host whole. Nothing was attached. Attach it again.'
-/** An upload whose parts, put together, are not the file its first part named. */
-export const FILE_UPLOAD_MISMATCH = 'This file changed on its way to the host. Nothing was attached. Attach it again.'
 
 /** A part refused for what it is, whose sentence the client is shown. */
 export class FileUploadRefusal extends Error {}

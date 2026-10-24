@@ -3,7 +3,7 @@ import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { AgentAttachmentReference } from '../../../shared/agents'
+import { isImageAttachment, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from '../../../shared/diagramSource'
@@ -412,7 +412,8 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
-  const isImage = attachment.mimeType?.startsWith('image/') ?? false
+  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0127).
+  const isImage = attachment.mimeType ? anyFile ? isImageAttachment(attachment.mimeType) : attachment.mimeType.startsWith('image/') : false
   const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
     const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {

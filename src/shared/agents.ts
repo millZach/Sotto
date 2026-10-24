@@ -139,6 +139,12 @@ export function nameHostInRefusal(message: string, name: string): string {
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
 /** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0127). */
 export const HOST_CANNOT_STAGE_FILES = 'This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a file is refused with when the host that would keep it is not connected (ADR-0127). */
+export const HOST_DISCONNECTED_BEFORE_FILES = 'This host is disconnected. Connect again before attaching files. Nothing was attached.'
+/** A file part a host refuses as not the one its upload expects: out of order, from an upload it no longer holds, or too large. */
+export const FILE_UPLOAD_INCOMPLETE = 'This file did not reach the host whole. Nothing was attached. Attach it again.'
+/** An upload whose parts, put together, are not the file its first part named. */
+export const FILE_UPLOAD_MISMATCH = 'This file changed on its way to the host. Nothing was attached. Attach it again.'
 export const agentRuntimeModeSchema = z.enum(['approval-required', 'auto-accept-edits', 'auto', 'full-access'])
 export type AgentRuntimeMode = z.infer<typeof agentRuntimeModeSchema>
 export function attachmentSizeBytes(dataUrl: string): number {
@@ -252,6 +258,10 @@ export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), m
   preview: agentAttachmentPreviewSchema.optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
+/** The references a message records for its attachments: each one's ID, name, type and size, and nothing more. */
+export function attachmentReferences(attachments: readonly Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'>[]): AgentAttachmentReference[] {
+  return attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+}
 /**
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
  * and `description` are the provider's words; `asks` is Sotto's, and says what it will still put to the

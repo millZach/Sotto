@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity, type OwnServerTurn } from '../../shared/agentActivity'
@@ -36,7 +36,7 @@ import { SessionReaper } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
-import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -1271,12 +1271,15 @@ export class OpenCodeHost implements AgentHost {
       ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
     }
   }
-  /** Record a user's message, without the note naming its attached files (ADR-0127); returns the Sotto message ID it is recorded under. */
+  /**
+   * Record a user's message, without the note naming its attached files when its origin recorded one (ADR-0127); returns
+   * the Sotto message ID it is recorded under.
+   */
   private recordUser(id: string, inboxId: string, text: string, at: number | undefined): string | undefined {
     const alias = this.aliases[id]; if (!alias) return undefined
-    const message = this.userMessage(alias, inboxId, stripAttachedFilesNote(text), at)
-    this.log.add(id, message)
     const origin = alias.origins.find(candidate => candidate.inboxId === inboxId)
+    const message = this.userMessage(alias, inboxId, readBackUserText(text, () => origin).text, at)
+    this.log.add(id, message)
     if (origin && !origin.confirmed) { origin.confirmed = true; this.lostPrompts.delete(inboxId); void this.persist().catch(() => undefined) }
     return message.id
   }
@@ -1686,7 +1689,7 @@ export class OpenCodeHost implements AgentHost {
           this.assertGeneration(generation)
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, inboxId: promptId(), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })), steer: command.type === 'steer',
+            attachments: attachmentReferences(attachments), steer: command.type === 'steer',
           }
           const entry = await this.threadProcess(command.threadId)
           await this.toolsGiven(entry)

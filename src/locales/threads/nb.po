@@ -297,6 +297,10 @@ msgstr ""
 msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Nothing was attached."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr ""
@@ -453,9 +457,29 @@ msgstr ""
 msgid "Thinking for {model}"
 msgstr ""
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file changed on its way to the host. Nothing was attached. Attach it again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file did not reach the host whole. Nothing was attached. Attach it again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
+msgstr ""
+
 #. {name} is the file name of the image, such as "screenshot.png".
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This model does not read images. Choose a model with image support, or remove {name}."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts

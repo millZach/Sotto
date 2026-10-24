@@ -12,7 +12,7 @@ import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, SCREENSHOT_WRONG_TYPE, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -253,6 +253,27 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, stage: stages.remote, content: contents.remote, available: () => false })
     await expect(router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes })).rejects.toThrow('Nothing was attached.')
     expect(await router.attachmentContent({ threadId: hostEntityKey(REMOTE, 'thread'), digest: handle.digest })).toBeNull()
+  })
+  it('asks no host to keep a file while this desktop’s attach-any-file answer is off, and forwards one when it is on (ADR-0127)', async () => {
+    const handle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'b'.repeat(64) }
+    const bytes = new Uint8Array([104, 101, 108, 108, 111])
+    for (const attachAnyFile of [undefined, false, true]) {
+      const router = new DesktopHostRouter(emptyDesktopState, attachAnyFile === undefined ? {} : { attachAnyFile }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+      const stages = { local: vi.fn(async () => handle), remote: vi.fn(async () => handle) }
+      router.add({ ...local.connection, stage: stages.local }); router.add({ ...remote.connection, stage: stages.remote })
+      const staged = router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'notes.txt', mimeType: 'text/plain', bytes })
+      if (attachAnyFile) {
+        await expect(staged).resolves.toEqual(handle)
+        expect(stages.remote).toHaveBeenCalledWith({ name: 'notes.txt', mimeType: 'text/plain', bytes })
+      } else {
+        await expect(staged).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        await expect(router.stageAttachment({ threadId: null, name: 'notes.txt', mimeType: 'text/plain', bytes })).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        expect(stages.remote).not.toHaveBeenCalled(); expect(stages.local).not.toHaveBeenCalled()
+        // Images go as they always have.
+        await router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) })
+        expect(stages.remote).toHaveBeenCalledOnce()
+      }
+    }
   })
   it('passes each host\'s finished-unread mark to the window on that host\'s thread, and sends the window\'s panes to the host that owns them (ADR-0046)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')

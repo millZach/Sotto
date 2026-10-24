@@ -17,6 +17,7 @@ import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
 import { ScreenshotInput } from './ScreenshotInput'
+import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
@@ -94,7 +95,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
     const result = await command(mode === 'queue' ? { type: 'queue-followup', ...payload } : mode === 'steer' ? { type: 'steer', ...payload } : { type: 'manual-send', ...payload })
     // Exact queue ownership wins an unrelated shell error, even before its publication reaches the draft store.
     const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
-      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
+      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error === null ? null : attachmentRefusal(result.error)
     store.resolve(threadId, draft.draftId, error)
     return result === null ? null : error === null
   } catch {

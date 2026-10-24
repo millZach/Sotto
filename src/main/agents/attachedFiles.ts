@@ -16,7 +16,8 @@ import { isPdfBytes, nativePdfSelection } from './pdfPages'
 // Each says what happened, that nothing was sent and the draft is kept, and what to do.
 export const ATTACHED_FILES_FOLDER_IS_LINK = 'The attached files were not saved, because .sotto or a folder inside it in this thread’s working folder is a link or not a folder. Nothing was sent, and your draft is saved. Move it aside, then send again.'
 export const ATTACHED_FILE_CLASH = 'The attached files were not saved, because a different file is already saved under the same name in .sotto/attachments. Nothing was sent, and your draft is saved. Remove that file, then send again.'
-export const ATTACHED_FILES_NOT_SAVED = 'The attached files could not be saved in this thread’s working folder. Nothing was sent, and your draft is saved. Check that the folder can be written to, then send again.'
+export const ATTACHED_FILES_NOT_IGNORED = 'The attached files were not saved, because .sotto/attachments/.gitignore no longer tells Git to ignore them. Nothing was sent, and your draft is saved. Put * back on a line of its own in .sotto/attachments/.gitignore, then send again.'
+export const ATTACHED_FILES_NOT_SAVED ='The attached files could not be saved in this thread’s working folder. Nothing was sent, and your draft is saved. Check that the folder can be written to, then send again.'
 
 /** A refusal whose sentence is already the user's; any other failure is said as `ATTACHED_FILES_NOT_SAVED`. */
 class AttachedFilesRefusal extends Error {}
@@ -59,7 +60,12 @@ export interface AttachedFileEntry { readonly relativePath: string; readonly nam
 const NOTE_OPEN = '<sotto-attached-files>'
 const NOTE_CLOSE = '</sotto-attached-files>'
 const NOTE_HEADER = 'The user attached these files. They are saved in this working folder:'
-const NOTE_BODY = `${NOTE_OPEN}\\n${NOTE_HEADER.replace(/[.]/gu, '\\.')}\\n(?:- [^\\n]*\\n)+${NOTE_CLOSE.replace('/', '\\/')}`
+/**
+ * One line exactly as `attachedFilesNote` writes it: the saved path, then the name, type and size in brackets, the size
+ * as `formatAttachmentSize` gives it or nothing.
+ */
+const NOTE_LINE = String.raw`- \.sotto/attachments/[0-9a-f]{12}/[^\s/\\<>]+ \([^\n<>]*, [^\n<>]+, (?:\d+ B|\d+ KB|\d+(?:\.\d)? MB)?\)`
+const NOTE_BODY = `${NOTE_OPEN}\\n${NOTE_HEADER.replace(/[.]/gu, '\\.')}\\n(?:${NOTE_LINE}\\n)+${NOTE_CLOSE.replace('/', '\\/')}`
 const NOTE = new RegExp(`^${NOTE_BODY}$`, 'u')
 /** The note at the end of a message, with the one separator the adapters put before it. */
 const TRAILING_NOTE = new RegExp(`(?:\\n\\n|\\n)?${NOTE_BODY}\\s*$`, 'u')
@@ -79,7 +85,7 @@ const noteName = (name: string): string => name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Z
 export function attachedFilesNote(files: readonly AttachedFileEntry[]): string {
   if (!files.length) return ''
   return [NOTE_OPEN, NOTE_HEADER, ...files.map(file =>
-    `- ${file.relativePath} (${noteName(file.name)}, ${fileTypeLabel(file.mimeType, file.name) ?? 'File'}, ${formatAttachmentSize(file.sizeBytes) ?? ''})`), NOTE_CLOSE].join('\n')
+    `- ${file.relativePath} (${noteName(file.name)}, ${noteName(fileTypeLabel(file.mimeType, file.name) ?? 'File')}, ${formatAttachmentSize(file.sizeBytes) ?? ''})`), NOTE_CLOSE].join('\n')
 }
 
 /** Whether a text is exactly a note, as a provider that keeps each text part apart gives it back. */
@@ -91,11 +97,32 @@ export function withAttachedFilesNote(text: string, note: string): string {
 }
 
 /**
- * A user message read back from a provider's own history, without the note Sotto added to it, so the thread shows only
- * what the user wrote. Text with no note is returned as it is.
+ * Text without a note in the generated form at its end, whoever wrote it. Readers call `readBackUserText`, or check the
+ * origin themselves first: a note is Sotto's only when the message's origin recorded an attached file.
  */
 export function stripAttachedFilesNote(text: string): string {
   return text.includes(NOTE_OPEN) ? text.replace(TRAILING_NOTE, '') : text
+}
+
+/** Whether a message's recorded attachments include a file that is not an image: the only message Sotto adds a note to. */
+export function carriesAttachedFiles(attachments: readonly { readonly mimeType: string }[] | undefined): boolean {
+  return attachments?.some(attachment => !isImageAttachment(attachment.mimeType)) ?? false
+}
+
+/**
+ * A user message read back from a provider's own history, and the origin it matches. The note comes off only when the
+ * origin the text then matches, by message ID or by digest as the adapter's `match` decides, recorded an attached file,
+ * since only then did Sotto put it there. Any other text, one the user typed in the note's shape included, is shown and
+ * matched as it is.
+ */
+export function readBackUserText<T extends { readonly attachments?: readonly { readonly mimeType: string }[] | undefined }>(
+  text: string, match: (text: string) => T | undefined): { readonly text: string; readonly origin: T | undefined } {
+  const words = stripAttachedFilesNote(text)
+  if (words !== text) {
+    const origin = match(words)
+    if (origin && carriesAttachedFiles(origin.attachments)) return { text: words, origin }
+  }
+  return { text, origin: match(text) }
 }
 
 /** What an adapter hands its provider for a message's attachments. */
@@ -130,7 +157,8 @@ export async function deliverAttachments(workingDirectory: string | undefined, a
 export async function saveAttachedFiles(workingDirectory: string | undefined, files: readonly PromptImage[]): Promise<(AttachedFileEntry & { readonly bytes: Uint8Array })[]> {
   if (!workingDirectory || !(await stat(workingDirectory).catch(() => undefined))?.isDirectory()) throw new Error(ATTACHED_FILES_NEED_A_FOLDER)
   try {
-    const saved: (AttachedFileEntry & { readonly bytes: Uint8Array })[] = []
+    await prepareFolder(workingDirectory)
+    const saved:(AttachedFileEntry & { readonly bytes: Uint8Array })[] = []
     for (const file of files) {
       const bytes = await file.read()
       if (bytes.byteLength !== file.sizeBytes || createHash('sha256').update(bytes).digest('hex') !== file.digest) throw new Error('content changed')
@@ -156,11 +184,23 @@ async function ensureFolder(path: string): Promise<void> {
 }
 const samePath = (a: string, b: string): boolean => process.platform === 'win32' || process.platform === 'darwin' ? a.toLowerCase() === b.toLowerCase() : a === b
 
+/**
+ * `.sotto/attachments`, made or found as real folders, and its `.gitignore` holding `*`: written once, and when one is
+ * already there, kept only while one of its lines is exactly `*`, so Git ignores what is saved. Checked before any file is
+ * written.
+ */
+async function prepareFolder(workingDirectory: string): Promise<void> {
+  const sotto = join(workingDirectory, FOLDERS[0]); const attachments = join(sotto, FOLDERS[1]); const ignore = join(attachments, '.gitignore')
+  await ensureFolder(sotto); await ensureFolder(attachments)
+  try { await writeFile(ignore, '*\n', { flag: 'wx', mode: 0o644 }) } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    if (!(await lstat(ignore)).isFile() || !(await readFile(ignore, 'utf8')).split(/\r?\n/u).includes('*')) throw new AttachedFilesRefusal(ATTACHED_FILES_NOT_IGNORED)
+  }
+}
+
 async function saveOne(workingDirectory: string, digest: string, name: string, bytes: Uint8Array): Promise<void> {
   const sotto = join(workingDirectory, FOLDERS[0]); const attachments = join(sotto, FOLDERS[1]); const folder = join(attachments, digest.slice(0, 12))
-  await ensureFolder(sotto); await ensureFolder(attachments)
-  await writeFile(join(attachments, '.gitignore'), '*\n', { flag: 'wx', mode: 0o644 }).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'EEXIST') throw error })
-  await ensureFolder(folder)
+  await ensureFolder(sotto); await ensureFolder(attachments); await ensureFolder(folder)
   // Checked once more where it resolves to, in case a folder above was swapped for a link between the checks.
   if (!samePath(await realpath(folder), join(await realpath(workingDirectory), ...FOLDERS, digest.slice(0, 12)))) throw new AttachedFilesRefusal(ATTACHED_FILES_FOLDER_IS_LINK)
   const target = join(folder, attachedFileSafeName(name))

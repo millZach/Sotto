@@ -297,6 +297,10 @@ msgstr "Nothing in the thread was lost. In Settings › Providers › Your own m
 msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
 msgstr "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Nothing was attached."
+msgstr "Nothing was attached."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
 msgstr "Only if the server was started with one"
@@ -453,10 +457,30 @@ msgstr "Thinking"
 msgid "Thinking for {model}"
 msgstr "Thinking for {model}"
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file changed on its way to the host. Nothing was attached. Attach it again."
+msgstr "This file changed on its way to the host. Nothing was attached. Attach it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file did not reach the host whole. Nothing was attached. Attach it again."
+msgstr "This file did not reach the host whole. Nothing was attached. Attach it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+msgstr "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
+msgstr "This host is disconnected. Connect again before attaching files. Nothing was attached."
+
 #. {name} is the file name of the image, such as "screenshot.png".
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This model does not read images. Choose a model with image support, or remove {name}."
 msgstr "This model does not read images. Choose a model with image support, or remove {name}."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
+msgstr "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "This thread is too long for {model}."

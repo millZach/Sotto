@@ -9,9 +9,22 @@ describe('PDF page counting for the native rule (ADR-0127)', () => {
     expect(pdfPageCount(tinyPdf(3))).toBe(3)
     expect(pdfPageCount(tinyPdf(101))).toBe(101)
   })
-  it('takes the larger of the page objects and the page tree’s count, since an update can leave pages behind', () => {
-    const bytes = Buffer.from(tinyPdf(2).toString('latin1').replace('/Count 2', '/Count 140'), 'latin1')
-    expect(pdfPageCount(bytes)).toBe(140)
+  it('reads a page tree with CRLF line ends, comments, strings and stream bodies around it', () => {
+    expect(pdfPageCount(Buffer.from(tinyPdf(2).toString('latin1').replaceAll('\n', '\r\n'), 'latin1'))).toBe(2)
+    // A page named in a comment, a string or a stream body is no page.
+    const decoys = '9 0 obj\n<< /Length 15 >>\nstream\n/Type /Page >>\nendstream\nendobj\n10 0 obj\n(a /Type /Page \\) string)\nendobj\n% 11 0 obj << /Type /Page >> endobj\n'
+    expect(pdfPageCount(Buffer.from(tinyPdf(1).toString('latin1').replace('xref\n', `${decoys}xref\n`), 'latin1'))).toBe(1)
+  })
+  it('cannot be fooled by a page named in a comment', () => {
+    expect(pdfPageCount(Buffer.from('%PDF-1.4\n% /Type /Page\n%%EOF\n', 'latin1'))).toBeUndefined()
+    expect(pdfPageCount(Buffer.from('%PDF-1.4\n%/Type /Pages /Count 1 /Type /Page\n%%EOF\n', 'latin1'))).toBeUndefined()
+  })
+  it('counts nothing when the page objects and the root page tree’s count disagree', () => {
+    expect(pdfPageCount(Buffer.from(tinyPdf(2).toString('latin1').replace('/Count 2', '/Count 140'), 'latin1'))).toBeUndefined()
+    expect(pdfPageCount(Buffer.from(tinyPdf(2).toString('latin1').replace('/Count 2', '/Count 1'), 'latin1'))).toBeUndefined()
+    // A page tree no catalog reaches has no root count.
+    expect(pdfPageCount(Buffer.from(tinyPdf(1).toString('latin1').replace(' /Root 1 0 R', ''), 'latin1'))).toBeUndefined()
+    expect(pdfPageCount(tinyPdf(0))).toBeUndefined()
   })
   it('cannot count a PDF whose page tree is in a compressed object stream, an encrypted one, or bytes that are not a PDF', () => {
     const packed = objectStreamPdf()
@@ -20,6 +33,9 @@ describe('PDF page counting for the native rule (ADR-0127)', () => {
     expect(pdfPageCount(tinyPdf(1, { encrypted: true }))).toBeUndefined()
     expect(pdfPageCount(Buffer.from('not a PDF /Type /Page'))).toBeUndefined()
     expect(pdfPageCount(Buffer.from('%PDF-1.4\n%%EOF\n'))).toBeUndefined()
+    // No header at the first byte, or an object the reader cannot follow.
+    expect(pdfPageCount(Buffer.from(` ${tinyPdf(1).toString('latin1')}`, 'latin1'))).toBeUndefined()
+    expect(pdfPageCount(Buffer.from(tinyPdf(1).toString('latin1').replace('/MediaBox', '/Broken ) /MediaBox'), 'latin1'))).toBeUndefined()
   })
   it('sends natively only a counted PDF of at most 100 pages', () => {
     expect(pdfFitsNatively(1)).toBe(true)

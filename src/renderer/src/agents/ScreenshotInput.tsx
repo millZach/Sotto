@@ -107,9 +107,11 @@ function fileStagingReason(cause: unknown): string | null {
 
 /** The same as addFailed, in the interface language, for any attachment. */
 function addAnyFailed(item: Incoming, remaining: number, first: boolean, cause: unknown): string {
-  const reason = item.image ? stagingReason(cause) : fileStagingReason(cause)
+  const given = item.image ? stagingReason(cause) : fileStagingReason(cause)
+  // Main's and a host's English sentences are said in the interface language.
+  const reason = given === null ? null : words.attachmentRefusal(given)
   if (first && remaining === 1 && reason) return reason
-  return words.addFailedWords(item.name, remaining, reason?.replace(/ ?Nothing was attached\./u, '').trim() || null)
+  return words.addFailedWords(item.name, remaining, reason === null ? null : words.withoutNothingAttached(reason) || null)
 }
 
 /**

@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -41,7 +41,7 @@ import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
 import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
-import { deliverAttachments } from './attachedFiles'
+import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -1771,12 +1771,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.usage.claude(id, frame, this.threads.get(id)!.modelId, this.usageContext(id, frame, fromLog))
     this.threads.get(id)!.usage = this.usage.get(id)
     if (frame.parent_tool_use_id || frame.isSidechain === true) return
-    const message = object(frame.message); let text = frame.type === 'user' ? claudeUserText(message?.content) : claudeText(message?.content)
+    const message = object(frame.message); let text = claudeText(message?.content)
     if ((!text && frame.type !== 'user') || !['user', 'assistant'].includes(String(frame.type))) return
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
-    const digest = claudeDigest(text)
     let origin = alias.origins.find(value => value.uuid === uuid)
+    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0127).
+    const words = frame.type === 'user' ? claudeUserText(message?.content) : text
+    if (words !== text) {
+      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(words)) : undefined)
+      if (owner && carriesAttachedFiles(owner.attachments)) { text = words; origin = owner }
+    }
+    const digest = claudeDigest(text)
     if (fromLog && frame.type === 'user') {
       const consumed = this.logOrigins.get(id) ?? new Set<string>(); this.logOrigins.set(id, consumed)
       origin ??= this.unreadOrigin(id, digest)
@@ -1971,7 +1977,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
     const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
     const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
-      ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
+      ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
     const content: unknown = images.length || delivered.note ? [
       ...images,
       ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),

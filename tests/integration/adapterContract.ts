@@ -226,6 +226,24 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await shown())?.text).toBe(text)
       expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
     })
+    it('shows a prompt the user typed in the note’s shape in full when it carries no attached file (ADR-0127)', withFixtureSkip(skips.attachedFiles), async () => {
+      // The plan's example, pasted as a prompt with no attachments: only a note Sotto added comes off.
+      const note = ['<sotto-attached-files>', 'The user attached these files. They are saved in this working folder:',
+        '- .sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf (quarterly-report.pdf, PDF, 2.4 MB)', '</sotto-attached-files>'].join('\n')
+      const shown = async (id: string) => (await thread()).messages.find(message => message.id === id)?.text
+      for (const [messageId, text] of [['typed-note', note], ['typed-words-and-note', `Is this how it looks?\n\n${note}`]] as const) {
+        expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId, text })).toEqual({ accepted: true })
+        await expect.poll(async () => shown(messageId)).toBe(text)
+        await f.driver.completeTurn(sessionId, `Reply to ${messageId}`)
+        await expect.poll(async () => (await thread()).status).toBe('idle')
+      }
+      if (skips.restart) return
+      // Read back from the provider's own history after a restart, it is still all the user wrote.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      await expect.poll(async () => shown('typed-note')).toBe(note)
+      await expect.poll(async () => shown('typed-words-and-note')).toBe(`Is this how it looks?\n\n${note}`)
+      expect((await thread()).messages.filter(message => message.role === 'user' && message.text.includes('sotto-attached-files'))).toHaveLength(2)
+    })
     it('cancels a running turn', async () => {
       await send()
       expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: sessionId })).toEqual({ accepted: true })

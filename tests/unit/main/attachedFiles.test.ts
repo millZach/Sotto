@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  ATTACHED_FILE_CLASH, ATTACHED_FILES_FOLDER_IS_LINK, ATTACHED_FILES_NOT_SAVED, attachedFileRelativePath, attachedFileSafeName, attachedFilesNote,
-  deliverAttachments, isAttachedFilesNote, stripAttachedFilesNote, withAttachedFilesNote,
+  ATTACHED_FILE_CLASH, ATTACHED_FILES_FOLDER_IS_LINK, ATTACHED_FILES_NOT_IGNORED, ATTACHED_FILES_NOT_SAVED, attachedFileRelativePath, attachedFileSafeName, attachedFilesNote,
+  carriesAttachedFiles, deliverAttachments, isAttachedFilesNote, readBackUserText, stripAttachedFilesNote, withAttachedFilesNote,
 } from '../../../src/main/agents/attachedFiles'
 import { ATTACHED_FILES_NEED_A_FOLDER } from '../../../src/shared/agents'
 import { PIXEL_PNG, promptImageOf } from '../../fixtures/stagedImages'
@@ -102,6 +102,26 @@ describe('saving attached files into the working folder (ADR-0127)', () => {
     await expect(deliverAttachments(work, [file()])).rejects.toThrow(ATTACHED_FILES_FOLDER_IS_LINK)
     expect(await readdir(outside)).toEqual([])
   })
+  it.each([
+    ['an empty .gitignore', '', false],
+    ['one that holds *', '*\n', true],
+    ['one with * among other rules, with CRLF line ends', '# kept\r\n*\r\n!keep.txt\r\n', true],
+    ['one with other rules only', '*.log\n!*\n* \n', false],
+  ])('takes %s that is already there only when a line is exactly *', async (_, contents, accepted) => {
+    const { work } = await folders()
+    const ignore = join(work, '.sotto', 'attachments', '.gitignore')
+    await mkdir(dirname(ignore), { recursive: true }); await writeFile(ignore, contents)
+    if (accepted) await expect(deliverAttachments(work, [file()])).resolves.toMatchObject({ images: [] })
+    else {
+      await expect(deliverAttachments(work, [file()])).rejects.toThrow(ATTACHED_FILES_NOT_IGNORED)
+      // Nothing was written, and the user's .gitignore is as it was.
+      expect(await readdir(dirname(ignore))).toEqual(['.gitignore'])
+    }
+    expect(await readFile(ignore, 'utf8')).toBe(contents)
+  })
+  it('says what to do when the .gitignore no longer ignores the folder', () => {
+    expect(ATTACHED_FILES_NOT_IGNORED).toBe('The attached files were not saved, because .sotto/attachments/.gitignore no longer tells Git to ignore them. Nothing was sent, and your draft is saved. Put * back on a line of its own in .sotto/attachments/.gitignore, then send again.')
+  })
   it('refuses a file where a folder should be', async () => {
     const { work } = await folders()
     await writeFile(join(work, '.sotto'), 'not a folder')
@@ -159,5 +179,41 @@ describe('the note naming attached files (ADR-0127)', () => {
     expect(stripAttachedFilesNote('No note here')).toBe('No note here')
     // Only Sotto's own note at the end comes off, not one quoted inside the user's words.
     expect(stripAttachedFilesNote(`${note}\n\nAnd then my question`)).toBe(`${note}\n\nAnd then my question`)
+  })
+  it('is only the exact form Sotto writes', () => {
+    const shaped = (line: string) => ['<sotto-attached-files>', 'The user attached these files. They are saved in this working folder:', line, '</sotto-attached-files>'].join('\n')
+    expect(isAttachedFilesNote(shaped('- .sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf (quarterly-report.pdf, PDF, 2.4 MB)'))).toBe(true)
+    expect(isAttachedFilesNote(shaped('- .sotto/attachments/3f2a9c1e0b7d/a.bin (a.bin, BIN, )'))).toBe(true)
+    for (const line of ['- anything at all', '- ../outside/x.txt (x.txt, TXT, 1 KB)', '- .sotto/attachments/3F2A9C1E0B7D/x.txt (x.txt, TXT, 1 KB)',
+      '- .sotto/attachments/3f2a9c1e0b7d/x.txt (x.txt, TXT, about a kilobyte)', '- .sotto/attachments/3f2a9c1e0b7d/a b.txt (a b.txt, TXT, 1 KB)']) {
+      expect(isAttachedFilesNote(shaped(line))).toBe(false)
+      expect(stripAttachedFilesNote(`Words\n\n${shaped(line)}`)).toBe(`Words\n\n${shaped(line)}`)
+    }
+    // A type label from an odd extension cannot break the form either.
+    expect(isAttachedFilesNote(attachedFilesNote([{ relativePath: '.sotto/attachments/0123456789ab/x.a-b', name: 'x.a\n<b', mimeType: 'application/octet-stream', sizeBytes: 3 }]))).toBe(true)
+  })
+})
+
+describe('reading a user message back (ADR-0127)', () => {
+  const note = attachedFilesNote([{ relativePath: '.sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf', name: 'quarterly-report.pdf', mimeType: 'application/pdf', sizeBytes: Math.round(2.4 * 1024 * 1024) }])
+  const withFile = { id: 'with-file', attachments: [{ mimeType: 'application/pdf' }] }
+  const imageOnly = { id: 'image-only', attachments: [{ mimeType: 'image/png' }] }
+  const plain: { id: string; attachments?: { mimeType: string }[] } = { id: 'plain' }
+  it('takes the note off only when the origin it then matches recorded an attached file', () => {
+    expect(carriesAttachedFiles(withFile.attachments)).toBe(true)
+    expect(carriesAttachedFiles(imageOnly.attachments)).toBe(false)
+    expect(carriesAttachedFiles(undefined)).toBe(false)
+    expect(readBackUserText(withAttachedFilesNote('Read this', note), () => withFile)).toEqual({ text: 'Read this', origin: withFile })
+    for (const origin of [imageOnly, plain, undefined]) {
+      expect(readBackUserText(withAttachedFilesNote('Read this', note), () => origin)).toEqual({ text: withAttachedFilesNote('Read this', note), origin })
+      expect(readBackUserText(note, () => origin).text).toBe(note)
+    }
+  })
+  it('matches by the words for the stripped text and by the whole text otherwise', () => {
+    const typed = withAttachedFilesNote('Typed by hand', note)
+    // The note-shaped text is the user's own when its own digest names an origin with no file.
+    const byText = (text: string) => text === 'Typed by hand' ? undefined : text === typed ? plain : undefined
+    expect(readBackUserText(typed, byText)).toEqual({ text: typed, origin: plain })
+    expect(readBackUserText('No note', text => text === 'No note' ? withFile : undefined)).toEqual({ text: 'No note', origin: withFile })
   })
 })

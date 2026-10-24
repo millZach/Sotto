@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities } from '../../shared/agentActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ProviderUnavailable } from './providerProblem'
@@ -14,7 +14,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
-import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
@@ -749,10 +749,12 @@ export class DevinAcpHost implements AgentHost {
     const alias = this.aliases[id]!
     let changed = false
     for (const replayed of transcript.messages) {
-      // A user's words without the note naming their attached files (ADR-0127); the transcript keeps what Devin said.
-      const message = replayed.role === 'user' ? { ...replayed, text: stripAttachedFilesNote(replayed.text) } : replayed
-      if (message.role === 'user') {
-        const origin = alias.origins.find(origin => origin.messageId === message.id)
+      // A user's words without the note naming their attached files, when the origin of that ID recorded one (ADR-0127);
+      // the transcript keeps what Devin said.
+      const read = replayed.role === 'user' ? readBackUserText(replayed.text, () => alias.origins.find(origin => origin.messageId === replayed.id)) : undefined
+      const message = read ? { ...replayed, text: read.text } : replayed
+      if (read) {
+        const origin = read.origin
         if (origin) {
           if (digest(message.text) !== origin.digest) throw new Error('Devin replay did not match the saved dispatch. Delivery remains uncertain.')
           if (!origin.confirmed) { origin.confirmed = true; changed = true }
@@ -1034,7 +1036,7 @@ export class DevinAcpHost implements AgentHost {
     if (this.active.has(id) || this.thread(id).requests.length) throw new Error('Devin is still working. Queue this follow-up.')
     const origin: Origin = { nativeMessageId: randomUUID(), messageId: command.messageId, commandId: command.commandId,
       digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
-      ...(command.attachments?.length ? { attachments: command.attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })) } : {}) }
+      ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
     alias.origins.push(origin); alias.ephemeral = false; await this.persist()
     checkConnection()
     try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist(); throw error }

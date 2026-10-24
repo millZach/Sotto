@@ -22,7 +22,7 @@ From the prototype `docs/prototypes/attach-any-file-prototype.html` (kept as the
 | Devin (ACP) | refused (no image support) | by path | by path |
 | Muse | `image` part | by path | by path |
 
-Anthropic API: a request is at most 32 MB and a PDF at most 100 pages under a 200K context. A PDF goes by path only when Sotto cannot read its page count, when it has more than 100 pages, or when it would push a message's native bytes (images and PDFs together) past 20 MB. A `document` block that fails stays in Claude's session history and would fail every later turn, so the check is conservative: count pages from the PDF's uncompressed page tree (`/Type /Page` objects, or the root `/Count`), and when the count cannot be read, send by path only.
+Anthropic API: a request is at most 32 MB and a PDF at most 100 pages under a 200K context. A PDF goes by path only when Sotto cannot read its page count, when it has more than 100 pages, or when it would push a message's native bytes (images and PDFs together) past 20 MB. A `document` block that fails stays in Claude's session history and would fail every later turn, so the check is strict: read every object of the PDF's uncompressed page tree with stream bodies and comments left out, count the leaf `/Type /Page` objects, and take the count only when it equals the root page tree's `/Count`; when the count cannot be read, send by path only.
 
 ## How a file reaches the agent
 
@@ -40,7 +40,7 @@ Anthropic API: a request is at most 32 MB and a PDF at most 100 pages under a 20
   </sotto-attached-files>
   ```
 
-  `stripAttachedFilesNote` removes it wherever an adapter reads a user message back from the provider's own history, so the thread shows only what the user wrote. An origin's digest is taken on the text without the note.
+  Wherever an adapter reads a user message back from the provider's own history, the note comes off only when the origin the rest then matches recorded an attached file (`readBackUserText`), so the thread shows only what the user wrote and a prompt typed in the note's shape stays whole. An origin's digest is taken on the text without the note.
 - **Who may.** A thread with no working folder refuses files: "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved." A model without image support refuses images only (today's rule), naming the image.
 - **Privacy.** Names, paths and bytes never reach a log. The copy stays in the working folder until the user removes it, as `.sotto/clipboard/` does. The README's "Privacy and cost" says so.
 
@@ -48,7 +48,7 @@ Anthropic API: a request is at most 32 MB and a PDF at most 100 pages under a 20
 
 - `src/shared/agents.ts`: handles and stage requests take any well-formed MIME type (`type/subtype`, lowercase, at most 127 characters). A name the browser gives no type gets `application/octet-stream`. An attachment is an image when its type is one of the four. An image's bytes must carry that type's signature, as today; a file's bytes are not inspected. `sizeBytes` is at most 10 MiB for an image and 25 MiB for a file. A set holds at most 8, images total at most 20 MiB, and everything totals at most 50 MiB.
 - `AttachmentStore` keeps a file as `attachments/<digest>.bin`, with its MIME type in the index. `attachment-content` answers for images only, since a chip draws no file. Previews never hold file bytes; a sent file's tile shows its name, type and size from the reference.
-- **Remote hosts.** A file can be larger than a 16 MiB socket frame once it is in base64, so files go in parts. The new host feature `file-staging` adds the request `stage-file-part`: an upload ID, the part's index, the part count, the name, MIME type, total size and digest, and at most 8 MiB of base64 data. The host keeps one upload per client in memory, drops it after two minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then stages the file. A host without the feature refuses files with "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached." Images still use `stage-attachment`. A headless host lists `file-staging` only when its own Owl answer for `attach-any-file` is on.
+- **Remote hosts.** A file can be larger than a 16 MiB socket frame once it is in base64, so files go in parts. The new host feature `file-staging` adds the request `stage-file-part`: an upload ID, the part's index, the part count, the name, MIME type, total size and digest, and at most 8 MiB of base64 data. The host keeps one upload per paired client in memory, across its sockets, drops it after two minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then stages the file. A host without the feature refuses files with "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached." Images still use `stage-attachment`. A headless host lists `file-staging` only when its own Owl answer for `attach-any-file` is on.
 - **iPhone.** Out of scope for attaching. A sent file in a thread shows its name with a document symbol instead of the photo symbol.
 
 ## Composer
