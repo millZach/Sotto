@@ -405,8 +405,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // Signing Cursor in from its tile on this computer (ADR-0127): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
-  const cursorSignIn = providers.cursor instanceof CursorAcpHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
-    configDirectory: join(directory, 'cursor', 'config'), openExternal: async url => { await options.openExternal(url) },
+  const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
+  const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
+    configDirectory: cursorHost.folder, program: () => cursorHost.clientProgram(), openExternal: async url => { await options.openExternal(url) },
     connect: async () => {
       const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
       const status = state.host.providers?.find(item => item.id === 'cursor')

@@ -23,6 +23,20 @@ This note has no screenshots: the Settings tile, model menu and request cards we
 - `tests/integration/watcherPairedHosts.test.ts`: a Watcher on Cursor reads and directs a paired host only when it lists `watcher-cursor`, and says to update one that does not.
 - Hosts: `headlessHost.test.ts` and `socketHostContract.test.ts` pass the host service contract for Cursor (20 cases); `socketProviderPeers.test.ts` sends an older phone and an older desktop nothing of Cursor from any shell field, event, detail, Watcher answer, read or projection, and refuses their reads and directions of Cursor threads; `providerSignIn.test.ts` runs a host's Cursor sign-in in its page shape; `socketHostFeatures.test.ts` lists `watcher-cursor`.
 
+## In the built app
+
+`tests/e2e/cursor-provider.spec.ts` runs the built Owl app with Cursor's real adapter over the fake Cursor client (`SOTTO_E2E_CURSOR_ROOT`), in a profile of its own, dark with reduced motion on, and passed on October 24, 2026 after main was merged in. Its captures are in [`artifacts/cursor-provider/`](../../artifacts/cursor-provider/):
+
+- `signed-out-1600-dark.png`: Cursor switched on and connected while signed out. The tile says Sotto uses Cursor's own sign-in and offers **Sign in**, with no alert repeating it.
+- `signing-in-1280-dark.png`: after **Sign in** (variant A). Main wrote the `https://cursor.com/` page down instead of opening a browser, Cursor's `login` ran with `NO_OPEN_BROWSER=1` and Sotto's own Cursor folder under the profile, and the tile says to finish on cursor.com, with **Open the page again** and **Cancel**. Writing the fixture's `login-done` connected Cursor by itself.
+- `connected-820-light.png`: connected, at the minimum window in light. The panel was also captured at 1600x1000 and 1280x800 in dark; nothing in it was cut off at any size.
+- `makers-1280-dark.png` and `anthropic-820-light.png`: the model menu opens on Cursor's model makers (Cursor, Anthropic, OpenAI) with the foot saying every model runs through Cursor on the user's plan; Anthropic's models show under **Makers**; Escape steps back to the maker's row and then to the chip. The chip reads Anthropic / Claude Fixture with "Claude Fixture from Anthropic, in Cursor" as its title and Cursor's mark.
+- `permissions-1280-dark.png`: Provider default, then exactly Cursor's three modes with Cursor's own descriptions, and no Allow edits.
+- `stable-providers.png`: the same profile with Cursor's Owl feature off. No Cursor tile, and `cursor-projects.json` kept.
+- `contrast.json`: every text measured is at least 4.5:1, the lowest the menu foot in light at 6.1:1.
+
+The first run found two faults, both fixed in this change: while a sign-in waited, the tile still showed the Connect press's error telling the user to sign in and connect again, and the tile's sign-in found Cursor's program by itself rather than the one the adapter runs, so a fixture's sign-in would have started the real `agent login`.
+
 ## The flaky adapter tests
 
 Three adapter tests had each failed once in a full run. Twenty-four runs of `cursorAdapter.test.ts` (eight sequential, eight at once, and six pinned to two cores beside a busy loop, as [docs/ci.md](../ci.md) describes) all passed. With the machine at 98% CPU from other work, two failures reproduced: the contract's uncertain-acknowledgement case, whose thread's create had come back uncertain, and a Watcher case whose create was never confirmed. The cause: a freshly started process's first answer, to `initialize`, was given the acknowledgement deadline, which the fixture sets to two seconds and a loaded machine's process start can pass. It now has a start deadline of its own (30 seconds). A test now holds a process's start past the fixture's two-second acknowledgement deadline. It fails with the old deadline and passes with the new one. After the fix, six further runs on that loaded machine, and the 20 Cursor host-contract cases, passed.

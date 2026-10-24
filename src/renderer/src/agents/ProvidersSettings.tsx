@@ -104,10 +104,11 @@ export function ProvidersSettings(): ReactNode {
   const models = newestModelsFirst(hostModels.filter(model => model.providerId === selected
     || (!model.providerId && model.provider === PROVIDER_LABELS[selected])))
   const label = PROVIDER_LABELS[selected]
-  // Cursor's tile says what to do when it is not signed in and offers Sign in, so main's sentence about it is not repeated.
+  // Cursor's tile says what to do when it is not signed in and offers Sign in, or says where a sign-in stands, so neither
+  // main's sentence about it nor a Connect press's own error is repeated under it.
   const cursorBridge = selected === 'cursor' ? window.sotto?.cursor : undefined
-  const cursorExplains = cursorBridge !== undefined && 'problem' in status && status.problem === 'signed-out'
-  const detailError = errors[selected] ?? (cursorExplains ? undefined : status.error)
+  const cursorExplains = cursorBridge !== undefined && (('problem' in status && status.problem === 'signed-out') || cursorSignIn.signing)
+  const detailError = cursorExplains ? undefined : errors[selected] ?? status.error
   const update = clientUpdates?.find(item => item.id === selected)
   const updating = (clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
   const selectedUpdating = Boolean(updatePending[selected]) || update?.state === 'updating' || update?.state === 'queued'

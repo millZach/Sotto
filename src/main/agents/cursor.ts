@@ -248,6 +248,9 @@ export class CursorAcpHost implements AgentHost {
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
+  /** The program this adapter starts, and Sotto's Cursor folder it runs with, so the tile's sign-in uses the same client. */
+  async clientProgram(): Promise<CursorProgram | undefined> { return this.program ?? this.options.program ?? findCursorProgram(this.options.environment) }
+  get folder(): string { return this.configDirectory }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
