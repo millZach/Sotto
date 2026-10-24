@@ -6,7 +6,7 @@
  * the hills run on under the column at 85%, held still whatever the words do, with a soft glow of the canvas behind each
  * word (variant D of `docs/prototypes/watcher-floating-composer-prototype.html`, which replaced the gaps round each line
  * of variant A of `docs/prototypes/watcher-column-scene-prototype.html`); the ink there stops where a word would fall
- * under 4.5:1 (ADR-0126). Nothing here touches the DOM or a
+ * under 4.5:1, its names and times in the secondary text colour so it can go stronger (ADR-0126). Nothing here touches the DOM or a
  * canvas, so all of it can be tested on its own; `owlFamily.ts` keeps the thread owls, `nightScenePainter.ts` draws the
  * scene and `WatcherNightScene.tsx` runs it.
  *
@@ -608,7 +608,8 @@ export function columnCeiling(surface: Rgb, ink: Rgb, boost: number, words: read
 /**
  * The scene's inks for a theme: its text and accent colours, made stronger when the surface under them is light, and
  * how far each may go in the column, where the conversation's words fall over it: `words` are the colours words there
- * are written in (the text and its muted tier), and none of them may fall under 4.5:1 against a glyph's core.
+ * are written in (the text, its secondary tier, which the names and times take there, and links), and none of them may
+ * fall under 4.5:1 against a glyph's core.
  */
 export function sceneInk(surface: Rgb, text: Rgb, accent: Rgb, words: readonly Rgb[] = [text]): SceneInk {
   const light = isLightSurface(surface)

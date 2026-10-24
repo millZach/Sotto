@@ -293,13 +293,18 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
 
     const readInk = (): void => {
       const style = getComputedStyle(ink)
-      // The words over the column are written in the text colour and its muted tier; the probe's border is the muted one.
-      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), muted = toRgb(style.borderTopColor, pixel), surface = surfaceOf(pane, pixel)
+      // The words over the column are written in the text colour, its secondary tier (the probe's border; the names and
+      // times take it there) and the link colour (the probe's outline).
+      const text = toRgb(style.color, pixel), accent = toRgb(style.backgroundColor, pixel), surface = surfaceOf(pane, pixel)
       if (text === null || accent === null || surface === null) return
-      const key = JSON.stringify([text, accent, muted, surface, style.fontFamily])
+      const words = [text, toRgb(style.borderTopColor, pixel), toRgb(style.outlineColor, pixel)].filter((word): word is Rgb => word !== null)
+      const key = JSON.stringify([text, accent, words, surface, style.fontFamily])
       if (key === inked) return
       inked = key
-      painter.setInk(sceneInk(surface, text, accent, muted === null ? [text] : [text, muted]), style.fontFamily)
+      const scene = sceneInk(surface, text, accent, words)
+      painter.setInk(scene, style.fontFamily)
+      // An end-to-end run reads the column's ceiling off the pane, to report it beside the contrast it measures.
+      if (counted) pane.dataset.nightSceneCap = JSON.stringify(scene.column)
       wake()
     }
     const relayout = (): void => {

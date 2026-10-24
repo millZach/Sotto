@@ -359,8 +359,11 @@ describe('the night scene’s ink', () => {
       expect(scene.column.ink).toBe(cap)
       expect(scene.column.accent).toBe(columnCeiling(surface, glow, boost === 1 ? 1 : LIGHT_ACCENT_BOOST, [word, quiet]))
     }
-    // The muted tier is the weaker word: it brings the ceiling down from where the text alone would put it.
-    expect(columnCeiling(night, text, 1, [text, muted])).toBeLessThan(columnCeiling(night, text, 1, [text]))
+    // The weaker word brings the ceiling down from where the text alone would put it. The muted tier would bring it far
+    // lower than the secondary one, which is why Watcher's names and times take the secondary tier (pick D2).
+    const secondary = { r: 214, g: 212, b: 204 }
+    expect(columnCeiling(night, text, 1, [text, secondary])).toBeLessThan(columnCeiling(night, text, 1, [text]))
+    expect(columnCeiling(night, text, 1, [text, muted])).toBeLessThan(columnCeiling(night, text, 1, [text, secondary]))
     // A word that already falls under 4.5:1 on the bare surface leaves no ink at all.
     expect(columnCeiling(night, text, 1, [{ r: 40, g: 40, b: 44 }])).toBe(0)
   })

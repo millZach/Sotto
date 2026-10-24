@@ -1,10 +1,10 @@
 # Slim composer and Watcher's column verification
 
-October 23, 2026. `feat/floating-composer-shrink`, built on the floating composer fix (`fix/floating-composer`, merged with `main` after #1441), on Windows 11 with the built app (`npm run build`). It covers three changes the user asked for that day:
+October 23, 2026, and October 24 for pick D2. `feat/floating-composer-shrink`, built on the floating composer fix (`fix/floating-composer`, merged with `main` after #1441), on Windows 11 with the built app (`npm run build`). It covers three changes the user asked for that day:
 
 - the Threads composer card loses its focus edge (ADR-0110, amended);
 - the **slim composer**, an Owl feature (`composer-shrink`, ADR-0125, pick B of `docs/prototypes/composer-shrink-prototype.html`, a draft keeps it full);
-- Watcher's conversation column (ADR-0126, pick D of `docs/prototypes/watcher-floating-composer-prototype.html`): the composer floats as frosted glass, the night scene runs under the column at 85% and never moves for the words, each word has a glow of the canvas, and Watcher's composer slims as a thread's does.
+- Watcher's conversation column (ADR-0126, picks D and D2 of `docs/prototypes/watcher-floating-composer-prototype.html`): the composer floats as frosted glass, the night scene runs under the column at 85% and never moves for the words, each word has a glow of the canvas, the conversation's names and times are in the secondary text colour, and Watcher's composer slims as a thread's does.
 
 ## How it was run
 
@@ -36,26 +36,30 @@ Captures, dark and light, at 1280x860 and 820x560: `artifacts/composer-shrink/th
 
 `watcher-column.spec.ts` seeds a Watcher with twenty-four messages and three watched threads. At 1600x1000, 1280x800 and 820x560, dark and light, Watcher's composer floats (its top margin is minus its height, the transcript keeps that much padding, the last message comes clear at the end), stays above the floating switch, and is glass: the card's colour at 72% with `blur(14px)`. Reading back slims it, and the landscape under the column, the glass card included, stays pixel for pixel the same as the composer slims and as the words scroll a further 480px. Watched keeps the floating composer, Visualize keeps its one line until focused and never slims, and a key typed in the conversation goes to Watcher's composer.
 
-Contrast is read from the canvas. Every pixel the landscape draws in the column below the header is laid over the pane's surface as the screen shows it and compared with every colour a word in the conversation is written in, the glow left out; under the composer, the glass card's colour over each of those pixels, unblurred, is compared with the placeholder and the composer's own words. In all six built-in themes, at 1600x1000 and 1280x800 (`artifacts/watcher-column/readings.json`):
+### Names and times in the secondary colour (pick D2)
 
-| Theme | Mode | Lowest word over the scene | Lowest composer word over the glass |
-| --- | --- | --- | --- |
-| Sotto | dark | 4.70:1 | 5.58:1 |
-| Hush | dark | 4.86:1 | 4.66:1 |
-| Linen | dark | 4.86:1 | 4.70:1 |
-| Nocturne | dark | 4.79:1 | 4.61:1 |
-| Tropic | dark | 4.85:1 | 4.72:1 |
-| Citrine | dark | 4.99:1 | 4.82:1 |
-| Sotto | light | 5.01:1 | 4.53:1 |
-| Hush | light | 4.76:1 | 5.16:1 |
-| Linen | light | 4.77:1 | 5.15:1 |
-| Nocturne | light | 5.10:1 | 5.12:1 |
-| Tropic | light | 5.11:1 | 5.08:1 |
-| Citrine | light | 4.84:1 | 5.12:1 |
+On October 24, 2026 the user picked D2 on round 3 of the prototype. As first built, the column's ink ceiling was held down by the muted tier the conversation's names and times are written in: it sits only 6.3 to 9.5:1 on the canvas, so no glyph under the column could go past about a sixth to a quarter of the text colour by night and a tenth by day, and the column read faint. In Watcher's conversation the muted tier now takes the secondary tier (`--tt-text-muted` is set to `--tt-text-2` on the conversation), and the ceiling is worked out from the text colour, the secondary tier and the link colour. The strength stays at 85%. The spec checks that a reply's time is in the secondary colour, and the fixture now has a link in each reply so the link colour is measured too.
 
-The lowest word is always the muted tier (the names and times). No theme needed its share lowered from 85%: the column's ink ceiling, worked out from each theme's text, muted and accent colours, holds every word at 4.6:1 or more in the maths and at the values above on screen. The ceiling is low: before it, the muted tier sits 6.3 to 9.5:1 on the canvas, and the strongest a glyph may go in the column is about a sixth to a quarter of the text colour by night and a tenth by day. The scene in the column reads as faint dotted hills, fainter by day; the margins are unchanged.
+Contrast is read from the canvas. Every pixel the landscape draws in the column below the header is laid over the pane's surface as the screen shows it and compared with every colour a word in the conversation is written in, the glow left out; under the composer, the glass card's colour over each of those pixels, unblurred, is compared with the placeholder and the composer's own words. A decorative mark (the faint dot between New Watcher and the model, which is hidden from screen readers) is not counted as a word. In all six built-in themes, at 1600x1000 and 1280x800 (`artifacts/watcher-column/readings.json`). The ceiling is the highest step each ink may take in the column, with the alpha a glyph's core is drawn at in brackets (by day the ink is made stronger, 1.9 times for the text colour and 1.5 times for the accent):
 
-`watcherNightScene.test.ts` checks the 85% share in both modes, that the scene runs under the composer, that a point in the column shows the same share however the conversation scrolls, and the ceiling: at it both words keep 4.6:1, a step past it one falls under, and a word already under 4.5:1 on the bare surface leaves no ink. `watcher-night-scene.spec.ts` now expects the landscape in the column under words as well as between them, and still none of the owls.
+| Theme | Mode | Lowest word over the scene | Lowest composer word over the glass | Ceiling, text ink | Ceiling, accent ink |
+| --- | --- | --- | --- | --- | --- |
+| Sotto | dark | 5.14:1 | 7.34:1 | 0.30 (0.30) | 0.45 (0.45) |
+| Hush | dark | 4.99:1 | 5.46:1 | 0.25 (0.25) | 0.35 (0.35) |
+| Linen | dark | 4.95:1 | 5.46:1 | 0.25 (0.25) | 0.35 (0.35) |
+| Nocturne | dark | 5.01:1 | 5.36:1 | 0.25 (0.25) | 0.40 (0.40) |
+| Tropic | dark | 4.87:1 | 5.49:1 | 0.25 (0.25) | 0.45 (0.45) |
+| Citrine | dark | 4.97:1 | 5.28:1 | 0.25 (0.25) | 0.30 (0.30) |
+| Sotto | light | 4.82:1 | 5.67:1 | 0.10 (0.19) | 0.20 (0.30) |
+| Hush | light | 5.28:1 | 5.04:1 | 0.15 (0.28) | 0.35 (0.52) |
+| Linen | light | 5.31:1 | 5.03:1 | 0.15 (0.28) | 0.35 (0.52) |
+| Nocturne | light | 5.27:1 | 5.02:1 | 0.15 (0.28) | 0.30 (0.45) |
+| Tropic | light | 5.11:1 | 5.14:1 | 0.15 (0.28) | 0.30 (0.45) |
+| Citrine | light | 5.07:1 | 5.06:1 | 0.15 (0.28) | 0.40 (0.60) |
+
+No theme needed its share lowered from 85%. The ceiling targets 4.6:1 so rounding never lands under 4.5:1. By night the ceiling rose from 0.15 to 0.25 of the text colour to 0.25 to 0.30; by day from about 0.10 to about 0.28. Sotto by day is the exception at 0.19: its link colour sits at 7.2:1 on the canvas, below its secondary tier, so its links set its ceiling. The scene in the column now reads as clear dotted hills, still quieter than the margins.
+
+`watcherNightScene.test.ts` checks the 85% share in both modes, that the scene runs under the composer, that a point in the column shows the same share however the conversation scrolls, and the ceiling: at it every word keeps 4.6:1, a step past it one falls under, the muted tier would hold it lower than the secondary one, and a word already under 4.5:1 on the bare surface leaves no ink. `watcher-night-scene.spec.ts` now expects the landscape in the column under words as well as between them, and still none of the owls.
 
 Captures, dark and light, at 1600x1000, 1280x800 and 820x560: `artifacts/watcher-column/full-*.png` and `artifacts/watcher-column/slim-*.png`.
 

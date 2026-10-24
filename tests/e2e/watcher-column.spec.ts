@@ -63,7 +63,7 @@ async function seedRoom(page: Page): Promise<void> {
     await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: 24 }, (_, index) => ({
       id: `column-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
       text: index % 2
-        ? `Watching it. Package (Windows) is still running for the release thread (${(index + 1) / 2}). The footer links thread waits on review, and the visual gate passed on its second run.`
+        ? `Watching it. Package (Windows) is still running for the release thread (${(index + 1) / 2}). The footer links thread waits on review, and the visual gate passed on its [second run](https://github.com/millZach/Sotto/actions).`
         : `Is the release thread green yet? (${index / 2 + 1})`,
       createdAt: new Date(now - (24 - index) * 60_000).toISOString() })) })
   }, { key: WATCHER_STAND_IN_KEY, seed, thread: CURRENT, now: E2E_THREADS_NOW })
@@ -148,7 +148,7 @@ async function columnContrast(page: Page): Promise<ColumnReading> {
     const own = ".thread-message[data-role='user'], pre, code, button, input, textarea, table, .agent-request, [class*='card'], [class*='chip']"
     const colours = new Map<string, number[]>()
     for (const element of log.querySelectorAll('*')) {
-      if (element.closest(own) !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
+      if (element.closest(own) !== null || element.closest('[aria-hidden="true"]') !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
       const colour = getComputedStyle(element).color
       colours.set(colour, rgba(colour))
     }
@@ -158,7 +158,8 @@ async function columnContrast(page: Page): Promise<ColumnReading> {
     const editor = formEl.querySelector('.prompt-editor')
     if (editor !== null) inCard.set(`placeholder ${getComputedStyle(editor, '::before').color}`, rgba(getComputedStyle(editor, '::before').color))
     for (const element of formEl.querySelectorAll('*')) {
-      if (element.closest('.tt-visually-hidden') !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
+      // A decorative mark, such as the faint dot between New Watcher and the model, is not a word.
+      if (element.closest('.tt-visually-hidden, [aria-hidden="true"]') !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
       if ((element as HTMLElement).offsetParent === null) continue
       const colour = getComputedStyle(element).color
       inCard.set(colour, rgba(colour))
@@ -286,7 +287,19 @@ test.describe("Watcher's conversation column on the built app", () => {
             await readBack(page, 0)
             await settle(page)
             const reading = await columnContrast(page)
-            recorded[`${appearance}-${theme}-${width}x${height}`] = reading
+            // Watcher's names and times are in the secondary tier, never the muted one (pick D2), and a link is among the words.
+            const tiers = await page.evaluate(() => {
+              const log = document.querySelector('#watcher-pane .thread-workspace__transcript')!
+              const probe = document.createElement('span'); log.append(probe)
+              const colour = (token: string): string => { probe.style.color = `var(${token})`; return getComputedStyle(probe).color }
+              const secondary = colour('--tt-text-2')
+              probe.remove()
+              const time = log.querySelector('.thread-message[data-role="assistant"] header time')
+              return { secondary, time: time === null ? null : getComputedStyle(time).color, links: log.querySelectorAll('a').length }
+            })
+            expect(tiers.time, `${appearance} ${theme}`).toBe(tiers.secondary)
+            expect(tiers.links, `${appearance} ${theme}`).toBeGreaterThan(0)
+            recorded[`${appearance}-${theme}-${width}x${height}`] = { ...reading, cap: await page.evaluate(() => JSON.parse(document.getElementById('watcher-pane')!.dataset.nightSceneCap ?? 'null') as unknown) }
             const context = `${appearance} ${theme} ${width}x${height}: ${JSON.stringify(reading)}`
             // The column has a landscape to read against, and none of it takes a word under 4.5:1.
             expect(reading.pixels, context).toBeGreaterThan(0)

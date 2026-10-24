@@ -9,9 +9,14 @@
   Round 2 (2026-10-23): B's gaps follow the words, so the characters shift round every line as it scrolls. D and E keep
   the scene still under the column and keep the words readable another way: D with a soft glow behind each word, E with
   a faint plate behind each paragraph that moves with it.
+  Round 3 (2026-10-24): D as built draws the scene in the theme's text colour and caps each character under the column so
+  the grey names and times keep 4.5:1, which leaves the column faint (D1). D2 writes the names and times in the secondary
+  text colour, so the cap can let the scene show about twice as strong.
   The readout under the bar measures the lowest contrast between the words and the pixels drawn under them.
   Picked: D, the user's pick on 2026-10-23: the scene still under the column at 85% with a glow behind each word, the
   composer as frosted glass, and the composer shrinking to the same slim line as a thread's (ADR-0125, ADR-0126).
+  Picked: D2, the user's pick on round 3 on 2026-10-24: the names and times in the conversation in the secondary text
+  colour, so the cap under the column can let the scene show stronger (ADR-0126).
 -->
 <html lang="en">
 <head>
@@ -65,10 +70,12 @@
   [data-variant='a'] .composer { box-shadow: 0 10px 30px rgb(0 0 0 / 0.28); }
   [data-theme='light'][data-variant='a'] .composer { box-shadow: 0 10px 26px rgb(60 50 20 / 0.14); }
   /* B: the card is glass. The scene and the words passing under it show through, blurred. */
-  :is([data-variant='b'], [data-variant='d'], [data-variant='e']) .composer { border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent); background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); color: var(--text-2); }
+  :is([data-variant='b'], [data-variant='d'], [data-variant='e'], [data-variant='d1'], [data-variant='d2']) .composer { border: 1px solid color-mix(in srgb, var(--hairline) 70%, transparent); background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); color: var(--text-2); }
   /* D: the scene never moves for the words. A soft glow of the canvas behind each word keeps it clear of the
      characters it passes over. */
-  [data-variant='d'] .col :is(p, code, a) { text-shadow: 0 0 3px var(--canvas), 0 0 7px var(--canvas), 0 0 12px var(--canvas); }
+  :is([data-variant='d'], [data-variant='d1'], [data-variant='d2']) .col :is(p, code, a) { text-shadow: 0 0 3px var(--canvas), 0 0 7px var(--canvas), 0 0 12px var(--canvas); }
+  /* D2: names and times in the secondary text colour, so the scene under the column may be stronger. */
+  [data-variant='d2'] .col .who { color: var(--text-2); }
   /* E: the scene never moves either. Each paragraph carries a faint plate of the canvas with soft edges, and the plate
      moves with it as one thing. */
   [data-variant='e'] .col p:not(.who) { margin-inline: -12px; padding: 4px 12px; border-radius: 12px; background: color-mix(in srgb, var(--canvas) 72%, transparent); box-shadow: 0 0 16px 6px color-mix(in srgb, var(--canvas) 60%, transparent); }
@@ -87,6 +94,8 @@
     <button type="button" data-v="c">C · Fade into the dock</button>
     <button type="button" data-v="d" aria-pressed="true">D · Still scene, glow</button>
     <button type="button" data-v="e">E · Still scene, plates</button>
+    <button type="button" data-v="d1">D1 · As built</button>
+    <button type="button" data-v="d2">D2 · Brighter names</button>
   </div>
   <div class="seg" id="theme">
     <button type="button" data-t="dark" aria-pressed="true">Dark</button>
@@ -130,6 +139,8 @@
     b: { strength: { dark: 92, light: 88 }, gap: [3, 16], note: 'B · See-through glass: the column is nearly as open as the margins. A tight gap round each line keeps the words clear, and the composer is frosted glass, so the scene and the words passing under it show through, blurred.' },
     d: { strength: { dark: 85, light: 85 }, gap: null, note: 'D · Still scene, glow: the scene runs under the column at 85% and never moves for the words, so nothing shifts as you scroll. Each word has a soft glow of the canvas behind it. The readout leaves the glow out, so the real contrast is higher.' },
     e: { strength: { dark: 92, light: 90 }, gap: null, note: 'E · Still scene, plates: the scene runs under the column at about 90% and never moves for the words. Each paragraph carries a faint, soft-edged plate of the canvas that scrolls with it, like the composer card does.' },
+    d1: { strength: { dark: 85, light: 85 }, gap: null, label: 'muted', note: 'D1 · As built: the scene is drawn in the text colour, the way the app draws it, and each character under the column is capped so the grey names and times keep 4.5:1. That cap is what leaves the column faint.' },
+    d2: { strength: { dark: 85, light: 85 }, gap: null, label: 'text2', note: 'D2 · Brighter names: names and times use the secondary text colour, a little brighter than the grey. The cap is worked out from that colour instead, so the scene under the column shows about three times as strong in dark and ten times in light, and every word still keeps 4.5:1.' },
     c: { strength: { dark: 72, light: 62 }, gap: [5, 22], note: 'C · Fade into the dock: the composer floats, and the words fade into the scene over the last few lines above it, so there is no edge anywhere. The column shows the scene at about two thirds.' },
   }
   const RAMP = ' .:-=+*#%@'
@@ -140,7 +151,7 @@
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
   const params = new URLSearchParams(location.search)
   let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'd'
-  let cols = 0, rows = 0, land = null, stars = [], lines = [], card = null, column = { l: 0, r: 0 }, ink = '#fff', accent = '#ff0', canvasRgb = [0, 0, 0], textRgb = [1, 1, 1]
+  let cols = 0, rows = 0, land = null, stars = [], lines = [], card = null, column = { l: 0, r: 0 }, ink = '#fff', accent = '#ff0', canvasRgb = [0, 0, 0], textRgb = [1, 1, 1], inkText = '#fff', mutedRgb = [0, 0, 0], text2Rgb = [0, 0, 0], inkRgb = [0, 0, 0], accentRgb = [0, 0, 0]
 
   const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
   const lerp = (a, b, t) => a + (b - a) * t
@@ -161,7 +172,7 @@
   strength.addEventListener('input', () => { strengthOut.textContent = strength.value + '%'; redraw() })
   addEventListener('keydown', e => {
     if (e.target.closest('input, textarea, [contenteditable]')) return
-    const keys = ['now', 'a', 'b', 'c', 'd', 'e'], i = keys.indexOf(variant)
+    const keys = ['now', 'a', 'b', 'c', 'd', 'e', 'd1', 'd2'], i = keys.indexOf(variant)
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { variant = keys[(i + (e.key === 'ArrowRight' ? 1 : keys.length - 1)) % keys.length]; press('variant', 'v', variant); applyVariant() }
   })
 
@@ -183,6 +194,8 @@
     const cs = getComputedStyle(body)
     ink = cs.getPropertyValue('--muted').trim(); accent = cs.getPropertyValue('--accent').trim()
     canvasRgb = rgbOf(cs.getPropertyValue('--canvas').trim()); textRgb = rgbOf(cs.getPropertyValue('--text').trim())
+    inkText = cs.getPropertyValue('--text').trim(); inkRgb = textRgb; accentRgb = rgbOf(accent)
+    mutedRgb = rgbOf(cs.getPropertyValue('--muted').trim()); text2Rgb = rgbOf(cs.getPropertyValue('--text-2').trim())
   }
 
   function buildLand(W, H) {
@@ -218,7 +231,7 @@
     const s = stage.getBoundingClientRect(), t = transcript.getBoundingClientRect(), c = composer.getBoundingClientRect()
     column = { l: c.left - s.left, r: c.right - s.left }
     card = { x: c.left - s.left, y: c.top - s.top, w: c.width, h: c.height }
-    const glass = variant === 'b' || variant === 'd' || variant === 'e'
+    const glass = ['b', 'd', 'e', 'd1', 'd2'].includes(variant)
     const bottom = glass ? t.bottom : Math.min(t.bottom, c.top)
     lines = []
     for (const p of col.querySelectorAll('p')) {
@@ -226,7 +239,7 @@
       for (const r of range.getClientRects()) {
         if (r.width <= 0 || r.bottom <= t.top || r.top >= bottom) continue
         const top = Math.max(r.top, t.top), end = Math.min(r.bottom, bottom)
-        lines.push({ x: r.left - s.left, y: top - s.top, w: r.width, h: end - top, under: r.bottom > c.top && glass })
+        lines.push({ x: r.left - s.left, y: top - s.top, w: r.width, h: end - top, under: r.bottom > c.top && glass, who: p.classList.contains('who') })
       }
     }
   }
@@ -247,13 +260,27 @@
     return inCol * smooth(g0, g1, near)
   }
 
+  // D1 and D2: the strongest a character may be under the column so every colour of words over it keeps 4.5:1.
+  const blend = (color, a) => [0, 1, 2].map(k => color[k] * a + canvasRgb[k] * (1 - a))
+  function capFor(color) {
+    const words = [textRgb, VARIANTS[variant].label === 'text2' ? text2Rgb : mutedRgb]
+    let lo = 0, hi = 1
+    for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (words.every(w => contrast(w, blend(color, mid)) >= 4.6)) lo = mid; else hi = mid }
+    return lo
+  }
+  let caps = null
+  const capped = () => variant === 'd1' || variant === 'd2'
+
   function draw(t) {
     if (!land) return
+    caps = capped() ? { ink: capFor(inkRgb), accent: capFor(accentRgb) } : null
+    const sceneInk = capped() ? inkText : ink
+    const inColumn = x => x > column.l - 8 && x < column.r + 8
     const dpr = devicePixelRatio || 1
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.font = '10.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillStyle = ink
+    ctx.fillStyle = sceneInk
     const starAt = new Map(stars.map(s => [s.i, s]))
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const x = (c + 0.5) * CW, y = (r + 0.5) * CH, i = r * cols + c
@@ -261,11 +288,12 @@
       const st = starAt.get(i)
       if (st) {
         const s = reduce ? 0.6 : 0.4 + 0.4 * Math.sin(t / 700 + st.p)
-        ctx.globalAlpha = (0.15 + 0.6 * s) * q; ctx.fillStyle = st.a ? accent : ink
-        ctx.fillText(s > 0.7 ? '*' : s > 0.45 ? '+' : '·', x, y); ctx.fillStyle = ink; continue
+        const alpha = (0.15 + 0.6 * s) * q
+        ctx.globalAlpha = caps && inColumn(x) ? Math.min(alpha, st.a ? caps.accent : caps.ink) : alpha; ctx.fillStyle = st.a ? accent : sceneInk
+        ctx.fillText(s > 0.7 ? '*' : s > 0.45 ? '+' : '·', x, y); ctx.fillStyle = sceneInk; continue
       }
       const d = land[i] * q; if (d < 0.1) continue
-      ctx.globalAlpha = 0.1 + 0.5 * d
+      ctx.globalAlpha = caps && inColumn(x) ? Math.min(0.1 + 0.5 * d, caps.ink) : 0.1 + 0.5 * d
       ctx.fillText(RAMP[Math.min(RAMP.length - 1, Math.floor(d * RAMP.length))], x, y)
     }
     ctx.globalAlpha = 1
@@ -288,12 +316,14 @@
         const a = d[i + 3] / 255 * (variant === 'e' ? 0.28 : 1); if (a < 0.01) continue
         glyphs++
         const px = [0, 1, 2].map(k => d[i + k] * a + canvasRgb[k] * (1 - a))
-        const ratio = contrast(textRgb, px); if (ratio < worst) worst = ratio
+        const words = b.who ? (VARIANTS[variant]?.label === 'text2' ? text2Rgb : mutedRgb) : textRgb
+        const ratio = contrast(words, px); if (ratio < worst) worst = ratio
       }
     }
     const plain = contrast(textRgb, canvasRgb)
     const shown = worst === Infinity ? plain : worst
-    readout.innerHTML = `Lowest contrast under the words: <strong ${shown < 4.5 ? 'data-bad' : ''}>${shown.toFixed(2)}:1</strong> ${shown < 4.5 ? '(below 4.5:1)' : '(meets 4.5:1)'} · words on the bare canvas ${plain.toFixed(2)}:1 · scene pixels under words: ${glyphs}`
+    const cap = caps ? ` · strongest character under the column ${Math.round(caps.ink * 100)}%` : ''
+    readout.innerHTML = `Lowest contrast under the words, names and times included: <strong ${shown < 4.5 ? 'data-bad' : ''}>${shown.toFixed(2)}:1</strong> ${shown < 4.5 ? '(below 4.5:1)' : '(meets 4.5:1)'} · words on the bare canvas ${plain.toFixed(2)}:1 · scene pixels under words: ${glyphs}${cap}`
   }
 
   function redraw() { measure(); draw(performance.now()); measureContrast() }
