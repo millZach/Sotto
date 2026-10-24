@@ -16,8 +16,9 @@ describe('what a Watcher send that names no delivery does (ADR-0130)', () => {
     const running = { status: 'running' as const, lastTurn: { id: 'turn-2', status: 'running' as const } }
     expect(defaultDelivery(running, true, undefined)).toEqual({ delivery: 'steer', expectedTurnId: 'turn-2' })
     expect(defaultDelivery(running, true, 'turn-1')).toEqual({ delivery: 'steer', expectedTurnId: 'turn-1' })
-    // A turn not yet confirmed names none, so the steer's own check refuses it rather than guess.
+    // A turn Sotto has not confirmed, as one resumed after a card (#1490), is steered unfenced: whichever turn runs.
     expect(defaultDelivery({ status: 'running' }, true, undefined)).toEqual({ delivery: 'steer' })
+    expect(defaultDelivery({ status: 'running', lastTurn: { id: 'turn-1', status: 'completed' } }, true, undefined)).toEqual({ delivery: 'steer' })
   })
 
   it('goes now when the thread’s turn is over, so it never fails as a steer would', () => {

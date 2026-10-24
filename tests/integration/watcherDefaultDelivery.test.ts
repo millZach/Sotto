@@ -72,6 +72,20 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     expect(f.control.watcherRecord().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
   })
 
+  it('steers a running turn Sotto never confirmed, as one resumed after the user answered its card (#1490)', async () => {
+    const f = await fixture(provider)
+    await f.turn('finished')
+    // The turn runs again, but the newest turn Sotto knows is still the finished one.
+    f.native().thread.status = 'running'
+    await f.refresh()
+    // A named steer still needs a confirmed turn to name, and a send now still waits for the turn.
+    expect(await f.send('Synthetic named steer', { delivery: 'steer' })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE' })
+    expect(await f.send('Synthetic named now', { delivery: 'now' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+    expect(await f.send('Synthetic unconfirmed steer')).toMatchObject({ status: 'ok', delivery: 'steer' })
+    expect(f.commands('steer', 'Synthetic unconfirmed steer')).toBe(1)
+    expect(f.control.watcherRecord().operations.find(item => item.action === 'send' && item.delivery === 'steer')).not.toHaveProperty('expectedTurnId')
+  })
+
   it('goes now to a thread whose turn is over, rather than failing as a steer', async () => {
     const f = await fixture(provider)
     await f.turn('finished')

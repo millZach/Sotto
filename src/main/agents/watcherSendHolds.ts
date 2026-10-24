@@ -35,7 +35,7 @@ export function queuedSendHeld(reason: 'paused-followups' | 'failed-followups'):
 
 /**
  * What a Watcher send that names no delivery does (ADR-0130): it steers a running turn, with the turn it reads as running
- * when the send names none, and goes now to a thread whose turn is over, so steering an idle thread never fails. A turn
+ * when the send names none, or unfenced into a running turn Sotto has not confirmed (#1490), and goes now to a thread whose turn is over, so steering an idle thread never fails. A turn
  * still under way that cannot be steered, on a provider that does not steer or ending after its thread reads idle, takes
  * it queued. A thread waiting on the user's card was refused before this.
  */

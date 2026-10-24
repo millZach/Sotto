@@ -2373,7 +2373,8 @@ export class WatcherService implements WatcherControlHooks {
       // Only a start gives a thread its permission; a send leaves the thread's own as the user set it (#1145).
       if (operation.action === 'start') { this.checkPermission(thread, request); this.checkRemoteCeiling(request.id, thread.runtimeMode) }
       if (operation.expectedLastUserMessageId && operation.expectedLastUserMessageId !== nativeHead(thread)) refuse('TARGET_CHANGED', 'This thread received another instruction. Read it before sending.')
-      if (operation.delivery === 'steer' && (thread.status !== 'running' || operation.expectedTurnId !== thread.lastTurn?.id)) refuse('TURN_CHANGED', 'The running turn changed. Nothing was steered.')
+      // A default steer Sotto could not fence to a confirmed turn goes into the turn that runs (ADR-0130, #1490).
+      if (operation.delivery === 'steer' && (thread.status !== 'running' || operation.expectedTurnId !== undefined && operation.expectedTurnId !== thread.lastTurn?.id)) refuse('TURN_CHANGED', 'The running turn changed. Nothing was steered.')
       if (operation.delivery !== 'queue' && operation.delivery !== 'steer' && thread.status === 'running') refuse('THREAD_BUSY', RUNNING_TURN_HOLD, true)
     }
     if (operation.action === 'settle') {
@@ -2720,7 +2721,12 @@ export class WatcherService implements WatcherControlHooks {
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
         if (review) refuse('THREAD_BUSY', queueHold(review, false))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
-        if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || !sent.expectedTurnId || sent.expectedTurnId !== thread.lastTurn?.id || thread.status !== 'running')) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
+        // A named steer needs a confirmed running turn. A default one does not: a turn that resumed after the user answered
+        // its card, or began from a queued prompt, runs before Sotto confirms it, and the default steers it unfenced
+        // (#1490). A paired desktop sends an unfenced steer only as its default.
+        const unfenced = !sent.expectedTurnId && (defaulted || Boolean(imported))
+        if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || thread.status !== 'running'
+          || (sent.expectedTurnId ? sent.expectedTurnId !== thread.lastTurn?.id : !unfenced))) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
         this.checkSettlement(thread)
