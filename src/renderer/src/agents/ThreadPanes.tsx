@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Marked, useMark } from '../components/marks'
 import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
@@ -236,6 +237,8 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const fits = fitsArea(layout, width, height)
   const narrow = split && !fits
   const single = split && (narrow || layout.zoomed)
+  // Two panes stand side by side: the host update pill shrinks to its mark and keeps the last pane's title its room.
+  useMark('side-by-side', split && !single)
   const shownId = focusedId !== null && paneIds.includes(focusedId) ? focusedId : paneIds[0] ?? null
   useLayoutEffect(() => { onVisiblePaneIdsChange?.(single ? shownId === null ? [] : [shownId] : paneIds) }, [single, shownId, paneIds, onVisiblePaneIdsChange])
   const shape = paneShape(layout)
@@ -371,15 +374,16 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
         // compact: the arrangement chosen there may be the one that does not fit, and the other may.
         const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
         const zooms = !narrow || layout.zoomed
-        return <React.Fragment key={id}><section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
-          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined}
+        const controls = (arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1
+        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} data-controls={split ? controls : undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
           {/* The layout controls come first, like the header they sit in, so tabbing leaves a pane from its composer. */}
-          {split ? <div className="thread-pane__controls" data-count={(arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1}>
+          {split ? <div className="thread-pane__controls" data-count={controls}>
             {arranges
               ? <button type="button" className="thread-pane__control tt-focusable" data-pane-chrome aria-pressed={layout.arrangement === 'row'}
                 aria-label="Single row" title={layout.arrangement === 'row' ? 'Arrange in a grid' : 'Arrange in a single row'}
@@ -409,7 +413,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
             </button>
           </div> : null}
           {renderPane(id)}
-        </section>
+        </section>}</Marked>
         {dividersAfter.get(index)}</React.Fragment>
       })}
     </div>
