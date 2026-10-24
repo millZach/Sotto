@@ -254,20 +254,24 @@ const isWatcherRoomUpdate = (value: unknown): value is WatcherRoomUpdate => type
  * answer, and with it updates measured from the last it sent, which this puts back into the whole room before any listener
  * sees it, one assembly for every listener. An update it cannot apply, measured from a room it does not hold, as after a
  * reload, changes nothing it holds: it reads the whole room once, which also tells main to send the next update whole,
- * and hands that room on. An update that arrives during the read is dropped the same way.
+ * and hands that room on. While the read is out, an update it cannot apply was sent before main took the read, and the
+ * read's answer covers it; a whole room main sent after it is held, and updates measured from it apply as ever. One that
+ * cannot apply after such a whole room is read again once the read answers, so the window always ends with main's room.
  */
 function watcherRoomChanges(renderer: IpcRendererAdapter): WatcherBridge['onChanged'] {
   const listeners = new Set<(state: WatcherRoomState) => void>()
-  let held: WatcherRoomHeld | null = null, reading = false
+  // `whole`: a whole room has come since the read went out. `again`: an update after it could not apply.
+  let held: WatcherRoomHeld | null = null, reading = false, whole = false, again = false
   const deliver = (state: WatcherRoomState): void => { for (const listener of [...listeners]) listener(state) }
   const read = (): void => {
     held = null
-    if (reading) return
-    reading = true
+    if (reading) { again ||= whole; return }
+    reading = true; whole = false; again = false
+    const answered = (): void => { reading = false; if (again && listeners.size) read() }
     void invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema).then(result => {
-      reading = false
       if (result.status === 'ok' && listeners.size) deliver(result.state)
-    }, () => { reading = false })
+      answered()
+    }, answered)
   }
   const received: RendererListener = (_event, ...args) => {
     if (args.length !== 1) return
@@ -277,8 +281,9 @@ function watcherRoomChanges(renderer: IpcRendererAdapter): WatcherBridge['onChan
       if (room.success) deliver(room.data)
       return
     }
-    const next = reading && payload.base !== null ? null : applyWatcherRoomUpdate(held, payload)
+    const next = applyWatcherRoomUpdate(held, payload)
     if (next === null || !trustedWatcherRoom.safeParse(next.room).success) { read(); return }
+    if (payload.base === null) whole = true
     held = next
     deliver(next.room)
   }

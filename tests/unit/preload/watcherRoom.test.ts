@@ -97,3 +97,39 @@ it('puts main\'s room updates back into the whole room once for every listener, 
   offFirst(); expect(ipc.removeListener).not.toHaveBeenCalled()
   offSecond(); expect(ipc.removeListener).toHaveBeenCalledWith(WATCHER_CHANGED, expect.any(Function))
 })
+
+it('applies updates measured from a whole room that arrives while it reads, and reads again when one after it cannot apply', async () => {
+  const ipc = preloadElectron().ipcRenderer
+  const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
+  const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
+  const at = (second: number) => `2026-10-23T00:00:${String(second).padStart(2, '0')}.000Z`
+  const room = (second: number, notice: string | null = null): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],
+    receipts: [], recoveryNotice: notice, observedAt: at(second) })
+  const answers: ((value: unknown) => void)[] = []
+  ipc.invoke.mockImplementation(() => new Promise(resolve => { answers.push(resolve) }))
+  // Measured from a room this window never held: it reads the room.
+  receive({}, { revision: 5, base: 4, room: { observedAt: at(1) } })
+  expect(ipc.invoke).toHaveBeenCalledOnce()
+  // Main read the reset before these: a whole room, then an update measured from it, both before the read answers.
+  receive({}, { revision: 6, base: null, room: room(2) })
+  receive({}, { revision: 7, base: 6, room: { recoveryNotice: 'last', observedAt: at(3) } })
+  expect(listener).toHaveBeenLastCalledWith(room(3, 'last'))
+  answers.shift()!({ status: 'ok', state: room(1, 'read') })
+  await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(1, 'read')))
+  // The read did not drop the room it held: the next update still applies, and nothing is read again.
+  receive({}, { revision: 8, base: 7, room: { observedAt: at(4) } })
+  expect(listener).toHaveBeenLastCalledWith(room(4, 'last'))
+  expect(ipc.invoke).toHaveBeenCalledOnce()
+
+  // An update after a whole room that still cannot apply, while a read is out, is read again once that read answers.
+  receive({}, { revision: 20, base: 19, room: { observedAt: at(5) } })
+  receive({}, { revision: 21, base: null, room: room(6) })
+  receive({}, { revision: 23, base: 22, room: { observedAt: at(7) } })
+  expect(ipc.invoke).toHaveBeenCalledTimes(2)
+  answers.shift()!({ status: 'ok', state: room(6, 'second read') })
+  await vi.waitFor(() => expect(ipc.invoke).toHaveBeenCalledTimes(3))
+  answers.shift()!({ status: 'ok', state: room(8, 'third read') })
+  await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(8, 'third read')))
+  expect(ipc.invoke).toHaveBeenCalledTimes(3)
+  off()
+})
