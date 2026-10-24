@@ -36,7 +36,7 @@ import { ForkCard, ForkContext, ForkPress, useForkOptions, type ForkOptions } fr
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
-import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
+import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, StillWorking, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
@@ -111,8 +111,10 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
-  readonly headline: string; readonly error?: string | undefined; readonly changes: readonly TurnChange[]
+function TurnWork({ headline, delegated, error, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
+  readonly headline: string
+  /** The turn's delegated work in a few words, after the headline, so a closed fold still says what it holds. */
+  readonly delegated?: ReactNode; readonly error?: string | undefined; readonly changes: readonly TurnChange[]
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
   readonly failed: boolean
   readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
@@ -136,7 +138,7 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
         onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
-        <span className="thread-work__headline">{headline}</span>
+        <span className="thread-work__headline">{headline}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
       <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
@@ -333,7 +335,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
   readonly threadId: string | undefined
-  /** The delegations this turn's message rooted (ADR-0081), as cards under its reply, never folded with the work. */
+  /** The delegations this turn's message rooted (ADR-0081), as rows in its Worked for fold, or under its reply when nothing folds. */
   readonly delegations?: readonly DelegationView[] | undefined
   readonly briefs?: DelegatedBriefs | undefined
   /** The threads that continue this one, made while this turn was the newest (ADR-0089), as notes under it. */
@@ -395,14 +397,14 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     return <>
       <ActivityGroups groups={replyWork ? boundaries : groups} context={context} />
       {turn.replies.map(message => <React.Fragment key={message.id}>{article(message, message === head ? replyWork : undefined)}</React.Fragment>)}
-      <DelegationCards views={delegations} />
+      <DelegatedWork views={delegations} />
       {continued}
     </>
   }
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<DelegationCards views={delegations} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<DelegatedWork views={delegations} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -413,7 +415,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} delegated={<DelegatedWorkSummary views={delegations} />} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
@@ -421,11 +423,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
         <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} />
       </React.Fragment>)}
       <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
+      <DelegatedWork views={delegations} />
     </TurnWork>
     {shown(-1, finalAt)}
     <ActivityGroups groups={boundaries} context={context} />
     {article(final)}
-    <DelegationCards views={delegations} />
+    <StillWorking views={delegations} />
     {shown(finalAt, Number.POSITIVE_INFINITY)}
     {continued}
   </>
@@ -457,7 +460,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   readonly threadId?: string
   /** Who the replies are from when it is not the provider: Watcher's own conversation. */
   readonly speaker?: 'watcher' | undefined
-  /** Delegation cards by the user's message each answers; under '' those whose message is not shown (ADR-0081). */
+  /** Delegated work by the user's message each answers; under '' those whose message is not shown (ADR-0081). */
   readonly delegations?: ReadonlyMap<string, readonly DelegationView[]> | undefined
   /** In a delegated thread, the briefs that are the delegating thread's words rather than the user's. */
   readonly briefs?: DelegatedBriefs | undefined
@@ -488,7 +491,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
-  <DelegationCards views={delegations?.get('')} />
+  <DelegatedWork views={delegations?.get('')} />
   </>
 })
 
@@ -676,7 +679,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const delegationsOn = useDelegationsEnabled()
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)
   const delegationCards = useShared(useMemo(() => delegationsByTurn(delegations.made, messages), [delegations.made, messages]))
-  const cardWorld = useDelegationCardWorld(state, command)
+  const cardWorld = useDelegationWorld(state, command)
   const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? 'The thread that delegated'
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
@@ -937,10 +940,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationWorldProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} /></MessageRowsContext.Provider>
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote

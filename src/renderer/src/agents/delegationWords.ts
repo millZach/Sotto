@@ -1,5 +1,5 @@
-import { lastUserMessageIdOf, type AgentThread } from '../../../shared/agents'
-import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, type DelegatedView, type DelegationOutcome, type RefusedView } from '../../../shared/delegation'
+import { lastUserMessageIdOf, type AgentRequest, type AgentThread } from '../../../shared/agents'
+import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView, type DelegationWork, type RefusedView } from '../../../shared/delegation'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { clockLabel } from './threadFacts'
 
@@ -139,4 +139,75 @@ export function delegatedNote(parent: string, newest: Pick<DelegatedView, 'outco
   if (userTurn || newest?.outcome === 'paused' && running) return `Your turn is running. ${parent} sends nothing here until it ends.`
   if (newest?.outcome === 'working' || newest?.outcome === 'background') return `If you send here, ${parent} sends nothing more until your turn ends.`
   return undefined
+}
+
+/**
+ * What kind of delegated work a delegation is, as its row's mark and word say it: a code review, a code review on Muse,
+ * or any other kind of work. Not "subagent", which is a provider's own agent (CONTEXT.md, Delegation).
+ */
+export type DelegatedKind = 'review' | 'muse-review' | 'work'
+export const delegatedKind = (work: DelegationWork, provider: string | undefined): DelegatedKind =>
+  work !== 'code-review' ? 'work' : provider === 'muse' ? 'muse-review' : 'review'
+export const delegatedKindWord = (kind: DelegatedKind, work: DelegationWork): string =>
+  kind === 'muse-review' ? 'Muse review' : kind === 'review' ? 'Review' : DELEGATION_WORK_TITLES[work]
+
+/**
+ * Where a row of delegated work stands: the outcome, told apart where the row says more than the outcome does. A brief
+ * still being started or sent is Starting, a working thread that waits on the user's answer is Needs you, and an
+ * answered review is Returned, since what it found is in its thread.
+ */
+export type DelegatedState = DelegationOutcome | 'starting' | 'needs-you' | 'returned'
+export function delegatedState(view: DelegationView, kind: DelegatedKind, asking: boolean): { readonly id: DelegatedState; readonly word: string } {
+  if (view.outcome === 'working' && asking) return { id: 'needs-you', word: 'Needs you' }
+  if (view.outcome === 'working' && view.waiting && !view.wait) return { id: 'starting', word: 'Starting' }
+  if (view.outcome === 'answered' && kind !== 'work') return { id: 'returned', word: 'Returned' }
+  return { id: view.outcome, word: DELEGATION_OUTCOME_WORDS[view.outcome] }
+}
+
+/** A delegation with nothing more to come while no one sends to it: neither working nor running background work. */
+export const settledDelegation = (view: DelegationView): boolean => view.outcome !== 'working' && view.outcome !== 'background'
+
+const MOST_COMMAND = 80
+/** What a delegated thread waits on the user for, from its own pending request. The user answers in that thread. */
+function askingLine(request: AgentRequest): string {
+  if (request.kind === 'question') return 'Waiting for your answer to its question. Open it to answer.'
+  const command = request.context?.command?.trim()
+  const what = command ? `: ${command.length > MOST_COMMAND ? `${command.slice(0, MOST_COMMAND - 1)}…` : command}` : request.context?.toolName ? ` to use ${request.context.toolName}` : ''
+  return `Waiting for your permission${what}. Open it to answer.`
+}
+
+/**
+ * The line under a row of delegated work: why Sotto refused it, what it waits on the user for, or how the wait went, and
+ * for a returned review, where to read what it found. `now` is the clock a wait in progress counts from.
+ */
+export function delegatedLine(view: DelegationView, state: DelegatedState, now: number, request: AgentRequest | undefined): string {
+  if (view.outcome === 'refused') return delegationRefusalLine(view)
+  if (state === 'needs-you' && request) return askingLine(request)
+  const line = delegationWaitLine(view, now)
+  return state === 'returned' ? `${line} Open it to read what it found.` : line
+}
+
+const counted = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`
+/**
+ * A turn's delegated work in a few words, after its Worked for line: how many of each kind, then how many wait on the
+ * user, failed or were refused, so a closed fold still says so. Empty when there is none.
+ */
+export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests'> | undefined): string {
+  const kinds: Record<DelegatedKind, number> = { work: 0, review: 0, 'muse-review': 0 }
+  let asking = 0, failed = 0, refused = 0
+  for (const view of views) {
+    const thread = threadOf(view)
+    kinds[delegatedKind(view.work, thread?.providerId ?? (view.outcome === 'refused' ? view.provider : undefined))]++
+    if (view.outcome === 'working' && thread?.requests.length) asking++
+    if (view.outcome === 'failed' || view.outcome === 'unknown') failed++
+    if (view.outcome === 'refused') refused++
+  }
+  return [
+    kinds.work && counted(kinds.work, 'delegated thread', 'delegated threads'),
+    kinds.review && counted(kinds.review, 'review', 'reviews'),
+    kinds['muse-review'] && (kinds['muse-review'] === 1 ? 'Muse review' : `${kinds['muse-review']} Muse reviews`),
+    asking && `${asking} ${asking === 1 ? 'needs' : 'need'} you`,
+    failed && `${failed} failed`,
+    refused && `${refused} refused`,
+  ].filter(Boolean).join(' · ')
 }
