@@ -98,7 +98,9 @@ export class WatcherPhoneService {
     // What goes next, after Watcher's turn: the user's own follow-ups, read from the queue without copying it (#1229).
     ...(steer ? { followups: (current ? this.control.watcherFollowups(current.id) : []).slice(0, WATCHER_PHONE_FOLLOWUPS_MAX)
       .map(item => ({ itemId: item.id, draftId: item.draftId, text: item.text, status: item.status })) } : {}),
-    working: room.currentOptions?.status === 'running' || starts > 0, recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+    // Watcher working is its own turn, a news turn included, as the desktop shows it. A thread it started says its own
+    // status under Watched: counted here, a few long-running workers kept the phone saying Working while Watcher was idle.
+    working: room.currentOptions?.status === 'running', recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
   }
   /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
   private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {
