@@ -1,3 +1,4 @@
+import { agentThreadPromptsSchema } from './threadPrompts'
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
@@ -176,6 +177,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `fork-thread`, which forks a thread at one of its replies (Fork from here), and
  * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
  * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
+ * `thread-prompts`: the host answers `thread-prompts` with every message the user sent before one, oldest first, from the
+ * thread's store, and takes `load-earlier-messages` with `throughMessageId`, which widens the thread's window back to that
+ * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
+ * the messages the window holds, and sends no `throughMessageId`.
  * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
@@ -220,20 +225,26 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then answers
  * with the handle. Images still go by `stage-attachment`. Only a host whose Owl answer for `attach-any-file` is on lists
  * it; a desktop asks no other host to keep a file, and says to update it.
+ * `provider-cursor`: as `provider-opencode`, for Cursor (ADR-0128). A host sends Cursor's provider row, models, projects and
+ * threads only to a client whose hello accepts it, since a client from before Cursor reads provider IDs against a list
+ * without `cursor` and would refuse a whole shell that names it.
+ * `watcher-cursor`: as `watcher-muse`, for a desktop whose Watcher runs on Cursor, whose identity names `cursor` as its
+ * provider (ADR-0128). It adds no request, field or push. A desktop whose Watcher is on Cursor reads and directs no thread
+ * on a host that does not list it, and says to update that host.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed', 'file-staging'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'host-update', 'opencode-sign-in', 'activity-bodies']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
  * the host leaves the provider's rows, models, projects and threads out of what it sends that client.
  */
-export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode' } as const satisfies Partial<Record<ProviderId, HostFeature>>
+export const PROVIDER_HOST_FEATURES = { opencode: 'provider-opencode', cursor: 'provider-cursor' } as const satisfies Partial<Record<ProviderId, HostFeature>>
 /** The providers a client's hello does not accept the feature of, which the host leaves out of everything it sends it. */
 export function providersUnknownTo(accepts: readonly string[] | undefined): HeldProviders {
   return new Set((Object.entries(PROVIDER_HOST_FEATURES) as [ProviderId, HostFeature][]).filter(([, feature]) => !accepts?.includes(feature)).map(([provider]) => provider))
@@ -430,6 +441,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('activity-body'), threadId: id, activityId: id }).strict(),
   /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
   z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
+  /** Every message the user sent before one, for the message scrubber, read when a pane opens or widens (`thread-prompts`). */
+  z.object({ ...base, op: z.literal('thread-prompts'), threadId: id, beforeMessageId: id }).strict(),
   /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
     file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
@@ -533,6 +546,8 @@ export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), c
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
 /** One activity record whole as a host answers `activity-body`, or null when the thread no longer has it. */
 export const hostActivityBodySchema = agentActivitySchema.nullable()
+/** The prompts above a pane's window as a host answers `thread-prompts`, or null when its store cannot say (ADR-0109). */
+export const hostThreadPromptsSchema = agentThreadPromptsSchema.nullable()
 /** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
 export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })

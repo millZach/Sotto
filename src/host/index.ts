@@ -158,7 +158,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     })
     const pairing = new PairedClients(directory)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
-    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}),
+    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
         const client = { clientId, user: pairing.list().find(item => item.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' as const }
         const state = await runtime.hostService.command({ type: 'connect', provider }, client)

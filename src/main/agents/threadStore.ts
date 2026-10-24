@@ -10,6 +10,7 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt, type AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
@@ -791,6 +792,49 @@ export class ThreadStore {
   message(threadId: string, messageId: string): AgentMessage | undefined {
     const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND message_id = ?').get(threadId, messageId)
     return row === undefined ? undefined : messageOf(row)
+  }
+
+  /**
+   * The messages the user sent before this one, oldest first, each with its turn's last reply with words: what the message
+   * scrubber marks above a pane's window (ADR-0109). Only the start of each message and the start and end of each reply
+   * are read, a page of the newest at a time: `next` is the message the next page is read before, absent once the page
+   * reaches the first. A message the store does not hold has nothing before it.
+   */
+  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompts {
+    const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (before === null || before === undefined) return { prompts: [] }
+    // Only the newest prompts an answer carries are read, so a longer history costs no more. The page is counted in the
+    // messages the user's role sent, wake-ups among them, so where it starts says whether there is more.
+    const start = this.statement(`SELECT position, message_id FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)
+    const from = start?.position ?? 0
+    const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
+    const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
+      CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
+      FROM messages WHERE thread_id = ? AND position >= ? AND position < ? AND (role = 'user' OR trim(text, char(32, 9, 10, 11, 12, 13)) <> '') ORDER BY position`).all(threadId, from, before)
+    const prompts: { -readonly [K in keyof AgentThreadPrompt]: AgentThreadPrompt[K] }[] = []
+    let current: typeof prompts[number] | undefined
+    for (const row of rows) {
+      const id = String(row.message_id)
+      if (row.role === 'user') {
+        // A wake-up is Sotto's and starts a turn of its own, so what answers it is no prompt's reply.
+        if (skip.has(id)) { current = undefined; continue }
+        const attached = row.attachments === null || row.attachments === undefined ? 0 : (JSON.parse(String(row.attachments)) as unknown[]).length
+        current = { id, createdAt: String(row.created_at), text: clipText(String(row.head), THREAD_PROMPT_TEXT), ...(attached > 0 ? { attachments: Math.min(attached, 1000) } : {}) }
+        prompts.push(current)
+      } else if (current) {
+        const tail = row.tail === null || row.tail === undefined ? null : String(row.tail)
+        // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
+        if (tail !== null || String(row.head).trim().length > 0) current.reply = { id, text: promptReplyText(String(row.head), tail) }
+      }
+    }
+    return { prompts, ...(start !== undefined && Number(from) > 0 ? { next: String(start.message_id) } : {}) }
+  }
+
+  /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */
+  turnsFrom(threadId: string, messageId: string): number | undefined {
+    const at = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (at === null || at === undefined) return undefined
+    return Number(this.statement(`SELECT COUNT(*) AS turns FROM messages WHERE thread_id = ? AND role = 'user' AND position >= ?`).get(threadId, at)!.turns)
   }
 
   /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */

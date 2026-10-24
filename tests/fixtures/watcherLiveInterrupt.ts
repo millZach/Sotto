@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AgentHost, AgentHostResult } from '../../src/main/agents/host'
 
 /** Count only replies to this thread's held card. Keep wire IDs in memory, never record frames. */
-export function observeWatcherLivePermissionAnswers(host: AgentHost, provider: 'codex' | 'claude' | 'grok' | 'muse', id: string, answered: () => void): void {
+export function observeWatcherLivePermissionAnswers(host: AgentHost, provider: 'codex' | 'claude' | 'grok' | 'muse' | 'cursor', id: string, answered: () => void): void {
   type Wire = { write(frame: unknown): unknown; answer?(id: string | number, result: unknown): Promise<void>; reply?(id: string | number, result: unknown): Promise<void> }
   const wrap = (wire: Wire, ids: Set<string | number>) => {
     const write = wire.write.bind(wire)
@@ -42,6 +42,14 @@ export function observeWatcherLivePermissionAnswers(host: AgentHost, provider: '
         return request(method, params)
       }
     }
+  } else if (provider === 'cursor') {
+    // Cursor's requests are answered on the process that asked, which each request keeps with its thread's connection.
+    const native = host as unknown as { pending: Map<string, { threadId: string; wireId: string | number; connection: { rpc: Wire } }> }
+    const clients = new Map<Wire, Set<string | number>>()
+    for (const pending of native.pending.values()) if (pending.threadId === id) {
+      const ids = clients.get(pending.connection.rpc) ?? new Set(); ids.add(pending.wireId); clients.set(pending.connection.rpc, ids)
+    }
+    for (const [client, ids] of clients) wrap(client, ids)
   } else {
     const native = host as unknown as { pending: Map<string, { threadId: string; wireId: string | number; rpc: Wire }> }
     const clients = new Map<Wire, Set<string | number>>()
@@ -58,13 +66,16 @@ export function observeWatcherLivePermissionAnswers(host: AgentHost, provider: '
  * without a permission reply, including during subsequent disconnect cleanup.
  * This changes no production permission or interruption behavior.
  */
-export async function interruptWatcherLiveTurn(host: AgentHost, provider: 'codex' | 'claude' | 'grok' | 'muse', id: string): Promise<AgentHostResult> {
+export async function interruptWatcherLiveTurn(host: AgentHost, provider: 'codex' | 'claude' | 'grok' | 'muse' | 'cursor', id: string): Promise<AgentHostResult> {
   if (provider === 'codex') {
     const native = host as unknown as { requests: Map<string, { sessionId: string }>; removeRequest(id: string): void }
     for (const [requestId, pending] of native.requests) if (pending.sessionId === id) native.removeRequest(requestId)
   } else if (provider === 'claude') {
     const native = host as unknown as { runtimes: Map<string, { requests: Map<string, unknown> }> }
     native.runtimes.get(id)?.requests.clear()
+  } else if (provider === 'cursor') {
+    const native = host as unknown as { pending: Map<string, { threadId: string }>; removeRequest(requestId: string): void }
+    for (const [requestId, pending] of [...native.pending]) if (pending.threadId === id) native.removeRequest(requestId)
   } else {
     type Pending = { threadId: string }
     const native = host as unknown as { pending: Map<string, Pending>; removeRequest(pending: Pending): void }
