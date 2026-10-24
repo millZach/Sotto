@@ -1,4 +1,4 @@
-import type { WatcherBridge, WatcherRoomListChange, WatcherRoomState, WatcherRoomUpdate } from '../../shared/watcherRoom'
+import type { WatcherBridge, WatcherRoomListChange, WatcherRoomPatch, WatcherRoomState, WatcherRoomUpdate } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { samePlainData } from './agentStateBroadcast'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
@@ -9,7 +9,8 @@ type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
 
 /**
  * The window's room updates (#1450): each carries what changed since the last one the window was sent, a list's
- * entries by place, so a request or receipt rides only when it changes. A room in which nothing changed but the time
+ * entries by place and a changed record as what changed in it, so a request, receipt or participation rides only when
+ * it changes, and a watched thread whose status changed does not carry every participation it has had. A room in which nothing changed but the time
  * it was read at is not sent at all. The rooms held are the ones last sent, read and never written into, as everything
  * the room hands out is (#1327). Only an update `deliver()` reports as sent becomes the base the next is measured
  * from. `reset()` drops the base, so the next update is whole: main calls it when the window reads the whole room, as
@@ -26,22 +27,10 @@ export class WatcherRoomBroadcast {
     let update: WatcherRoomUpdate
     if (base === null) update = { revision: this.revision + 1, base: null, room }
     else {
-      const held = base.room as Record<string, unknown>, next = room as Record<string, unknown>
-      const changed: Record<string, unknown> = {}, lists: Record<string, WatcherRoomListChange> = {}, removed: (keyof WatcherRoomState)[] = []
-      let any = false
-      for (const key in next) {
-        if (key === 'observedAt') continue
-        const before = held[key], after = next[key]
-        if (before === after && (before !== undefined || Object.hasOwn(held, key))) continue
-        if (Array.isArray(before) && Array.isArray(after)) {
-          const change = listChange(before, after)
-          if (change) { lists[key] = change; any = true }
-        } else if (!Object.hasOwn(held, key) || !samePlainData(before, after)) { changed[key] = after; any = true }
-      }
-      for (const key in held) if (!Object.hasOwn(next, key)) { removed.push(key as keyof WatcherRoomState); any = true }
-      if (!any) return
-      update = { revision: this.revision + 1, base: base.revision, room: { ...changed, observedAt: room.observedAt },
-        ...Object.keys(lists).length ? { lists } : {}, ...removed.length ? { removed } : {} }
+      const patch = recordPatch(base.room, room, 'observedAt')
+      if (!patch) return
+      update = { revision: this.revision + 1, base: base.revision, room: { ...patch.set, observedAt: room.observedAt },
+        ...patch.lists ? { lists: patch.lists } : {}, ...patch.removed ? { removed: patch.removed as (keyof WatcherRoomState)[] } : {} }
     }
     this.revision = update.revision
     const resets = this.resets
@@ -52,14 +41,44 @@ export class WatcherRoomBroadcast {
   reset(): void { this.base = null; this.resets++ }
 }
 
-/** The entries of `after` that differ from the entry at the same place in `before`, or undefined when none does. */
-function listChange(before: readonly unknown[], after: readonly unknown[]): WatcherRoomListChange | undefined {
-  const at: [number, unknown][] = []
-  for (let index = 0; index < after.length; index++) {
-    const entry = after[index]
-    if (index >= before.length || entry !== before[index] && !samePlainData(before[index], entry)) at.push([index, entry])
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+
+/**
+ * What changed from `before` to `after`, two records, or undefined when nothing did: each field set anew, each list as
+ * its change, and the fields that went. `ignored` is never compared.
+ */
+function recordPatch(before: object, after: object, ignored?: string): WatcherRoomPatch | undefined {
+  const held = before as Record<string, unknown>, next = after as Record<string, unknown>
+  const set: Record<string, unknown> = {}, lists: Record<string, WatcherRoomListChange> = {}, removed: string[] = []
+  let any = false
+  for (const key in next) {
+    if (key === ignored) continue
+    const was = held[key], now = next[key]
+    if (was === now && (was !== undefined || Object.hasOwn(held, key))) continue
+    if (Array.isArray(was) && Array.isArray(now)) {
+      const change = listChange(was, now)
+      if (change) { lists[key] = change; any = true }
+    } else if (!Object.hasOwn(held, key) || !samePlainData(was, now)) { set[key] = now; any = true }
   }
-  return at.length || before.length !== after.length ? { length: after.length, at } : undefined
+  for (const key in held) if (key !== ignored && !Object.hasOwn(next, key)) { removed.push(key); any = true }
+  if (!any) return undefined
+  return { ...Object.keys(set).length ? { set } : {}, ...Object.keys(lists).length ? { lists } : {}, ...removed.length ? { removed } : {} }
+}
+
+/**
+ * The entries of `after` that differ from the entry at the same place in `before`, or undefined when none does: a
+ * record that was a record there as what changed in it, anything else whole.
+ */
+function listChange(before: readonly unknown[], after: readonly unknown[]): WatcherRoomListChange | undefined {
+  const at: [number, unknown][] = [], patch: [number, WatcherRoomPatch][] = []
+  for (let index = 0; index < after.length; index++) {
+    const entry = after[index], was = before[index]
+    if (index < before.length && (entry === was || samePlainData(was, entry))) continue
+    const changed = index < before.length && isRecord(was) && isRecord(entry) ? recordPatch(was, entry) : undefined
+    if (changed) patch.push([index, changed]); else at.push([index, entry])
+  }
+  return at.length || patch.length || before.length !== after.length ? { length: after.length, at, ...patch.length ? { patch } : {} } : undefined
 }
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */

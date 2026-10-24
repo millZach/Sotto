@@ -288,7 +288,7 @@ const NAMES: Record<Kind, string> = {
   providerIdParses: 'reads of a provider out of a public model or project ID (how stable filters the providers it holds)',
   schemaErrors: 'schema failures (each builds an error)',
   watcherRoomBuilds: 'builds of Watcher\'s room state',
-  watcherRoomRecords: 'records of Watcher\'s history (requests, receipts, earlier Watchers) sent to the window\'s room',
+  watcherRoomRecords: 'records of Watcher\'s history (requests, receipts, earlier Watchers, watched threads\' participations) sent to the window\'s room',
 }
 const SCENARIOS = {
   '1 streaming': 'one thread streaming, per update',
@@ -363,7 +363,9 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * 119 records per streamed update on one thread, 620 records per answer-draft save, per keystroke save and per thread
  * opened, and five builds and 930 records per send. Now the room is built when an update goes and the update carries only
  * what changed: 0.38 builds and no records per streamed update, two builds and no records per save or open, three builds
- * and no records per send. The desktop room's copy went with it: Owl makes one copy fewer per streamed update (8.85, from
+ * and no records per send. The threads that stream were let go by Watcher's earlier requests, so their rows carry that
+ * history; a row that changes sends only what changed in it, never its participations again (without that, 62 records
+ * per streamed update on one thread and 320 per save, growing with the history). The desktop room's copy went with it: Owl makes one copy fewer per streamed update (8.85, from
  * 9.85), two fewer per action and five fewer per send, and copies 1,772 objects per streamed update on one thread, from
  * 4,372. Every count lowered has its budget lowered to the new count with the usual room, or exactly for #1248's.
  */

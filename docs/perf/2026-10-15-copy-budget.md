@@ -273,7 +273,10 @@ to the window. Owl, owner's scale, before and after:
 | Opening a thread | 34 to 32 | 26,945 to 21,745 | 14,490 | 2 | 620 to 0 |
 | Sending a message | 136 to 131 | 59,923 to 46,923 | 37,733 to 34,077 | 5 to 3 | 930 to 0 |
 
-Owl's copied objects no longer grow with the history while threads stream or when an answer draft is saved; what still
+The history records count each watched thread's participations too: the threads that stream were let go by earlier
+requests, and a row that changes goes as what changed in it, so none of them rides again (sent whole, it was 62 records
+per streamed update on one thread and 320 per save). Owl's copied objects no longer grow with the history while threads
+stream or when an answer draft is saved; what still
 grows is a command copying Watcher's whole record (#1248). Stable is unchanged. In the streaming copy budget Owl makes
 8.5 to 9.45 copies per update, from 9.3 to 9.8, and its budget is 9.5.
 

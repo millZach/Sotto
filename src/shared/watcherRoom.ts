@@ -139,13 +139,21 @@ export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
 type WatcherRoomRow = WatcherRoomState['watchedThreads'][number]
 
 /**
- * A list of the room's that changed, as a room update carries it (#1450): its length now, and each entry that differs
- * from the entry at the same place in the room the update is measured from, with its place. Entries past the old
- * length are always listed. A request or receipt that did not change does not ride.
+ * A list of the room's that changed, as a room update carries it (#1450): its length now, each entry that differs from
+ * the entry at the same place in the room the update is measured from, whole in `at` or, when both are records, as what
+ * changed in it in `patch`. Entries past the old length are always whole. A request, receipt or participation that did
+ * not change does not ride, nor does the rest of a watched thread's row when only its status changed.
  */
 export interface WatcherRoomListChange {
   readonly length: number
   readonly at: readonly (readonly [number, unknown])[]
+  readonly patch?: readonly (readonly [number, WatcherRoomPatch])[]
+}
+/** What changed in one record of a list: the fields set, the fields that went and the lists that changed, the same way. */
+export interface WatcherRoomPatch {
+  readonly set?: Readonly<Record<string, unknown>>
+  readonly removed?: readonly string[]
+  readonly lists?: Readonly<Record<string, WatcherRoomListChange>>
 }
 /**
  * What crosses `WATCHER_CHANGED` to the window while the streaming-publish-cost answer is on (#1450): the room whole, or
@@ -168,31 +176,51 @@ export interface WatcherRoomUpdate {
 export interface WatcherRoomHeld { readonly revision: number; readonly room: WatcherRoomState }
 
 const isPlace = (value: unknown, length: number): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) < length
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/** The list `change` makes of `before`, or null when it would leave a gap or patch what is not a record. */
+function applyListChange(before: unknown, change: WatcherRoomListChange): unknown[] | null {
+  if (!isRecord(change) || !Number.isInteger(change.length) || change.length < 0 || !Array.isArray(change.at)) return null
+  const list: unknown[] = Array.isArray(before) ? before.slice(0, change.length) : []
+  const known = list.length
+  let filled = 0
+  for (const entry of change.at) {
+    if (!Array.isArray(entry) || !isPlace(entry[0], change.length)) return null
+    if (entry[0] >= known && !(entry[0] in list)) filled++
+    list[entry[0]] = entry[1]
+  }
+  if (known + filled !== change.length) return null
+  if (change.patch !== undefined && !Array.isArray(change.patch)) return null
+  for (const entry of change.patch ?? []) {
+    if (!Array.isArray(entry) || !isPlace(entry[0], list.length)) return null
+    const patched = applyPatch(list[entry[0]], entry[1])
+    if (patched === null) return null
+    list[entry[0]] = patched
+  }
+  return list
+}
+/** The record `patch` makes of `before`, a new record sharing every field it did not name, or null when it cannot. */
+function applyPatch(before: unknown, patch: WatcherRoomPatch): Record<string, unknown> | null {
+  if (!isRecord(before) || typeof patch !== 'object' || patch === null || patch.removed !== undefined && !Array.isArray(patch.removed)) return null
+  const after: Record<string, unknown> = { ...before, ...patch.set }
+  for (const key of patch.removed ?? []) delete after[key]
+  for (const [key, change] of Object.entries(patch.lists ?? {})) {
+    const list = applyListChange(before[key], change)
+    if (list === null) return null
+    after[key] = list
+  }
+  return after
+}
 /**
  * The room `update` makes of `held`, or null when it cannot be applied: it is measured from another update, or a list
- * would be left with a gap. A list or field the update does not name is the very one `held` had, so a reader that
- * compares by identity sees only what changed.
+ * would be left with a gap. A list, record or field the update does not name is the very one `held` had, so a reader
+ * that compares by identity sees only what changed.
  */
 export function applyWatcherRoomUpdate(held: WatcherRoomHeld | null, update: WatcherRoomUpdate): WatcherRoomHeld | null {
   if (update.base === null) return { revision: update.revision, room: update.room as WatcherRoomState }
   if (held === null || held.revision !== update.base) return null
-  const room: Record<string, unknown> = { ...held.room, ...update.room }
-  for (const key of update.removed ?? []) delete room[key]
-  for (const [key, change] of Object.entries(update.lists ?? {}) as [string, WatcherRoomListChange][]) {
-    const before = (held.room as Record<string, unknown>)[key]
-    if (!Number.isInteger(change.length) || change.length < 0 || !Array.isArray(change.at)) return null
-    const list: unknown[] = Array.isArray(before) ? before.slice(0, change.length) : []
-    const known = list.length
-    let filled = 0
-    for (const entry of change.at) {
-      if (!Array.isArray(entry) || !isPlace(entry[0], change.length)) return null
-      if (entry[0] >= known && !(entry[0] in list)) filled++
-      list[entry[0]] = entry[1]
-    }
-    if (known + filled !== change.length) return null
-    room[key] = list
-  }
-  return { revision: update.revision, room: room as WatcherRoomState }
+  const room = applyPatch(held.room, { set: update.room as Record<string, unknown>, ...update.removed ? { removed: update.removed } : {},
+    ...update.lists ? { lists: update.lists as Record<string, WatcherRoomListChange> } : {} })
+  return room === null ? null : { revision: update.revision, room: room as WatcherRoomState }
 }
 
 /**

@@ -117,12 +117,34 @@ describe('desktop Watcher room publication', () => {
       f.publish(before); f.clock.tick()
       f.publish(after)
       const update = structuredClone(f.send.mock.calls[1]![0]) as WatcherRoomUpdate
+      // The closed request rides as what changed in it, the new one whole.
       expect(update).toEqual({ revision: 2, base: 1, room: { creationStopped: false, observedAt: after.observedAt },
-        lists: { requests: { length: 52, at: [[50, after.requests[50]], [51, after.requests[51]]] } }, removed: ['handover'] })
+        lists: { requests: { length: 52, at: [[51, after.requests[51]]], patch: [[50, { set: { state: 'closed', closedAt: at } }]] } }, removed: ['handover'] })
       // The window's room is the room main built, and keeps the closed requests it already held.
       expect(f.rooms[1]).toEqual(after)
       expect(f.rooms[1]!.requests[0]).toBe(f.rooms[0]!.requests[0])
       expect(f.rooms[1]!.watchedThreads).toBe(f.rooms[0]!.watchedThreads)
+    } finally { f.desktop!.dispose() }
+  })
+
+  it('sends a watched thread whose status changed without the participations it has had, and the window keeps them', () => {
+    const f = fixture(), hostId = randomUUID(), target = { hostId, threadId: 'worker' }
+    type Participant = WatcherRoomState['watchedThreads'][number]['participation'][number]
+    const participation: Participant[] = Array.from({ length: 200 }, () => ({ target, requestId: randomUUID(), startedBy: 'watcher', generation: 0,
+      state: 'relinquished', lastUserMessageId: null, promptCount: 1 }))
+    const row = (status: 'running' | 'idle', parts = participation) => ({ target, title: 'Worker', status, connected: true, settled: false, backgroundWorkCount: 0,
+      waitsOn: [], participation: [...parts] })
+    const taking: Participant = { ...participation[0]!, requestId: randomUUID(), state: 'participating' }
+    try {
+      f.publish({ ...room('rows'), watchedThreads: [row('running')] }); f.clock.tick()
+      // Rebuilt as Watcher builds it: a new row and a new list of the same participations.
+      f.publish({ ...room('rows'), watchedThreads: [row('idle')] }); f.clock.tick()
+      f.publish({ ...room('rows'), watchedThreads: [row('idle', [...participation, taking])] }); f.clock.tick()
+      const [, idle, taken] = f.send.mock.calls.map(([payload]) => structuredClone(payload) as WatcherRoomUpdate)
+      expect(idle!.lists).toEqual({ watchedThreads: { length: 1, at: [], patch: [[0, { set: { status: 'idle' } }]] } })
+      expect(taken!.lists).toEqual({ watchedThreads: { length: 1, at: [], patch: [[0, { lists: { participation: { length: 201, at: [[200, taking]] } } }]] } })
+      expect(f.rooms.at(-1)!.watchedThreads).toEqual([row('idle', [...participation, taking])])
+      expect(f.rooms.at(-1)!.watchedThreads[0]!.participation[0]).toBe(f.rooms[0]!.watchedThreads[0]!.participation[0])
     } finally { f.desktop!.dispose() }
   })
 
@@ -147,6 +169,9 @@ describe('desktop Watcher room publication', () => {
     expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 2, at: [[1, 'one']] } } })).toBeNull()
     expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [[1, 'one']] } } })).toBeNull()
     expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [[0, 'zero']] } } })?.room.requests).toEqual(['zero'])
+    // A patch reaches only a record that is there.
+    expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [], patch: [[0, { set: { state: 'closed' } }]] } } })).toBeNull()
+    expect(applyWatcherRoomUpdate(held, { revision: 4, base: 3, room: {}, lists: { requests: { length: 1, at: [[0, 'zero']], patch: [[0, { set: { state: 'closed' } }]] } } })).toBeNull()
   })
 
   it('does not retry an absent window and recovers with a complete get before any older trailing send', async () => {
