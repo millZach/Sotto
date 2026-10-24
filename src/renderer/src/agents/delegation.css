@@ -6,11 +6,13 @@
    delegation in its turn's Worked for fold, or under the reply when nothing folds, and the rows still working under a
    finished turn's reply. The kind of work is a mark and a word, the state a ring and a word, never colour alone. */
 .delegated-work { display: grid; gap: 10px; margin: 0 0 16px; padding: 0; list-style: none; }
-.thread-work__body > .delegated-work { margin: 4px 0 12px 1px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
 .thread-message ~ .delegated-work { margin-top: -12px; margin-bottom: 28px; }
+/* In the fold, after any folded reply: the fold's own ledger edge and spacing. */
+.thread-work__body > ul.delegated-work { margin: 4px 0 12px 1px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
 .delegated-work__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; min-width: 0; font-size: 14px; }
 .delegated-work__glyph { flex: none; color: var(--tt-text-muted); }
-.delegated-work__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; overflow: hidden; color: var(--tt-text); font-weight: 500; white-space: nowrap; }
+/* The name cell does not clip, so a focused link's ring shows whole; the link truncates itself. */
+.delegated-work__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--tt-text); font-weight: 500; white-space: nowrap; }
 .delegated-work__name > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .delegated-work__kind { flex: none; color: var(--tt-text-2); font-weight: 400; }
 .delegated-work__refused { color: var(--tt-text); }

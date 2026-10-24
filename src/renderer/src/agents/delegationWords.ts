@@ -1,10 +1,10 @@
 import { lastUserMessageIdOf, type AgentRequest, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView, type DelegationWork, type RefusedView } from '../../../shared/delegation'
-import { isThreadTurnRunning } from '../../../shared/threadActivity'
+import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
 import { clockLabel } from './threadFacts'
 
 /**
- * The words delegation shows in the window (#1029, design A): a card's outcome and its wait line, "Delegated by", and
+ * The words delegation shows in the window (#1029, design A): a row of delegated work's outcome and its wait line, "Delegated by", and
  * what Stop will stop. Outcomes are worded as Watcher's are, as the placement prototype words them.
  */
 export const DELEGATION_OUTCOME_WORDS: Readonly<Record<DelegationOutcome, string>> = {
@@ -33,8 +33,8 @@ const between = (from: string | undefined, to: string | undefined): number | und
 }
 
 /**
- * The line under a card: how the delegating thread's wait went, or what the outcome means for it. `now` is the clock a
- * wait in progress counts from. The card is in the delegating thread, so it is "this thread"; Tools › Agents names the
+ * The line under a row of delegated work: how the delegating thread's wait went, or what the outcome means for it. `now` is the clock a
+ * wait in progress counts from. The row is in the delegating thread, so it is "this thread"; Tools › Agents names the
  * delegating thread instead where it is not the roster's own (`delegator`).
  */
 export function delegationWaitLine(view: DelegatedView, now: number, delegator?: string): string {
@@ -76,9 +76,9 @@ export function delegationWaitLine(view: DelegatedView, now: number, delegator?:
 }
 
 /**
- * Why Sotto refused a delegation, in the words the user reads on its card in the delegating thread ("this thread"):
+ * Why Sotto refused a delegation, in the words the user reads on its row in the delegating thread ("this thread"):
  * what turned it down, that nothing was started or sent, and what would let it through where the user can change that.
- * Main's own words for a refusal were written for the agent that asked, so the card words the rule itself.
+ * Main's own words for a refusal were written for the agent that asked, so the row words the rule itself.
  */
 export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusal'>): string {
   const start = view.action === 'start'
@@ -158,7 +158,7 @@ export const delegatedKindWord = (kind: DelegatedKind, work: DelegationWork): st
  */
 export type DelegatedState = DelegationOutcome | 'starting' | 'needs-you' | 'returned'
 export function delegatedState(view: DelegationView, kind: DelegatedKind, asking: boolean): { readonly id: DelegatedState; readonly word: string } {
-  if (view.outcome === 'working' && asking) return { id: 'needs-you', word: 'Needs you' }
+  if (!settledDelegation(view) && asking) return { id: 'needs-you', word: 'Needs you' }
   if (view.outcome === 'working' && view.waiting && !view.wait) return { id: 'starting', word: 'Starting' }
   if (view.outcome === 'answered' && kind !== 'work') return { id: 'returned', word: 'Returned' }
   return { id: view.outcome, word: DELEGATION_OUTCOME_WORDS[view.outcome] }
@@ -166,6 +166,15 @@ export function delegatedState(view: DelegationView, kind: DelegatedKind, asking
 
 /** A delegation with nothing more to come while no one sends to it: neither working nor running background work. */
 export const settledDelegation = (view: DelegationView): boolean => view.outcome !== 'working' && view.outcome !== 'background'
+
+/**
+ * What a delegated thread still at work waits on the user for, as its sidebar row picks it: a permission ahead of a
+ * question, and nothing for a closed thread or a delegation that has settled.
+ */
+export function pendingRequestOf(view: DelegationView, thread: Pick<AgentThread, 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined): AgentRequest | undefined {
+  if (thread === undefined || settledDelegation(view) || isThreadClosed(thread)) return undefined
+  return thread.requests.find(request => request.kind === 'permission') ?? thread.requests[0]
+}
 
 const MOST_COMMAND = 80
 /** What a delegated thread waits on the user for, from its own pending request. The user answers in that thread. */
@@ -180,27 +189,30 @@ function askingLine(request: AgentRequest): string {
  * The line under a row of delegated work: why Sotto refused it, what it waits on the user for, or how the wait went, and
  * for a returned review, where to read what it found. `now` is the clock a wait in progress counts from.
  */
-export function delegatedLine(view: DelegationView, state: DelegatedState, now: number, request: AgentRequest | undefined): string {
+export function delegatedLine(view: DelegationView, state: DelegatedState, now: number, request: AgentRequest | undefined, listed = true): string {
   if (view.outcome === 'refused') return delegationRefusalLine(view)
   if (state === 'needs-you' && request) return askingLine(request)
   const line = delegationWaitLine(view, now)
-  return state === 'returned' ? `${line} Open it to read what it found.` : line
+  // Only a thread the window still lists can be opened to read what it found.
+  return state === 'returned' && listed ? `${line} Open it to read what it found.` : line
 }
 
 const counted = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`
 /**
- * A turn's delegated work in a few words, after its Worked for line: how many of each kind, then how many wait on the
- * user, failed or were refused, so a closed fold still says so. Empty when there is none.
+ * A turn's delegated work in a few words, after its Worked for line: how many of each kind were started or sent, then
+ * how many wait on the user, failed, are unknown or were refused, so a closed fold still says so. A refused delegation
+ * started nothing, so it counts only as refused. Empty when there is none.
  */
-export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests'> | undefined): string {
+export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined): string {
   const kinds: Record<DelegatedKind, number> = { work: 0, review: 0, 'muse-review': 0 }
-  let asking = 0, failed = 0, refused = 0
+  let asking = 0, failed = 0, unknown = 0, refused = 0
   for (const view of views) {
+    if (view.outcome === 'refused') { refused++; continue }
     const thread = threadOf(view)
-    kinds[delegatedKind(view.work, thread?.providerId ?? (view.outcome === 'refused' ? view.provider : undefined))]++
-    if (view.outcome === 'working' && thread?.requests.length) asking++
-    if (view.outcome === 'failed' || view.outcome === 'unknown') failed++
-    if (view.outcome === 'refused') refused++
+    kinds[delegatedKind(view.work, thread?.providerId)]++
+    if (pendingRequestOf(view, thread)) asking++
+    if (view.outcome === 'failed') failed++
+    if (view.outcome === 'unknown') unknown++
   }
   return [
     kinds.work && counted(kinds.work, 'delegated thread', 'delegated threads'),
@@ -208,6 +220,7 @@ export function delegatedSummary(views: readonly DelegationView[], threadOf: (vi
     kinds['muse-review'] && (kinds['muse-review'] === 1 ? 'Muse review' : `${kinds['muse-review']} Muse reviews`),
     asking && `${asking} ${asking === 1 ? 'needs' : 'need'} you`,
     failed && `${failed} failed`,
+    unknown && `${unknown} unknown`,
     refused && `${refused} refused`,
   ].filter(Boolean).join(' · ')
 }

@@ -15,7 +15,7 @@ npx playwright test tests/e2e/thread-delegation.spec.ts -g "delegates to a Codex
 
 ## What was checked
 
-`threadDelegation.test.tsx` draws the transcript with delegations of every kind and state:
+`threadDelegation.test.tsx` draws the transcript with delegations of each kind, and tests the state, line and summary words for every state on their own:
 
 - A turn with nothing else to fold shows its rows under its reply, before the next message. Each row has the kind of work as a mark and a word, the delegated thread as a link that opens it, its provider and machine, its state and the wait line. The link's description reads the meta and the line.
 - A refused delegation is a row that links nowhere and says why.
@@ -24,11 +24,11 @@ npx playwright test tests/e2e/thread-delegation.spec.ts -g "delegates to a Codex
 `thread-delegation.spec.ts` runs the real app on the Owl track with the fake Claude and Codex CLIs:
 
 - A Claude thread delegates a review and a building job to Codex, and one research delegation is refused. The review row reads Working and the wait, then Returned with "Open it to read what it found." once Codex answers. The building row says the thread did not wait. The refused row says why, with no link.
-- At 1280x800 and 820x560, in dark and light and in Citrine dark and light at 820x560, nothing in the pane is wider than the pane. Every row's words, the Worked for summary and the Still working heading meet 4.5:1 against what they sit on.
+- At 1280x800 and 820x560, in dark and light and in Citrine dark and light at 820x560, nothing in the pane is wider than the pane, and every row's words meet 4.5:1 against what they sit on.
 - By keyboard, the row's link opens the delegated thread, and its "Delegated by" links back.
 - Stop stops the working thread too, and its row reads Stopped.
 
-The fixture's Claude turn writes no reply, so the spec's turns never fold. The fold, its summary and the Still working line are checked in the unit test, not in the running app.
+The fixture's Claude turn writes no reply, so the spec's turns never fold. The fold, its summary and the Still working line, their contrast and their wrapping at 820x560 are checked in the unit test only, not in the running app.
 
 ## Screenshots
 
@@ -41,6 +41,7 @@ The fixture's Claude turn writes no reply, so the spec's turns never fold. The f
 
 - A delegation's findings are its thread's reply, which the window is never sent (ADR-0081: identities, outcome and timing only). So a returned review says Returned and opens its thread; it does not count or quote its findings.
 - Delegation has no queue, so there is no Queued. A brief Sotto is still starting or sending reads Starting.
+- An accepted delegation's record names no provider, so a Muse review whose thread the window no longer lists reads **Review**, with no provider and no "Open it to read what it found".
 - Subagents a provider runs inside a thread, such as Claude Code's Agent tool, were already activity rows in the fold, under the word "agent action" and the Bot mark. They are unchanged.
 
 ## Not verified

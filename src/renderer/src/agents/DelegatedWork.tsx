@@ -6,7 +6,7 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
+import { DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread } from '../tools/delegatedRoster'
 import './delegation.css'
@@ -64,7 +64,8 @@ function RowLine({ view, state, id, world, request }: { readonly view: Delegatio
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [ticking])
-  return <p id={id} className="delegated-work__line">{delegatedLine(view, state, world.now ?? now, request)}</p>
+  const listed = view.thread !== undefined && world.thread(view.thread) !== undefined
+  return <p id={id} className="delegated-work__line">{delegatedLine(view, state, world.now ?? now, request, listed)}</p>
 }
 
 /**
@@ -81,12 +82,12 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const provider = thread?.providerId ?? (view.outcome === 'refused' ? view.provider : undefined)
   const kind = delegatedKind(view.work, provider)
   const Glyph = KIND_GLYPHS[kind]
-  const request = view.outcome === 'working' ? thread?.requests[0] : undefined
+  const request = pendingRequestOf(view, thread)
   const state = delegatedState(view, kind, request !== undefined)
   const refused = view.outcome === 'refused'
   const name = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
   const kindWord = delegatedKindWord(kind, view.work)
-  const label = refused ? `${kindWord}, ${view.action === 'send' && thread ? `not sent to ${thread.title}` : 'not delegated'}` : `${kindWord}: ${name}`
+  const label = `${refused ? `${kindWord}, ${view.action === 'send' && thread ? `not sent to ${thread.title}` : 'not delegated'}` : `${kindWord}: ${name}`}, ${state.word}`
   const machine = thread ? world.hostName(thread) : 'This computer'
   const Machine = thread?.remoteHost ? Server : Laptop
   return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} aria-label={label}>
@@ -111,9 +112,9 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
 }
 
 /** The rows of one turn, in the order the delegating thread made them: in its Worked for fold, or under its reply when nothing folds. */
-export function DelegatedWork({ views, label = 'Delegated work' }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string }): ReactNode {
+export function DelegatedWork({ views, label = 'Delegated work' }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
   if (!views?.length) return null
-  return <ul className="delegated-work" aria-label={label}>{views.map(view => <DelegatedWorkRow key={view.id} view={view} />)}</ul>
+  return <ul className="delegated-work" aria-label={label ?? undefined}>{views.map(view => <DelegatedWorkRow key={view.id} view={view} />)}</ul>
 }
 
 /** The turn's delegated work in a few words after its Worked for line, so a closed fold still says what it holds. */
@@ -126,7 +127,8 @@ export function DelegatedWorkSummary({ views }: { readonly views: readonly Deleg
 
 /**
  * The delegated work of a finished turn that outlives its reply, such as a Muse review still running: under the reply, so
- * it is not folded away while the thread waits on it. It goes once the work settles; its row stays in the fold.
+ * it is not folded away while the thread waits on it. It goes once the work settles, and while the fold is open, where
+ * the same rows already are.
  */
 export function StillWorking({ views }: { readonly views: readonly DelegationView[] | undefined }): ReactNode {
   const open = useMemo(() => views?.filter(view => !settledDelegation(view)), [views])
@@ -134,7 +136,7 @@ export function StillWorking({ views }: { readonly views: readonly DelegationVie
   if (!open?.length) return null
   return <section className="delegated-work-still" aria-labelledby={headingId}>
     <p id={headingId} className="delegated-work-still__heading">Still working after this reply</p>
-    <DelegatedWork views={open} label="Still working after this reply" />
+    <DelegatedWork views={open} label={null} />
   </section>
 }
 

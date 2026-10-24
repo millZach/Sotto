@@ -7,7 +7,7 @@ import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { DelegationWorldProvider, delegationsByTurn, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
-import { delegatedNote, delegationDuration, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
+import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationDuration, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
@@ -322,13 +322,13 @@ describe('delegated work in the delegating thread', () => {
     const open = vi.fn()
     const rows = delegationsByTurn([view({ anchorMessageId: 'ask', outcome: 'answered', outcomeAt: at(8), wait: { seconds: 300, startedAt: at(9) } })], messages)
     render(<DelegationWorldProvider world={world(open)}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows} /></DelegationWorldProvider>)
-    const row = screen.getByRole('listitem', { name: 'Review: Review the gate fix' })
+    const row = screen.getByRole('listitem', { name: 'Review: Review the gate fix, Returned' })
     expect(row.querySelector('.delegated-work__kind')).toHaveTextContent('Review')
     expect(row.querySelector('.delegated-work__meta')).toHaveTextContent('Codex·This computer')
     // An answered review has returned: what it found is in its thread, which the row opens.
     expect(row.querySelector('.delegated-work__state')).toHaveTextContent('Returned')
     expect(row).toHaveTextContent('Answered in 1 min, while this thread waited for it. Open it to read what it found.')
-    expect(order()).toEqual(['ask', 'reply', 'Review: Review the gate fix', 'later'])
+    expect(order()).toEqual(['ask', 'reply', 'Review: Review the gate fix, Returned', 'later'])
     const link = within(row).getByRole('button', { name: 'Open Review the gate fix' })
     expect(link).toHaveAccessibleDescription(/Codex.*This computer.*Returned.*Answered in 1 min/u)
     fireEvent.click(link)
@@ -342,19 +342,19 @@ describe('delegated work in the delegating thread', () => {
     const rows = delegationsByTurn([view({ anchorMessageId: 'ask', outcome: 'answered', outcomeAt: at(8) }), refusedView({ anchorMessageId: 'ask', createdAt: at(8) }),
       refusedView({ anchorMessageId: 'ask', action: 'send', thread: CHILD, refusal: 'PAUSED', createdAt: at(7) }), turnless], messages)
     render(<DelegationWorldProvider world={world()}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows} /></DelegationWorldProvider>)
-    const start = screen.getAllByRole('listitem', { name: 'Research, not delegated' })[0]!
+    const start = screen.getAllByRole('listitem', { name: 'Research, not delegated, Refused' })[0]!
     expect(start).toHaveAttribute('data-state', 'refused')
     expect(start.querySelector('.delegated-work__state')).toHaveTextContent('Refused')
     expect(start.querySelector('.delegated-work__meta')).toHaveTextContent('Codex·This computer')
     expect(start).toHaveTextContent('It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. Nothing was started.')
     expect(within(start).queryByRole('button')).toBeNull()
     // A refused send names the thread it would have gone to, its provider and machine, and links nowhere: nothing was sent.
-    const send = screen.getByRole('listitem', { name: 'Research, not sent to Review the gate fix' })
+    const send = screen.getByRole('listitem', { name: 'Research, not sent to Review the gate fix, Refused' })
     expect(send).toHaveTextContent('Not sent to Review the gate fix')
     expect(send).toHaveTextContent('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
     expect(within(send).queryByRole('button')).toBeNull()
     // In the turn it was asked in, beside the delegation that started; one with no turn Sotto could find goes last.
-    expect(order()).toEqual(['ask', 'reply', 'Review: Review the gate fix', 'Research, not delegated', 'Research, not sent to Review the gate fix', 'later', 'Research, not delegated'])
+    expect(order()).toEqual(['ask', 'reply', 'Review: Review the gate fix, Returned', 'Research, not delegated, Refused', 'Research, not sent to Review the gate fix, Refused', 'later', 'Research, not delegated, Refused'])
   })
 
   it('a finished turn keeps its rows in the Worked for fold, says them in a few words, and keeps what still works under its reply', () => {
@@ -388,25 +388,30 @@ describe('delegated work in the delegating thread', () => {
     expect(fold).toHaveTextContent('· 4 delegated threads · 1 review · Muse review · 1 needs you · 1 failed')
     // Work still going after the reply stays in view under it, the Muse review among it; what settled does not.
     const still = screen.getByRole('region', { name: 'Still working after this reply' })
-    expect(within(still).getAllByRole('listitem').map(row => row.getAttribute('aria-label'))).toEqual([
-      'Muse review: Build plan for your pick, A', 'UI work: Check text contrast on every theme', 'Computer use: Capture the night scene', 'Review: Spec review'])
     const states = (root: HTMLElement): Record<string, string | null> => Object.fromEntries(within(root).getAllByRole('listitem')
-      .map(row => [row.getAttribute('aria-label'), row.querySelector('.delegated-work__state')!.textContent]))
+      .map(row => [row.getAttribute('aria-label')!.replace(/, [^,]+$/u, ''), row.querySelector('.delegated-work__state')!.textContent]))
+    expect(Object.keys(states(still))).toEqual(['Muse review: Build plan for your pick, A', 'UI work: Check text contrast on every theme', 'Computer use: Capture the night scene', 'Review: Spec review'])
     expect(states(still)).toEqual({ 'Muse review: Build plan for your pick, A': 'Working', 'UI work: Check text contrast on every theme': 'Working',
       'Computer use: Capture the night scene': 'Needs you', 'Review: Spec review': 'Starting' })
-    expect(within(still).getByRole('listitem', { name: 'Computer use: Capture the night scene' })).toHaveTextContent('Waiting for your permission: npm run design:capture. Open it to answer.')
+    expect(within(still).getByRole('listitem', { name: 'Computer use: Capture the night scene, Needs you' })).toHaveTextContent('Waiting for your permission: npm run design:capture. Open it to answer.')
     expect(document.querySelector('[data-message-id="final"]')!.compareDocumentPosition(still) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // Opened, the fold holds a row for every delegation of the turn, in the order they were made.
     fireEvent.click(fold)
     const inFold = screen.getByRole('list', { name: 'Delegated work' })
     expect(inFold.closest('.thread-work__body')).not.toBeNull()
+    // Open, the fold holds those rows itself, so they are not drawn a second time under the reply.
+    expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Open Build plan for your pick, A' })).toHaveLength(1)
     expect(states(inFold)).toEqual({ 'Research: Find where the scene draws text': 'Answered', 'Building: Check reduced motion': 'Failed',
       'Muse review: Build plan for your pick, A': 'Working', 'UI work: Check text contrast on every theme': 'Working',
       'Computer use: Capture the night scene': 'Needs you', 'Review: Spec review': 'Starting' })
-    expect(within(inFold).getByRole('listitem', { name: 'Building: Check reduced motion' })).toHaveTextContent('Its last turn failed. Open it to see why.')
+    expect(within(inFold).getByRole('listitem', { name: 'Building: Check reduced motion, Failed' })).toHaveTextContent('Its last turn failed. Open it to see why.')
     // Each kind has its own mark as well as its word.
     const marks = new Set([...inFold.querySelectorAll('.delegated-work__glyph')].map(svg => svg.getAttribute('class')))
     expect(marks.size).toBe(3)
+    // Closed again, what still works stands under the reply again.
+    fireEvent.click(fold)
+    expect(screen.getByRole('region', { name: 'Still working after this reply' })).toBeInTheDocument()
   })
 
   it('goes in a wake-up\'s turn when the call was made there, and last when its turn is not shown unless it is older than what is', () => {
@@ -418,6 +423,57 @@ describe('delegated work in the delegating thread', () => {
     expect(byTurn.get('later')).toEqual([woken])
     expect([...byTurn.keys()]).toEqual(['ask', 'later', ''])
     expect(byTurn.get('')).toEqual([missing])
+  })
+})
+
+describe('the words of delegated work', () => {
+  const asking = (kind: 'permission' | 'question', command?: string): AgentThread['requests'][number] =>
+    ({ id: kind, kind, text: 'Allow?', options: [], ...command ? { context: { command } } : {} })
+  const open = { requests: [] as AgentThread['requests'] }
+
+  it('names each state, and what a waiting thread waits on, permission ahead of question', () => {
+    const cases: [DelegationView, 'review' | 'muse-review' | 'work', boolean, string, string][] = [
+      [view({ waiting: true }), 'review', false, 'starting', 'Starting'],
+      [view({ wait: { seconds: 0, startedAt: at(4) } }), 'work', false, 'working', 'Working'],
+      [view({ wait: { seconds: 0, startedAt: at(4) } }), 'work', true, 'needs-you', 'Needs you'],
+      [view({ outcome: 'background' }), 'work', true, 'needs-you', 'Needs you'],
+      [view({ outcome: 'background' }), 'work', false, 'background', 'Background work'],
+      [view({ outcome: 'answered', outcomeAt: at(1) }), 'work', false, 'answered', 'Answered'],
+      [view({ outcome: 'answered', outcomeAt: at(1) }), 'muse-review', false, 'returned', 'Returned'],
+      [view({ outcome: 'failed' }), 'work', true, 'failed', 'Failed'],
+      [view({ outcome: 'stopped' }), 'work', false, 'stopped', 'Stopped'],
+      [view({ outcome: 'paused' }), 'work', false, 'paused', 'Paused'],
+      [view({ outcome: 'unknown' }), 'work', false, 'unknown', 'Unknown'],
+      [refusedView(), 'work', false, 'refused', 'Refused'],
+    ]
+    for (const [delegation, kind, waits, id, word] of cases) expect(delegatedState(delegation, kind, waits), `${delegation.outcome} ${kind} ${waits}`).toEqual({ id, word })
+    expect(delegatedKind('code-review', 'muse')).toBe('muse-review')
+    expect(delegatedKind('code-review', 'codex')).toBe('review')
+    expect(delegatedKind('code-review', undefined)).toBe('review')
+    expect(delegatedKind('ui', 'muse')).toBe('work')
+    const working = view({ wait: { seconds: 0, startedAt: at(4) } })
+    const both = { requests: [asking('question'), asking('permission', 'npm run design:capture')] }
+    expect(pendingRequestOf(working, both)?.kind).toBe('permission')
+    expect(pendingRequestOf(view({ outcome: 'answered' }), both)).toBeUndefined()
+    expect(pendingRequestOf(working, { ...both, archivedAt: at(1) })).toBeUndefined()
+    expect(delegatedLine(working, 'needs-you', NOW, asking('permission', 'npm run design:capture'))).toBe('Waiting for your permission: npm run design:capture. Open it to answer.')
+    expect(delegatedLine(working, 'needs-you', NOW, asking('question'))).toBe('Waiting for your answer to its question. Open it to answer.')
+    const answered = view({ outcome: 'answered', outcomeAt: at(1), wait: { seconds: 300, startedAt: at(2) } })
+    expect(delegatedLine(answered, 'returned', NOW, undefined)).toBe('Answered in 1 min, while this thread waited for it. Open it to read what it found.')
+    // A thread the window no longer lists cannot be opened, so the line does not say to open it.
+    expect(delegatedLine(answered, 'returned', NOW, undefined, false)).toBe('Answered in 1 min, while this thread waited for it.')
+  })
+
+  it('sums a turn up: started work by kind, then what needs you, failed, is unknown or was refused', () => {
+    const muse = { providerId: 'muse' as const, ...open }, codex = { providerId: 'codex' as const, ...open }
+    const waiting = { providerId: 'claude' as const, requests: [asking('question')] }
+    const threads: Record<string, typeof muse | typeof codex | typeof waiting> = { a: muse, b: muse, c: codex, d: waiting, e: codex }
+    const of = (delegation: DelegationView) => delegation.thread === undefined ? undefined : threads[delegation.thread]
+    expect(delegatedSummary([refusedView()], of)).toBe('1 refused')
+    expect(delegatedSummary([view({ thread: 'a' }), view({ thread: 'b' })], of)).toBe('2 Muse reviews')
+    expect(delegatedSummary([view({ thread: 'c', outcome: 'unknown' }), view({ thread: 'd', work: 'ui', outcome: 'background' }), view({ thread: 'e', work: 'building', outcome: 'failed' }), refusedView()], of))
+      .toBe('2 delegated threads · 1 review · 1 needs you · 1 failed · 1 unknown · 1 refused')
+    expect(delegatedSummary([], of)).toBe('')
   })
 })
 
@@ -460,7 +516,7 @@ describe('the delegating and the delegated thread\'s panes', () => {
     fireEvent.click(stop)
     expect(live.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: PARENT })
     // The pane read its delegations once, and draws the row in the turn it answers.
-    await waitFor(() => expect(screen.getByRole('listitem', { name: 'Review: Review the gate fix' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('listitem', { name: 'Review: Review the gate fix, Working' })).toBeInTheDocument())
     expect(reads.fake.reads).toEqual([PARENT])
     await act(async () => { reads.views[PARENT] = [view({ outcome: 'answered', outcomeAt: at(1), wait: { seconds: 300, startedAt: at(4) } })]; reads.change([PARENT]) })
     await waitFor(() => expect(document.querySelector('.delegated-work__state')).toHaveTextContent('Returned'))

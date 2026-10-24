@@ -241,7 +241,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
 
       // Its row of delegated work: Review, the thread as a link, Codex on This computer, Working, and the wait.
       const reviewId = await delegatedThread(page, parentId, [], REVIEW)
-      const card = parent.getByRole('listitem', { name: `Review: ${REVIEW}` })
+      const card = parent.getByRole('listitem', { name: new RegExp(`^Review: ${REVIEW}, `, 'u') })
       await expect(card).toBeVisible({ timeout: 30_000 })
       await expect(card.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
       await expect(card.locator('.delegated-work__meta')).toContainText('Codex')
@@ -358,7 +358,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', wait_seconds: 0 })
       expect(second.delegation?.outcome, JSON.stringify(second)).toBe('working')
       const journeysId = await delegatedThread(page, parentId, [reviewId], JOURNEYS)
-      const journeys = parent.getByRole('listitem', { name: `Building: ${JOURNEYS}` })
+      const journeys = parent.getByRole('listitem', { name: new RegExp(`^Building: ${JOURNEYS}, `, 'u') })
       await expect(journeys.locator('.delegated-work__line')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(2)
 
@@ -367,7 +367,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       const wider = await tool(page, parentId, 'delegate', { work: 'research', brief: 'Draft the release notes for the reconnect fix.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'full-access', wait_seconds: 0 })
       expect(wider, JSON.stringify(wider)).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
-      const refused = parent.getByRole('listitem', { name: 'Research, not delegated' })
+      const refused = parent.getByRole('listitem', { name: 'Research, not delegated, Refused' })
       await expect(refused).toBeVisible({ timeout: 30_000 })
       await expect(refused).toHaveAttribute('data-outcome', 'refused')
       await expect(refused.locator('.delegated-work__meta')).toContainText('Codex')
