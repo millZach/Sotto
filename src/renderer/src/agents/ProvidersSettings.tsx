@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight, CircleArrowUp, RefreshCw } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
@@ -17,6 +17,7 @@ import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
+import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from '../features/settings/settingsTarget'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import './providers.css'
 
@@ -70,12 +71,20 @@ function shortVersion(version: string): string {
  * (Zach's pick, variant A of the tag prototype/providers-settings). One row is open at a time; Codex's is open to begin
  * with, as Codex was the provider shown first before, and pressing an open row's header closes it.
  */
-export function ProvidersSettings(): ReactNode {
+/** Idle compaction's switch (ADR-0127): a setting of this computer's rather than the provider's, shown in Claude Code's row. */
+export interface CompactIdleSetting {
+  readonly checked: boolean
+  readonly onChange: (checked: boolean) => void
+}
+
+export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: CompactIdleSetting } = {}): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
   const ownServers = useOwnServersBridge()
   const { t } = useLingui()
-  const [open, setOpen] = useState<ProviderId | null>('codex')
+  // A link elsewhere, such as a thread's Turn off, or Find a setting, can open the row that holds one provider's setting.
+  const [open, setOpen] = useState<ProviderId | null>(() => takeAimedProvider() ?? 'codex')
+  useEffect(() => onProviderAimed(setOpen), [])
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
   const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)
@@ -288,6 +297,13 @@ export function ProvidersSettings(): ReactNode {
             <Toggle setting="shell-sandbox" label="Shell sandbox" checked={!museDisableSandbox}
               onCheckedChange={value => void saveMuseSandbox(!value)} />
           </div>
+        </div>}
+        {provider === 'claude' && compactIdle && <div className="provider-client">
+          <div>
+            <h4><Trans>Compact idle threads</Trans></h4>
+            <p className="tt-paragraph"><Trans>After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history.</Trans></p>
+          </div>
+          <div className="provider-client__actions"><Toggle setting={COMPACT_IDLE_SETTING} label={t`Compact idle threads`} checked={compactIdle.checked} onCheckedChange={compactIdle.onChange} /></div>
         </div>}
         {provider === 'opencode' && (openCodeInstall || byHand) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
         {provider === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
