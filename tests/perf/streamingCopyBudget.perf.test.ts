@@ -165,13 +165,20 @@ async function measure(threads: number, owl: boolean) {
  * spread.
  */
 /*
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copied everything but the threads on every broadcast, in two
+ * calls, and it now reads that part against the last broadcast's frozen copy and copies only what changed. Owl makes 7.3 to
+ * 7.8 copies per update, from 9.3 to 9.7, and stable 6.8 to 6.9, from 8.9; Owl's objects per thread per update stay within
+ * their spread (7.5 to 8.0) and stable's are 9.2 to 9.4, from 9.5 to 9.8. The budgets are 8.5 copies on Owl and 7.5 on
+ * stable, and 10 objects on stable.
+ */
+/*
  * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, and
- * copied for none of them, where the desktop room copied every room it kept for its window. Owl makes 8.5 to 9.45 copies
- * per update, from 9.3 to 9.8. The Owl budget is 9.5 copies.
+ * copied for none of them, where the desktop room copied every room it kept for its window. With #1334 in, Owl makes 6.3
+ * to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5.
  */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 11, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 10, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

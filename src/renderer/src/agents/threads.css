@@ -21,7 +21,7 @@
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
-.threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
+.threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 /* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
    The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
@@ -149,7 +149,7 @@
 /* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
    around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
    questions keep their scroll above the message bar and nothing in the transcript hides under them. */
-.thread-pane:has(> .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose:not(:has(> .thread-questions))) { --thread-compose-height: var(--thread-compose-measured, 0px); }
+.thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
@@ -253,9 +253,9 @@
    narrower, until the first send (Zach, October 14: docs/prototypes/new-thread-greeting-prototype.html, variant a). The
    empty transcript above and the balance below share the room equally. */
 .thread-pane__balance { display: none; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-transcript { flex: 1 1 0; min-height: 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-pane__balance { display: block; flex: 1 1 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
+.thread-pane[data-greeting] > .thread-transcript { flex: 1 1 0; min-height: 0; }
+.thread-pane[data-greeting] > .thread-pane__balance { display: block; flex: 1 1 0; }
+.thread-pane[data-greeting] > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
 .thread-greeting { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 24px 18px; text-align: center; }
 .thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
 .thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: 13px; }

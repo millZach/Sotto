@@ -1,4 +1,5 @@
 import { focusedComposerField } from './promptSelection'
+import { Marked } from '../components/marks'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
@@ -302,7 +303,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} onKeyDown={grid.onKeyDown} {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -314,7 +315,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
-      <div className="thread-workspace__body">
+      <div className="thread-workspace__body" data-panes={paneIds.length > 0 || undefined}>
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
@@ -326,5 +327,5 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       </div>
     </section>
     <PageWindowControls />
-  </div></SidebarChromeProvider>
+  </div>}</Marked></SidebarChromeProvider>
 }

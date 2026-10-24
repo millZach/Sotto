@@ -138,7 +138,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         return !Number.isFinite(observed) || Math.abs(clock - observed) >= QUOTA_FRESH_MS
       }).map(quota => quota.providerId)
       if (providerIds.length === 0) continue
-      void bridge.refresh({ hostIds: [host.hostId], providerIds }).then(result => {
+      // Made on its own, so a provider whose read is costly may answer from a recent reading (#1456); Read again never is.
+      void bridge.refresh({ hostIds: [host.hostId], providerIds, background: true }).then(result => {
         if (!mounted.current) return
         usage.applyQuotas(result, providerIds); reloadRef.current([host.hostId])
       }, () => { if (mounted.current) setNotice('Subscription limits could not be read again. Your saved figures are still here.') })

@@ -1,4 +1,5 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
@@ -55,6 +56,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const rows = messageLinks.filter(url => !linked.has(url) && !servedAsPage(url, pages))
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
+  // The pane wears a question open in its composer, and a request card standing in its transcript.
+  useMark('question-open', docked && !collapsed)
+  useMark('request', !docked)
   const nativeUncertain = request.delivery === 'uncertain'
   const uncertain = nativeUncertain || entry.phase === 'unconfirmed'
   const locked = uncertain || entry.phase === 'sending' || entry.phase === 'sent'

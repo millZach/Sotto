@@ -320,6 +320,10 @@ const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'whole
  * of the copied objects that does not grow with the history, so that growth is a larger share of what is left: 1.766
  * times streaming on one thread, where #1327 alone measured 1.398 and #1326 alone 2.045.
  *
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copies what is not threads only when it changed, which takes
+ * away more of the copied objects that do not grow with the history. What grows is unchanged, 1,896 per streamed update on
+ * one thread and 16,026 per send, and is a larger share again: 1.78 times streaming on one thread.
+ *
  * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, rather
  * than on every coordinator broadcast, and copied for none of them. Owl's copied objects no longer grow with the history
  * while threads stream or when an answer draft is saved, so those leave the copiedObjects entry, and what is left of it
@@ -329,7 +333,7 @@ const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'whole
 const KNOWN_HISTORY_GROWTH: readonly { readonly track: OwnerScaleTrack; readonly kind: Kind; readonly growth: Partial<Record<Scenario, number>>; readonly why: string }[] = [
   { track: 'owl', kind: 'threadVisits', growth: { '1 streaming': 1.126, '3 streaming': 1.144, saveAnswerDraft: 1.192, typeInComposer: 1.272, openThread: 1.219, send: 1.139 },
     why: "Watcher's room reading every thread once for each watched thread, on every room update" },
-  { track: 'owl', kind: 'copiedObjects', growth: { typeInComposer: 1.261, openThread: 1.131, send: 1.163 },
+  { track: 'owl', kind: 'copiedObjects', growth: { typeInComposer: 1.266, openThread: 1.132, send: 1.164 },
     why: "a command copying Watcher's whole record" },
   { track: 'owl', kind: 'stringifies', growth: { '1 streaming': 1.122, '3 streaming': 1.119, typeInComposer: 1.756, openThread: 2.326 },
     why: "Watcher's wake-up pass building each watched thread's keys afresh, about eleven times on every update" },
@@ -357,34 +361,42 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * streamed update, 586 more per thread opened and 1,172 more per send than without the three (with #1350's router reuse
  * counted on both sides), the one walk a broadcast needs to tell what changed. It is what buys the window a broadcast about a twentieth the size.
  *
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copies what is not threads only where it changed since the
+ * last broadcast, where it was two copies of it on every broadcast. The copies and copied objects fall on both tracks, for
+ * example from 9.85 to 7.85 copies per streamed update and 136 to 121 per send on Owl, and from 9.58 to 7.58 and 130 to
+ * 114 on stable. Those budgets are lowered to the new counts with the usual room, or exactly for #1248's.
+ *
  * October 23, 2026 (#1450): two counts are added, the builds of Watcher's room state and the records of Watcher's history
- * (requests, receipts and earlier Watchers) sent to the window's room. Before, Owl built the room once for every
- * coordinator broadcast and sent every one of those records with each update: at the owner's scale one room build and
- * 119 records per streamed update on one thread, 620 records per answer-draft save, per keystroke save and per thread
- * opened, and five builds and 930 records per send. Now the room is built when an update goes and the update carries only
- * what changed: 0.38 builds and no records per streamed update, two builds and no records per save or open, three builds
- * and no records per send. The threads that stream were let go by Watcher's earlier requests, so their rows carry that
- * history; a row that changes sends only what changed in it, never its participations again (without that, 62 records
- * per streamed update on one thread and 320 per save, growing with the history). The desktop room's copy went with it: Owl makes one copy fewer per streamed update (8.85, from
- * 9.85), two fewer per action and five fewer per send, and copies 1,772 objects per streamed update on one thread, from
- * 4,372. Every count lowered has its budget lowered to the new count with the usual room, or exactly for #1248's.
+ * (requests, receipts, earlier Watchers and watched threads' participations) sent to the window's room. Before, Owl built
+ * the room once for every coordinator broadcast and sent every one of those records with each update: at the owner's
+ * scale one room build and 119 records per streamed update on one thread, 620 records per answer-draft save, per
+ * keystroke save and per thread opened, and five builds and 930 records per send. Now the room is built when an update
+ * goes and the update carries only what changed: 0.38 builds and no records per streamed update, two builds and no
+ * records per save or open, three builds and no records per send. The threads that stream were let go by Watcher's
+ * earlier requests, so their rows carry that history; a row that changes sends only what changed in it, never its
+ * participations again (sent whole, 62 records per streamed update on one thread and 320 per save, growing with the
+ * history). The desktop room's copy went with it. Measured with #1334 in, Owl makes one copy fewer per streamed update
+ * (6.85, from 7.85), two fewer per action and five fewer per send (116, from 121), and copies 1,729 objects per streamed
+ * update on one thread, from 4,329, and 46,635 per send, from 59,635; the room reads 4,996 threads per streamed update,
+ * from 6,114, and 34,077 per send, from 37,733. Every count lowered has its budget lowered to the new count with the usual
+ * room, or exactly for #1248's.
  */
 const BUDGET: Record<OwnerScaleTrack, Record<Scenario, Counts>> = {
   owl: {
-    '1 streaming': { copies: 9.74, copiedObjects: 1948.95, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1885.75, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4996.15, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 509.54, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0 },
-    '3 streaming': { copies: 13.88, copiedObjects: 2052.69, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1889.46, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5184.46, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 529.77, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0 },
-    saveAnswerDraft: { copies: 14.3, copiedObjects: 156.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 15_593, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 961, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
-    typeInComposer: { copies: 20.9, copiedObjects: 10_834, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 8558, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 12_148, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 172, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
-    openThread: { copies: 35.2, copiedObjects: 21_745, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 20_545.8, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 14_490, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 193, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
-    send: { copies: 144.1, copiedObjects: 46_923, wholeStateCopies: 14.3, wholeCopyThreads: 3369.3, wholeCopyObjects: 38_819, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 34_077, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 3692, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 3.3, watcherRoomRecords: 0 },
+    '1 streaming': { copies: 7.54, copiedObjects: 1901.65, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1885.75, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 4996.15, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 509.54, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0 },
+    '3 streaming': { copies: 11.68, copiedObjects: 2003.19, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1889.46, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 5184.46, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 529.77, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0 },
+    saveAnswerDraft: { copies: 9.9, copiedObjects: 57.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 15_593, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 961, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
+    typeInComposer: { copies: 12.1, copiedObjects: 10_694, wholeStateCopies: 5, wholeCopyThreads: 879, wholeCopyObjects: 8558, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 7, threadVisits: 12_148, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 172, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
+    openThread: { copies: 23.1, copiedObjects: 21_599, wholeStateCopies: 11, wholeCopyThreads: 1846, wholeCopyObjects: 20_545.8, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 10, threadVisits: 14_490, watcherRecordCopies: 3, watcherRecordObjects: 2898, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 193, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0 },
+    send: { copies: 127.6, copiedObjects: 46_635, wholeStateCopies: 14.3, wholeCopyThreads: 3369.3, wholeCopyObjects: 38_819, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 14, threadVisits: 34_077, watcherRecordCopies: 7, watcherRecordObjects: 8694, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 3692, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 3.3, watcherRoomRecords: 0 },
   },
   stable: {
-    '1 streaming': { copies: 10.54, copiedObjects: 2393.6, wholeStateCopies: 1.02, wholeCopyThreads: 252.09, wholeCopyObjects: 2041.88, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3556.75, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
-    '3 streaming': { copies: 13.96, copiedObjects: 2317.11, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1888.54, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3595, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
-    saveAnswerDraft: { copies: 18.7, copiedObjects: 14_237.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 8926, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
-    typeInComposer: { copies: 21, copiedObjects: 10_950.5, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 10_794.3, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 9855, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
-    openThread: { copies: 36, copiedObjects: 22_911.9, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 22_741.4, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_172, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
-    send: { copies: 143, copiedObjects: 54_785.5, wholeStateCopies: 15.4, wholeCopyThreads: 3638.8, wholeCopyObjects: 41_012.4, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 24_664, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    '1 streaming': { copies: 8.34, copiedObjects: 2351.8, wholeStateCopies: 1.02, wholeCopyThreads: 252.09, wholeCopyObjects: 2041.88, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3556.75, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 515.17, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    '3 streaming': { copies: 11.76, copiedObjects: 2273.11, wholeStateCopies: 0.94, wholeCopyThreads: 232.7, wholeCopyObjects: 1888.54, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 3595, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 486.12, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    saveAnswerDraft: { copies: 14.3, copiedObjects: 14_149.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 8926, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 824, providerIdParses: 9, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    typeInComposer: { copies: 11, copiedObjects: 10_811.9, wholeStateCopies: 6, wholeCopyThreads: 1153, wholeCopyObjects: 10_794.3, unsharedPublications: 0, routerShellBuilds: 5, coordinatorShellBuilds: 8, threadVisits: 9855, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 20, providerIdParses: 18, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    openThread: { copies: 22, copiedObjects: 22_766.7, wholeStateCopies: 13, wholeCopyThreads: 2117, wholeCopyObjects: 22_741.4, unsharedPublications: 0, routerShellBuilds: 7, coordinatorShellBuilds: 11, threadVisits: 13_172, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 31, providerIdParses: 27, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
+    send: { copies: 125.4, copiedObjects: 54_500.6, wholeStateCopies: 15.4, wholeCopyThreads: 3638.8, wholeCopyObjects: 41_012.4, unsharedPublications: 0, routerShellBuilds: 8, coordinatorShellBuilds: 15, threadVisits: 24_664, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 2876, providerIdParses: 31, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0 },
   },
 }
 

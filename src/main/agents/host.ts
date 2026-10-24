@@ -254,7 +254,12 @@ export interface AgentHost {
   /** Owl-only numeric observations. Adapters own native IDs; wrappers translate to Sotto IDs. */
   subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
-  readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
+  /**
+   * A provider's limits: the last reading, or with `refresh` a new one. `background` marks a refresh Usage made on its
+   * own when it opened, which a provider whose read is costly may answer from a recent reading (#1456). Read again
+   * never sets it.
+   */
+  readProviderQuota?(providerId: ProviderId, refresh: boolean, background?: boolean): Promise<UsageQuotaRead>
   /**
    * Owl-only (ADR-0083): read this computer's own provider records into Usage, numbers only. Each native adapter reads
    * its own provider's files, reports a session it owns under its own thread ID, and every other session under a

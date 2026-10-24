@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
@@ -92,7 +93,8 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>): void
     const pane = element?.parentElement
     if (!element || !pane || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`))
-    observer.observe(element)
+    // The border box: a short pane changes only the composer's padding, which its content box does not see.
+    observer.observe(element, { box: 'border-box' })
     return () => { observer.disconnect(); pane.style.removeProperty('--thread-compose-measured') }
   }, [compose])
 }
@@ -108,7 +110,9 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
   const watcherOn = useWatcherEnabled()
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
-  if (isThreadClosed(thread) || requests.length === 0) return null
+  const shown = !isThreadClosed(thread) && requests.length > 0
+  useMark('questions', kind === 'question' && shown)
+  if (!shown) return null
   const blocked = threadRequestBlocked(row, state)
   return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}

@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
@@ -551,11 +552,14 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
+/** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
+  // The transcript's scroll padding is the floating composer's height, and nothing while the composer stacks.
+  const bottom = view.bottom - (parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
-    return box.bottom > view.bottom - JUMP_BAND_PX && box.top < view.bottom
+    return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom
   })
 }
 
@@ -832,6 +836,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const greets = empty && !queueHolds && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
+  useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}

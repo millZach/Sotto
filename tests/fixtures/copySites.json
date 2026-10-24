@@ -25,7 +25,7 @@
     "structuredClone(": 21,
     "shell()": 38,
     "watcherRecord()": 2,
-    "clonePlainData(": 3
+    "clonePlainData(": 2
   },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
