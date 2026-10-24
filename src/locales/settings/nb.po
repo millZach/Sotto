@@ -5708,6 +5708,10 @@ msgstr ""
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Your own model servers"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"
 msgstr ""
