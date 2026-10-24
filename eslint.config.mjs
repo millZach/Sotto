@@ -163,6 +163,7 @@ export default tseslint.config(
       'artifacts/opencode-provider/**',
       'artifacts/opencode-sign-in/**',
       'artifacts/opencode-model-menu/**',
+      'artifacts/cursor-provider/**',
       'artifacts/starting-screen/**',
       'artifacts/unconfirmed-send/**',
       'node_modules/**',

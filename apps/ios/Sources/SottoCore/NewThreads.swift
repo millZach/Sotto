@@ -12,16 +12,20 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     public let runtimeModes: [String]?; public let providerModes: [ProviderMode]?
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
-    /// Where the provider gets the model, such as OpenCode Zen or Anthropic (ADR-0087). Only OpenCode's models say.
+    /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
+    /// maker, the company that made it, such as Anthropic (ADR-0128). Other providers' models say nothing.
     public let source: String?
     public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?
     }
-    /// The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source.
+    /// The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source, and
+    /// "Cursor · Anthropic · Claude Sonnet 5.5" with a maker, so a Cursor thread on Claude never reads as Claude Code.
     public var label: String { Self.label(providerID: providerId, source: source, name: name) }
+    /// A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto".
     public static func label(providerID: String?, source: String?, name: String) -> String {
-        let named: String? = source?.isEmpty == false ? source : nil
-        return [AgentNames.name(providerID), named, name].compactMap { $0 }.joined(separator: " · ")
+        let agent = AgentNames.name(providerID)
+        let named: String? = source?.isEmpty == false && source != agent ? source : nil
+        return [agent, named, name].compactMap { $0 }.joined(separator: " · ")
     }
     public var startingEffort: String {
         if let value = defaultReasoningEffort, reasoningEfforts?.contains(value) == true { return value }
@@ -176,7 +180,7 @@ public enum NewThreads {
 }
 extension Commands {
     public static func createProject(providerID: String, title: String, path: String) throws -> JSONValue {
-        guard ["codex", "claude", "grok", "devin", "muse", "opencode"].contains(providerID),
+        guard ["codex", "claude", "grok", "devin", "muse", "opencode", "cursor"].contains(providerID),
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf16.count <= 512,
               !path.isEmpty, path.utf16.count <= 4096 else { throw ClientError.invalidRequest }
         return try RemoteCommands.checked(.object(["type": .string("create-project"), "provider": .string(providerID),

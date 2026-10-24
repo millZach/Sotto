@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf,
+import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { capRuntimeMode, roleStartNote, startFromRole, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -2995,10 +2995,16 @@ ${operation.draftId}`)
     const host = this.remote?.hosts().find(item => item.hostId === hostId)
     if (!host?.connected) refuse('HOST_DISCONNECTED', 'That host is disconnected. Its unconfirmed starts and sends are kept. Reconnect it to continue.', true)
     if (!host.reads || mutation && !host.control) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher directs its threads. Nothing was sent.')
-    if (!this.takesMaster(host)) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on this host before Watcher on Muse reads or directs its threads. Nothing was sent.')
+    if (!this.takesMaster(host)) refuse('HOST_FEATURE_UNAVAILABLE', `Update Sotto on this host before Watcher on ${PROVIDER_LABELS[this.view().current!.provider]} reads or directs its threads. Nothing was sent.`)
   }
-  /** An older host refuses a Watcher identity that names Muse, so a Watcher on Muse asks only hosts that list `watcher-muse`. */
-  private takesMaster(host: { readonly muse?: boolean }): boolean { return this.view().current?.provider !== 'muse' || host.muse === true }
+  /**
+   * An older host refuses a Watcher identity that names a provider it did not know Watcher on, so a Watcher on Muse asks only
+   * hosts that list `watcher-muse`, and one on Cursor only hosts that list `watcher-cursor` (ADR-0079, ADR-0128).
+   */
+  private takesMaster(host: { readonly muse?: boolean; readonly cursor?: boolean }): boolean {
+    const provider = this.view().current?.provider
+    return provider === 'muse' ? host.muse === true : provider === 'cursor' ? host.cursor === true : true
+  }
   private takingHost(hostId: string | undefined) {
     const host = this.remote?.hosts().find(item => item.hostId === hostId)
     return host && this.takesMaster(host) ? host : undefined

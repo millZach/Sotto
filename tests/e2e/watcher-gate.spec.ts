@@ -116,6 +116,11 @@ test.describe('Watcher follows the running release track', () => {
             .filter(element => element.closest('#settings-watcher, #tab-settings-watcher, #settings-night-falls') === null).map(element => element.textContent))).toEqual([])
         }
         await expect(page.getByRole('spinbutton', { name: /Watcher/ })).toHaveCount(0)
+        // Night falls' look is held with its switch (ADR-0119, decision 6): stable shows no row for it, Owl shows Band and Stars.
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+        await expect(page.getByRole('switch', { name: /Night falls between Threads and Watcher/ })).toHaveCount(track === 'owl' ? 1 : 0)
+        await expect(page.getByRole('radiogroup', { name: 'Night falls look' })).toHaveCount(track === 'owl' ? 1 : 0)
+        await expect(page.getByRole('radio', { name: 'Stars', exact: true })).toHaveCount(track === 'owl' ? 1 : 0)
         if (track === 'stable') {
           await resizeContentWindow(launched, 1600, 1000)
           await openThreads(page)

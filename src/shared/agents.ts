@@ -37,6 +37,7 @@ export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 /** One activity record whole, for a remote row whose body its host sent cut (ADR-0025, October 18 amendment). */
 export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
+import type { AgentThreadPrompts, AgentThreadPromptsRequest } from './threadPrompts'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
 /** Absent on older live snapshots; ordinary threads have the project kind. */
@@ -265,7 +266,9 @@ export const agentRequestSchema = z.object({
   options: z.array(z.object({ id, label: text })).default([]),
   questions: z.array(z.object({ id, question: text, header: text.optional(), options: z.array(z.object({ id, label: text, description: text.optional(), preview: text.optional() })), multiSelect: z.boolean(), allowFreeText: z.boolean(), required: z.boolean().optional(), unavailableReason: text.optional() })).max(100).optional(),
   permissionChoices: z.array(z.object({ id, label: text, kind: z.enum(['allow-once', 'allow-session', 'allow-always', 'deny', 'cancel']), description: text.optional() })).optional(),
-  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional() }).optional(),
+  context: z.object({ toolName: text.optional(), toolCallId: id.optional(), command: text.optional(), cwd: text.optional(), details: text.optional(),
+    /** A plan the agent asks the user to accept, in its parts (Cursor's `cursor/create_plan`, ADR-0128); `steps` is Markdown. */
+    plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
 })
@@ -659,7 +662,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   /**
    * This computer's own entry only, for Settings > Providers: the providers it has turned on, whether it checks for client
    * updates, whether its Muse starts without the shell sandbox, and the model its agent setting starts new threads on, its
-   * Models tab's "Agent setting".
+   * open row's "Agent setting" in Settings > Providers.
    */
   enabledProviders: z.array(providerIdSchema).max(PROVIDER_COUNT).optional(), checkClientUpdates: z.boolean().optional(), museDisableSandbox: z.boolean().optional(),
   agentModelId: z.string().max(512).optional() })
@@ -733,7 +736,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1247,7 +1250,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('dismiss-failures'), failures: z.array(z.object({ threadId: id, failure: z.string().max(64) }).strict())
     .min(1).max(AGENT_DISMISS_FAILURES_MAX) }).strict(),
   /** Widen one thread's loaded window by another twenty turns, because the pane asked for earlier messages. */
-  z.object({ type: z.literal('load-earlier-messages'), threadId: id }).strict(),
+  z.object({ type: z.literal('load-earlier-messages'), threadId: id, throughMessageId: id.optional() }).strict(),
   /** Early start: the user began typing in this thread's composer, so its provider session is started now rather than
    * inside the next send. Starts nothing a send would not, creates no provider session, worktree or branch, sends no
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
@@ -1282,6 +1285,8 @@ export interface AgentBridge {
   threadDetail?(threadId: string): Promise<AgentThreadDetail | null>
   /** One record of a remote thread whole, for a row whose body its host sent cut; null for this computer's threads. */
   activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
+  /** Every message the user sent above the window a pane holds, for the message scrubber (ADR-0109); null when the host cannot say. */
+  threadPrompts?(request: AgentThreadPromptsRequest): Promise<AgentThreadPrompts | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**
@@ -1322,7 +1327,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays

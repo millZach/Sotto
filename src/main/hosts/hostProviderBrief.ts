@@ -16,13 +16,14 @@ export interface HostProviderBriefInput {
 }
 
 /** The command each client is started by on the host, which the lookup searches for. */
-export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse', opencode: 'opencode' }
+export const PROVIDER_COMMANDS: Readonly<Record<HostProviderId, string>> = { claude: 'claude', codex: 'codex', grok: 'grok', devin: 'devin', muse: 'muse', opencode: 'opencode', cursor: 'agent' }
 
 /**
  * Each provider's official way to install it on Linux or macOS, as its maker documents it, and what the host's lookup
  * needs of the result. Checked September 28, 2026 against code.claude.com/docs/en/setup, github.com/openai/codex,
  * docs.x.ai and npm's @xai-official/grok, and docs.devin.ai/cli; OpenCode's on October 16, 2026 against opencode.ai/v2/docs
- * and npm's @opencode/cli (#1104).
+ * and npm's @opencode/cli (#1104); Cursor's on October 23, 2026 against cursor.com/docs/cli/installation and cursor.com/install
+ * (ADR-0128).
  */
 export const PROVIDER_INSTALL_METHODS: Readonly<Record<HostProviderId, string>> = {
   claude: 'Anthropic\'s native installer, `curl -fsSL https://claude.ai/install.sh | bash`, which puts `claude` in ~/.local/bin (https://code.claude.com/docs/en/setup). npm\'s `npm install -g @anthropic-ai/claude-code` installs the same binary. Update a native install with `claude update`.',
@@ -31,6 +32,7 @@ export const PROVIDER_INSTALL_METHODS: Readonly<Record<HostProviderId, string>> 
   devin: 'Cognition\'s installer, `curl -fsSL https://cli.devin.ai/install.sh | bash` (https://docs.devin.ai/cli). Check where it put `devin`; if that folder is not one the host searches, link the binary into ~/.local/bin.',
   muse: 'Meta\'s documented installer, `curl -fsSL https://dev.meta.ai/install.sh | bash`, which puts its launcher and versioned native binary in ~/.local/bin. Follow https://dev.meta.ai/docs/muse-code/ on Windows for its PowerShell installer. Preserve an existing manager-owned install and update it with that manager.',
   opencode: 'OpenCode 2\'s installer, `curl -fsSL https://opencode.ai/v2/install | bash`, which puts `opencode` in ~/.opencode/bin, which the host searches first, or npm\'s `npm install -g @opencode/cli` (https://opencode.ai/v2/docs/). Sotto drives OpenCode 2 only: `https://opencode.ai/install` and npm\'s `opencode-ai` install OpenCode 1, which it refuses. Never move an existing install between channels: a copy in ~/.opencode/bin updates with `opencode upgrade`, an npm copy with npm, and a Homebrew, scoop or pacman copy with that manager. Check the result with `opencode --version` only. Sotto keeps the host\'s OpenCode data and sign-ins in a folder of its own, so do not start OpenCode itself or sign it in.',
+  cursor: 'Cursor\'s installer, `curl https://cursor.com/install -fsS | bash` (https://cursor.com/docs/cli/installation), which keeps each version in ~/.local/share/cursor-agent/versions and links `agent` into ~/.local/bin. Update an existing install with `agent update`. Check the result with `agent --version` only. Do not run `agent login` or `agent logout`: the user signs Cursor in from Sotto.',
 }
 
 /** Where the host's CLI lookup searches on Linux and macOS, in order (ADR-0036, `src/main/agents/cliLookup.ts`). */

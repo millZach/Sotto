@@ -4,6 +4,8 @@
 
 Accepted October 22, 2026. Zach picked each part from `docs/prototypes/look-tuneup-prototype.html`, the look tune-up mock-up made from user feedback: "thin box outlines, pill designs, provider boxes hard to tell apart with the toggle far away, usage index not scaled correctly, left sidebar text too small, too much grey". His picks: containers B (filled surfaces), controls N1 (soft square), provider cards P1 (the toggle at the end of the name's line), Usage scaling with the room, and the light sidebar tune.
 
+Amended October 23, 2026: decision 3's provider cards are replaced by one card holding a row per provider, each row opening in place to its connection, client and models (Zach's pick, variant A "List" of the prototype tag `prototype/providers-settings`; `docs/verification/2026-10-23-providers-list.md`). The rows are divided by the inset's 2px line like rows on any card, and the toggle keeps its name, `Enable <Provider>`.
+
 Amended October 23, 2026 by [ADR-0113](0113-the-composer-controls-are-text-buttons.md): inside a composer, the option chips, Steer now, the branch toolbar and the queued messages' actions are text buttons with no fill or edge at rest, not filled chips.
 
 Amended October 23, 2026 again: the composer card's edge no longer comes back for focus (below, "The composer's edge").

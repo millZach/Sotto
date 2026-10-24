@@ -1,3 +1,4 @@
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
@@ -21,7 +22,7 @@ import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../..
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, HOST_BUSY, hostAttachmentContentSchema, hostIsNewer, hostVersionMismatch, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
@@ -679,6 +680,7 @@ export class SocketHostService implements HostService {
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
   get supportsWatcherMuse(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-muse') }
+  get supportsWatcherCursor(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-cursor') }
   private heldWatcherProvider(request: WatcherHostRead | WatcherHostControl): HeldProviderNames | undefined {
     return heldProviderOfWatcherRequest(request, this.held, this.cached?.host, this.dormantProviderThreads)
   }
@@ -1184,6 +1186,17 @@ export class SocketHostService implements HostService {
     const record = this.read(hostActivityBodySchema, await this.call({ op: 'activity-body', threadId, activityId }))
     this.sameGeneration(generation)
     return record
+  }
+  /**
+   * Every message the user sent above a pane's window, for the message scrubber (`thread-prompts`, ADR-0109). Null from a
+   * host that does not list it, whose threads' scrubbers mark what the window holds.
+   */
+  async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
+    if (!this.threadAvailable(threadId) || !this.features.includes('thread-prompts')) return null
+    const generation = this.generation
+    const prompts = this.read(hostThreadPromptsSchema, await this.call({ op: 'thread-prompts', threadId, beforeMessageId }))
+    this.sameGeneration(generation)
+    return prompts
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
