@@ -34,7 +34,7 @@ import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
-import type { AgentState } from '../../src/shared/agents'
+import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -553,6 +553,33 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   expect(written.filter(item => item.method === 'turn/start')).toHaveLength(1)
   expect(written.filter(item => item.method === 'turn/steer')).toHaveLength(1)
   expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
+}, 60_000)
+
+it('picks a default send’s delivery on the desktop and sends a paired host the one it picked (ADR-0130)', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const turnId = f.socket.shell().host.threads.find(item => item.id === target.threadId)!.lastTurn!.id
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const packets: WatcherHostControl[] = []
+  const original = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(packet => { packets.push(structuredClone(packet)); return original(packet) })
+  // A head fence comes before the picked delivery in the call as made; the host still finds the digest it was sent.
+  const head = await vi.waitFor(() => { const id = lastUserMessageIdOf(f.socket.shell().host.threads.find(item => item.id === target.threadId)!); if (!id) throw new Error('No head yet'); return id })
+  const steered = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default steer', expectedLastUserMessageId: head })
+  expect(steered, JSON.stringify(steered)).toMatchObject({ status: 'ok', delivery: 'steer' })
+  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'steer', expectedTurnId: turnId, expectedLastUserMessageId: head })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/steer')).toHaveLength(1))
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)).toMatchObject({ status: 'idle', lastTurn: { status: 'completed' } }))
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default now' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok', delivery: 'now' })
+  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'now' })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
 }, 60_000)
 
 it('fences native input arriving at a prepared paired queue writer before another turn starts', async () => {

@@ -602,3 +602,9 @@ Without the streaming-publish-cost answer the desktop room sends the whole room 
 ## October 23, 2026: the iPhone says Watcher works only for its own turn (#1436)
 
 The phone's page called Watcher working while its own turn ran or any thread it started was still working. Watcher starts threads that run for hours, so the iPhone's pill, tab dot and "Watcher is working" line stayed on while Watcher was idle. Zach decided on October 23, 2026 that Watcher working, on the phone as on the desktop, is Watcher's own turn, a turn on news of a watched thread included: Watcher is really working then, and a send steers or queues behind it. A thread Watcher started says its own state under Watched. The desktop does not change. Host protocol version 1 does not change either: `working` keeps its shape, and an iPhone already installed shows the new meaning once its computer updates. `inFlight` still counts the starts.
+
+## October 24, 2026: Watcher's sends steer by default
+
+`send_to_thread`'s `delivery` is optional. A send that names none steers a running turn, goes now to a thread whose turn
+is over, and queues only where the provider cannot steer. A thread waiting on the user's card is still refused, and a
+named delivery still wins. [ADR-0130](0130-watchers-sends-steer-by-default.md) has the decision.
