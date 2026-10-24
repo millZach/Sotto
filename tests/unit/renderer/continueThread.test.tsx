@@ -14,6 +14,7 @@ import type { AppContextValue } from '../../../src/renderer/src/state/AppContext
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { continueStore } from '../../../src/renderer/src/agents/continuations'
+import { replyQuoteStore } from '../../../src/renderer/src/agents/replyQuotes'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -77,7 +78,7 @@ function fakeBridge() {
 function mount(threads: AgentThread[] = [stopped()], options: { readonly owl?: boolean; readonly bridge?: boolean; readonly grok?: 'signed-out' | 'connected'; readonly newThreadRuntimeMode?: AgentRuntimeMode } = {}) {
   const on = options.owl !== false
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { owlFeatures: { 'continue-on-provider': on } },
+    update: { owlFeatures: { 'continue-on-provider': on, 'reply-quote': on } },
     actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
   const bridge = fakeBridge()
   Object.assign(window, { sotto: options.bridge === false ? {} : { continueThread: bridge } })
@@ -93,8 +94,9 @@ const requests = <T extends AgentCommand['type']>(live: ReturnType<typeof liveAg
 const chips = () => screen.queryByRole('group', { name: 'Continue now on another provider' })
 const strip = () => screen.queryByRole('region', { name: /^Continue on / })
 
-beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); continueStore.set(SOURCE, undefined) })
-afterEach(() => { cleanup(); continueStore.set(SOURCE, undefined); delete (window as { sotto?: unknown }).sotto })
+const clearQuotes = (): void => replyQuoteStore.sent(SOURCE, replyQuoteStore.list(SOURCE).map(quote => quote.id))
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).mockReset(); continueStore.set(SOURCE, undefined); clearQuotes() })
+afterEach(() => { cleanup(); continueStore.set(SOURCE, undefined); clearQuotes(); delete (window as { sotto?: unknown }).sotto })
 
 describe('under a usage-limit stop', () => {
   it('offers each other connected provider on its default model, and one that is not signed in with why', () => {
@@ -221,6 +223,24 @@ describe('the composer while continuing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
     await waitFor(() => expect(bridge.start).toHaveBeenCalledTimes(2))
     expect(bridge.start.mock.calls[1]![0].newThreadId).toBe(bridge.start.mock.calls[0]![0].newThreadId)
+  })
+
+  it('carries a reply quote once however many times a refused continuation is tried, and takes it off once it starts', async () => {
+    const { bridge, prompt } = mount()
+    bridge.start.mockResolvedValueOnce({ status: 'refused', message: 'Codex didn’t take the first message, so nothing was sent. Check it under Settings → Providers, then continue again.' })
+    act(() => { replyQuoteStore.add(SOURCE, { messageId: 'answer', text: 'the length marker is patched' }) })
+    fireEvent.click(within(chips()!).getByRole('button', { name: 'Continue on Codex, GPT-5.4' }))
+    setPromptText(prompt(), 'Carry on.')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    expect(await within(strip()!).findByRole('alert')).toHaveTextContent('nothing was sent')
+    // Refused, the draft and the chip are as they were.
+    expect(promptText(prompt())).toBe('Carry on.')
+    expect(replyQuoteStore.list(SOURCE)).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue on Codex' }))
+    await waitFor(() => expect(bridge.start).toHaveBeenCalledTimes(2))
+    const sent = 'From your earlier reply:\n> the length marker is patched\n\nCarry on.'
+    expect(bridge.start.mock.calls.map(([request]) => request.text)).toEqual([sent, sent])
+    await waitFor(() => expect(replyQuoteStore.list(SOURCE)).toEqual([]))
   })
 
   it('reads the handover on request; Escape folds it, then puts the continuation away and returns to the composer', async () => {

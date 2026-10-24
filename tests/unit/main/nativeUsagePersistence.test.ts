@@ -9,6 +9,8 @@ import type { ThreadUsage } from '../../../src/shared/threadUsage'
 import { deferred } from '../../fixtures/deferred'
 
 type Archive = Record<string, { view: ThreadUsage; entries: Record<string, unknown> }>
+/** A write hands the store the file's text, or its encoded pieces (#1451). */
+const writtenText = (written: string | readonly Uint8Array[]): string => typeof written === 'string' ? written : Buffer.concat(written).toString('utf8')
 const roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -109,7 +111,7 @@ it('holds one immutable in-flight archive and coalesces 100 changing observation
   usage.claude('a', frame(0))
   await Promise.resolve()
   expect(write).toHaveBeenCalledTimes(1)
-  const snapshot = JSON.parse(write.mock.calls[0]![0]) as Archive
+  const snapshot = JSON.parse(writtenText(write.mock.calls[0]![0])) as Archive
   let drained = false
   const drain = usage.flushed().then(() => { drained = true })
   for (let i = 1; i <= 100; i++) usage.claude(i % 2 ? 'a' : 'b', frame(i))
@@ -121,7 +123,7 @@ it('holds one immutable in-flight archive and coalesces 100 changing observation
   await Promise.resolve()
   expect(write).toHaveBeenCalledTimes(2)
   expect(drained).toBe(false)
-  const latest = JSON.parse(write.mock.calls[1]![0]) as Archive
+  const latest = JSON.parse(writtenText(write.mock.calls[1]![0])) as Archive
   expect(latest.a!.view.total!.output).toBe(5100)
   expect(latest.b!.view.total!.output).toBe(5000)
   second.resolve(); await drain
@@ -217,7 +219,7 @@ it('writes a streaming reply at most once an interval, and the end of its turn a
   const write = vi.spyOn(AtomicJsonStore.prototype, 'writeSerialized').mockResolvedValue(undefined)
   const clone = vi.spyOn(globalThis, 'structuredClone')
   const message = { ...frame(0).message, id: 'streamed', usage: { ...frame(0).message.usage, output_tokens: 0 } }
-  const written = (call: number) => (JSON.parse(write.mock.calls[call]![0]) as Archive).thread!.entries.streamed as { tokens: { output: number } }
+  const written = (call: number) => (JSON.parse(writtenText(write.mock.calls[call]![0])) as Archive).thread!.entries.streamed as { tokens: { output: number } }
   usage.claude('thread', { type: 'stream_event', event: { type: 'message_start', message } })
   await vi.advanceTimersByTimeAsync(0)
   expect(write).toHaveBeenCalledTimes(1)

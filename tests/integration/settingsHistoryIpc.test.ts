@@ -328,6 +328,14 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
     })
 
+  it('persists the night falls look through the allow-list, and refuses a look Sotto does not have (ADR-0119)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'stars' })).resolves.toMatchObject({ roomTransitionLook: 'stars' })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ roomTransitionLook: 'stars' })
+    await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'wing' })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
+
   it('persists the typing speed the Dictate room counts time saved against, and refuses one out of bounds (#1293)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { typingSpeedWpm: 65 })).resolves.toMatchObject({ typingSpeedWpm: 65 })

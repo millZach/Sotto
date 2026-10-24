@@ -4,11 +4,12 @@ import { HOST_OPENCODE_ANSWERS, HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, H
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_CHANGED, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema, watcherMergeTurnsReadSchema,
   WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
-  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge, type WatcherRoomState } from '../shared/watcherRoom'
+  watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
+import { watcherRoomChanges } from './watcherRoomChanges'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -21,6 +22,8 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
+  cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
   addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
@@ -48,6 +51,7 @@ import { questionPageOpenResultSchema, questionPageOpenSchema } from '../shared/
 import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
+import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
 import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema } from '../shared/agents'
 
 import {
@@ -226,21 +230,6 @@ function trustedState<Output>(key: string): PayloadCheck<Output> {
   }
 }
 
-/**
- * Watcher's room update is state of the same kind (#1336): main's Watcher builds it on every publish from its own records,
- * which it validated when it read or wrote them, and the room schema transforms nothing (every object is strict, and the
- * one trim is of kept notes already trimmed when they were kept), so the full parse could only hand back what came in.
- * It ran over every request, receipt, watch and news item several times a second while threads streamed. What the page
- * reads before anything else is checked: the time it orders updates by and the watched threads. Every invoke result that
- * carries the room, and everything the page sends, keeps its schema.
- */
-const trustedWatcherRoom: PayloadCheck<WatcherRoomState> = {
-  safeParse: value => typeof value === 'object' && value !== null && !Array.isArray(value)
-    && typeof (value as { observedAt?: unknown }).observedAt === 'string' && Array.isArray((value as { watchedThreads?: unknown }).watchedThreads)
-    ? { success: true, data: value as WatcherRoomState }
-    : { success: false },
-}
-
 function subscribe<Output>(
   renderer: IpcRendererAdapter,
   channel: string,
@@ -335,6 +324,8 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     startHandover: (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, agentStartHandoverSchema.nullable(), agentThreadDetailRequestSchema.parse(threadId)),
     // One record of a remote thread whole, for a row whose body its host sent cut (ADR-0025, October 18 amendment).
     activityBody: (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, agentActivitySchema.nullable(), agentActivityBodyRequestSchema.parse(request)),
+    // The prompts above a pane's window, for the message scrubber (ADR-0109).
+    threadPrompts: (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, agentThreadPromptsSchema.nullable(), agentThreadPromptsRequestSchema.parse(request)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
@@ -367,6 +358,8 @@ export function createSottoBridge(
   mainActivityEnabled = false,
   /** Notifications when a thread has finished or needs the user (ADR-0117): only while the Owl feature is on, on a Mac that can show them. */
   desktopNotificationsEnabled = false,
+  /** Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. */
+  cursorEnabled = false,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
   /** The user's own model servers (ADR-0124): only while the `own-model-servers` Owl feature is on and OpenCode runs here. */
@@ -427,6 +420,14 @@ export function createSottoBridge(
       cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
+    // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
+    ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
+      start: () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
+      read: request => invokeParsed(renderer, CURSOR_SIGN_IN_READ, cursorSignInViewSchema.nullable(), cursorSignInRequestSchema.parse(request)),
+      reopen: request => invokeParsed(renderer, CURSOR_SIGN_IN_REOPEN, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      cancel: request => invokeParsed(renderer, CURSOR_SIGN_IN_CANCEL, cursorSignInDoneSchema, cursorSignInRequestSchema.parse(request)),
+      signOut: () => invokeParsed(renderer, CURSOR_SIGN_OUT, cursorSignInDoneSchema),
+    }) } : {}),
     // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
     // returned carries one.
     ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
@@ -453,6 +454,7 @@ export function createSottoBridge(
       start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
+      onChanged: watcherRoomChanges(renderer),
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
       prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),
@@ -465,7 +467,6 @@ export function createSottoBridge(
       dismissHandover: () => invokeParsed(renderer, WATCHER_DISMISS_HANDOVER, watcherRoomResultSchema),
       startNew: () => invokeParsed(renderer, WATCHER_START_NEW, watcherRoomResultSchema),
       readMergeTurns: () => invokeParsed(renderer, WATCHER_READ_MERGE_TURNS, watcherMergeTurnsReadSchema),
-      onChanged: listener => subscribe(renderer, WATCHER_CHANGED, trustedWatcherRoom, listener),
     }) } : {}),
     hosts: Object.freeze<import('../shared/hosts').HostsBridge>({ get: () => renderer.invoke(HOSTS_GET) as Promise<HostsState>, command: command => renderer.invoke(HOSTS_COMMAND, hostsCommandSchema.parse(command)) as Promise<HostsState>, onChanged: listener => subscribe(renderer, HOSTS_CHANGED, trustedState<HostsState>('hosts'), listener),
       devices: () => renderer.invoke(HOSTS_DEVICES) as Promise<HostDeviceList>, tailscale: () => renderer.invoke(HOSTS_TAILSCALE) as Promise<TailscaleSummary>,
@@ -697,6 +698,7 @@ export function exposeRendererBridge(
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
+      arguments_.includes(CURSOR_RENDERER_ARGUMENT),
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT)))
     return true
   }

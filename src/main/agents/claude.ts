@@ -11,7 +11,7 @@ import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { unavailableProviderQuota } from './providerQuota'
 import { ClaudeLimits, type ClaudeControl } from './claudeLimits'
-import { compactionPending, compactionSchema } from '../../shared/compaction'
+import { compactionPending, compactionSchema, idleMark } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -929,15 +929,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
+        // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
+        // can take long enough for the user to type, send or turn the setting off.
+        watcherGuard?.()
         const inputId = randomUUID()
-        alias.compaction = { commandId: command.commandId, status: 'running' }
+        alias.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
         alias.compactStartedAt = new Date().toISOString()
         alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
         try { await this.persist() } catch (error) { delete alias.compaction; throw error }
         thread.compaction = alias.compaction; thread.status = 'running'; this.compacting.set(id, runtime); this.emit()
         try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
         catch {
-          alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.' }
+          alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.', ...idleMark(alias.compaction) }
           thread.compaction = alias.compaction; await this.persist(); this.emit(); return { accepted: false, uncertain: true }
         }
         return { accepted: true }
@@ -1696,7 +1699,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'result') {
       this.compacting.delete(id)
       if (compactionPending(alias.compaction)) {
-        alias.compaction = { commandId: alias.compaction!.commandId, status: frame.is_error === true ? 'failed' : 'uncertain',
+        alias.compaction = { commandId: alias.compaction!.commandId, ...idleMark(alias.compaction), status: frame.is_error === true ? 'failed' : 'uncertain',
           error: frame.is_error === true ? 'Claude native compaction failed.' : 'Claude finished without confirming a compaction boundary. The operation will not be retried.' }
         thread.compaction = alias.compaction
         void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
@@ -1897,7 +1900,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       // when Sotto has read no turn of the thread, always). A /compact whose write went unconfirmed but arrived late is
       // answered the same way. Only a compaction no CLI will answer settles here, and so does a failed one, as it did.
       const answering = this.compacting.has(id) && this.compacting.get(id) === this.runtimes.get(id)
-      alias.compaction = { commandId: alias.compaction!.commandId, status: frame.compact_result === 'failed' ? 'failed' : 'completed',
+      alias.compaction = { commandId: alias.compaction!.commandId, ...idleMark(alias.compaction), status: frame.compact_result === 'failed' ? 'failed' : 'completed',
         ...(frame.compact_result === 'failed' ? { error: typeof frame.compact_error === 'string' ? frame.compact_error : 'Claude native compaction failed.' } : {}) }
       thread.compaction = alias.compaction
       if (!answering || frame.compact_result === 'failed') thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'

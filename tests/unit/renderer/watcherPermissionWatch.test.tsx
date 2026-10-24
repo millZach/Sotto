@@ -13,6 +13,7 @@ import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { cursorModeLine } from '../../../src/renderer/src/agents/ThreadOptions'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { WatcherRoomProvider, targetForThread, watchedTargets } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
@@ -213,6 +214,19 @@ describe('Watcher’s permissions chip', () => {
     expect(options[0]).toHaveTextContent('Auto')
     expect(options[0]).toBeDisabled()
     expect(options.slice(1).map(option => option.querySelector('span')?.firstChild?.textContent)).toEqual(['Ask for approval', 'Allow edits', 'Full access'])
+  })
+
+  it('offers a Watcher on Cursor exactly Cursor’s three modes, each with the line a Cursor thread’s menu gives it', async () => {
+    const state = stateWithWatcher()
+    const model = state.host.models.find(entry => entry.id === 'codex:gpt')!
+    model.providerId = 'cursor'; model.runtimeModes = ['approval-required', 'auto', 'full-access']
+    renderRoom(roomState(), { state })
+    fireEvent.click(within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' }))
+    const options = within(screen.getByRole('listbox', { name: 'Watcher’s permissions' })).getAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      `Ask for approval${cursorModeLine('approval-required')}`, `Auto${cursorModeLine('auto')}`, `Full access${cursorModeLine('full-access')}`])
+    expect(options[0]).toHaveTextContent('It edits files inside the project without asking.')
+    expect(options[1]).toHaveTextContent('Its classifier runs on Cursor’s servers')
   })
 
   it('is chosen before Watcher exists, and a new Watcher starts on the remembered mode', async () => {

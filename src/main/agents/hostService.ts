@@ -1,3 +1,4 @@
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
@@ -74,7 +75,8 @@ export interface HostService {
   /** Numeric usage belongs to this host and exists only when its own startup gate is on. */
   readonly supportsUsage?: boolean
   usageRead?(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  usageRefresh?(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  /** `background` is a refresh Usage made on its own when it opened, which may be answered from a recent reading. */
+  usageRefresh?(providerIds?: ProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
@@ -85,6 +87,8 @@ export interface HostService {
   readonly supportsWatcherOutcomes?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
+  /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
+  readonly supportsWatcherCursor?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
@@ -109,6 +113,11 @@ export interface HostService {
   readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Null when the host cannot read its store, or keeps none.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -188,7 +197,7 @@ export interface ThreadEventSource {
 /** A numeric archive and cached native allowance reads, without provider handles or message text. */
 export interface HostUsageReads {
   read(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  refresh(providerIds?: UsageProviderId[]): Promise<UsageLocalHostRead>
+  refresh(providerIds?: UsageProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   clear(request: UsageLocalClearRequest): Promise<UsageLocalClearResult>
 }
 
@@ -274,6 +283,8 @@ export class LocalHostService implements HostService {
   constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
+    /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
+    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
     /**
@@ -306,6 +317,9 @@ export class LocalHostService implements HostService {
     const built = this.options.threadStarts.startHandover(threadId)
     return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
   }
+  async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
+    return this.options.prompts?.threadPrompts(threadId, beforeMessageId) ?? null
+  }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
     return hostMachineReport(this.options.facts, this.control.shell().host.threads)
@@ -315,9 +329,10 @@ export class LocalHostService implements HostService {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
     return this.usage.read(usageLocalQuerySchema.parse(query))
   }
-  usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
+  usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds))
+    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    return background ? this.usage.refresh(named, true) : this.usage.refresh(named)
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))

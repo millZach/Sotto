@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOptionalAgents } from './AgentContext'
@@ -20,6 +21,7 @@ function sinceLabel(iso: string): string {
  * never speaks for a client Sotto cannot update: that row shows the command to run instead.
  */
 export function ClientUpdateCard(): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const card = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
@@ -85,7 +87,11 @@ export function ClientUpdateCard(): ReactNode {
     const under = single.state === 'updating' ? 'Your threads keep working.'
       : single.state === 'failed' ? 'Nothing was changed.'
       : single.state === 'unchanged' && single.published ? `${single.published} is published.` : undefined
-    const details = single.state === 'updated' || single.state === 'updating' ? undefined : single.state === 'failed'
+    const to = single.published ?? t`the published version`, installed = single.installed
+    const details = single.state === 'updated' || single.state === 'updating' ? undefined
+      : single.state === 'failed' && single.failure === 'not-listed'
+        ? t`mise does not list ${name} ${to} yet, even with its cache cleared, so Sotto did not install it. ${installed} is still installed. Try again later.`
+      : single.state === 'failed'
       ? `${single.error ? `The installer said: ${single.error}.` : 'The installer reported a failure.'} Another app may be using ${name}. Close it, then try again.`
       : single.error ? single.error
       : `The installer finished, but ${name} still reports ${single.installed}. Try again${single.command ? `, or run ${single.command} yourself to see what it says` : ''}.`
@@ -100,7 +106,7 @@ export function ClientUpdateCard(): ReactNode {
         </>}
       </div>
       {failure === null ? null : <p className="client-updates__error">{failure}</p>}
-      {details === undefined ? null : <details className="client-updates__details"><summary>Details</summary><p>{details}</p></details>}
+      {details === undefined ? null : <details className="client-updates__details"><summary>Details</summary><p className="tt-paragraph">{details}</p></details>}
     </div>
   }
 
@@ -115,6 +121,10 @@ export function ClientUpdateCard(): ReactNode {
     : unchanged.length ? 'The update ran, but the version did not move'
     : behind.length ? `${behind.length} of ${updates.length} clients ${behind.length === 1 ? 'has' : 'have'} a newer version`
     : undefined
+  const notListed = (update: ProviderClientUpdate): string => {
+    const to = update.published ?? t`the published version`
+    return t`mise does not list ${to} yet`
+  }
   const checkedAt = shown.map(update => update.checkedAt).sort().at(-1) ?? new Date().toISOString()
 
   return <div className="client-updates" ref={card} role="status" aria-live="polite" aria-label={heading}>
@@ -130,6 +140,7 @@ export function ClientUpdateCard(): ReactNode {
           <small>
             {update.state === 'updated' ? `Now ${update.installed}`
               : update.state === 'unchanged' ? update.error ?? `Still ${update.installed}. Try again.`
+              : update.state === 'failed' && update.failure === 'not-listed' ? <span className="tt-paragraph">{notListed(update)}</span>
               : update.state === 'failed' ? (update.error ?? 'The installer reported a failure')
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}

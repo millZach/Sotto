@@ -22,7 +22,7 @@ const shortText = z.string().max(2_000)
 const cursor = z.string().min(1).max(2_048)
 const utf8 = (max: number) => z.string().max(max).refine(value => new TextEncoder().encode(value).byteLength <= max, 'Text exceeds the byte limit.')
 const prompt = utf8(WATCHER_PROMPT_BYTES_MAX).refine(value => value.trim().length > 0, 'A prompt is required.')
-export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse'])
+export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse', 'cursor'])
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
@@ -266,8 +266,9 @@ export const watcherToolSchemas = {
   send_to_thread: {
     // `mergeTurn` is the desktop's alone (#1339): it marks the send that gives a thread its merge turn, for Watcher's
     // picture. Main takes it off before the send is admitted, so it changes nothing about the send, its digest or its
-    // retry, and a paired host is never sent it.
-    input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,
+    // retry, and a paired host is never sent it. A send that names no `delivery` steers (ADR-0130): main picks the mode
+    // from the thread before admission, and a paired host is sent the one it picked.
+    input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
       expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(),
       mergeTurn: z.object({ pullRequest: z.number().int().positive() }).strict().optional() }).strict(),
     output: result({ ...receiptResult, delivery: deliveryMode }),

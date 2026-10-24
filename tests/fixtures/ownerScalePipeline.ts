@@ -27,6 +27,7 @@ import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdenti
 import type { HeldProviders } from '../../src/shared/heldProviders'
 import { requestDraftProvider, type RequestDraft, type RequestDraftOwner, type RequestDraftTarget } from '../../src/shared/requestDrafts'
 import type { WatcherThreadTarget } from '../../src/shared/watcher'
+import type { WatcherRoomListChange, WatcherRoomState, WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { FakeProviderHost } from './fakeProviderHost'
 import { addWatcherHistory, ownerRequestDrafts, ownerScaleCounts, type OwnerScale, type OwnerScaleCounts } from './ownerScale'
 import { syntheticModelCatalog } from './modelCatalog'
@@ -94,6 +95,8 @@ export interface OwnerScalePipeline {
   broadcasts(): number
   /** The draft store's look-ups of an answer's thread since the last reset. */
   ownerLookups(): number
+  /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
+  watcherRoomRecords(): number
   resetCounts(): void
   /** The user's actions, as the window sends them to main. */
   readonly actions: {
@@ -141,7 +144,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
-      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode') } })
+      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor') } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
@@ -159,7 +162,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
   await watcher?.recover()
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
+  let roomRecords = 0
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: payload => { roomRecords += historyRecords(payload); return true } })
   const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
   const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
@@ -234,9 +238,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const asking = view.host.threads.find(item => item.id === idOf('asking-0'))!
   const question: RequestDraftTarget = { kind: 'thread', ownerId: asking.id, providerId: requestDraftProvider(view.host, asking, view.provider), requestId: 'question-1', questions: QUESTIONS }
   try {
-    // The threads that took part in Watcher's requests: this computer's idle threads and the remote host's, never one
-    // that streams. The first threads are watched.
+    // The threads that took part in Watcher's requests: this computer's idle threads and the remote host's. The threads
+    // that stream took part too and were let go, as a thread Watcher has long driven was (#1450). The first threads are watched.
     const watched = [...streamIds, ...localIds].slice(0, counts.watches)
+    const streamed: WatcherThreadTarget[] = streamIds.map(threadId => ({ hostId: localHostId, threadId }))
     const targets: WatcherThreadTarget[] = [...localIds.slice(counts.watches).map(threadId => ({ hostId: localHostId, threadId })),
       ...remoteThreads.map(item => ({ hostId: REMOTE_HOST_ID, threadId: item.id }))]
     if (watcher) {
@@ -249,13 +254,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         const result = await watcher.watchThread({ target: { hostId: localHostId, threadId } })
         if (result.status !== 'ok') throw new Error(`Watcher did not watch a thread: ${JSON.stringify(result)}`)
       }
-      await control.updateWatcher(record => { addWatcherHistory(record, targets, counts) })
+      await control.updateWatcher(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
     } else {
       // Stable starts no Watcher and keeps the record an Owl build left, whole (ADR-0072).
       control.mutateWatcher(record => {
         record.watches = watched.map((threadId, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
           target: { hostId: localHostId, threadId }, createdAt: AT, generation: 0 }))
-        addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' })
+        addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' }, streamed)
       })
     }
     // The window shows one thread and watches the streams, as after the owner opened it.
@@ -298,7 +303,26 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
     broadcasts: () => broadcasts,
     ownerLookups: () => lookups,
-    resetCounts: () => { broadcasts = 0; lookups = 0 },
+    watcherRoomRecords: () => roomRecords,
+    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
     stop,
   }
+}
+
+/**
+ * The records of Watcher's history a room or a room update carries to the window (#1450): requests, receipts, earlier
+ * Watchers and each watched row's participations, whole or as the entries that changed, whole or in part.
+ */
+function historyRecords(payload: WatcherRoomState | WatcherRoomUpdate): number {
+  const update = 'base' in payload && 'revision' in payload ? payload : undefined
+  const room: Partial<WatcherRoomState> = update ? update.room : payload as WatcherRoomState
+  const entries = (change: WatcherRoomListChange | undefined) => (change?.at.length ?? 0) + (change?.patch?.length ?? 0)
+  const participations = (rows: readonly unknown[]) => rows.reduce<number>((n, row) => n + ((row as { participation?: unknown[] } | undefined)?.participation?.length ?? 0), 0)
+  let records = 0
+  for (const key of ['requests', 'receipts', 'history'] as const) records += (room[key]?.length ?? 0) + entries(update?.lists?.[key])
+  records += participations(room.watchedThreads ?? [])
+  const rows = update?.lists?.watchedThreads
+  records += participations((rows?.at ?? []).map(([, row]) => row))
+  for (const [, patch] of rows?.patch ?? []) records += ((patch.set?.participation as unknown[] | undefined)?.length ?? 0) + entries(patch.lists?.participation)
+  return records
 }

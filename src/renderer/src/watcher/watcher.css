@@ -123,30 +123,21 @@
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
 @container thread-pane (width < 470px) { .watcher-head__list-text { display: none; } }
 
-/* Conversation and Watched, beside All threads: two segments in a hairline track, the one shown raised. */
-.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 3px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-surface-sunken, var(--tt-hover)); }
-.watcher-tabs__tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+/* Conversation, Watched and Visualize, beside All threads: three icons with no track (Drake's pick on October 24, 2026).
+   The one shown takes All threads' hover look; the others stay quieter until hovered. Watched's count is a badge in its
+   corner, in the pill colours so it reads apart from the eye, and the icons need no word's room at any width. */
+.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; }
+.watcher-tabs__tab { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; cursor: pointer; }
 .watcher-tabs__tab:hover { color: var(--tt-text); }
-.watcher-tabs__tab[aria-selected='true'] { background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); }
-.watcher-tabs__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
-@container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } .watcher-tabs__tab { padding: 0 7px; } }
-/* Visualize, the third tab (#1339), keeps its word where the row holds it with three-digit counts, from 640 pixels of
-   pane and from 680 while Stop all shows, and its constellation mark below that; its name says Visualize either way.
-   With Stop all showing, the tabs also tighten sooner, to keep the name's room from 500. */
-.watcher-tabs__icon { display: none; flex: none; }
-@container thread-pane (width < 640px) {
-  .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__icon { display: block; }
-  .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__label { display: none; }
-}
-@container thread-pane (width < 680px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__icon { display: block; }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__label { display: none; }
-}
-@container thread-pane (width < 570px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab { padding: 0 7px; } }
-/* Off macOS a label comes back only where the whole row holds it with three-digit counts on All threads and Watched,
-   the counts being uncapped. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
+.watcher-tabs__tab[aria-selected='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-tabs__icon { display: block; }
+.watcher-tabs__count { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-pill);
+  box-shadow: 0 0 0 1.5px var(--tt-canvas); color: var(--tt-pill-ink); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+@container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } }
+/* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
+   uncapped. These widths were set for the tabs' old words and hold the 94-pixel icon tabs with room to spare. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
    all's needs 611 and returns at 630, All threads' then needs 556 and returns at 570, below 500 the name gives the tabs
-   its room, and below 420 the tabs and All threads tighten again. macOS keeps its own widths, since its header starts
+   its room, and below 420 All threads tightens again. macOS keeps its own widths, since its header starts
    past the traffic lights. */
 @container thread-pane (width < 540px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
 @container thread-pane (width < 630px) {
@@ -158,7 +149,6 @@
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container thread-pane (width < 420px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab { padding: 0 5px; }
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
 }
 /* Beside a thread at the smallest window the tabs need the name's room: the tile still says whose room it is, and the
@@ -169,13 +159,13 @@
 /* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
    in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
    follow its 88 pixels, with a few to spare for longer counts). Below 664 pixels All threads and Stop all keep their
-   icons and counts, and the tabs tighten. Below 520 pixels one row no longer holds the name, the tabs and the actions
+   icons and counts. Below 520 pixels one row no longer holds the name, the tabs and the actions
    beside the lights, so the tabs and the actions take a second row under them, starting at the pane's edge, and the
    name stays. Focus still runs as the eye reads: the tile's row, then the tabs and the actions. */
 @container thread-pane (width < 664px) {
   .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
   .threads-view--mac .watcher-tabs { margin-left: 0; }
-  .threads-view--mac .watcher-tabs__tab, .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
+  .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
 }
 @container thread-pane (width < 520px) {
   .threads-view.threads-view--mac .thread-pane .watcher-head:has(.watcher-tabs) {

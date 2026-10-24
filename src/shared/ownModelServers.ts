@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { OwnServerTurn, OwnServerTurnFailure } from './agentActivity'
 
 /**
  * Your own model servers (ADR-0124): model servers the user runs, such as SGLang, vLLM, Ollama, LM Studio or llama.cpp,
@@ -66,6 +67,8 @@ export type FoundModel = z.infer<typeof foundModelSchema>
 export const ownServerRefusalSchema = z.enum([
   'bad-address', 'public-http', 'unreachable', 'key-needed', 'key-refused', 'no-models', 'not-openai', 'opencode-not-running', 'sign-in-failed',
   'not-found', 'full',
+  /** A server at that address is already saved; adding it again would be a second source for the same server. */
+  'already-added',
   /** Something in Sotto went wrong before the request was done, such as the record not being written. */
   'failed',
   /** Remove signed OpenCode out of the server's key but could not take the server off the list; a second Remove finishes it. */
@@ -130,6 +133,7 @@ export const OWN_SERVER_WORDS = {
   signInFailed: (name: string) => `OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`,
   notFound: 'That server is no longer saved. Nothing was changed.',
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
+  alreadyAdded: (host: string) => `${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`,
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
   addPartly: (name: string) => `OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`,
@@ -153,10 +157,38 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'sign-in-failed': return OWN_SERVER_WORDS.signInFailed(serverName)
     case 'not-found': return OWN_SERVER_WORDS.notFound
     case 'full': return OWN_SERVER_WORDS.full
+    case 'already-added': return OWN_SERVER_WORDS.alreadyAdded(host)
     case 'failed': return OWN_SERVER_WORDS.failed
     case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
     case 'added-partly': return OWN_SERVER_WORDS.addPartly(serverName)
   }
+}
+
+/**
+ * What a thread says in English when one of the user's own servers let its turn down (ADR-0124, October 24 amendment):
+ * the first sentence says what happened, the rest that nothing was lost and what to do. Main keeps them as the turn
+ * record's reason, so a phone, Watcher's news and an older window read something sensible; the window words the failure
+ * in the interface language itself.
+ */
+export function ownServerTurnWords(failure: OwnServerTurnFailure, turn: Pick<OwnServerTurn, 'name' | 'model' | 'host'>): { readonly title: string; readonly body: string } {
+  const { name, model, host } = turn
+  switch (failure) {
+    case 'unreachable': return { title: `${name} didn’t answer.`,
+      body: `OpenCode tried it 10 times over about a minute and a half. Nothing in the thread was lost. Check that ${name} is on and this computer can reach ${host}, then try again.` }
+    case 'timeout': return { title: `${name} didn’t start answering within 5 minutes.`,
+      body: `It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check ${name}, then try again.` }
+    case 'key-refused': return { title: `${name} turned down its key.`,
+      body: `Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove ${name} and add it again with the right key, then try again.` }
+    case 'model-gone': return { title: `${name} no longer has ${model}.`,
+      body: `Nothing in the thread was lost. Pick another model in the model menu below, or load ${model} on ${name} again, then try again.` }
+    case 'too-long': return { title: `This thread is too long for ${model}.`,
+      body: 'Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread.' }
+  }
+}
+/** The same words as one plain sentence run, for the turn record's reason. */
+export function ownServerTurnText(failure: OwnServerTurnFailure, turn: Pick<OwnServerTurn, 'name' | 'model' | 'host'>): string {
+  const { title, body } = ownServerTurnWords(failure, turn)
+  return `${title} ${body}`
 }
 
 const PRIVATE_SUFFIXES = ['.local', '.lan', '.home.arpa', '.internal', '.ts.net', '.localhost']

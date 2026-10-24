@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
   addRequestSchema, checkRequestSchema, checkSavedRequestSchema, OWN_SERVER_ID_PREFIX, OWN_SERVER_WORDS, ownServerAddress, ownServerListSchema, ownServerSchema,
@@ -43,15 +43,19 @@ export interface OwnServersOptions {
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
   readonly log?: (event: OwnServerEvent) => void
-  /** A new server's ID suffix, which a test fixes. */
-  readonly newId?: () => string
+  /** A new server's ID suffix for its address, which a test fixes. */
+  readonly newId?: (address: string) => string
   /** The clock Check again times a server by, which a test fixes. */
   readonly now?: () => number
 }
 
-const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
-function randomSuffix(): string {
-  return [...randomBytes(10)].map(byte => ID_ALPHABET[byte % ID_ALPHABET.length]).join('')
+/**
+ * A server's ID suffix, from its address as Sotto saves it: the same address always gives the same ID, so a server removed
+ * and added again, such as to give it the right key, is the same model source, and a thread on one of its models carries
+ * on (ADR-0124). Servers saved before keep the random IDs they were given.
+ */
+export function addressSuffix(address: string): string {
+  return createHash('sha256').update(address.toLowerCase()).digest('hex').slice(0, 12)
 }
 /** Why a check, an add or a remove went no further, in the shape every one of their answers shares. */
 interface Refusal { readonly status: 'refused'; readonly reason: OwnServerRefusal; readonly message: string }
@@ -144,10 +148,14 @@ export class OwnServers {
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
     if (!openCode?.running()) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
+    if (saved) return refusal('already-added', ownServerRefusalWords('already-added', place.host))
     const key = request.key?.trim() || undefined
     const taken = new Set(servers.map(server => server.id))
-    let id: string
-    do id = `${OWN_SERVER_ID_PREFIX}${(this.options.newId ?? randomSuffix)()}`; while (taken.has(id))
+    const base = `${OWN_SERVER_ID_PREFIX}${(this.options.newId ?? addressSuffix)(place.address)}`
+    // Another address that came to the same ID, which twelve hex digits make all but impossible, gets the next free one.
+    let id = base
+    for (let next = 2; taken.has(id); next++) id = `${base}-${next}`
     // A model listed twice is declared once, as OpenCode keys them by ID.
     const models = [...new Map(request.models.map(model => [model.id, model])).values()]
     // Checked whole before it is written, so the record never holds what it could not read back.

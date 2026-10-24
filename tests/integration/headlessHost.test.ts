@@ -13,14 +13,15 @@ import { codexFixture, codexFixtureSkips } from '../fixtures/codexFixture'
 import { devinFixture, devinFixtureSkips } from '../fixtures/devinFixture'
 import { grokFixture, grokFixtureSkips } from '../fixtures/fakeGrokThreadFixture'
 import { opencodeFixture, opencodeFixtureSkips } from '../fixtures/fakeOpenCodeFixture'
+import { cursorFixture, cursorFixtureSkips } from '../fixtures/fakeCursorFixture'
 import { describeHostServiceContract } from './hostServiceContract'
 
 const OWL = '0.1.37-owl.20261012.1'
 /** Provider IDs remain inside the fixture driver; every tested client operation uses HostService. */
 async function hostFixture(provider: ProviderId, native: AdapterFixture): Promise<HostServiceFixture> {
   const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), [provider]: native.host }
-  // OpenCode is an Owl provider (ADR-0087): its host runs it only on an Owl build, as this computer does.
-  const host = await startHeadlessHost({ dataDirectory: native.root, providers, reasoner: e2eAgentReasoner, ...(provider === 'opencode' ? { sottoVersion: OWL } : {}) })
+  // OpenCode and Cursor are Owl providers (ADR-0087, ADR-0128): a host runs either only on an Owl build, as this computer does.
+  const host = await startHeadlessHost({ dataDirectory: native.root, providers, reasoner: e2eAgentReasoner, ...(provider === 'opencode' || provider === 'cursor' ? { sottoVersion: OWL } : {}) })
   await host.service.command({ type: 'configure', patch: { enabledProviders: [provider], provider } }, desktopWindowClient('host-contract'))
   const binding = async (threadId: string): Promise<string | undefined> => {
     let text: string
@@ -63,6 +64,8 @@ const fixtures: { provider: ProviderId; create: (session?: AdapterSessionOptions
   { provider: 'devin', create: session => devinFixture(undefined, undefined, undefined, session), skips: devinFixtureSkips },
   // Hosts take OpenCode since #1107.
   { provider: 'opencode', create: session => opencodeFixture(undefined, undefined, session), skips: opencodeFixtureSkips },
+  // And Cursor with ADR-0128.
+  { provider: 'cursor', create: session => cursorFixture(undefined, undefined, session), skips: cursorFixtureSkips },
 ]
 for (const fixture of fixtures) describeHostServiceContract('Headless ' + fixture.provider, async session => hostFixture(fixture.provider, await fixture.create(session)), fixture.skips)
 

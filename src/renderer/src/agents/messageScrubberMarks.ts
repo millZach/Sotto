@@ -1,20 +1,30 @@
 import { isVisualMessage, type AgentMessage, type AgentRequest } from '../../../shared/agents'
+import type { AgentThreadPrompt } from '../../../shared/threadPrompts'
 import { isWakeUpMessage } from './babysitting'
 import { questionsIn } from './liftedQuestions'
 
 /**
  * The message scrubber (ADR-0109; Owl only): a column of ticks at the transcript's left edge, one for each message the
- * user sent, with a card that shows the message and the start of what came back. Everything here is read from the
- * messages the window already holds; nothing is fetched to fill a card.
+ * user sent, with a card that shows the message and the start of what came back. The ticks come from the messages the
+ * window holds and, above them, the prompts the thread's store holds (`AgentThreadPrompt`), read once as the pane opens or
+ * its window moves; nothing is fetched to fill a card.
  */
+
+/** What a card shows of a message sent: its words and when. */
+export interface ScrubberMessage { readonly text: string; readonly createdAt: string }
+/** What a card shows of a reply: its words, whole or, from the store, their start and end. */
+export interface ScrubberReply { readonly id: string; readonly text: string }
 
 /** One tick: a message the user sent, where it sits in the thread's messages, and the turn's last written reply. */
 export interface ScrubberMark {
   readonly messageId: string
+  /** Where it sits in the window's messages, or -1 for a message only the thread's store holds. */
   readonly index: number
-  readonly message: AgentMessage
+  readonly message: ScrubberMessage
+  /** How many files were attached. */
+  readonly attachments: number
   /** The turn's last reply with words, so far. A turn still being written may have none yet. */
-  readonly reply: AgentMessage | undefined
+  readonly reply: ScrubberReply | undefined
   /** No message comes after this one's turn: an open question in the thread is the one this message led to. */
   readonly newest: boolean
 }
@@ -47,17 +57,49 @@ const OPENING = 220
  * sent, which is the reply a finished turn shows unfolded. What answers a wake-up or a brief belongs to neither tick.
  */
 export function scrubberMarks(messages: readonly AgentMessage[], notTheUsers: ReadonlySet<string> = new Set()): ScrubberMark[] {
-  const marks: { messageId: string; index: number; message: AgentMessage; reply: AgentMessage | undefined; newest: boolean }[] = []
+  const marks: { messageId: string; index: number; message: AgentMessage; attachments: number; reply: AgentMessage | undefined; newest: boolean }[] = []
   let current: typeof marks[number] | undefined
   for (const [index, message] of messages.entries()) {
     if (message.role === 'user') {
-      current = isWakeUpMessage(message) || notTheUsers.has(message.id) ? undefined : { messageId: message.id, index, message, reply: undefined, newest: false }
+      current = isWakeUpMessage(message) || notTheUsers.has(message.id) ? undefined
+        : { messageId: message.id, index, message, attachments: message.attachments?.length ?? 0, reply: undefined, newest: false }
       if (current) marks.push(current)
     } else if (current && message.role === 'assistant' && !isVisualMessage(message) && message.text.trim().length > 0) current.reply = message
   }
   // A wake-up or a brief after the last message sent starts a turn of its own, and what it asks is not this message's.
   if (current) current.newest = true
   return marks
+}
+
+/**
+ * The ticks for the prompts the thread's store holds above the window. Wake-ups never reach here; a brief another thread
+ * delegated is left out as it is in the window, and the reply that answered it with it.
+ */
+export function storedMarks(prompts: readonly AgentThreadPrompt[], notTheUsers: ReadonlySet<string> = new Set()): ScrubberMark[] {
+  const marks: ScrubberMark[] = []
+  for (const prompt of prompts) {
+    if (!notTheUsers.has(prompt.id)) marks.push({ messageId: prompt.id, index: -1, message: prompt, attachments: prompt.attachments ?? 0, reply: prompt.reply, newest: false })
+  }
+  return marks
+}
+
+/**
+ * The ticks above the window: the store's, then those of the turns the window let go since the store was read. A turn the
+ * store was read past is the store's.
+ */
+export function aboveWindow(stored: readonly ScrubberMark[], slid: readonly ScrubberMark[]): readonly ScrubberMark[] {
+  if (slid.length === 0) return stored
+  const read = new Set(stored.map(mark => mark.messageId))
+  const after = slid.filter(mark => !read.has(mark.messageId))
+  return after.length === 0 ? stored : stored.length === 0 ? after : [...stored, ...after]
+}
+
+/** The store's ticks, then the window's: a message the window has loaded since the store was read is the window's tick. */
+export function joinedMarks(stored: readonly ScrubberMark[], window: readonly ScrubberMark[]): readonly ScrubberMark[] {
+  if (stored.length === 0) return window
+  const drawn = new Set(window.map(mark => mark.messageId))
+  const above = drawn.size === 0 ? stored : stored.filter(mark => !drawn.has(mark.messageId))
+  return window.length === 0 ? above : [...above, ...window]
 }
 
 /** Whether the scrubber shows: enough messages sent, and a conversation taller than a screen or two, or with more above. */
@@ -81,8 +123,8 @@ export function plainOpening(text: string, most = OPENING): string {
 }
 
 /** A reply's questions are found once; replies are shared across updates. */
-const asked = new WeakMap<AgentMessage, readonly string[]>()
-function questionsOf(message: AgentMessage): readonly string[] {
+const asked = new WeakMap<ScrubberReply, readonly string[]>()
+function questionsOf(message: ScrubberReply): readonly string[] {
   let found = asked.get(message)
   if (!found) asked.set(message, found = questionsIn(message.text))
   return found

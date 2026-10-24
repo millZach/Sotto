@@ -39,7 +39,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
-import { cancelNightFalls, nightFallsShipped, playNightFalls } from '../watcher/nightFalls'
+import { cancelNightFalls, nightFallsRun, playNightFalls } from '../watcher/nightFalls'
 import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
@@ -49,7 +49,11 @@ export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
-export interface SettingsRequest { readonly section: SettingsSectionId; readonly key: number }
+export interface SettingsRequest {
+  readonly section: SettingsSectionId; readonly key: number
+  /** A setting on that page to bring into view and focus, by its `data-setting` id. */
+  readonly setting?: string | undefined
+}
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
@@ -147,8 +151,8 @@ export interface AppActions {
   cancel(): Promise<void>
   retry(): Promise<void>
   dismiss(): Promise<void>
-  /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts). */
-  navigate(destination: AppNavigation, settingsSection?: SettingsSectionId): void
+  /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts), and at one setting on it. */
+  navigate(destination: AppNavigation, settingsSection?: SettingsSectionId, setting?: string): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
@@ -683,19 +687,18 @@ export function AppProvider({
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
-    navigate: (destination, settingsSection) => {
+    navigate: (destination, settingsSection, setting) => {
       // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
       const generation = ++navigationGenerationRef.current
       const go = (): void => {
         if (generation !== navigationGenerationRef.current) return
         setNavigation(destination)
         // A request is for one visit: Settings opened any other way starts on its first page again.
-        setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
+        setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1, ...(setting !== undefined ? { setting } : {}) } : null)
       }
       // Between Threads and Watcher's room the window plays night falls, unless the setting is off.
-      const from = navigationRef.current, current = settingsRef.current
-      const betweenRooms = (from === 'threads' && destination === 'watcher') || (from === 'watcher' && destination === 'threads')
-      if (betweenRooms && nightFallsShipped(updateRef.current) && current?.roomTransition !== false) playNightFalls(go, { forward: destination === 'watcher', speed: current?.roomTransitionSpeed ?? 1 })
+      const run = nightFallsRun(navigationRef.current, destination, updateRef.current, settingsRef.current)
+      if (run !== null) playNightFalls(go, run)
       else { cancelNightFalls(); go() }
     },
     updateSettings: (patch) => bridge === undefined

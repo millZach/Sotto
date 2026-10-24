@@ -4,6 +4,7 @@ import { msg } from '@lingui/core/macro'
 import { platformCopy } from '../../platformCopy'
 import { inEnglish } from '../../state/interfaceLanguage'
 import type { SottoPlatform } from '../../../../shared/platform'
+import type { ProviderId } from '../../../../shared/agents'
 
 /** A page in the rail. Its name is read in the interface language each time it is shown (ADR-0123). */
 function settingsPage<Id extends string>(id: Id, label: MessageDescriptor | string, run: number): { readonly id: Id; readonly label: string; readonly run: number } {
@@ -87,6 +88,8 @@ export interface SettingEntry {
    * Custom instructions shows only while that style is chosen, Shell sandbox only while Muse is selected.
    */
   readonly fallback?: string
+  /** On Providers, the provider whose page holds it, which Find shows before bringing it into view. */
+  readonly provider?: ProviderId
   readonly gate?: SettingGate
 }
 
@@ -99,6 +102,7 @@ interface SettingSpec {
   readonly section: SettingsSectionId
   readonly words?: string
   readonly fallback?: string
+  readonly provider?: ProviderId
   readonly gate?: SettingGate
 }
 
@@ -172,6 +176,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'thread-providers', label: msg`Thread providers`, section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { id: 'client-updates', label: msg`Check for client updates`, section: 'settings-providers', words: 'agent clients' },
     { id: 'shell-sandbox', label: msg`Shell sandbox`, section: 'settings-providers', words: 'muse', fallback: 'thread-providers', gate: 'muse' },
+    { id: 'compact-idle-threads', label: msg`Compact idle threads`, section: 'settings-providers', words: 'claude code cache compaction context cost idle', fallback: 'thread-providers', provider: 'claude' },
     { id: 'local-host', label: msg`Run the local host`, section: 'settings-hosts', words: 'this computer' },
     { id: 'remote-hosts', label: msg`Remote hosts`, section: 'settings-hosts', words: 'ssh tailscale add host computers' },
     { id: 'phone-access', label: msg`Let phones connect`, section: 'settings-phones', words: 'iphone' },
@@ -191,6 +196,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'contrast', label: msg`Contrast`, section: 'settings-appearance' },
     { id: 'reduced-motion', label: msg`Reduced motion`, section: 'settings-appearance', words: 'animation' },
     { id: 'night-falls', label: msg`Night falls between Threads and Watcher`, section: 'settings-appearance', words: 'transition animation watcher room', gate: 'night-falls' },
+    { id: 'night-falls-look', label: msg`Night falls look`, section: 'settings-appearance', words: 'transition animation stars band look', gate: 'night-falls' },
     { id: 'night-falls-speed', label: msg`Night falls speed`, section: 'settings-appearance', words: 'transition animation slower faster', gate: 'night-falls' },
     { id: 'launch-at-startup', label: copy.settingsLaunchAtStartupLabel, section: 'settings-privacy', words: 'startup login' },
     { id: 'start-minimized', label: msg`Start minimized`, section: 'settings-privacy', words: 'startup tray' },
