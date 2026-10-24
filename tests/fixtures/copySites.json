@@ -104,9 +104,6 @@
   "src/main/agents/threadStore.ts": {
     "clonePlainData(": 1
   },
-  "src/main/agents/watcherRoomDesktop.ts": {
-    "clonePlainData(": 1
-  },
   "src/main/agents/workspace.ts": {
     "structuredClone(": 6,
     "cloneHostSnapshot(": 1
