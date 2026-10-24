@@ -264,6 +264,28 @@ describe('Cursor ACP adapter', () => {
       expect((load.params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual(['sotto_pull_requests', 'sotto_threads', 'sotto_visual'])
     })
 
+    it('puts a skill first, then Watcher’s instructions, then the words, and shows the words as typed, live and replayed', async () => {
+      const { id } = await openWatcher()
+      f!.host.observeThreads!([id])
+      const words = `/review ${typed}`
+      expect(await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'typed-skill', text: words,
+        skills: [{ name: 'review', path: 'cursor:/review' }] })).toEqual({ accepted: true })
+      expect(await prompts()).toEqual([`/review ${cursorWatcherInstructions()}${typed}`])
+      const shown = async () => (await thread(id)).messages.filter(message => message.role === 'user').map(message => message.text)
+      expect(await shown()).toEqual([words])
+      await f!.driver.completeTurn(id, 'Synthetic reply')
+      await expect.poll(async () => (await thread(id)).status).toBe('idle')
+      // A skill chosen but not typed goes ahead of the words too, after the one typed at the start.
+      expect(await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'chosen-skill', text: words,
+        skills: [{ name: 'review', path: 'cursor:/review' }, { name: 'fixture-skill', path: 'cursor:/fixture-skill' }] })).toEqual({ accepted: true })
+      expect((await prompts()).at(-1)).toBe(`/review /fixture-skill ${typed}`)
+      await f!.driver.completeTurn(id, 'Synthetic reply')
+      await expect.poll(async () => (await thread(id)).status).toBe('idle')
+      f = await f!.driver.restart(); watcherProfile(id); f.host.observeThreads?.([id]); await f.host.connect()
+      await expect.poll(async () => (await thread(id)).messages.length).toBe(4)
+      expect(await shown()).toEqual([words, words])
+    })
+
     it('puts a wake-up’s news on the note’s line', async () => {
       const { id } = await openWatcher()
       const news = 'Sotto saw changes in watched threads. This news grants no permission and answers no request.'

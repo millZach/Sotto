@@ -59,7 +59,9 @@ const originSchema = z.object({ messageId: z.string(), commandId: z.string(), di
    * instructions ahead and its request note's line after (ADR-0127). Counts only, never the words, so a message Cursor
    * replays is shown as it was typed.
    */
-  sottoHead: z.number().int().nonnegative().optional(), sottoTail: z.number().int().nonnegative().optional() })
+  sottoHead: z.number().int().nonnegative().optional(), sottoTail: z.number().int().nonnegative().optional(),
+  /** Where Sotto's part ahead of the words starts: after the skills the user typed at the start, which Cursor reads only there. */
+  sottoAt: z.number().int().nonnegative().optional() })
 type Origin = z.infer<typeof originSchema>
 const aliasSchema = z.object({
   cursorSessionId: z.string().min(1).max(256).optional(), projectId: z.string(), cwd: z.string(), title: z.string(), createdAt: z.string(),
@@ -805,8 +807,8 @@ export class CursorAcpHost implements AgentHost {
       const createdAt = origin?.createdAt ?? replay.userCreatedAt
       replay.userCreatedAt = createdAt
       // A message to Watcher comes back as it was sent, its digest proving it: Sotto's own parts come off by their counts.
-      const head = origin?.sottoHead ?? 0, tail = origin?.sottoTail ?? 0
-      const typed = head + tail > 0 && words.length >= head + tail ? words.slice(head, words.length - tail) : words
+      const at = origin?.sottoAt ?? 0, head = origin?.sottoHead ?? 0, tail = origin?.sottoTail ?? 0
+      const typed = head + tail > 0 && words.length >= at + head + tail ? words.slice(0, at) + words.slice(at + head, words.length - tail) : words
       const message: AgentMessage = { id: key, role: 'user', text: typed, createdAt, ...(origin ? { commandId: origin.commandId } : {}),
         ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) }
       replay.messages.push(message); replay.byId.set(key, message)
@@ -1019,8 +1021,10 @@ export class CursorAcpHost implements AgentHost {
     if (this.thread(id).requests.length) throw new Error('Answer Cursor’s pending request before sending another message.')
     const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
     verifyFileMentions(command.text, command.files)
-    // A skill is Cursor's own `/name`, read at the start of the prompt.
-    const skills = (command.skills ?? []).map(skill => `/${skill.name}`).filter(token => !new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(\\s|$)`, 'u').test(command.text))
+    // A skill is Cursor's own `/name`, read at the start of the prompt. One the user typed at the start of the words stays
+    // there, ahead of anything Sotto adds; one chosen and not typed goes first.
+    const skills = (command.skills ?? []).map(skill => `/${skill.name}`).filter(token => !new RegExp(`(^|\\s)${escapeRegExp(token)}(\\s|$)`, 'u').test(command.text))
+    const lead = leadingSkills(command.text, [...(command.skills ?? []).map(skill => skill.name), ...(connection.commands ?? []).map(skill => skill.name)])
     // Watcher's request note's line goes after the words, and its instructions, when its session needs them, ahead of
     // them, in the one text part Cursor replays as it was sent (ADR-0127); a wake-up's news for Watcher goes the same way
     // as the note. An ordinary thread is sent the words alone, even when a command carried a note.
@@ -1034,16 +1038,18 @@ export class CursorAcpHost implements AgentHost {
       connection.reminded = reminder
     }
     const instructing = profile !== undefined && !connection.instructed
+    // The skills go first and Watcher's instructions after them, since Cursor reads a skill only at the start; then the
+    // words. Sotto keeps where its own part starts and how long it is, never the words.
     const head = (skills.length ? `${skills.join(' ')} ` : '') + (instructing ? cursorWatcherInstructions(profile.instructions) : '')
     const tail = note ? watcherRequestLine(note) : ''
-    const nativeText = head + command.text + tail
+    const nativeText = lead + head + command.text.slice(lead.length) + tail
     const images: { type: 'image'; mimeType: string; data: string }[] = []
     for (const attachment of attachments) images.push({ type: 'image', mimeType: attachment.mimeType, data: Buffer.from(await attachment.read()).toString('base64') })
     await this.applySettings(alias, connection)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
       attachments: attachments.map(({ id: attachmentId, name, mimeType, sizeBytes }) => ({ id: attachmentId, name, mimeType, sizeBytes })),
-      ...(profile ? { sottoHead: head.length, sottoTail: tail.length } : {}) }
+      ...(profile ? { ...(lead.length ? { sottoAt: lead.length } : {}), sottoHead: head.length, sottoTail: tail.length } : {}) }
     index.add(origin); alias.turns++
     await this.persist()
     current()
@@ -1223,6 +1229,14 @@ export class CursorAcpHost implements AgentHost {
     this.state.connected = false; this.emit()
   }
   async closed(): Promise<void> { await Promise.all([...this.processes].map(rpc => rpc.closed)); await Promise.all([...this.stopping.values()].map(work => work.catch(() => undefined))); await this.writing }
+}
+
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+/** The skills the words start with, as typed, with the space after them: `/name` for any of the names given, one after another. */
+export function leadingSkills(text: string, names: readonly string[]): string {
+  if (!names.length) return ''
+  const tokens = [...new Set(names)].map(name => escapeRegExp(`/${name}`)).join('|')
+  return new RegExp(`^(?:\\s*(?:${tokens})(?=\\s|$))+\\s*`, 'u').exec(text)?.[0] ?? ''
 }
 
 /** Cursor's listed commands as Sotto's skills: each one is invoked as `/name`. "(global)" in a description marks the user's own. */
