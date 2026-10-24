@@ -185,7 +185,8 @@ export class ConfiguredProviderHost implements AgentHost {
     this.markDisconnected(slot)
   }
   private aggregate(): AgentHostSnapshot {
-    const providers = [...this.slots.values()].map(slot => clonePlainData(slot.status))
+    // One copy of every provider's status, not one per provider, so a new provider adds no copy to each publish.
+    const providers = clonePlainData([...this.slots.values()].map(slot => slot.status))
     const capabilities = { ...EMPTY_AGENT_HOST.capabilities }
     for (const provider of providers.filter(provider => provider.connection === 'connected')) {
       for (const key of Object.keys(provider.capabilities) as (keyof AgentCapabilities)[]) if (provider.capabilities[key]) capabilities[key] = true

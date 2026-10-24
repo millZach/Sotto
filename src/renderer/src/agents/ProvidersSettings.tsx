@@ -9,16 +9,32 @@ import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
 import { useHeldProviders } from '../state/owlFeature'
-import { newestModelsFirst } from './ModelPicker'
+import { modelSources, newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
+import { CursorConnection, useCursorSignIn } from './CursorConnection'
 import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode' }
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor' }
+
+/**
+ * What the update switch says it checks, by where each client's published version is read: Muse's own release feed and
+ * Cursor's install script, where each is not held, and the npm registry for the rest. Each case is one whole message.
+ */
+function updateChecks(held: ReadonlySet<ProviderId>): string {
+  const muse = !held.has('muse'), cursor = !held.has('cursor')
+  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (muse) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  return 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'
+}
+/** What the Providers page says when Cursor's install guide does not open. */
+const CURSOR_GUIDE_FAILED = msg`Cursor’s install guide could not be opened. Try again.`
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
 function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, connected = false, checkingNow = false): string {
@@ -61,11 +77,13 @@ export function ProvidersSettings(): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState<ProviderId | null>('codex')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
-  const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
+  const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
   const [loginFeedback, showLoginFeedback] = useTransientFlag()
+  /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
+  const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
   const sandboxActions = useRef<HTMLDivElement>(null)
@@ -128,6 +146,13 @@ export function ProvidersSettings(): ReactNode {
       if (!result?.ok) setErrors(previous => ({ ...previous, opencode: 'The OpenCode guide could not be opened. Try again.' }))
     } catch { setErrors(previous => ({ ...previous, opencode: 'The OpenCode guide could not be opened. Try again.' })) }
   }
+  const openCursorGuide = async (): Promise<void> => {
+    setErrors(previous => ({ ...previous, cursor: undefined }))
+    try {
+      const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES.cursor)
+      if (!result?.ok) setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED }))
+    } catch { setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED })) }
+  }
   const copyMuseLogin = async (): Promise<void> => {
     setCopyingLogin(true)
     setErrors(previous => ({ ...previous, muse: undefined }))
@@ -173,6 +198,15 @@ export function ProvidersSettings(): ReactNode {
   // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
   const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
   const triggerOf = (provider: ProviderId) => document.getElementById(`${rowId}-${provider}-trigger`)
+  // Cursor's row signs in from its connection column, which says what to do while Cursor is not signed in and where a
+  // sign-in stands while one waits; neither main's sentence about it nor a Connect press's own error is repeated there.
+  const cursorBridge = window.sotto?.cursor
+  const cursorExplains = (provider: ProviderId, status: ReturnType<typeof statusFor>): boolean => provider === 'cursor' && cursorBridge !== undefined
+    && (('problem' in status && status.problem === 'signed-out') || cursorSignIn.signing)
+  // Each sign-in press answers the row's last error, as every other press on this page does, so a Connect press's
+  // "sign in" does not come back once the sign-in has connected Cursor.
+  const cursorPress = <T,>(press: () => Promise<T>) => (): Promise<T> => { setErrors(previous => ({ ...previous, cursor: undefined })); return press() }
+  const cursorRowSignIn = { ...cursorSignIn, start: cursorPress(cursorSignIn.start), reopen: cursorPress(cursorSignIn.reopen), signOut: cursorPress(cursorSignIn.signOut) }
   // Up and Down move between the rows' headers, Home and End to the first and last, and round from one end to the other.
   const moveBetweenRows = (event: KeyboardEvent<HTMLUListElement>): void => {
     if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
@@ -205,20 +239,27 @@ export function ProvidersSettings(): ReactNode {
       : problem === 'too-old' ? `Sotto works with OpenCode ${'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'} or newer. Install OpenCode 2 with its install script, which replaces an older copy in ~/.opencode/bin, where Sotto looks first, then connect again. npm’s @opencode/cli installs a second copy and leaves that one.`
       : undefined
     const byHand = checkClientUpdates && update && ((update.behind && !update.canInstall) || update.state === 'failed' || update.state === 'unchanged')
+    const connectButtons = <>
+      <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || providerUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
+        onClick={() => void perform(provider, connected ? 'disconnect' : 'connect')}>{working ? pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
+      {connected && <Button variant="ghost" iconOnly aria-label={`Refresh ${label}`} disabled={Boolean(working) || providerUpdating} onClick={() => void perform(provider, 'refresh')}><RefreshCw size={15} /></Button>}
+    </>
+    // Cursor's models arrive grouped by model maker in Cursor's order (ADR-0128), and its row keeps them so, grouped the
+    // way the model menu groups them.
+    const makers = provider === 'cursor' ? modelSources(hostModels.filter(model => model.providerId === 'cursor'), label) : undefined
+    const modelItem = (model: (typeof models)[number]): ReactNode => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small data-agent-setting={model.ready && model.id === inheritedEntryId ? true : undefined}>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>
     return <>
       <div className="provider-row__column">
-        <div className="provider-connection">
+        {provider === 'cursor' && cursorBridge ? <CursorConnection signIn={cursorRowSignIn} problem={problem} connected={connected}
+          busy={Boolean(working) || providerUpdating} connectButton={connectButtons} onGuide={() => void openCursorGuide()} />
+        : <div className="provider-connection">
           <div>
             <h4>Local connection</h4>
             <p>{provider === 'devin' ? 'Install Devin CLI and run devin auth login before connecting.' : provider === 'muse' ? 'Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.' : provider === 'opencode' ? 'Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.' : `Uses your ${CLIENT_NAMES[provider]} sign-in on this computer.`}</p>
             {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label="Copy Muse login command" onClick={() => void copyMuseLogin()}>{loginFeedback ?? 'Copy'}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>Sign-in steps</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? 'Muse login command copied.' : ''}</span></div>}
           </div>
-          <div className="provider-client__actions">
-            <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || providerUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
-              onClick={() => void perform(provider, connected ? 'disconnect' : 'connect')}>{working ? pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
-            {connected && <Button variant="ghost" iconOnly aria-label={`Refresh ${label}`} disabled={Boolean(working) || providerUpdating} onClick={() => void perform(provider, 'refresh')}><RefreshCw size={15} /></Button>}
-          </div>
-        </div>
+          <div className="provider-client__actions">{connectButtons}</div>
+        </div>}
         {provider === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
         <div className="provider-client" aria-busy={checkingUpdates || providerUpdating}>
           <div>
@@ -251,11 +292,16 @@ export function ProvidersSettings(): ReactNode {
         {provider === 'opencode' && (openCodeInstall || byHand) && <details className="provider-client__steps"><summary>Installation steps</summary><p>{openCodeInstall ?? (!update?.byHand?.length ? 'Update OpenCode 2 with the installer or package manager you used. Then check again.' : 'Run these commands in a terminal on this computer, then check again.')}</p>{openCodeInstall ? null : update?.byHand?.map((line, index) => <code key={index}>{line}</code>)}<Button variant="ghost" onClick={() => void openOpenCodeGuide()}>Open OpenCode installation guide</Button></details>}
         {provider === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
         {provider === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
+        {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
       </div>
       <div className="provider-row__column provider-row__models" role="group" aria-labelledby={`${rowId}-${provider}-models`}>
         <h4 id={`${rowId}-${provider}-models`}><Trans>Models</Trans></h4>
-        {models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small data-agent-setting={model.ready && model.id === inheritedEntryId ? true : undefined}>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul>
+        {makers?.length ? <div className="provider-models__makers" role="group" aria-label={`${label} available models`}>{makers.map(({ name, models: items }, index) => <React.Fragment key={name}>
+          <h5 id={`${rowId}-${provider}-maker-${index}`} className="provider-models__maker">{name}</h5>
+          <ul className="provider-models" aria-labelledby={`${rowId}-${provider}-maker-${index}`}>{items.map(modelItem)}</ul>
+        </React.Fragment>)}</div>
+          : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(modelItem)}</ul>
           : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
       </div>
     </>
@@ -267,11 +313,14 @@ export function ProvidersSettings(): ReactNode {
     const isOpen = open === provider
     const active = enabled.includes(provider)
     const connecting = status.connection === 'connecting' || pending[provider]
-    const statusLabel = pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : status.connection === 'connected' ? 'Connected' : status.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
+    // While a sign-in waits on cursor.com, Cursor's row says so, live as a connect is, and holds its switch.
+    const signingIn = provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing && status.connection !== 'connected'
+    const signedOut = provider === 'cursor' && status.connection === 'error' && 'problem' in status && status.problem === 'signed-out'
+    const statusLabel = signingIn ? t`Signing in…` : pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : status.connection === 'connected' ? 'Connected' : signedOut ? t`Not signed in` : status.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
     const version = update?.published ?? ''
-    const error = errors[provider] ?? status.error
+    const error = cursorExplains(provider, status) ? undefined : errors[provider] ?? status.error
     const id = `${rowId}-${provider}`
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
     const closeOnEscape = (event: KeyboardEvent<HTMLLIElement>): void => {
@@ -290,7 +339,7 @@ export function ProvidersSettings(): ReactNode {
           <span className="provider-badge" data-provider={provider}><ProviderMark provider={provider} name={label} size={17} /></span>
           <span className="provider-row__name"><strong>{label}</strong>
             <span className="provider-row__meta" id={`${id}-meta`}>
-              <small className="provider-row__status" data-status={connecting ? 'busy' : status.connection}><i aria-hidden="true" />{statusLabel}</small>
+              <small className="provider-row__status" data-status={signingIn || connecting ? 'busy' : status.connection}><i aria-hidden="true" />{statusLabel}</small>
               <span className="provider-row__version">{status.version ? shortVersion(status.version) : ''}</span>
             </span>
           </span>
@@ -300,9 +349,9 @@ export function ProvidersSettings(): ReactNode {
             disabled={providerUpdating || Boolean(connecting) || updating || checkingUpdates} onClick={() => void runUpdate(provider)}>
             <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? t`Waiting to update` : t`Updating…` : t`Update to ${version}`}</button>
           : <span className="provider-row__update-slot" />}
-        <Toggle label={`Enable ${label}`} checked={active} disabled={Boolean(connecting) || providerUpdating} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
+        <Toggle label={`Enable ${label}`} checked={active} disabled={signingIn || Boolean(connecting) || providerUpdating} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
       </div>
-      {error && <p role="alert" className="provider-row__error">{error}</p>}
+      {error && <p role="alert" className={typeof error === 'string' ? 'provider-row__error' : 'provider-row__error tt-paragraph'}>{shownWords(error)}</p>}
       {isOpen && <div id={`${id}-panel`} role="region" aria-label={t`${label} details`} className="provider-row__panel">{details(provider)}</div>}
     </li>
   }
@@ -315,7 +364,7 @@ export function ProvidersSettings(): ReactNode {
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
-        <p>{!held.has('muse') ? "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
+        <p className={held.has('muse') && held.has('cursor') ? undefined : 'tt-paragraph'}>{updateChecks(held)}</p>
       </div>
       <Toggle setting="client-updates" label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />

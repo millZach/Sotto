@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { t } from '@lingui/core/macro'
 import { Check, ChevronDown, Lock, Shield } from 'lucide-react'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
@@ -17,6 +18,7 @@ import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
 import { useSaveOrchestrating } from '../watcher/orchestratingRole'
+import { useLingui as useInterfaceLanguage } from '../state/interfaceLanguageReact'
 import './threadChips.css'
 
 export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
@@ -24,6 +26,19 @@ export const RUNTIME_LABELS: Record<AgentRuntimeMode, string> = {
   'auto-accept-edits': 'Allow edits',
   auto: 'Auto',
   'full-access': 'Full access',
+}
+/**
+ * What each of Cursor's three modes does, said as Cursor doing it (ADR-0128), in the interface language. Cursor has no
+ * Allow edits: it edits inside the project without asking under every mode, so Ask for approval says so, and Auto says
+ * where its judgement runs.
+ */
+export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
+  switch (mode) {
+    case 'approval-required': return t`Cursor asks before commands, web requests and tools. It edits files inside the project without asking.`
+    case 'auto': return t`Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you.`
+    case 'full-access': return t`Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it.`
+    default: return undefined
+  }
 }
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
@@ -46,7 +61,11 @@ export function WatcherPermission({ mode = 'approval-required' }: { readonly mod
     <Lock size={13} aria-hidden="true" /><span className="tt-visually-hidden">Watcher’s permissions: </span>{RUNTIME_LABELS[mode]}</span>
 }
 
-export interface ChoiceOption { readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean }
+export interface ChoiceOption {
+  readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean
+  /** The description is a message of Sotto's in the interface language, which runs right to left where that language does. */
+  readonly translated?: boolean
+}
 
 /** The effort levels a model offers, led by the current one as unchoosable when the model does not offer it. */
 export function effortChoices(model: AgentModel | undefined, reasoning: string): ChoiceOption[] {
@@ -74,7 +93,10 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   if (modes.length === 0) return []
   const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
-  return [...lead, ...modes.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
+  return [...lead, ...modes.map(mode => {
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : undefined
+    return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
+  })]
 }
 /** The provider mode a thread is on, or the one it starts on when none has been chosen: the first offered. */
 export const startingProviderMode = (model: AgentModel | undefined, providerMode: string | undefined): string | undefined =>
@@ -96,6 +118,8 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
   /** Model and reasoning stay visible but fixed; permissions remain editable. */
   readonly modelDisabled?: boolean
 }): ReactNode {
+  // Cursor's permission lines are messages, so a change of interface language draws this again.
+  useInterfaceLanguage()
   const model = resolveModel(models, modelId)
   const reasoning = reasoningEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
@@ -243,7 +267,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
   const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
     {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
-      <span>{option.label}{option.description ? <small>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
+      <span>{option.label}{option.description ? <small className={option.translated ? 'tt-paragraph' : undefined}>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
   </div>
   return <div className="thread-chip-menu"
     onKeyDown={event => {
@@ -318,6 +342,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
 }): ReactNode {
+  // Cursor's permission lines are messages, so a change of interface language draws this again.
+  useInterfaceLanguage()
   const settings = usePendingSettings(thread.id)
   // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
   // and never for Watcher (ADR-0124, phase 1).

@@ -14,6 +14,7 @@ import { clockLabel } from './threadFacts'
 import { ChoiceChip, effortChoices, modeChoices, PERMISSIONS_ICON, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
+import { useLingui as useInterfaceLanguage } from '../state/interfaceLanguageReact'
 import './continueThread.css'
 
 /**
@@ -173,6 +174,8 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
 
 /** The composer's chips while a continuation is begun: the model it starts on, that model's effort, and its permissions. */
 export function ContinueOptions({ thread, state, choice }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice }): ReactNode {
+  // Cursor's permission lines are messages, so a change of interface language draws this again.
+  useInterfaceLanguage()
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
   const model = resolveModel(models, choice.modelId)

@@ -44,6 +44,7 @@ import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { MuseMspHost } from './agents/muse'
 import { OpenCodeHost } from './agents/opencode'
+import { CursorAcpHost } from './agents/cursor'
 import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
@@ -230,6 +231,8 @@ import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLang
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
+import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
 import { registerOwnServersIpc } from './ownModelServers/ipc'
@@ -792,6 +795,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
         ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
@@ -838,13 +842,19 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   if (opencodeFixtureRoot && (!isAbsolute(opencodeFixtureRoot) || !opencodeFixtureExecutable || !isAbsolute(opencodeFixtureExecutable))) {
     throw new Error('The OpenCode test fixture requires absolute paths.')
   }
+  // Cursor's real adapter over the fake Cursor client, the same way; Sotto's Cursor folder is under the profile, as it is in use.
+  const cursorFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_CURSOR_ROOT'] : undefined
+  const cursorFixtureExecutable = process.env['SOTTO_E2E_CURSOR_EXECUTABLE']
+  if (cursorFixtureRoot && (!isAbsolute(cursorFixtureRoot) || !cursorFixtureExecutable || !isAbsolute(cursorFixtureExecutable))) {
+    throw new Error('The Cursor test fixture requires absolute paths.')
+  }
   // The same for Claude and Codex: the real adapters over the fake CLIs, so a benchmark measures what they hold.
-  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
+  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot && !cursorFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
   const nativeFixtureExecutable = process.env['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE']
   if (nativeFixtureRoot && (!isAbsolute(nativeFixtureRoot) || !nativeFixtureExecutable || !isAbsolute(nativeFixtureExecutable))) {
     throw new Error('The native test fixture requires absolute paths.')
   }
-  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || cursorFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
   // A Playwright journey pushes to an owned remote and "creates" its pull request through a scripted gh; development only.
   const ghStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_GH_SCRIPT'] : undefined
   const ghStandInExecutable = process.env['SOTTO_E2E_GH_EXECUTABLE']
@@ -871,7 +881,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
-    openExternal: url => shell.openExternal(url),
+    // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
+    openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
+`, 'utf8') : shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
       const error = await shell.openPath(path); if (error) throw new Error(error)
@@ -882,14 +894,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       devin: new DevinAcpHost(userDataPath, {
         executable: devinFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeDevinAgent.mjs'), devinFixtureRoot],
         nativeConfigDirectory: join(devinFixtureRoot, 'native-config'), pollIntervalMs: 50,
       }),
     } } : {}),
     ...(museFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
         // Read at connect, as the runtime's own Muse reads it, so a journey proves the switch reaches the host it starts.
@@ -897,7 +909,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       }) } : {}),
     } } : {}),
     ...(opencodeFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
         executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot], heldProviders,
         ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -905,12 +917,18 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         openExternal: url => appendFile(join(opencodeFixtureRoot, 'opened-pages.txt'), `${url}\n`, 'utf8'),
       }) } : {}),
     } } : {}),
+    ...(cursorFixtureRoot ? { providers: {
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      ...(!heldProviders.has('cursor') ? { cursor: new CursorAcpHost(userDataPath, {
+        program: { executable: cursorFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeCursorAgent.mjs'), cursorFixtureRoot] },
+      }) } : {}),
+    } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home') }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home') }),
-      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
@@ -1850,6 +1868,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
+      // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
+      const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
@@ -2083,6 +2103,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupMainActivity()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
+        cleanupCursorSignIn()
         cleanupOwnServers()
         worktreeCleanup?.dispose()
         cleanupTools()

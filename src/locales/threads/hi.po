@@ -21,6 +21,11 @@ msgstr ""
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr ""
 
+#. placeholder {0}: questions.length
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{0, plural, one {Skip question} other {Skip questions}}"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{count, plural, one {# model} other {# models}}"
 msgstr ""
@@ -56,6 +61,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "{label} details"
+msgstr ""
+
+#. {maker} is the company that made the models, such as Anthropic.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "{maker} models in Cursor"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -101,6 +111,14 @@ msgstr ""
 msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
 msgstr ""
 
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Accept Cursor’s plan"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Accept plan"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Add a server"
 msgstr ""
@@ -138,8 +156,18 @@ msgstr ""
 msgid "Asking the server for its models…"
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Back to Cursor’s model makers"
+msgstr ""
+
+#. Stops a sign-in that is waiting for the user.
+#: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Cancel"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cancel signing in to Cursor"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -158,6 +186,22 @@ msgstr ""
 msgid "Checking…"
 msgstr ""
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Choose an answer, or skip"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Close without adding a server"
 msgstr ""
@@ -166,12 +210,80 @@ msgstr ""
 msgid "Context, in tokens"
 msgstr ""
 
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor asks before commands, web requests and tools. It edits files inside the project without asking."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor could not sign out. Nothing was changed. Run agent logout in a terminal to try again."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor did not finish signing in, so Sotto is not connected to it. Nothing was saved. Sign in again to try once more."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor is signed out on this computer."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Cursor made a plan and waits for you before it starts."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor’s CLI is not installed on this computer. Install it with Cursor’s guide, then connect again."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Cursor’s install guide could not be opened. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Cursor’s model makers"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Cursor’s plan"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor’s sign-in is not available right now. Nothing was changed."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr ""
 
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Every model here runs through Cursor, on your Cursor plan."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Finish signing in on cursor.com in your browser."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "From the address, if left empty"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Install guide"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -189,6 +301,16 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key kept by OpenCode"
+msgstr ""
+
+#. Heading of a provider’s connection on this computer, in Settings > Providers.
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Local connection"
+msgstr ""
+
+#. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Makers"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -219,6 +341,10 @@ msgstr ""
 msgid "None yet. Add a model server you run to use its models in OpenCode threads."
 msgstr ""
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Not signed in"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 msgstr ""
@@ -236,12 +362,24 @@ msgstr ""
 msgid "Only if the server was started with one"
 msgstr ""
 
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open Cursor’s install guide in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open Cursor’s sign-in page in your browser again"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Open Settings"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Open Settings at Your own model servers"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open the page again"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -269,12 +407,30 @@ msgstr ""
 msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
 msgstr ""
 
+#. The heading of a card that shows a plan Cursor made and waits for the user to accept.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Plan"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Plan from {ownerTitle}"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Read your saved servers again"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Reading your servers…"
+msgstr ""
+
+#. Rejects a plan the coding agent proposed.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Reject"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Reject Cursor’s plan"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -293,6 +449,10 @@ msgstr ""
 msgid "Removing…"
 msgstr ""
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Runs with OpenCode"
 msgstr ""
@@ -303,6 +463,35 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
+msgstr ""
+
+#. A button that signs in to a provider.
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign in"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign in to Cursor in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign out of Cursor"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign out of Cursor on this computer"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Signed in on cursor.com. Connecting Cursor…"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Signing in…"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Signing out…"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -333,8 +522,16 @@ msgstr ""
 msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
 msgstr ""
 
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto’s OpenCode holds the key for {name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Starting Cursor’s sign-in…"
 msgstr ""
 
 #. {name} is the user’s own model server, such as Sparks.
@@ -376,6 +573,10 @@ msgstr ""
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr ""
 
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "The sign-in page could not open. Nothing was changed. Try again."
+msgstr ""
+
 #. Whether the model reasons before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking"
@@ -392,6 +593,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Threads on this server send your code and messages to it, so whoever runs it can read them."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Threads with Cursor"
 msgstr ""
 
 #. Button under a failed turn: sends the user’s last message again.
@@ -427,6 +632,18 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Updating…"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Waiting for Cursor. This connects by itself."
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx

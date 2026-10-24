@@ -12,6 +12,7 @@ import { findMuseExecutable } from './museRpc'
 import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type OpenCodeFolders } from './opencodeServer'
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
+import { compareCursorVersions, cursorEnvironment, cursorInstallRoot, cursorProgramOf, cursorPublishedVersion, findCursorExecutable, parseCursorVersion } from './cursorRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
@@ -67,6 +68,8 @@ function ownHome(provider: ProviderId, environment: NodeJS.ProcessEnv): readonly
   if (provider === 'grok') return [grokBin(environment)]
   // OpenCode 2's install script (`opencode.ai/v2/install`) puts it here, and `opencode upgrade` updates it in place.
   if (provider === 'opencode') return [join(home, '.opencode', 'bin')]
+  // Cursor's installer keeps each version in its own folder and `agent update` replaces them (ADR-0128).
+  if (provider === 'cursor') return [cursorInstallRoot(environment), ...(process.platform === 'win32' ? [] : [join(home, '.local', 'bin')])].filter((folder): folder is string => Boolean(folder))
   return []
 }
 function grokBin(environment: NodeJS.ProcessEnv): string {
@@ -356,6 +359,11 @@ export async function detectClientInstall(provider: ProviderId, executable: stri
     return inOwnHome ? { channel: 'self-update' } : { channel: 'unknown' }
   }
   if (MANAGED_ELSEWHERE.some(marker => lower.includes(marker))) return { channel: 'unknown' }
+  // Only a copy Cursor's own installer put in its version folders updates itself; any other copy is left to whoever installed it.
+  if (provider === 'cursor') {
+    const real = await realpath(executable).catch(() => executable)
+    return [executable, real].some(path => inOwnHome || ownHome(provider, environment).some(directory => within(path, directory))) ? { channel: 'self-update' } : { channel: 'unknown' }
+  }
   if (provider === 'muse') {
     const real = await realpath(executable).catch(() => executable)
     if (MANAGED_ELSEWHERE.some(marker => real.toLowerCase().includes(marker))) return { channel: 'unknown' }
@@ -405,7 +413,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       return [`npm install -g${prefix ? ` --prefix ${prefix}` : ''} --allow-scripts=${packageName} ${packageName}@latest`]
     }
     case 'self-update': return provider === 'muse' && install.muse ? museByHand(install.muse) : provider === 'claude' || provider === 'grok' ? [`${provider} update`]
-      : provider === 'opencode' ? ['opencode upgrade'] : undefined
+      : provider === 'opencode' ? ['opencode upgrade'] : provider === 'cursor' ? ['agent update'] : undefined
     case 'mise': {
       if (!install.miseTool) return undefined
       const target = miseTarget(install.miseTool, version)
@@ -487,6 +495,8 @@ export async function updateActionFor(provider: ProviderId, install: ClientChann
     return { command: byHand[0]!, byHand, executable: process.execPath, asNode: true,
       args: [cli, 'install', '-g', ...found.npmPrefix ? ['--prefix', found.npmPrefix] : [], allowScripts, `${packageName}@latest`] }
   }
+  // Cursor's program on Windows is its own node.exe running the index.js beside it, so `update` follows that script.
+  if (found.channel === 'self-update' && provider === 'cursor' && executable && byHand) { const program = cursorProgramOf(executable); return { command: byHand[0]!, byHand, executable: program.executable, args: [...program.args, 'update'] } }
   if (found.channel === 'self-update' && provider !== 'muse' && executable && byHand) return { command: byHand[0]!, byHand, executable, args: [provider === 'opencode' ? 'upgrade' : 'update'] }
   if (found.channel === 'mise' && found.miseTool && byHand) {
     const mise = await misePath()
@@ -594,6 +604,8 @@ export interface ProviderClientsOptions {
   readonly opencodeFolders?: OpenCodeFolders
   /** The platform whose install layouts are read: this one's, by default. */
   readonly platform?: NodeJS.Platform
+  /** Sotto's own Cursor folder: `agent update` runs with it, never with the user's own Cursor folder (ADR-0128). */
+  readonly cursorConfigDirectory?: string
 }
 
 /**
@@ -611,6 +623,7 @@ export class ProviderClients {
   private readonly miseReleaseAgeFlag: (executable: string) => Promise<boolean>
   private readonly nodePath: string
   private readonly opencodeFolders: OpenCodeFolders | undefined
+  private readonly cursorConfigDirectory: string | undefined
   private readonly platform: NodeJS.Platform
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
@@ -621,6 +634,7 @@ export class ProviderClients {
     this.miseReleaseAgeFlag = options.miseReleaseAgeFlag ?? defaultMiseReleaseAgeFlag
     this.nodePath = options.nodePath ?? process.execPath
     this.opencodeFolders = options.opencodeFolders
+    this.cursorConfigDirectory = options.cursorConfigDirectory
     this.platform = options.platform ?? process.platform
   }
 
@@ -630,6 +644,7 @@ export class ProviderClients {
    */
   async publishedVersion(provider: ProviderId, museChannel: MuseChannel = 'muse-stable', afresh = false): Promise<string | undefined> {
     if (provider === 'muse') return this.publishedMuseVersion(museChannel, afresh)
+    if (provider === 'cursor') return this.publishedCursorVersion(afresh)
     const packageName = CLIENT_PACKAGES[provider]
     if (!packageName) return undefined
     const cached = this.cache.get(packageName)
@@ -645,6 +660,21 @@ export class ProviderClients {
       if (body.length > REGISTRY_MAX_BYTES) return undefined
       const version = published.parse(JSON.parse(body)).version
       this.cache.set(packageName, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
+      return version
+    } catch { return undefined }
+  }
+
+  /** The version Cursor's own install script downloads, the one place Cursor says what it has published (ADR-0128). */
+  private async publishedCursorVersion(afresh: boolean): Promise<string | undefined> {
+    const key = 'cursor:install', cached = this.cache.get(key)
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
+    try {
+      const response = await this.fetchImpl('https://cursor.com/install', { redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS), headers: { accept: 'text/plain' } })
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); return undefined }
+      const body = await response.text()
+      if (body.length > REGISTRY_MAX_BYTES) return undefined
+      const version = cursorPublishedVersion(body)
+      if (version) this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
       return version
     } catch { return undefined }
   }
@@ -676,6 +706,7 @@ export class ProviderClients {
     const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel, options.afresh === true)
     const behind = provider === 'muse'
       ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
+      : provider === 'cursor' ? Boolean(latest && parseCursorVersion(installed) && compareCursorVersions(installed, latest) < 0)
       : Boolean(installed && latest && isComparableVersion(installed) && isComparableVersion(latest) && compareClientVersions(installed, latest) < 0)
     // A client behind what is published is updated to that version, which mise is asked for by name.
     const target = behind ? latest : undefined
@@ -727,7 +758,9 @@ export class ProviderClients {
     // OpenCode's own updater reads its config folder, so it runs on Sotto's OpenCode folders and the shared allow-list,
     // never the user's own OpenCode folders or other providers' keys.
     const opencodeOwn = provider === 'opencode' && install.channel === 'self-update' && this.opencodeFolders
-      ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) } : {}
+      ? { environment: opencodeEnvironment(withCliPath(environment, action.executable), this.opencodeFolders, opencodePassword()) }
+      // Cursor's updater runs with Sotto's Cursor folder and the shared allow-list, never the user's own ~/.cursor (ADR-0128).
+      : provider === 'cursor' && this.cursorConfigDirectory ? { environment: cursorEnvironment(this.cursorConfigDirectory, withCliPath(environment, action.executable)) } : {}
     const upgrade = await this.run(action.executable, action.args, action.asNode, action.cwd || action.env || opencodeOwn.environment
       ? { ...(action.cwd ? { cwd: action.cwd } : {}), ...(action.env ? { env: action.env } : {}), ...opencodeOwn } : undefined)
     if (!upgrade.ok) return { ...upgrade, step: 1, failure: DOWNLOAD_FAILED.test(upgrade.printed ?? upgrade.detail ?? '') ? 'download' : 'installer' }
@@ -780,5 +813,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'devin': return findDevinExecutable()
     case 'muse': return findMuseExecutable()
     case 'opencode': return findOpenCodeExecutable()
+    case 'cursor': return findCursorExecutable()
   }
 }
