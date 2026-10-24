@@ -106,6 +106,7 @@ export function refusalWords(reason: OwnServerRefusal | string, doing: OwnServer
     case 'removed-partly': return t`OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`
     case 'not-found': return t`That server is no longer saved. Nothing was changed.`
     case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`
+    case 'already-added': return t`${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`
     case 'failed': return t`Sotto could not finish that, so nothing was changed. Try again.`
     default: return english ?? t`Sotto could not finish that, so nothing was changed. Try again.`
   }
