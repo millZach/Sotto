@@ -62,17 +62,59 @@ const providerEntityId = z.string().min(1).max(6_144)
 export const AGENT_TEXT_MAX = 100_000
 const text = z.string().max(AGENT_TEXT_MAX)
 export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const
+export type AgentImageMimeType = typeof AGENT_IMAGE_MIME_TYPES[number]
+/**
+ * Whether an attachment is an image: one of the four raster types a model reads as a picture (ADR-0031). Anything else
+ * is an attached file (ADR-0131), whose bytes Sotto never inspects.
+ */
+export function isImageAttachment(mimeType: string): mimeType is AgentImageMimeType {
+  return (AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)
+}
+/** The type a file is staged as when the browser gives it none, or one that is not a well-formed MIME type. */
+export const AGENT_GENERIC_FILE_MIME_TYPE = 'application/octet-stream'
+/** A well-formed MIME type, `type/subtype`, lowercase, at most 127 characters, with no parameters. */
+export const agentMimeTypeSchema = z.string().max(127).regex(/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u)
+/** The MIME type a file is staged under: the browser's own, lowercased and without parameters, or the generic one. */
+export function attachmentMimeType(browserType: string): string {
+  const type = browserType.split(';')[0]!.trim().toLowerCase()
+  return agentMimeTypeSchema.safeParse(type).success ? type : AGENT_GENERIC_FILE_MIME_TYPE
+}
 export const AGENT_MAX_ATTACHMENTS = 8
 /** The most threads one Dismiss all names; a window with more failed threads sends them in turn. */
 export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+/** The bytes a set's images may hold between them, which keeps a Claude request under its 32 MB cap. */
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/** The most one attached file may hold (ADR-0131). */
+export const AGENT_MAX_FILE_BYTES = 25 * 1024 * 1024
+/** The most a set's images and files may hold between them (ADR-0131). */
+export const AGENT_MAX_ATTACHMENTS_TOTAL_BYTES = 50 * 1024 * 1024
+/** The most one attachment may hold, by what it is. */
+export function attachmentLimitBytes(mimeType: string): number {
+  return isImageAttachment(mimeType) ? AGENT_MAX_IMAGE_BYTES : AGENT_MAX_FILE_BYTES
+}
 // What a screenshot is refused with wherever it is checked: the composer before it reads a file, and staging after.
 // The guide gives these limits in MB, so the sentences do too.
 export const SCREENSHOT_WRONG_TYPE = 'Only PNG, JPEG, GIF, and WebP screenshots can be attached. Nothing was attached. Choose files of those types.'
 export const SCREENSHOT_TOO_LARGE = 'Each screenshot must be 10 MB or smaller. Nothing was attached. Choose a smaller file.'
 export const SCREENSHOTS_TOO_LARGE_IN_TOTAL = 'Screenshots must total 20 MB or less. Nothing was attached. Remove an image or choose smaller files.'
 export const SCREENSHOT_NOT_ITS_TYPE = 'This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it.'
+// The same refusals once any file can be attached (ADR-0131). The window says them through its catalogs; these are
+// main's and the host's, in English, and match the window's source text.
+export const ATTACHMENTS_TOO_MANY = 'Attach up to 8 files at a time. Nothing was attached.'
+export const ATTACHED_FILE_TOO_LARGE = 'Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.'
+export const ATTACHED_IMAGE_TOO_LARGE = 'Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image.'
+export const ATTACHED_IMAGES_TOO_LARGE_IN_TOTAL = 'Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones.'
+export const ATTACHMENTS_TOO_LARGE_IN_TOTAL = 'Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones.'
+/** An image on a model that reads none, naming the image. Files go to every model. */
+export function imagesNotReadRefusal(name: string): string {
+  return `This model does not read images. Choose a model with image support, or remove ${name}.`
+}
+/**
+ * A send that carries an attached file on a thread with no working folder to copy it into (ADR-0131). Checked before
+ * the provider hears anything.
+ */
+export const ATTACHED_FILES_NEED_A_FOLDER = 'This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved.'
 /**
  * The refusal when nothing is connected to act with. Only a send has a draft to keep, so only a send says so. A
  * headless host cannot know the name a desktop saved it under, so it says "this host" and the desktop puts that name
@@ -96,6 +138,14 @@ export function nameHostInRefusal(message: string, name: string): string {
 }
 /** What a host from before staged images (ADR-0031) is refused with when asked to keep one. */
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0131). */
+export const HOST_CANNOT_STAGE_FILES = 'This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.'
+/** What a file is refused with when the host that would keep it is not connected (ADR-0131). */
+export const HOST_DISCONNECTED_BEFORE_FILES = 'This host is disconnected. Connect again before attaching files. Nothing was attached.'
+/** A file part a host refuses as not the one its upload expects: out of order, from an upload it no longer holds, or too large. */
+export const FILE_UPLOAD_INCOMPLETE = 'This file did not reach the host whole. Nothing was attached. Attach it again.'
+/** An upload whose parts, put together, are not the file its first part named. */
+export const FILE_UPLOAD_MISMATCH = 'This file changed on its way to the host. Nothing was attached. Attach it again.'
 export const agentRuntimeModeSchema = z.enum(['approval-required', 'auto-accept-edits', 'auto', 'full-access'])
 export type AgentRuntimeMode = z.infer<typeof agentRuntimeModeSchema>
 export function attachmentSizeBytes(dataUrl: string): number {
@@ -152,29 +202,39 @@ export const attachmentDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
  */
 export const agentAttachmentHandleSchema = z.object({
   id: z.string().min(1).max(128).regex(/^[a-z0-9_-]+$/iu), name: z.string().trim().min(1).max(255),
-  mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), sizeBytes: z.number().int().min(1).max(AGENT_MAX_IMAGE_BYTES), digest: attachmentDigestSchema,
+  mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), digest: attachmentDigestSchema,
   /** The sizes the composer attached and staged it at, when it knew them (issue #321). */
   dimensions: agentAttachmentDimensionsSchema.optional(),
-}).strict()
+}).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB.')
 export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
-/** The bytes a set of staged images holds between them: what the 20 MiB total is measured on. */
+/** The bytes a set of staged attachments holds between them: what the 50 MiB total is measured on. */
 export function attachmentHandlesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes'>[]): number {
   return items.reduce((sum, item) => sum + item.sizeBytes, 0)
 }
+/** The bytes a set's images hold between them: what the 20 MiB image total is measured on. */
+export function attachmentImagesBytes(items: readonly Pick<AgentAttachmentHandle, 'sizeBytes' | 'mimeType'>[]): number {
+  return attachmentHandlesBytes(items.filter(item => isImageAttachment(item.mimeType)))
+}
 export const agentAttachmentHandlesSchema = z.array(agentAttachmentHandleSchema).max(AGENT_MAX_ATTACHMENTS)
   .refine(items => new Set(items.map(item => item.id)).size === items.length, 'Attachment IDs must be unique.')
-  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
+  .refine(items => attachmentImagesBytes(items) <= AGENT_MAX_ATTACHMENT_BYTES, 'Images must total no more than 20 MiB.')
+  .refine(items => attachmentHandlesBytes(items) <= AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, 'Attachments must total no more than 50 MiB.')
 const imageBytes = (limit: number) => z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= limit,
   'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
-/** The window hands an image's bytes to main once; the handle comes back. `threadId` picks the host that runs it. */
+const attachmentBytes = z.custom<Uint8Array>(value => value instanceof Uint8Array && value.byteLength > 0 && value.byteLength <= AGENT_MAX_FILE_BYTES,
+  'Choose a file no larger than 25 MiB.')
+/**
+ * The window hands an attachment's bytes to main once; the handle comes back. `threadId` picks the host that runs it.
+ * An image holds at most 10 MiB and any other file at most 25 MiB; whether this build keeps files at all is main's to say.
+ */
 export const agentAttachmentStageRequestSchema = z.object({
-  threadId: id.nullable(), name: z.string().trim().min(1).max(255), mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), bytes: imageBytes(AGENT_MAX_IMAGE_BYTES),
+  threadId: id.nullable(), name: z.string().trim().min(1).max(255), mimeType: agentMimeTypeSchema, bytes: attachmentBytes,
   dimensions: agentAttachmentDimensionsSchema.optional(),
-}).strict()
+}).strict().refine(request => request.bytes.byteLength <= attachmentLimitBytes(request.mimeType), 'Choose a PNG, JPEG, GIF or WebP image no larger than 10 MiB.')
 export type AgentAttachmentStageRequest = z.infer<typeof agentAttachmentStageRequestSchema>
 /** What a host is handed to stage: the image without the thread the window routed it by. */
 export type AgentAttachmentUpload = Omit<AgentAttachmentStageRequest, 'threadId'>
-/** A staged image's bytes, for a composer restoring a chip it holds no copy of. */
+/** A staged image's bytes, for a composer restoring a chip it holds no copy of. A file draws no chip, so none is read. */
 export const agentAttachmentContentRequestSchema = z.object({ threadId: id.nullable(), digest: attachmentDigestSchema }).strict()
 export type AgentAttachmentContentRequest = z.infer<typeof agentAttachmentContentRequestSchema>
 export const agentAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), bytes: imageBytes(AGENT_MAX_IMAGE_BYTES) }).strict()
@@ -199,6 +259,10 @@ export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), m
   preview: agentAttachmentPreviewSchema.optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
+/** The references a message records for its attachments: each one's ID, name, type and size, and nothing more. */
+export function attachmentReferences(attachments: readonly Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'>[]): AgentAttachmentReference[] {
+  return attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+}
 /**
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
  * and `description` are the provider's words; `asks` is Sotto's, and says what it will still put to the

@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -30,6 +30,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { discoverGrokSkills, grokSkillPrompt } from './grokSkills'
 import { verifyFileMentions } from './promptFiles'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
 import { markTurnActivity } from './turnActivity'
@@ -96,7 +97,8 @@ const QUOTA_REUSE_MS = 5 * 60_000
  */
 const LIVE_BILLING_TIMEOUT_MS = 5_000
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional() })
+/** `attachments`: the files a prompt carried (ADR-0131), by reference, so its message shows them however it is read back. */
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
 const catalogSchema = z.object({ currentModelId: z.string(), availableModels: z.array(z.object({ modelId: z.string(), name: z.string(), _meta: z.object({ reasoningEffort: z.string().optional(), supportsReasoningEffort: z.boolean().optional(), reasoningEfforts: z.array(z.object({ id: z.string(), value: z.string().optional(), default: z.boolean().optional() })).optional() }).optional() })).min(1) })
@@ -1029,11 +1031,10 @@ export class GrokAcpHost implements AgentHost {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
               delete history.assistant; history.status = 'running'
-              const text = content.text
-              const origin = messageOrigin(alias, key, text, Date.parse(createdAt))
+              const { text, origin } = readBackUserText(content.text, words => messageOrigin(alias, key, words, Date.parse(createdAt)))
               history.lastTurn = { id: origin?.messageId ?? key, status: 'running' }
               if (origin && !origin.entryKey) { origin.entryKey = key; changed = true }
-              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId } : {}) })
+              history.messages.push({ id: origin?.messageId ?? key, role: 'user', text: text, createdAt: origin?.createdAt ?? createdAt, ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
               if (origin) this.deliveries.get(origin.messageId)?.resolve()
             } else if (update.sessionUpdate === 'agent_message_chunk') {
               const assistantId = assistantKey(id, parsed.data, history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', lastReportedId(history.activities))
@@ -1286,7 +1287,7 @@ export class GrokAcpHost implements AgentHost {
           release = this.hold(command.threadId)
           if (alias.pendingRuntimeMode) throw new Error('Grok has not confirmed this thread’s permission mode. Reconnect to check before sending.')
           if (!alias.settingsConfirmed) throw new Error('Grok has not confirmed this thread’s model settings. Reconnect to check before sending.')
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           try { if (!readForSend()) await this.sync(command.threadId) }
           catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before sending the prompt.', { cause: error }) : error }
           const thread = this.thread(command.threadId)
@@ -1304,10 +1305,14 @@ export class GrokAcpHost implements AgentHost {
           const note = command.watcherRequestNote ?? command.watcherNews
           const requestLine = note && await this.launchProfile(command.threadId) ? watcherRequestLine(note) : ''
           const nativeText = skillText + requestLine
+          // Grok reads no images, so every attachment here is a file: saved into the thread's folder and named in a note
+          // after everything else (ADR-0131). The origin's digest leaves the note out, as the history read takes it off.
+          const filesNote = (await deliverAttachments(alias.cwd, command.attachments)).note
           this.assertGeneration(generation)
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.
           if (alias.pendingRuntimeMode || !alias.settingsConfirmed) throw new Error('Grok is applying a new permission mode to this thread. Send again once it is confirmed.')
-          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString() }
+          const origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(),
+            ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           this.activePrompts.add(command.threadId)
           // The prompt now holds the process itself.
@@ -1332,7 +1337,7 @@ export class GrokAcpHost implements AgentHost {
           const delivery = new Promise<void>((resolve, reject) => { this.deliveries.set(command.messageId, { resolve, reject }); timer = setTimeout(() => reject(new GrokUncertain('Grok prompt delivery is uncertain.')), this.options.requestTimeoutMs ?? 15000) })
           // ACP prompt responds at turn completion. Its authored-message echo acknowledges delivery.
           markSendStage(command.commandId, 'written')
-          void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: nativeText }] }, value => {
+          void entry.rpc.request('session/prompt', { sessionId: alias.grokSessionId, prompt: [{ type: 'text', text: withAttachedFilesNote(nativeText, filesNote) }] }, value => {
             const completion = z.object({ stopReason: z.enum(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) }).parse(value)
             this.thread(command.threadId).lastTurn = { id: command.messageId, status: turnOutcome(completion.stopReason) }
             this.markTurn(command.threadId, turnOutcome(completion.stopReason), command.messageId)
@@ -1445,10 +1450,10 @@ export class GrokAcpHost implements AgentHost {
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {
         const key = eventKey(parsed.data, Date.now())
-        const origin = messageOrigin(this.aliases[id]!, key, content.text, parsed.data._meta?.agentTimestampMs ?? Date.now())
+        const { text, origin } = readBackUserText(content.text, words => messageOrigin(this.aliases[id]!, key, words, parsed.data._meta?.agentTimestampMs ?? Date.now()))
         const messageId = origin?.messageId ?? key
         if (messageId && !this.authored.has(messageId) && !this.log.has(id, messageId)) {
-          const message: AgentMessage = { id: messageId, role: 'user', text: content.text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId } : {}) }
+          const message: AgentMessage = { id: messageId, role: 'user', text, createdAt: origin?.createdAt ?? new Date(parsed.data._meta?.agentTimestampMs ?? Date.now()).toISOString(), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) }
           this.authored.set(messageId, { threadId: id, message })
         }
         if (origin) this.deliveries.get(origin.messageId)?.resolve()

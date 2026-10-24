@@ -72,7 +72,7 @@ import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
-import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
+import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 
@@ -654,6 +654,8 @@ export class AgentControl {
   private readonly attachmentPreviews: AttachmentPreviews
   /** This host's staged images (ADR-0031); what keeps each one is `ownedAttachments()`. */
   private readonly attachments: AttachmentStore
+  /** What a prompt's attachments are held to here: with `attach-any-file` off, a file is refused even when a handle names one (ADR-0131). */
+  private get attachmentRules(): { readonly acceptsFiles: boolean } { return { acceptsFiles: this.dependencies.attachAnyFile === true } }
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private readonly clients: ProviderClients
@@ -813,6 +815,8 @@ export class AgentControl {
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
     /** The sentence a send is refused with when an image it names is no longer kept; a headless host names itself. */
     missingAttachment?: string
+    /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
+    attachAnyFile?: boolean
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
      * that is installed and signed in when it starts, except the ones the user turned off, and its refusals point
@@ -843,7 +847,8 @@ export class AgentControl {
     }
     // Compact: it is rewritten before every send.
     this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
-    this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
+    this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment,
+      acceptsFiles: dependencies.attachAnyFile === true })
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false, undefined, this.dormantThreadIds)
   }
@@ -1583,9 +1588,13 @@ export class AgentControl {
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     return this.attachments.stage(image)
   }
-  /** A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it. */
+  /**
+   * A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it.
+   * A file draws no chip, so its bytes are never handed back (ADR-0131).
+   */
   async attachmentContent(digest: string): Promise<AgentAttachmentContent | null> {
-    const mimeType = this.attachments.mimeType(digest)
+    const kept = this.attachments.mimeType(digest)
+    const mimeType = kept !== null && isImageAttachment(kept) ? kept : null
     const bytes = mimeType ? await this.attachments.read(digest) : null
     // A copy of exactly these bytes: a view would carry its whole backing buffer across IPC, which for a small image can be shared.
     return mimeType && bytes ? { mimeType, bytes: new Uint8Array(bytes) } : null
@@ -3758,7 +3767,7 @@ export class AgentControl {
             if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
             this.canAct(threadId)
-            validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
+            validatePromptAttachments(this.state.host, latest.modelId, item.attachments, this.attachmentRules)
             // Asked again right before the provider hears it: a stop or the switch may have come while it was read.
             if (this.wakeUpOutdated(threadId, item)) throw new WakeUpNoLongerDue()
           }
@@ -3894,7 +3903,7 @@ export class AgentControl {
     try {
       const validatePrompt = (): void => {
         validate()
-        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments)
+        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments, this.attachmentRules)
       }
       validatePrompt()
       if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
@@ -3926,7 +3935,7 @@ export class AgentControl {
       if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before steering.')
       if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before steering.')
       if (!command.text.trim() && !command.attachments?.length) throw new Error('There is no prompt to steer with.')
-      validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
+      validatePromptAttachments(this.state.host, thread.modelId, command.attachments, this.attachmentRules)
     }
     validate()
     // A thread settled while its turn ran is restored by the steer, as by any new work.
@@ -4753,7 +4762,7 @@ export class AgentControl {
         // that ran while this waited behind a running lane is caught here rather than at the adapter.
         this.attachments.verify(prompt.attachments)
         // Checked before the provider hears anything; kept as a preview only once it has.
-        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments)
+        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments, this.attachmentRules)
       }
       if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
         const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
@@ -5054,7 +5063,7 @@ export class AgentControl {
       origin?.guard()
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
-      validatePromptAttachments(this.state.host, latest.modelId, attachments)
+      validatePromptAttachments(this.state.host, latest.modelId, attachments, this.attachmentRules)
       if (!capabilitiesForThread(this.state.host, latest).submit || !capabilitiesForThread(this.state.host, latest).reconcile) throw new Error('This connection cannot safely send and reconcile a prompt.')
       // Settlement parks an open thread; explicitly prompting it starts fresh work.
       if (latest.archivedAt && Number.isFinite(Date.parse(latest.archivedAt))) throw new Error('This thread is archived. Reopen it before sending a prompt.')
@@ -5105,7 +5114,7 @@ export class AgentControl {
     if (composer) this.validateComposerQuestion(composer)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
-    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
+    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
     const text = draftText.trim()
     const draftId = pickedDraftId
     const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
