@@ -1,59 +1,61 @@
-# A thread record kept through every layer (#925)
+# Each layer passes on only the threads that changed (#925)
 
-The plan behind ADR-0016's proposed amendment of October 24, 2026. **It is a draft for Zach's review. Nothing here is built until he picks an option.**
+The plan behind ADR-0016's proposed amendment of October 24, 2026. Nothing here is built yet.
+
+## Zach's picks, October 24, 2026
+
+- **Option 2: publish only what changed.** Each publication carries the threads that changed and the threads that went. Every layer and subscriber keeps its own map and applies them. Option 1, keeping a record's identity through every layer, was the draft's recommendation as the narrower change; Zach chose the one whose cost follows the change whatever the threads number.
+- **#925 before #1457.** The store worker #1457 needs is then fed these changes as they are.
 
 ## The problem
 
 On every streamed chunk, five steps between an adapter and the window build a new record for every thread. They are the adapter's view and copy, the Sotto identity wrapper, the provider switch, the workspace's accept and the host stamp. Because every record arrives new, the workspace's publication then walks every thread to prove it unchanged. In the October 23 recording (0.1.38-owl.20261023.3, about 529 threads) that was about 12 s of a 44.7 s busy minute, 27% of main, and it grows with the threads rather than with what changed. The ADR amendment has the breakdown and the four options.
 
-## Recommendation: option 1
+## The shape
 
-Keep a record's identity through every layer:
-- An adapter publishes frozen per-thread records and reuses the record of a thread that did not change.
-- Each later layer hands out the same output for the same input.
-- The workspace keeps a thread's merged record while nothing about that thread moved.
-
-An update then costs one identity check per thread plus the threads that changed. Nothing a user sees changes, so there is no prototype.
+- **Thread changes.** A new internal type, `AgentHostChanges`, carries:
+  - a sequence number;
+  - `upserts`, whole frozen thread records;
+  - `removals`, Sotto thread IDs;
+  - the non-thread parts (providers, catalog, projects, connection, error) only when they changed;
+  - `whole: true` on a first publication, or one after a gap.
+- **The subscription.** `subscribeActivityChanges(listener)` replaces `subscribeActivitySnapshots` for activity subscribers. A subscriber that sees a sequence gap calls its publisher's `resync()` and gets a whole one.
+- **A map per layer.** `ThreadMap` is a shared helper holding records by ID in display order. It applies changes and builds a whole snapshot on demand for `snapshot`, `workspaceSnapshot` and ordinary `subscribe`. Each layer and subscriber owns one.
+- **Frozen records.** Every record is frozen and only ever replaced, from the adapter to the window.
 
 ## How it would be built
 
-One pull request per step, each tightening the counting gates. Each step can ship alone and does no harm without the next.
+One pull request per step. Each step keeps the old snapshot subscription working beside the new one until the last subscriber has moved, so every step can ship alone.
 
-1. **Gates first.**
-   - `ownerScaleWorkBudget.perf.test.ts` gains "thread records built per streamed update". Today it is about every thread at every layer. The target is the threads that changed: 1 or 3 in its scenarios.
-   - `streamingCopyBudget.perf.test.ts` gains the same count at 20 and 200 threads, which must not grow with the threads.
-   - A verifying mode in the owner-scale fixture rebuilds every reused record fresh and compares the two, so a stale record fails the gate.
+1. **Gates and the type.**
+   - `AgentHostChanges`, `ThreadMap` and the sequence and resync rules, with unit tests: apply, remove, gap, resync, and display order after upserts.
+   - `ownerScaleWorkBudget.perf.test.ts` gains "thread records touched per streamed update". The target is the threads that changed (1 or 3), and the count must not grow with the threads or the history.
+   - A verifying mode rebuilds each layer's map from a whole snapshot after every change in the owner-scale fixture and compares the two. A missed removal or a stale record fails the gate.
 2. **Adapters.**
-   - Each adapter (Claude, Codex, Grok, Devin, Muse, OpenCode) marks a thread changed on every path that changes its state.
-   - Its activity view reuses the frozen record of an unmarked thread, and `cloneActivitySnapshot` stops copying records that are already frozen and owned.
-   - A shared helper beside `ActivitySubscribers` holds the per-thread cache, so each adapter only supplies its marking.
-   - Adapters that cannot mark yet keep today's path. The later layers then do what they do today for those threads.
-3. **The wrapper and the provider switch.**
-   - `mapSnapshot` in `threads.ts` and `aggregate` in `providerSwitch.ts` keep a per-thread map from input record to output record, with the bound ID or the provider as part of the key.
-   - The switch's aggregate list stays its own.
+   - A boundary shim turns any adapter's snapshot publication into changes by comparing each thread's record with the last one published. That is one check per thread, for that adapter's threads only.
+   - Then each adapter (Claude, Codex, Grok, Devin, Muse, OpenCode) marks a thread changed on every path that changes it. Its publication sends only marked threads, and the shim goes for that adapter.
+   - `tests/integration/adapterContract.ts` gains a check that every state change publishes the thread, and that a removed thread is published as removed.
+3. **The wrapper and the provider switch.** `threads.ts` binds IDs and `providerSwitch.ts` names providers for upserts only, mapping removals to Sotto IDs, and each keeps its map.
 4. **The workspace.**
-   - `accept` stops re-spreading earlier threads.
-   - It keeps a thread's merged record when the incoming record and the workspace's own state for that thread are unchanged.
-   - Its own state includes the thread's messages, activities, worktree, Git action, pull requests and the other fields it lays over the provider's.
-   - `activityPublication`'s `immutableUpdates` then stops at identity.
-5. **The host stamp.** `stampHostSnapshot` and the router keep the stamped record per input record.
-
-Each step finds and replaces any in-place write into a record it now shares. ES modules run in strict mode, so a write into a frozen record throws, and the suite finds such writes.
+   - `accept` applies upserts and removals to its state, merging each upserted thread with what it lays over the provider's: messages, activities, worktree, Git action, pull requests and the rest.
+   - Its publication passes on what changed, including threads whose own state changed: an event, a saved activity, a settle.
+   - Its saves and event batch look only at changed threads.
+5. **The subscribers.**
+   - The coordinator applies changes to its host state. Its shell and its finish, failure and unread tracking work per changed thread, which also covers the per-thread `acceptSnapshot` work #1334 left.
+   - Usage reads upserts.
+   - Watcher and delegation observe changed threads.
+   - The router stamps hosts on upserts and joins every host's changes for the coordinator.
+   - The host socket and the phone path apply the changes they are given.
+   - When no subscriber is left on it, the old activity snapshot subscription goes.
+6. **The window.** The coordinator's thread-record broadcast (ADR-0028) is fed the changed records directly.
 
 ## What it means for #1457
 
-Do this first, then design #1457 around it:
-- With identity kept, the workspace knows which threads changed on each publish, so its saves and event batch can look only at those.
-- A thread-store worker can be sent just the changed threads' events and records, so moving the store off main costs in proportion to the change.
-- Opening a stored thread can read and parse its list on that worker and swap the frozen records in whole.
+The workspace knows exactly which threads changed on each publish, so the #1457 store worker can be posted those upserts, removals and events as they are. A stored thread's list can be read and parsed on the worker and handed back as an upsert. #1457's design is drafted once steps 1 to 4 have landed.
 
 ## Risks
 
-- **A stale record.** An adapter path that changes a thread without marking it leaves the window showing an old record. The verifying mode in step 1 is the guard, and the adapter contract (`tests/integration/adapterContract.ts`) would gain a check that every state change publishes a changed record.
-- **A write into a shared record.** A layer that writes into a record it now shares throws in strict mode. Tests find these, and each is replaced with a new record, as #1326 and #1334 did.
-- **Memory.** Each layer keeps one record per thread, which is what it holds today for one publish, now kept between publishes.
-
-## Questions for Zach
-
-- **Option:** is option 1 the one to build, or would you rather weigh option 2, publishing only what changed?
-- **Order:** should #925 go before #1457, as recommended?
+- **Drift between maps.** A missed removal leaves a ghost thread, and a missed upsert leaves a stale one. The guards are the verifying mode, the sequence numbers with resync, and the adapter contract checks.
+- **The width of the change.** Every activity subscriber moves. The staged order keeps the old subscription alive until the last one has moved, so any step can be reverted alone.
+- **Display order.** `ThreadMap` keeps each publisher's order, and the tests check order after upserts that move a thread.
+- **Writes into frozen records.** ES modules run in strict mode, so a write into a frozen record throws. Tests find these, and each is replaced with a new record, as #1326 and #1334 did.

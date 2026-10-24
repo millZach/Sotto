@@ -244,9 +244,9 @@ What reaches the disk is unchanged, and so is how: saves stay at NORMAL, and a c
 
 In a benchmark of streamed saves against a 555 MB store, the time main spent held by saves fell from 6.2 to 10.0 s to 2.2 to 3.7 s, and the worst save from 1.2 to 2.2 s to 0.65 to 0.85 s. Main still writes its saves to the log on its own thread, and on Windows a write waits while another thread flushes a large file on the same disk, so the worker's flushes still reach main now and then, in smaller and fewer pieces. Taking those waits off main means taking the saves off main, which this amendment does not do; neither does it stop a publish writing or read a stored thread's records off main. Those parts of #1451 stay open.
 
-## Proposed amendment: a thread that did not change keeps its record through every layer (draft for review, October 24, 2026, #925)
+## Proposed amendment: each layer passes on only the threads that changed (draft, October 24, 2026, #925)
 
-**Status: proposed, not accepted.** Nothing below is built. The plan is in `docs/plans/shared-thread-records.md`.
+**Status: proposed, not accepted.** Zach picked option 2 below on October 24, 2026, and asked for #925 to go before #1457. Nothing is built yet. The plan is in `docs/plans/shared-thread-records.md`.
 
 **What it costs today.** After #1326, #1334 and #1450, the workspace's publication, the coordinator's shell and Watcher's room share what did not change. The layers between an adapter and the workspace still build a new record for every thread on every update:
 - the adapter's activity view and its `cloneActivitySnapshot`;
@@ -271,21 +271,27 @@ In the one-minute recording of the owner's Owl build on October 23 (0.1.38-owl.2
 All of it is paid once per streamed chunk, and it grows with the threads, not with what changed. Watcher and the coordinator no longer add to it. The 16:54 recording on 0.1.41-owl.20261023.5 still put the whole activity broadcast at 8.4 s of a minute.
 
 **Options weighed.**
-1. **Keep a record's identity through every layer (recommended).** An adapter publishes each thread as a frozen, owned record and hands out the same record while that thread has not changed. Each layer after it keeps, per thread, the record it made last time and the input it made it from. When the input is the same object, the layer hands out the same output. The wrapper's ID binding, the switch's provider IDs and the host stamp are pure functions of the input and a key that does not change while the thread exists. The workspace's `accept` keeps a thread's merged record when neither the incoming record nor its own state for that thread moved, so its publication's `immutableUpdates` stops at identity. An update then costs one identity check per thread, plus building what changed. Each layer's thread list stays its own.
-2. **Publish only what changed.** Each publication carries the changed and removed threads, and every layer keeps a map. This costs nothing per unchanged thread, but every subscriber would have to apply deltas: the coordinator, usage, Watcher, delegation, the router and the phone. That is a much wider change with more ways to drift. Option 1 keeps the same subscribers and removes nearly all the cost, because an identity check is far cheaper than building a record. Revisit only if the threads reach the thousands.
+1. **Keep a record's identity through every layer.** Each layer hands out the same frozen record for a thread that did not change, so an update costs one identity check per thread, plus building what changed. Subscribers stay the same. This was the draft's recommendation, because it is the narrower change.
+2. **Each layer passes on only what changed (picked).** A publication names the threads that changed and the threads that went, and every layer and subscriber keeps its own map of thread records. It costs nothing per unchanged thread, not even a check, so the cost follows the change whatever the threads number. It is the wider change: every activity subscriber moves to applying changes. That covers the coordinator, usage, Watcher, delegation, the router, the host socket and the phone path.
 3. **Fewer layers.** Fold the wrapper's ID binding and the switch's provider IDs into the adapter or the workspace. This removes two passes but keeps a new record per thread in the others. It moves Sotto's thread IDs inside the adapter boundary, against ADR-0002.
 4. **Publish less often**, with a wider publish window. This is cheap, but it changes how streamed text feels, and a publish still costs what it does today.
 
-**What the decision would be.** The rule "isolated per publication", made "shared and frozen across publications" for the workspace's records by the October 22 amendment, becomes: **a thread record is frozen and shared across layers and publications from the adapter to the window.** Every layer only reads a record. A layer that needs to change one, such as the workspace's history save notice, a disconnect's `clientConnected`, or the coordinator's marks, replaces it with a new record and never writes into it.
+**What the decision would be.** The activity subscription carries **thread changes** instead of a whole snapshot each time:
+- **A first publication is whole.** It starts the subscriber's map, as does any publication after a gap.
+- **Every later one is a change.** It carries the threads upserted (whole frozen records), the thread IDs removed, and the rest of the snapshot (providers, catalog, projects, connection) only when it changed.
+- **Changes are numbered.** Each publication carries a sequence number. A subscriber that sees a gap asks its publisher for a whole one rather than guessing.
+- **Each layer keeps a map** of its own records by Sotto thread ID, applies what it receives, and transforms and passes on only the upserts and removals. The wrapper binds IDs, the switch names providers, the workspace merges, and the host stamp tags hosts.
+- **Records are frozen and only ever replaced.** As the October 22 amendment made the workspace's records, every record is now frozen and shared across layers.
 
 What does not change:
-- `snapshot`, `workspaceSnapshot`, ordinary `subscribe` and command replies stay independently writable copies.
+- `snapshot`, `workspaceSnapshot`, ordinary `subscribe` and command replies are built whole from the maps when asked, and stay independently writable copies.
 - IPC and socket formats, the publish cadence, history and permissions are unchanged.
 - Nothing a user sees changes.
+- The window's broadcast already sends thread records by change (ADR-0028), and this feeds it the changes directly.
 
-An adapter must know when a thread changed. Every path that changes a thread's state marks the thread, and an unmarked thread reuses its record. A path that forgets to mark it would leave a stale record, so the counting gates gain a check that a reused record equals a fresh build.
+An adapter must know which threads changed. Every path that changes a thread's state marks the thread. Until an adapter marks its own, a shim at its boundary works the changes out by comparing each thread's record with the one it published last. That costs one check per thread, as option 1 would, and only that adapter's threads pay it.
 
-**What it means for #1457.** Option 1 is the groundwork for #1457, and the recommendation is to build it first:
-- **The workspace knows which threads changed.** With identity kept, it learns this on every publish without comparing anything. Its saves and its event batch can then look only at those threads; `planActivitySync` already skips an unchanged input by identity.
-- **A store worker gets cheap input.** #1457 moves the thread store's writes off main. A worker needs its input posted across threads, and posting only the changed threads' events and records keeps that cost proportional to the change, not to the history.
-- **Swapping in a worker's list is safe.** Opening a stored thread can then read and parse its list on that worker and hand back frozen records. Main swaps them in whole, which is safe because records are only ever replaced.
+**What it means for #1457.** Zach asked for #925 first, and option 2 is close to what #1457 needs:
+- **The workspace already holds the change.** Each publish tells it exactly which threads changed, so its saves and event batch look only at those.
+- **A store worker gets the changes as they are.** #1457 moves the thread store's writes off main, and the workspace can post it the upserts, removals and events unchanged. Moving the store off main then costs in proportion to the change.
+- **A worker's list goes in as an upsert.** Opening a stored thread can read and parse its list on the worker and hand it back as an upsert of frozen records.
