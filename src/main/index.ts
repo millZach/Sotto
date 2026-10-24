@@ -1853,7 +1853,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
-      // Cursor's sign-in from its tile (ADR-0125): only while its Owl feature is on, so stable registers nothing.
+      // Cursor's sign-in from its tile (ADR-0127): only while its Owl feature is on, so stable registers nothing.
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())

@@ -367,7 +367,7 @@ export interface SottoBridge {
   readonly continueThread?: import('./continueThread').ContinueBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
-  /** Signing Cursor in and out on this computer (ADR-0125), present only while Cursor's Owl feature is on. */
+  /** Signing Cursor in and out on this computer (ADR-0127), present only while Cursor's Owl feature is on. */
   readonly cursor?: import('./cursorSignIn').CursorSignInBridge
   /** The user's own model servers (ADR-0124), present only while the `own-model-servers` Owl feature is on and OpenCode runs on this computer. */
   readonly ownServers?: import('./ownModelServers').OwnServersBridge

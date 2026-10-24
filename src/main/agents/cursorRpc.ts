@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
- * Cursor's floor: the oldest client Sotto connects (ADR-0042, ADR-0125). 2026.10.22-27dcf5f is the version whose ACP
+ * Cursor's floor: the oldest client Sotto connects (ADR-0042, ADR-0127). 2026.10.22-27dcf5f is the version whose ACP
  * agent was checked live: the parameterized model picker, `cursor/list_available_models`, `session/set_config_option`
  * for the model and its effort, `session/load` replaying a whole conversation, `cursor/ask_question` and
  * `cursor/create_plan` as client methods, and `CURSOR_CONFIG_DIR` moving the whole config folder. Move it only after
@@ -55,7 +55,7 @@ export function compareCursorVersions(a: string, b: string): number {
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'comspec', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir', 'xdg_data_home', 'xdg_config_home', 'xdg_cache_home'])
 /**
  * The environment every Cursor process gets: the shared allow-list, so no other provider's key and no Cursor key
- * (`CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`) reaches it, Sotto's own Cursor folder (ADR-0125), so nothing a thread does
+ * (`CURSOR_API_KEY`, `CURSOR_AUTH_TOKEN`) reaches it, Sotto's own Cursor folder (ADR-0127), so nothing a thread does
  * changes the user's own Cursor, and `NO_OPEN_BROWSER`, so a sign-in prints its page instead of opening one.
  * `CURSOR_INVOKED_AS` is what Cursor's own launchers set.
  */
@@ -84,7 +84,7 @@ export async function newestCursorVersion(versions: string): Promise<string | un
 }
 
 /**
- * Cursor's program on this computer (ADR-0125): on Windows, the newest version folder's `node.exe` and `index.js`;
+ * Cursor's program on this computer (ADR-0127): on Windows, the newest version folder's `node.exe` and `index.js`;
  * elsewhere `agent` by the shared CLI lookup (ADR-0036) with `~/.local/bin` first, followed to its real file.
  */
 export async function findCursorProgram(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<CursorProgram | undefined> {
@@ -142,7 +142,7 @@ export async function readCursorSignIn(program: CursorProgram, env: NodeJS.Proce
 }
 
 /**
- * Sotto's rules in its Cursor folder (ADR-0125), written before every Cursor process starts: Sotto's own tool servers
+ * Sotto's rules in its Cursor folder (ADR-0127), written before every Cursor process starts: Sotto's own tool servers
  * allowed by name and nothing denied, Cursor's allowlist mode, and no vim keys. Everything else Cursor keeps in the
  * file is Cursor's and stays as it was, except a rule a past answer saved, which Sotto never gives. One folder serves
  * every thread, so the rules name every Sotto server; a thread can still reach only the servers it was given.
@@ -284,7 +284,7 @@ export class CursorRpc {
 }
 
 /**
- * The newest version Cursor's install script downloads, which it names in its download address (ADR-0125): the one
+ * The newest version Cursor's install script downloads, which it names in its download address (ADR-0127): the one
  * place Cursor says what it has published.
  */
 export function cursorPublishedVersion(script: string): string | undefined {

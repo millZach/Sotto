@@ -7,7 +7,7 @@ import { root } from '../../fixtures/providerClientInstallFixture'
 
 const script = (version: string): Response => new Response(`#!/usr/bin/env bash\nDOWNLOAD_URL="https://downloads.cursor.com/lab/${version}/\${OS}/\${ARCH}/agent-cli-package.tar.gz"\n`, { status: 200 })
 
-describe('Cursor’s client updates (ADR-0042, ADR-0125)', () => {
+describe('Cursor’s client updates (ADR-0042, ADR-0127)', () => {
   it('reads the newest version from Cursor’s install script, and updates its own copy with agent update in Sotto’s Cursor folder', async () => {
     const local = await root('sotto-cursor-local-')
     const folder = join(local, 'cursor-agent', 'versions', '2026.10.22-27dcf5f')

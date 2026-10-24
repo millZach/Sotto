@@ -13,7 +13,7 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// Whether the model reads images. Only a model that says so is sent photos.
     public let supportsImages: Bool?
     /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
-    /// maker, the company that made it, such as Anthropic (ADR-0125). Other providers' models say nothing.
+    /// maker, the company that made it, such as Anthropic (ADR-0127). Other providers' models say nothing.
     public let source: String?
     public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?

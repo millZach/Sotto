@@ -9,7 +9,7 @@ import { cursorEnvironment, findCursorProgram, type CursorProgram } from './curs
 const DESKTOP = 'desktop'
 
 export interface CursorSignInOptions {
-  /** Sotto's own Cursor folder, which `agent login` and `agent logout` run with (ADR-0125). */
+  /** Sotto's own Cursor folder, which `agent login` and `agent logout` run with (ADR-0127). */
   readonly configDirectory: string
   /** Cursor's program; found the way the adapter finds it by default. A test stands a fake client in here. */
   readonly program?: () => Promise<CursorProgram | undefined>
@@ -25,7 +25,7 @@ export interface CursorSignInOptions {
 }
 
 /**
- * Cursor's sign-in from its tile on this computer (ADR-0125, variant A): Cursor's own `agent login`, which prints a
+ * Cursor's sign-in from its tile on this computer (ADR-0127, variant A): Cursor's own `agent login`, which prints a
  * cursor.com page and finishes by itself once the user has signed in there. Main opens that page, checked, in the
  * browser; the window is told where the sign-in stands and never the page's address. Nothing here is logged.
  */

@@ -3,7 +3,7 @@ import type { AgentQuestionAnswers, AgentRequest } from '../../shared/agents'
 import { permissionValue, questionValues } from './nativeRequests'
 
 /**
- * What Cursor asks the user (ADR-0125, ADR-0004), as Sotto shows it and answers it. Every answer is the user's own:
+ * What Cursor asks the user (ADR-0127, ADR-0004), as Sotto shows it and answers it. Every answer is the user's own:
  * a permission is allowed once or rejected, never allowed always, since that would save a grant in Sotto's Cursor
  * folder; a question is answered with the options the user chose; a plan is accepted or rejected. Nothing here answers
  * on the user's behalf, and stopping a thread or disconnecting answers `cancelled`, which grants nothing.
@@ -13,7 +13,7 @@ import { permissionValue, questionValues } from './nativeRequests'
 export const CURSOR_PERMISSION = 'session/request_permission'
 export const CURSOR_QUESTION = 'cursor/ask_question'
 export const CURSOR_PLAN = 'cursor/create_plan'
-/** What a plan request's context names, so a window can show it as a plan card rather than a permission (ADR-0125). */
+/** What a plan request's context names, so a window can show it as a plan card rather than a permission (ADR-0127). */
 export const CURSOR_PLAN_TOOL = 'cursor/create_plan'
 /** The choices a plan card offers, as permission choices: accepting is the allow, rejecting the deny. */
 export const CURSOR_PLAN_CHOICES = [
@@ -84,7 +84,7 @@ export function cursorPending(wireId: string | number, method: string, params: u
     const command = permission.toolCall.kind === 'execute' ? unquoted(title) : undefined
     return { wireId, threadId, kind: 'permission', toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission',
       text: [title, ...said].join('\n').slice(0, TEXT_LIMIT), options: [],
-      // Allow once and reject only: Cursor's allow-always would save a rule in Sotto's Cursor folder (ADR-0125).
+      // Allow once and reject only: Cursor's allow-always would save a rule in Sotto's Cursor folder (ADR-0127).
       permissionChoices: permission.options.flatMap((option): NonNullable<AgentRequest['permissionChoices']> => option.kind === 'allow_once' ? [{ id: option.optionId, label: 'Allow once', kind: 'allow-once' }]
         : option.kind === 'reject_once' ? [{ id: option.optionId, label: 'Reject', kind: 'deny' }] : []),
       context: { toolCallId: permission.toolCall.toolCallId, ...(command ? { command: command.slice(0, TEXT_LIMIT) } : {}),

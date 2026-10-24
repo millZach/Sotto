@@ -37,7 +37,7 @@ import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTo
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
 
 /**
- * Cursor as a thread provider (ADR-0125): one `agent acp` process per thread, started from Cursor's own program with
+ * Cursor as a thread provider (ADR-0127): one `agent acp` process per thread, started from Cursor's own program with
  * Sotto's own Cursor folder, speaking ACP on stdio. Cursor keeps the sign-in, the sessions and the tools; Sotto keeps
  * only each thread's session ID, its settings and what it sent, by digest, never by its words.
  *
@@ -56,7 +56,7 @@ const originSchema = z.object({ messageId: z.string(), commandId: z.string(), di
   attachments: z.array(attachmentSchema).default([]),
   /**
    * How many characters Sotto put before and after the user's words on the wire, for a message to Watcher: its
-   * instructions ahead and its request note's line after (ADR-0125). Counts only, never the words, so a message Cursor
+   * instructions ahead and its request note's line after (ADR-0127). Counts only, never the words, so a message Cursor
    * replays is shown as it was typed.
    */
   sottoHead: z.number().int().nonnegative().optional(), sottoTail: z.number().int().nonnegative().optional() })
@@ -78,11 +78,11 @@ const sessionNewSchema = configOptionsSchema.extend({ sessionId: z.string().min(
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), description: z.string().max(4096).optional() }).passthrough()).max(500)
 
-/** What Sotto says once to a thread that came with Allow edits, which Cursor has not (ADR-0125). */
+/** What Sotto says once to a thread that came with Allow edits, which Cursor has not (ADR-0127). */
 export const CURSOR_ALLOW_EDITS_NOTICE = 'Cursor has no Allow edits mode, so this thread asks for approval. Cursor still makes edits inside the project folder without asking.'
 const PROCESS_LOST = 'Cursor stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 /**
- * Watcher's instructions on Cursor (ADR-0125): `instructions` is the profile's own, with the worker-role lines when that
+ * Watcher's instructions on Cursor (ADR-0127): `instructions` is the profile's own, with the worker-role lines when that
  * feature is on, or the base prompt (#1417). Cursor's ACP agent takes no system prompt or instructions from a client, and
  * its rules are files one Cursor folder shares with every thread, so they travel in the message's text part, marked as
  * Sotto's, ahead of the first message Sotto sends Watcher's session on a process and again when the request note says the
@@ -170,7 +170,7 @@ export interface CursorAcpOptions {
   /** The program to start, in place of finding Cursor's own: a test's fake client. */
   program?: CursorProgram
   environment?: NodeJS.ProcessEnv
-  /** Sotto's Cursor folder (ADR-0125): `<userData>/cursor/config` by default, and the data directory's on a headless host. */
+  /** Sotto's Cursor folder (ADR-0127): `<userData>/cursor/config` by default, and the data directory's on a headless host. */
   configDirectory?: string
   requestTimeoutMs?: number
   /**
@@ -276,7 +276,7 @@ export class CursorAcpHost implements AgentHost {
   }
 
   /**
-   * Watcher's launch profile for this thread, or undefined for every other thread (ADR-0073, ADR-0125). A Watcher thread
+   * Watcher's launch profile for this thread, or undefined for every other thread (ADR-0073, ADR-0127). A Watcher thread
    * whose profile main can no longer verify is stopped and its tools revoked, and nothing is sent.
    */
   private async launchProfile(id: string, rpc?: CursorRpc): Promise<WatcherLaunchProfile | undefined> {
@@ -335,7 +335,7 @@ export class CursorAcpHost implements AgentHost {
   }
 
   /**
-   * The names of every Sotto tool server, which Sotto's rules in its Cursor folder allow (ADR-0125), and Watcher's own once
+   * The names of every Sotto tool server, which Sotto's rules in its Cursor folder allow (ADR-0127), and Watcher's own once
    * a Watcher has run on Cursor in this run of Sotto. One folder serves every thread; a thread still reaches only the
    * servers it was given, and no ordinary thread is given Watcher's.
    */
@@ -877,7 +877,7 @@ export class CursorAcpHost implements AgentHost {
   private model(modelId: string): AgentModel | undefined { return this.facts.get(modelId)?.model }
   /**
    * Put the session on the thread's model and effort before a prompt that needs them, and read both back from
-   * Cursor's answer (ADR-0125). Cursor applies a model to every session in its process, which is only this thread's.
+   * Cursor's answer (ADR-0127). Cursor applies a model to every session in its process, which is only this thread's.
    */
   private async applySettings(alias: Alias, connection: Connection, rpc: CursorRpc = connection.rpc, sessionId = alias.cursorSessionId, modelId = alias.modelId, effort = alias.reasoningEffort): Promise<void> {
     if (connection.model !== modelId) {
@@ -945,7 +945,7 @@ export class CursorAcpHost implements AgentHost {
     // A skill is Cursor's own `/name`, read at the start of the prompt.
     const skills = (command.skills ?? []).map(skill => `/${skill.name}`).filter(token => !new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(\\s|$)`, 'u').test(command.text))
     // Watcher's request note's line goes after the words, and its instructions, when its session needs them, ahead of
-    // them, in the one text part Cursor replays as it was sent (ADR-0125); a wake-up's news for Watcher goes the same way
+    // them, in the one text part Cursor replays as it was sent (ADR-0127); a wake-up's news for Watcher goes the same way
     // as the note. An ordinary thread is sent the words alone, even when a command carried a note.
     const note = profile ? command.watcherRequestNote ?? command.watcherNews : undefined
     // Once per conversation, not with every message (#1418): with the first message on this process, and again when the

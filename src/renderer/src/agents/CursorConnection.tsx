@@ -31,7 +31,7 @@ export interface CursorSignIn {
 }
 
 /**
- * Cursor's sign-in from its tile (ADR-0125, variant A of the prototype), held by the Providers page so moving between
+ * Cursor's sign-in from its tile (ADR-0127, variant A of the prototype), held by the Providers page so moving between
  * its tabs and providers keeps a sign-in waiting. Main runs Cursor's own sign-in and opens its cursor.com page; this
  * follows it until Cursor says it signed in or it ends, and stops one still waiting when the page goes. The page's
  * address never reaches the window.
@@ -113,7 +113,7 @@ export function useCursorSignIn(bridge: CursorSignInBridge | undefined): CursorS
 }
 
 /**
- * Cursor's Local connection on its tile (ADR-0125, variant A of the prototype): Sign in runs Cursor's own sign-in, main
+ * Cursor's Local connection on its tile (ADR-0127, variant A of the prototype): Sign in runs Cursor's own sign-in, main
  * opens its cursor.com page in the browser, and the tile waits with Open the page again and Cancel until Cursor says it
  * signed in, when it connects by itself. Connected, it offers Sign out of Cursor beside Disconnect. Escape while it
  * waits cancels, as Cancel does.

@@ -8,7 +8,7 @@ import { CURSOR_SIGN_IN_WORDS } from '../../src/shared/cursorSignIn'
 import { parseProviderRecords } from '../fixtures/providerRecords'
 import { fakeCursorProgram } from '../fixtures/fakeCursorFixture'
 
-describe('Cursor’s sign-in from its tile (ADR-0125)', () => {
+describe('Cursor’s sign-in from its tile (ADR-0127)', () => {
   let root: string | undefined
   let signIn: CursorSignIn | undefined
   afterEach(async () => { signIn?.close(); signIn = undefined; if (root) await rm(root, { recursive: true, force: true }); root = undefined })
