@@ -4966,7 +4966,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "تعبر النافذة بين المحادثات وغرفة Watcher عند فتح غرفة Watcher أو العودة إلى المحادثات، وتركب البومة هذا العبور إلى مكانها الجديد. عند الإيقاف، تتغير النافذة فورًا. ومع تقليل الحركة تتغير دائمًا فورًا."
+msgstr "تعبر النافذة بين Threads وغرفة Watcher عند فتح غرفة Watcher أو العودة إلى Threads، وتركب البومة هذا العبور إلى مكانها الجديد. عند الإيقاف، تتغير النافذة فورًا. ومع تقليل الحركة تتغير دائمًا فورًا."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

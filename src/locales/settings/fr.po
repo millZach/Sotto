@@ -4966,7 +4966,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "La fenêtre passe d’un balayage entre Fils et la salle de Watcher quand vous ouvrez la salle de Watcher ou revenez à Fils, et la chouette suit le balayage jusqu’à sa nouvelle place. Désactivé, la fenêtre change aussitôt. Avec les animations réduites, elle change toujours aussitôt."
+msgstr "La fenêtre passe d’un balayage entre Threads et la salle de Watcher quand vous ouvrez la salle de Watcher ou revenez à Threads, et la chouette suit le balayage jusqu’à sa nouvelle place. Désactivé, la fenêtre change aussitôt. Avec les animations réduites, elle change toujours aussitôt."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

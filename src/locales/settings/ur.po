@@ -4966,7 +4966,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "جب آپ Watcher کا کمرہ کھولتے ہیں یا تھریڈز پر واپس جاتے ہیں تو ونڈو تھریڈز اور Watcher کے کمرے کے درمیان گزرتی ہے، اور الو اسی گزر کے ساتھ اپنی نئی جگہ پہنچتا ہے۔ بند ہو تو ونڈو فوراً بدل جاتی ہے۔ کم حرکت میں یہ ہمیشہ فوراً بدلتی ہے۔"
+msgstr "جب آپ Watcher کا کمرہ کھولتے ہیں یا Threads پر واپس جاتے ہیں تو ونڈو Threads اور Watcher کے کمرے کے درمیان گزرتی ہے، اور الو اسی گزر کے ساتھ اپنی نئی جگہ پہنچتا ہے۔ بند ہو تو ونڈو فوراً بدل جاتی ہے۔ کم حرکت میں یہ ہمیشہ فوراً بدلتی ہے۔"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
