@@ -678,7 +678,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     [thread.messages, messages, thread.activities, thread.historyStatus, thread.earlierAvailable]))
   const liveTurn = liveTurnId(thread)
   // Delegation (ADR-0081; Owl only): this thread's own delegations, read once as its pane opens and again when main
-  // names it. What it delegated are cards in the turn each call was made in; the briefs it was sent are the words of
+  // names it. What it delegated are rows of delegated work in the turn each call was made in; the briefs it was sent are the words of
   // the thread that delegated to it, not the user's.
   const delegationsOn = useDelegationsEnabled()
   const delegations = useDelegations(delegationsOn && !watcher ? thread.id : undefined)

@@ -241,19 +241,19 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
 
       // Its row of delegated work: Review, the thread as a link, Codex on This computer, Working, and the wait.
       const reviewId = await delegatedThread(page, parentId, [], REVIEW)
-      const card = parent.getByRole('listitem', { name: new RegExp(`^Review: ${REVIEW}, `, 'u') })
-      await expect(card).toBeVisible({ timeout: 30_000 })
-      await expect(card.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
-      await expect(card.locator('.delegated-work__meta')).toContainText('Codex')
-      await expect(card.locator('.delegated-work__meta')).toContainText('This computer')
-      await expect(card.locator('.delegated-work__state')).toHaveText('Working')
-      await expect(card.locator('.delegated-work__line')).toHaveText(/^This thread waits up to 5 min for it\. \d+ s so far\.$/u, { timeout: 30_000 })
+      const review = parent.getByRole('listitem', { name: new RegExp(`^Review: ${REVIEW}, `, 'u') })
+      await expect(review).toBeVisible({ timeout: 30_000 })
+      await expect(review.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
+      await expect(review.locator('.delegated-work__meta')).toContainText('Codex')
+      await expect(review.locator('.delegated-work__meta')).toContainText('This computer')
+      await expect(review.locator('.delegated-work__state')).toHaveText('Working')
+      await expect(review.locator('.delegated-work__line')).toHaveText(/^This thread waits up to 5 min for it\. \d+ s so far\.$/u, { timeout: 30_000 })
 
       // The delegated thread has no row in the sidebar: the Claude thread's row stands for it.
       const parentRow = sidebar(page).getByRole('button', { name: PARENT, exact: true })
       await expect(parentRow).toBeVisible()
       await expect(sidebar(page).getByRole('button', { name: REVIEW, exact: true })).toHaveCount(0)
-      await capture(launched, 'card-working-dark-1280x800')
+      await capture(launched, 'review-working-dark-1280x800')
 
       // Tools › Agents lists it as a thread: its provider, a Thread marker, its brief, what the record knows, its outcome.
       const roster = await openAgents(page)
@@ -345,8 +345,8 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
 
       // Codex answers: the outcome moves to Answered, and the waiting call returns the reply as the delegated thread's.
       await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: reviewNative, text: 'Two small nits and nothing that blocks a merge.' })
-      await expect(card.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
-      await expect(card.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
+      await expect(review.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
+      await expect(review.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
       const answered = await page.evaluate(async () => {
         const result = await (window as unknown as { delegating: Promise<{ content: { type: string; text?: string }[] }> }).delegating
         return JSON.parse(result.content[0]!.text!) as ToolResult
@@ -413,7 +413,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
 
       // By keyboard: the row's link opens the delegated thread, whose "Delegated by" links back.
-      const link = card.getByRole('button', { name: `Open ${REVIEW}` })
+      const link = review.getByRole('button', { name: `Open ${REVIEW}` })
       await link.focus()
       await expect(link).toBeFocused()
       await page.keyboard.press('Enter')
