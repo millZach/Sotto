@@ -81,17 +81,17 @@ function hostState(provider: Held): AgentState {
 describe('the held-provider table', () => {
   it('holds a provider until its Owl feature is on, and a missing answer holds it', () => {
     const entries: readonly HeldProviderEntry[] = [...HELD_PROVIDER_ENTRIES, { provider: 'grok', feature: 'usage' }]
-    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'grok'])
-    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'grok'])
-    expect([...heldProvidersOf({ muse: true, opencode: true, usage: true }, entries)]).toEqual([])
+    expect([...heldProvidersOf({}, entries)]).toEqual(['muse', 'opencode', 'cursor', 'grok'])
+    expect([...heldProvidersOf({ muse: true }, entries)]).toEqual(['opencode', 'cursor', 'grok'])
+    expect([...heldProvidersOf({ muse: true, opencode: true, cursor: true, usage: true }, entries)]).toEqual([])
     expect(releasesHeldProvider(new Set(['grok']), entries)).toBe(true)
-    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'grok']), entries)).toBe(false)
-    expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode'])
+    expect(releasesHeldProvider(new Set(['muse', 'opencode', 'cursor', 'grok']), entries)).toBe(false)
+    expect([...heldProvidersOf({})]).toEqual(['muse', 'opencode', 'cursor'])
   })
   it('reads an older Muse answer as the held set, and the held set wins', () => {
     // The older answer is Muse's alone, so OpenCode, which it says nothing about, stays held: the gate fails closed.
-    expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode'])
-    expect([...heldProvidersOption({ museEnabled: true })]).toEqual(['opencode'])
+    expect([...heldProvidersOption({})]).toEqual(['muse', 'opencode', 'cursor'])
+    expect([...heldProvidersOption({ museEnabled: true })]).toEqual(['opencode', 'cursor'])
     expect([...heldProvidersOption({ museEnabled: true, heldProviders: HELD })]).toEqual(['muse', 'grok'])
   })
   it("keeps Muse's refusal word for word and builds another's from its label", () => {

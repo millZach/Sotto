@@ -11,6 +11,7 @@ export interface HeldProviderEntry {
 export const HELD_PROVIDER_ENTRIES = [
   { provider: 'muse', feature: 'muse' },
   { provider: 'opencode', feature: 'opencode' },
+  { provider: 'cursor', feature: 'cursor' },
 ] as const satisfies readonly HeldProviderEntry[]
 
 /** The providers held on this run: a fact read once at start, like the Owl answers it comes from. */
