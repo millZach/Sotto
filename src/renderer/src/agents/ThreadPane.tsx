@@ -93,7 +93,8 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>): void
     const pane = element?.parentElement
     if (!element || !pane || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`))
-    observer.observe(element)
+    // The border box: a short pane changes only the composer's padding, which its content box does not see.
+    observer.observe(element, { box: 'border-box' })
     return () => { observer.disconnect(); pane.style.removeProperty('--thread-compose-measured') }
   }, [compose])
 }

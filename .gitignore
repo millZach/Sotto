@@ -195,6 +195,8 @@ artifacts/queued-steering/
 
 # Question panel verification captures
 artifacts/question-choices/
+# Floating composer verification captures; the cited ones are committed
+artifacts/composer-float/
 
 /artifacts/settled-folder-new-thread/
 artifacts/agents-view/
