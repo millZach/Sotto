@@ -52,6 +52,22 @@ describe('Cursor ACP adapter', () => {
     expect(config).toMatchObject({ version: 1, editor: { vimMode: false }, approvalMode: 'allowlist', permissions: { deny: [] } })
   })
 
+  it('publishes a send’s thread running before the prompt’s own message, which settles the send', async () => {
+    const id = await open()
+    let published: string | undefined, atMessage: string | undefined
+    const unsubscribe = f!.host.subscribeActivitySnapshots(snapshot => { published = snapshot.threads.find(item => item.id === id)?.status }, { historyFromEvents: true })
+    const unsubscribeEvents = f!.host.subscribeEvents(({ threadId, event }) => {
+      if (threadId === id && event.kind === 'message-added' && event.message.id === 'm1') atMessage = published
+    })
+    try {
+      expect(await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Hello' })).toEqual({ accepted: true })
+    } finally { unsubscribe(); unsubscribeEvents() }
+    // The workspace publishes a prompt's message as it hears of it, and the coordinator takes a send that message settles
+    // as answered, reading nothing after it (#765). Were running published after the message, a send could be answered
+    // with its thread idle until the next publish.
+    expect(atMessage).toBe('running')
+  })
+
   it('sets the model and effort before the prompt and reads them back', async () => {
     const id = await open()
     await f!.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high' })
