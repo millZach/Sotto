@@ -93,12 +93,16 @@ describe('desktop Watcher room publication', () => {
     } finally { f.desktop!.dispose() }
   })
 
-  it('sends nothing for a room that changed only the time it was read at', () => {
+  it('builds the room for a change that moved nothing it shows, at most once a window, and sends nothing for it', () => {
     const f = fixture()
     try {
       f.publish(room('same')); f.clock.tick()
-      f.publish({ ...room('same'), observedAt: '2026-10-14T00:00:01.000Z' }); f.clock.tick()
-      expect(f.service.state).toHaveBeenCalledTimes(2)
+      for (let i = 0; i < 10; i++) f.publish({ ...room('same'), observedAt: '2026-10-14T00:00:01.000Z' })
+      f.clock.tick()
+      // A known limit (#1450): main cannot tell cheaply and safely that nothing the room shows moved, so the room is built
+      // for the ten changes as for any, once at the first and once at the window's end, compared with the room last sent,
+      // and nothing goes.
+      expect(f.service.state).toHaveBeenCalledTimes(3)
       expect(f.send).toHaveBeenCalledOnce()
     } finally { f.desktop!.dispose() }
   })
