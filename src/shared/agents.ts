@@ -110,10 +110,10 @@ export function imagesNotReadRefusal(name: string): string {
   return `This model does not read images. Choose a model with image support, or remove ${name}.`
 }
 /**
- * A send that carries an attached file before Sotto hands files to providers (the first phase of ADR-0127). Checked at
- * the provider boundary, so a file never reaches a provider as if it were an image.
+ * A send that carries an attached file on a thread with no working folder to copy it into (ADR-0127). Checked before
+ * the provider hears anything.
  */
-export const FILES_NOT_DELIVERED_YET = 'Sotto cannot send attached files to a provider yet. Remove them, then send again.'
+export const ATTACHED_FILES_NEED_A_FOLDER = 'This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved.'
 /**
  * The refusal when nothing is connected to act with. Only a send has a draft to keep, so only a send says so. A
  * headless host cannot know the name a desktop saved it under, so it says "this host" and the desktop puts that name

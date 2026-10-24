@@ -31,6 +31,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscriptionCodex'
 import { withCliPath } from './cliLookup'
 import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
+import { deliverAttachments } from './attachedFiles'
 import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -856,14 +857,19 @@ export class CodexAppServerHost implements AgentHost {
         error: 'Codex skills could not be listed. Check Codex and refresh skills.' }
     }
   }
-  /** Send and steer share native reference validation and input mapping. */
+  /**
+   * Send and steer share native reference validation and input mapping. Any attached file that is not an image is saved
+   * into the thread's folder and named in a `text` input item of its own, after everything else (ADR-0127); Codex has no
+   * input type for a file, so a PDF goes by path too. `textOf` leaves that item out when the message is read back.
+   */
   async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = [], attachments: readonly PromptImage[] = []) {
     verifyFileMentions(text, files)
     const input = skills.length ? codexSkillInput(text, skills, await this.listThreadSkills(threadId, true)) : [{ type: 'text' as const, text }]
+    const delivered = await deliverAttachments(this.aliases[threadId]?.cwd, attachments)
     // A data URL, as before: Codex's `localImage` scales an image to its own limits, which is #321's decision (ADR-0031).
-    const images = await Promise.all(attachments.map(async image => ({ type: 'image' as const,
+    const images = await Promise.all(delivered.images.map(async image => ({ type: 'image' as const,
       url: `data:${image.mimeType};base64,${Buffer.from(await image.read()).toString('base64')}` })))
-    return [...input, ...images]
+    return [...input, ...images, ...(delivered.note ? [{ type: 'text' as const, text: delivered.note }] : [])]
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
@@ -1711,7 +1717,7 @@ export class CodexAppServerHost implements AgentHost {
             if (thread.requests.length) throw new Error('Answer the pending Codex request explicitly before steering.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The thread changed in Codex. Review it before steering.')
           }
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           if (alias.origins.some(o => o.messageId === command.messageId)) return this.log.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
           validate()
           if (this.dispatching.has(id)) throw new Error('A Codex prompt is already being submitted.')
@@ -1762,7 +1768,7 @@ export class CodexAppServerHost implements AgentHost {
             this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           }, undefined, undefined, watcherGuard)
         } else {
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
           // would have queued behind, so no read applies the thread across turn/start. It reads after all when the
           // thread moved since that read, by a read in flight or the resume above, or when the read in flight

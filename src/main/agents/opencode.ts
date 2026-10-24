@@ -36,6 +36,7 @@ import { SessionReaper } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
+import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -324,6 +325,8 @@ export class OpenCodeHost implements AgentHost {
   /** When each prompt's answer was lost, by its inbox ID, while that still holds its server. */
   private readonly lostPrompts = new Map<string, number>()
   private readonly activePrompts = new Set<string>()
+  /** The Sotto IDs of the models whose catalog lists PDF input, which may take a PDF as part of the prompt (ADR-0127). */
+  private pdfModels = new Set<string>()
   /** The turn each thread is running, by the Sotto ID of the user message that opened it. */
   private readonly activeTurns = new Map<string, { messageId: string }>()
   /** Threads whose running turn shows a retry of one of the user's own servers, until the server answers again. */
@@ -938,6 +941,7 @@ export class OpenCodeHost implements AgentHost {
     const names = new Map(providers.map(provider => [provider.id, provider.name]))
     const sourceOf = (providerId: string): string => providerId === ZEN ? ZEN_NAME : names.get(providerId) ?? providerId
     const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
+    this.pdfModels = new Set(shown.filter(model => model.capabilities.input.includes('pdf')).map(model => `${model.providerID}/${model.id}`))
     this.state.models = shown.map((model): AgentModel => {
       const efforts = orderReasoningEfforts(model.variants.map(variant => variant.id))
       const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
@@ -1267,10 +1271,10 @@ export class OpenCodeHost implements AgentHost {
       ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
     }
   }
-  /** Record a user's message; returns the Sotto message ID it is recorded under. */
+  /** Record a user's message, without the note naming its attached files (ADR-0127); returns the Sotto message ID it is recorded under. */
   private recordUser(id: string, inboxId: string, text: string, at: number | undefined): string | undefined {
     const alias = this.aliases[id]; if (!alias) return undefined
-    const message = this.userMessage(alias, inboxId, text, at)
+    const message = this.userMessage(alias, inboxId, stripAttachedFilesNote(text), at)
     this.log.add(id, message)
     const origin = alias.origins.find(candidate => candidate.inboxId === inboxId)
     if (origin && !origin.confirmed) { origin.confirmed = true; this.lostPrompts.delete(inboxId); void this.persist().catch(() => undefined) }
@@ -1661,7 +1665,7 @@ export class OpenCodeHost implements AgentHost {
         } else if (command.type === 'send' || command.type === 'steer') {
           if (command.skills?.length) throw providerTakesNoSkills('opencode')
           await this.open(command.threadId); this.assertGeneration(generation)
-          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           readForSend()
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
@@ -1673,8 +1677,12 @@ export class OpenCodeHost implements AgentHost {
           if (thread.requests.length) throw new Error('Answer the pending OpenCode request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
           // Images go as data URIs, which OpenCode stores with the provider session and hands the model itself (ADR-0087).
+          // Any other file is saved into the thread's folder and named in a note after the user's words, and a PDF goes as
+          // a data URI too when the model's catalog lists PDF input and it passes the native rule (ADR-0127).
+          const delivered = await deliverAttachments(alias.cwd, attachments, { nativePdf: this.pdfModels.has(alias.modelId) })
           const files: { uri: string; name: string }[] = []
-          for (const attachment of attachments) files.push({ uri: `data:${attachment.mimeType};base64,${Buffer.from(await attachment.read()).toString('base64')}`, name: attachment.name })
+          for (const attachment of delivered.images) files.push({ uri: `data:${attachment.mimeType};base64,${Buffer.from(await attachment.read()).toString('base64')}`, name: attachment.name })
+          for (const pdf of delivered.nativePdfs) files.push({ uri: `data:application/pdf;base64,${Buffer.from(pdf.bytes).toString('base64')}`, name: pdf.name })
           this.assertGeneration(generation)
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, inboxId: promptId(), createdAt: new Date().toISOString(), confirmed: false,
@@ -1698,7 +1706,7 @@ export class OpenCodeHost implements AgentHost {
           try {
             // The inbox ID is Sotto's, so the prompt is recognised in the stream and in history even when this answer is lost.
             const ack = promptReplySchema.parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/prompt`, { body: {
-              id: origin.inboxId, text: command.text, ...(files.length ? { files } : {}), ...(command.type === 'steer' ? { delivery: 'steer' } : {}),
+              id: origin.inboxId, text: withAttachedFilesNote(command.text, delivered.note), ...(files.length ? { files } : {}), ...(command.type === 'steer' ? { delivery: 'steer' } : {}),
             } }))
             if (ack.data.id !== origin.inboxId) throw new OpenCodeUncertain('OpenCode answered for another prompt.')
           } catch (error) {

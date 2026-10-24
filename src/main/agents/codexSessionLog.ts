@@ -4,9 +4,12 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../shared/agents'
 import { CodexRolloutIdentities, type RolloutIdentity } from './codexMessageIdentity'
+import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
-export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
+/** A user message's words: its text items, without the item naming its attached files that Sotto sends apart from them (ADR-0127). */
+export const textOf = (content?: { type: string; text?: string | undefined }[]): string => (content ?? [])
+  .filter(c => c.type === 'text' && !isAttachedFilesNote(c.text ?? '')).map(c => c.text ?? '').join('\n')
 // An authored rollout row can contain the full accepted image batch as base64.
 const MAX_ROLLOUT_LINE_BYTES = Math.ceil(AGENT_MAX_ATTACHMENT_BYTES / 3) * 4 + 1024 * 1024
 const entrySchema = z.object({ timestamp: z.string(), ordinal: z.number().optional(), type: z.string(), payload: z.unknown() })
@@ -127,7 +130,8 @@ export class CodexSessionLogWatcher {
       const event = userEvent.parse(entry.payload)
       const item = event.type === 'item_completed' && ['UserMessage', 'user_message'].includes(event.item?.type ?? '') ? event.item : undefined
       if (!item && event.type !== 'user_message') return
-      const text = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
+      // A rollout's `message` may join the input's text items, the note naming attached files among them.
+      const text = item ? textOf(item.content) : stripAttachedFilesNote(event.message ?? event.text ?? textOf(event.content))
       const hasImages = (event.images?.length ?? 0) > 0 || (event.local_images?.length ?? 0) > 0
         || (item?.content ?? event.content)?.some(part => part.type === 'image' || part.type === 'localImage')
       if (!text && !hasImages) return

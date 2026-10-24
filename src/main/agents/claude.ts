@@ -40,7 +40,8 @@ import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
-import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
+import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
+import { deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -945,7 +946,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'configure-thread') return this.configure(id, command, watcherGuard)
     if (command.type === 'send') {
-      validatePromptAttachments(this.state, alias.modelId, command.attachments)
+      validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
       const checkLatestUserMessage = (): void => {
         if (command.expectedLastUserMessageId !== undefined && (this.messageLog.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
       }
@@ -1770,7 +1771,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.usage.claude(id, frame, this.threads.get(id)!.modelId, this.usageContext(id, frame, fromLog))
     this.threads.get(id)!.usage = this.usage.get(id)
     if (frame.parent_tool_use_id || frame.isSidechain === true) return
-    const message = object(frame.message); let text = claudeText(message?.content)
+    const message = object(frame.message); let text = frame.type === 'user' ? claudeUserText(message?.content) : claudeText(message?.content)
     if ((!text && frame.type !== 'user') || !['user', 'assistant'].includes(String(frame.type))) return
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
@@ -1955,18 +1956,26 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private dropSteers(id: string): void {
     for (const [uuid, steer] of this.steers) if (steer.threadId === id) { this.steers.delete(uuid); this.acknowledgements.get(uuid)?.(false) }
   }
-  /** A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol boundary (ADR-0031). */
+  /**
+   * A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol
+   * boundary (ADR-0031). Any other attached file is saved into the thread's folder and named in a text block of its own,
+   * after the user's words, and a PDF that passes the native rule goes as a `document` block too (ADR-0127). The origin's
+   * digest is the user's words alone, which is what `claudeUserText` reads back.
+   */
   private async nativePrompt(id: string, command: Extract<AgentHostCommand, { type: 'send' | 'steer' }>): Promise<{ content: unknown; nativeText: string; origin: Alias['origins'][number] }> {
     verifyFileMentions(command.text, command.files)
-    const images = await Promise.all((command.attachments ?? []).map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
+    const delivered = await deliverAttachments(this.aliases[id]?.cwd, command.attachments, { nativePdf: true })
+    const images: unknown[] = await Promise.all(delivered.images.map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
       data: Buffer.from(await image.read()).toString('base64') } })))
+    for (const pdf of delivered.nativePdfs) images.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: Buffer.from(pdf.bytes).toString('base64') }, title: pdf.name })
     const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
     const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
     const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
       ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
-    const content: unknown = images.length ? [
+    const content: unknown = images.length || delivered.note ? [
       ...images,
       ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
+      ...(delivered.note ? [{ type: 'text', text: delivered.note }] : []),
     ] : nativePrompt
     return { content, nativeText, origin }
   }
@@ -1980,7 +1989,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * a stop included, starts the next turn (see `steers`).
    */
   private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean, watcherGuard?: () => void): Promise<AgentHostResult> {
-    validatePromptAttachments(this.state, alias.modelId, command.attachments)
+    validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
     const runtime = this.runtimes.get(id)
     const validate = (): void => {

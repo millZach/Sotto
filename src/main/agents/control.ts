@@ -46,7 +46,7 @@ import { compareMuseVersions } from './museClientInstall'
 import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, ProviderClients } from './providerClients'
 import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
-import { refuseUndeliveredFiles, validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
@@ -639,6 +639,8 @@ export class AgentControl {
   private readonly attachmentPreviews: AttachmentPreviews
   /** This host's staged images (ADR-0031); what keeps each one is `ownedAttachments()`. */
   private readonly attachments: AttachmentStore
+  /** What a prompt's attachments are held to here: with `attach-any-file` off, a file is refused even when a handle names one (ADR-0127). */
+  private get attachmentRules(): { readonly acceptsFiles: boolean } { return { acceptsFiles: this.dependencies.attachAnyFile === true } }
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private readonly clients: ProviderClients
@@ -3749,7 +3751,7 @@ export class AgentControl {
             if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
             this.canAct(threadId)
-            validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
+            validatePromptAttachments(this.state.host, latest.modelId, item.attachments, this.attachmentRules)
             // Asked again right before the provider hears it: a stop or the switch may have come while it was read.
             if (this.wakeUpOutdated(threadId, item)) throw new WakeUpNoLongerDue()
           }
@@ -3885,7 +3887,7 @@ export class AgentControl {
     try {
       const validatePrompt = (): void => {
         validate()
-        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments)
+        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments, this.attachmentRules)
       }
       validatePrompt()
       if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
@@ -3917,7 +3919,7 @@ export class AgentControl {
       if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before steering.')
       if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before steering.')
       if (!command.text.trim() && !command.attachments?.length) throw new Error('There is no prompt to steer with.')
-      validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
+      validatePromptAttachments(this.state.host, thread.modelId, command.attachments, this.attachmentRules)
     }
     validate()
     // A thread settled while its turn ran is restored by the steer, as by any new work.
@@ -4742,9 +4744,7 @@ export class AgentControl {
         // that ran while this waited behind a running lane is caught here rather than at the adapter.
         this.attachments.verify(prompt.attachments)
         // Checked before the provider hears anything; kept as a preview only once it has.
-        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments)
-        // A file is carried to here, but no provider is handed one yet (the first phase of ADR-0127).
-        refuseUndeliveredFiles(prompt.attachments)
+        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments, this.attachmentRules)
       }
       if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
         const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
@@ -5045,7 +5045,7 @@ export class AgentControl {
       origin?.guard()
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
-      validatePromptAttachments(this.state.host, latest.modelId, attachments)
+      validatePromptAttachments(this.state.host, latest.modelId, attachments, this.attachmentRules)
       if (!capabilitiesForThread(this.state.host, latest).submit || !capabilitiesForThread(this.state.host, latest).reconcile) throw new Error('This connection cannot safely send and reconcile a prompt.')
       // Settlement parks an open thread; explicitly prompting it starts fresh work.
       if (latest.archivedAt && Number.isFinite(Date.parse(latest.archivedAt))) throw new Error('This thread is archived. Reopen it before sending a prompt.')
@@ -5096,7 +5096,7 @@ export class AgentControl {
     if (composer) this.validateComposerQuestion(composer)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
-    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
+    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
     const text = draftText.trim()
     const draftId = pickedDraftId
     const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)

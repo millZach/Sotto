@@ -8,9 +8,9 @@ import { AttachmentPreviews } from '../../../src/main/agents/attachmentPreviews'
 import { AttachmentStore, RefusedImage } from '../../../src/main/agents/attachmentStore'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost, AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
-import { refuseUndeliveredFiles, validatePromptAttachments } from '../../../src/main/agents/threadOptions'
+import { validatePromptAttachments } from '../../../src/main/agents/threadOptions'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import { ATTACHED_FILE_TOO_LARGE, FILES_NOT_DELIVERED_YET, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE,
+import { ATTACHED_FILE_TOO_LARGE, ATTACHED_FILES_NEED_A_FOLDER, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE,
   type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -92,16 +92,21 @@ describe('the attachment store with attached files (ADR-0127)', () => {
   })
 })
 
-describe('attached files in prompts before delivery (ADR-0127, first phase)', () => {
+describe('attached files in prompts (ADR-0127)', () => {
   const file: AgentAttachmentHandle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'a'.repeat(64) }
-  it('asks image support of images alone, and refuses a file at the provider boundary', async () => {
+  it('asks image support of images alone, a working folder of files alone, and refuses files where this build takes none', async () => {
     const snapshot = await new E2EAgentHost().connect()
     const model = snapshot.models[0]!
     model.supportsImages = false
     expect(validatePromptAttachments(snapshot, model.id, [file])).toEqual([file])
     expect(() => validatePromptAttachments(snapshot, model.id, [file, handleOf(PIXEL_PNG)])).toThrow('This model does not advertise image support.')
-    expect(() => refuseUndeliveredFiles([handleOf(PIXEL_PNG)])).not.toThrow()
-    expect(() => refuseUndeliveredFiles([file])).toThrow(FILES_NOT_DELIVERED_YET)
+    // A thread whose folder the adapter names has somewhere to copy a file; one with none is refused before anything is read.
+    expect(validatePromptAttachments(snapshot, model.id, [file], { workingDirectory: '/work' })).toEqual([file])
+    for (const workingDirectory of [undefined, null, '']) expect(() => validatePromptAttachments(snapshot, model.id, [file], { workingDirectory })).toThrow(ATTACHED_FILES_NEED_A_FOLDER)
+    model.supportsImages = true
+    expect(validatePromptAttachments(snapshot, model.id, [handleOf(PIXEL_PNG)], { workingDirectory: undefined, acceptsFiles: false })).toHaveLength(1)
+    // With the Owl feature off, a file is refused even when a handle names one: a defence behind the composer.
+    expect(() => validatePromptAttachments(snapshot, model.id, [file], { acceptsFiles: false })).toThrow(SCREENSHOT_WRONG_TYPE)
   })
 })
 
@@ -143,12 +148,32 @@ describe('attached files through the coordinator (ADR-0127)', () => {
     expect((await readdir(join(f.root, 'attachments'))).filter(name => name !== 'index.json')).toEqual([`${file.digest}.bin`])
   })
 
-  it('refuses to send a file before the provider hears anything, until adapters deliver files', async () => {
+  it('hands a file to the provider as a handle whose bytes it reads at the boundary, as an image is', async () => {
     const f = await coordinator(true)
     const file = await f.control.stageAttachment(pdf)
-    const result = await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Read this', attachments: [file] })
-    expect(result.error).toContain(FILES_NOT_DELIVERED_YET)
-    expect(f.host.attempts.filter(command => command.type === 'send')).toEqual([])
+    // This host records nothing it is sent, so the send stays unconfirmed; what matters is what crossed the boundary.
+    await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Read this', attachments: [file] })
+    const sent = f.host.attempts.find(command => command.type === 'send')
+    expect(sent).toMatchObject({ text: 'Read this', attachments: [expect.objectContaining(file)] })
+    const [attached] = (sent as Extract<AgentHostCommand, { type: 'send' }>).attachments!
+    expect(Buffer.from(await attached!.read())).toEqual(pdf.bytes)
+  })
+
+  it('refuses to send a file once the Owl feature is off, before the provider hears anything, even though the store still keeps it', async () => {
+    const root = await directory(); const host = new Host()
+    const credentials = await testCredentials(root, { mode: 'unavailable' })
+    const create = (attachAnyFile: boolean) => {
+      const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, ...(attachAnyFile ? { attachAnyFile: true } : {}) })
+      controls.push(control); return control
+    }
+    const on = create(true); await on.start(); await on.command({ type: 'connect' })
+    const file = await on.stageAttachment(pdf)
+    expect((await on.command({ type: 'save-thread-draft', threadId: 'workshop', draftId: randomUUID(), text: 'Read this', attachments: [file], requestId: null })).error).toBeNull()
+    on.dispose(); await on.privacyChanged()
+    const off = create(false); await off.start(); await off.command({ type: 'connect' })
+    const result = await off.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Read this', attachments: [file] })
+    expect(result.error).toContain(SCREENSHOT_WRONG_TYPE)
+    expect(host.attempts.filter(command => command.type === 'send')).toEqual([])
   })
 
   it('stages no file while the Owl feature is off', async () => {

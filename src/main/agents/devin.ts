@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentProviderMode, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities } from '../../shared/agentActivity'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ProviderUnavailable } from './providerProblem'
@@ -14,6 +14,7 @@ import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from 
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
+import { deliverAttachments, stripAttachedFilesNote, withAttachedFilesNote } from './attachedFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { verifyFileMentions } from './promptFiles'
 import { markTurnActivity } from './turnActivity'
@@ -38,6 +39,8 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const originSchema = z.object({
   nativeMessageId: z.string().uuid(), messageId: z.string(), commandId: z.string(),
   digest: z.string(), createdAt: z.string(), confirmed: z.boolean().default(false),
+  /** The files the prompt carried (ADR-0127), by reference, so its message shows them however it is read back. */
+  attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
 const aliasSchema = z.object({
   devinSessionId: z.string().optional(), ephemeral: z.boolean().default(false), emptyReleased: z.boolean().default(false), projectId: z.string(), cwd: z.string(), title: z.string(), modelId: z.string(),
@@ -730,7 +733,7 @@ export class DevinAcpHost implements AgentHost {
       let message = transcript.messages.find(message => message.id === messageId)
       if (!message) {
         message = { id: messageId, role: 'user', text: '', createdAt: origin?.createdAt ?? (typeof meta?.['cognition.ai/timestamp'] === 'string' ? meta['cognition.ai/timestamp'] : alias.createdAt),
-          ...(origin ? { commandId: origin.commandId } : {}) }
+          ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) }
         transcript.messages.push(message)
       }
       message.text += content.text; transcript.user = message; transcript.nativeUser = nativeId; delete transcript.assistant
@@ -745,7 +748,9 @@ export class DevinAcpHost implements AgentHost {
   private async mergeReplay(id: string, transcript: Transcript): Promise<void> {
     const alias = this.aliases[id]!
     let changed = false
-    for (const message of transcript.messages) {
+    for (const replayed of transcript.messages) {
+      // A user's words without the note naming their attached files (ADR-0127); the transcript keeps what Devin said.
+      const message = replayed.role === 'user' ? { ...replayed, text: stripAttachedFilesNote(replayed.text) } : replayed
       if (message.role === 'user') {
         const origin = alias.origins.find(origin => origin.messageId === message.id)
         if (origin) {
@@ -768,7 +773,7 @@ export class DevinAcpHost implements AgentHost {
     // Shown once Devin has taken the prompt, by its replay or by its own stream, so a reply appears as it streams.
     if (!active || !promptTaken(active)) return
     this.log.add(id, { id: active.origin.messageId, role: 'user', text: active.text,
-      commandId: active.origin.commandId, createdAt: active.origin.createdAt })
+      commandId: active.origin.commandId, createdAt: active.origin.createdAt, ...(active.origin.attachments ? { attachments: active.origin.attachments } : {}) })
     const existing = this.log.message(id, 'devin-assistant-' + active.origin.nativeMessageId)
     if (active.assistant && !existing?.text.startsWith(active.assistant)) this.log.add(id, { id: 'devin-assistant-' + active.origin.nativeMessageId,
       role: 'assistant', text: active.assistant, createdAt: active.origin.createdAt })
@@ -1003,7 +1008,7 @@ export class DevinAcpHost implements AgentHost {
     const checkConnection = (): void => {
       if (generation !== this.generation || this.connections.get(id) !== connection || !this.state.connected) throw new DevinUncertain('Devin connection changed. Delivery has not been confirmed.')
     }
-    validatePromptAttachments(this.state, alias.modelId, command.attachments)
+    validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     if (command.skills?.length) throw new Error('Devin skill selection is not supported.')
     if (/^\s*\/[a-z][\w-]*(?:\s|$)/iu.test(command.text)) throw new Error('Devin slash commands are not supported here. Send a text prompt instead.')
     verifyFileMentions(command.text, command.files)
@@ -1013,6 +1018,9 @@ export class DevinAcpHost implements AgentHost {
       await this.readHistory(id)
       return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
+    // Devin reads no images, so every attachment here is a file: saved into the thread's folder and named in a note after
+    // the user's words (ADR-0127). The origin's digest is the words alone, as the replay is read without the note.
+    const filesNote = (await deliverAttachments(alias.cwd, command.attachments)).note
     // A dispatch no replay has confirmed yet, as a turn taken on the stream can leave one, has its replay read before
     // the next prompt goes out, joining a read already running. A replay that contradicts it refuses this send.
     if (alias.origins.some(origin => !origin.confirmed)) await this.readHistory(id)
@@ -1025,7 +1033,8 @@ export class DevinAcpHost implements AgentHost {
     if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The Devin thread changed before this follow-up. Review the newest input first.')
     if (this.active.has(id) || this.thread(id).requests.length) throw new Error('Devin is still working. Queue this follow-up.')
     const origin: Origin = { nativeMessageId: randomUUID(), messageId: command.messageId, commandId: command.commandId,
-      digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false }
+      digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
+      ...(command.attachments?.length ? { attachments: command.attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })) } : {}) }
     alias.origins.push(origin); alias.ephemeral = false; await this.persist()
     checkConnection()
     try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist(); throw error }
@@ -1048,7 +1057,7 @@ export class DevinAcpHost implements AgentHost {
     const superseded = (): boolean => generation !== this.generation || this.connections.get(id) !== connection || this.active.get(id)?.origin !== origin
     markSendStage(command.commandId, 'written')
     void connection.rpc.request('session/prompt', {
-      sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: command.text }],
+      sessionId: alias.devinSessionId, prompt: [{ type: 'text', text: withAttachedFilesNote(command.text, filesNote) }],
       _meta: { 'cognition.ai/clientMessageId': origin.nativeMessageId },
     }, async value => {
       if (superseded()) { endTurn(turn); return }

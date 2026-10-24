@@ -14,6 +14,7 @@ import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination,
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
 import { useOwlFeature } from '../state/owlFeature'
 import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
+import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import './rich-messages.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
@@ -99,13 +100,7 @@ async function openWithBridge(url: string): Promise<LinkOpenResult> {
   return open ? open(url) : { ok: false }
 }
 
-export function formatAttachmentSize(bytes: number | undefined): string | null {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return null
-  if (bytes < 1024) return `${Math.round(bytes)} B`
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  const megabytes = bytes / (1024 * 1024)
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
-}
+export { formatAttachmentSize }
 
 export function attachmentTypeLabel(mimeType: string | undefined): string | null {
   if (!mimeType) return null

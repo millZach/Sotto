@@ -3,11 +3,20 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
+import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
   if (typeof content === 'string') return content
   return Array.isArray(content) ? content.map(block => object(block)).filter(block => block?.type === 'text').map(block => typeof block?.text === 'string' ? block.text : '').join('\n') : ''
+}
+/**
+ * A user prompt's own words: its text blocks without the block naming its attached files, which Sotto sends apart from
+ * them (ADR-0127), so a prompt reads back, and matches its origin's digest, as the user wrote it.
+ */
+export function claudeUserText(content: unknown): string {
+  if (!Array.isArray(content)) return stripAttachedFilesNote(claudeText(content))
+  return claudeText(content.filter(block => { const text = object(block); return !(text?.type === 'text' && typeof text.text === 'string' && isAttachedFilesNote(text.text)) }))
 }
 export function authoredClaudeUser(frame: ClaudeFrame): boolean {
   if (frame.type !== 'user' || frame.isMeta === true || frame.isSynthetic === true || frame.isCompactSummary === true || frame.is_compact_summary === true || frame.isSidechain === true || frame.parent_tool_use_id) return false
