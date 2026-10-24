@@ -154,6 +154,20 @@
 .thread-workspace__compose > * { pointer-events: auto; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
 .thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
+   user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row, the
+   branch toolbar and the row under the card step away. The composer keeps the full card's room, so the transcript keeps
+   its size and its last line still comes clear at the end; the card sits at the foot of that room, and the Jump button
+   just above what shows. The pane sets data-slim on the composer, and tells it to the pane as a mark (marks.tsx), only
+   while the composer floats.
+   The rules carry the pane's classes so they outweigh a short pane's and a split's own sizes for the composer. */
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] { min-height: var(--thread-compose-height, 0px); justify-content: flex-end; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > :is(.thread-pane__meta, .branch-toolbar) { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > .thread-prompt { padding-block: 9px; padding-inline: 16px 10px; cursor: text; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(textarea, .prompt-editor) { min-height: 22px; max-height: 22px; padding-right: 40px; overflow: hidden; resize: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(.thread-prompt__meta, .thread-prompt__steer, .screenshot-input__tools > *) { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt > .thread-prompt__footer { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); }
+.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
 /* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
 .thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
