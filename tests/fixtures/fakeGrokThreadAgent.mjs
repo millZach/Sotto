@@ -116,6 +116,8 @@ function sessionCatalog(script, session) {
 const pending = new Map(); let serial = 5000
 /** A `session/new` answer held back by `holdCreate`. */
 let heldCreate
+/** `_x.ai/billing` answers held back by `holdBilling`. */
+let heldBilling = []
 // Mirrors Grok 1.0.5 as probed through SessionStart hooks: _meta applies when a session starts or is
 // loaded while not resident; loading a resident session can add always-approve but never removes it.
 const nativeMode = meta => meta?.yoloMode ? 'bypassPermissions' : meta?.autoMode ? 'auto' : 'default'
@@ -230,8 +232,10 @@ createInterface({input:process.stdin}).on('line', line => {
  else if (frame.method === 'session/cancel') complete(p.sessionId,'','cancelled')
  // The signed-in account's credit use, which Usage reads as Grok's limits. It names no session.
  else if (frame.method === '_x.ai/billing') {
-  if (script.rejectBilling) send({id:frame.id,error:{code:-32603,message:'Billing unavailable'}})
-  else send({id:frame.id,result:{config:{creditUsagePercent:script.billingPercent ?? 42,currentPeriod:{type:'USAGE_PERIOD_TYPE_WEEKLY',start:'2026-10-19T00:00:00Z',end:'2026-10-26T00:00:00Z'}}}})
+  const answer = script.rejectBilling ? {id:frame.id,error:{code:-32603,message:'Billing unavailable'}}
+   : {id:frame.id,result:{config:{creditUsagePercent:script.billingPercent ?? 42,currentPeriod:{type:'USAGE_PERIOD_TYPE_WEEKLY',start:'2026-10-19T00:00:00Z',end:'2026-10-26T00:00:00Z'}}}}
+  // `holdBilling` keeps the answer, worked out now, until a `release-billing` command, so a later read can finish first.
+  if (script.holdBilling) { heldBilling.push(() => send(answer)); record({method:'fixture/billing-held'}) } else send(answer)
  }
  else send({id:frame.id,error:{code:-32601,message:'Unknown method'}})
 }).on('close', () => {
@@ -247,6 +251,7 @@ createInterface({input:process.stdin}).on('line', line => {
 let last
 function claim(command) {
  if (command.type === 'release-create' && !heldCreate) return false
+ if (command.type === 'release-billing' && !heldBilling.length) return false
  if (command.sessionId && ['permission','question','unreadable'].includes(command.type) && !resident.has(command.sessionId)) return false
  if (command.sessionId && !resident.has(command.sessionId)) { const holder = holderOf(command.sessionId); if (holder && holder !== process.pid) return false }
  try { mkdirSync(path('control-claims'), {recursive:true}); writeFileSync(path(`control-claims/${command.id}`), String(process.pid), {flag:'wx'}); return true }
@@ -264,6 +269,7 @@ function check() {
 const control = setInterval(check, 10)
 function run(command) {
  if (command.type === 'release-create') { const reply = heldCreate; heldCreate = undefined; reply?.() }
+ if (command.type === 'release-billing') { const replies = heldBilling; heldBilling = []; for (const reply of replies) reply() }
  if (command.type === 'complete') complete(command.sessionId,command.text,command.reason,command.thought)
  if (command.type === 'thought') update(command.sessionId,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:command.text}},false,true,command.meta)
  if (command.type === 'takeover') update(command.sessionId,{sessionUpdate:'user_message_chunk',content:{type:'text',text:command.text}},false,command.notify ?? false)

@@ -79,6 +79,34 @@ it('reports a refused read as read-failed without harming the live process it as
   await expect.poll(async () => (await thread(id)).status).toBe('idle')
 })
 
+it('says the read failed when the live process refuses, never handing back an earlier reading in its place', async () => {
+  await open()
+  // A good reading from moments ago, taken before any thread was running.
+  expect(await quota(true)).toMatchObject({ status: 'available' })
+  const { id } = await working()
+  await f!.script({ rejectBilling: true })
+  // Opening Usage again asks the running process, which refuses: that is a failed read, not the old reading.
+  expect(await quota(true, true)).toMatchObject({ providerId: 'grok', status: 'error', reason: 'read-failed' })
+  expect((await thread(id)).status).toBe('running')
+})
+
+it('keeps the newer reading when an older read finishes after it', async () => {
+  await open()
+  const { id } = await working()
+  // Opening Usage asks first and its answer, 42%, is held back; Read again asks after it and is answered with 64% at once.
+  await f!.script({ holdBilling: true })
+  const opened = quota(true, true)
+  // The fake records the request before it reads the script, so the hold itself is what is waited for.
+  await expect.poll(async () => (await records()).some(record => record.method === 'fixture/billing-held')).toBe(true)
+  await f!.script({ billingPercent: 64 })
+  const asked = await quota(true)
+  expect(asked.windows[0]).toMatchObject({ usedPercent: 64 })
+  await f!.action(id, { type: 'release-billing' })
+  // The older answer arrives last, and neither it nor what it hands back takes the newer reading's place.
+  expect(await opened).toEqual(asked)
+  expect(await quota(false)).toEqual(asked)
+})
+
 it('says Grok is not connected before it connects', async () => {
   f = await grokFixture(undefined, undefined, undefined, {}, { usageEnabled: true })
   expect(await quota(true)).toMatchObject({ providerId: 'grok', status: 'unavailable', reason: 'not-connected' })

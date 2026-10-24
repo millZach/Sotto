@@ -173,9 +173,12 @@ export class GrokAcpHost implements AgentHost {
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (id: string, visitor: (record: UsageTokenObservation) => void) => void
   readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
+  /** The newest good reading, which a failed read keeps showing. */
   private quota: UsageQuotaRead | undefined
-  /** When `quota` was read, by this computer's clock. */
-  private quotaReadAt: number | undefined
+  /** Each read's place in the order reads began, so an older read finishing late never replaces a newer one's answer. */
+  private quotaStarts = 0
+  /** The answer of the newest read to finish, by its place in that order, and when it finished by this computer's clock. */
+  private quotaLatest: { start: number; read: UsageQuotaRead; at: number } | undefined
   /** The refresh under way, and whether Usage made it on its own; Read again never waits on one of those. */
   private quotaReading: { read: Promise<UsageQuotaRead>; background: boolean } | undefined
   private readonly quotaProbes = new Set<GrokRpc>()
@@ -397,12 +400,13 @@ export class GrokAcpHost implements AgentHost {
   /**
    * Read the signed-in account's limits. A thread's process that is already running and signed in is asked first, so
    * a refresh starts no process while one is there (#1456). `_x.ai/billing` names no session, and Grok already answers
-   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. With none to ask, a
-   * refresh Usage made on its own takes a reading from the last few minutes, and only then is a process started for
-   * the one question. No session/new, load or prompt is sent on any of them.
+   * history reads on a process beside its running prompt, so asking one disturbs no turn on it. Only when there is
+   * none to ask may a refresh Usage made on its own take a good reading from the last few minutes; a live read that
+   * failed is never covered by an earlier reading. Otherwise a process is started for the one question. No
+   * session/new, load or prompt is sent on any of them.
    */
   private async readQuota(background: boolean): Promise<UsageQuotaRead> {
-    const generation = this.generation, executable = this.executable
+    const generation = this.generation, executable = this.executable, start = ++this.quotaStarts
     if (!executable) return unavailableProviderQuota('grok', 'not-connected')
     const gone = () => generation !== this.generation || !this.state.connected
     const live = this.liveProcess()
@@ -410,30 +414,40 @@ export class GrokAcpHost implements AgentHost {
       try {
         const answer = await this.askBilling(live)
         if (gone()) return unavailableProviderQuota('grok', 'not-connected')
-        return this.keepQuota(answer)
+        return this.settleQuota(start, answer)
       } catch {
         // A process that stopped or refused partway is not the account's answer; the read below gives that.
         if (gone()) return unavailableProviderQuota('grok', 'not-connected')
       }
     }
-    if (background && this.quota && this.quotaReadAt !== undefined && Date.now() - this.quotaReadAt < QUOTA_REUSE_MS) return this.quota
+    const latest = this.quotaLatest
+    if (background && !live && latest && latest.read.status !== 'error' && Date.now() - latest.at < QUOTA_REUSE_MS) return latest.read
     const probe = this.spawn(executable, () => undefined)
     this.quotaProbes.add(probe)
     try {
       const client = await this.identify(probe)
       if (gone()) return unavailableProviderQuota('grok', 'not-connected')
-      if (clientRefusal(client)) return unavailableProviderQuota('grok', 'read-failed', true)
+      if (clientRefusal(client)) return this.settleQuota(start, unavailableProviderQuota('grok', 'read-failed', true))
       await this.authenticate(probe)
       if (gone()) return unavailableProviderQuota('grok', 'not-connected')
       const answer = await this.askBilling(probe)
       if (gone()) return unavailableProviderQuota('grok', 'not-connected')
-      return this.keepQuota(answer)
+      return this.settleQuota(start, answer)
     } catch {
       if (gone()) return unavailableProviderQuota('grok', 'not-connected')
-      return { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' }
+      return this.settleQuota(start, { ...(this.quota ?? unavailableProviderQuota('grok', 'read-failed', true)), status: 'error', reason: 'read-failed' })
     } finally { this.quotaProbes.delete(probe); probe.close() }
   }
-  private keepQuota(answer: UsageQuotaRead): UsageQuotaRead { this.quota = answer; this.quotaReadAt = Date.now(); return answer }
+  /**
+   * Keep a finished read's answer unless a read that began after it has already finished, in which case that newer
+   * answer stands and is what this read hands back too, so nothing downstream shows the older one over it.
+   */
+  private settleQuota(start: number, answer: UsageQuotaRead): UsageQuotaRead {
+    if (this.quotaLatest && this.quotaLatest.start > start) return this.quotaLatest.read
+    this.quotaLatest = { start, read: answer, at: Date.now() }
+    if (answer.status !== 'error') this.quota = answer
+    return answer
+  }
   /**
    * A thread's process that has started, signed in and is not being stopped: one on the current client whose thread
    * is idle first, then one on the current client whose thread is busy, then an outdated one still running.
@@ -716,7 +730,7 @@ export class GrokAcpHost implements AgentHost {
   }
   private id(nativeId: string): string | undefined { return Object.keys(this.aliases).find(id => this.aliases[id]!.grokSessionId === nativeId) }
   async connect(): Promise<AgentHostSnapshot> {
-    if (this.usageEnabled) { this.quota = undefined; this.quotaReadAt = undefined; this.usagePromptStarts.clear() }
+    if (this.usageEnabled) { this.quota = undefined; this.quotaLatest = undefined; this.usagePromptStarts.clear() }
     this.disconnect(); await this.closed()
     const generation = this.generation
     await this.usage.load()

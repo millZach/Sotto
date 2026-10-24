@@ -41,6 +41,9 @@ export class UsageService implements UsagePromptRecorder {
   private readonly tokens = new Map<string, UsageTokenObservation>()
   private readonly prompts = new Map<string, PromptWrite>()
   private readonly quotas = new Map<UsageLimitProviderId, UsageQuotaRead>()
+  /** Where in the order refreshes began the newest refresh to answer for each provider began. */
+  private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
+  private quotaStarts = 0
   private readonly visited = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
@@ -287,13 +290,22 @@ export class UsageService implements UsagePromptRecorder {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')
       if (!this.options.host.readProviderQuota) return unavailableProviderQuota(providerId, 'unsupported')
       const read = async (): Promise<UsageQuotaRead> => {
+        // A refresh that began after this one and has already answered is newer news, and stands over this one (#1456).
+        // A read of the last reading takes no place in that order: it answers at once with whatever the provider holds.
+        const start = refresh ? ++this.quotaStarts : 0
+        const newer = (): UsageQuotaRead | undefined => refresh && (this.quotaStarted.get(providerId) ?? 0) > start ? this.quotas.get(providerId) : undefined
         try {
           const host = this.options.host
           const quota = usageQuotaReadSchema.parse(await (background ? host.readProviderQuota!(providerId, true, true) : host.readProviderQuota!(providerId, refresh)))
           if (quota.providerId !== providerId) throw new Error('Usage provider does not match')
+          const standing = newer()
+          if (standing) return standing
           this.quotas.set(providerId, quota)
+          if (refresh) this.quotaStarted.set(providerId, start)
           return quota
         } catch {
+          const standing = newer()
+          if (standing) return standing
           const previous = this.quotas.get(providerId)
           return { ...(previous ?? unavailableProviderQuota(providerId, 'read-failed')), status: 'error', reason: 'read-failed' }
         }

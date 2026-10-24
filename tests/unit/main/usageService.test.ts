@@ -246,6 +246,37 @@ describe('host usage collection service', () => {
     expect(f.fake.commands).toHaveLength(0)
   })
 
+  it('keeps the reading of a later read when an earlier one finishes after it (#1456)', async () => {
+    const f = fixture()
+    const older = parseCodexQuota({ rateLimits: { primary: { usedPercent: 42, windowDurationMins: 300 } } }, at)
+    const newer = parseCodexQuota({ rateLimits: { primary: { usedPercent: 64, windowDurationMins: 300 } } }, at)
+    let finish: (() => void) | undefined
+    f.host.readProviderQuota = vi.fn(async (_provider: string, _refresh: boolean, background?: boolean) => {
+      if (!background) return newer
+      await new Promise<void>(resolve => { finish = resolve })
+      return older
+    })
+    const opened = f.service.refresh(['codex'], true)
+    expect((await f.service.refresh(['codex'])).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    finish!()
+    expect((await opened).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    // A read of the last reading while Read again is under way takes no place ahead of it.
+    let release: (() => void) | undefined
+    const newest = parseCodexQuota({ rateLimits: { primary: { usedPercent: 80, windowDurationMins: 300 } } }, at)
+    f.host.readProviderQuota = vi.fn(async (_provider: string, refresh: boolean) => {
+      if (!refresh) return newer
+      await new Promise<void>(resolve => { release = resolve })
+      return newest
+    })
+    const again = f.service.refresh(['codex'])
+    expect((await f.service.read()).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    release!()
+    expect((await again).quotas[0]!.windows[0]!.usedPercent).toBe(80)
+    // A failure later still shows the newest reading's figures.
+    f.host.readProviderQuota = vi.fn(async () => { throw new Error('synthetic failure') })
+    expect((await f.service.refresh(['codex'])).quotas[0]).toMatchObject({ status: 'error', reason: 'read-failed', windows: [{ usedPercent: 80 }] })
+  })
+
   it('reports a failed store separately while account metadata remains available', async () => {
     const store = new UsageStore(':memory:')
     vi.spyOn(store, 'open').mockImplementation(() => { throw new Error('synthetic open failure') })
