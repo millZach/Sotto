@@ -6,23 +6,26 @@ import { createContext } from 'react'
  * cards stays in view after an open fold of the replies around it). Rows add themselves as they are drawn and leave as
  * they go, so the transcript finds a message, and the first one in view, without searching the page or walking the
  * messages it does not draw (#1452).
+ *
+ * The order is put right only when it is read, for every row that came or went since. A few new rows each take their place
+ * by halves, as a new message at the end does; more are sorted in with the rest at once, as Show earlier draws them. Rows
+ * that went are taken out in one pass. So drawing or letting go of many rows costs about what sorting them does, never a
+ * shift of the whole order for each row, and a transcript that goes takes nothing out at all.
  */
 export class MessageRows {
   private readonly byId = new Map<string, HTMLElement>()
   private readonly ids = new WeakMap<HTMLElement, string>()
-  private readonly shown: HTMLElement[] = []
-  /** Adds a drawn row at its place among the rows shown, found by halves; the function it returns lets that row go. */
+  private shown: HTMLElement[] = []
+  private readonly came = new Set<HTMLElement>()
+  private readonly went = new Set<HTMLElement>()
+  /** Adds a drawn row; the function it returns lets that row go. */
   add(messageId: string, element: HTMLElement): () => void {
     this.byId.set(messageId, element)
     this.ids.set(element, messageId)
-    this.shown.splice(this.place(element), 0, element)
+    if (!this.went.delete(element)) this.came.add(element)
     return () => {
       if (this.byId.get(messageId) === element) this.byId.delete(messageId)
-      // Found by halves while the row is still on the page, as React lets it go before taking it off; looked for through the
-      // rows only if the page no longer places it.
-      const near = this.place(element)
-      const at = this.shown[near] === element ? near : this.shown.indexOf(element)
-      if (at >= 0) this.shown.splice(at, 1)
+      if (!this.came.delete(element)) this.went.add(element)
     }
   }
   /** The row drawn for a message, when one is. */
@@ -30,11 +33,27 @@ export class MessageRows {
     return this.byId.get(messageId)
   }
   /** How many rows are drawn. */
-  get size(): number { return this.shown.length }
+  get size(): number { return this.settled().length }
   /** The row at a place among the rows shown, top first. */
-  at(index: number): HTMLElement | undefined { return this.shown[index] }
+  at(index: number): HTMLElement | undefined { return this.settled()[index] }
   /** The message a drawn row shows. */
   messageOf(element: HTMLElement): string | undefined { return this.ids.get(element) }
+  /** The rows in the order shown, with every row that came or went since it was last read put right. */
+  private settled(): HTMLElement[] {
+    if (this.went.size) {
+      const went = this.went
+      this.shown = this.shown.filter(element => !went.has(element))
+      went.clear()
+    }
+    if (this.came.size > FEW_ROWS) {
+      this.shown = this.shown.concat([...this.came]).sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
+      this.came.clear()
+    } else if (this.came.size) {
+      for (const element of this.came) this.shown.splice(this.place(element), 0, element)
+      this.came.clear()
+    }
+    return this.shown
+  }
   /** Where a row goes among the rows shown: after every row the page puts before it. */
   private place(element: HTMLElement): number {
     let low = 0, high = this.shown.length
@@ -46,6 +65,8 @@ export class MessageRows {
     return low
   }
 }
+/** Up to this many rows that came since the order was read take their places one by one; more are sorted in at once. */
+const FEW_ROWS = 16
 
 /** The rows of the transcript a message is drawn in. Outside a transcript, a row adds itself nowhere. */
 export const MessageRowsContext = createContext<MessageRows | null>(null)
@@ -123,11 +144,15 @@ const SCROLL_KEYS: ReadonlySet<string> = new Set(['PageUp', 'PageDown', 'ArrowUp
 const OWNS_KEYS = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], [role="listbox"], '
   + '[role="menu"], [role="menubar"], [role="radiogroup"], [role="slider"], [role="spinbutton"], [role="tablist"], [role="tree"], [role="grid"]'
 
+/** Where Space presses the control instead of scrolling: a button, a link, a disclosure's summary. */
+const PRESSED_BY_SPACE = 'button, [role="button"], a[href], summary'
+
 /**
  * Whether a key pressed in the transcript is the reader scrolling it: a scrolling key that no control took for itself.
- * Space typed into a request card's answer, or an arrow moving through a menu, is not.
+ * Space typed into a request card's answer or pressing Copy, or an arrow moving through a menu, is not.
  */
 export function scrollsTranscript(event: { readonly key: string; readonly target: EventTarget | null; readonly defaultPrevented: boolean }): boolean {
   if (event.defaultPrevented || !SCROLL_KEYS.has(event.key)) return false
-  return !(event.target instanceof Element && event.target.closest(OWNS_KEYS) !== null)
+  if (!(event.target instanceof Element)) return true
+  return event.target.closest(event.key === ' ' ? `${OWNS_KEYS}, ${PRESSED_BY_SPACE}` : OWNS_KEYS) === null
 }
