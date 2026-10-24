@@ -1,9 +1,10 @@
-import { useCallback, useSyncExternalStore } from 'react'
+import { renderedPlainLines } from './richActions'
+import { ThreadListStore, useThreadList } from './threadListStore'
 
 /**
  * Words the user selected in one of the agent's replies, waiting on that thread's composer to go with the next prompt
- * (ADR-0127). The text is what the selection read when Add to prompt was pressed: plain text, so a code block in the
- * reply arrives as its lines without the fence.
+ * (ADR-0127). The text is what the selection showed when Add to prompt was pressed, as plain text, so a code block in the
+ * reply arrives as its lines without the fence, and the code block's own controls are left out.
  */
 export interface ReplyQuote {
   readonly id: string
@@ -22,9 +23,16 @@ export function replyQuoteLabel(text: string): string {
   return `“${words.slice(0, 6).join(' ')}${words.length > 6 ? '…' : ''}”`
 }
 
+/** The text without blank lines before or after it, and line ends trimmed; the first line keeps its indentation. */
+export function trimBlankLines(text: string): string {
+  const lines = text.replace(/\r\n?/gu, '\n').split('\n').map(line => line.trimEnd())
+  const first = lines.findIndex(line => line !== '')
+  return first < 0 ? '' : lines.slice(first, lines.findLastIndex(line => line !== '') + 1).join('\n')
+}
+
 /** One quote as the provider reads it: a line saying where it is from, then each line as a Markdown blockquote. */
 export function replyQuoteText(quote: Pick<ReplyQuote, 'text'>): string {
-  const lines = quote.text.trim().replace(/\r\n?/gu, '\n').split('\n').map(line => line.trimEnd() === '' ? '>' : `> ${line.trimEnd()}`)
+  const lines = trimBlankLines(quote.text).split('\n').map(line => line === '' ? '>' : `> ${line}`)
   return `From your earlier reply:\n${lines.join('\n')}`
 }
 
@@ -36,67 +44,34 @@ export function composeQuotedMessage(message: string, quotes: readonly Pick<Repl
   return [...quotes.map(replyQuoteText), message.trim()].filter(part => part !== '').join('\n\n')
 }
 
-const NONE: readonly ReplyQuote[] = []
-
 /**
  * Each thread's reply quotes for this session. The transcript adds them; the thread's composer shows them as chips and
  * takes them into the message on the press. They live in this window's memory only, are never logged and are not saved
  * with the draft. Once written into a prompt they are part of its text, which is saved and sent as any prompt is.
  */
-export class ReplyQuoteStore {
-  private readonly threads = new Map<string, readonly ReplyQuote[]>()
-  private readonly listeners = new Set<() => void>()
-  constructor(private readonly uuid: () => string = () => crypto.randomUUID()) {}
-
-  readonly subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
-  }
-
-  list(threadId: string): readonly ReplyQuote[] { return this.threads.get(threadId) ?? NONE }
-
-  /** Whether the thread's next prompt can carry another quote. */
-  full(threadId: string): boolean { return this.list(threadId).length >= MAX_REPLY_QUOTES }
+export class ReplyQuoteStore extends ThreadListStore<ReplyQuote> {
+  constructor(private readonly uuid: () => string = () => crypto.randomUUID()) { super(MAX_REPLY_QUOTES) }
 
   /** Add words from a reply. Null when there are no words or the prompt is full. */
   add(threadId: string, quote: { readonly messageId: string; readonly text: string }): ReplyQuote | null {
-    const text = quote.text.trim()
-    if (text === '' || this.full(threadId)) return null
-    const added: ReplyQuote = { id: this.uuid(), threadId, messageId: quote.messageId, text }
-    this.threads.set(threadId, [...this.list(threadId), added])
-    this.emit()
-    return added
+    const text = trimBlankLines(quote.text)
+    if (text === '') return null
+    return this.append(threadId, { id: this.uuid(), threadId, messageId: quote.messageId, text })
   }
-
-  remove(threadId: string, id: string): void { this.without(threadId, [id]) }
-
-  /** Take these quotes off the composer: their prompt has gone, and they went with it. */
-  sent(threadId: string, ids: readonly string[]): void { this.without(threadId, ids) }
-
-  private without(threadId: string, ids: readonly string[]): void {
-    const current = this.list(threadId)
-    const next = current.filter(quote => !ids.includes(quote.id))
-    if (next.length === current.length) return
-    if (next.length === 0) this.threads.delete(threadId)
-    else this.threads.set(threadId, next)
-    this.emit()
-  }
-
-  private emit(): void { for (const listener of [...this.listeners]) listener() }
 }
 
 /** The one store the transcripts and the thread composers share in this window. */
 export const replyQuoteStore = new ReplyQuoteStore()
 
 export function useReplyQuotes(store: ReplyQuoteStore, threadId: string | null): readonly ReplyQuote[] {
-  const read = useCallback(() => threadId === null ? NONE : store.list(threadId), [store, threadId])
-  return useSyncExternalStore(store.subscribe, read)
+  return useThreadList(store, threadId)
 }
 
 /**
  * The words a selection holds in one of the agent's replies inside this scroller, with that reply's message ID. Null
- * unless both ends of the selection are in the same reply's text: a selection that runs into another message, a
- * header or the user's own words quotes nothing.
+ * unless both ends of the selection are in the same reply's own text: a selection that runs into another message, a
+ * header, the work folded under a reply or the user's own words quotes nothing. The words are read as the reply shows
+ * them, without a code block's language, its Copy control or text kept for screen readers.
  */
 export function quoteFromSelection(selection: Selection | null, scroller: HTMLElement | null): { readonly messageId: string; readonly text: string } | null {
   if (selection === null || scroller === null || selection.isCollapsed || selection.rangeCount === 0) return null
@@ -106,9 +81,17 @@ export function quoteFromSelection(selection: Selection | null, scroller: HTMLEl
   }
   const reply = body(selection.anchorNode)
   if (reply === null || reply !== body(selection.focusNode) || !scroller.contains(reply)) return null
-  const message = reply.closest<HTMLElement>('.thread-message[data-role="assistant"][data-message-id]')
-  const messageId = message?.dataset.messageId
-  if (messageId === undefined) return null
-  const text = selection.toString().trim()
-  return text === '' ? null : { messageId, text }
+  // The reply's own text sits directly in its message; Markdown in the work folded under it is deeper.
+  const message = reply.parentElement
+  if (message === null || !message.matches('.thread-message[data-role="assistant"][data-message-id]')) return null
+  const range = selection.getRangeAt(0)
+  const codeOf = (node: Node): Element | null => (node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement)?.closest('pre') ?? null
+  // A selection inside one code block is read as that block's text, so its spacing survives.
+  const holder = document.createElement('div')
+  const into = codeOf(range.commonAncestorContainer) === null ? holder : holder.appendChild(document.createElement('pre'))
+  into.append(range.cloneContents())
+  const lines = trimBlankLines(renderedPlainLines(holder))
+  // Indentation counts only in code: a selection that starts in prose drops the space it began on.
+  const text = codeOf(range.startContainer) === null ? lines.trimStart() : lines
+  return text === '' ? null : { messageId: message.dataset.messageId!, text }
 }

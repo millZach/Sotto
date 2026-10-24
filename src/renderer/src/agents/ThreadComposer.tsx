@@ -256,9 +256,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
    * comments, so every provider reads the same message, the transcript shows what was sent, and a refused prompt
    * comes back to the composer with them written out.
    */
+  const withCarried = (text: string): string => carried.length === 0 && carriedQuotes.length === 0 ? text
+    : composeReviewMessage(composeQuotedMessage(text, carriedQuotes), carried)
   const writeCarried = (): void => {
-    if (carried.length === 0 && carriedQuotes.length === 0) return
-    store.edit(threadId, { text: composeReviewMessage(composeQuotedMessage(store.draft(threadId).text, carriedQuotes), carried) })
+    const draftText = store.draft(threadId).text, text = withCarried(draftText)
+    if (text !== draftText) store.edit(threadId, { text })
   }
   /** What rode with the prompt has gone with it, so its chips come off. */
   const sentCarried = (): void => {
@@ -273,15 +275,17 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const continueSend = async (choice: ContinueChoice): Promise<void> => {
     const bridge = window.sotto?.continueThread
     if (bridge === undefined) return
-    writeCarried()
+    // What rides with it goes into the request, not the draft, until the new thread has started: a refusal leaves the
+    // draft and the chips as they were, so continuing again carries each once.
     const written = store.draft(threadId)
-    if (written.text.trim() === '') { continueStore.update(threadId, { error: `Write what ${continueTarget} should do next. It goes with the handover.` }); return }
+    const text = withCarried(written.text)
+    if (text.trim() === '') { continueStore.update(threadId, { error: `Write what ${continueTarget} should do next. It goes with the handover.` }); return }
     continueStore.update(threadId, { sending: true, error: null })
     let result: ContinueStart
     try {
       result = await bridge.start({ threadId, newThreadId: choice.newThreadId, modelId: choice.modelId,
         ...(choice.reasoningEffort ? { reasoningEffort: choice.reasoningEffort } : {}), ...(choice.runtimeMode ? { runtimeMode: choice.runtimeMode } : {}),
-        ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text: written.text,
+        ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text,
         ...(written.attachments.length ? { attachments: [...written.attachments] } : {}), ...(written.files?.length ? { files: [...written.files] } : {}) })
     } catch {
       // Main's answer was lost, so whether the new thread started is unknown. A retry names the same new thread, which main
@@ -336,7 +340,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */
   const removeChip = (button: HTMLElement, remove: () => void): void => {
-    const buttons = [...(button.closest('.review-chips')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
+    // Quotes and comments are two rows of chips; focus moves through both, as one.
+    const buttons = [...(button.closest('form')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
     const next = buttons[buttons.indexOf(button) + 1] ?? buttons[buttons.indexOf(button) - 1]
     remove()
     if (next) next.focus(); else field.current?.focus()
@@ -385,12 +390,15 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           })}
         </ul> : null}
         {quotes.length > 0 ? <ul className="review-chips" aria-label="Quotes from replies">
-          {quotes.map(quote => <li key={quote.id} className="review-chip" title={quote.text}>
+          {quotes.map(quote => {
+            const label = replyQuoteLabel(quote.text)
+            return <li key={quote.id} className="review-chip" title={quote.text}>
             <Quote size={13} aria-hidden="true" className="review-chip__icon" />
-            <span className="review-chip__label">{replyQuoteLabel(quote.text)}</span><span className="tt-visually-hidden">: {quote.text}</span>
-            <button type="button" className="review-chip__remove tt-focusable" aria-label="Remove quote" title="Remove quote"
+            <span className="review-chip__label">{label}</span><span className="tt-visually-hidden">: {quote.text}</span>
+            <button type="button" className="review-chip__remove tt-focusable" aria-label={`Remove quote ${label}`} title="Remove quote"
               onClick={event => removeChip(event.currentTarget, () => replyQuotes.remove(threadId, quote.id))}><X size={13} aria-hidden="true" /></button>
-          </li>)}
+          </li>
+          })}
         </ul> : null}
         {answering && (comments.length > 0 || quotes.length > 0) ? <p className="review-chips__note">{heldNote(comments.length > 0, quotes.length > 0)}</p> : null}
         <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{answering ? 'Your answer' : watcher ? 'Watcher message' : 'Prompt'}</label>

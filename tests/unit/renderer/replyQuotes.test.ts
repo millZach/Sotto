@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  composeQuotedMessage, MAX_REPLY_QUOTES, quoteFromSelection, replyQuoteLabel, ReplyQuoteStore, replyQuoteText,
+  composeQuotedMessage, MAX_REPLY_QUOTES, quoteFromSelection, replyQuoteLabel, ReplyQuoteStore, replyQuoteText, trimBlankLines,
 } from '../../../src/renderer/src/agents/replyQuotes'
 import { composeReviewMessage } from '../../../src/renderer/src/agents/reviewComments'
 
 describe('the text a reply quote sends', () => {
   it('says where it is from and quotes each line', () => {
-    expect(replyQuoteText({ text: '  Read the saved draft first.\r\n\r\nThen skip the write-back.  ' }))
+    expect(replyQuoteText({ text: '\r\nRead the saved draft first.\r\n\r\nThen skip the write-back.  ' }))
       .toBe('From your earlier reply:\n> Read the saved draft first.\n>\n> Then skip the write-back.')
+  })
+
+  it('keeps the first line’s indentation, trimming only blank lines around the words', () => {
+    expect(replyQuoteText({ text: '\n\n    if (!key) return\n  done()  \n\n' })).toBe('From your earlier reply:\n>     if (!key) return\n>   done()')
+    expect(trimBlankLines(' \n  a\n\n b \n \n')).toBe('  a\n\n b')
+    expect(trimBlankLines(' \n \n')).toBe('')
   })
 
   it('puts the quotes before the message, each set apart by a blank line', () => {
@@ -41,11 +47,11 @@ describe('the reply quote store', () => {
     const store = new ReplyQuoteStore(() => `q${++next}`)
     const listener = vi.fn()
     store.subscribe(listener)
-    expect(store.add('t1', { messageId: 'm1', text: '  first  ' })).toEqual({ id: 'q1', threadId: 't1', messageId: 'm1', text: 'first' })
+    expect(store.add('t1', { messageId: 'm1', text: '\n first  \n' })).toEqual({ id: 'q1', threadId: 't1', messageId: 'm1', text: ' first' })
     store.add('t1', { messageId: 'm2', text: 'second' })
     store.add('t2', { messageId: 'm9', text: 'elsewhere' })
     expect(store.add('t1', { messageId: 'm1', text: '   ' })).toBeNull()
-    expect(store.list('t1').map(quote => quote.text)).toEqual(['first', 'second'])
+    expect(store.list('t1').map(quote => quote.text)).toEqual([' first', 'second'])
     expect(listener).toHaveBeenCalledTimes(3)
     store.remove('t1', 'q1')
     expect(store.list('t1').map(quote => quote.id)).toEqual(['q2'])
@@ -73,7 +79,8 @@ describe('reading a selection', () => {
       <article class="thread-message" data-role="user" data-message-id="u1"><div class="rich-message"><p id="mine">My words</p></div></article>
       <article class="thread-message" data-role="assistant" data-message-id="a1"><header id="who">Claude</header>
         <div class="rich-message"><p id="one">The draft lives in the store.</p><p id="two">The loss comes from the editor.</p></div></article>
-      <article class="thread-message" data-role="assistant" data-message-id="a2"><div class="rich-message"><p id="other">Another reply.</p></div></article>`
+      <article class="thread-message" data-role="assistant" data-message-id="a2"><div class="rich-message"><p id="other">Another reply.</p></div>
+        <div class="thread-message__work-body"><div class="rich-message"><p id="work">Thinking about it.</p></div></div></article>`
     document.body.append(scroller)
     return scroller
   }
@@ -101,6 +108,8 @@ describe('reading a selection', () => {
     const elsewhere = document.createElement('div')
     document.body.append(elsewhere)
     expect(quoteFromSelection(select(text(scroller, 'one'), 0, text(scroller, 'one'), 3), elsewhere)).toBeNull()
+    // The work folded under a reply is not the reply.
+    expect(quoteFromSelection(select(text(scroller, 'work'), 0, text(scroller, 'work'), 8), scroller)).toBeNull()
     scroller.remove()
     elsewhere.remove()
   })

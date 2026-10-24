@@ -24,7 +24,7 @@ From your earlier reply:
 > line
 ```
 
-then the user's message, then any review comments, joined by blank lines. Quotes come first so the message's "this" has something to point at. Plain text means every provider reads the same thing, the transcript shows what was sent (the user's bubble draws the blockquote), and a refused prompt comes back to the composer with the quotes written in. An answer to a question carries none; the composer says they wait for the next prompt.
+then the user's message, then any review comments, joined by blank lines. Blank lines around a quote are dropped, but its first line keeps its indentation. Quotes come first so the message's "this" has something to point at. Plain text means every provider reads the same thing, the transcript shows what was sent (the user's bubble draws the blockquote), and a refused prompt comes back to the composer with the quotes written in. A continuation's first message carries them in its request alone until the new thread starts, so a refused continuation leaves the draft and the chips as they were and a retry carries each quote once. An answer to a question carries none; the composer says they wait for the next prompt.
 
 **5. No sent-quote view.** The sent message is the user's text like any other. There is no special bubble and no jump back to the reply; the prototype's sketch of one was not picked.
 
@@ -33,6 +33,6 @@ then the user's message, then any review comments, joined by blank lines. Quotes
 ## Consequences
 
 - `CONTEXT.md` names the **reply quote**. The design captures do not change: nothing is selected in them.
-- `Selection.toString()` is the quote's text, so a code block arrives as its lines without its fence and Markdown emphasis is lost. Quoting the reply's Markdown source for the selected range would keep it; it is not worth the mapping yet.
+- The quote's text is the selected part of the reply read as plain text, the way a reply's copy control copies it as plain text: a code block's language and Copy control and text kept for screen readers are left out, code keeps its indentation, and a code block arrives as its lines without its fence. Markdown emphasis and links are lost. Quoting the reply's Markdown source for the selected range would keep them; it is not worth the mapping yet.
 - A quote is the user's evidence for the agent, like any prompt text. It answers nothing and grants nothing.
 - Sending the feature to stable flips its entry's `sentToStable`.

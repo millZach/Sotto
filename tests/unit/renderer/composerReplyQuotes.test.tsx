@@ -7,7 +7,9 @@ import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { replyQuoteStore } from '../../../src/renderer/src/agents/replyQuotes'
+import { quoteFromSelection, replyQuoteStore } from '../../../src/renderer/src/agents/replyQuotes'
+import { MessageContent } from '../../../src/renderer/src/agents/MessageContent'
+import { ReplyQuoteButton } from '../../../src/renderer/src/agents/ReplyQuoteButton'
 import { reviewCommentStore } from '../../../src/renderer/src/agents/reviewComments'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -69,11 +71,24 @@ describe('reply quotes on the composer', () => {
     const items = within(chips()!).getAllByRole('listitem')
     expect(items.map(item => item.querySelector('.review-chip__label')!.textContent)).toEqual(['“The preview plays a two-second sample…”', '“the key never touches settings.json”'])
     expect(items[0]).toHaveAttribute('title', 'The preview plays a two-second sample through the selected voice')
-    const first = within(items[0]!).getByRole('button', { name: 'Remove quote' })
+    const first = within(items[0]!).getByRole('button', { name: 'Remove quote “The preview plays a two-second sample…”' })
     first.focus()
     fireEvent.click(first)
     expect(replyQuoteStore.list(THREAD).map(quote => quote.text)).toEqual(['the key never touches settings.json'])
-    expect(within(chips()!).getByRole('button', { name: 'Remove quote' })).toHaveFocus()
+    expect(within(chips()!).getByRole('button', { name: 'Remove quote “the key never touches settings.json”' })).toHaveFocus()
+  })
+
+  it('moves focus from the last quote to the review comments after it, then to the prompt', () => {
+    const { prompt } = mount()
+    act(() => {
+      replyQuoteStore.add(THREAD, { messageId: REPLY, text: 'two-second sample' })
+      reviewCommentStore.add(THREAD, { path: 'a.ts', lines: [{ kind: 'add', text: 'x', oldLine: null, newLine: 1 }], text: 'Why?' })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove quote “two-second sample”' }))
+    const comment = screen.getByRole('button', { name: 'Remove comment on a.ts L1' })
+    expect(comment).toHaveFocus()
+    fireEvent.click(comment)
+    expect(prompt()).toHaveFocus()
   })
 
   it('sends the quotes before the message and the review comments after it, then takes the chips off', () => {
@@ -174,5 +189,55 @@ describe('Add to prompt over a selection in a reply', () => {
       fireEvent.keyUp(document.body, { key: 'Shift' })
     })
     expect(screen.queryByRole('button', { name: 'Add to prompt' })).toBeNull()
+  })
+})
+
+describe('the words a quote reads from a rendered reply', () => {
+  it('leaves out a code block’s controls and keeps the code’s spacing', () => {
+    const { container } = render(<div><article className="thread-message" data-role="assistant" data-message-id="a3">
+      <MessageContent text={'Run this:\n\n```bash\n  npm ci\n  npm test\n```\n\nThen push.'} /></article></div>)
+    const scroller = container.firstElementChild as HTMLElement
+    const reply = scroller.querySelector('.rich-message')!
+    const first = reply.querySelector('p')!.firstChild!, last = [...reply.querySelectorAll('p')].at(-1)!.firstChild!
+    const selection = document.getSelection()!
+    selection.setBaseAndExtent(first, 0, last, 10)
+    expect(quoteFromSelection(selection, scroller)).toEqual({ messageId: 'a3', text: 'Run this:\n  npm ci\n  npm test\n\nThen push.' })
+    const code = reply.querySelector('pre code')!
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT)
+    const start = walker.nextNode()!
+    selection.setBaseAndExtent(start, 0, start, Math.min(8, start.textContent!.length))
+    expect(quoteFromSelection(selection, scroller)?.text.startsWith('  ')).toBe(true)
+  })
+})
+
+describe('Add to prompt as the transcript scrolls', () => {
+  it('hides while the selection is out of view and comes back when it scrolls in again', () => {
+    const rect = (top: number) => ({ top, bottom: top + 18, left: 100, right: 300, width: 200, height: 18, x: 100, y: top, toJSON: () => ({}) }) as DOMRect
+    let selectionTop = 300
+    const range = vi.spyOn(Range.prototype, 'getBoundingClientRect').mockImplementation(() => rect(selectionTop))
+    function Frame() {
+      const scroller = React.useRef<HTMLDivElement>(null)
+      return <div className="thread-transcript"><div ref={scroller} data-testid="scroller">
+        <article className="thread-message" data-role="assistant" data-message-id="r1"><div className="rich-message"><p>Words in a reply.</p></div></article>
+      </div><ReplyQuoteButton threadId="t-scroll" scroller={scroller} /></div>
+    }
+    render(<Frame />)
+    const scroller = screen.getByTestId('scroller')
+    vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({ ...rect(0), top: 0, bottom: 600, height: 600 } as DOMRect)
+    vi.spyOn(scroller.parentElement!, 'getBoundingClientRect').mockReturnValue({ ...rect(0), top: 0, bottom: 600, left: 0, right: 800, width: 800, height: 600 } as DOMRect)
+    const words = scroller.querySelector('p')!.firstChild!
+    act(() => {
+      document.getSelection()!.setBaseAndExtent(words, 0, words, 5)
+      fireEvent.keyUp(document.body, { key: 'Shift' })
+    })
+    const pop = () => document.querySelector<HTMLElement>('.reply-quote-pop')!
+    expect(pop().hidden).toBe(false)
+    selectionTop = -200
+    fireEvent.scroll(scroller)
+    expect(pop().hidden).toBe(true)
+    selectionTop = 250
+    fireEvent.scroll(scroller)
+    expect(pop().hidden).toBe(false)
+    range.mockRestore()
   })
 })

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Quote } from 'lucide-react'
 import { useOptionalApp } from '../state/AppContext'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
@@ -17,10 +17,10 @@ const GAP_PX = 8
  * or under it where the top of the transcript would cut it off, and follows it as the transcript scrolls. A press puts
  * the words on this thread's composer as a quote and hands focus to the composer; Escape puts the button away.
  */
-export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuoteStore }: {
+export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuoteStore }: {
   readonly threadId: string
   readonly scroller: RefObject<HTMLElement | null>
-  /** The words are on the composer: the pane puts focus in it. */
+  /** The words are on the composer: the pane puts focus in it. A new function each render draws nothing again; the newest is called. */
   readonly onAdded?: (() => void) | undefined
   /** The window's own unless a test passes one. */
   readonly store?: ReplyQuoteStore
@@ -28,7 +28,9 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
   const app = useOptionalApp()
   const platform = app?.platform ?? 'win32'
   const chord = chordClaimed(REPLY_QUOTE_SHORTCUT, app?.settings?.hotkey, platform) ? REPLY_QUOTE_SHORTCUT : null
-  const full = useReplyQuotes(store, threadId).length >= MAX_REPLY_QUOTES
+  // Subscribed so the button hears when the prompt fills or empties.
+  useReplyQuotes(store, threadId)
+  const full = store.full(threadId)
   const [pending, setPending] = useState<{ readonly messageId: string; readonly text: string } | null>(null)
   const pop = useRef<HTMLDivElement>(null)
   const pressing = useRef(false)
@@ -41,9 +43,11 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
 
   /** Puts the button over the selection, in the transcript's own coordinates, or hides it while the selection is out of view. */
   const place = useCallback((): void => {
-    const element = pop.current, view = scroller.current, host = element?.offsetParent
+    // The button stands in the transcript's frame, beside the scroller; read from the frame itself, since a hidden
+    // button has no offset parent to ask.
+    const element = pop.current, view = scroller.current, host = view?.parentElement
     const selection = document.getSelection()
-    if (!element || !view || !(host instanceof HTMLElement) || !selection || selection.rangeCount === 0) return
+    if (!element || !view || !host || !selection || selection.rangeCount === 0) return
     const range = selection.getRangeAt(0)
     if (typeof range.getBoundingClientRect !== 'function') return
     const rect = range.getBoundingClientRect(), frame = view.getBoundingClientRect(), origin = host.getBoundingClientRect()
@@ -63,10 +67,12 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
     setPending(null)
   }, [])
 
+  const added = useRef(onAdded)
+  added.current = onAdded
   const add = (quote: { readonly messageId: string; readonly text: string } | null): void => {
     if (quote === null || store.add(threadId, quote) === null) return
     dismiss()
-    onAdded?.()
+    added.current?.()
   }
 
   // A different thread starts with nothing pending.
@@ -77,14 +83,17 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
   useEffect(() => {
     const down = (event: PointerEvent): void => { if (!pop.current?.contains(event.target as Node | null)) pressing.current = true }
     const up = (): void => { pressing.current = false; requestAnimationFrame(read) }
+    const cancel = (): void => { pressing.current = false }
     const changed = (): void => { if (document.getSelection()?.isCollapsed !== false) setPending(current => current === null ? current : null) }
     document.addEventListener('pointerdown', down, true)
     document.addEventListener('pointerup', up, true)
+    document.addEventListener('pointercancel', cancel, true)
     document.addEventListener('keyup', read)
     document.addEventListener('selectionchange', changed)
     return () => {
       document.removeEventListener('pointerdown', down, true)
       document.removeEventListener('pointerup', up, true)
+      document.removeEventListener('pointercancel', cancel, true)
       document.removeEventListener('keyup', read)
       document.removeEventListener('selectionchange', changed)
     }
@@ -102,19 +111,23 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
   }, [pending, scroller, place])
 
   // Escape puts the button away; the chord adds whatever this transcript's selection holds, the button shown or not.
+  // Registered once, reading the latest render through a ref.
+  const latest = useRef({ pending, chord, platform, full, add })
+  latest.current = { pending, chord, platform, full, add }
   useEffect(() => {
     const keydown = (event: KeyboardEvent): void => {
+      const now = latest.current
       if (event.defaultPrevented || event.repeat) return
-      if (event.key === 'Escape' && pending !== null) { event.preventDefault(); dismiss(); return }
-      if (chord === null || !chordMatches(event, chord, platform) || chordBelongsElsewhere(event.target)) return
+      if (event.key === 'Escape' && now.pending !== null) { event.preventDefault(); dismiss(); return }
+      if (now.chord === null || !chordMatches(event, now.chord, now.platform) || chordBelongsElsewhere(event.target)) return
       const quote = quoteFromSelection(document.getSelection(), scroller.current)
       if (quote === null) return
       event.preventDefault()
-      if (!full) add(quote)
+      if (!now.full) now.add(quote)
     }
     document.addEventListener('keydown', keydown)
     return () => document.removeEventListener('keydown', keydown)
-  })
+  }, [dismiss, scroller])
 
   if (pending === null) return null
   const keys = chord === null ? undefined : platform === 'darwin' ? 'Meta+Shift+A' : 'Control+Shift+A'
@@ -128,4 +141,4 @@ export function ReplyQuoteButton({ threadId, scroller, onAdded, store = replyQuo
         {chord === null ? null : <kbd aria-hidden="true">{platform === 'darwin' ? '⌘⇧A' : 'Ctrl+Shift+A'}</kbd>}
       </button>}
   </div>
-}
+}, (before, after) => before.threadId === after.threadId && before.scroller === after.scroller && before.store === after.store)
