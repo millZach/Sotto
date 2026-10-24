@@ -311,7 +311,11 @@ their participations rides again (sent whole, it was 62 records per streamed upd
 Owl's copied objects no longer grow with the history while threads stream or when an answer draft is saved; what still
 grows is a command copying Watcher's whole record (#1248). Stable is unchanged.
 
-In the streaming copy budget Owl makes 6.3 to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5.
+In the streaming copy budget Owl makes 6.3 to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5. That gate
+now holds the workspace's saves through the stream and makes one at its end. The workspace saves at most once a 250 ms
+window while anything changes, so one to three saves fell inside the stream as the machine was fast or slow, and each
+copies the saved organization on stable: stable read 8.6 to 9.6 objects per thread per update by how many fell in, near
+its budget of 10. With one save it reads 8.6 on every run, and its budget is 9.5.
 
 ## When a guard goes red
 
