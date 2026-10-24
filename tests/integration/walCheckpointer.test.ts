@@ -235,8 +235,8 @@ describe('thread store checkpoints off main', () => {
         if (frames < last) restarts++
         last = frames
         most = Math.max(most, frames)
-        // The next save waits for a pass that starts after this one.
-        while (Atomics.load(control, 0) === 1) await nextTask()
+        // The next save waits for a pass that starts after this one: its passive checkpoint and any RESTART end first.
+        while (Atomics.load(control, 0) !== 0) await nextTask()
       }
     } finally {
       checkpointer.stop()
@@ -246,5 +246,66 @@ describe('thread store checkpoints off main', () => {
     // at most 220 pages on Windows and Linux alike, where without the RESTART it reached 240 to 485.
     expect(restarts).toBeGreaterThan(0)
     expect(most).toBeLessThan(300)
+  }, 120_000)
+
+  /**
+   * A save holding the write lock when the worker's RESTART asks for it, as one of a steady stream of saves always is,
+   * and letting it go two milliseconds later, as the gap between two saves comes. A RESTART that answered busy at once
+   * lost every time and the log was never started over (#1451); one that waits a little for the lock takes it in the
+   * gap. The worker marks the RESTART in the control array, so the save is holding the lock when it asks, whatever the
+   * platform's speed; the two milliseconds are the length of the save, well inside the RESTART's ten.
+   */
+  async function contend(timing: { restartWaitMs?: number; restartRetryMs?: number }): Promise<{ done: number; busy: number; rounds: number; dropped: boolean }> {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-')); roots.push(root)
+    const path = join(root, 'threads.sqlite')
+    const db = new DatabaseSync(path, { timeout: 5_000 })
+    db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE rows (text TEXT NOT NULL)')
+    const insert = db.prepare('INSERT INTO rows (text) VALUES (?)')
+    const save = (): void => { insert.run(randomBytes(9_000).toString('base64')) }
+    // Past the restart size before the worker starts, so its first pass already tries a RESTART.
+    while (walIndex(path).frames < 200) save()
+    const checkpointer = WalCheckpointer.start(path, worker.path, () => undefined, { intervalMs: 10, restartPages: 200, ...timing })!
+    const control = (checkpointer as unknown as { control: Int32Array }).control
+    let rounds = 0, dropped = false
+    try {
+      for (; rounds < 40 && checkpointer.restarts().done === 0; rounds++) {
+        // A save takes the write lock and holds it until the worker's RESTART is asking for it.
+        db.exec('BEGIN IMMEDIATE')
+        save()
+        for (;;) {
+          let spins = 0
+          while (Atomics.load(control, 0) !== 3 && spins++ < 100_000) { /* The passive checkpoint is copying. */ }
+          if (Atomics.load(control, 0) === 3) break
+          await nextTask()
+        }
+        const asked = performance.now()
+        while (performance.now() - asked < 2) { /* The rest of the save. */ }
+        db.exec('COMMIT')
+        while (Atomics.load(control, 0) !== 0) await nextTask()
+      }
+      if (checkpointer.restarts().done > 0) {
+        const before = walIndex(path).frames
+        save()
+        dropped = walIndex(path).frames < before
+      }
+      return { ...checkpointer.restarts(), rounds, dropped }
+    } finally {
+      checkpointer.stop()
+      db.close()
+    }
+  }
+
+  it('gets a RESTART through a steady stream of saves by waiting a little for the write lock', async () => {
+    const result = await contend({})
+    // It took the gap after the first passive checkpoint, and the save after it started the log over.
+    expect(result.done).toBeGreaterThan(0)
+    expect(result.dropped).toBe(true)
+    expect(result.rounds).toBeLessThan(40)
+  }, 120_000)
+
+  it('loses every RESTART to the same saves when it answers busy at once, as it did before', async () => {
+    const result = await contend({ restartWaitMs: 0, restartRetryMs: 10 })
+    expect(result.done).toBe(0)
+    expect(result.busy).toBeGreaterThanOrEqual(result.rounds - 1)
   }, 120_000)
 })

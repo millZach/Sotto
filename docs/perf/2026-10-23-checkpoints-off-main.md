@@ -62,3 +62,20 @@ A run of the benchmark with the RESTART turned off reproduced the October 19 fin
 and held main no less: 3.4 to 6.1 s held and a worst save of 0.28 to 0.73 s, beside 15.0 to 16.0 s held with SQLite's
 own checkpoint in the same run. The RESTART's integration test, with a restart size of 200 pages, makes one save for
 each of the worker's passes as the pass starts, and the log never held more than 220 pages on Windows or Linux.
+
+## A RESTART under a steady stream of saves
+
+The first version opened the worker's connection with no busy wait, so a RESTART that found a save holding the write
+lock answered busy at once and the next try came a pass later. With saves back to back on Linux (forge, on disk), two
+RESTARTs in three came back busy and the log reached 20,000 to 23,000 pages at a 200-page restart size. The RESTART now
+waits up to 10 ms for the lock and, when it still loses, tries again 2 ms later: one in twenty came back busy and the
+log peaked at 5,000 to 8,000 pages. On Windows saves are slower and the RESTART rarely lost either way.
+
+The wait costs main nothing: the RESTART takes the lock in a gap between saves. The save after it waits while the
+RESTART copies and flushes what the passive checkpoint left. With the shipped settings and saves back to back, that
+save waited 11 to 23 ms at the median and at most 37 ms on Windows, and up to 35 to 180 ms on Linux at tens of
+thousands of saves a second, once for each 16 MB saved.
+
+`tests/integration/walCheckpointer.test.ts` holds a save's write lock until the worker marks its RESTART, then lets it
+go 2 ms later: the RESTART gets through on its first try, and with the old answer-at-once setting it lost 40 tries in
+40, on Windows and on Linux alike.
