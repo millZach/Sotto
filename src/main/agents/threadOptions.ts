@@ -1,4 +1,4 @@
-import { agentAttachmentHandlesSchema, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadOptions } from '../../shared/agents'
+import { agentAttachmentHandlesSchema, FILES_NOT_DELIVERED_YET, isImageAttachment, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadOptions } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 
 /** Validate against the active provider's advertised model, never a substitute. */
@@ -28,6 +28,15 @@ export function effortAfterChange(snapshot: AgentHostSnapshot, options: AgentThr
  */
 export function validatePromptAttachments<T extends AgentAttachmentHandle>(snapshot: AgentHostSnapshot, modelId: string, attachments: readonly T[] = []): T[] {
   agentAttachmentHandlesSchema.parse(attachments.map(({ id, name, mimeType, sizeBytes, digest }) => ({ id, name, mimeType, sizeBytes, digest })))
-  if (attachments.length && !resolveModel(snapshot.models, modelId)?.supportsImages) throw new Error('This model does not advertise image support.')
+  // Only an image needs a model that reads images; an attached file goes to every model (ADR-0127).
+  if (attachments.some(attachment => isImageAttachment(attachment.mimeType)) && !resolveModel(snapshot.models, modelId)?.supportsImages) throw new Error('This model does not advertise image support.')
   return [...attachments]
+}
+
+/**
+ * Refuses a prompt that carries an attached file, at the provider boundary, until adapters hand files to their providers
+ * (the first phase of ADR-0127). Drafts, follow-ups and the outbox carry the file meanwhile; only the send is refused.
+ */
+export function refuseUndeliveredFiles(attachments: readonly Pick<AgentAttachmentHandle, 'mimeType'>[] = []): void {
+  if (attachments.some(attachment => !isImageAttachment(attachment.mimeType))) throw new Error(FILES_NOT_DELIVERED_YET)
 }

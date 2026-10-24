@@ -121,6 +121,23 @@ export async function stageImage(threadId: string | null, image: { readonly name
   return handle
 }
 
+/**
+ * Hands an attached file's bytes to main once, as they are, and answers with its handle (ADR-0127). A file draws no
+ * chip, so no thumbnail is made or kept. `failed` and `unread` are the window's own sentences for a staging that gave
+ * no reason of its own and for a file that could not be read.
+ */
+export async function stageAttachedFile(threadId: string | null, file: { readonly name: string; readonly mimeType: string; readonly blob: Blob },
+  words: { readonly failed: string; readonly unread: string }): Promise<AgentAttachmentHandle> {
+  const bridge = agents()
+  if (!bridge?.stageAttachment) throw new Error(words.failed)
+  const bytes = new Uint8Array(await file.blob.arrayBuffer().catch((error: unknown) => { throw new Error(words.unread, { cause: error }) }))
+  try { return await bridge.stageAttachment({ threadId, name: file.name, mimeType: file.mimeType, bytes }) }
+  catch (error) {
+    const said = stagingError(error)
+    throw new Error(said === STAGING_FAILED ? words.failed : said, { cause: error })
+  }
+}
+
 /** The chip's thumbnail: drawn when the image was staged here, or from the bytes its host still keeps. */
 export function thumbnailFor(threadId: string | null, handle: Pick<AgentAttachmentHandle, 'digest'>): Promise<string | null> {
   const thumbnail = cached(handle.digest)

@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { AgentSkillReference } from '../../../shared/agentSkills'
 import type { AgentFileReference } from '../../../shared/agentFiles'
-import { MAX_DELIVERED_DRAFTS, agentAttachmentHandlesSchema, agentThreadDraftSchema, type AgentAttachmentHandle, type AgentCommand, type AgentDelivery, type AgentState } from '../../../shared/agents'
+import { MAX_DELIVERED_DRAFTS, agentAttachmentHandlesSchema, agentThreadDraftSchema, isImageAttachment, type AgentAttachmentHandle, type AgentCommand, type AgentDelivery, type AgentState } from '../../../shared/agents'
 import { gateOnCreation } from './draftThreads'
 
 type Command = (command: AgentCommand) => Promise<AgentState | null>
@@ -358,7 +358,9 @@ export class ThreadDraftStore {
     threadId = this.recoveredThreadId(threadId)
     const recovering = this.refusedDrafts.get(threadId)
     const draft = recovering?.at(-1) ?? this.draft(threadId)
-    if (draft.requestId === null && imagesSupported && (recovering || this.recoveryThreads.has(threadId))) {
+    // A model that reads no images still takes attached files (ADR-0127); with none attached this is the screenshots alone.
+    const takes = (image: AgentAttachmentHandle): boolean => imagesSupported || !isImageAttachment(image.mimeType)
+    if (draft.requestId === null && images.every(takes) && (recovering || this.recoveryThreads.has(threadId))) {
       const added = images.map(image => ({ ...EMPTY, attachments: [image] }))
       if (recovering) this.refusedDrafts.set(threadId, [...recovering, ...added])
       else this.restoreRecoveredDrafts(threadId, [draft, ...added])
@@ -367,11 +369,11 @@ export class ThreadDraftStore {
       return
     }
     const before = draft.attachments
-    const refusal = draft.requestId !== null ? 'answering' : !imagesSupported ? 'unsupported' : null
+    const refusal = draft.requestId !== null ? 'answering' : images.some(image => !takes(image)) ? 'unsupported' : null
     let attachments = before
     let leftOut = 0
     for (const image of images) {
-      const next = refusal === null ? agentAttachmentHandlesSchema.safeParse([...attachments, image]) : null
+      const next = refusal === 'answering' || !takes(image) ? null : agentAttachmentHandlesSchema.safeParse([...attachments, image])
       if (next?.success) attachments = next.data
       else leftOut += 1
     }

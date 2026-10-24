@@ -66,7 +66,8 @@ async function controlFixture() {
 describe('bounded image contract', () => {
   it('accepts image-only manual prompts and rejects invalid encodings, duplicate IDs and excessive counts/sizes', () => {
     expect(agentCommandSchema.parse({ type: 'manual-send', threadId: 'thread', text: '', attachments: [image] })).toMatchObject({ attachments: [image] })
-    for (const attachments of [[{ ...image, digest: 'https://example.com/image.png' }], [{ ...image, mimeType: 'image/svg+xml' }],
+    // Since ADR-0127 any well-formed MIME type is an attached file; a type that is not one is refused.
+    for (const attachments of [[{ ...image, digest: 'https://example.com/image.png' }], [{ ...image, mimeType: 'image/svg+xml; charset=utf-8' }],
       [{ ...image, dataUrl: 'data:image/png;base64,AAAA' }], [image, image], Array.from({ length: 9 }, (_, i) => ({ ...image, id: String(i) })),
       [{ ...image, sizeBytes: 10 * 1024 * 1024 + 1 }],
       Array.from({ length: 3 }, (_, i) => ({ ...image, id: String(i), sizeBytes: 8 * 1024 * 1024 }))]) {

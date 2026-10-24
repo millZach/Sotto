@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
-import { AGENT_IMAGE_MIME_TYPES, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
@@ -215,8 +215,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
+ * `file-staging`: the host keeps an attached file that is not an image (ADR-0127), sent in parts with `stage-file-part`,
+ * since a file in base64 can be larger than a frame. It keeps one upload per client in memory, drops it after two
+ * minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then answers
+ * with the handle. Images still go by `stage-attachment`. Only a host whose Owl answer for `attach-any-file` is on lists
+ * it; a desktop asks no other host to keep a file, and says to update it.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed', 'file-staging'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -354,6 +359,20 @@ const imageData = z.string().max(Math.ceil(10 * 1024 * 1024 / 3) * 4).regex(/^[A
 export const hostAttachmentSchema = z.object({ name: z.string().trim().min(1).max(255), mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), data: imageData,
   dimensions: agentAttachmentDimensionsSchema.optional() }).strict()
 export const hostAttachmentContentSchema = z.object({ mimeType: z.enum(AGENT_IMAGE_MIME_TYPES), data: imageData }).strict().nullable()
+/** The raw bytes one `stage-file-part` carries at most: about 11.2 MB of base64, inside one 16 MiB frame. */
+export const HOST_FILE_PART_BYTES = 8 * 1024 * 1024
+/** The most parts a file may take: a 25 MiB file in 8 MiB parts. */
+export const HOST_FILE_PARTS_MAX = Math.ceil(AGENT_MAX_FILE_BYTES / HOST_FILE_PART_BYTES)
+/**
+ * One part of an attached file on its way to a host (`file-staging`, ADR-0127). Every part names the whole file, so the
+ * host can tell a part of this upload from one of another; parts go in order, from 0 to `count - 1`.
+ */
+export const hostFilePartSchema = z.object({
+  uploadId: z.uuid(), index: z.number().int().min(0).max(HOST_FILE_PARTS_MAX - 1), count: z.number().int().min(1).max(HOST_FILE_PARTS_MAX),
+  name: z.string().trim().min(1).max(255), mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES),
+  digest: attachmentDigestSchema, data: z.string().min(1).max(Math.ceil(HOST_FILE_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
+}).strict().refine(part => part.index < part.count, 'A part must be one of its upload’s parts.')
+export type HostFilePart = z.infer<typeof hostFilePartSchema>
 /** Just enough of a request to answer it: a request the host cannot otherwise read is refused by its id. */
 export const hostRequestEnvelopeSchema = z.object(base)
 export const hostRequestSchema = z.discriminatedUnion('op', [
@@ -390,6 +409,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('stage-attachment'), image: hostAttachmentSchema }).strict(),
   /** A staged image's bytes by digest, for a chip the client holds no copy of; null once the host no longer keeps it. */
   z.object({ ...base, op: z.literal('attachment-content'), digest: attachmentDigestSchema }).strict(),
+  /** One part of a file for a draft on this host (`file-staging`); the last part's answer is its handle, the others' null. */
+  z.object({ ...base, op: z.literal('stage-file-part'), part: hostFilePartSchema }).strict(),
   /** One folder's subfolders on the host, for the Add project dialog's folder browser; read on request. */
   z.object({ ...base, op: z.literal('host-folders'), request: hostFoldersRequestSchema }).strict(),
   /** One folder's entries in a thread's working copy, for Files; read on request (ADR-0025, October 5 amendment). */

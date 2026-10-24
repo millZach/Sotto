@@ -79,6 +79,11 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
+   * The Owl list's answer for attaching any file (ADR-0127), read once by the process owner. With it the store keeps files
+   * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
+   */
+  attachAnyFile?: boolean
+  /**
    * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
    */
@@ -224,6 +229,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
+    ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
@@ -388,6 +394,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),

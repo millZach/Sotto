@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { BrowserBridge, BrowserCapture, BrowserPage } from '../../../shared/browser'
-import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, agentAttachmentHandlesSchema, attachmentHandlesBytes } from '../../../shared/agents'
+import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes } from '../../../shared/agents'
 import { dataUrlBlob, prepareScreenshot, wasResized, type PreparedScreenshot } from '../agents/screenshotResize'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
 import { STAGING_FAILED, stageImage } from '../agents/stagedImages'
@@ -25,7 +25,9 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   if (signal?.aborted) return null
   const { dimensions } = prepared
   const before = store.draft(threadId)
-  if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES) return DOES_NOT_FIT
+  // Images are held to their own total; attached files count only toward the whole (ADR-0127).
+  if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentImagesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES
+    || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return DOES_NOT_FIT
   let image
   try { image = await stageImage(threadId, { name: 'Browser feedback.png', mimeType: 'image/png', ...prepared }) }
   catch (error) { return error instanceof Error ? error.message : STAGING_FAILED }

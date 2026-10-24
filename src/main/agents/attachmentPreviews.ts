@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { readFile, readdir, unlink } from 'node:fs/promises'
 import { z } from 'zod'
-import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature,
+import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature, isImageAttachment,
   type AgentAttachmentHandle, type AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AttachmentStore, StageInline } from './attachmentStore'
@@ -21,8 +21,10 @@ type Cached = Entry & { retain: boolean }
 
 /**
  * Submitted content only. No native transcript ingestion, URL fetching, or path resolution. An entry names the
- * staged images its message carried; the bytes are the attachment store's, which keeps them while an entry here
- * (or anything else) owns them. Retention here is the entries': seven days and 100 MiB of the handles' sizes.
+ * staged attachments its message carried; the bytes are the attachment store's, which keeps an image's while an entry
+ * here (or anything else) owns them. Retention here is the entries': seven days and 100 MiB of the images' sizes. A
+ * file that is not an image has no preview (ADR-0127): its entry keeps the handle for the tile's name, type and size,
+ * and owns none of its bytes.
  */
 export class AttachmentPreviews {
   private entries: Cached[] = []
@@ -140,7 +142,7 @@ export class AttachmentPreviews {
     return this.dirty
   }
   private size(entry: Entry): number {
-    return entry.attachments.reduce((sum, attachment) => sum + attachment.sizeBytes, 0)
+    return entry.attachments.reduce((sum, attachment) => sum + (isImageAttachment(attachment.mimeType) ? attachment.sizeBytes : 0), 0)
   }
   private async write(): Promise<void> {
     const entries = [...this.dormant, ...this.entries.filter(entry => this.enabled && entry.retain)
@@ -161,7 +163,8 @@ export class AttachmentPreviews {
   /** Every content a live entry names, retained on disk or held for this run alone: what the attachment store keeps for previews. */
   digests(): Set<string> {
     const dormant = this.dormant.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] })
-    return new Set([...this.recoveryDigests, ...[...this.live().values(), ...dormant].flatMap(entry => entry.attachments.map(attachment => attachment.digest))])
+    return new Set([...this.recoveryDigests, ...[...this.live().values(), ...dormant].flatMap(entry => entry.attachments
+      .filter(attachment => isImageAttachment(attachment.mimeType)).map(attachment => attachment.digest))])
   }
   /**
    * Every content any entry still names, live or not, with when its latest entry was stored: what a privacy change
@@ -170,7 +173,9 @@ export class AttachmentPreviews {
   named(): Map<string, number> {
     const named = new Map<string, number>()
     const dormant = this.dormant.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] })
-    for (const entry of [...this.entries, ...dormant]) for (const { digest } of entry.attachments) named.set(digest, Math.max(named.get(digest) ?? entry.storedAt, entry.storedAt))
+    for (const entry of [...this.entries, ...dormant]) for (const { digest, mimeType } of entry.attachments) {
+      if (isImageAttachment(mimeType)) named.set(digest, Math.max(named.get(digest) ?? entry.storedAt, entry.storedAt))
+    }
     return named
   }
   /**
@@ -228,8 +233,9 @@ export class AttachmentPreviews {
       for (const attachment of message.attachments ?? []) delete attachment.preview
       const entry = entries.get(JSON.stringify([thread.id, message.id]))
       if (!entry || !this.permits(message, entry)) continue
+      // A file's tile shows its name, type and size; only an image has a preview to ask for.
       const local = entry.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes, preview: { available: true as const } }))
+        sizeBytes: attachment.sizeBytes, ...(isImageAttachment(attachment.mimeType) ? { preview: { available: true as const } } : {}) }))
       message.attachments = [...local, ...(message.attachments ?? []).filter(attachment => !local.some(item => item.id === attachment.id))]
     }
   }
@@ -239,7 +245,7 @@ export class AttachmentPreviews {
     if (!entry) return null
     const message = snapshot.threads.find(thread => thread.id === threadId)?.messages.find(item => item.id === messageId)
     if (!message || !this.permits(message, entry)) return null
-    const attachment = entry.attachments.find(item => item.id === attachmentId)
+    const attachment = entry.attachments.find(item => item.id === attachmentId && isImageAttachment(item.mimeType))
     const bytes = attachment ? await this.content.read(attachment.digest) : null
     return attachment && bytes ? `data:${attachment.mimeType};base64,${bytes.toString('base64')}` : null
   }

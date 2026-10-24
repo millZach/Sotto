@@ -13,6 +13,7 @@ import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
 import { useOwlFeature } from '../state/owlFeature'
+import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
 import './rich-messages.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
@@ -393,17 +394,19 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
 const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
-const attachmentDetails = (attachment: MessageAttachment): string =>
-  [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
+const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+  [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
  * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
  * ContextMenu key offers Open image and Copy image.
  */
-function AttachmentTile({ attachment, origin, onOpen, onShown }: {
+function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
   /** Whether the tile is showing its image, which is what puts it in the viewer. */
   onShown: (id: string, shown: boolean) => void
+  /** Once any file can be attached (ADR-0127), a file's tile names its type and claims no preview it could never have. */
+  anyFile: boolean
 }): ReactNode {
   const { source, awaiting } = useAttachmentSource(attachment, origin)
   const [failed, setFailed] = useState(false)
@@ -415,7 +418,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
   const isImage = attachment.mimeType?.startsWith('image/') ?? false
-  const details = attachmentDetails(attachment)
+  const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
     const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
       const rect = frame.current?.getBoundingClientRect()
@@ -446,9 +449,10 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
       {menuAt ? <LinkMenu at={menuAt} label={`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }
-  const reason = !attachment.mimeType || awaiting ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
+  const reason = !attachment.mimeType || awaiting ? null : !isImage ? (anyFile ? null : 'No preview for this file type') : failed ? 'Preview could not be shown' : 'Preview unavailable'
   return <div className="rich-attachment rich-attachment--file" role="listitem">
-    {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+    {anyFile && attachment.mimeType && !isImage ? <AttachmentKindIcon kind={attachmentKind(name, attachment.mimeType)} size={16} />
+      : isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
     <span className="rich-attachment__text">
       <span className="rich-attachment__name" title={name}>{name}</span>
       {(details || reason) && <span className="rich-attachment__meta">{[details, reason].filter(Boolean).join(' · ')}</span>}
@@ -457,7 +461,11 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
 }
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
-export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
+export function AttachmentPreviews({ attachments: given, notice, origin }: AttachmentPreviewsProps): ReactNode {
+  const anyFile = useOwlFeature('attach-any-file')
+  // Images come first, then every other file (ADR-0127).
+  const attachments = useMemo(() => anyFile ? [...given.filter(item => attachmentKind(item.name, item.mimeType) === 'image' || !item.mimeType),
+    ...given.filter(item => item.mimeType && attachmentKind(item.name, item.mimeType) !== 'image')] : given, [anyFile, given])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
   const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
@@ -469,10 +477,10 @@ export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPr
   if (!attachments.length && !notice) return null
   // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
   const images = attachments.filter(attachment => shown.has(attachment.id))
-    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
+    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment, anyFile) }))
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} anyFile={anyFile} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
     {open && images.some(image => image.id === open.id)

@@ -117,6 +117,10 @@ msgstr "Added {doneName}"
 msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
 msgstr "Added {name}. Its models are in the model menu under {name}, with OpenCode."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Adding files..."
+msgstr "Adding files..."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Adding…"
 msgstr "Adding…"
@@ -133,6 +137,26 @@ msgstr "An OpenAI-compatible server"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"
 msgstr "Asking the server for its models…"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach files"
+msgstr "Attach files"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach up to 8 files at a time. Nothing was attached."
+msgstr "Attach up to 8 files at a time. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached files"
+msgstr "Attached files"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached images"
+msgstr "Attached images"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
+msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Cancel"
@@ -162,13 +186,62 @@ msgstr "Close without adding a server"
 msgid "Context, in tokens"
 msgstr "Context, in tokens"
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. {next}"
+msgstr "Could not add {name}, so it and the {after} after it were not attached. {next}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. Try adding them again."
+msgstr "Could not add {name}, so it and the {after} after it were not attached. Try adding them again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. {next}"
+msgstr "Could not add {name}, so it was not attached. {next}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. Try adding it again."
+msgstr "Could not add {name}, so it was not attached. Try adding it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add this file. Nothing was attached. Try again."
+msgstr "Could not add this file. Nothing was attached. Try again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not read this file. Nothing was attached. Try adding it again."
+msgstr "Could not read this file. Nothing was attached. Try adding it again."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr "Done"
 
+#. Shown over the message box while files are dragged over it.
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Drop to attach"
+msgstr "Drop to attach"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+msgstr "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
+msgstr "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files cannot be attached while this thread waits for your answer. Nothing was attached."
+msgstr "Files cannot be attached while this thread waits for your answer. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files to attach"
+msgstr "Files to attach"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "From the address, if left empty"
 msgstr "From the address, if left empty"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
+msgstr "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "It runs with OpenCode."
@@ -273,6 +346,8 @@ msgstr "Reading your servers…"
 msgid "Remove"
 msgstr "Remove"
 
+#. {name} is an attached file's name. The button takes it off the draft.
+#: src/renderer/src/agents/attachmentWords.ts
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Remove {name}"
 msgstr "Remove {name}"
@@ -377,6 +452,11 @@ msgstr "Thinking"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking for {model}"
 msgstr "Thinking for {model}"
+
+#. {name} is the file name of the image, such as "screenshot.png".
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This model does not read images. Choose a model with image support, or remove {name}."
+msgstr "This model does not read images. Choose a model with image support, or remove {name}."
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "This thread is too long for {model}."
