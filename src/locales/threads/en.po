@@ -6,3 +6,317 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "(optional)"
+msgstr "(optional)"
+
+#. placeholder {0}: extra.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
+msgstr "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
+
+#. placeholder {0}: gone.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
+msgstr "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{count, plural, one {# model} other {# models}}"
+msgstr "{count, plural, one {# model} other {# models}}"
+
+#. {derivedName} is the name Sotto takes from the address, such as spark-head.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{derivedName}, from the address"
+msgstr "{derivedName}, from the address"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again."
+msgstr "{host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
+msgstr "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
+msgstr "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
+msgstr "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+msgstr "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+
+#. {who} is a server program such as Ollama; {count} is a number of models, as in "2 models".
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{who} answered in {ms} ms with {count}."
+msgstr "{who} answered in {ms} ms with {count}."
+
+#. {who} is a server program such as Ollama.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{who} answered in {ms} ms."
+msgstr "{who} answered in {ms} ms."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add a server"
+msgstr "Add a server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add server"
+msgstr "Add server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add your own model server"
+msgstr "Add your own model server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Added {doneName}"
+msgstr "Added {doneName}"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
+msgstr "Added {name}. Its models are in the model menu under {name}, with OpenCode."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Adding…"
+msgstr "Adding…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Address"
+msgstr "Address"
+
+#. A model server that answers the OpenAI API but did not say which program it is.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "An OpenAI-compatible server"
+msgstr "An OpenAI-compatible server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Asking the server for its models…"
+msgstr "Asking the server for its models…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Cancel"
+msgstr "Cancel"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check {name} again"
+msgstr "Check {name} again"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check again"
+msgstr "Check again"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check this server"
+msgstr "Check this server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Checking…"
+msgstr "Checking…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Close without adding a server"
+msgstr "Close without adding a server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Context, in tokens"
+msgstr "Context, in tokens"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Done"
+msgstr "Done"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "From the address, if left empty"
+msgstr "From the address, if left empty"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "It runs with OpenCode."
+msgstr "It runs with OpenCode."
+
+#. A secret the model server checks before it answers.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key"
+msgstr "Key"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key kept by OpenCode"
+msgstr "Key kept by OpenCode"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
+msgstr "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Models found"
+msgstr "Models found"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Name"
+msgstr "Name"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "None yet. Add a model server you run to use its models in OpenCode threads."
+msgstr "None yet. Add a model server you run to use its models in OpenCode threads."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
+msgstr "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Only if the server was started with one"
+msgstr "Only if the server was started with one"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
+msgstr "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
+msgstr "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
+msgstr "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
+msgstr "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
+msgstr "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Read your saved servers again"
+msgstr "Read your saved servers again"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Reading your servers…"
+msgstr "Reading your servers…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Remove"
+msgstr "Remove"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Remove {name}"
+msgstr "Remove {name}"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
+msgstr "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Removing…"
+msgstr "Removing…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Runs with OpenCode"
+msgstr "Runs with OpenCode"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Saved model servers"
+msgstr "Saved model servers"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
+msgstr "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
+msgstr "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish that, so nothing was changed. Try again."
+msgstr "Sotto could not finish that, so nothing was changed. Try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not reach its own side of this. Nothing was changed. Try again."
+msgstr "Sotto could not reach its own side of this. Nothing was changed. Try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
+msgstr "Sotto could not reach its own side of this. Nothing was saved. Try again."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Sotto could not read your saved servers. Nothing was changed. Try again."
+msgstr "Sotto could not read your saved servers. Nothing was changed. Try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not remove {name}. Nothing was changed. Try again."
+msgstr "Sotto could not remove {name}. Nothing was changed. Try again."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
+msgstr "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto’s OpenCode holds the key for {name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again."
+msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Takes images."
+msgstr "Takes images."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
+msgstr "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "That server is no longer saved. Nothing was changed."
+msgstr "That server is no longer saved. Nothing was changed."
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "The server does not say how much context this model has. Type it from the model’s page."
+msgstr "The server does not say how much context this model has. Type it from the model’s page."
+
+#. Whether the model reasons before it answers.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Thinking"
+msgstr "Thinking"
+
+#. {model} is a model name.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Thinking for {model}"
+msgstr "Thinking for {model}"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Threads on this server send your code and messages to it, so whoever runs it can read them."
+msgstr "Threads on this server send your code and messages to it, so whoever runs it can read them."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Try again"
+msgstr "Try again"
+
+#. 128K means 128 times 1,024 tokens; keep 131072 and 128K as they are.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
+msgstr "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "What the model menu calls it."
+msgstr "What the model menu calls it."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Where the server listens, on this computer, your network or your tailnet."
+msgstr "Where the server listens, on this computer, your network or your tailnet."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own model servers"
+msgstr "Your own model servers"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own server: add a model server you run"
+msgstr "Your own server: add a model server you run"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own server…"
+msgstr "Your own server…"
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
+msgstr "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
