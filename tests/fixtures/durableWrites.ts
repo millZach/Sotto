@@ -53,6 +53,12 @@ export function recordDurableWrites(): DurableWriteRecorder {
       bytes += typeof data === 'string' ? Buffer.byteLength(data) : data.byteLength
       return writeFile(data as never, options as never)
     }) as FileHandle['writeFile']
+    // A store handed its JSON already encoded writes the pieces at once.
+    const writev = handle.writev.bind(handle)
+    handle.writev = (async (buffers: readonly NodeJS.ArrayBufferView[], position?: number) => {
+      bytes += buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+      return writev(buffers, position)
+    }) as FileHandle['writev']
     const sync = handle.sync.bind(handle)
     handle.sync = async () => {
       const file = storeName(path)

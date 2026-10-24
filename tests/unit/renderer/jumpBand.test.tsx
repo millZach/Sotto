@@ -34,4 +34,18 @@ describe('the Jump to latest band', () => {
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 460 }))).toBe(true)
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 360 }))).toBe(false)
   })
+
+  it('rides above what shows of a slim composer, which keeps the full composer’s padding (ADR-0125)', () => {
+    // A 500px transcript keeping 120px for a composer that shows 60px while slim: the band is 380 to 440.
+    const scroller = transcript(500, 120, { top: 390, bottom: 420 })
+    const pane = document.createElement('section')
+    pane.className = 'thread-pane'
+    pane.setAttribute('data-slim', '')
+    pane.style.setProperty('--thread-compose-shown', '60px')
+    pane.append(scroller)
+    document.body.append(pane)
+    expect(reachesJumpBand(scroller)).toBe(true)
+    pane.removeAttribute('data-slim')
+    expect(reachesJumpBand(scroller)).toBe(false)
+  })
 })

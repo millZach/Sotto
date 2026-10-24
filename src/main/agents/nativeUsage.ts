@@ -63,6 +63,10 @@ export function codexEntryKey(turnId: unknown, total: UsageTokens): string {
   return createHash('sha256').update(JSON.stringify([turnId, total])).digest('hex')
 }
 
+const OPEN_BRACE = Buffer.from('{')
+const COMMA = Buffer.from(',')
+const CLOSE_BRACE = Buffer.from('}')
+
 /** How often the ledger is written while a reply streams. A turn's end is written at once. */
 export const USAGE_WRITE_INTERVAL_MS = 1000
 
@@ -84,8 +88,10 @@ export class NativeUsage {
    * Each ledger as the file last held it, by the ledger object. The ledger is written whole about once a second while a
    * reply streams, and one thread's ledger changes in that time; serializing every thread's every request again was about
    * a second of a busy minute (October 19, 2026). Every change to a ledger goes through `ledger()` or ends in `save()`, and each forgets it.
+   * What is kept is the ledger's member of the file, its ID and its text, already encoded: encoding the whole file's
+   * text again for every write was another second of a busy minute once the file passed 12 MB (#1451).
    */
-  private serializedLedgers = new WeakMap<Ledger, string>()
+  private serializedLedgers = new WeakMap<Ledger, Buffer>()
   private readonly failed = new Set<string>()
   /** When the last write started, by the monotonic clock: a wall clock set back must not hold writes back. */
   private lastWriteAt = Number.NEGATIVE_INFINITY
@@ -316,19 +322,24 @@ export class NativeUsage {
       }
     })
   }
-  /** The ledger as the file holds it: a write failure is this process's to show, never saved. */
-  private serialized(): string {
+  /**
+   * The ledger as the file holds it, encoded, in pieces: a write failure is this process's to show, never saved. The
+   * pieces are the bytes of `JSON.stringify(this.data)`, with the ledgers nothing changed since the last write kept as
+   * they were, so a write encodes only the ledgers that changed. A kept piece is never written into, only replaced.
+   */
+  private serialized(): Buffer[] {
     const flagged = Object.values(this.data).filter(ledger => ledger.view.persistenceError)
     for (const ledger of flagged) delete ledger.view.persistenceError
     try {
-      // The same text `JSON.stringify(this.data)` gives, with the ledgers nothing changed since the last write kept as they were.
-      const parts: string[] = []
+      const pieces: Buffer[] = [OPEN_BRACE]
       for (const [id, ledger] of Object.entries(this.data)) {
-        let text = this.serializedLedgers.get(ledger)
-        if (text === undefined) { text = JSON.stringify(ledger); this.serializedLedgers.set(ledger, text) }
-        parts.push(`${JSON.stringify(id)}:${text}`)
+        let piece = this.serializedLedgers.get(ledger)
+        if (piece === undefined) { piece = Buffer.from(`${JSON.stringify(id)}:${JSON.stringify(ledger)}`); this.serializedLedgers.set(ledger, piece) }
+        if (pieces.length > 1) pieces.push(COMMA)
+        pieces.push(piece)
       }
-      return `{${parts.join(',')}}`
+      pieces.push(CLOSE_BRACE)
+      return pieces
     } finally { for (const ledger of flagged) ledger.view.persistenceError = true }
   }
   private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): boolean {
