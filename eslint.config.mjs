@@ -120,6 +120,8 @@ export default tseslint.config(
       'apps/android/**/build/**',
       'artifacts/question-choices/**',
       'artifacts/composer-float/**',
+      'artifacts/composer-shrink/**',
+      'artifacts/watcher-column/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
       'artifacts/git-settings/**',
