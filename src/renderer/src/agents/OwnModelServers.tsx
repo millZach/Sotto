@@ -52,7 +52,7 @@ export function parseContext(text: string): number | null {
 
 /** Where focus goes after a refusal: the field that can put it right, or nowhere new. */
 const fieldFor = (reason: OwnServerRefusal): 'address' | 'key' | null =>
-  reason === 'bad-address' || reason === 'public-http' || reason === 'unreachable' || reason === 'not-openai' ? 'address'
+  reason === 'bad-address' || reason === 'public-http' || reason === 'unreachable' || reason === 'not-openai' || reason === 'already-added' ? 'address'
     : reason === 'key-needed' || reason === 'key-refused' ? 'key' : null
 
 /**

@@ -17,6 +17,7 @@ import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
 import { LinkMenu, type LinkMenuItem } from '../tools/webLinks'
 import { ActivityGroupView, CompactionLine, foldOnEscape, LiveActivity, TurnChangedFiles } from './ThreadActivity'
+import { OwnServerTurnContext, TurnFailureReason, useOwnServerTurns } from './OwnServerTurn'
 import { ActivityBodyContext, type ActivityBodyHost } from './activityBodies'
 import { threadHostName } from './HostBadge'
 import { isDrawableVisual, VisualCard } from './VisualCard'
@@ -111,8 +112,8 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
-  readonly headline: string; readonly error?: string | undefined; readonly changes: readonly TurnChange[]
+function TurnWork({ headline, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
+  readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
   readonly failed: boolean
   readonly onDisclosure: (element: HTMLElement) => void; readonly onSeek?: ((message: HTMLElement) => void) | undefined
@@ -140,7 +141,7 @@ function TurnWork({ headline, error, failed, changes, onDisclosure, onSeek, lift
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
       <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
-      {error ? <p className="thread-activity__error thread-activity__error--turn">{error}</p> : null}
+      <TurnFailureReason turn={turn} />
       {open ? <div id={bodyId} ref={body} className="thread-work__body">{children}</div> : null}
     </section>
     {lifted.map(({ message, questions }) => {
@@ -304,7 +305,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
         onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(open => !open) }}>
         {work}<ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
       </button> : null}</header>
-    {work && lifecycle?.error ? <p className="thread-activity__error thread-activity__error--turn">{lifecycle.error}</p> : null}
+    {work ? <TurnFailureReason turn={lifecycle} /> : null}
     {work && workOpen && activity ? <div id={workId} className="thread-message__work-body">
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
@@ -413,7 +414,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} error={lifecycle?.error} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
@@ -880,6 +881,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     landing.current = null
     land(target.messageId, target.focus)
   }, [landingSeq, messages, land])
+  const ownServerTurns = useOwnServerTurns(row, state, command, store)
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
@@ -924,7 +926,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
-      <div className="thread-transcript__content" ref={content}>
+      <div className="thread-transcript__content" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || 'Could not load this thread’s messages.'}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>Retry loading messages</Button></div>}
         {hidden > 0
@@ -950,7 +952,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} sendingSince={sendingSince} />
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
-      </div>
+      </OwnServerTurnContext.Provider></div>
     </div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
