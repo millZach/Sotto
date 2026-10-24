@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 import { preloadElectron } from '../../fixtures/preloadElectron'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { createSottoBridge, createSottoWidgetBridge } from '../../../src/preload'
-import { WATCHER_CHANGED, WATCHER_GET, WATCHER_OPEN, WATCHER_SET_PERMISSION, WATCHER_START_NEW, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, watcherRoomStateSchema,
+import { WATCHER_CHANGED, WATCHER_GET, WATCHER_OPEN, newerWatcherRoom, WATCHER_SET_PERMISSION, WATCHER_START_NEW, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, watcherRoomStateSchema,
   type WatcherRoomState } from '../../../src/shared/watcherRoom'
 
 it('offers the private Watcher bridge only behind the main renderer gate and validates inputs and results', async () => {
@@ -98,65 +98,66 @@ it('puts main\'s room updates back into the whole room once for every listener, 
   offSecond(); expect(ipc.removeListener).toHaveBeenCalledWith(WATCHER_CHANGED, expect.any(Function))
 })
 
+/** The room the page ends on, from every room the preload handed it, ordered as the page orders them. */
+const pageRoom = (listener: ReturnType<typeof vi.fn>) => listener.mock.calls.reduce<WatcherRoomState | null>((page, [room]) => newerWatcherRoom(page, room as WatcherRoomState), null)
+
 it('applies updates measured from a whole room that arrives while it reads, and reads again when one after it cannot apply', async () => {
   const ipc = preloadElectron().ipcRenderer
   const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
   const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
   const at = (second: number) => `2026-10-23T00:00:${String(second).padStart(2, '0')}.000Z`
+  // Main numbers every room it builds; here the number is the second it was built in.
   const room = (second: number, notice: string | null = null): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],
-    receipts: [], recoveryNotice: notice, observedAt: at(second) })
+    receipts: [], recoveryNotice: notice, observedAt: at(second), sequence: second })
   const answers: ((value: unknown) => void)[] = []
   ipc.invoke.mockImplementation(() => new Promise(resolve => { answers.push(resolve) }))
   // Measured from a room this window never held: it reads the room.
-  receive({}, { revision: 5, base: 4, room: { observedAt: at(1) } })
+  receive({}, { revision: 5, base: 4, room: { observedAt: at(1), sequence: 1 } })
   expect(ipc.invoke).toHaveBeenCalledOnce()
   // Main read the reset before these: a whole room, then an update measured from it, both before the read answers.
   receive({}, { revision: 6, base: null, room: room(2) })
-  receive({}, { revision: 7, base: 6, room: { recoveryNotice: 'last', observedAt: at(3) } })
+  receive({}, { revision: 7, base: 6, room: { recoveryNotice: 'last', observedAt: at(3), sequence: 3 } })
   expect(listener).toHaveBeenLastCalledWith(room(3, 'last'))
-  // A whole room came while the read was out, so the read's answer is not handed on: the page keeps what main sent since.
-  const calls = listener.mock.calls.length
+  // The read's answer is older than what main sent since, and the page keeps the newer room.
   answers.shift()!({ status: 'ok', state: room(1, 'read') })
-  await new Promise(resolve => { setTimeout(resolve, 0) })
-  expect(listener).toHaveBeenCalledTimes(calls)
+  await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(1, 'read')))
+  expect(pageRoom(listener)).toEqual(room(3, 'last'))
   // The read did not drop the room it held: the next update still applies, and nothing is read again.
-  receive({}, { revision: 8, base: 7, room: { observedAt: at(4) } })
+  receive({}, { revision: 8, base: 7, room: { observedAt: at(4), sequence: 4 } })
   expect(listener).toHaveBeenLastCalledWith(room(4, 'last'))
   expect(ipc.invoke).toHaveBeenCalledOnce()
 
   // An update after a whole room that still cannot apply, while a read is out, is read again once that read answers.
-  receive({}, { revision: 20, base: 19, room: { observedAt: at(5) } })
+  receive({}, { revision: 20, base: 19, room: { observedAt: at(5), sequence: 5 } })
   receive({}, { revision: 21, base: null, room: room(6) })
-  receive({}, { revision: 23, base: 22, room: { observedAt: at(7) } })
+  receive({}, { revision: 23, base: 22, room: { observedAt: at(7), sequence: 7 } })
   expect(ipc.invoke).toHaveBeenCalledTimes(2)
-  answers.shift()!({ status: 'ok', state: room(6, 'second read') })
+  answers.shift()!({ status: 'ok', state: room(5, 'second read') })
   await vi.waitFor(() => expect(ipc.invoke).toHaveBeenCalledTimes(3))
-  expect(listener).not.toHaveBeenCalledWith(room(6, 'second read'))
-  // No whole room came during the third read, so its answer is the newest room and is handed on.
+  expect(pageRoom(listener)).toEqual(room(6))
   answers.shift()!({ status: 'ok', state: room(8, 'third read') })
   await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(8, 'third read')))
+  expect(pageRoom(listener)).toEqual(room(8, 'third read'))
   expect(ipc.invoke).toHaveBeenCalledTimes(3)
   off()
 })
 
-it('does not hand on a recovery read\'s answer over a whole room main sent while it was out, even read in the same millisecond', async () => {
+it('leaves the page on the newer room when a recovery read\'s answer and a whole room were read in the same millisecond', async () => {
   const ipc = preloadElectron().ipcRenderer
   const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
   const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
   const at = '2026-10-23T00:00:00.000Z'
-  const room = (notice: string): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],
-    receipts: [], recoveryNotice: notice, observedAt: at })
+  const room = (notice: string, sequence: number): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],
+    receipts: [], recoveryNotice: notice, observedAt: at, sequence })
   let answer!: (value: unknown) => void
   ipc.invoke.mockReturnValueOnce(new Promise(resolve => { answer = resolve }))
-  receive({}, { revision: 5, base: 4, room: { observedAt: at } })
+  receive({}, { revision: 5, base: 4, room: { observedAt: at, sequence: 9 } })
   expect(ipc.invoke).toHaveBeenCalledOnce()
   // Main took the read with room A, then sent room B whole, built in the same millisecond.
-  receive({}, { revision: 6, base: null, room: room('B') })
-  expect(listener).toHaveBeenLastCalledWith(room('B'))
-  answer({ status: 'ok', state: room('A') })
-  await new Promise(resolve => { setTimeout(resolve, 0) })
-  // The page would take A over B on a tie, so the preload must not hand it on.
-  expect(listener).toHaveBeenCalledOnce()
-  expect(listener).toHaveBeenLastCalledWith(room('B'))
+  receive({}, { revision: 6, base: null, room: room('B', 11) })
+  answer({ status: 'ok', state: room('A', 10) })
+  await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room('A', 10)))
+  // A tie in time is no tie in order: the page ends on B.
+  expect(pageRoom(listener)).toEqual(room('B', 11))
   off()
 })

@@ -48,6 +48,12 @@ export const watcherRoomStateSchema = z.object({
   receipts: z.array(watcherOperationSchema), news: z.array(watcherEventSchema).max(400).optional(),
   recoveryNotice: z.string().nullable(), observedAt: timestamp,
   /**
+   * Which build of the room this is: main numbers every room it builds, counting up, so of two rooms the higher is the
+   * newer even when both were read in the same millisecond (#1450). The window orders rooms by it and keeps `observedAt`
+   * for what it shows. Absent from rooms main did not build, such as the e2e stand-in's; they are ordered by time.
+   */
+  sequence: z.number().int().nonnegative().optional(),
+  /**
    * The handover of the last Watcher offered to the current one after a provider change or New Watcher, until its first message goes
    * or the user puts the offer away (ADR-0073): where it comes from and what it carries, in counts. Never its words.
    */
@@ -171,6 +177,15 @@ export interface WatcherRoomUpdate {
   readonly room: Partial<WatcherRoomState>
   readonly lists?: Readonly<Partial<Record<keyof WatcherRoomState, WatcherRoomListChange>>>
   readonly removed?: readonly (keyof WatcherRoomState)[]
+}
+/**
+ * The newer of two rooms, for a window that receives rooms from updates, reads and command replies in any order: the
+ * higher build number when both carry one, and otherwise the later read, with a tie going to `next` (#1450).
+ */
+export function newerWatcherRoom(current: WatcherRoomState | null, next: WatcherRoomState): WatcherRoomState {
+  if (current === null) return next
+  if (current.sequence !== undefined && next.sequence !== undefined) return current.sequence > next.sequence ? current : next
+  return Date.parse(current.observedAt) > Date.parse(next.observedAt) ? current : next
 }
 /** The room a window holds, with the update it came from. */
 export interface WatcherRoomHeld { readonly revision: number; readonly room: WatcherRoomState }

@@ -5,7 +5,7 @@ import { createWatcherRoomDesktop } from '../../../src/main/agents/watcherRoomDe
 import type { PublishScheduler } from '../../../src/main/agents/control'
 import { registerIpc } from '../../../src/main/ipc/registerIpc'
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL,
-  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, applyWatcherRoomUpdate,
+  WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD, WATCHER_START_NEW, applyWatcherRoomUpdate, newerWatcherRoom,
   type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomResult, type WatcherRoomUpdate,
   type WatcherStopAllResult } from '../../../src/shared/watcherRoom'
 import { createIpcHarness } from '../../fixtures/ipcHarness'
@@ -150,6 +150,32 @@ describe('desktop Watcher room publication', () => {
       expect(f.rooms.at(-1)!.watchedThreads).toEqual([row('idle', [...participation, taking])])
       expect(f.rooms.at(-1)!.watchedThreads[0]!.participation[0]).toBe(f.rooms[0]!.watchedThreads[0]!.participation[0])
     } finally { f.desktop!.dispose() }
+  })
+
+  it.each(['watchThread', 'get'] as const)('leaves the page on the room flushed after a %s reply when both were read in the same millisecond', async operation => {
+    // Main numbers every room it builds; both rooms here are read at the same time.
+    let sequence = 0, notice = 'first', listener: (() => void) | undefined
+    const clock = new Clock(), build = (): WatcherRoomState => ({ ...room(notice), sequence: ++sequence })
+    const service = { subscribe: (fn: () => void) => { listener = fn; return () => { listener = undefined } }, state: vi.fn(build),
+      get: (): WatcherRoomResult => ({ status: 'ok', state: build() }),
+      watchThread: async (): Promise<WatcherRoomResult> => { const answer = build(); notice = 'after the answer'; listener?.(); return { status: 'ok', state: answer } } }
+    let held: WatcherRoomHeld | null = null
+    const pushed: WatcherRoomState[] = []
+    const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: service as never, schedule: clock.schedule,
+      send: update => { held = applyWatcherRoomUpdate(held, update as WatcherRoomUpdate)!; pushed.push(held.room); return true } })!
+    try {
+      listener!(); expect(pushed).toHaveLength(1)
+      // A change waits in the window, and the reply's own room is built before the flush builds the next.
+      if (operation === 'get') { notice = 'pending'; listener!() }
+      const reply = operation === 'get' ? await desktop.bridge.get() : await desktop.bridge.watchThread({ target: { hostId: randomUUID(), threadId: 'worker' } })
+      if (reply.status !== 'ok') throw new Error('refused')
+      const flushed = pushed.at(-1)!
+      expect(flushed.observedAt).toBe(reply.state.observedAt)
+      expect(flushed.sequence!).toBeGreaterThan(reply.state.sequence!)
+      // The page takes the push first and the reply after it, as the window does.
+      const page = [...pushed, reply.state].reduce<WatcherRoomState | null>((current, next) => newerWatcherRoom(current, next), null)
+      expect(page).toBe(flushed)
+    } finally { desktop.dispose() }
   })
 
   it('measures from the last update the window was sent, and sends the room whole after the window read it', async () => {

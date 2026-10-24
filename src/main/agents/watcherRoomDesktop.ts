@@ -27,9 +27,10 @@ export class WatcherRoomBroadcast {
     let update: WatcherRoomUpdate
     if (base === null) update = { revision: this.revision + 1, base: null, room }
     else {
-      const patch = recordPatch(base.room, room, 'observedAt')
+      // Every build has its own read time and number: neither is a change, and both go with any update that does go.
+      const patch = recordPatch(base.room, room, BUILD_FIELDS)
       if (!patch) return
-      update = { revision: this.revision + 1, base: base.revision, room: { ...patch.set, observedAt: room.observedAt },
+      update = { revision: this.revision + 1, base: base.revision, room: { ...patch.set, observedAt: room.observedAt, ...room.sequence === undefined ? {} : { sequence: room.sequence } },
         ...patch.lists ? { lists: patch.lists } : {}, ...patch.removed ? { removed: patch.removed as (keyof WatcherRoomState)[] } : {} }
     }
     this.revision = update.revision
@@ -44,16 +45,19 @@ export class WatcherRoomBroadcast {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
   && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
 
+/** The fields every build of the room sets afresh, which say when and which build it is, not what it shows. */
+const BUILD_FIELDS: ReadonlySet<string> = new Set(['observedAt', 'sequence'])
+
 /**
  * What changed from `before` to `after`, two records, or undefined when nothing did: each field set anew, each list as
- * its change, and the fields that went. `ignored` is never compared.
+ * its change, and the fields that went. `ignored` fields are never compared.
  */
-function recordPatch(before: object, after: object, ignored?: string): WatcherRoomPatch | undefined {
+function recordPatch(before: object, after: object, ignored?: ReadonlySet<string>): WatcherRoomPatch | undefined {
   const held = before as Record<string, unknown>, next = after as Record<string, unknown>
   const set: Record<string, unknown> = {}, lists: Record<string, WatcherRoomListChange> = {}, removed: string[] = []
   let any = false
   for (const key in next) {
-    if (key === ignored) continue
+    if (ignored?.has(key)) continue
     const was = held[key], now = next[key]
     if (was === now && (was !== undefined || Object.hasOwn(held, key))) continue
     if (Array.isArray(was) && Array.isArray(now)) {
@@ -61,7 +65,7 @@ function recordPatch(before: object, after: object, ignored?: string): WatcherRo
       if (change) { lists[key] = change; any = true }
     } else if (!Object.hasOwn(held, key) || !samePlainData(was, now)) { set[key] = now; any = true }
   }
-  for (const key in held) if (key !== ignored && !Object.hasOwn(next, key)) { removed.push(key); any = true }
+  for (const key in held) if (!ignored?.has(key) && !Object.hasOwn(next, key)) { removed.push(key); any = true }
   if (!any) return undefined
   return { ...Object.keys(set).length ? { set } : {}, ...Object.keys(lists).length ? { lists } : {}, ...removed.length ? { removed } : {} }
 }

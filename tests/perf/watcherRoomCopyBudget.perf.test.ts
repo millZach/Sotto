@@ -38,8 +38,8 @@ function roomRecords(record: Readonly<WatcherRecord>) {
   for (const request of copy.requests) delete request.phoneOrigin
   return { current: copy.current, history: copy.history, requests: copy.requests, standingWatches: copy.watches ?? [] }
 }
-/** A room without the time it was read at, which every read sets afresh. */
-const timeless = ({ observedAt: _observedAt, ...room }: WatcherRoomState) => { void _observedAt; return room }
+/** A room without the time it was read at and the number of its build, which every read sets afresh. */
+const timeless = ({ observedAt: _observedAt, sequence: _sequence, ...room }: WatcherRoomState) => { void _observedAt; void _sequence; return room }
 
 it.each([1, 6])('copies no private takeover proofs when reading the room with %i watches', async watches => {
   const f = await watcherObservePerformance({ watches, olderMessages: 20, retainedTakeovers: 200,

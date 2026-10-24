@@ -291,6 +291,8 @@ export class WatcherService implements WatcherControlHooks {
   /** The room's target keys, for the record they were built from (`roomKeys`). */
   private roomKeyed: RoomKeys | undefined
   private roomReceipted: RoomReceipts | undefined
+  /** The number of the last room built: each build takes the next, so the window can tell which is newer (#1450). */
+  private roomSequence = 0
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
@@ -1015,7 +1017,7 @@ export class WatcherService implements WatcherControlHooks {
           participation }
       }),
       receipts: this.roomReceipts(record.operations),
-      news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(),
+      news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(), sequence: ++this.roomSequence,
       // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
       creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
