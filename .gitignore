@@ -200,6 +200,8 @@ artifacts/composer-float/
 # Slim composer and Watcher column verification captures; the cited ones are committed
 artifacts/composer-shrink/
 artifacts/watcher-column/
+# Reply quote verification captures; the cited ones are committed
+artifacts/reply-quote/
 
 /artifacts/settled-folder-new-thread/
 artifacts/agents-view/
