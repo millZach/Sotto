@@ -391,6 +391,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+    prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.

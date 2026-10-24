@@ -773,6 +773,7 @@ artifacts/message-scrubber/*
 !artifacts/message-scrubber/hover-reduced-dark-1280x800.png
 !artifacts/message-scrubber/keys-light-1280x800.png
 !artifacts/message-scrubber/rest-dark-1280x800.png
+!artifacts/message-scrubber/stored-dark-1280x800.png
 !artifacts/message-scrubber/rest-light-820x560.png
 !artifacts/message-scrubber/watcher-hover-dark-1280x800.png
 !artifacts/message-scrubber/watcher-hover-dark-1600x1000.png

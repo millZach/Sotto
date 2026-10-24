@@ -1,3 +1,4 @@
+import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
@@ -34,7 +35,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -966,6 +967,15 @@ export class DesktopHostRouter {
     if (!connection.activityBody) return null
     if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing is lost. The rest shows when it reconnects.')
     return connection.activityBody(id!, request.activityId)
+  }
+  /**
+   * Every message the user sent above the window a pane holds, read on the thread's own host for the message scrubber
+   * (ADR-0109). Null from a host that cannot say, and while it is disconnected: the scrubber then marks what the window holds.
+   */
+  async threadPrompts(request: AgentThreadPromptsRequest): Promise<AgentThreadPrompts | null> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.service.threadPrompts || connection.available?.() === false) return null
+    return connection.service.threadPrompts(id!, request.beforeMessageId)
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

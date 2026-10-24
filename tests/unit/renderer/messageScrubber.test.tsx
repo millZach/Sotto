@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import type { AgentThreadPrompt, AgentThreadPromptsRequest } from '../../../src/shared/threadPrompts'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import type { AppContextValue } from '../../../src/renderer/src/state/AppContext'
@@ -19,6 +20,8 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   useOptionalApp: vi.fn(),
 }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+// A store answers its prompts a page at a time; a small page lets a test read several.
+vi.mock('../../../src/shared/threadPrompts', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/shared/threadPrompts')>(), THREAD_PROMPTS_MOST: 20 }))
 
 /**
  * The message scrubber (ADR-0109; Owl only): a tick for each message the user sent at the transcript's left edge, a
@@ -38,13 +41,13 @@ function conversation(turns: number): AgentMessage[] {
   ]).flat()
 }
 
-function mount(messages: AgentMessage[], options: { readonly owl?: boolean } = {}) {
+function mount(messages: AgentMessage[], options: { readonly owl?: boolean; readonly thread?: Partial<AgentThread> } = {}) {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { owlFeatures: { 'message-scrubber': options.owl !== false } },
     actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
   const state = threadsStateFixture()
   const thread: AgentThread = { id: 'long', projectId: state.host.threads[0]!.projectId, title: 'Host pill flicker', modelId: state.host.threads[0]!.modelId, providerId: state.host.threads[0]!.providerId,
-    status: 'idle', requests: [], messages, activities: [], updatedAt: at(0) }
+    status: 'idle', requests: [], messages, activities: [], updatedAt: at(0), ...options.thread }
   state.host.threads = [thread, ...state.host.threads]
   state.activeThreadId = thread.id
   const live = liveAgentState(state)
@@ -205,6 +208,122 @@ describe('the message scrubber', () => {
     fireEvent.keyDown(ticks()[1]!, { key: 'Enter' })
     expect(article('u1')).toHaveFocus()
     expect(article('u1')).toHaveAttribute('data-sought')
+  })
+})
+
+describe('with earlier messages only in the thread’s store', () => {
+  const TURNS = 60
+  const WINDOW = 10
+  const all = conversation(TURNS)
+  /** What the store answers for the prompts before a message: the user's, each with its turn's reply. */
+  const promptsBefore = (id: string): AgentThreadPrompt[] => {
+    const end = all.findIndex(message => message.id === id)
+    return all.slice(0, end).flatMap((message, index, list) => message.role === 'user'
+      ? [{ id: message.id, createdAt: message.createdAt, text: message.text, reply: { id: list[index + 1]!.id, text: list[index + 1]!.text } }] : [])
+  }
+  /** The newest twenty, as a store answers a page. */
+  /** A page of the newest twenty, and the message the next is read before, as the store answers. */
+  const pageOf = (list: AgentThreadPrompt[]) => ({ prompts: list.slice(-20), ...(list.length > 20 ? { next: list.at(-20)!.id } : {}) })
+  const page = async (request: AgentThreadPromptsRequest) => pageOf(promptsBefore(request.beforeMessageId))
+  const read = vi.fn(page)
+  beforeEach(() => { read.mockReset(); read.mockImplementation(page); Object.assign(window, { sotto: { agents: { threadPrompts: read } } }) })
+  afterEach(() => { Reflect.deleteProperty(window, 'sotto') })
+  const windowFrom = (turn: number) => all.slice(turn * 2)
+  const republish = (live: ReturnType<typeof mount>, patch: Partial<AgentThread>): void => {
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'long' ? { ...item, ...patch } : item) } }) })
+  }
+
+  it('marks every prompt, the store’s above the window’s, and reads the store again only when the window starts beyond the read', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    // Fifty prompts above the window, read a page of twenty at a time back to the first.
+    expect(read.mock.calls.map(([request]) => request.beforeMessageId)).toEqual([`u${TURNS - WINDOW}`, 'u30', 'u10'])
+    fireEvent.pointerMove(scrubber()!, { clientY: tickPlaces(TURNS, VIEW).places[0], pointerType: 'mouse' })
+    expect(card()).toHaveTextContent(`Message 1 of ${TURNS}`)
+    expect(card()).toHaveTextContent('Question 0: what about part 0?')
+    expect(card()).toHaveTextContent('Answer 0: part 0 is done.')
+    expect(ticks()[0]).toHaveAccessibleName(/: Question 0: what about part 0\?$/u)
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    // Show earlier messages loads twenty turns the store was read for: the ticks stay, and nothing is read.
+    republish(live, { messages: windowFrom(TURNS - WINDOW - 20) })
+    expect(ticks()).toHaveLength(TURNS)
+    expect(ticks()[0]).toHaveAccessibleName(/Question 0:/u)
+    // The pane comes back to the thread: its messages load again, and the ticks it had stand meanwhile.
+    republish(live, { messages: [], historyStatus: 'loading' })
+    expect(ticks()).toHaveLength(TURNS)
+    republish(live, { messages: windowFrom(TURNS - WINDOW), historyStatus: undefined })
+    expect(ticks()).toHaveLength(TURNS)
+    expect(read).toHaveBeenCalledTimes(3)
+    // A new turn slides the window down a turn: the turn it lets go keeps its tick, and nothing is read.
+    const next: AgentMessage[] = [{ id: 'u60', role: 'user', text: 'Question 60: and the iPhone?', createdAt: at(0) }, { id: 'r60', role: 'assistant', text: 'Answer 60.', createdAt: at(0) }]
+    republish(live, { messages: [...windowFrom(TURNS - WINDOW + 1), ...next] })
+    expect(ticks()).toHaveLength(TURNS + 1)
+    expect(ticks()[TURNS - WINDOW]).toHaveAccessibleName(/Question 50:/u)
+    expect(ticks()[TURNS]).toHaveAccessibleName(/Question 60:/u)
+    expect(read).toHaveBeenCalledTimes(3)
+  })
+
+  it('reads the store again for a window that starts on a message it never held', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    // Another thread's window replaces this one's, as a rewind to newer messages would: its first message is new here.
+    republish(live, { messages: all.slice((TURNS - 5) * 2).map(message => ({ ...message, id: `new-${message.id}` })) })
+    await vi.waitFor(() => expect(read).toHaveBeenCalledWith({ threadId: 'long', beforeMessageId: `new-u${TURNS - 5}` }))
+  })
+
+  it('reads the store again when the thread’s history has lost messages, as a reset that keeps its epoch does', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true, summary: { messageCount: TURNS * 2, activityCount: 0 } as AgentThread['summary'] } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    const calls = read.mock.calls.length
+    read.mockImplementation(async (request: AgentThreadPromptsRequest) => pageOf(promptsBefore(request.beforeMessageId).filter(prompt => prompt.id !== 'u49')))
+    republish(live, { summary: { messageCount: TURNS * 2 - 2, activityCount: 0 } as AgentThread['summary'] })
+    await vi.waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(calls))
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS - 1))
+  })
+
+  it('loads the window back to a prompt only the store holds, then lands on it with focus', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    act(() => ticks()[0]!.focus())
+    fireEvent.keyDown(ticks()[0]!, { key: 'Enter' })
+    expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'long', throughMessageId: 'u0' })
+    expect(article('u0')).toBeNull()
+    // The window arrives widened back to the prompt.
+    republish(live, { messages: all, earlierAvailable: undefined })
+    expect(article('u0')).toHaveAttribute('data-sought')
+    expect(article('u0')).toHaveFocus()
+    expect(ticks()).toHaveLength(TURNS)
+  })
+
+  it('leaves the reader where they are when they scroll while a pressed prompt loads', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    fireEvent.click(ticks()[3]!, { detail: 0 })
+    expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'long', throughMessageId: 'u3' })
+    fireEvent.wheel(transcript(), { deltaY: -200 })
+    republish(live, { messages: all, earlierAvailable: undefined })
+    expect(article('u3')).toBeNull()
+  })
+
+  it('leaves the reader where they are when they wheel over the scrubber while a pressed prompt loads', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    fireEvent.click(ticks()[3]!, { detail: 0 })
+    fireEvent.wheel(scrubber()!, { deltaY: -200 })
+    republish(live, { messages: all, earlierAvailable: undefined })
+    expect(article('u3')).toBeNull()
+  })
+
+  it('marks what the window holds where the host cannot say, and asks again a little later', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      read.mockResolvedValueOnce(null as unknown as { prompts: AgentThreadPrompt[] })
+      mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+      expect(ticks()).toHaveLength(WINDOW)
+      await act(async () => { await vi.advanceTimersByTimeAsync(4_000) })
+      await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    } finally { vi.useRealTimers() }
   })
 })
 

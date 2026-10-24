@@ -14,6 +14,7 @@ import type { ThreadEvent } from '../../shared/threadEvents'
 import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -354,8 +355,16 @@ export interface AgentHost {
    * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
    */
   recordAnswer?(threadId: string, event: AnswerGivenEvent): void
-  /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
-  loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
+  /**
+   * Widen one thread's loaded message window by another twenty turns and publish (issue #119), or, with `throughMessageId`,
+   * far enough back to hold that message, for the message scrubber's press on a prompt above the window (ADR-0109).
+   */
+  loadEarlierMessages?(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null
   /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records

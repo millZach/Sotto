@@ -4225,7 +4225,7 @@ export class AgentControl {
         this.observe(); return
       case 'load-earlier-messages': {
         if (!this.dependencies.host.loadEarlierMessages) throw new Error('Earlier messages could not be read. Nothing was lost; refresh and open the thread again.')
-        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId))
+        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId, command.throughMessageId))
         return
       }
       case 'retry-thread-worktree':
