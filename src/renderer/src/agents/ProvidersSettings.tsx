@@ -1,5 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { t } from '@lingui/core/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type AgentModel, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
@@ -10,6 +11,7 @@ import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { CursorConnection, useCursorSignIn } from './CursorConnection'
+import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
@@ -33,6 +35,10 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
     : `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'queued') return `Waiting to update to ${update.published ?? 'the published version'}. Your threads keep working.${past}`
+  if (update.state === 'failed' && update.failure === 'not-listed') {
+    const to = update.published ?? t`the published version`, installed = update.installed
+    return `${t`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`}${past}`
+  }
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
@@ -47,6 +53,7 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
+  const ownServers = useOwnServersBridge()
   const [selected, setSelected] = useState<ProviderId>('codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
@@ -198,6 +205,8 @@ export function ProvidersSettings(): ReactNode {
     return groups
   }, [] as [string, AgentModel[]][]) : undefined
   return <div className="providers-settings">
+    {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0124, layout B). */}
+    {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     <div className="providers-workspace">
       <nav className="providers-list" aria-label="Thread providers" data-setting="thread-providers">{providerIdSchema.options.filter(provider => !held.has(provider)).map(provider => {
         const current = statusFor(provider)
@@ -232,7 +241,7 @@ export function ProvidersSettings(): ReactNode {
             <div className="provider-client" aria-busy={checkingUpdates || selectedUpdating}>
               <div>
                 <h4>Installed client</h4>
-                <p role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
+                <p className="tt-paragraph" role="status">{updatePending[selected] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
               </div>
               <div className="provider-client__actions">
                 {checkClientUpdates && update?.canInstall && update.state !== 'updating' && update.state !== 'queued'

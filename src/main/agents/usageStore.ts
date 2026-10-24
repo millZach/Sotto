@@ -179,13 +179,20 @@ export class UsageStore {
     })
   }
 
-  /** One transaction and at most one revision for a whole history batch. Later rows see earlier rows of the same batch. */
-  observeTokenBatch(inputs: readonly UsageTokenObservation[]): UsageWriteResult {
+  /**
+   * One transaction for a whole batch. Later rows see earlier rows of the same batch. A history batch moves the revision
+   * at most once. `revision: 'per-record'` moves it once for every record written, so the rows and the revision come out
+   * exactly as one `observeTokens` call per record would leave them; the live flush uses it.
+   */
+  observeTokenBatch(inputs: readonly UsageTokenObservation[], options: { revision?: 'batch' | 'per-record' } = {}): UsageWriteResult {
     bounded(inputs, 'Token observations')
     const observations = inputs.map(input => usageTokenObservationSchema.parse(input))
     return this.transaction(() => {
       const metadata = this.metadata()
-      return this.result(metadata.revision, observations.map(observation => this.writeToken(observation, metadata.clearedAt)))
+      const statuses = observations.map(observation => this.writeToken(observation, metadata.clearedAt))
+      if (options.revision !== 'per-record') return this.result(metadata.revision, statuses)
+      const written = statuses.filter(status => status === 'written').length
+      return { status: combined(statuses), revision: written === 0 ? metadata.revision : this.bumpRevision(metadata.revision, written) }
     })
   }
 
@@ -796,8 +803,8 @@ export class UsageStore {
     const status = combined(statuses)
     return { status, revision: status === 'written' ? this.bumpRevision(revision) : revision }
   }
-  private bumpRevision(revision: number): number {
-    const next = nextCount(revision)
+  private bumpRevision(revision: number, by = 1): number {
+    const next = safeCount(revision + by)
     this.statement('UPDATE usage_meta SET revision=? WHERE singleton=1').run(next)
     return next
   }

@@ -6,6 +6,8 @@ import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/model
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
+import { useOwnServersBridge } from './OwnModelServers'
+import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
@@ -327,6 +329,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   readonly continueOffer?: ThreadContinueOffer | undefined
 }): ReactNode {
   const settings = usePendingSettings(thread.id)
+  // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
+  // and never for Watcher (ADR-0124, phase 1).
+  const ownServersBridge = useOwnServersBridge()
+  const ownServers = !watcher && (!thread.hostId || thread.hostId === localHostId(state)) ? ownServersBridge : undefined
   const bar = useRef<HTMLDivElement>(null)
   const refocus = useRef<HTMLButtonElement | null>(null)
   const captionId = useId()
@@ -470,7 +476,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
-        pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId}
+        pending={settings.pending.model?.awaiting === 'unconfirmed'} describedBy={unconfirmedModelId} ownServers={ownServers}
         unavailable={continueUnavailable} continueOn={continueOn} onChange={pressed => {
         if (continuing && continuations.some(model => model.id === pressed)) { continuing.onContinue(pressed); return }
         const picked = others.find(model => model.id === pressed)

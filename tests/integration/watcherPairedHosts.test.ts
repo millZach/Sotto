@@ -7,7 +7,8 @@ import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { registerIpc } from '../../src/main/ipc/registerIpc'
-import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, type WatcherPrepareStopAllResult, type WatcherRoomState, type WatcherStopAllResult } from '../../src/shared/watcherRoom'
+import { WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, applyWatcherRoomUpdate, type WatcherPrepareStopAllResult, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomUpdate,
+  type WatcherStopAllResult } from '../../src/shared/watcherRoom'
 import { createIpcHarness } from '../fixtures/ipcHarness'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { LocalHostService } from '../../src/main/agents/hostService'
@@ -286,6 +287,13 @@ it('keeps a closed paired copy stopped when a settle the master sent before its 
   const copy = () => owner.state().requests.find(item => item.id === f.requestId)
   expect(await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: targets[0] })).toMatchObject({ status: 'ok' })
   await expect.poll(() => copy()?.state).toBe('closed')
+  // The master reads an unconfirmed operation back on its next reconcile pass, 250 ms after it is left so. On a slow
+  // machine that pass came before the Stop below: the owning host, with no record of the held settle, fenced its ID, and
+  // the settle was refused as unrecorded, which is the other order and its own case. The pass is held here so the Stop
+  // comes first, as this test names; the Stop's own reconcile runs at once and is not held.
+  const passes = f.watcher as unknown as { remoteTimer?: unknown; remoteFlushing: boolean; armRemote(): void }
+  await vi.waitFor(() => { expect(passes.remoteTimer).toBeUndefined(); expect(passes.remoteFlushing).toBe(false) })
+  vi.spyOn(passes, 'armRemote').mockImplementation(() => undefined)
   // The second settle leaves the master but is held on the way, so the owning host has not seen it.
   let held: WatcherHostControl | undefined
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async packet => { held = packet; throw new Error('held-in-transit') })
@@ -784,7 +792,9 @@ it('refuses a model without an asking mode on a host where this computer may not
 })
 
 it('keeps remote Stop all ownership while desktop room IPC is held and flushes before its own answer', async () => {
-  const f = await master(), sent = vi.fn<(state: WatcherRoomState) => boolean>(() => true)
+  // The window's room, put back together from the updates main sends it (#1450).
+  let held: WatcherRoomHeld | null = null
+  const f = await master(), sent = vi.fn<(payload: WatcherRoomState | WatcherRoomUpdate) => boolean>(payload => { held = applyWatcherRoomUpdate(held, payload as WatcherRoomUpdate); return true })
   const timers: (() => void)[] = []
   const desktop = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher,
     send: sent, schedule: run => { timers.push(run); return () => undefined } })!
@@ -817,11 +827,9 @@ it('keeps remote Stop all ownership while desktop room IPC is held and flushes b
   expect(answer).toMatchObject({ status: 'ok', results: [{ target: started.target, status: expect.stringMatching(/stopped|requested/u) }] })
   expect(answer).toBe(ownResult)
   if (ownResult?.status !== 'ok') throw new Error('stop-refused')
-  const last = sent.mock.calls.at(-1)![0]
-  expect(last).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
+  // The window holds what the operation's own answer says, from a room built when its update went (#1450).
+  expect((held as WatcherRoomHeld | null)?.room).toMatchObject({ requests: ownResult.state.requests, receipts: ownResult.state.receipts,
     currentOptions: ownResult.state.currentOptions })
-  // publish() and the operation's own state() are distinct captures; keep both original timestamps.
-  expect(Date.parse(last.observedAt)).toBeLessThanOrEqual(Date.parse(ownResult.state.observedAt))
   const count = sent.mock.calls.length
   for (const run of timers.splice(0)) run()
   expect(sent).toHaveBeenCalledTimes(count)

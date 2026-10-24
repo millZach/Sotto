@@ -25,7 +25,7 @@
     "structuredClone(": 21,
     "shell()": 38,
     "watcherRecord()": 2,
-    "clonePlainData(": 3
+    "clonePlainData(": 2
   },
   "src/main/agents/cursor.ts": {
     "structuredClone(": 1,
@@ -107,9 +107,6 @@
     "watcherRecord()": 1
   },
   "src/main/agents/threadStore.ts": {
-    "clonePlainData(": 1
-  },
-  "src/main/agents/watcherRoomDesktop.ts": {
     "clonePlainData(": 1
   },
   "src/main/agents/workspace.ts": {

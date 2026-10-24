@@ -2666,8 +2666,16 @@ msgid "mise did not finish updating {name} on {host}. Nothing was changed: {inst
 msgstr "mise did not finish updating {name} on {host}. Nothing was changed: {installed} is still installed, and your threads kept working."
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise does not list {to} yet. {installed} is still installed."
+msgstr "mise does not list {to} yet. {installed} is still installed."
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise installed {to}, but {name}'s install step did not finish, so {host} still starts {installed}. Nothing was lost, and your threads kept working."
 msgstr "mise installed {to}, but {name}'s install step did not finish, so {host} still starts {installed}. Nothing was lost, and your threads kept working."
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise on {host} does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: {installed} is still installed, and your threads kept working. Try again later."
+msgstr "mise on {host} does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: {installed} is still installed, and your threads kept working. Try again later."
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise stopped with an error. {installed} is still installed."
@@ -5699,6 +5707,10 @@ msgstr "Your instructions go to the thread's own model with every draft and win 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
 msgstr "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Your own model servers"
+msgstr "Your own model servers"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"

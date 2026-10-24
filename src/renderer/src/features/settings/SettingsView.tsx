@@ -54,6 +54,7 @@ import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { CleanupModelFields } from '../../components/CleanupModelFields'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
+import { useOwnServersBridge } from '../../agents/OwnModelServers'
 import { SidebarFoot, SidebarTop } from '../../agents/SidebarFrame'
 import { useSidebarSize } from '../../agents/sidebarSize'
 import { PageWindowControls } from '../../components/WindowControls'
@@ -444,8 +445,9 @@ export function SettingsView({
   const nightFallsOn = useOwlFeature('night-falls') && watcherOn
   const creatureToggle = useOwlFeature('creature-toggle')
   const cleanupModelOn = useOwlFeature('cleanup-model')
+  const ownServersOn = useOwnServersBridge() !== undefined
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.

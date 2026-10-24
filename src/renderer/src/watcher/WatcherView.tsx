@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Marked } from '../components/marks'
 import { ArrowUp, ChevronDown, List, Waypoints } from 'lucide-react'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
@@ -584,18 +585,18 @@ export function WatcherView({ now: fixedNow, updateControl }: {
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
-  return <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined}>
+  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} {...marks}>
     <section className="thread-workspace" aria-label="Watcher’s room">
-      <div className="thread-workspace__body">
+      <div className="thread-workspace__body" data-panes>
         <div className="thread-panes">
           <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-view={tab} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} owls={owls} onOpen={openThread} onShowWatched={showWatched} />
               <OwlRoomSky />
               {watcherContent}
-            </section>
+            </section>}</Marked>
             {beside ? <>
               <BesideDivider width={width} share={view.share} controls={BESIDE_PANE_ID} />
               <BesidePane key={besideRow.thread.id} row={besideRow} state={state} command={command} store={agents.threadDrafts} focused={focusedPane === 'beside'} underControls
@@ -609,5 +610,5 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherDock updateControl={updateControl} />
     <PageWindowControls />
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
-  </div>
+  </div>}</Marked>
 }

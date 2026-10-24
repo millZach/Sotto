@@ -1,4 +1,5 @@
-import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
@@ -38,6 +39,8 @@ import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
+import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { readsBack, typesIntoComposer } from './slimComposer'
 import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -259,6 +262,12 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   readonly activity?: ActivityContext | undefined
 }): ReactNode {
   const article = useRef<HTMLElement>(null)
+  // The transcript finds this message's row by its ID, without searching the page (#1452).
+  const rows = useContext(MessageRowsContext)
+  const placeRow = useCallback((element: HTMLElement | null): (() => void) | undefined => {
+    article.current = element
+    return element !== null && rows !== null ? rows.add(message.id, element) : undefined
+  }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
   const [workOpen, setWorkOpen] = useState(false)
   const workId = useId()
@@ -285,7 +294,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   const forkedAt = started !== null && started !== 'off' && started.start.from === 'turn' && started.start.route === 'fork' && started.start.messageId === message.id
   return <>{message.handover && message.role === 'user' ? started === 'off' ? null : started ? <StartHandoverCard view={started} handover={message.handover} createdAt={message.createdAt} />
     : <HandoverMessage handover={message.handover} createdAt={message.createdAt} /> : null}
-  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={article}
+  <article className="thread-message" data-role={message.role} data-from={wakeUp ? 'sotto' : brief ? 'delegation' : undefined} data-message-id={message.id} ref={placeRow}
     data-not-carried={fork?.after.has(message.id) || undefined} data-turn-outcome={work && lifecycle?.status === 'failed' ? 'failed' : undefined} onKeyDown={work ? foldWork : undefined}>
     <header>{wakeUp ? <WakeUpWho text={message.text} />
       : brief ? <><span className="thread-message__who"><GitFork size={13} aria-hidden="true" />{delegatedBy}</span><span>delegated</span></>
@@ -317,7 +326,9 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
  * to know about its place; everything else it reads is shared across updates.
  */
 const TurnView = memo(function TurnView({ turn, provider, running, last, writing, placement, context, streamText, threadId, speaker, delegations, briefs, continuedIn }: {
-  readonly turn: TranscriptTurn; readonly provider: string; readonly running: boolean; readonly last: boolean
+  readonly turn: TranscriptTurn; readonly provider: string; readonly last: boolean
+  /** The thread is working on the newest turn drawn, so that turn, when `last`, keeps the live layout. */
+  readonly running: boolean
   readonly writing: string | undefined
   readonly speaker?: 'watcher' | undefined
   readonly placement: ActivityPlacement; readonly context: ActivityContext; readonly streamText: boolean
@@ -453,18 +464,26 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0089). */
   readonly continuedIn?: ReadonlyMap<string, readonly ThreadContinuedIn[]> | undefined
 }): ReactNode {
-  const last = messages.findLast(drawn)
-  // A visual after the reply means the reply is no longer being written.
-  const writing = running && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that turn
+  // ended and another turn's lifecycle runs: Watcher is then working on news, whose wake-up the conversation leaves out
+  // (`watcherWakeUpsAsShown`), so the news turn has nothing drawn until its first reply. Drawn as the running turn, the
+  // finished one would open while the news turn runs and fold again when it ends (#1452). Without that evidence on both
+  // sides, the newest turn is the running one, as in every other thread.
+  const live = running && !(speaker === 'watcher' && placement.newestTurnEnded === true)
+  // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
+  // leaves the reply above it finished. A visual after the reply means the reply is no longer being written.
+  const newest = turns.at(-1)
+  const last = newest === undefined ? undefined : [...newest.user ? [newest.user] : [], ...newest.replies].findLast(drawn)
+  const writing = live && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
   {turns.map((turn, index) => <React.Fragment key={turn.key}>
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
-    <TurnView turn={turn} provider={provider} running={running}
+    <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
   </React.Fragment>)}
@@ -551,11 +570,17 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
+/** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
+  // The transcript's scroll padding is the floating composer's height, and nothing while the composer stacks. A slim
+  // composer (ADR-0125) keeps that padding, and the button rides above what shows of it instead.
+  const pane = scroller.closest<HTMLElement>('.thread-pane')
+  const shown = pane?.hasAttribute('data-slim') ? parseFloat(getComputedStyle(pane).getPropertyValue('--thread-compose-shown')) : Number.NaN
+  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
-    return box.bottom > view.bottom - JUMP_BAND_PX && box.top < view.bottom
+    return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom
   })
 }
 
@@ -564,7 +589,7 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote, onReadingBack, onTypeAhead }: {
   readonly row: ThreadRow
   /** Where a new thread's greeting goes, directly above the composer. Without one, the thread keeps the plain empty line. */
   readonly greetingSlot?: HTMLElement | null
@@ -579,6 +604,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly followSignal: number
   /** The inline request, rendered after the newest message. */
   readonly children?: ReactNode
+  /**
+   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125).
+   * Only a crossing is told, never a scroll, and leaving says the reader is back.
+   */
+  readonly onReadingBack?: ((reading: boolean) => void) | undefined
+  /** A printable key pressed in the transcript: the pane puts focus in the composer, which takes the key. */
+  readonly onTypeAhead?: (() => void) | undefined
 }): ReactNode {
   const thread = row.thread
   const streamText = useAgents().responseStreaming !== 'complete'
@@ -593,6 +625,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   const [requestUnderJump, setRequestUnderJump] = useState(false)
+  // Whether the reader is far enough above the end for the composer to slim, kept off React's state: the pane hears of a
+  // crossing and nothing here draws again for it.
+  const readingBack = useRef(false)
+  const onReadingBackRef = useRef(onReadingBack)
+  onReadingBackRef.current = onReadingBack
+  const noteReading = useCallback((element: HTMLElement): void => {
+    const reading = readsBack(element)
+    if (reading === readingBack.current) return
+    readingBack.current = reading
+    onReadingBackRef.current?.(reading)
+  }, [])
+  useEffect(() => () => { if (readingBack.current) { readingBack.current = false; onReadingBackRef.current?.(false) } }, [])
   // A press on the scrubber that needs an earlier page drawn first: where it goes, and whether focus goes with it.
   const landing = useRef<{ readonly messageId: string; readonly focus: boolean } | null>(null)
   const [landingSeq, setLandingSeq] = useState(0)
@@ -683,6 +727,25 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const pendingKey = [...sending.map(item => `${item.item.draftId}:${item.status}`),
     ...recovery.map(item => `${item.draftId}:${item.status}`)].join(',')
 
+  // A reader who is not following the end stays where they are reading, whatever an update folds, opens or resizes above
+  // them (#1452). The window's own scroll anchoring holds an element only while it lives, and a turn that changes between
+  // its running and finished layouts draws its messages again as new elements, so the transcript holds the place itself, by
+  // message. The place is read when the reader scrolls and again after each update has put it back; an update that leaves
+  // the transcript too short to put it back holds it for the next. Show earlier, Load earlier and the scrubber's landing put
+  // the reader somewhere on purpose, and a scroll the transcript did not make is where the reader now is.
+  const reading = useRef<ReadingPlace | null>(null)
+  const [rows] = useState(() => new MessageRows())
+  useLayoutEffect(() => {
+    const element = scroller.current
+    const place = reading.current
+    if (element === null || place === null) return
+    if (place.threadId !== thread.id || following.current) { reading.current = null; return }
+    if (anchor.current !== null || landing.current !== null) return
+    // Scrolled since the place was read or put back, by the reader before their scroll was heard or by the window's own
+    // anchoring: that is where they read now, held or not.
+    reading.current = scrolledSince(element, place) ? readingPlace(element, rows, thread.id) : keepReadingPlace(element, rows, place)
+  })
+
   useLayoutEffect(() => {
     firstRendered.current = messages[0] ? { threadId: thread.id, messageId: messages[0].id } : null
   }, [messages, thread.id])
@@ -694,7 +757,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     following.current = true
     setAway(false)
     setUnseen(false)
-  }, [])
+    noteReading(element)
+  }, [noteReading])
 
   // A different thread opens at its newest message with a fresh page.
   useLayoutEffect(() => {
@@ -726,21 +790,42 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (following.current && anchor.current === null && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
-      if (scroller.current) setRequestUnderJump(reachesJumpBand(scroller.current))
+      if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [noteReading])
 
   const onScroll = (): void => {
     const element = scroller.current
     if (element === null) return
+    // The window's own scroll after an update cut the transcript short, at the end it was cut to: the place stays held for
+    // the update that brings the room back, and a reader who did not scroll is not following the end they were pulled to.
+    const held = reading.current
+    if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight
     following.current = distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
     setRequestUnderJump(reachesJumpBand(element))
+    // The reader's own scroll, or the window's anchoring, says where they read now; the transcript's own does not.
+    const place = reading.current
+    if (following.current) reading.current = null
+    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, thread.id)
+    noteReading(element)
+  }
+  /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
+  const onReaderInput = (event: React.SyntheticEvent): void => {
+    if (reading.current?.held !== true || event.type === 'keydown' && !scrollsTranscript(event as React.KeyboardEvent)) return
+    reading.current = null
+    onScroll()
+  }
+  // A key pressed in the transcript is the reader scrolling, a printable key the start of a message the composer takes
+  // (ADR-0125), or neither. The two never share a key: Space scrolls and is never typing, and no printable key scrolls.
+  const onTranscriptKey = (event: React.KeyboardEvent): void => {
+    onReaderInput(event)
+    if (onTypeAhead !== undefined && typesIntoComposer(event.nativeEvent)) onTypeAhead()
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
@@ -832,10 +917,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const greets = empty && !queueHolds && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
+  useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
-    <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
+    <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
+      onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}
@@ -851,8 +938,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationCardProvider world={cardWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
-          <MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} />
+          <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
+          delegations={delegationCards.size ? delegationCards : undefined} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} /></MessageRowsContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationCardProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
