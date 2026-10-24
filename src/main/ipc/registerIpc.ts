@@ -122,6 +122,7 @@ const settingKeys = [
   'reducedMotion',
   'roomTransition',
   'roomTransitionSpeed',
+  'roomTransitionLook',
   'terminalFontSize',
   'microphoneId',
   'maxRecordingSeconds',

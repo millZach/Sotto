@@ -665,8 +665,8 @@ msgid "500 entries"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr ""
+msgid "A band of text characters sweeps across the window."
+msgstr "Μια λωρίδα από χαρακτήρες κειμένου σαρώνει το παράθυρο."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
@@ -683,6 +683,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "Μια γραμμή από αστέρια σαρώνει το παράθυρο, με ένα αχνό ίχνος πίσω της."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -1052,6 +1056,11 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr ""
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "Λωρίδα"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -2783,6 +2792,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Εμφάνιση του Night falls"
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr ""
 
@@ -3979,8 +3993,8 @@ msgid "Signing in…"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr ""
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "Πιο αργά για να βλέπετε τη σάρωση, πιο γρήγορα για να φτάνετε νωρίτερα. Το 1x διαρκεί λιγότερο από ένα δευτερόλεπτο."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4283,6 +4297,11 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr ""
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "Αστέρια"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"
@@ -4944,6 +4963,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "Το παράθυρο σαρώνει ανάμεσα στο Threads και στο δωμάτιο του Watcher όταν ανοίγετε το δωμάτιο του Watcher ή επιστρέφετε στο Threads, και η κουκουβάγια ταξιδεύει με τη σάρωση στη νέα της θέση. Όταν είναι ανενεργό, το παράθυρο αλλάζει αμέσως. Με μειωμένη κίνηση αλλάζει πάντα αμέσως."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
