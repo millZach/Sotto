@@ -264,6 +264,9 @@ final class WatcherModelTests: XCTestCase {
         await until { model.watcherTab == WatcherTabState(working: false, needs: 0) }
         XCTAssertEqual(model.watcherTab, WatcherTabState(working: false, needs: 0), "No dot once Watcher is idle, no badge once nothing waits")
         XCTAssertEqual(model.watcherTab.spoken, "")
+        // Fix login test, which Watcher started, still works: it says so on its own row, and lights no dot for Watcher.
+        let started = try XCTUnwrap(model.watcherPage(laptop)?.watchedThreads.first { $0.target.threadId == "t" })
+        XCTAssertEqual(WatcherWords.status(started), "Working")
         // A computer that can't be reached claims neither.
         try push(Spec(ownCard: true, observedAt: "2026-10-11T09:02:00.000Z"))
         await until { model.watcherTab.needs == 1 }

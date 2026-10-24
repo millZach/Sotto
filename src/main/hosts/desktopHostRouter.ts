@@ -329,9 +329,10 @@ export class DesktopHostRouter {
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageRefresh(input: UsageRefreshQuery): Promise<UsageDashboardRead> {
-    const { hostIds, providerIds: named } = usageRefreshQuerySchema.parse(input)
+    const { hostIds, providerIds: named, background } = usageRefreshQuerySchema.parse(input)
     const providerIds = this.usageProviders(named)
-    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRefresh!(providerIds)))
+    const refresh = (service: Pick<HostService, 'usageRefresh'>) => background ? service.usageRefresh!(providerIds, true) : service.usageRefresh!(providerIds)
+    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => refresh(connection.service)))
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageClear(input: UsageClearQuery, client: ClientIdentity = desktopWindowClient()): Promise<UsageClearResult[]> {

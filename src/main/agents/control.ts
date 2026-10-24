@@ -7,7 +7,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -87,6 +87,9 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
+/** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
+const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
+const BROADCAST_ACTIVITIES = Object.freeze([]) as unknown as AgentActivity[]
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'interrupt',
@@ -1189,16 +1192,29 @@ export class AgentControl {
     return { host: this.state.host, provider: this.state.configuration.provider }
   }
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
+  /** Watcher's own workspace folder, and each project folder as `resolve` spells it, worked out once rather than on every shell. */
+  private watcherFolder: string | undefined
+  private readonly resolvedProjectPaths = new Map<string, string>()
   private hideWatcher(state: AgentState): void {
-    const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
-    state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)
+    const folder = this.watcherFolder ??= resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
+    const resolved = (path: string): string => {
+      let known = this.resolvedProjectPaths.get(path)
+      if (known === undefined) {
+        if (this.resolvedProjectPaths.size >= 1_000) this.resolvedProjectPaths.clear()
+        this.resolvedProjectPaths.set(path, known = resolve(path))
+      }
+      return known
+    }
+    // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
+    const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder)
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
     for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
       const records = state[key]
-      if (records) (state as Record<string, unknown>)[key] = records.filter(item => this.threadAvailable(item.threadId))
+      if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
     // Stable can retain dormant receipts beside a full ordinary ledger. Public shells keep their usual bound on either track.
     for (const key of ['deliveredDrafts', 'obsoleteDrafts', 'followupReceipts'] as const) {
@@ -1220,18 +1236,23 @@ export class AgentControl {
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
-    const shown = threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish({
-      ...thread, messages: shareThreads ? [] : EMPTY_MESSAGES,
-      ...(thread.activities === undefined ? {} : { activities: shareThreads ? [] : EMPTY_ACTIVITIES }),
-      summary: this.presentedSummary(thread),
-    })))
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
-      threads: shareThreads ? EMPTY_THREADS : shown } }
-    // Every shell copies containers and keeps strings: several times faster than structuredClone.
-    const state = clonePlainData(bare)
-    if (shared) state.host.models = models
-    if (shareThreads) state.host.threads = shown
-    state.obsoleteDrafts = clonePlainData(this.persistedObsoleteDrafts)
+      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES)))) },
+      obsoleteDrafts: this.persistedObsoleteDrafts }
+    let state: AgentState
+    if (shareThreads) {
+      // Everything but the threads, copied only where it changed since the last broadcast (#1334). The coordinator writes
+      // parts of its state in place, so what changed is found by reading it against the last copy rather than by identity;
+      // that reads without making anything, where a copy on every broadcast made every object again. The copy is frozen,
+      // so the broadcasts that share it are read and never written into, as their thread records already are.
+      const [base] = immutableUpdates([bare], [this.broadcastBase])
+      this.broadcastBase = base
+      state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: this.broadcastThreads(threads) } }
+    } else {
+      // Every other shell is its caller's to change: it copies containers and keeps strings, several times faster than structuredClone.
+      state = clonePlainData(bare)
+      if (shared) state.host.models = models
+    }
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
@@ -1240,6 +1261,44 @@ export class AgentControl {
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     this.hideWatcher(state)
     return state
+  }
+  /** A thread as the shell lists it: its summary in place of its history. */
+  private shellThread(thread: AgentThread, messages: AgentMessage[], activities: AgentActivity[]): AgentThread {
+    return { ...thread, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
+  }
+  /** The non-thread part of the last broadcast's shell, frozen, which the next one is read against. */
+  private broadcastBase: AgentState | undefined
+  /**
+   * Each thread as the last broadcast listed it, by thread, with the record it was made from and how that record's summary
+   * was shown. Watcher's conversations and continued threads are shown through displays the coordinator holds, so a
+   * summary made from their messages is made again whenever a display moves.
+   */
+  private readonly broadcastRecords = new Map<string, { source: AgentThread; display: unknown; revision: number; hostId: string | undefined; record: AgentThread }>()
+  /**
+   * Every thread as a broadcast lists it. A thread whose record is the one the last broadcast listed, with the same finish
+   * and failure marks, is listed as the very record that broadcast carried: frozen, never written into, and made again only
+   * when its thread, a mark or the display its summary came from moved (#1334). It was a new record for every thread on
+   * every broadcast, and the router and the window's encoder then worked out again that most had not changed.
+   */
+  private broadcastThreads(threads: readonly AgentThread[]): AgentThread[] {
+    const records = this.broadcastRecords
+    const display = this.continuationDisplay, revision = this.watcherMessageDisplay?.revision ?? 0, hostId = this.state.host.hostId
+    const shown = threads.map(thread => {
+      let held = records.get(thread.id)
+      if (!held || held.source !== thread || held.display !== display || held.revision !== revision || held.hostId !== hostId) {
+        held = { source: thread, display, revision, hostId, record: Object.freeze(this.shellThread(thread, BROADCAST_MESSAGES, BROADCAST_ACTIVITIES)) }
+        records.set(thread.id, held)
+      }
+      // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
+      const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+      if (marked !== held.record) held.record = Object.freeze(marked)
+      return held.record
+    })
+    if (records.size > threads.length) {
+      const present = new Set(threads.map(thread => thread.id))
+      for (const id of records.keys()) if (!present.has(id)) records.delete(id)
+    }
+    return shown
   }
   /**
    * One thread's history — its messages and the activity beside them — for a window looking at it.
@@ -2255,13 +2314,15 @@ export class AgentControl {
     try {
       const result = await this.clients.install(provider, await this.clientPath(provider), process.env, step => {
         if (step > 1 && !this.disposed) { this.setClientUpdate(provider, { step }); this.publish() }
-      })
+      }, record.behind ? record.published : undefined)
       if (!result.ok) {
         this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}),
           ...(result.step && record.steps && record.steps > 1 ? { step: result.step } : {}), ...(result.failure ? { failure: result.failure } : {}),
           ...(result.printed ? { printed: result.printed } : {}) }, false)
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
+          : result.failure === 'not-listed'
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto did not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
@@ -2311,6 +2372,22 @@ export class AgentControl {
    */
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
+  }
+  /**
+   * The Watcher sends whose prompts still wait in their threads' queues for those threads' turns, which only the turn
+   * holds, by operation, in one pass over the queue. Not one that has left the queue or whose send is unconfirmed, nor one
+   * that waits instead on the user, its queue holding a paused or failed item, a wake-up included, nor one for a thread
+   * settled or archived. A provider change waits only for these (#1325).
+   */
+  watcherQueuedSendsWaiting(): ReadonlySet<string> {
+    const items = this.followupStore.peek().items, blocked = new Set<string>(), waiting = new Set<string>()
+    for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
+    for (const item of items) {
+      if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
+      const thread = this.state.host.threads.find(candidate => candidate.id === item.threadId)
+      if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
+    }
+    return waiting
   }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks

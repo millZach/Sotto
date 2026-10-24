@@ -1,6 +1,7 @@
 import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
-import type { AgentActivity } from '../../../shared/agentActivity'
+import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
+import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
@@ -10,6 +11,8 @@ import {
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
+import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
+import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -298,7 +301,6 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const shown: readonly ActivityNode[] = expanded ? nestActivities(group.records) : failures.map(record => ({ record, children: [] }))
   const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
-  const turnError = group.turn?.error
   const canFold = !live && group.records.length > 0
   const name = [headline, summary].filter(Boolean).join(', ') || 'Activity'
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
@@ -313,7 +315,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     </button> : !live && headline ? <p className="thread-activity__summary thread-activity__summary--static" data-status={group.turn?.status}>
       <CircleAlert className="thread-activity__chevron" size={14} aria-hidden="true" /><span className="thread-activity__headline">{headline}</span>
     </p> : null}
-    {turnError ? <p className="thread-activity__error thread-activity__error--turn">{turnError}</p> : null}
+    <TurnFailureReason turn={group.turn} />
     {rows.length ? <ul id={listId} className="thread-activity__rows">
       {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
         onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}>Show {earlier} earlier</button></li> : null}
@@ -321,6 +323,54 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     </ul> : null}
   </section>
 })
+
+/** How long a turn on one of the user's own servers waits with nothing from it before its line says it is still waiting. */
+export const STILL_WAITING_MS = 30_000
+
+/** Whether the server has sent anything for this turn: a reply after its message, or any work of its own. */
+function heardFrom(thread: Pick<AgentThread, 'activities' | 'messages'>, turnId: string): boolean {
+  if (thread.activities?.some(record => record.turnId === turnId && !isTurnRecord(record))) return true
+  const at = thread.messages.findLastIndex(message => message.id === turnId)
+  return at >= 0 && thread.messages.slice(at + 1).some(message => message.role === 'assistant')
+}
+
+/** True once a running wait has gone on for 30 seconds; one timer brings the line round when it does. */
+function useStillWaiting(startedAt: string | undefined, active: boolean): boolean {
+  const [, setDue] = useState(0)
+  const due = startedAt === undefined ? Number.NaN : Date.parse(startedAt) + STILL_WAITING_MS
+  useEffect(() => {
+    if (!active || !Number.isFinite(due)) return
+    const left = due - Date.now()
+    if (left <= 0) return
+    const timer = window.setTimeout(() => setDue(value => value + 1), left)
+    return () => window.clearTimeout(timer)
+  }, [active, due])
+  return active && Number.isFinite(due) && Date.now() >= due
+}
+
+/**
+ * The live line of a turn waiting on one of the user's own model servers: what it is waiting for, with Stop, the
+ * thread's own interrupt. Only its words are announced, and politely, so a new try does not move anything.
+ */
+function OwnServerLine({ actions, server, startedAt }: {
+  readonly actions: OwnServerTurnActions; readonly server: OwnServerTurn
+  /** When the turn began: given, the line says it is still waiting and counts from then; absent, it says which try it is. */
+  readonly startedAt?: string | undefined
+}): ReactNode {
+  const { i18n } = useLingui()
+  const name = stopName(i18n)
+  const words = startedAt === undefined ? retryingWords(i18n, server, server.attempt ?? 1, server.attempts ?? server.attempt ?? 1) : stillWaitingWords(i18n, server)
+  const note = startedAt === undefined ? undefined : stillWaitingNote(i18n)
+  return <div className="thread-activity-live thread-activity-live--own-server" data-testid="thread-activity-live" data-connected>
+    <i className="thread-activity__pulse" data-connected data-tone={startedAt === undefined ? 'attention' : undefined} aria-hidden="true" />
+    <span className="thread-activity-live__state"><span role="status">{words}</span>{startedAt ? <> <Elapsed startedAt={startedAt} /></> : null}</span>
+    <button type="button" className="thread-activity-live__stop tt-focusable" aria-label={name} title={name} disabled={!actions.canStop}
+      onClick={event => { const pressed = event.currentTarget; actions.stop(); focusComposerFrom(pressed) }}>
+      <Square size={10} fill="currentColor" aria-hidden="true" />{stopWords(i18n)}
+    </button>
+    {note ? <p className="thread-activity-live__note tt-paragraph">{note}</p> : null}
+  </div>
+}
 
 /**
  * One line at the end of a running turn: how long it has run and what it is doing now. The current
@@ -336,6 +386,13 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
+  const turnId = liveTurnId(thread)
+  const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
+  // A turn on one of the user's own model servers (ADR-0124, October 24 amendment) says so while OpenCode tries the
+  // server again, and once the server has sent nothing for 30 seconds.
+  const own = useOwnServerTurnActions()
+  const server = own !== null && connected && turn?.status === 'running' ? turn.ownServer : undefined
+  const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heardFrom(thread, turnId))
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.
   if (thread.compaction?.status === 'running') {
@@ -344,9 +401,13 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
       <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
     </div>
   }
-  const turnId = liveTurnId(thread)
   if (turnId === null && sendingSince === undefined) return null
-  const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
+  if (server !== undefined && own !== null && server.attempt !== undefined) {
+    return <OwnServerLine actions={own} server={server} />
+  }
+  if (server !== undefined && own !== null && waiting && turn?.startedAt) {
+    return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} />
+  }
   const action = turnId === null ? undefined : currentAction(thread, turnId)
   const label = action && action.id !== adjacentRecordId ? activityLabel(action) : null
   const startedAt = turn?.startedAt ?? sendingSince

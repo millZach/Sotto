@@ -1,5 +1,7 @@
 import React, { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight, CircleArrowUp, RefreshCw } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
@@ -10,6 +12,7 @@ import { useHeldProviders } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
+import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
@@ -26,6 +29,10 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
     : `Connect this provider to read its installed version.${past}`
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'queued') return `Waiting to update to ${update.published ?? 'the published version'}. Your threads keep working.${past}`
+  if (update.state === 'failed' && update.failure === 'not-listed') {
+    const to = update.published ?? i18n._(msg`the published version`), installed = update.installed
+    return `${i18n._(msg`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`)}${past}`
+  }
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
   if (update.channel === 'devin-app') return `${update.installed} is installed. Devin updates with the Devin app.${past}`
@@ -50,6 +57,7 @@ function shortVersion(version: string): string {
 export function ProvidersSettings(): ReactNode {
   const agents = useOptionalAgents()
   const held = useHeldProviders()
+  const ownServers = useOwnServersBridge()
   const { t } = useLingui()
   const [open, setOpen] = useState<ProviderId | null>('codex')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
@@ -215,7 +223,7 @@ export function ProvidersSettings(): ReactNode {
         <div className="provider-client" aria-busy={checkingUpdates || providerUpdating}>
           <div>
             <h4>Installed client</h4>
-            <p role="status">{updatePending[provider] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
+            <p className="tt-paragraph" role="status">{updatePending[provider] && update?.state !== 'updating' && update?.state !== 'queued' ? 'Starting the update…' : clientLine(update, status.verifiedVersion, checkClientUpdates, connected, checkingUpdates)}</p>
           </div>
           <div className="provider-client__actions">
             {checkClientUpdates && update?.canInstall && update.state !== 'updating' && update.state !== 'queued'
@@ -236,7 +244,7 @@ export function ProvidersSettings(): ReactNode {
           </div>
           <div className="provider-client__actions" ref={sandboxActions}>
             {museSandboxOwed && <Button variant="primary" disabled={Boolean(working) || providerUpdating} aria-label="Reconnect Muse to apply the shell sandbox setting" onClick={() => void reconnectMuse()}>Reconnect</Button>}
-            <Toggle label="Shell sandbox" checked={!museDisableSandbox}
+            <Toggle setting="shell-sandbox" label="Shell sandbox" checked={!museDisableSandbox}
               onCheckedChange={value => void saveMuseSandbox(!value)} />
           </div>
         </div>}
@@ -300,14 +308,16 @@ export function ProvidersSettings(): ReactNode {
   }
 
   return <div className="providers-settings">
-    <ul className="providers-list" aria-label="Thread providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
+    {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
+    {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
+    <ul className="providers-list" aria-label="Thread providers" data-setting="thread-providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
     <p className="providers-note">Choose what new threads start with under Agents.</p>
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
         <p>{!held.has('muse') ? "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates." : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
       </div>
-      <Toggle label="Check for client updates" checked={checkClientUpdates}
+      <Toggle setting="client-updates" label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />
     </div>
   </div>

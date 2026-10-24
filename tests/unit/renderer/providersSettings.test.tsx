@@ -337,6 +337,15 @@ describe('the installed client, in provider settings', () => {
     expect(screen.queryByRole('button', { name: /^Update Claude Code/u })).toBeNull()
   })
 
+  it('says mise does not list the published version yet, in its own words rather than main’s', () => {
+    const state = fixture()
+    state.clientUpdates = [{ id: 'codex', installed: '0.163.0', published: '0.164.0', behind: true, channel: 'mise', command: 'mise install codex@0.164.0',
+      canInstall: true, checkedAt: new Date().toISOString(), state: 'failed', step: 1, failure: 'not-listed', error: 'mise does not list Codex 0.164.0 yet.' }]
+    provide(state)
+    render(<ProvidersSettings />)
+    expect(screen.getByText('0.163.0 is installed. mise does not list 0.164.0 yet, even with its cache cleared, so Sotto did not install it. Try again later.')).toBeTruthy()
+  })
+
   it('says when a client is newer than the version Sotto checked', () => {
     const state = fixture()
     state.host.providers = state.host.providers!.map(provider => provider.id === 'codex' ? { ...provider, verifiedVersion: '0.150.0' } : provider)
