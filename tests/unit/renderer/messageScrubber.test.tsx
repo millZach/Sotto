@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import type { AgentThreadPrompt, AgentThreadPromptsRequest } from '../../../src/shared/threadPrompts'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import type { AppContextValue } from '../../../src/renderer/src/state/AppContext'
@@ -38,13 +39,13 @@ function conversation(turns: number): AgentMessage[] {
   ]).flat()
 }
 
-function mount(messages: AgentMessage[], options: { readonly owl?: boolean } = {}) {
+function mount(messages: AgentMessage[], options: { readonly owl?: boolean; readonly thread?: Partial<AgentThread> } = {}) {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { owlFeatures: { 'message-scrubber': options.owl !== false } },
     actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
   const state = threadsStateFixture()
   const thread: AgentThread = { id: 'long', projectId: state.host.threads[0]!.projectId, title: 'Host pill flicker', modelId: state.host.threads[0]!.modelId, providerId: state.host.threads[0]!.providerId,
-    status: 'idle', requests: [], messages, activities: [], updatedAt: at(0) }
+    status: 'idle', requests: [], messages, activities: [], updatedAt: at(0), ...options.thread }
   state.host.threads = [thread, ...state.host.threads]
   state.activeThreadId = thread.id
   const live = liveAgentState(state)
@@ -205,6 +206,83 @@ describe('the message scrubber', () => {
     fireEvent.keyDown(ticks()[1]!, { key: 'Enter' })
     expect(article('u1')).toHaveFocus()
     expect(article('u1')).toHaveAttribute('data-sought')
+  })
+})
+
+describe('with earlier messages only in the thread’s store', () => {
+  const TURNS = 60
+  const WINDOW = 10
+  const all = conversation(TURNS)
+  /** What the store answers for the prompts before a message: the user's, each with its turn's reply. */
+  const promptsBefore = (id: string): AgentThreadPrompt[] => {
+    const end = all.findIndex(message => message.id === id)
+    return all.slice(0, end).flatMap((message, index, list) => message.role === 'user'
+      ? [{ id: message.id, createdAt: message.createdAt, text: message.text, reply: { id: list[index + 1]!.id, text: list[index + 1]!.text } }] : [])
+  }
+  const read = vi.fn(async (request: AgentThreadPromptsRequest) => ({ prompts: promptsBefore(request.beforeMessageId) }))
+  beforeEach(() => { read.mockClear(); Object.assign(window, { sotto: { agents: { threadPrompts: read } } }) })
+  afterEach(() => { Reflect.deleteProperty(window, 'sotto') })
+  const windowFrom = (turn: number) => all.slice(turn * 2)
+  const republish = (live: ReturnType<typeof mount>, patch: Partial<AgentThread>): void => {
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'long' ? { ...item, ...patch } : item) } }) })
+  }
+
+  it('marks every prompt, the store’s above the window’s, and reads the store again only when the window starts beyond the read', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    expect(read).toHaveBeenCalledExactlyOnceWith({ threadId: 'long', beforeMessageId: `u${TURNS - WINDOW}` })
+    fireEvent.pointerMove(scrubber()!, { clientY: tickPlaces(TURNS, VIEW).places[0], pointerType: 'mouse' })
+    expect(card()).toHaveTextContent(`Message 1 of ${TURNS}`)
+    expect(card()).toHaveTextContent('Question 0: what about part 0?')
+    expect(card()).toHaveTextContent('Answer 0: part 0 is done.')
+    expect(ticks()[0]).toHaveAccessibleName(/: Question 0: what about part 0\?$/u)
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    // Show earlier messages loads twenty turns the store was read for: the ticks stay, and nothing is read.
+    republish(live, { messages: windowFrom(TURNS - WINDOW - 20) })
+    expect(ticks()).toHaveLength(TURNS)
+    expect(ticks()[0]).toHaveAccessibleName(/Question 0:/u)
+    // The pane comes back to the thread: its messages load again, and the ticks it had stand meanwhile.
+    republish(live, { messages: [], historyStatus: 'loading' })
+    expect(ticks()).toHaveLength(TURNS)
+    republish(live, { messages: windowFrom(TURNS - WINDOW), historyStatus: undefined })
+    expect(ticks()).toHaveLength(TURNS)
+    expect(read).toHaveBeenCalledOnce()
+    // A window that now starts later than the read reached reads again, and the ticks stand until it answers.
+    republish(live, { messages: windowFrom(TURNS - 5) })
+    expect(ticks().length).toBeGreaterThanOrEqual(TURNS - WINDOW + 5)
+    await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+  })
+
+  it('loads the window back to a prompt only the store holds, then lands on it with focus', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    act(() => ticks()[0]!.focus())
+    fireEvent.keyDown(ticks()[0]!, { key: 'Enter' })
+    expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'long', throughMessageId: 'u0' })
+    expect(article('u0')).toBeNull()
+    // The window arrives widened back to the prompt.
+    republish(live, { messages: all, earlierAvailable: undefined })
+    expect(article('u0')).toHaveAttribute('data-sought')
+    expect(article('u0')).toHaveFocus()
+    expect(ticks()).toHaveLength(TURNS)
+  })
+
+  it('leaves the reader where they are when they scroll while a pressed prompt loads', async () => {
+    const live = mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(ticks()).toHaveLength(TURNS))
+    fireEvent.click(ticks()[3]!, { detail: 0 })
+    expect(live.command).toHaveBeenCalledWith({ type: 'load-earlier-messages', threadId: 'long', throughMessageId: 'u3' })
+    fireEvent.wheel(transcript(), { deltaY: -200 })
+    republish(live, { messages: all, earlierAvailable: undefined })
+    expect(article('u3')).toBeNull()
+  })
+
+  it('marks what the window holds where the host cannot say', async () => {
+    read.mockResolvedValue(null as unknown as { prompts: AgentThreadPrompt[] })
+    mount(windowFrom(TURNS - WINDOW), { thread: { earlierAvailable: true } })
+    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+    expect(ticks()).toHaveLength(WINDOW)
   })
 })
 

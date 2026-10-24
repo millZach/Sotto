@@ -1,3 +1,4 @@
+import { agentThreadPromptsSchema } from './threadPrompts'
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
@@ -176,6 +177,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `fork-thread`, which forks a thread at one of its replies (Fork from here), and
  * answers `start-handover` with the handover a thread that began from another goes with on its first message (#1028). Only
  * a host whose Owl answer turns them on lists it; a desktop refuses both for a host that does not.
+ * `thread-prompts`: the host answers `thread-prompts` with every message the user sent before one, oldest first, from the
+ * thread's store, and takes `load-earlier-messages` with `throughMessageId`, which widens the thread's window back to that
+ * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
+ * the messages the window holds, and sends no `throughMessageId`.
  * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy
@@ -216,7 +221,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -409,6 +414,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('activity-body'), threadId: id, activityId: id }).strict(),
   /** The words of a started thread's handover, read only when the user asks to read them (#1028). */
   z.object({ ...base, op: z.literal('start-handover'), threadId: id }).strict(),
+  /** Every message the user sent before one, for the message scrubber, read when a pane opens or widens (`thread-prompts`). */
+  z.object({ ...base, op: z.literal('thread-prompts'), threadId: id, beforeMessageId: id }).strict(),
   /** One step of a host update, run by the host on itself for a desktop that may answer (ADR-0088). */
   z.object({ ...base, op: z.literal('host-update'), action: z.enum(HOST_UPDATE_REQUEST_ACTIONS), version: z.string().min(1).max(64).optional(),
     file: z.string().min(1).max(128).optional(), sha256: z.string().regex(/^[0-9a-f]{64}$/u).optional() }).strict(),
@@ -512,6 +519,8 @@ export const hostHelloSchema = z.object({ ...eventPageShape, hostId: z.uuid(), c
   ...aboutShape, phoneAccess: hostPhoneAccessSchema.optional().catch(undefined) })
 /** One activity record whole as a host answers `activity-body`, or null when the thread no longer has it. */
 export const hostActivityBodySchema = agentActivitySchema.nullable()
+/** The prompts above a pane's window as a host answers `thread-prompts`, or null when its store cannot say (ADR-0109). */
+export const hostThreadPromptsSchema = agentThreadPromptsSchema.nullable()
 /** A started thread's handover as a host answers `start-handover`: its words, or null when it has none (#1028). */
 export const hostStartHandoverSchema = z.object({ handover: z.object({ text: z.string() }).strict().nullable() }).strict()
 export const hostHealthSchema = z.object({ v: z.literal(1), status: z.literal('ready'), hostId: z.uuid(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), sottoVersion, features: featureList, ...aboutShape })

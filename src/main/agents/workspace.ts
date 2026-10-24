@@ -1,5 +1,6 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { withKeptMessageMetadata } from '../../shared/agents'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
@@ -2445,6 +2446,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
   }
+  /**
+   * Every message the user sent before `beforeMessageId`, read from the store for the message scrubber (ADR-0109): the
+   * prompts above the window a pane holds. Wake-ups are Sotto's, so they are left out, as the window leaves them unmarked.
+   * Read only when a pane asks, and never published. Null when the store cannot answer.
+   */
+  threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread || !this.visible(thread) || this.storeUnavailable) return null
+    this.writeEvents()
+    try {
+      const skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
+        ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
+      return { prompts: this.threadStore.promptsBefore(threadId, beforeMessageId, skip) }
+    } catch { return null }
+  }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
@@ -2454,13 +2470,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     delete thread.earlierAvailable
   }
   /**
-   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages.
-   * The store holds the whole history; only how much of it is in memory changes here.
+   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages, or back to a message
+   * the user sent, because they pressed its tick in the message scrubber (ADR-0109). The store holds the whole history;
+   * only how much of it is in memory changes here.
    */
-  async loadEarlierMessages(threadId: string): Promise<AgentHostSnapshot> {
+  async loadEarlierMessages(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot> {
     await this.initialize()
     this.thread(threadId)
-    this.watched.set(threadId, (this.watched.get(threadId) ?? FIRST_WINDOW_TURNS) + LATER_WINDOW_TURNS)
+    const turns = this.watched.get(threadId) ?? FIRST_WINDOW_TURNS
+    let through: number | undefined
+    if (throughMessageId !== undefined && !this.storeUnavailable) {
+      this.writeEvents()
+      try { through = this.threadStore.turnsFrom(threadId, throughMessageId) } catch { this.saveError = HISTORY_SAVE_ERROR }
+    }
+    this.watched.set(threadId, throughMessageId === undefined ? turns + LATER_WINDOW_TURNS : Math.max(turns, through ?? turns))
     this.loadWindow(threadId)
     this.publish()
     return this.workspaceSnapshot()

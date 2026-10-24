@@ -42,7 +42,8 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
 import { readsBack, typesIntoComposer } from './slimComposer'
-import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
+import { joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
+import { useStoredPrompts } from './useStoredPrompts'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -689,9 +690,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
     return ids.size && delegatingTitle !== undefined ? { ids, from: delegatingTitle } : undefined
   }, [delegations.received, delegatingTitle])
-  // The message scrubber (ADR-0109; Owl only): a tick for each message the user sent, wherever it is in the window.
+  // The message scrubber (ADR-0109; Owl only): a tick for each message the user sent, in the window or only in the
+  // thread's store above it.
   const scrubberOn = useOwlFeature('message-scrubber')
-  const marks = useMemo(() => scrubberOn ? scrubberMarks(thread.messages, briefs?.ids) : [], [scrubberOn, thread.messages, briefs])
+  const windowMarks = useMemo(() => scrubberOn ? scrubberMarks(thread.messages, briefs?.ids) : [], [scrubberOn, thread.messages, briefs])
+  const storedPrompts = useStoredPrompts(thread.id, thread.messages[0]?.id, thread.earlierAvailable === true, thread.historyEpoch, scrubberOn)
+  const aboveMarks = useMemo(() => storedMarks(storedPrompts, briefs?.ids), [storedPrompts, briefs])
+  const joined = useMemo(() => joinedMarks(aboveMarks, windowMarks), [aboveMarks, windowMarks])
+  // While the thread's messages load again, as they do when the pane comes back to it, the ticks it had stand.
+  const lastMarks = useRef<{ readonly threadId: string; readonly marks: readonly ScrubberMark[] } | null>(null)
+  const marksHeld = thread.historyStatus === 'loading' && lastMarks.current?.threadId === thread.id && lastMarks.current.marks.length > joined.length
+  const marks = marksHeld ? lastMarks.current!.marks : joined
+  if (!marksHeld) lastMarks.current = { threadId: thread.id, marks: joined }
   // A thread that began from another (#1028; Owl only) says where it began, and shows the handover it starts from.
   // Its view changes only when where it began does, so the messages that read it are not redrawn on every update.
   const startsOn = useThreadStarts()
@@ -824,6 +834,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   }
   /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
   const onReaderInput = (event: React.SyntheticEvent): void => {
+    // A reader who moves on while a pressed prompt loads is not taken there when it arrives.
+    if (far.current !== null && (event.type !== 'keydown' || scrollsTranscript(event as React.KeyboardEvent))) far.current = null
     if (reading.current?.held !== true || event.type === 'keydown' && !scrollsTranscript(event as React.KeyboardEvent)) return
     reading.current = null
     onScroll()
@@ -868,10 +880,20 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     markSought(message)
     if (focus) { message.tabIndex = -1; message.focus({ preventScroll: true }) }
   }, [])
-  /** The scrubber's press: a message above the first one drawn widens the window to it first, then lands there. */
+  /** A press on a prompt only the thread's store holds, waiting for the window to widen back to it. */
+  const far = useRef<{ readonly threadId: string; readonly messageId: string; readonly focus: boolean } | null>(null)
+  /**
+   * The scrubber's press: a message above the first one drawn widens the window to it first, then lands there. One only
+   * the thread's store holds has the window loaded back to it first; until it arrives the reader stays where they are.
+   */
   const jumpTo = useCallback((messageId: string, focus: boolean): void => {
     const index = thread.messages.findIndex(message => message.id === messageId)
-    if (index < 0) return
+    if (index < 0) {
+      far.current = { threadId: thread.id, messageId, focus }
+      void command({ type: 'load-earlier-messages', threadId: thread.id, throughMessageId: messageId })
+      return
+    }
+    far.current = null
     following.current = false
     if (index >= start) { land(messageId, focus); return }
     anchor.current = null
@@ -879,7 +901,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     landing.current = { messageId, focus }
     setLimit(current => Math.max(current, thread.messages.length - index))
     setLandingSeq(current => current + 1)
-  }, [thread.messages, thread.id, start, land])
+  }, [thread.messages, thread.id, start, land, command])
   // Once the wider window is drawn, the press lands where it asked to go.
   useLayoutEffect(() => {
     const target = landing.current
@@ -887,6 +909,14 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     landing.current = null
     land(target.messageId, target.focus)
   }, [landingSeq, messages, land])
+  // The window has widened back to a prompt pressed while only the store held it: the press lands now. It comes
+  // after the landing above, which would otherwise take the press before the wider window is drawn.
+  useLayoutEffect(() => {
+    const target = far.current
+    if (target === null) return
+    if (target.threadId !== thread.id) { far.current = null; return }
+    if (thread.messages.some(message => message.id === target.messageId)) jumpTo(target.messageId, target.focus)
+  }, [thread.messages, thread.id, jumpTo])
   const ownServerTurns = useOwnServerTurns(row, state, command, store)
   const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
     [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
@@ -927,7 +957,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
   useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
-    {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
+    {marks.length >= SCRUBBER_FEWEST ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true || marksHeld}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"

@@ -10,6 +10,7 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt } from '../../shared/threadPrompts'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
@@ -791,6 +792,40 @@ export class ThreadStore {
   message(threadId: string, messageId: string): AgentMessage | undefined {
     const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND message_id = ?').get(threadId, messageId)
     return row === undefined ? undefined : messageOf(row)
+  }
+
+  /**
+   * The messages the user sent before this one, oldest first, each with its turn's last reply with words: what the message
+   * scrubber marks above a pane's window (ADR-0109). Only the start of each message and the start and end of each reply
+   * are read. A message the store does not hold has nothing before it.
+   */
+  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompt[] {
+    const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (before === null || before === undefined) return []
+    const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
+    const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
+      CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
+      FROM messages WHERE thread_id = ? AND position < ? AND (role = 'user' OR trim(text) <> '') ORDER BY position`).all(threadId, before)
+    const prompts: { -readonly [K in keyof AgentThreadPrompt]: AgentThreadPrompt[K] }[] = []
+    let current: typeof prompts[number] | undefined
+    for (const row of rows) {
+      const id = String(row.message_id)
+      if (row.role === 'user') {
+        // A wake-up is Sotto's and starts a turn of its own, so what answers it is no prompt's reply.
+        if (skip.has(id)) { current = undefined; continue }
+        const attached = row.attachments === null || row.attachments === undefined ? 0 : (JSON.parse(String(row.attachments)) as unknown[]).length
+        current = { id, createdAt: String(row.created_at), text: clipText(String(row.head), THREAD_PROMPT_TEXT), ...(attached > 0 ? { attachments: Math.min(attached, 1000) } : {}) }
+        prompts.push(current)
+      } else if (current) current.reply = { id, text: promptReplyText(String(row.head), row.tail === null || row.tail === undefined ? null : String(row.tail)) }
+    }
+    return prompts.slice(-THREAD_PROMPTS_MOST)
+  }
+
+  /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */
+  turnsFrom(threadId: string, messageId: string): number | undefined {
+    const at = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (at === null || at === undefined) return undefined
+    return Number(this.statement(`SELECT COUNT(*) AS turns FROM messages WHERE thread_id = ? AND role = 'user' AND position >= ?`).get(threadId, at)!.turns)
   }
 
   /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */
