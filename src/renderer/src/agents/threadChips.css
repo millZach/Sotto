@@ -22,7 +22,11 @@
 .thread-prompt .thread-chip.model-picker__trigger { color: var(--tt-text-2); }
 .thread-prompt .thread-chip > svg:last-child { opacity: .7; }
 .thread-prompt .thread-chip:hover:not(:disabled), .thread-prompt .thread-chip[aria-expanded='true'] { border-color: transparent; background: var(--tt-hover); color: var(--tt-text); }
-.thread-prompt .thread-chip.watch-on-send[aria-pressed='true'], .thread-prompt .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: transparent; color: var(--tt-accent-text); }
+.thread-prompt .thread-chip.watch-on-send[aria-pressed='true'], .thread-prompt .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); background: color-mix(in srgb, var(--tt-accent) 14%, transparent); color: var(--tt-accent-text); }
+/* Pressed, the owl's eyes glow in the theme's accent; reduced motion keeps the glow and drops its pulse. */
+.thread-chip.watch-on-send[aria-pressed='true'] .watcher-owl__pupil { filter: drop-shadow(0 0 1.5px var(--tt-accent)) drop-shadow(0 0 3px var(--tt-accent)); animation: watch-eyes-glow 2.4s ease-in-out infinite; }
+@keyframes watch-eyes-glow { 50% { opacity: .65; } }
+@media (prefers-reduced-motion: reduce) { .thread-chip.watch-on-send[aria-pressed='true'] .watcher-owl__pupil { animation: none; } }
 /* A glyph that stands for the value appears only where the composer is narrow; the words stay for assistive technology. */
 .thread-chip > .thread-chip__icon { display: none; flex: none; }
 @container thread-pane (max-width: 720px) {

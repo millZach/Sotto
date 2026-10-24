@@ -13,8 +13,8 @@ export const WATCHED_BY_WATCHER = 'Watched by Watcher'
 export function WatcherOwl({ size = 16, className }: { readonly size?: number; readonly className?: string | undefined }): ReactNode {
   return <svg className={className ? `watcher-owl ${className}` : 'watcher-owl'} width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
     <path d={OWL} fillRule="evenodd" />
-    <circle cx="5.29" cy="8.22" r="1.19" />
-    <circle cx="10.79" cy="8.87" r="1.19" />
+    <circle className="watcher-owl__pupil" cx="5.29" cy="8.22" r="1.19" />
+    <circle className="watcher-owl__pupil" cx="10.79" cy="8.87" r="1.19" />
   </svg>
 }
 
