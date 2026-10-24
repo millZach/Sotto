@@ -50,7 +50,7 @@ export function PerformanceSettings({ visible, settings, onUpdateSettings, bridg
       </div>
       {wide}
     </div>
-    <Toggle label="Tell me when main freezes" checked={settings.mainFreezeNotice} onCheckedChange={checked => void onUpdateSettings({ mainFreezeNotice: checked })}
+    <Toggle setting="main-freeze-notice" label="Tell me when main freezes" checked={settings.mainFreezeNotice} onCheckedChange={checked => void onUpdateSettings({ mainFreezeNotice: checked })}
       description="Shows a notice in the window's top row while main is blocked for more than half of the last minute." />
   </div>
 }

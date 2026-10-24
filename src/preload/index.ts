@@ -21,6 +21,10 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import {
+  addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
+  OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
+} from '../shared/ownModelServers'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
@@ -365,6 +369,8 @@ export function createSottoBridge(
   desktopNotificationsEnabled = false,
   /** The interface language as the window was made (ADR-0123): only while the `interface-language` Owl feature is on. */
   interfaceLanguage: InterfaceLanguageState | null = null,
+  /** The user's own model servers (ADR-0124): only while the `own-model-servers` Owl feature is on and OpenCode runs here. */
+  ownServersEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -420,6 +426,15 @@ export function createSottoBridge(
       reopen: request => invokeParsed(renderer, OPENCODE_SIGN_IN_REOPEN, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       cancel: request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
+    }) } : {}),
+    // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
+    // returned carries one.
+    ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
+      list: () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
+      check: request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
+      add: request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
+      checkSaved: request => invokeParsed(renderer, OWN_SERVERS_CHECK_SAVED, checkResultSchema, checkSavedRequestSchema.parse(request)),
+      remove: request => invokeParsed(renderer, OWN_SERVERS_REMOVE, removeResultSchema, removeRequestSchema.parse(request)),
     }) } : {}),
     ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
@@ -682,7 +697,7 @@ export function exposeRendererBridge(
     context.exposeInMainWorld('sotto', createSottoBridge(renderer, platform, arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(USAGE_RENDERER_ARGUMENT),
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
-      parseInterfaceLanguageArgument(arguments_)))
+      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

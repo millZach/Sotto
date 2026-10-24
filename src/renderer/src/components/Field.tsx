@@ -12,9 +12,11 @@ export interface FieldProps {
   readonly error?: string
   readonly children: ReactElement<Record<string, unknown>>
   readonly className?: string
+  /** The setting the control changes, for Find a setting (`data-setting`, settingsPages.ts). */
+  readonly setting?: string
 }
 
-export function Field({ label, description, error, children, className = '' }: FieldProps): ReactNode {
+export function Field({ label, description, error, children, className = '', setting }: FieldProps): ReactNode {
   const generatedId = useId()
   if (!isValidElement(children)) throw new Error('Field requires one form control.')
   const controlId = typeof children.props.id === 'string' ? children.props.id : `${generatedId}-control`
@@ -28,6 +30,7 @@ export function Field({ label, description, error, children, className = '' }: F
     id: controlId,
     'aria-describedby': describedBy,
     'aria-invalid': error === undefined ? children.props['aria-invalid'] : true,
+    ...setting === undefined ? {} : { 'data-setting': setting },
     className: [
       typeof children.props.className === 'string' ? children.props.className : '',
       'tt-focusable',

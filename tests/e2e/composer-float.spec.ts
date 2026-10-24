@@ -155,6 +155,26 @@ test('a thread composer floats over its transcript, alone, side by side and in a
       return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2))
     })).toBe(true)
     await page.screenshot({ path: join(evidence, 'split-permission-1280x620-dark.png'), animations: 'disabled' })
+    // Jump to latest rides above the floating composer; reading back through the card, it never sits over it.
+    const covered = await footer.evaluate(async element => {
+      const log = element.querySelector<HTMLElement>('[aria-label="Thread transcript"]')!
+      const frame = (): Promise<void> => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      const hits: number[] = []
+      let shown = 0
+      for (let top = log.scrollHeight - log.clientHeight; top >= 0; top -= 16) {
+        log.scrollTop = top
+        log.dispatchEvent(new Event('scroll'))
+        await frame()
+        const jump = element.querySelector('.thread-transcript__jump')?.getBoundingClientRect()
+        if (!jump) continue
+        shown++
+        const card = log.querySelector('.agent-request')!.getBoundingClientRect()
+        if (jump.bottom > card.top && jump.top < card.bottom && jump.right > card.left && jump.left < card.right) hits.push(top)
+      }
+      return { hits, shown }
+    })
+    expect(covered.shown, JSON.stringify(covered)).toBeGreaterThan(0)
+    expect(covered.hits, JSON.stringify(covered)).toEqual([])
 
     // A waiting question goes above the message bar, and the composer stacks under the transcript again.
     await emit(page, 'weekly-note', question)

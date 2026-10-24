@@ -13,6 +13,8 @@ import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
+import type { OwnServer } from '../../shared/ownModelServers'
+import { openCodeForOwnServers } from '../ownModelServers/openCode'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
@@ -76,6 +78,11 @@ export interface AgentRuntimeOptions {
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
+  /**
+   * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
+   * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
+   */
+  ownServers?: () => Promise<readonly OwnServer[]>
   claudeHistoryModulePath?: string
   credentials: ControlDependencies['credentials']
   settings: () => AppSettings
@@ -147,7 +154,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: adapter('muse', () => options.providers?.muse ?? new MuseMspHost(directory, { disableSandbox: () => agentControl.configuration().museDisableSandbox, usageEnabled: options.usageEnabled === true })),
     // A desktop's OpenCode opens a sign-in page in the user's browser (#1104). A headless host's has no browser: a desktop signs
     // it in over the host connection and opens its pages itself (#1107).
-    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true })),
+    opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
+      ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -388,5 +396,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   babysitter?.begin()
   // Signing Sotto's OpenCode in to model sources (#1104): only where its adapter runs, so a held OpenCode has none.
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, prepareForShutdown, close }
+  // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
+  const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, prepareForShutdown, close }
 }
