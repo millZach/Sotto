@@ -18,6 +18,9 @@ import { isCompositionKey } from '../../../agents/composerKeys'
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, MousePointer2, Paintbrush, Plus, X } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { AppSettings, SettingsPatch } from '../../../../../shared/settings'
 import { toCanonicalThemeColor } from '../../../../../shared/themes/color'
@@ -38,8 +41,9 @@ import {
 import { Button } from '../../../components/Button'
 import { appearancePreview, isTransientPaintMutation, useAppearancePreviewVersion } from '../../../state/appearance'
 import { isEditorColor, ThemeColorField, themeRoleLabel } from './ThemeColorField'
+import { shownWords, type LaterWords } from '../laterWords'
 import { closeThemeEditor, useThemeEditorSession, type ThemeEditorSession } from './themeEditorSession'
-import { editorMergeTarget, editorSavePatch, ThemeLibraryWriter } from './themeLibrary'
+import { editorMergeTarget, editorSavePatch, ThemeLibraryError, ThemeLibraryWriter } from './themeLibrary'
 import {
   clearThemeInspectorHighlights,
   clearThemeInspectorHover,
@@ -55,49 +59,55 @@ const SIMPLE_ROLES: readonly ThemeColorRole[] = ['canvas', 'accent']
 
 interface ColorFamily { readonly id: string; readonly label: string; readonly role: ThemeColorRole; readonly roles: readonly ThemeColorRole[] }
 
+/** A colour family whose name is read in the interface language each time it is shown. */
+function colorFamily(id: string, label: MessageDescriptor, role: ThemeColorRole, roles: readonly ThemeColorRole[]): ColorFamily {
+  return { id, role, roles, get label() { return i18n._(label) } }
+}
+
+// Each group's title and each family's name is read when it is shown, so they follow the interface language.
 export const THEME_EDITOR_ROLE_GROUPS: ReadonlyArray<{ readonly id: string; readonly title: string; readonly families: readonly ColorFamily[] }> = [
   {
     id: 'foundation',
-    title: 'Foundation',
+    get title() { return i18n._(msg({ message: 'Foundation', comment: 'A group of theme colors in the theme editor' })) },
     families: [
-      { id: 'background', label: 'Background', role: 'canvas', roles: ['canvas', 'chrome', 'toolbar'] },
-      { id: 'surface', label: 'Surface', role: 'surface', roles: ['surface'] },
-      { id: 'raised-surface', label: 'Raised surface', role: 'surfaceRaised', roles: ['surfaceRaised'] },
-      { id: 'overlay', label: 'Overlay', role: 'surfaceOverlay', roles: ['surfaceOverlay'] },
-      { id: 'text', label: 'Text', role: 'text', roles: ['text', 'toolbarForeground', 'toolbarControlForeground'] },
-      { id: 'muted-text', label: 'Muted text', role: 'mutedForeground', roles: ['textMuted', 'mutedForeground', 'placeholder', 'secondaryLabel', 'iconMuted', 'sidebarMutedForeground'] },
-      { id: 'border', label: 'Border', role: 'border', roles: ['border', 'toolbarBorder', 'sidebarBorder'] },
-      { id: 'input', label: 'Input', role: 'input', roles: ['input'] },
+      colorFamily('background', msg({ message: 'Background', comment: 'A family of theme colors in the theme editor' }), 'canvas', ['canvas', 'chrome', 'toolbar']),
+      colorFamily('surface', msg({ message: 'Surface', comment: 'A family of theme colors in the theme editor' }), 'surface', ['surface']),
+      colorFamily('raised-surface', msg({ message: 'Raised surface', comment: 'A family of theme colors in the theme editor' }), 'surfaceRaised', ['surfaceRaised']),
+      colorFamily('overlay', msg({ message: 'Overlay', comment: 'A family of theme colors in the theme editor' }), 'surfaceOverlay', ['surfaceOverlay']),
+      colorFamily('text', msg({ message: 'Text', comment: 'A family of theme colors in the theme editor' }), 'text', ['text', 'toolbarForeground', 'toolbarControlForeground']),
+      colorFamily('muted-text', msg({ message: 'Muted text', comment: 'A family of theme colors in the theme editor' }), 'mutedForeground', ['textMuted', 'mutedForeground', 'placeholder', 'secondaryLabel', 'iconMuted', 'sidebarMutedForeground']),
+      colorFamily('border', msg({ message: 'Border', comment: 'A family of theme colors in the theme editor' }), 'border', ['border', 'toolbarBorder', 'sidebarBorder']),
+      colorFamily('input', msg({ message: 'Input', comment: 'A family of theme colors in the theme editor' }), 'input', ['input']),
     ],
   },
   {
     id: 'brand-content',
-    title: 'Brand & content',
+    get title() { return i18n._(msg({ message: 'Brand & content', comment: 'A group of theme colors in the theme editor' })) },
     families: [
-      { id: 'subtle-surface', label: 'Subtle surface', role: 'secondary', roles: ['secondary', 'secondaryForeground', 'muted', 'toolbarControl'] },
-      { id: 'highlight-surface', label: 'Highlight surface', role: 'accentSurface', roles: ['accentSurface', 'accentSurfaceForeground', 'toolbarControlHover'] },
-      { id: 'accent', label: 'Accent', role: 'accent', roles: ['accent', 'accentForeground', 'focus', 'update', 'updateForeground', 'updateSurface', 'terminalCursor'] },
-      { id: 'action', label: 'Action', role: 'messageAction', roles: ['messageAction', 'messageActionForeground', 'messageActionHover'] },
-      { id: 'message-surface', label: 'Message surface', role: 'messageSurface', roles: ['messageSurface', 'messageForeground'] },
-      { id: 'code-surface', label: 'Code surface', role: 'codeBackground', roles: ['codeBackground', 'codeForeground'] },
+      colorFamily('subtle-surface', msg({ message: 'Subtle surface', comment: 'A family of theme colors in the theme editor' }), 'secondary', ['secondary', 'secondaryForeground', 'muted', 'toolbarControl']),
+      colorFamily('highlight-surface', msg({ message: 'Highlight surface', comment: 'A family of theme colors in the theme editor' }), 'accentSurface', ['accentSurface', 'accentSurfaceForeground', 'toolbarControlHover']),
+      colorFamily('accent', msg({ message: 'Accent', comment: 'A family of theme colors in the theme editor' }), 'accent', ['accent', 'accentForeground', 'focus', 'update', 'updateForeground', 'updateSurface', 'terminalCursor']),
+      colorFamily('action', msg({ message: 'Action', comment: 'A family of theme colors in the theme editor' }), 'messageAction', ['messageAction', 'messageActionForeground', 'messageActionHover']),
+      colorFamily('message-surface', msg({ message: 'Message surface', comment: 'A family of theme colors in the theme editor' }), 'messageSurface', ['messageSurface', 'messageForeground']),
+      colorFamily('code-surface', msg({ message: 'Code surface', comment: 'A family of theme colors in the theme editor' }), 'codeBackground', ['codeBackground', 'codeForeground']),
     ],
   },
   {
     id: 'context',
-    title: 'Context',
+    get title() { return i18n._(msg({ message: 'Context', comment: 'A group of theme colors in the theme editor' })) },
     families: [
-      { id: 'sidebar-background', label: 'Sidebar background', role: 'sidebar', roles: ['sidebar', 'sidebarForeground'] },
-      { id: 'sidebar-controls', label: 'Sidebar controls', role: 'sidebarControlSurface', roles: ['sidebarControlSurface'] },
-      { id: 'sidebar-selection', label: 'Sidebar selection', role: 'sidebarRowSelected', roles: ['sidebarRowHover', 'sidebarRowActive', 'sidebarRowSelected'] },
-      { id: 'terminal-background', label: 'Terminal background', role: 'terminalBackground', roles: ['terminalBackground', 'terminalForeground', 'terminalSelection', 'terminalScrollbar', 'terminalScrollbarHover'] },
+      colorFamily('sidebar-background', msg({ message: 'Sidebar background', comment: 'A family of theme colors in the theme editor' }), 'sidebar', ['sidebar', 'sidebarForeground']),
+      colorFamily('sidebar-controls', msg({ message: 'Sidebar controls', comment: 'A family of theme colors in the theme editor' }), 'sidebarControlSurface', ['sidebarControlSurface']),
+      colorFamily('sidebar-selection', msg({ message: 'Sidebar selection', comment: 'A family of theme colors in the theme editor' }), 'sidebarRowSelected', ['sidebarRowHover', 'sidebarRowActive', 'sidebarRowSelected']),
+      colorFamily('terminal-background', msg({ message: 'Terminal background', comment: 'A family of theme colors in the theme editor' }), 'terminalBackground', ['terminalBackground', 'terminalForeground', 'terminalSelection', 'terminalScrollbar', 'terminalScrollbarHover']),
     ],
   },
   {
     id: 'status',
-    title: 'Status',
+    get title() { return i18n._(msg({ message: 'Status', comment: 'A group of theme colors in the theme editor' })) },
     families: [
-      { id: 'error', label: 'Error', role: 'error', roles: ['error', 'errorForeground', 'errorSurface'] },
-      { id: 'warning', label: 'Warning', role: 'warning', roles: ['warning', 'warningForeground', 'warningSurface'] },
+      colorFamily('error', msg({ message: 'Error', comment: 'A family of theme colors in the theme editor' }), 'error', ['error', 'errorForeground', 'errorSurface']),
+      colorFamily('warning', msg({ message: 'Warning', comment: 'A family of theme colors in the theme editor' }), 'warning', ['warning', 'warningForeground', 'warningSurface']),
     ],
   },
 ]
@@ -197,6 +207,7 @@ export function ThemeEditorHost({ settings, onSave, getSettings, onNotice }: The
 
 function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: ThemeEditorHostProps & { readonly session: ThemeEditorSession; readonly settings: AppSettings }): ReactNode {
   useAppearancePreviewVersion()
+  const { t } = useLingui()
   const library = appearancePreview.effective(settings)
   const editingTheme = session.editingThemeId === null ? null : library.customThemes.find(theme => theme.id === session.editingThemeId) ?? null
   const writer = useMemo(() => new ThemeLibraryWriter(onSave, getSettings), [onSave, getSettings])
@@ -226,7 +237,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const [colorsByAppearance, setColorsByAppearance] = useState<ColorsByAppearance>(seeded.colors)
   const [simpleDirty, setSimpleDirty] = useState<Record<ThemeAppearance, boolean>>({ light: false, dark: false })
   const [regenerateOnSimple, setRegenerateOnSimple] = useState(seeded.advanced)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [saving, setSaving] = useState(false)
   const [minimized, setMinimized] = useState(false)
   const [roleQuery, setRoleQuery] = useState('')
@@ -246,6 +257,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
 
   const isEditing = session.editingThemeId !== null
   const mergeTarget = editorMergeTarget(library, name, editingTheme?.id ?? null)
+  const mergeTargetName = mergeTarget?.label ?? ''
   const takenAppearances = mergeTarget ? getThemeModes(mergeTarget) : []
   const editableAppearances = editingTheme ? getThemeModes(editingTheme) : null
 
@@ -276,8 +288,14 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   }, [isEditing, mergeKey])
 
   const lockReason = (appearance: ThemeAppearance): string | null => {
-    if (editableAppearances && !editableAppearances.includes(appearance)) return `“${editingTheme?.label}” has no ${appearance} palette. Create a theme with the same name to add one.`
-    if (!isEditing && takenAppearances.includes(appearance)) return `“${mergeTarget?.label}” already has a ${appearance} palette.`
+    const editing = editingTheme?.label
+    const target = mergeTarget?.label
+    if (editableAppearances && !editableAppearances.includes(appearance)) {
+      return appearance === 'light'
+        ? t`“${editing}” has no light palette. Create a theme with the same name to add one.`
+        : t`“${editing}” has no dark palette. Create a theme with the same name to add one.`
+    }
+    if (!isEditing && takenAppearances.includes(appearance)) return appearance === 'light' ? t`“${target}” already has a light palette.` : t`“${target}” already has a dark palette.`
     return null
   }
 
@@ -312,7 +330,7 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const submit = async (): Promise<void> => {
     if (saving) return
     if (!name.trim()) {
-      setError('Name your theme first.')
+      setError(msg`Name your theme first.`)
       return
     }
     setSaving(true)
@@ -327,16 +345,18 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     try {
       const result = await writer.run(state => editorSavePatch(state, { name, editingTheme: session.editingThemeId === null ? null : editingTheme ?? ({ id: session.editingThemeId } as ThemeDefinition), activeAppearance, colorsByAppearance: colors, advanced }))
       if (!result.saved) {
-        setError('The theme could not be saved. Your saved themes are unchanged.')
+        setError(msg`The theme could not be saved. Your saved themes are unchanged.`)
         setSaving(false)
         return
       }
-      onNotice?.(result.mergedAppearance
-        ? `${result.theme.label} updated. Its ${result.mergedAppearance} palette was added.`
-        : result.created ? `${result.theme.label} created. It’s now your ${activeAppearance} theme.` : `${result.theme.label} saved.`)
+      const saved = result.theme.label
+      onNotice?.(result.mergedAppearance === 'light' ? t`${saved} updated. Its light palette was added.`
+        : result.mergedAppearance === 'dark' ? t`${saved} updated. Its dark palette was added.`
+        : !result.created ? t`${saved} saved.`
+        : activeAppearance === 'light' ? t`${saved} created. It’s now your light theme.` : t`${saved} created. It’s now your dark theme.`)
       close()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : isEditing ? 'Could not save the theme.' : 'Could not create the theme.')
+      setError(cause instanceof ThemeLibraryError ? cause.words : cause instanceof Error ? cause.message : isEditing ? msg`Could not save the theme.` : msg`Could not create the theme.`)
       setSaving(false)
     }
   }
@@ -634,12 +654,14 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
   const groups = THEME_EDITOR_ROLE_GROUPS
     .map(group => ({ ...group, families: group.families.filter(family => !query || [family.label, ...family.roles.map(themeRoleLabel)].join(' ').toLowerCase().includes(query)) }))
     .filter(group => group.families.length > 0)
-  const title = isEditing ? 'Edit theme' : 'Create theme'
+  const title = isEditing ? t`Edit theme` : t`Create theme`
+  const selectedName = selectedRole === null ? '' : advanced ? roleName(selectedRole) : themeRoleLabel(selectedRole)
+  const uses = usageCount ?? 0
   const status = inspecting
-    ? 'Select an element · Esc to cancel'
+    ? t`Select an element · Esc to cancel`
     : selectedRole !== null
-      ? `${advanced ? roleName(selectedRole) : themeRoleLabel(selectedRole)} · ${usageCount ?? 0} ${usageCount === 1 ? 'use' : 'uses'}`
-      : advanced ? 'Colors by family' : 'Two colors, rest derived'
+      ? plural(uses, { one: `${selectedName} · # use`, other: `${selectedName} · # uses` })
+      : advanced ? t`Colors by family` : t`Two colors, rest derived`
 
   return (
     <section
@@ -670,31 +692,31 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
     >
       <div className="theme-editor__header" {...dragHandlers}>
         <h2 id={titleId}>{title}</h2>
-        {minimized ? null : <p aria-live="polite">{status}</p>}
+        {minimized ? null : <p className="tt-paragraph" aria-live="polite">{status}</p>}
         {minimized ? null : (
           <Button
             variant={inspecting ? 'secondary' : 'ghost'}
             className="theme-editor__inspect"
             aria-pressed={inspecting}
-            aria-label={inspecting ? 'Cancel inspecting app colors' : 'Inspect app colors'}
-            title={inspecting ? 'Cancel and clear the selection' : 'Pick a color from the app'}
+            aria-label={inspecting ? t`Cancel inspecting app colors` : t`Inspect app colors`}
+            title={inspecting ? t`Cancel and clear the selection` : t`Pick a color from the app`}
             onClick={() => {
               if (inspecting) clearInspector()
               else setInspecting(true)
             }}
           >
             <MousePointer2 size={14} aria-hidden="true" />
-            {inspecting ? 'Cancel' : 'Inspect'}
+            {inspecting ? t`Cancel` : t({ message: 'Inspect', comment: 'Picks a color from the app to edit' })}
           </Button>
         )}
-        <Button variant="ghost" iconOnly aria-label={minimized ? 'Expand the theme editor' : 'Minimize the theme editor'} onClick={() => {
+        <Button variant="ghost" iconOnly aria-label={minimized ? t`Expand the theme editor` : t`Minimize the theme editor`} onClick={() => {
           // A minimized bar has no Inspect button, so it cannot be left picking.
           if (!minimized) setInspecting(false)
           setMinimized(current => !current)
         }}>
           {minimized ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
         </Button>
-        <Button variant="ghost" iconOnly aria-label="Close the theme editor" onClick={close}><X size={15} aria-hidden="true" /></Button>
+        <Button variant="ghost" iconOnly aria-label={t`Close the theme editor`} onClick={close}><X size={15} aria-hidden="true" /></Button>
       </div>
       {minimized
         ? null
@@ -702,13 +724,13 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
             <>
               <div className="theme-editor__body">
                 <div className="theme-editor__row">
-                  <label htmlFor={nameId}>Theme name</label>
+                  <label htmlFor={nameId}><Trans>Theme name</Trans></label>
                   <input
                     id={nameId}
                     className="tt-input"
                     autoFocus
                     maxLength={48}
-                    placeholder={isEditing ? 'Theme name' : 'e.g. Aurora'}
+                    placeholder={isEditing ? t`Theme name` : t`e.g. Aurora`}
                     value={name}
                     aria-invalid={error !== null || undefined}
                     aria-describedby={error === null ? undefined : errorId}
@@ -722,9 +744,9 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                     }}
                   />
                 </div>
-                {error === null ? null : <p className="theme-editor__error" id={errorId} role="alert">{error}</p>}
+                {error === null ? null : <p className="theme-editor__error tt-paragraph" id={errorId} role="alert">{shownWords(error)}</p>}
                 <div className="theme-editor__row">
-                  <span id={`${titleId}-appearance`}>Appearance</span>
+                  <span id={`${titleId}-appearance`}>{t({ message: 'Appearance', context: 'theme editor', comment: 'Which palette of the theme is being edited: light or dark' })}</span>
                   <div className="segmented-control theme-editor__appearance" role="radiogroup" aria-labelledby={`${titleId}-appearance`}>
                     {(['light', 'dark'] as const).map(appearance => {
                       const reason = lockReason(appearance)
@@ -750,18 +772,18 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                             }
                           }}
                         >
-                          {appearance === 'light' ? 'Light' : 'Dark'}
+                          {appearance === 'light' ? t`Light` : t`Dark`}
                         </button>
                       )
                     })}
                   </div>
                 </div>
                 <div className="theme-editor__colors-head">
-                  <h3>Colors</h3>
-                  {advanced ? <input className="tt-input" aria-label="Filter colors" placeholder="Filter colors" value={roleQuery} onChange={event => setRoleQuery(event.currentTarget.value)} /> : null}
+                  <h3><Trans>Colors</Trans></h3>
+                  {advanced ? <input className="tt-input" aria-label={t`Filter colors`} placeholder={t`Filter colors`} value={roleQuery} onChange={event => setRoleQuery(event.currentTarget.value)} /> : null}
                   <label className="theme-editor__advanced">
-                    <span>Advanced</span>
-                    <input type="checkbox" role="switch" aria-label="Use advanced theme colors" checked={advanced} onChange={event => changeAdvanced(event.currentTarget.checked)} />
+                    <span>{t({ message: 'Advanced', comment: 'Edits every color family instead of two colors' })}</span>
+                    <input type="checkbox" role="switch" aria-label={t`Use advanced theme colors`} checked={advanced} onChange={event => changeAdvanced(event.currentTarget.checked)} />
                   </label>
                 </div>
                 {advanced
@@ -773,19 +795,19 @@ function ThemeEditorPanel({ session, settings, onSave, getSettings, onNotice }: 
                             {group.families.map(family => <ThemeColorField key={family.id} role={family.role} label={family.label} value={palette[family.role]} onChange={updateColor} selected={selectedRole === family.role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
                           </section>
                         ))}
-                        {groups.length === 0 ? <p className="theme-editor__empty">No matches.</p> : null}
+                        {groups.length === 0 ? <p className="theme-editor__empty tt-paragraph"><Trans>No matches.</Trans></p> : null}
                       </div>
                     )
-                  : SIMPLE_ROLES.map(role => <ThemeColorField key={role} role={role} label={role === 'canvas' ? 'Background' : 'Accent'} value={palette[role]} onChange={updateColor} selected={selectedRole === role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
+                  : SIMPLE_ROLES.map(role => <ThemeColorField key={role} role={role} label={role === 'canvas' ? t({ message: 'Background', comment: 'A theme color: the window background' }) : t({ message: 'Accent', comment: 'A theme color: the accent' })} value={palette[role]} onChange={updateColor} selected={selectedRole === role} onSelect={selectRole} onToggleSelected={toggleRole} />)}
               </div>
               <div className="theme-editor__footer">
-                <Button variant="ghost" onClick={close}>Cancel</Button>
+                <Button variant="ghost" onClick={close}><Trans>Cancel</Trans></Button>
                 <Button variant="primary" disabled={!name.trim() || saving} onClick={() => void submit()}>
                   {isEditing
-                    ? mergeTarget ? `Merge into “${mergeTarget.label}”` : 'Save changes'
+                    ? mergeTarget ? t`Merge into “${mergeTargetName}”` : t`Save changes`
                     : mergeTarget
-                      ? <><Plus size={15} aria-hidden="true" />{`Add ${activeAppearance} palette`}</>
-                      : <><Paintbrush size={15} aria-hidden="true" />Create theme</>}
+                      ? <><Plus size={15} aria-hidden="true" />{activeAppearance === 'light' ? t`Add light palette` : t`Add dark palette`}</>
+                      : <><Paintbrush size={15} aria-hidden="true" /><Trans>Create theme</Trans></>}
                 </Button>
               </div>
               <div className="theme-editor__grip" aria-hidden="true" {...resizeHandlers}>
