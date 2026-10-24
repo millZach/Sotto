@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
   activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
   statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
@@ -149,6 +150,23 @@ describe('placing activity when the messages are a window of a longer history', 
       expect(placement.leading).toEqual([])
     }
     expect(placeActivities([], [], live).trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
+  })
+})
+
+describe('the newest turn the placement reads', () => {
+  const at = (minute: number): string => new Date(Date.UTC(2026, 9, 23, 11, minute)).toISOString()
+  const messages: AgentMessage[] = [{ id: 'you', role: 'user', text: 'Check the threads.', createdAt: at(0) }, { id: 'answer', role: 'assistant', text: 'All quiet.', createdAt: at(1) }]
+  const activities: AgentActivity[] = [{ id: 'turn-you', turnId: 'you', afterMessageId: 'you', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(1) }]
+
+  it('says the newest turn finished from a lifecycle that draws nothing, until a reply is written after it ended', () => {
+    expect(placeActivities(messages, messages, activities).newestTurn).toEqual({ turnIds: ['you'], lifecycle: 'finished' })
+    const report: AgentMessage = { id: 'report', role: 'assistant', text: 'The review found', createdAt: at(5) }
+    expect(placeActivities([...messages, report], [...messages, report], activities).newestTurn).toEqual({ turnIds: ['you'] })
+  })
+
+  it('is the same value on every update that changes nothing, so the placement that holds it is shared', () => {
+    const first = placeActivities(messages, messages, activities)
+    expect(share(first, placeActivities(messages, messages, activities.map(record => ({ ...record }))))).toBe(first)
   })
 })
 

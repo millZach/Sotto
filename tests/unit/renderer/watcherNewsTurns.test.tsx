@@ -191,6 +191,32 @@ describe('Watcher working on news before its first reply', () => {
         for (const [id, element] of before) expect(drawnMessages().get(id), id).toBe(element)
       })
 
+      it('shows a report Claude starts on its own after a finished answer as being written', () => {
+        // Claude reports finished background work in a turn it starts itself: no message of yours, no lifecycle, no turn named.
+        const plain = messages.slice(0, 2)
+        const report = said('report', 'assistant', '58:30.000', 'The review found')
+        const records = [lifecycle('you-1', 0, 'completed', '56:41.291', '56:50.600')]
+        render(<MessageList messages={[...plain, report]} provider="Claude Code" running placement={placeActivities([...plain, report], [...plain, report], records)}
+          context={{ ...finished, liveTurn: 'you-1', running: true }} streamText={streamText} speaker="watcher" />)
+        expect(screen.getByText('It is waiting on a permission to run the suite.')).toBeInTheDocument()
+        if (streamText) expect(document.querySelector('[data-message-id="report"] [data-streaming]')).not.toBeNull()
+        else expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+      })
+
+      it('leaves the last answer finished when the window starts inside a Codex turn whose replies name no turn', () => {
+        // Codex's replies carry no turnMessageId, and its turn's lifecycle and work follow your message, above the window.
+        const long: AgentMessage[] = [said('you-long', 'user', '50:00.000', 'Go through every watched thread.'),
+          ...Array.from({ length: 81 }, (_, index): AgentMessage => said(`step-${index}`, 'assistant', `51:${String(index % 60).padStart(2, '0')}.000`, `Checked thread ${index + 1}.`))]
+        const shown = long.slice(-80)
+        const records: AgentActivity[] = [{ ...lifecycle('codex-turn-1', 0, 'completed', '50:00.500', '52:30.000'), afterMessageId: 'you-long' },
+          { id: 'codex-turn-1-tool', turnId: 'codex-turn-1', afterMessageId: 'you-long', sequence: 1, kind: 'tool', status: 'completed', title: 'read_thread', startedAt: clock('50:01.000'), completedAt: clock('50:02.000') }]
+        const draw = (running: boolean, list: readonly AgentActivity[]) => <MessageList messages={shown} provider="Codex" running={running} placement={placeActivities(long, shown, list)}
+          context={running ? { ...finished, liveTurn: 'codex-turn-2', running: true } : finished} streamText={streamText} speaker="watcher" />
+        const view = render(draw(false, records))
+        view.rerender(draw(true, [...records, { ...lifecycle('codex-turn-2', 50, 'running', '59:50.000'), afterMessageId: 'news-9' }]))
+        finishedReply('step-80', 'Checked thread 81.')
+      })
+
       it('leaves the last answer finished when the window starts inside your turn and the news turn has only its lifecycle', () => {
         // 81 replies: the last 80 leave out your message, which the turn's work and lifecycle follow. Each reply names it.
         const long: AgentMessage[] = [said('you-long', 'user', '50:00.000', 'Go through every watched thread.'),
