@@ -3,13 +3,12 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentCommand, AgentState } from '../../../src/shared/agents'
+import { lastUserMessageIdOf, type AgentCommand, type AgentState } from '../../../src/shared/agents'
 import type { NextPrompt } from '../../../src/shared/nextPrompt'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
-import { ghostRest, withNextText } from '../../../src/renderer/src/agents/ThreadComposer'
-import { NextPromptStore, nextPromptStore } from '../../../src/renderer/src/agents/nextPrompts'
+import { ghostRest, NextPromptStore, nextPromptStore, withNextText } from '../../../src/renderer/src/agents/nextPrompts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const owl = vi.hoisted(() => ({ next: true }))
@@ -37,7 +36,7 @@ function mount(options: { running?: boolean; prompt?: NextPrompt; afterUserMessa
   const state: AgentState = threadsStateFixture()
   state.activeThreadId = THREAD
   if (options.running) state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'running' as const } : thread) }
-  anchor = state.host.threads.find(thread => thread.id === THREAD)!.lastUserMessageId ?? ''
+  anchor = lastUserMessageIdOf(state.host.threads.find(thread => thread.id === THREAD)!) ?? ''
   nextPromptStore.apply({ threadId: THREAD, afterUserMessageId: options.afterUserMessageId ?? anchor, prompt: options.prompt ?? PROMPT })
   const live = liveAgentState(state)
   vi.mocked(useAgents).mockImplementation(live.useLive)
@@ -78,6 +77,18 @@ describe('the next prompt in an empty composer', () => {
     expect(ghost()).toBeNull()
     expect(fireEvent.keyDown(prompt(), { key: 'Tab' })).toBe(true)
     expect(promptText(prompt())).toBe('Something else')
+  })
+
+  it('puts the ghost away for this turn on Escape, after which Tab moves focus as usual', () => {
+    const { prompt } = mount()
+    prompt().focus()
+    expect(fireEvent.keyDown(prompt(), { key: 'Escape' })).toBe(false)
+    expect(ghost()).toBeNull()
+    expect(fireEvent.keyDown(prompt(), { key: 'Tab' })).toBe(true)
+    expect(promptText(prompt())).toBe('')
+    // The list is still there on request, and a later turn's ghost shows again.
+    fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
+    expect(list()).not.toBeNull()
   })
 
   it('offers nothing while a turn runs, for a turn that is over, or while the Owl feature is off', () => {
@@ -128,6 +139,22 @@ describe('the Next list', () => {
     expect(sends(live)).toEqual([])
   })
 
+  it('is closed and back at its first row on another thread', () => {
+    const { live, prompt } = mount()
+    nextPromptStore.apply({ threadId: 'other', afterUserMessageId: '', prompt: PROMPT })
+    fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
+    fireEvent.keyDown(prompt(), { key: 'ArrowDown' })
+    expect(list()).not.toBeNull()
+    const other = live.state.host.threads.find(thread => thread.id !== THREAD && thread.status !== 'running')!
+    act(() => { live.publish({ activeThreadId: other.id }) })
+    expect(list()).toBeNull()
+    act(() => { live.publish({ activeThreadId: THREAD }) })
+    expect(list()).toBeNull()
+    fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
+    expect(prompt()).toHaveAttribute('aria-activedescendant', within(list()!).getAllByRole('option')[0]!.id)
+    nextPromptStore.sent('other', '')
+  })
+
   it('opens from Next in the footer, and Escape hands focus back to it', () => {
     const { prompt } = mount()
     const button = nextButton()!
@@ -159,8 +186,20 @@ describe('the Next list', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     await act(async () => { await Promise.resolve() })
     expect(sends(live).map(send => send.text)).toEqual(['Use the default voice'])
+    // Gone only once main has taken it.
+    expect(nextPromptStore.get(THREAD)).toBeDefined()
+    await act(async () => { live.deliver(THREAD, 'accepted', 'Use the default voice'); await Promise.resolve() })
     expect(nextPromptStore.get(THREAD)).toBeUndefined()
     expect(live.command.mock.calls.some(([request]) => request.type === 'answer')).toBe(false)
+  })
+
+  it('keeps the suggestion when main refuses the send', async () => {
+    const { live, prompt } = mount()
+    setPromptText(prompt(), 'Something else')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    expect(sends(live)).toHaveLength(1)
+    await act(async () => { live.deliver(THREAD, 'failed'); await Promise.resolve() })
+    expect(nextPromptStore.get(THREAD)).toBeDefined()
   })
 })
 
@@ -186,6 +225,9 @@ describe('the window\'s record of next prompts', () => {
     expect(ghostRest('Open the PR', 'Open the PR')).toBeNull()
     expect(ghostRest('Open the PR', 'Close')).toBeNull()
     expect(ghostRest('', '')).toBeNull()
+    // Lowercasing İ adds a character, so only an exact prefix counts where it appears.
+    expect(ghostRest('İstanbul build', 'i̇stan')).toBeNull()
+    expect(ghostRest('İstanbul build', 'İstan')).toBe('bul build')
     expect(withNextText('', 'Run it')).toBe('Run it')
     expect(withNextText('run', 'Run it')).toBe('Run it')
     expect(withNextText('First this.  ', 'Run it')).toBe('First this.\nRun it')

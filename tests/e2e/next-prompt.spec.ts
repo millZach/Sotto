@@ -50,10 +50,14 @@ async function answeredThread(page: Page, project: string): Promise<void> {
     const modelId = (await agents.get()).host.models.find(m => m.providerId === 'codex' && m.ready)!.id
     const thread = await agents.command({ type: 'create-thread', projectId, title: 'Dark theme contrast', titleSource: 'user', modelId, workingCopy: 'shared' })
     if (thread.error || !thread.activeThreadId) throw new Error(thread.error ?? 'Missing thread')
-    await agents.command({ type: 'manual-send', threadId: thread.activeThreadId, text: 'The palette is unreadable in dark mode.' })
   }, project)
   await page.reload(); await openThreads(page)
+  // The pane shows the thread before its turn, so its messages are in memory when the turn ends (ADR-0131).
   await page.getByRole('button', { name: 'Dark theme contrast', exact: true }).click()
+  await page.evaluate(async () => {
+    const agents = window.sotto!.agents!
+    await agents.command({ type: 'manual-send', threadId: (await agents.get()).activeThreadId!, text: 'The palette is unreadable in dark mode.' })
+  })
   await expect(page.getByLabel('Thread transcript')).toContainText('I raised the foreground contrast on both dark themes.')
 }
 

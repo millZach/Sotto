@@ -1,9 +1,8 @@
 import type { AppSettings } from '../../shared/settings'
 import { NEXT_PROMPT_INTENTS, NEXT_PROMPT_LIMITS, type NextPrompt, type NextPromptIntent, type NextPromptItem, type NextPromptSuggestion } from '../../shared/nextPrompt'
 import { settingsGatedWriter, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
+import { EXCHANGE_EXCERPT_CHARACTERS, excerpt } from './threadTitle'
 
-/** Each half of an exchange is cut to this before it is sent, as a title's are (ADR-0026). */
-export const NEXT_PROMPT_EXCERPT_CHARACTERS = 2_000
 /** How many of the thread's latest exchanges are sent. */
 export const NEXT_PROMPT_EXCHANGES = 3
 /** The reply is JSON; anything past this is not a reply worth reading. */
@@ -41,7 +40,7 @@ export function nextPromptRequest(exchanges: readonly NextPromptExchange[]): Sho
     purpose: 'next-prompt',
     instruction: INSTRUCTION,
     material: `Recent conversation, oldest first:\n\n${recent
-      .map(item => `[User] ${opening(item.prompt) || '(no message)'}\n\n[Agent] ${ending(item.reply)}`)
+      .map(item => `[User] ${excerpt(item.prompt) || '(no message)'}\n\n[Agent] ${ending(item.reply)}`)
       .join('\n\n')}\n\nPredict what I, the user, type next.`,
     maxCharacters: REPLY_MAX_CHARACTERS,
     shape: 'raw',
@@ -92,7 +91,7 @@ export function parseNextPrompt(text: string | null): NextPrompt | null {
 export function nextPromptWriter(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
-): (threadId: string, exchanges: readonly NextPromptExchange[]) => Promise<string | null> {
+): (threadId: string, exchanges: readonly NextPromptExchange[], signal?: AbortSignal) => Promise<string | null> {
   return settingsGatedWriter(writer, getSettings, {
     enabled: settings => settings.nextPromptSuggestions,
     worthAsking: exchanges => exchanges.length > 0,
@@ -100,12 +99,7 @@ export function nextPromptWriter(
   })
 }
 
-function opening(text: string): string {
-  const trimmed = text.trim()
-  return trimmed.length <= NEXT_PROMPT_EXCERPT_CHARACTERS ? trimmed : trimmed.slice(0, NEXT_PROMPT_EXCERPT_CHARACTERS)
-}
-
+/** A reply's ending, cut as a title's opening is: what the user answers is how the reply ended. */
 function ending(text: string): string {
-  const trimmed = text.trim()
-  return trimmed.length <= NEXT_PROMPT_EXCERPT_CHARACTERS ? trimmed : trimmed.slice(-NEXT_PROMPT_EXCERPT_CHARACTERS)
+  return text.trim().slice(-EXCHANGE_EXCERPT_CHARACTERS)
 }

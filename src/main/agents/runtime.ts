@@ -233,7 +233,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
     write: nextPromptWriter(shortTextWriter, options.writingSettings),
     thread: id => agentControl.liveThread(id),
-    history: thread => agentControl.historyOf(thread),
     historyEnabled: options.historyEnabled,
     publish: entry => options.nextPromptChanged?.(entry),
     log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),

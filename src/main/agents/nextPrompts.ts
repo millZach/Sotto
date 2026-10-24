@@ -1,4 +1,4 @@
-import { isVisualMessage, type AgentMessage, type AgentThread } from '../../shared/agents'
+import { isVisualMessage, lastUserMessageIdOf, type AgentMessage, type AgentThread } from '../../shared/agents'
 import type { NextPrompt, NextPromptEntry } from '../../shared/nextPrompt'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { NEXT_PROMPT_EXCHANGES, parseNextPrompt, type NextPromptExchange } from '../llm/nextPrompt'
@@ -8,19 +8,22 @@ export const NEXT_PROMPTS_HELD = 200
 
 /** What the coordinator tells the next prompts as it reads each update: cheap, and never a copy of anything. */
 export interface NextPromptHooks {
-  /** A thread began work, or the user sent it something: whatever was suggested for it is over. */
-  started(threadId: string): void
+  /**
+   * A thread began work, or main accepted something the user sent it while `sentAt` (from `sending`) was its generation:
+   * whatever was suggested then is over. A send accepted after its own turn already ended lets go of nothing newer.
+   */
+  started(threadId: string, sentAt?: number): void
+  /** The thread's generation as a send is admitted, read from this record alone, never from the thread list. */
+  sending(threadId: string): number | undefined
   /** A thread that was working is idle with nothing waiting on the user. */
   finished(thread: AgentThread): void
 }
 
 export interface NextPromptsDependencies {
-  /** The side call, gated by the user's switch: the raw reply, or null when nothing was written. */
-  readonly write: (threadId: string, exchanges: readonly NextPromptExchange[]) => Promise<string | null>
-  /** The thread as the coordinator holds it now. */
+  /** The side call, gated by the user's switch: the raw reply, or null when nothing was written. `signal` gives up on it. */
+  readonly write: (threadId: string, exchanges: readonly NextPromptExchange[], signal: AbortSignal) => Promise<string | null>
+  /** The thread as the coordinator holds it now, with the messages a window has it hold in memory. */
   readonly thread: (threadId: string) => AgentThread | undefined
-  /** The thread's whole history, newest last. */
-  readonly history: (thread: AgentThread) => readonly AgentMessage[]
   /** Local history off means no thread content is kept, so none is sent for this either, as with titles. */
   readonly historyEnabled?: () => boolean
   /** Each change, for the window. */
@@ -33,6 +36,8 @@ export interface NextPromptsDependencies {
 interface Held {
   /** Bumped by every start and finish: an answer for an older one is dropped. */
   generation: number
+  /** The side call in flight, aborted when a start or a newer finish supersedes it. */
+  asking?: AbortController
   entry?: NextPromptEntry & { prompt: NextPrompt }
 }
 
@@ -72,48 +77,66 @@ export class NextPrompts implements NextPromptHooks {
     this.defer = dependencies.defer ?? (run => { setTimeout(run, 0) })
   }
 
-  started(threadId: string): void {
+  started(threadId: string, sentAt?: number): void {
     const held = this.held.get(threadId)
-    if (!held) return
-    held.generation += 1
+    if (!held || (sentAt !== undefined && held.generation !== sentAt)) return
+    this.supersede(held)
     this.letGo(threadId, held)
   }
 
   finished(thread: AgentThread): void {
-    // A turn the user stopped or that failed did not end on an answer; Watcher's own threads are its, not the user's.
-    if (this.closed || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.lastTurn?.status === 'interrupted' || thread.lastTurn?.status === 'failed') return
+    // A turn the user stopped or that failed did not end on an answer. Watcher's own threads are its, and a delegated
+    // thread's next message comes from the thread that delegated to it (ADR-0081), not the user.
+    if (this.closed || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.delegatedBy !== undefined
+      || thread.lastTurn?.status === 'interrupted' || thread.lastTurn?.status === 'failed') return
     const held = this.hold(thread.id)
-    held.generation += 1
+    this.supersede(held)
     this.letGo(thread.id, held)
     const generation = held.generation
     // Read and asked after the update that ended the turn has been published, never on the update path itself.
     this.defer(() => { void this.ask(thread.id, generation) })
   }
 
+  sending(threadId: string): number | undefined { return this.held.get(threadId)?.generation }
+
   /** What is held now, for a window that has just loaded. */
   list(): NextPromptEntry[] {
     return [...this.held.values()].flatMap(held => held.entry ? [held.entry] : [])
   }
 
-  close(): void { this.closed = true }
+  close(): void {
+    this.closed = true
+    for (const held of this.held.values()) held.asking?.abort()
+  }
+
+  /** A new generation: the side call asked for the old one is told to stop, so it costs nothing more. */
+  private supersede(held: Held): void {
+    held.generation += 1
+    held.asking?.abort()
+    delete held.asking
+  }
 
   private async ask(threadId: string, generation: number): Promise<void> {
     if (this.closed || this.dependencies.historyEnabled?.() === false) return
     const before = this.dependencies.thread(threadId)
     if (!before || !this.quiet(before) || this.held.get(threadId)?.generation !== generation) return
-    const exchanges = recentExchanges(this.dependencies.history(before))
+    // Only what the coordinator already holds in memory: a thread no window is showing carries its summary alone, and its
+    // history is not read from the store at a turn's end for this. Such a thread is asked nothing.
+    const exchanges = recentExchanges(before.messages)
     if (!exchanges) return
-    const anchor = before.lastUserMessageId ?? ''
+    const anchor = lastUserMessageIdOf(before) ?? ''
+    const held = this.held.get(threadId)!
+    const asking = held.asking = new AbortController()
     let reply: string | null
-    try { reply = await this.dependencies.write(threadId, exchanges) }
-    catch { this.dependencies.log?.('next-prompt-failed error'); return }
-    if (reply === null) return
+    try { reply = await this.dependencies.write(threadId, exchanges, asking.signal) }
+    catch { if (!asking.signal.aborted) this.dependencies.log?.('next-prompt-failed error'); return }
+    finally { if (held.asking === asking) delete held.asking }
+    if (reply === null || asking.signal.aborted) return
     const prompt = parseNextPrompt(reply)
     if (!prompt) { this.dependencies.log?.('next-prompt-failed unreadable'); return }
     // The generation guard: a send, a new turn or a newer finish since this was asked means it answers a turn that is over.
-    const held = this.held.get(threadId)
     const after = this.dependencies.thread(threadId)
-    if (this.closed || held?.generation !== generation || !after || !this.quiet(after) || (after.lastUserMessageId ?? '') !== anchor) return
+    if (this.closed || this.held.get(threadId) !== held || held.generation !== generation || !after || !this.quiet(after) || (lastUserMessageIdOf(after) ?? '') !== anchor) return
     held.entry = { threadId, afterUserMessageId: anchor, prompt }
     this.dependencies.publish(held.entry)
   }
@@ -130,6 +153,7 @@ export class NextPrompts implements NextPromptHooks {
     for (const [id, oldest] of this.held) {
       if (this.held.size <= NEXT_PROMPTS_HELD) break
       this.held.delete(id)
+      oldest.asking?.abort()
       if (oldest.entry) this.dependencies.publish({ threadId: id, afterUserMessageId: oldest.entry.afterUserMessageId, prompt: null })
     }
     return held

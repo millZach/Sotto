@@ -154,7 +154,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   usage?.start()
   // Next prompts are an Owl feature (ADR-0131): they hear each thread start and finish from the coordinator's own pass, as
   // runtime.ts wires them. Nothing here ends a turn on an answer, so no side call is asked.
-  const nextPrompts = owl ? new NextPrompts({ write: async () => null, thread: id => control.liveThread(id), history: thread => control.historyOf(thread), publish: () => undefined }) : undefined
+  const nextPrompts = owl ? new NextPrompts({ write: async () => null, thread: id => control.liveThread(id), publish: () => undefined }) : undefined
   const control: AgentControl = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     ...(usage ? { usage } : {}), ...(nextPrompts ? { nextPrompts } : {}) })
   await control.start()

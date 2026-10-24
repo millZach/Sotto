@@ -3019,8 +3019,6 @@ export class AgentControl {
   }
   /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
   liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
-  /** A thread's whole history, read in place, for a side call's material (ADR-0131). */
-  historyOf(thread: AgentThread): readonly AgentMessage[] { return this.threadHistory(thread) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   private threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
@@ -3220,17 +3218,20 @@ export class AgentControl {
     if (!this.watcherOrigins.has(command) || command.type === 'interrupt' && !this.delegationOrigins.has(command)) {
       try { this.delegationHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion) } catch { /* The next snapshot reconciles it. */ }
     }
-    // Whatever was suggested next for a thread is over once something is sent to it (ADR-0131).
-    if (command.type === 'manual-send' || command.type === 'steer' || command.type === 'answer' || command.type === 'send') {
-      const sentTo = explicitThreadId ?? implicitThreadId
-      if (sentTo) this.dependencies.nextPrompts?.started(sentTo)
-    }
     // Reserve before the command waits for its lane. This token is distinct from the native dispatch token.
     const releaseAnswer = answerThreadId ? this.holdAnswer(answerThreadId) : () => undefined
     let pending: Promise<AgentState>
     try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner, composer) }
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
+    // Whatever was suggested next for a thread is over once main has taken something sent to it; a refused send keeps
+    // it (ADR-0131).
+    const sentTo = command.type === 'manual-send' || command.type === 'steer' || command.type === 'answer' || command.type === 'send'
+      ? explicitThreadId ?? implicitThreadId : undefined
+    if (sentTo && this.dependencies.nextPrompts) {
+      const sentAt = this.dependencies.nextPrompts.sending(sentTo)
+      if (sentAt !== undefined) void pending.then(result => { if (result.error === null) this.dependencies.nextPrompts?.started(sentTo, sentAt) }, () => undefined)
+    }
     const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
     void pending.then(settled, settled)
     return pending

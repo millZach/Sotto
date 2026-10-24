@@ -69,19 +69,20 @@ export class ShortTextWriter {
     await Promise.allSettled([...this.operations])
   }
 
-  write(threadId: string, request: ShortTextRequest): Promise<string | null> {
-    if (this.shutdown.signal.aborted) return Promise.resolve(null)
-    const pending = this.performWrite(threadId, request)
+  /** `signal` lets the caller give up on one request: its client is told to stop, and it answers null with nothing logged. */
+  write(threadId: string, request: ShortTextRequest, signal?: AbortSignal): Promise<string | null> {
+    if (this.shutdown.signal.aborted || signal?.aborted) return Promise.resolve(null)
+    const pending = this.performWrite(threadId, request, signal ? AbortSignal.any([this.shutdown.signal, signal]) : this.shutdown.signal)
     this.operations.add(pending)
     void pending.then(() => this.operations.delete(pending), () => this.operations.delete(pending))
     return pending
   }
 
-  private async performWrite(threadId: string, request: ShortTextRequest): Promise<string | null> {
+  private async performWrite(threadId: string, request: ShortTextRequest, stop: AbortSignal): Promise<string | null> {
     let content: string | null
-    try { content = await this.dependencies.write(threadId, { instruction: request.instruction, material: request.material }, this.shutdown.signal) }
-    catch { return this.shutdown.signal.aborted ? null : this.fail(request.purpose, 'failed') }
-    if (this.shutdown.signal.aborted) return null
+    try { content = await this.dependencies.write(threadId, { instruction: request.instruction, material: request.material }, stop) }
+    catch { return stop.aborted ? null : this.fail(request.purpose, 'failed') }
+    if (stop.aborted) return null
     if (content === null) return this.fail(request.purpose, 'unavailable')
     const text = request.shape === 'raw' ? content.trim().slice(0, request.maxCharacters) || null
       : request.shape === 'text' ? trimToText(content, request.maxCharacters) : trimToLine(content, request.maxCharacters)
@@ -116,13 +117,13 @@ export function settingsGatedWriter<Input, Output = string | null>(
   writer: Pick<ShortTextWriter, 'write'>,
   getSettings: () => AppSettings | Promise<AppSettings>,
   job: GatedWriterShape<Input, Output>,
-): (threadId: string, input: Input) => Promise<Output | null> {
-  return async (threadId, input) => {
+): (threadId: string, input: Input, signal?: AbortSignal) => Promise<Output | null> {
+  return async (threadId, input, signal) => {
     let settings: AppSettings
     try { settings = await getSettings() }
     catch { return null }
     if (!job.enabled(settings) || job.worthAsking?.(input) === false) return null
-    const written = await writer.write(threadId, job.request(input, settings))
+    const written = await writer.write(threadId, job.request(input, settings), signal)
     return job.shape ? job.shape(written) : (written as Output)
   }
 }

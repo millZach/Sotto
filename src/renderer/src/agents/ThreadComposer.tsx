@@ -4,8 +4,8 @@ import type { NextPrompt } from '../../../shared/nextPrompt'
 import { useOptionalApp } from '../state/AppContext'
 import { chordClaimed } from './branchToolbar.logic'
 import { NextList, nextOptionId, nextRows, type NextRow } from './NextList'
-import { nextPromptStore, useNextPrompt } from './nextPrompts'
-import { capabilitiesForThread, hostForThread, isThreadBusy, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
+import { DICTATING, ghostRest, nextPromptStore, useNextPrompt, withNextText } from './nextPrompts'
+import { capabilitiesForThread, hostForThread, isThreadBusy, lastUserMessageIdOf, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { continueProviderRefusal, continueThreadRefusal, type ContinueStart } from '../../../shared/continueThread'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
@@ -13,21 +13,6 @@ import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, isCompositionKey, readComposerKey, runComposerMenuKey } from './composerKeys'
 
-/** Dictation is writing into whatever has the focus, so the next prompt's ghost steps aside. */
-const DICTATING: ReadonlySet<string> = new Set(['requesting-permission', 'listening', 'processing'])
-
-/** `next` written into what the draft already says: in place of an empty draft or one it begins with, else on a line of its own. */
-export function withNextText(draft: string, next: string): string {
-  if (draft.trim() === '' || next.toLowerCase().startsWith(draft.toLowerCase())) return next
-  return `${draft.replace(/\s+$/u, '')}\n${next}`
-}
-
-/** The rest of the next prompt to draw after what is typed: all of it in an empty prompt, the rest after a prefix of it. */
-export function ghostRest(ghost: string, text: string): string | null {
-  if (ghost === '') return null
-  if (text === '') return ghost
-  return text.length < ghost.length && ghost.toLowerCase().startsWith(text.toLowerCase()) ? ghost.slice(text.length) : null
-}
 import { browseFolder, fileLimitReached, insertFile, retainFileReferences, sameFileReferences, type FileEntry } from './composerFiles'
 import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './FilePicker'
 import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
@@ -354,12 +339,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     }
     writeCarried()
     onSend()
-    // What was suggested next is over once this goes (ADR-0131).
-    nextPromptStore.sent(threadId, row.thread.lastUserMessageId ?? '')
+    // What was suggested next is over once main takes this (ADR-0131); a refused send keeps it.
+    const sentAfter = lastUserMessageIdOf(row.thread) ?? ''
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
     const first = row.thread.nativeSessionStarted === false
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
-      .then(sent => watchAfterSend(threadId, sent, mode, first, watchActions))
+      .then(sent => { if (sent === true) nextPromptStore.sent(threadId, sentAfter); return watchAfterSend(threadId, sent, mode, first, watchActions) })
     sentCarried()
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */
@@ -393,7 +378,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const app = useOptionalApp()
   const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false && !watcher
   const nextEntry = useNextPrompt(nextOn ? threadId : null)
-  const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === (row.thread.lastUserMessageId ?? '') && !working && !answering
+  const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''
+  const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === nextAnchor && !working && !answering
     && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && row.connected && !sendInFlight && !localAdmissions
     && followupsFor(state, threadId).length === 0 && !isThreadClosed(row.thread) ? nextEntry.prompt : null
   const dictating = DICTATING.has(app?.dictation?.status ?? 'idle')
@@ -401,12 +387,16 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const hotkey = app?.settings?.hotkey, platform = app?.platform ?? 'win32'
   const nextKeysFree = { tab: chordClaimed('tab', hotkey, platform), up: chordClaimed('up', hotkey, platform),
     digit: (digit: string) => chordClaimed(digit, hotkey, platform) }
-  const [nextList, setNextList] = useState<{ readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
-  const nextOpen = next !== null && nextList !== null
+  // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
+  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
+  const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
+  const setNextList = (value: { readonly index: number; readonly from: 'prompt' | 'button' } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
+  const nextOpen = nextList !== null
+  // Escape in the prompt puts the ghost away for this turn, so Tab moves focus as it always does.
+  const [ghostDismissed, setGhostDismissed] = useState<string | null>(null)
+  const ghostAway = ghostDismissed === `${threadId}\n${nextAnchor}`
   const nextButton = useRef<HTMLButtonElement>(null)
   const nextListId = `${composerId}-next`
-  const nextGone = next === null
-  useEffect(() => { if (nextGone) setNextList(null) }, [nextGone, threadId])
   const closeNext = (returnFocus: boolean): void => {
     const from = nextList?.from
     setNextList(null)
@@ -448,6 +438,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       if (event.key === 'Tab' && !event.shiftKey && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
       return false
     }
+    if (event.key === 'Escape' && ghostShown) { event.preventDefault(); event.stopPropagation(); setGhostDismissed(`${threadId}\n${nextAnchor}`); return true }
     if (event.key === 'Tab' && !event.shiftKey && ghostShown && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
     if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0, from: 'prompt' }); return true }
     return false
@@ -461,7 +452,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       {ornament}
-      {nextOpen ? <NextList prompt={next} listId={nextListId} activeIndex={nextList.index} sends={!hasContent}
+      {next !== null && nextList !== null ? <NextList prompt={next} listId={nextListId} activeIndex={nextList.index} sends={!hasContent}
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
@@ -469,7 +460,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
-        dictating={dictating} nextKey={nextKey}
+        dictating={dictating || ghostAway} nextKey={nextKey}
         edit={edit} onSend={() => send(performance.now())}>
         {comments.length > 0 ? <ul className="review-chips" aria-label="Review comments">
           {comments.map(comment => {

@@ -59,3 +59,28 @@ export function useNextPrompt(threadId: string | null, store: NextPromptStore = 
   if (threadId !== null) store.connect(typeof window === 'undefined' ? undefined : window.sotto?.nextPrompt)
   return useSyncExternalStore(store.subscribe, () => threadId === null ? undefined : store.get(threadId))
 }
+
+/** Dictation is writing into whatever has the focus, so the next prompt's ghost steps aside. */
+export const DICTATING: ReadonlySet<string> = new Set(['requesting-permission', 'listening', 'processing'])
+
+/**
+ * Whether `text` begins `whole`. Case is ignored only where lowercasing keeps both lengths, so a cut at the typed text's
+ * length always falls where the typed text ends; otherwise only an exact prefix counts.
+ */
+function beginsWith(whole: string, text: string): boolean {
+  const lowerWhole = whole.toLowerCase(), lowerText = text.toLowerCase()
+  return lowerWhole.length === whole.length && lowerText.length === text.length ? lowerWhole.startsWith(lowerText) : whole.startsWith(text)
+}
+
+/** `next` written into what the draft already says: in place of an empty draft or one it begins with, else on a line of its own. */
+export function withNextText(draft: string, next: string): string {
+  if (draft.trim() === '' || beginsWith(next, draft)) return next
+  return `${draft.replace(/\s+$/u, '')}\n${next}`
+}
+
+/** The rest of the next prompt to draw after what is typed: all of it in an empty prompt, the rest after a prefix of it. */
+export function ghostRest(ghost: string, text: string): string | null {
+  if (ghost === '') return null
+  if (text === '') return ghost
+  return text.length < ghost.length && beginsWith(ghost, text) ? ghost.slice(text.length) : null
+}

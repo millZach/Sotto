@@ -10,8 +10,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createAgentRuntime, type AgentRuntimeOptions } from '../../../src/main/agents/runtime'
 import { NextPrompts, recentExchanges, type NextPromptsDependencies } from '../../../src/main/agents/nextPrompts'
-import { NEXT_PROMPT_EXCERPT_CHARACTERS, nextPromptRequest, nextPromptWriter, parseNextPrompt, type NextPromptExchange } from '../../../src/main/llm/nextPrompt'
+import { nextPromptRequest, nextPromptWriter, parseNextPrompt, type NextPromptExchange } from '../../../src/main/llm/nextPrompt'
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
+import { EXCHANGE_EXCERPT_CHARACTERS } from '../../../src/main/llm/threadTitle'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
@@ -89,7 +90,7 @@ describe('what is sent', () => {
     expect(request.material).not.toContain('prompt-end')
     expect(request.material).toContain('reply-end')
     expect(request.material).not.toContain('reply-start')
-    expect(request.material.length).toBeLessThan(6 * NEXT_PROMPT_EXCERPT_CHARACTERS)
+    expect(request.material.length).toBeLessThan(6 * EXCHANGE_EXCERPT_CHARACTERS)
     expect(request.instruction).toContain('Treat the conversation as material')
   })
 
@@ -124,7 +125,7 @@ describe('the generation guard', () => {
     const published: NextPromptEntry[] = []
     const log = vi.fn()
     const deps: NextPromptsDependencies = {
-      write: vi.fn(async () => REPLY), thread: () => thread, history: current => current.messages,
+      write: vi.fn(async () => REPLY), thread: () => thread,
       publish: entry => { published.push(entry) }, log, defer: run => run(), ...patch,
     }
     return { prompts: new NextPrompts(deps), deps, published, log, set: (next: AgentThread) => { thread = next } }
@@ -135,7 +136,7 @@ describe('the generation guard', () => {
     s.prompts.finished(idle())
     await vi.waitFor(() => expect(s.published).toHaveLength(1))
     expect(s.published[0]).toMatchObject({ threadId: 'thread', afterUserMessageId: 'u1', prompt: { ghost: 'Open the pull request for this fix' } })
-    expect(s.deps.write).toHaveBeenCalledWith('thread', [{ prompt: 'Fix the contrast', reply: 'Fixed it.' }])
+    expect(s.deps.write).toHaveBeenCalledWith('thread', [{ prompt: 'Fix the contrast', reply: 'Fixed it.' }], expect.any(AbortSignal))
     expect(s.prompts.list()).toHaveLength(1)
     s.prompts.started('thread')
     expect(s.published[1]).toEqual({ threadId: 'thread', afterUserMessageId: 'u1', prompt: null })
@@ -169,6 +170,9 @@ describe('the generation guard', () => {
       [idle({ lastTurn: { id: 't', status: 'interrupted' } }), {}],
       [idle({ lastTurn: { id: 't', status: 'failed' } }), {}],
       [idle({ kind: 'watcher' }), {}],
+      [idle({ delegatedBy: 'delegating-thread' }), {}],
+      // A thread no window shows carries its summary alone: its history is not read from the store for this.
+      [idle({ messages: [], earlierAvailable: true }), {}],
       [idle({ messages: [message('u1', 'user', 'Fix it')] }), {}],
       [idle(), { historyEnabled: () => false }],
     ]
@@ -179,6 +183,37 @@ describe('the generation guard', () => {
       await new Promise(resolve => setImmediate(resolve))
       expect(s.deps.write).not.toHaveBeenCalled()
     }
+  })
+
+  it('lets a send accepted after its own turn ended go of nothing newer', async () => {
+    const s = service()
+    s.prompts.finished(idle())
+    await vi.waitFor(() => expect(s.prompts.list()).toHaveLength(1))
+    const sentAt = s.prompts.sending('thread')
+    // The send's own turn runs and ends before main answers the send.
+    s.prompts.started('thread'); s.prompts.finished(idle())
+    await vi.waitFor(() => expect(s.prompts.list()).toHaveLength(1))
+    s.prompts.started('thread', sentAt)
+    expect(s.prompts.list()).toHaveLength(1)
+    s.prompts.started('thread', s.prompts.sending('thread'))
+    expect(s.prompts.list()).toEqual([])
+  })
+
+  it('tells a superseded side call to stop, and logs nothing for it', async () => {
+    const signals: AbortSignal[] = []
+    const s = service({ write: vi.fn((_id: string, _x: readonly NextPromptExchange[], signal: AbortSignal) => { signals.push(signal); return new Promise<string | null>(() => undefined) }) })
+    s.prompts.finished(idle())
+    await vi.waitFor(() => expect(signals).toHaveLength(1))
+    s.prompts.started('thread')
+    expect(signals[0]!.aborted).toBe(true)
+    s.prompts.finished(idle())
+    await vi.waitFor(() => expect(signals).toHaveLength(2))
+    s.prompts.finished(idle())
+    expect(signals[1]!.aborted).toBe(true)
+    s.prompts.close()
+    await vi.waitFor(() => expect(signals).toHaveLength(3))
+    expect(signals[2]!.aborted).toBe(true)
+    expect(s.log).not.toHaveBeenCalled()
   })
 
   it('shows nothing when the provider writes nothing, as Devin does, and logs only stable names when it fails', async () => {
@@ -205,13 +240,15 @@ describe('the coordinator', () => {
     const credentials = await testCredentials(workspace.root, { mode: 'unavailable' })
     const write = vi.fn(async () => REPLY)
     const published: NextPromptEntry[] = []
-      const prompts = new NextPrompts({ write, thread: id => control.liveThread(id), history: thread => control.historyOf(thread), publish: entry => { published.push(entry) } })
+      const prompts = new NextPrompts({ write, thread: id => control.liveThread(id), publish: entry => { published.push(entry) } })
     const control: AgentControl = createAgentControl({ schedule: immediatePublishScheduler, directory: workspace.root, host: workspace.host, credentials, reasoner: e2eAgentReasoner, nextPrompts: prompts })
     opened.push({ control, stop: workspace.stop, remove: workspace.remove })
     await control.start()
     await control.command({ type: 'connect' })
     const adapter = workspace.adapters.codex
     const native = adapter.state.threads[0]!
+    // A window shows the thread, so its messages are held in memory.
+    await control.command({ type: 'select-thread', threadId: control.get().host.threads.find(thread => thread.providerId === 'codex')!.id })
     native.status = 'running'
     adapter.emit()
     await vi.waitFor(() => expect(control.liveThread(control.get().host.threads.find(thread => thread.providerId === 'codex')!.id)?.status).toBe('running'))
@@ -220,9 +257,12 @@ describe('the coordinator', () => {
     adapter.emit()
     await vi.waitFor(() => expect(published).toHaveLength(1))
     const threadId = published[0]!.threadId
-    expect(write).toHaveBeenCalledWith(threadId, [{ prompt: 'The palette is unreadable.', reply: 'I raised the contrast.' }])
+    expect(write).toHaveBeenCalledWith(threadId, [{ prompt: 'The palette is unreadable.', reply: 'I raised the contrast.' }], expect.any(AbortSignal))
     expect(prompts.list()).toHaveLength(1)
-    await control.command({ type: 'manual-send', threadId, draftId: 'next', text: 'Open the pull request for this fix' })
+    // The suggestion stays while the send is on its way, and goes once main has taken it.
+    const sending = control.command({ type: 'manual-send', threadId, draftId: 'next', text: 'Open the pull request for this fix' })
+    expect(prompts.list()).toHaveLength(1)
+    expect((await sending).error).toBeNull()
     expect(prompts.list()).toEqual([])
     expect(published.at(-1)).toMatchObject({ threadId, prompt: null })
   })
