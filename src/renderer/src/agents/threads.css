@@ -154,6 +154,20 @@
 .thread-workspace__compose > * { pointer-events: auto; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
 .thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
+   user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row, the
+   branch toolbar and the row under the card step away. The composer keeps the full card's room, so the transcript keeps
+   its size and its last line still comes clear at the end; the card sits at the foot of that room, and the Jump button
+   just above what shows. The pane sets data-slim on the composer, and tells it to the pane as a mark (marks.tsx), only
+   while the composer floats.
+   The rules carry the pane's classes so they outweigh a short pane's and a split's own sizes for the composer. */
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] { min-height: var(--thread-compose-height, 0px); justify-content: flex-end; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > :is(.thread-pane__meta, .branch-toolbar) { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > .thread-prompt { padding-block: 9px; padding-inline: 16px 10px; cursor: text; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(textarea, .prompt-editor) { min-height: 22px; max-height: 22px; padding-right: 40px; overflow: hidden; resize: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(.thread-prompt__meta, .thread-prompt__steer, .screenshot-input__tools > *) { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt > .thread-prompt__footer { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); }
+.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
 /* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
 .thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
@@ -163,8 +177,9 @@
 .thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
-/* The composer is a card (ADR-0110): filled, with no outline at rest. Its edge comes back to say it is focused, running
-   or at a model's highest effort. */
+/* The composer is a card (ADR-0110): filled, with no outline at rest. Its edge comes back to say it is running or at a
+   model's highest effort, never for focus: the caret says where typing goes, and the card is the pane's only text field
+   (the user's ask on October 23, 2026). */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
@@ -172,7 +187,6 @@
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
-.thread-prompt:focus-within { border-color: var(--threads-field-focus); }
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 74px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .prompt-editor { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
@@ -212,9 +226,8 @@
 .thread-prompt:has(.thread-chip[data-effort-top='true']) { --effort-tint: 30%; border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-border)); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
 /* The arrival mark sits on the chip's wrapper, which outlives the card: closing the card mid-tide does not cut it. */
 .thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true']) { --effort-tint: 70%; transition-duration: 220ms; }
-/* The tint sits over the focus and running colours rather than replacing them: the border is the textarea's focus cue. */
+/* The tint sits over the running colour rather than replacing it, so a running turn still shows at the highest effort. */
 .thread-prompt[data-running]:has(.thread-chip[data-effort-top='true']) { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border))); }
-.thread-prompt:has(.thread-chip[data-effort-top='true']):focus-within { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-focus)); }
 .thread-prompt::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
   background: conic-gradient(from var(--effort-ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--tt-effort-a) 70%, transparent) .66turn, var(--tt-effort-b) .76turn, var(--tt-effort-c) .84turn, transparent .94turn, transparent 1turn);
   -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); mask-composite: exclude; }

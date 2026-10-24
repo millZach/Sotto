@@ -105,7 +105,8 @@ export class GrokRpc {
   }
   /** The client process's ID, for telling one thread's process from another's. */
   get pid(): number | undefined { return this.child.pid }
-  request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false): Promise<void> {
+  /** `timeoutMs` replaces this process's deadline for one request; its reply, if it comes later, is ignored. */
+  request(method: string, params: unknown, apply: Waiter['apply'] = () => undefined, completionOnly = false, timeoutMs = this.timeoutMs): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.stopped) { reject(new GrokUncertain('Grok disconnected.')); return }
       if (this.pending.size >= 128) { reject(new GrokUncertain('Grok has too many unacknowledged requests. Reconnect before continuing.')); this.fail(); return }
@@ -113,7 +114,7 @@ export class GrokRpc {
       const timer = completionOnly ? undefined : setTimeout(() => {
         if (!['session/new', 'session/set_model'].includes(method)) this.pending.delete(JSON.stringify(id))
         reject(new GrokUncertain('Grok did not acknowledge the operation in time.'))
-      }, this.timeoutMs)
+      }, timeoutMs)
       this.pending.set(JSON.stringify(id), { resolve, reject, apply, timer })
       try { this.write({ jsonrpc: '2.0', id, method, params }) } catch (error) { reject(error); this.fail() }
     })

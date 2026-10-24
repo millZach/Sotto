@@ -119,6 +119,9 @@ export default tseslint.config(
       // Gradle's own output for the Android client: test reports carry generated browser scripts.
       'apps/android/**/build/**',
       'artifacts/question-choices/**',
+      'artifacts/composer-float/**',
+      'artifacts/composer-shrink/**',
+      'artifacts/watcher-column/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',
       'artifacts/git-settings/**',
