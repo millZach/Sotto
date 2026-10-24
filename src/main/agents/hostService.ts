@@ -74,7 +74,8 @@ export interface HostService {
   /** Numeric usage belongs to this host and exists only when its own startup gate is on. */
   readonly supportsUsage?: boolean
   usageRead?(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  usageRefresh?(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  /** `background` is a refresh Usage made on its own when it opened, which may be answered from a recent reading. */
+  usageRefresh?(providerIds?: ProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
@@ -188,7 +189,7 @@ export interface ThreadEventSource {
 /** A numeric archive and cached native allowance reads, without provider handles or message text. */
 export interface HostUsageReads {
   read(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  refresh(providerIds?: UsageProviderId[]): Promise<UsageLocalHostRead>
+  refresh(providerIds?: UsageProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   clear(request: UsageLocalClearRequest): Promise<UsageLocalClearResult>
 }
 
@@ -315,9 +316,10 @@ export class LocalHostService implements HostService {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
     return this.usage.read(usageLocalQuerySchema.parse(query))
   }
-  usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
+  usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds))
+    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    return background ? this.usage.refresh(named, true) : this.usage.refresh(named)
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))

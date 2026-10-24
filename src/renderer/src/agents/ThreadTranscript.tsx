@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { AgentActivity } from '../../../shared/agentActivity'
@@ -38,6 +39,7 @@ import type { DelegationView } from '../../../shared/delegation'
 import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegationCardWorld } from './DelegationCards'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
+import { readsBack, typesIntoComposer } from './slimComposer'
 import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
@@ -551,11 +553,17 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
 const JUMP_BAND_PX = 60
 
+/** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
+  // The transcript's scroll padding is the floating composer's height, and nothing while the composer stacks. A slim
+  // composer (ADR-0125) keeps that padding, and the button rides above what shows of it instead.
+  const pane = scroller.closest<HTMLElement>('.thread-pane')
+  const shown = pane?.hasAttribute('data-slim') ? parseFloat(getComputedStyle(pane).getPropertyValue('--thread-compose-shown')) : Number.NaN
+  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
-    return box.bottom > view.bottom - JUMP_BAND_PX && box.top < view.bottom
+    return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom
   })
 }
 
@@ -564,7 +572,7 @@ export function reachesJumpBand(scroller: HTMLElement): boolean {
  * reading older messages keeps its place and offers Jump to latest. Showing earlier messages keeps
  * the message under the reader where it was.
  */
-export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote }: {
+export function ThreadTranscript({ row, state, command, store, followSignal, children, watcher = false, greetingSlot, emptyNote, onReadingBack, onTypeAhead }: {
   readonly row: ThreadRow
   /** Where a new thread's greeting goes, directly above the composer. Without one, the thread keeps the plain empty line. */
   readonly greetingSlot?: HTMLElement | null
@@ -579,6 +587,13 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly followSignal: number
   /** The inline request, rendered after the newest message. */
   readonly children?: ReactNode
+  /**
+   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125).
+   * Only a crossing is told, never a scroll, and leaving says the reader is back.
+   */
+  readonly onReadingBack?: ((reading: boolean) => void) | undefined
+  /** A printable key pressed in the transcript: the pane puts focus in the composer, which takes the key. */
+  readonly onTypeAhead?: (() => void) | undefined
 }): ReactNode {
   const thread = row.thread
   const streamText = useAgents().responseStreaming !== 'complete'
@@ -593,6 +608,18 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   const [requestUnderJump, setRequestUnderJump] = useState(false)
+  // Whether the reader is far enough above the end for the composer to slim, kept off React's state: the pane hears of a
+  // crossing and nothing here draws again for it.
+  const readingBack = useRef(false)
+  const onReadingBackRef = useRef(onReadingBack)
+  onReadingBackRef.current = onReadingBack
+  const noteReading = useCallback((element: HTMLElement): void => {
+    const reading = readsBack(element)
+    if (reading === readingBack.current) return
+    readingBack.current = reading
+    onReadingBackRef.current?.(reading)
+  }, [])
+  useEffect(() => () => { if (readingBack.current) { readingBack.current = false; onReadingBackRef.current?.(false) } }, [])
   // A press on the scrubber that needs an earlier page drawn first: where it goes, and whether focus goes with it.
   const landing = useRef<{ readonly messageId: string; readonly focus: boolean } | null>(null)
   const [landingSeq, setLandingSeq] = useState(0)
@@ -694,7 +721,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     following.current = true
     setAway(false)
     setUnseen(false)
-  }, [])
+    noteReading(element)
+  }, [noteReading])
 
   // A different thread opens at its newest message with a fresh page.
   useLayoutEffect(() => {
@@ -726,11 +754,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (following.current && anchor.current === null && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
-      if (scroller.current) setRequestUnderJump(reachesJumpBand(scroller.current))
+      if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
     return () => observer.disconnect()
-  }, [])
+  }, [noteReading])
 
   const onScroll = (): void => {
     const element = scroller.current
@@ -741,6 +769,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
     setRequestUnderJump(reachesJumpBand(element))
+    noteReading(element)
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.
@@ -832,10 +861,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const greets = empty && !queueHolds && greetingSlot !== undefined && !watcher && startView === null && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
     && thread.status === 'idle' && !isThreadClosed(thread) && (thread.summary?.messageCount ?? 0) === 0
     && thread.compaction?.status !== 'running' && thread.requests.length === 0 && !thread.earlierAvailable
+  useMark('greeting', greets && greetingSlot != null)
   return <div className="thread-transcript">
     {marks.length >= SCRUBBER_FEWEST && thread.historyStatus !== 'loading' ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} /> : null}
     <div className="thread-workspace__transcript" ref={scroller} onScroll={onScroll} tabIndex={0} role="log" aria-live="off"
+      onKeyDown={onTypeAhead === undefined ? undefined : event => { if (typesIntoComposer(event.nativeEvent)) onTypeAhead() }}
       aria-label="Thread transcript" aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" ref={content}>
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">Loading messages…</div>}

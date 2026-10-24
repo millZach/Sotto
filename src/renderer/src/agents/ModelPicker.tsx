@@ -1,10 +1,12 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
+import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
+import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import './threadChips.css'
 import './modelPicker.css'
 
@@ -90,9 +92,11 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * model count, the one holding the chosen model in the accent colour. Choosing one shows its models under a back
  * control; typing searches every source at once, under small source headings. Escape steps back one level at a time:
  * it clears the search, then leaves the source with focus on its row, then closes the menu. The chip names the source
- * before the model, and the source gives way first in a narrow composer.
+ * before the model, and the source gives way first in a narrow composer. With `ownServers`, OpenCode's source list ends
+ * with Your own server…, which closes the menu and opens the Add a server dialog (ADR-0124); closing that hands focus
+ * back to the chip.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -103,11 +107,14 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   readonly label?: string | undefined
   /** Opens the menu as the chip appears, where a press elsewhere asked for it. */
   readonly openOnMount?: boolean | undefined
+  /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
+  readonly ownServers?: OwnServersBridge | undefined
 }): ReactNode {
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [open, setOpen] = useState(openOnMount && !disabled)
+  const [addingServer, setAddingServer] = useState(false)
   const [provider, setProvider] = useState('')
   const [query, setQuery] = useState('')
   /** The model source whose models are showing, and whose provider it is, so another provider's tile starts on its own sources. */
@@ -123,6 +130,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
+  /** Whether the press now ending began on the backdrop, outside every part of the menu. */
+  const pressedBackdrop = useRef(false)
   const groups = useMemo(() => {
     if (!open) return []
     const result = groupModels(models, model => model.provider)
@@ -264,7 +273,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label="Choose model" data-rail={groups.length > 1 || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
-      onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
+      // A click outside closes the menu only when its press began outside too. A press on a provider tile can change the
+      // menu's height, and a menu above its chip moves its top edge, so the release may land beyond the menu; the click
+      // then goes to the dialog itself, and closing on it would close the menu on the tile the user pressed.
+      onPointerDown={event => { pressedBackdrop.current = event.target === event.currentTarget }}
+      onClick={event => { if (event.target === event.currentTarget && pressedBackdrop.current) setOpen(false); pressedBackdrop.current = false; event.stopPropagation() }}>
       {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
       {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label="Model providers" aria-orientation="vertical"
         onKeyDown={event => moveListboxFocus(event, rail.current)}>
@@ -315,9 +328,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
                 <span><b>{source.name}</b><small>{about}</small></span><ChevronRight size={14} aria-hidden="true" />
               </button>
             })}
+            {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
         {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
       </div>
     </dialog>}
+    {addingServer && ownServers ? <AddOwnServerDialog bridge={ownServers} fallbackFocus={trigger} confirm onClose={() => setAddingServer(false)} /> : null}
   </div>
 }

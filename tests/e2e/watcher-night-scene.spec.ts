@@ -20,8 +20,9 @@ import { resizeContentWindow } from './support/sottoWindow'
  * Watcher's night scene on the built app (Zach's picks on October 21 and 22, 2026, `prototype/watcher-owl-scene` and
  * `prototype/watcher-owl-family`): the ASCII night in the side margins of Watcher's room, with Watcher's owl and a thread
  * owl for each watched thread, at the three sizes in dark and light, with reduced motion, and live. In the column only
- * the quieter sky and hills may show, never on or beside a line of words (variant A of
- * `docs/prototypes/watcher-column-scene-prototype.html`, October 23, 2026), and no owl at all. A capture run's fixed clock holds the scene still with every owl sitting, so those captures repeat; a
+ * the sky and hills show, still under the words (variant D of `docs/prototypes/watcher-floating-composer-prototype.html`,
+ * October 23, 2026; watcher-column.spec.ts holds every word there to 4.5:1), and no owl at all. A capture run's fixed
+ * clock holds the scene still with every owl sitting, so those captures repeat; a
  * newcomer's flight out of the moon, a press and the paint rates are checked on a live clock. Main's Watcher is stood in
  * for by a seeded projection, as in watcher.spec.ts. Run after `npm run build`. Captures go to disposable run evidence;
  * `SOTTO_E2E_EVIDENCE=publish` writes artifacts/watcher-owl-family.
@@ -122,9 +123,9 @@ const owlButtons = (page: Page) => page.locator('#watcher-pane > .watcher-scene-
 
 /**
  * The scene is decoration: both canvases hidden, never focusable, never pressed. Between the composer's sides, below the
- * header, the owls' canvas paints nothing; the landscape's paints nothing on a line of words or within a few pixels of
- * it, nor on the composer, and where the margins have trees, and so a landscape (`landscape`; the smallest window's rail
- * of eyes has none), it paints something elsewhere in the column too, so the column does not read as an empty panel.
+ * header, the owls' canvas paints nothing; where the margins have trees, and so a landscape (`landscape`; the smallest
+ * window's rail of eyes has none), the landscape's paints in the column too, under the words as well as between them, so
+ * the column does not read as an empty panel. How strongly it may paint under a word is watcher-column.spec.ts's.
  */
 async function sceneHolds(page: Page, key: string, landscape = true): Promise<void> {
   for (const canvas of [land(page), owl(page)]) {
@@ -137,8 +138,8 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
     const base = pane.getBoundingClientRect()
     const composer = pane.querySelector('.thread-workspace__compose .thread-prompt')!.getBoundingClientRect()
     const header = Math.max(...[...pane.querySelectorAll(':scope > :is(.watcher-head, .watcher-glance)')].map(node => node.getBoundingClientRect().bottom))
-    // Every line of words in the transcript that shows with its 12-pixel hard gap, and the composer with 4, in pane pixels.
-    const PAD = 12, COMPOSER_PAD = 4
+    // Every line of words in the transcript that shows, in pane pixels.
+    const PAD = 0
     const transcript = pane.querySelector('.thread-workspace__transcript')!
     const view = transcript.getBoundingClientRect()
     const words: Array<{ x0: number; y0: number; x1: number; y1: number }> = []
@@ -153,7 +154,6 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
       range.selectNodeContents(node)
       for (const rect of range.getClientRects()) keep(rect)
     }
-    keep(composer, COMPOSER_PAD)
     const out: Record<string, number> = {}
     for (const canvas of pane.querySelectorAll<HTMLCanvasElement>(':scope > canvas.watcher-scene')) {
       const scale = canvas.width / canvas.clientWidth
@@ -175,8 +175,7 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
     return out
   })
   expect(reading.lines, `lines measured, ${key}`).toBeGreaterThan(1)
-  expect(reading['watcher-scene watcher-scene--land on words'], `landscape pixels on or beside words, ${key}`).toBe(0)
-  if (landscape) expect(reading['watcher-scene watcher-scene--land elsewhere'], `landscape pixels elsewhere in the column, ${key}`).toBeGreaterThan(0)
+  if (landscape) expect(reading['watcher-scene watcher-scene--land on words']! + reading['watcher-scene watcher-scene--land elsewhere']!, `landscape pixels in the column, ${key}`).toBeGreaterThan(0)
   expect(reading['watcher-scene watcher-scene--owl on words']! + reading['watcher-scene watcher-scene--owl elsewhere']!, `owl pixels in the column, ${key}`).toBe(0)
   recorded[key] = reading
 }
