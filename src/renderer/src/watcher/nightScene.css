@@ -45,6 +45,11 @@
 .watcher-pane .thread-workspace__transcript .rich-message { --rich-link-hover: var(--watcher-link-hover); }
 .watcher-pane .thread-workspace__transcript { text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
 .watcher-pane .thread-workspace__transcript :is(.thread-message[data-role='user'], pre, code, button, input, textarea, table, .agent-request, [class*='card'], [class*='chip']) { text-shadow: none; }
+/* The message scrubber's ticks float over the scene, which runs on under their lane as under the column (ADR-0109,
+   amended October 24, 2026); the lane itself paints nothing, so it never reads as a box. Its ticks are drawn in the
+   secondary tier where the conversation's would be muted, as the names and times are (pick D2), so the column's ink
+   ceiling keeps them clear of the glyphs under them: 3:1 once the pointer or the keyboard reaches the lane. */
+.watcher-pane .message-scrubber { --tt-text-muted: var(--tt-text-2); }
 /* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
    blurred, with no edge in any state (ADR-0110). It is never thinner than lets every word on it keep 4.5:1 over pure
    white or pure black, whatever a picture in the conversation puts under it: the scene works that out from the theme

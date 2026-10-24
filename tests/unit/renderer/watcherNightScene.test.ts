@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, boxDistance, heldRoom, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  addRipple, along, boxDistance, heldRoom, inLane, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
   glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
@@ -148,9 +148,13 @@ describe('beside the message scrubber', () => {
       expect(layout.mode, `${width}x${height}`).toBe('trees')
       expect(layout.home.x + 20 * layout.s, `${width}x${height}`).toBeLessThan(edge)
       for (const spot of layout.spots.filter(item => item.x < layout.column.left)) expect(spot.x + 18, `${spot.kind} at ${spot.x}`).toBeLessThan(edge)
-      // The lane is kept like words: nothing of the landscape, a star or a ripple shows in it.
-      expect(quietAt(layout, edge + 10, measure.lane!.y + 100)).toBe(0)
-      expect(layout.words).toContainEqual(measure.lane)
+      // The sky and the hills run on under the lane at the column's share, so its ticks float over them with no box round
+      // them; no owl is drawn there (the user's ask on October 24, 2026).
+      const y = measure.lane!.y + 100
+      expect(inLane(layout, edge + 10, y)).toBe(true)
+      expect(quietAt(layout, edge + 10, y)).toBeCloseTo(quietAt(layout, (layout.column.left + layout.column.right) / 2, y), 6)
+      expect(quietAt(layout, edge + 10, y)).toBeGreaterThan(0)
+      expect(layout.words).not.toContainEqual(measure.lane)
     }
   })
 
