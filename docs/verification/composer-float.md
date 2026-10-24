@@ -12,11 +12,13 @@ October 23, 2026. The fix on `fix/floating-composer` from `main` at c9a681b15, o
 
 A `:has()` inside another `:has()` is not valid CSS. Chromium drops the whole rule, so the variable was never set, the composer kept a zero margin, and the transcript stopped above it as before. The release build had the rule; nothing overrode it, and the question-waits test was never reached. In the built app before the fix, the pane had measured the composer (`--thread-compose-measured: 123px`) but `--thread-compose-height` was empty, the composer's top margin was `0px` and the transcript's bottom padding `28px`. #1391's own test change still passed, because it only allowed the composer to cover the transcript's padding, and a composer that does not float covers nothing.
 
-The two tests now sit side by side on the pane, which is valid:
+This branch first put the two tests side by side on the pane, which is valid. While it waited to merge, #1441 replaced the rule with marks the components set on the pane, for the cost of `:has()` near the terminal, and the merge takes that rule:
 
 ```css
-.thread-pane:has(> .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose):not(:has(> .thread-workspace__compose > .thread-questions)) { … }
+.thread-pane:not([data-greeting], [data-questions]) { … }
 ```
+
+The spec and the captures below were run again on the merged branch.
 
 With the float working, a second fault showed. The pane measured the composer with a `ResizeObserver` on its content box, and a short window changes only the composer's padding, so after shrinking to 820x560 the pane still held 165px for a 119px composer. It observes the border box now.
 
