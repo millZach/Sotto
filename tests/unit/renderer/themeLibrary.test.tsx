@@ -1,4 +1,5 @@
 import { deferred } from '../../fixtures/deferred'
+import { saying } from '../../fixtures/renderer/laterWords'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -283,7 +284,7 @@ describe('appearance settings', () => {
     within(scheme).getByRole('radio', { name: 'Light' }).focus()
     await user.keyboard('{ArrowRight}')
     expect(within(scheme).getByRole('radio', { name: 'Match Windows' })).toHaveFocus()
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ appearance: 'system' }, 'Color scheme saved.'))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ appearance: 'system' }, saying('Color scheme saved.')))
 
     const dark = screen.getByRole('radiogroup', { name: 'Dark theme' })
     expect(within(dark).getAllByRole('radio').filter(option => option.tabIndex === 0).map(option => option.textContent)).toEqual(['Sotto'])
@@ -420,7 +421,7 @@ describe('appearance settings', () => {
     expect(within(group).getByRole('button', { name: 'Use Cyberpunk as the effort color, currently active' })).toHaveAttribute('aria-pressed', 'true')
     expect(appearancePreview.effective(DEFAULT_SETTINGS).effortColor).toBe('cyberpunk')
     await waitFor(() => expect(sample).toHaveAttribute('data-arriving', 'true'))
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ effortColor: 'cyberpunk' }, 'Effort color saved.'))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ effortColor: 'cyberpunk' }, saying('Effort color saved.')))
   })
 
   it('mounts the sample scene fresh on every play, so an arrival already running starts again', () => {

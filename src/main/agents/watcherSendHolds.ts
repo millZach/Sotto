@@ -20,3 +20,13 @@ export function queueHold(reason: CheckoutPendingWork, heldByStop: boolean): str
       : 'This thread has a queued prompt that goes first, as soon as its turn is free. Queue this one behind it. Nothing was sent.'
   }
 }
+
+/**
+ * What read_operation says of a Watcher send still in a thread's queue that its queue holds for the user's review: it
+ * stays `working`, since the user's Resume sends it, but not "still working", which a thread at rest would belie.
+ */
+export function queuedSendHeld(reason: 'paused-followups' | 'failed-followups'): string {
+  return reason === 'paused-followups'
+    ? 'It waits in the thread’s queue, which is paused until the user reviews the thread and resumes it. Nothing has been sent. Tell the user rather than send it again.'
+    : 'It waits in the thread’s queue behind a queued prompt that failed, until the user reviews it. Nothing has been sent. Tell the user rather than send it again.'
+}

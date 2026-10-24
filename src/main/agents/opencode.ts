@@ -8,6 +8,7 @@ import type { UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import type { OwnServer } from '../../shared/ownModelServers'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -287,6 +288,11 @@ export interface OpenCodeHostOptions {
   heldProviders?: HeldProviders
   /** Usage's startup answer (ADR-0083): count this computer's OpenCode threads. OpenCode reports no account limits. */
   usageEnabled?: boolean
+  /**
+   * The user's own model servers (ADR-0124), read at each process start and given to it as provider blocks. Present only
+   * while the `own-model-servers` Owl answer is on; a headless host has none.
+   */
+  ownServers?: () => Promise<readonly OwnServer[]>
 }
 
 /**
@@ -628,10 +634,11 @@ export class OpenCodeHost implements AgentHost {
     const executable = this.executable
     if (!executable) throw new Error('Connect OpenCode before managing threads.')
     await ensureOpenCodeFolders(this.folders)
+    const servers = await this.ownServers()
     return withFirstServerLock(this.folders, async () => {
       const password = opencodePassword()
       const server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
-        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
+        env: opencodeEnvironment(this.environment, this.folders, password, servers), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
         ledger: this.folders.servers })
       try {
         const client = new OpenCodeClient(server.url, password, this.timeoutMs, closed)
@@ -752,8 +759,25 @@ export class OpenCodeHost implements AgentHost {
   }
 
   /** Asks a client its version, on Sotto's own OpenCode folders, without starting a server. */
-  private readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
-    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()), timeoutMs).catch(() => undefined)
+  private async readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
+    const servers = await this.ownServers()
+    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword(), servers), timeoutMs).catch(() => undefined)
+  }
+  /** The user's own model servers as they are saved now (ADR-0124); none while their Owl answer is off or the record cannot be read. */
+  private async ownServers(): Promise<readonly OwnServer[]> {
+    return this.options.ownServers ? await this.options.ownServers().catch(() => []) : []
+  }
+  /** Whether OpenCode is connected, so its processes may be started for a sign-in or a catalog read. */
+  isConnected(): boolean { return this.state.connected }
+  /**
+   * The user's own model servers changed (ADR-0124): every OpenCode process was started with the old list, so each thread
+   * server is outdated, as after a sign-in change, and the sign-in server moves to a fresh one once nothing uses it.
+   */
+  ownServersChanged(): void {
+    if (!this.state.connected) return
+    this.renew()
+    this.signIn.renew()
+    this.emit()
   }
   /**
    * The client to use, with what it said when asked its version: the one the adapter was given, or else `current`, the

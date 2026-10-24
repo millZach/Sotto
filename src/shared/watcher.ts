@@ -280,6 +280,11 @@ export const watcherToolSchemas = {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
     output: result({ ...receiptResult, state: operationState }),
   },
+  // Restoring changes nothing a second time, so it keeps no operation and its result needs no receipt (October 23, 2026).
+  unsettle_thread: {
+    input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
+    output: result({ target: watcherThreadTargetSchema, settled: z.literal(false) }),
+  },
   list_projects: {
     // `projectId`, `query` and `includeModels` are the desktop's alone (#1191): a paired host is never sent them.
     input: z.object({ hostId: z.uuid().optional(), projectId: entityId.optional(), query: z.string().min(1).max(200).optional(),
