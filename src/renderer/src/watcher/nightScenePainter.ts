@@ -385,12 +385,14 @@ export class NightScenePainter {
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
-  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  /**
+   * Forgets the layout, so nothing is drawn until the room can be measured again. The canvases keep the last frame drawn:
+   * the scene never blinks, and the next layout draws over it in the frame it is made.
+   */
   invalidate(): void {
     this.layout = null
     this.owlBox = null
     this.painted = ''
-    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   /** The perched thread owls' boxes in the pane, for their buttons. */

@@ -340,8 +340,9 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       observeParts()
       const next = measure === null ? null : painter.resize(measure, dpr)
       if (next === null) {
-        // No composer to set the column by, such as a first entry whose composer went with the last model: nothing is
-        // drawn, and no frame is asked for, until the room can be measured again.
+        // No composer to set the column by, such as a first entry whose composer went with the last model, or the room
+        // between one Watcher and the next: the scene keeps its last frame, and no frame is asked for, until the room can
+        // be measured again.
         painter.invalidate()
         halt()
         layout = null
