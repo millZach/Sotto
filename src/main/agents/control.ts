@@ -2255,13 +2255,15 @@ export class AgentControl {
     try {
       const result = await this.clients.install(provider, await this.clientPath(provider), process.env, step => {
         if (step > 1 && !this.disposed) { this.setClientUpdate(provider, { step }); this.publish() }
-      })
+      }, record.behind ? record.published : undefined)
       if (!result.ok) {
         this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}),
           ...(result.step && record.steps && record.steps > 1 ? { step: result.step } : {}), ...(result.failure ? { failure: result.failure } : {}),
           ...(result.printed ? { printed: result.printed } : {}) }, false)
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
+          : result.failure === 'not-listed'
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto did not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
