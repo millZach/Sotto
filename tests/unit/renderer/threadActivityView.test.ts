@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
   activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
   statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
@@ -149,6 +150,34 @@ describe('placing activity when the messages are a window of a longer history', 
       expect(placement.leading).toEqual([])
     }
     expect(placeActivities([], [], live).trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
+  })
+})
+
+describe('the newest turn the placement reads', () => {
+  const at = (minute: number): string => new Date(Date.UTC(2026, 9, 23, 11, minute)).toISOString()
+  const messages: AgentMessage[] = [{ id: 'you', role: 'user', text: 'Check the threads.', createdAt: at(0) }, { id: 'answer', role: 'assistant', text: 'All quiet.', createdAt: at(1) }]
+  const activities: AgentActivity[] = [{ id: 'turn-you', turnId: 'you', afterMessageId: 'you', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(1) }]
+
+  const news: AgentActivity = { id: 'turn-news', turnId: 'news', afterMessageId: 'news', sequence: 1, kind: 'turn', status: 'running', title: 'Turn', startedAt: at(3) }
+
+  it('says the newest turn ended only when its own lifecycle ended and another turn’s lifecycle runs', () => {
+    expect(placeActivities(messages, messages, [...activities, news]).newestTurnEnded).toBe(true)
+    // Ended, with nothing else running: a turn the provider began on its own, such as Claude's report, may be the work going on.
+    expect(placeActivities(messages, messages, activities).newestTurnEnded).toBeUndefined()
+    // Another turn runs, but the newest turn's own lifecycle says nothing yet.
+    expect(placeActivities(messages, messages, [news]).newestTurnEnded).toBeUndefined()
+  })
+
+  it('reads work a provider leaves running after its turn ended as saying nothing about which turn is going', () => {
+    const left: AgentActivity[] = [{ id: 'plan', turnId: 'you', afterMessageId: 'you', sequence: 2, kind: 'plan', status: 'running', title: 'Plan', startedAt: at(0) },
+      { id: 'agent', turnId: 'you', afterMessageId: 'you', sequence: 3, kind: 'subagent', status: 'running', title: 'Review', startedAt: at(0) }]
+    expect(placeActivities(messages, messages, [...activities, ...left]).newestTurnEnded).toBeUndefined()
+    expect(placeActivities(messages, messages, [...activities, ...left, news]).newestTurnEnded).toBe(true)
+  })
+
+  it('is the same value on every update that changes nothing, so the placement that holds it is shared', () => {
+    const first = placeActivities(messages, messages, [...activities, news])
+    expect(share(first, placeActivities(messages, messages, [...activities, news].map(record => ({ ...record }))))).toBe(first)
   })
 })
 

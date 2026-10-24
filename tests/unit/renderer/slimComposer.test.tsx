@@ -127,6 +127,55 @@ describe('the slim composer in a thread pane', () => {
     }
   })
 
+  it('keeps the reader where they are reading while the composer slims and comes back full (#1452)', () => {
+    // Lays each message out one row for each paragraph of the answer, so the answer can be read from its middle.
+    const ROW = 100, VIEW = 600
+    const rows = (message: Element): number => Math.max(1, (message.textContent ?? '').split('Answer paragraph').length - 1)
+    const drawn = (log: Element): Element[] => [...log.querySelectorAll('.thread-message')]
+    const height = (element: HTMLElement): number => drawn(element).reduce((sum, message) => sum + rows(message), 0) * ROW
+    const tops = new WeakMap<Element, number>()
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => VIEW)
+    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'get').mockImplementation(function (this: HTMLElement) { return tops.get(this) ?? 0 })
+    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const log = this.closest<HTMLElement>('.thread-workspace__transcript')
+      const list = log === null ? [] : drawn(log)
+      const index = list.indexOf(this)
+      const top = index < 0 ? 0 : list.slice(0, index).reduce((sum, message) => sum + rows(message), 0) * ROW - log!.scrollTop
+      const tall = index < 0 ? VIEW : rows(this) * ROW
+      return { top, bottom: top + tall, left: 0, right: 600, width: 600, height: tall, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    })
+    try {
+      const state = threadsStateFixture()
+      state.activeThreadId = 'grok-previews'
+      const at = new Date(E2E_THREADS_NOW - 60_000).toISOString()
+      state.host.threads.find(item => item.id === 'grok-previews')!.messages = [
+        { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at },
+        { id: 'answer', role: 'assistant', text: Array.from({ length: 20 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at },
+      ]
+      const live = liveAgentState(state)
+      vi.mocked(useAgents).mockImplementation(live.useLive)
+      const row = describeThreads(state, E2E_THREADS_NOW).find(item => item.thread.id === state.activeThreadId)!
+      render(<ThreadPane row={row} state={state} command={live.command} store={new ThreadDraftStore(live.command)} focused promptId="prompt" error={null} />)
+      const log = screen.getByRole('log', { name: 'Thread transcript' })
+      const compose = document.querySelector<HTMLElement>('.thread-workspace__compose')!
+      const answer = (): number => log.querySelector('[data-message-id="answer"]')!.getBoundingClientRect().top
+      // Reading the answer's fourth paragraph, well above the end.
+      act(() => { log.scrollTop = 4 * ROW; fireEvent.scroll(log) })
+      expect(answer()).toBe(-3 * ROW)
+      expect(compose).toHaveAttribute('data-slim', 'true')
+      act(() => { screen.getByRole('textbox', { name: 'Prompt' }).focus() })
+      expect(compose).not.toHaveAttribute('data-slim')
+      expect(answer()).toBe(-3 * ROW)
+      act(() => { log.focus() })
+      expect(compose).toHaveAttribute('data-slim', 'true')
+      expect(answer()).toBe(-3 * ROW)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it('hands a key typed in the transcript to the composer', () => {
     const view = mount()
     view.readBack(400)
