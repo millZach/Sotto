@@ -195,9 +195,9 @@ describe('Cursor’s model menu', () => {
 describe('Cursor’s permission menu', () => {
   it('offers exactly Cursor’s three modes, each said as Cursor doing it', () => {
     expect(modeChoices(CURSOR_MODELS[0], 'auto', undefined)).toEqual([
-      { id: 'approval-required', label: 'Ask for approval', description: 'Cursor asks before commands, web requests and tools. It edits files inside the project without asking.' },
-      { id: 'auto', label: 'Auto', description: 'Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you.' },
-      { id: 'full-access', label: 'Full access', description: 'Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it.' },
+      { id: 'approval-required', label: 'Ask for approval', description: 'Cursor asks before commands, web requests and tools. It edits files inside the project without asking.', translated: true },
+      { id: 'auto', label: 'Auto', description: 'Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you.', translated: true },
+      { id: 'full-access', label: 'Full access', description: 'Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it.', translated: true },
     ])
     // A saved Allow edits leads, unchoosable: main starts the thread on Ask for approval and says so on the thread.
     expect(modeChoices(CURSOR_MODELS[0], 'auto-accept-edits', undefined)[0]).toEqual({ id: 'auto-accept-edits', label: 'Allow edits', disabled: true })

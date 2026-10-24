@@ -1,6 +1,7 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg, t as tNow } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type AgentModel, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
 import { Button } from '../components/Button'
@@ -15,16 +16,24 @@ import { OwnModelServers, useOwnServersBridge } from './OwnModelServers'
 import { useTransientFlag, writeClipboard } from './richActions'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import './providers.css'
 
 const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor' }
 
-/** Where the clients that do not use the npm registry read their published version, for the update switch; none, when every such client is held. */
-function updateSources(held: ReadonlySet<ProviderId>): string {
+/**
+ * What the update switch says it checks, by where each client's published version is read: Muse's own release feed and
+ * Cursor's install script, where each is not held, and the npm registry for the rest. Each case is one whole message.
+ */
+function updateChecks(held: ReadonlySet<ProviderId>): string {
   const muse = !held.has('muse'), cursor = !held.has('cursor')
-  const own = muse && cursor ? 'Muse uses its own release feed and Cursor its install script' : muse ? 'Muse uses its own release feed' : cursor ? 'Cursor uses its install script' : ''
-  return own ? `${own}; the other clients use the npm registry.` : ''
+  if (muse && cursor) return tNow`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`
+  if (muse) return tNow`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`
+  if (cursor) return tNow`Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`
+  return 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'
 }
+/** What the Providers page says when Cursor's install guide does not open. */
+const CURSOR_GUIDE_FAILED = msg`Cursor’s install guide could not be opened. Try again.`
 
 /** What Sotto knows about the installed client, in one sentence, whichever way the check went. */
 function clientLine(update: ProviderClientUpdate | undefined, verified: string | undefined, checking: boolean, connected = false, checkingNow = false): string {
@@ -36,8 +45,8 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
   if (update.state === 'updating') return `Updating to ${update.published ?? 'the published version'}…`
   if (update.state === 'queued') return `Waiting to update to ${update.published ?? 'the published version'}. Your threads keep working.${past}`
   if (update.state === 'failed' && update.failure === 'not-listed') {
-    const to = update.published ?? t`the published version`, installed = update.installed
-    return `${t`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`}${past}`
+    const to = update.published ?? tNow`the published version`, installed = update.installed
+    return `${tNow`${installed} is installed. mise does not list ${to} yet, even with its cache cleared, so Sotto did not install it. Try again later.`}${past}`
   }
   if (update.state === 'failed') return `${update.installed} is installed. The last update did not finish${update.error ? `: ${update.error}` : '.'}${past}`
   if (update.state === 'unchanged') return update.error ? `${update.error}${past}` : `The update ran, but this client still reports ${update.installed}. Try again${update.command ? `, or run ${update.command} yourself to see what it says` : ''}.${past}`
@@ -51,13 +60,14 @@ function clientLine(update: ProviderClientUpdate | undefined, verified: string |
 }
 
 export function ProvidersSettings(): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const held = useHeldProviders()
   const ownServers = useOwnServersBridge()
   const [selected, setSelected] = useState<ProviderId>('codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
-  const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
+  const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
@@ -153,8 +163,8 @@ export function ProvidersSettings(): ReactNode {
     setErrors(previous => ({ ...previous, cursor: undefined }))
     try {
       const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES.cursor)
-      if (!result?.ok) setErrors(previous => ({ ...previous, cursor: 'Cursor’s install guide could not be opened. Try again.' }))
-    } catch { setErrors(previous => ({ ...previous, cursor: 'Cursor’s install guide could not be opened. Try again.' })) }
+      if (!result?.ok) setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED }))
+    } catch { setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED })) }
   }
   const openMuseGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
@@ -214,7 +224,7 @@ export function ProvidersSettings(): ReactNode {
         const connecting = current.connection === 'connecting' || pending[provider]
         const signingIn = provider === 'cursor' && cursorSignIn.signing && current.connection !== 'connected'
         const signedOut = provider === 'cursor' && current.connection === 'error' && 'problem' in current && current.problem === 'signed-out'
-        const statusLabel = signingIn ? 'Signing in…' : pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : current.connection === 'connected' ? 'Connected' : signedOut ? 'Not signed in' : current.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
+        const statusLabel = signingIn ? t`Signing in…` : pending[provider] === 'disconnect' ? 'Disconnecting…' : pending[provider] === 'refresh' ? 'Refreshing…' : connecting ? 'Connecting…' : current.connection === 'connected' ? 'Connected' : signedOut ? t`Not signed in` : current.connection === 'error' ? 'Needs attention' : active ? 'Not connected' : 'Disabled'
         return <div key={provider} className="providers-list__row" data-selected={provider === selected}>
           <button type="button" className="providers-list__select" aria-label={PROVIDER_LABELS[provider]} aria-pressed={provider === selected}
             onClick={() => setSelected(provider)}><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={21} /><span><strong>{PROVIDER_LABELS[provider]}</strong>
@@ -270,20 +280,20 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'devin' && <p className="provider-models__empty">Uses your Devin account and credits. Devin keeps its own history and analytics, outside Sotto's control.</p>}
             <p className="provider-models__empty">Choose what new threads start with under Agents.</p>
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
-            {selected === 'cursor' && <details className="provider-support"><summary>Threads with Cursor</summary><p>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</p><p>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</p></details>}
+            {selected === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
             {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
           </> : makers?.length ? <div aria-label={`${label} available models`} role="group">{makers.map(([maker, items]) => <section key={maker} aria-label={maker}>
             <h5 className="provider-models__maker">{maker}</h5>
             <ul className="provider-models">{items.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul>
           </section>)}</div> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
-          {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
+          {detailError && <p role="alert" className={typeof detailError === 'string' ? 'provider-detail__error' : 'provider-detail__error tt-paragraph'}>{shownWords(detailError)}</p>}
         </div>
       </section>
     </div>
     <div className="providers-updates">
       <div>
         <h4>Check for client updates</h4>
-        <p>{updateSources(held) ? `Checks each client's published version when it connects and every five minutes. ${updateSources(held)} No thread text is sent. Off, Sotto does not check versions or offer updates.` : 'Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.'}</p>
+        <p className={held.has('muse') && held.has('cursor') ? undefined : 'tt-paragraph'}>{updateChecks(held)}</p>
       </div>
       <Toggle setting="client-updates" label="Check for client updates" checked={checkClientUpdates}
         onCheckedChange={value => void command({ type: 'configure', patch: { checkClientUpdates: value }, ...here })} />

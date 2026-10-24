@@ -1,6 +1,8 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
@@ -42,6 +44,7 @@ export interface AgentRequestCardProps {
  * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
  */
 export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+  const { t } = useLingui()
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)
   const entry = useRequestEntry(entryOwner, request.id, store, draftOwner && draftQuestions.length > 0
@@ -109,7 +112,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         toggle.current?.focus()
       }
     }}>
-    <span className="tt-visually-hidden">{plan ? `Plan from ${ownerTitle}` : permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
+    <span className="tt-visually-hidden">{plan ? t`Plan from ${ownerTitle}` : permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
     {docked ? <div className="agent-request__toggle-row">
       {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questions.length > 1 ? `${questions.length} questions waiting` : questions[0]?.question ?? request.text}</span> : null}
       <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? 'Show question' : 'Collapse question'}
@@ -119,15 +122,15 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
     </div> : null}
     <div id={`${baseId}-body`} className="agent-request__body" hidden={docked && collapsed}>
       {plan ? <>
-        <div className="agent-request__head"><strong id={titleId}>Plan</strong><span className="agent-request__tag">Cursor</span></div>
-        <p className="agent-request__text">Cursor made a plan and waits for you before it starts.</p>
+        <div className="agent-request__head"><strong id={titleId}>{t({ message: 'Plan', comment: 'The heading of a card that shows a plan Cursor made and waits for the user to accept.' })}</strong><span className="agent-request__tag">Cursor</span></div>
+        <p className="agent-request__text tt-paragraph"><Trans>Cursor made a plan and waits for you before it starts.</Trans></p>
         {/* A long plan scrolls here, so it takes a stop in the keyboard order for the arrows to scroll it. */}
-        <div className="agent-request__plan tt-focusable" role="region" aria-label="Cursor’s plan" tabIndex={0}>
+        <div className="agent-request__plan tt-focusable" role="region" aria-label={t`Cursor’s plan`} tabIndex={0}>
           {plan.title ? <p className="agent-request__plan-title">{plan.title}</p> : null}
           {plan.overview ? <p className="agent-request__plan-overview"><LinkedText text={plan.overview} /></p> : null}
           {plan.steps ? <div className="agent-request__plan-steps"><MessageContent text={plan.steps} /></div> : null}
         </div>
-        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} names={PLAN_CHOICE_NAMES} />
+        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} names={{ 'accept-plan': t`Accept Cursor’s plan`, 'reject-plan': t`Reject Cursor’s plan` }} />
       </> : summary ? <>
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
@@ -151,9 +154,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
-            : skipping ? 'Choose an answer, or skip' : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : 'Choose an answer'}</span>
+            : skipping ? t`Choose an answer, or skip` : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : 'Choose an answer'}</span>
           <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? 'Sending…'
-            : skipping ? questions.length === 1 ? 'Skip question' : 'Skip questions' : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
+            : skipping ? t`${plural(questions.length, { one: 'Skip question', other: 'Skip questions' })}` : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
         </div>
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
@@ -211,7 +214,6 @@ function PermissionActions({ request, disabled, pressed, onChoose, names }: {
 
 /** The tool Cursor's plans arrive as (main's `CURSOR_PLAN_TOOL`, ADR-0127): a request to accept or reject a plan. */
 const CURSOR_PLAN_TOOL = 'cursor/create_plan'
-const PLAN_CHOICE_NAMES: Readonly<Record<string, string>> = { 'accept-plan': 'Accept Cursor’s plan', 'reject-plan': 'Reject Cursor’s plan' }
 
 /**
  * A Cursor plan's parts, or null for any other permission. Main sends the plan's name, overview and steps as the text,

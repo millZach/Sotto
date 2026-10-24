@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
@@ -69,10 +70,6 @@ export function modelSources(models: readonly AgentModel[], provider: string): M
 /** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0127). */
 const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
 
-/** The words a menu of makers uses where a menu of model sources uses its own, and the line under a Cursor model list. */
-const MAKER_WORDS = { back: 'Makers', backLabel: 'Back to Cursor’s model makers', group: 'Cursor’s model makers' } as const
-export const CURSOR_MODELS_NOTE = 'Every model here runs through Cursor, on your Cursor plan.'
-
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
 
@@ -119,6 +116,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
   readonly ownServers?: OwnServersBridge | undefined
 }): ReactNode {
+  const { t } = useLingui()
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
@@ -151,6 +149,9 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
   const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
+  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0127).
+  const backToMakers = t`Back to Cursor’s model makers`
+  const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
   const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
@@ -322,15 +323,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
           </div>
           : openSource ? <>
             <div className="model-picker__step">
-              <button ref={back} type="button" aria-label={makers ? MAKER_WORDS.backLabel : 'Back to model sources'} title={makers ? MAKER_WORDS.backLabel : 'Back to model sources'} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? MAKER_WORDS.back : 'Model sources'}</button>
+              <button ref={back} type="button" aria-label={makers ? backToMakers : 'Back to model sources'} title={makers ? backToMakers : 'Back to model sources'} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? t({ message: 'Makers', comment: 'A back control in the model menu that returns to the list of the companies that made Cursor’s models.' }) : 'Model sources'}</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
-            <div ref={list} role="listbox" aria-label={makers ? `${openSource.name} models in Cursor` : `${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+            <div ref={list} role="listbox" aria-label={makers ? makerModels(openSource.name) : `${openSource.name} models`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
               {openSource.models.map(option)}
             </div>
           </>
           // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
-          : <div ref={list} role="group" aria-label={makers ? MAKER_WORDS.group : `${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
+          : <div ref={list} role="group" aria-label={makers ? t`Cursor’s model makers` : `${selectedProvider!.name} model sources`} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
               const about = `${countModels(source.models.length)}${source.name === OPENCODE_ZEN_SOURCE ? ' · Free with OpenCode Zen' : ''}`
               return <button type="button" key={source.name} data-source={source.name} aria-current={holdsChosen(source) || undefined} tabIndex={source.name === stopSource ? 0 : -1}
@@ -341,7 +342,9 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
             {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
         {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note || selectedProvider?.providerId === 'cursor'
-          ? <p className="model-picker__note">{selectedProvider?.providerId === 'cursor' ? [CURSOR_MODELS_NOTE, note].filter(Boolean).join(' ') : note}</p> : null}
+          ? selectedProvider?.providerId === 'cursor'
+            ? <p className="model-picker__note tt-paragraph">{[t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
+            : <p className="model-picker__note">{note}</p> : null}
       </div>
     </dialog>}
     {addingServer && ownServers ? <AddOwnServerDialog bridge={ownServers} fallbackFocus={trigger} confirm onClose={() => setAddingServer(false)} /> : null}
