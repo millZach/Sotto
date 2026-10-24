@@ -39,7 +39,7 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
-import { cancelNightFalls, nightFallsShipped, playNightFalls } from '../watcher/nightFalls'
+import { cancelNightFalls, nightFallsRun, playNightFalls } from '../watcher/nightFalls'
 import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
@@ -693,9 +693,8 @@ export function AppProvider({
         setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1 } : null)
       }
       // Between Threads and Watcher's room the window plays night falls, unless the setting is off.
-      const from = navigationRef.current, current = settingsRef.current
-      const betweenRooms = (from === 'threads' && destination === 'watcher') || (from === 'watcher' && destination === 'threads')
-      if (betweenRooms && nightFallsShipped(updateRef.current) && current?.roomTransition !== false) playNightFalls(go, { forward: destination === 'watcher', speed: current?.roomTransitionSpeed ?? 1 })
+      const run = nightFallsRun(navigationRef.current, destination, updateRef.current, settingsRef.current)
+      if (run !== null) playNightFalls(go, run)
       else { cancelNightFalls(); go() }
     },
     updateSettings: (patch) => bridge === undefined
