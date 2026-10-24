@@ -1,9 +1,0 @@
-
-> sotto@0.1.37 package:linux:stable
-> npm run release:check && node scripts/package-stable.mjs linux
-
-
-> sotto@0.1.37 release:check
-> node scripts/check-release.mjs
-
-This checkout is 02026faccaff42048ebd2cd39e7e5c74f0a77d9e. Check out 99cb180b0201a0ada48a6bd88ae12ceb7411fd37, the commit Sotto Owl 0.1.37-owl.20261011.2 carried, or publish an Owl build of this commit first.

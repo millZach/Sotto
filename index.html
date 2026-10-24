@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owl sprites, prototype</title>
+<style>
+  @font-face {
+    font-family: 'Spline Sans Mono';
+    font-style: normal;
+    font-weight: 300 700;
+    src: url('spline-sans-mono-latin.woff2') format('woff2');
+  }
+  :root {
+    --canvas: oklch(0.115 0.008 265);
+    --surface: oklch(0.145 0.008 265);
+    --text: oklch(0.985 0.005 280);
+    --muted: oklch(0.72 0.014 265);
+    --border: oklch(0.305 0.02 265);
+    --accent: oklch(0.714403 0.104089 183.092);
+    color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --canvas: oklch(0.978 0.004 85);
+    --surface: oklch(0.99 0.003 85);
+    --text: oklch(0.235 0.014 75);
+    --muted: oklch(0.5 0.014 75);
+    --border: oklch(0.86 0.012 80);
+    --accent: oklch(0.53 0.095 186);
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; overflow-x: hidden; }
+  body {
+    background: var(--canvas); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    padding: 16px 16px 96px;
+  }
+  main { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 20px 0 8px; color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    font: inherit; color: var(--text); background: transparent; border: 0; padding: 6px 14px; cursor: pointer;
+  }
+  .seg button[aria-pressed='true'] { background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent); }
+  fieldset { border: 0; margin: 0; padding: 0; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  legend { float: left; margin-right: 6px; color: var(--muted); }
+  label { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sizes { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+  figure { margin: 0; padding: 10px; border: 1px solid var(--border); border-radius: 8px; max-width: 100%; overflow-x: auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  canvas { display: block; }
+  .strip { border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; max-width: 100%; }
+  .note { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+  /* The variant bar is not part of the design. */
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    background: #ffe600; color: #000; border-top: 3px solid #000;
+    padding: 8px 12px; font: 600 15px/1.2 ui-monospace, Consolas, monospace;
+  }
+  .bar button {
+    font: inherit; background: #000; color: #ffe600; border: 0; border-radius: 6px;
+    min-width: 48px; min-height: 40px; cursor: pointer;
+  }
+  .bar button:focus-visible { outline: 3px solid #d0006f; outline-offset: 2px; }
+  .bar span { text-align: center; min-width: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Owl sprites, prototype. Question: does a glyph owl hold up at the scene's size, dark and light?</h1>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Theme">
+      <button type="button" id="dark" aria-pressed="true">Dark</button>
+      <button type="button" id="light" aria-pressed="false">Light</button>
+    </div>
+    <fieldset>
+      <legend>Mood</legend>
+      <label><input type="radio" name="mood" value="awake" checked> Awake</label>
+      <label><input type="radio" name="mood" value="asleep"> Asleep</label>
+      <label><input type="radio" name="mood" value="waiting"> Waiting</label>
+    </fieldset>
+  </div>
+
+  <h2 id="variant-name">Variant</h2>
+  <div class="sizes">
+    <figure><canvas id="s1" aria-hidden="true"></canvas><figcaption>1x: 7 by 12 px cells, the scene's size</figcaption></figure>
+    <figure><canvas id="s15" aria-hidden="true"></canvas><figcaption>1.5x</figcaption></figure>
+    <figure><canvas id="s2" aria-hidden="true"></canvas><figcaption>2x</figcaption></figure>
+  </div>
+
+  <h2>Flight across the landscape, 1x</h2>
+  <div class="strip"><canvas id="strip" aria-hidden="true"></canvas></div>
+  <p class="note" id="motion-note"></p>
+</main>
+
+<nav class="bar" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">&larr;</button>
+  <span id="bar-label" aria-live="polite"></span>
+  <button type="button" id="next" aria-label="Next variant">&rarr;</button>
+</nav>
+
+<script>
+'use strict'
+// ---------- Constants copied from the scene ----------
+const CELL = { w: 7, h: 12 }
+const GLYPH_PX = 10.5
+const MOVING_MS = 33
+const IDLE_CHECK_MS = 125
+const RAMP = ' .·:-=+*#%@'
+const LIGHT_INK_BOOST = 1.9
+const LIGHT_ACCENT_BOOST = 1.5
+// The thread owls, as owlFamily.ts draws them.
+const PERCHED_OWL = ['{o,o}', '/)__)', ' " " ']
+const FLYING_OWL = [['\\{o,o}/', ' (__) '], ['-{o,o}-', ' (__) '], ['/{o,o}\\', ' (__) ']]
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+const lerp = (a, b, t) => a + (b - a) * t
+const rampGlyph = d => RAMP[Math.max(1, Math.round(clamp(d, 0, 1) * (RAMP.length - 1)))]
+
+// ---------- Sprites ----------
+// A sprite is { w, h, cells }, cells[r][c] = null (see-through) or { g, s, eye }.
+// Templates: 'E' is an eye, '~' is a blank that still hides the landscape behind it.
+function fromTemplate(rows, pose, eyeOpen, strength) {
+  const w = Math.max(...rows.map(r => r.length)), h = rows.length
+  const grid = rows.map(r => r.padEnd(w, ' ').split(''))
+  // Spaces reachable from the edge are see-through; enclosed ones hide the landscape.
+  const out = grid.map(r => r.map(() => false))
+  const stack = []
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) if ((r === 0 || c === 0 || r === h - 1 || c === w - 1) && grid[r][c] === ' ') stack.push([r, c])
+  while (stack.length) {
+    const [r, c] = stack.pop()
+    if (r < 0 || c < 0 || r >= h || c >= w || out[r][c] || grid[r][c] !== ' ') continue
+    out[r][c] = true
+    stack.push([r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1])
+  }
+  const shut = pose.mood === 'asleep' || pose.blink
+  const cells = grid.map((row, r) => row.map((g, c) => {
+    if (out[r][c]) return null
+    if (g === 'E') return { g: shut ? '-' : eyeOpen, s: 1, eye: true }
+    if (g === '~') return { g: ' ', s: 0, eye: false }
+    return { g, s: strength, eye: false }
+  }))
+  return { w, h, cells }
+}
+
+// A: the thread owl, three rows, unchanged glyphs. It cannot turn its head inside five glyphs, so the head row slides.
+const variantA = {
+  id: 'A', name: 'Thread owl, scaled',
+  perched(pose) {
+    const t = pose.turn
+    const head = ' '.repeat(1 + t) + PERCHED_OWL[0].replace(/o/g, 'E') + ' '.repeat(1 - t)
+    return fromTemplate([head, ' ' + PERCHED_OWL[1] + ' ', ' ' + PERCHED_OWL[2] + ' '], pose, 'o', 0.9)
+  },
+  flying(pose, flap) {
+    const f = FLYING_OWL[[0, 1, 2, 1][flap.frame % 4]]
+    return fromTemplate([f[0].replace(/o/g, 'E'), f[1]], pose, 'o', 0.9)
+  },
+}
+
+// B: six rows of plain ASCII. Ear tufts, a face disc with ringed eyes, folded wings, feet.
+const B_BODY = [
+  String.raw` /\_____/\ `,
+  null, // the face row, built per pose
+  String.raw` \ '---' / `,
+  String.raw` /(.:.:.)\ `,
+  String.raw`( (:.:.:) )`,
+  String.raw`  \_"_"_/  `,
+]
+function bFace(turn) {
+  return turn < 0 ? '((E)v(E)~~)' : turn > 0 ? '(~~(E)v(E))' : '(~(E)v(E)~)'
+}
+const B_FLY = [
+  [ // wings up
+    String.raw`\\   /\_____/\   //`,
+    String.raw` \\ ` + '(~(E)v(E)~)' + String.raw` // `,
+    String.raw`  \\ \ '---' / //  `,
+    String.raw`   \  |.:.:.|  /   `,
+    String.raw`        " "        `,
+  ],
+  [ // wings level
+    String.raw`     /\_____/\     `,
+    String.raw`____` + '(~(E)v(E)~)' + String.raw`____`,
+    String.raw`'--._\ '---' /_.--'`,
+    String.raw`      |.:.:.|      `,
+    String.raw`        " "        `,
+  ],
+  [ // wings down
+    String.raw`     /\_____/\     `,
+    String.raw`    ` + '(~(E)v(E)~)' + String.raw`    `,
+    String.raw`   / \ '---' / \   `,
+    String.raw`  // ~|.:.:.|~ \\  `,
+    String.raw` //     " "     \\ `,
+  ],
+]
+const variantB = {
+  id: 'B', name: 'Tufted ASCII',
+  perched(pose) {
+    const rows = B_BODY.map((r, i) => r === null ? bFace(pose.turn) : r)
+    return fromTemplate(rows, pose, 'o', 0.9)
+  },
+  flying(pose, flap) {
+    return fromTemplate(B_FLY[[0, 1, 2, 1][flap.frame % 4]], pose, 'o', 0.9)
+  },
+}
+
+// C: a silhouette drawn as shapes in pixels, then turned into ramp glyphs by coverage, the way the landscape is.
+function inEllipse(x, y, cx, cy, rx, ry, rot = 0) {
+  const dx = x - cx, dy = y - cy, cs = Math.cos(rot), sn = Math.sin(rot)
+  const u = dx * cs + dy * sn, v = -dx * sn + dy * cs
+  return (u * u) / (rx * rx) + (v * v) / (ry * ry) <= 1
+}
+function inPoly(x, y, pts) {
+  let inside = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j]
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+function distToSeg(x, y, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, t = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy))
+}
+// field(x, y) gives a density 0..1 or 0 for empty. The grid samples it 4 by 6 times a cell.
+function rasterize(cols, rows, field, eyes, pose) {
+  const SX = 4, SY = 6
+  const shut = pose.mood === 'asleep' || pose.blink
+  const cells = []
+  for (let r = 0; r < rows; r++) {
+    const row = []
+    for (let c = 0; c < cols; c++) {
+      let sum = 0, hit = 0
+      for (let j = 0; j < SY; j++) for (let i = 0; i < SX; i++) {
+        const d = field((c + (i + 0.5) / SX) * CELL.w, (r + (j + 0.5) / SY) * CELL.h)
+        if (d > 0) { sum += d; hit++ }
+      }
+      const d = sum / (SX * SY)
+      if (d < 0.07) { row.push(hit / (SX * SY) > 0.5 ? { g: ' ', s: 0, eye: false } : null); continue }
+      row.push({ g: rampGlyph(d), s: 0.35 + 0.6 * d, eye: false })
+    }
+    cells.push(row)
+  }
+  for (const [r, c] of eyes) if (cells[r] && c >= 0 && c < cols) cells[r][c] = { g: shut ? '-' : '@', s: 1, eye: true }
+  return { w: cols, h: rows, cells }
+}
+const variantC = {
+  id: 'C', name: 'Ramp silhouette',
+  perched(pose) {
+    const cols = 11, rows = 7, cx = cols * CELL.w / 2, t = pose.turn
+    const fx = cx + t * CELL.w // the face moves a whole cell, or the turn is lost to the grid
+    const field = (x, y) => {
+      let d = 0
+      if (inEllipse(x, y, cx, 56, 19, 25)) d = 0.45 + 0.14 * Math.sin(x * 0.9) * Math.sin(y * 0.7) // breast, speckled
+      if (inEllipse(x, y, cx - 15, 54, 7, 21, 0.12) || inEllipse(x, y, cx + 15, 54, 7, 21, -0.12)) d = 0.9 // wings
+      if (inEllipse(x, y, cx + t * 3, 24, 19, 14)) d = 0.74 // head
+      if (inPoly(x, y, [[cx - 19, 22], [cx - 18, 1], [cx - 8, 14]]) || inPoly(x, y, [[cx + 19, 22], [cx + 18, 1], [cx + 8, 14]])) d = 0.86 // tufts
+      if (inEllipse(x, y, fx - 8, 22, 7.5, 7) || inEllipse(x, y, fx + 8, 22, 7.5, 7)) d = 0.14 // face disc
+      if (inPoly(x, y, [[fx - 3.5, 29], [fx + 3.5, 29], [fx, 38]])) d = 0.7 // beak
+      if ((Math.abs(x - (cx - 6)) < 3 || Math.abs(x - (cx + 6)) < 3) && y > 78 && y < 84) d = 0.7 // feet
+      return d
+    }
+    const ec = Math.floor(cx / CELL.w) + t
+    return rasterize(cols, rows, field, [[1, ec - 1], [1, ec + 1]], pose)
+  },
+  flying(pose, flap) {
+    const cols = 19, rows = 6, cx = cols * CELL.w / 2
+    const a = Math.sin(flap.phase) * 0.95 // wing angle: up is positive
+    const span = 56
+    const wing = (side) => {
+      const sx = cx + side * 10, sy = 32
+      const tx = sx + side * span * Math.cos(a) * (0.8 + 0.2 * Math.cos(a)), ty = sy - span * Math.sin(a) * 0.7
+      const rx = cx + side * 9, ry = 52
+      const mx = lerp(tx, rx, 0.5), my = lerp(ty, ry, 0.5) + 6
+      return { pts: [[sx, sy - 6], [lerp(sx, tx, 0.5), lerp(sy, ty, 0.5) - 7], [tx, ty], [mx, my], [rx, ry]], sx, sy, tx, ty }
+    }
+    const wl = wing(-1), wr = wing(1)
+    const field = (x, y) => {
+      let d = 0
+      for (const w of [wl, wr]) if (inPoly(x, y, w.pts)) {
+        d = 0.78
+        for (let k = 1; k <= 3; k++) { // feather gaps, as the painter cuts them
+          const t = k / 4
+          if (distToSeg(x, y, lerp(w.sx, w.tx, t), lerp(w.sy - 3, w.ty, t), lerp(w.sx, w.tx, t * 0.85), lerp(w.sy + 12, w.ty + 6, t)) < 1.6) d = 0.4
+        }
+      }
+      if (inEllipse(x, y, cx, 46, 15, 20)) d = 0.45 + 0.14 * Math.sin(x * 0.9) * Math.sin(y * 0.7)
+      if (inEllipse(x, y, cx, 22, 17, 12)) d = 0.74
+      if (inPoly(x, y, [[cx - 17, 20], [cx - 16, 1], [cx - 7, 12]]) || inPoly(x, y, [[cx + 17, 20], [cx + 16, 1], [cx + 7, 12]])) d = 0.86
+      if (inEllipse(x, y, cx - 7, 21, 6.5, 6.5) || inEllipse(x, y, cx + 7, 21, 6.5, 6.5)) d = 0.14
+      if (inPoly(x, y, [[cx - 3.5, 27], [cx + 3.5, 27], [cx, 35]])) d = 0.7
+      if (inPoly(x, y, [[cx - 6, 64], [cx + 6, 64], [cx + 3, 70], [cx - 3, 70]])) d = 0.7 // tucked feet
+      return d
+    }
+    const ec = Math.floor(cx / CELL.w)
+    return rasterize(cols, rows, field, [[1, ec - 1], [1, ec + 1]], pose)
+  },
+}
+
+const VARIANTS = [variantA, variantB, variantC]
+
+// ---------- Theme and ink ----------
+const THEMES = {
+  dark: { canvas: 'oklch(0.115 0.008 265)', text: [0.985, 0.005, 280], accent: [0.714403, 0.104089, 183.092], light: false },
+  light: { canvas: 'oklch(0.978 0.004 85)', text: [0.235, 0.014, 75], accent: [0.53, 0.095, 186], light: true },
+}
+function ink(lch, strength, boost) {
+  const a = clamp(Math.round(clamp(strength, 0, 1) * 20) / 20 * boost, 0, 1)
+  return `oklch(${lch[0]} ${lch[1]} ${lch[2]} / ${a.toFixed(2)})`
+}
+
+// ---------- Landscape ----------
+function rng(seed) {
+  return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
+}
+// Returns { cols, rows, cells: [{g, s}] | null, perches: [{c, r}] } where a perch is the cell the owl's feet sit above.
+function landscape(cols, rows, perchCols, seed) {
+  const r = rng(seed)
+  const cells = Array.from({ length: rows }, () => Array(cols).fill(null))
+  const put = (c, rr, g, s) => { if (rr >= 0 && rr < rows && c >= 0 && c < cols) cells[rr][c] = { g, s } }
+  // Stars.
+  for (let rr = 0; rr < Math.min(5, rows - 6); rr++) for (let c = 0; c < cols; c++) {
+    const v = r()
+    if (v > 0.97) put(c, rr, v > 0.995 ? '*' : v > 0.985 ? '+' : '·', 0.2 + r() * 0.4)
+  }
+  // Hills, denser with depth.
+  const ground = c => rows - 3 - 1.4 * Math.sin(c * 0.08 + 0.5) - 0.9 * Math.sin(c * 0.21 + 2)
+  for (let c = 0; c < cols; c++) {
+    const g = ground(c)
+    for (let rr = 0; rr < rows; rr++) {
+      const depth = rr + 0.5 - g
+      if (depth < 0) continue
+      const d = clamp(0.15 + 0.16 * depth + (r() - 0.5) * 0.12, 0, 0.75)
+      put(c, rr, rampGlyph(d), 0.1 + 0.5 * d)
+    }
+  }
+  const limbRow = rows - 5
+  const perches = []
+  for (const pc of perchCols) {
+    const dir = pc < cols / 2 ? -1 : 1 // the trunk is on the outside
+    const trunk = pc + dir * 8
+    // Crown, behind and away from the perch.
+    for (let rr = 0; rr < limbRow; rr++) for (let c = trunk - 8; c <= trunk + 8; c++) {
+      const dx = (c - (trunk + dir * 2)) / 6.5, dy = (rr - (limbRow - 6)) / 3.4
+      const q = 1 - (dx * dx + dy * dy)
+      if (q > 0 && r() > 0.12) put(c, rr, rampGlyph(0.1 + q * 0.45 + (r() - 0.5) * 0.1), 0.12 + 0.4 * q)
+    }
+    for (let rr = limbRow - 3; rr < rows; rr++) { put(trunk, rr, '#', 0.55); put(trunk - dir, rr, rr > limbRow ? '%' : ':', 0.45) }
+    for (let c = Math.min(trunk, pc - dir * 7); c <= Math.max(trunk, pc - dir * 7); c++) put(c, limbRow, '=', 0.5)
+    put(pc - dir * 7, limbRow - 1, '-', 0.35)
+    perches.push({ c: pc, r: limbRow - 1 })
+  }
+  return { cols, rows, cells, perches }
+}
+
+// ---------- Drawing ----------
+const state = { variant: 1, theme: 'dark', mood: 'awake', reduce: matchMedia('(prefers-reduced-motion: reduce)').matches, t0: performance.now() }
+
+function prepare(canvas, cols, rows, scale) {
+  const dpr = window.devicePixelRatio || 1
+  const w = cols * CELL.w * scale, h = rows * CELL.h * scale
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr)
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px'
+  }
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+  ctx.font = `${GLYPH_PX * scale}px 'Spline Sans Mono', ui-monospace, Consolas, monospace`
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  return ctx
+}
+
+// Draws a landscape grid with a sprite over it. The sprite's bottom centre sits at cell (ax, ay).
+function drawScene(canvas, land, sprite, ax, ay, scale) {
+  const th = THEMES[state.theme]
+  const inkBoost = th.light ? LIGHT_INK_BOOST : 1, accBoost = th.light ? LIGHT_ACCENT_BOOST : 1
+  const ctx = prepare(canvas, land.cols, land.rows, scale)
+  const cw = CELL.w * scale, ch = CELL.h * scale
+  const c0 = Math.round(ax - sprite.w / 2), r0 = ay - sprite.h + 1
+  const owlAt = (c, r) => {
+    const sr = r - r0, sc = c - c0
+    return sr >= 0 && sr < sprite.h && sc >= 0 && sc < sprite.w ? sprite.cells[sr][sc] : null
+  }
+  for (let r = 0; r < land.rows; r++) for (let c = 0; c < land.cols; c++) {
+    if (owlAt(c, r)) continue
+    const cell = land.cells[r][c]
+    if (!cell) continue
+    ctx.fillStyle = ink(th.text, cell.s, inkBoost)
+    ctx.fillText(cell.g, (c + 0.5) * cw, (r + 0.5) * ch)
+  }
+  const waiting = state.mood === 'waiting'
+  for (let sr = 0; sr < sprite.h; sr++) for (let sc = 0; sc < sprite.w; sc++) {
+    const cell = sprite.cells[sr][sc]
+    if (!cell || cell.g === ' ') continue
+    const x = (c0 + sc + 0.5) * cw, y = (r0 + sr + 0.5) * ch
+    if (cell.eye && waiting) {
+      ctx.save()
+      ctx.shadowColor = ink(th.accent, 0.9, accBoost); ctx.shadowBlur = 7 * scale
+      ctx.fillStyle = ink(th.accent, 1, accBoost)
+      ctx.fillText(cell.g, x, y); ctx.fillText(cell.g, x, y)
+      ctx.restore()
+    } else {
+      ctx.fillStyle = ink(th.text, cell.s, inkBoost)
+      ctx.fillText(cell.g, x, y)
+    }
+  }
+}
+
+// ---------- Timing ----------
+const BLINK_EVERY = 4700, BLINK_MS = 140, TURN_EVERY = 5000, TURN_HOLD = 1300
+const PERCH_MS = 2500, FLY_MS = 3000, LOOP_MS = 2 * (PERCH_MS + FLY_MS)
+const FLAP_TICKS = 4 // the loop draws every 33 ms; a flap frame holds four of them
+
+function poseAt(t) {
+  const mood = state.mood
+  if (state.reduce) return { mood, blink: false, turn: 0 }
+  const blink = mood !== 'asleep' && t % BLINK_EVERY > BLINK_EVERY - BLINK_MS
+  const k = Math.floor(t / TURN_EVERY)
+  const turn = mood === 'asleep' || k === 0 || t % TURN_EVERY > TURN_HOLD ? 0 : (k % 2 ? -1 : 1)
+  return { mood, blink, turn }
+}
+
+let land = null
+function flightAt(t) {
+  if (state.reduce) return { flying: false, perch: 0 }
+  const u = t % LOOP_MS
+  if (u < PERCH_MS) return { flying: false, perch: 0 }
+  if (u < PERCH_MS + FLY_MS) return { flying: true, from: 0, to: 1, p: (u - PERCH_MS) / FLY_MS, ft: u - PERCH_MS }
+  if (u < 2 * PERCH_MS + FLY_MS) return { flying: false, perch: 1 }
+  return { flying: true, from: 1, to: 0, p: (u - 2 * PERCH_MS - FLY_MS) / FLY_MS, ft: u - 2 * PERCH_MS - FLY_MS }
+}
+
+const sizeLand = {}
+function sizeLandscape(sprite) {
+  const cols = sprite.w + 6, rows = sprite.h + 3, key = state.variant + ':' + cols + 'x' + rows
+  if (!sizeLand[key]) {
+    const cells = Array.from({ length: rows }, () => Array(cols).fill(null))
+    for (let c = 1; c < cols - 1; c++) cells[rows - 2][c] = { g: '=', s: 0.5 }
+    for (let c = 0; c < cols; c++) cells[rows - 1][c] = { g: rampGlyph(0.25 + 0.1 * Math.sin(c * 1.7)), s: 0.22 }
+    cells[0][1] = { g: '·', s: 0.4 }; cells[1][cols - 2] = { g: '+', s: 0.3 }
+    sizeLand[key] = { cols, rows, cells }
+  }
+  return sizeLand[key]
+}
+
+function render(now) {
+  const t = now - state.t0
+  const v = VARIANTS[state.variant]
+  const pose = poseAt(t)
+  // The three sizes: perched, blinking and turning.
+  const perched = v.perched(pose)
+  const sl = sizeLandscape(v.perched({ mood: 'awake', blink: false, turn: 0 }))
+  for (const [id, scale] of [['s1', 1], ['s15', 1.5], ['s2', 2]]) {
+    drawScene(document.getElementById(id), sl, perched, sl.cols / 2, sl.rows - 3, scale)
+  }
+  // The flight strip.
+  const f = flightAt(t)
+  let sprite, ax, ay
+  if (!f.flying) {
+    sprite = perched; ax = land.perches[f.perch].c; ay = land.perches[f.perch].r
+  } else {
+    const a = land.perches[f.from], b = land.perches[f.to]
+    const e = f.p < 0.5 ? 2 * f.p * f.p : 1 - Math.pow(-2 * f.p + 2, 2) / 2
+    const tick = Math.floor(f.ft / MOVING_MS)
+    const landing = f.p > 0.9
+    const flap = { frame: landing ? 0 : Math.floor(tick / FLAP_TICKS), phase: landing ? Math.PI / 2 : (tick / (FLAP_TICKS * 4)) * Math.PI * 2 }
+    sprite = v.flying({ mood: pose.mood === 'asleep' ? 'awake' : pose.mood, blink: pose.blink, turn: 0 }, flap)
+    ax = Math.round(lerp(a.c, b.c, e))
+    ay = Math.round(lerp(a.r, b.r, f.p) - 3.2 * Math.sin(Math.PI * f.p))
+  }
+  drawScene(document.getElementById('strip'), land, sprite, ax, ay, 1)
+  return f.flying
+}
+
+function rebuildLand() {
+  const box = document.querySelector('.strip')
+  const cols = clamp(Math.floor((box.clientWidth - 2) / CELL.w), 46, 120)
+  const p = clamp(Math.round(cols * 0.18), 12, 22)
+  land = landscape(cols, 15, [p, cols - 1 - p], 7)
+}
+
+let last = -Infinity, flying = false, raf = 0
+function loop(now) {
+  raf = requestAnimationFrame(loop)
+  const delay = flying ? MOVING_MS : IDLE_CHECK_MS
+  if (now - last < delay - 4) return
+  last = now
+  flying = render(now)
+}
+// ?t=<ms> holds the page at one moment, for screenshots.
+const frozen = new URLSearchParams(location.search).get('t')
+if (frozen !== null) state.t0 = performance.now() - Number(frozen)
+function restart() {
+  cancelAnimationFrame(raf)
+  if (state.reduce || frozen !== null) { render(frozen !== null ? state.t0 + Number(frozen) : performance.now()); return }
+  last = -Infinity
+  raf = requestAnimationFrame(loop)
+}
+
+// ---------- Controls ----------
+function setVariant(i, push = true) {
+  state.variant = (i + VARIANTS.length) % VARIANTS.length
+  const v = VARIANTS[state.variant]
+  const label = `Variant ${v.id}: ${v.name}`
+  document.getElementById('bar-label').textContent = `${label} (${state.variant + 1} of ${VARIANTS.length})`
+  document.getElementById('variant-name').textContent = label
+  if (push) { const u = new URL(location.href); u.searchParams.set('variant', v.id); history.replaceState(null, '', u) }
+  render(performance.now())
+}
+function setTheme(name) {
+  state.theme = name
+  document.documentElement.dataset.theme = name
+  document.getElementById('dark').setAttribute('aria-pressed', String(name === 'dark'))
+  document.getElementById('light').setAttribute('aria-pressed', String(name === 'light'))
+  render(performance.now())
+}
+document.getElementById('prev').addEventListener('click', () => setVariant(state.variant - 1))
+document.getElementById('next').addEventListener('click', () => setVariant(state.variant + 1))
+document.getElementById('dark').addEventListener('click', () => setTheme('dark'))
+document.getElementById('light').addEventListener('click', () => setTheme('light'))
+for (const r of document.querySelectorAll('input[name=mood]')) r.addEventListener('change', e => { state.mood = e.target.value; render(performance.now()) })
+document.addEventListener('keydown', e => {
+  const a = document.activeElement
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return
+  if (e.key === 'ArrowLeft') { setVariant(state.variant - 1); e.preventDefault() }
+  if (e.key === 'ArrowRight') { setVariant(state.variant + 1); e.preventDefault() }
+})
+const mq = matchMedia('(prefers-reduced-motion: reduce)')
+function motionNote() {
+  document.getElementById('motion-note').textContent = state.reduce
+    ? 'Reduced motion is on: the owl stays perched with its eyes open. No flight, no turn, no blink.'
+    : 'Perched 2.5 s, flies 3 s, lands. The loop draws every 33 ms; each flap frame holds four draws. Blink every 4.7 s, head turn every 5 s.'
+}
+mq.addEventListener('change', () => { state.reduce = mq.matches; motionNote(); restart() })
+let resizeTimer = 0
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { rebuildLand(); render(performance.now()) }, 100) })
+
+const params = new URLSearchParams(location.search)
+const startIdx = Math.max(0, VARIANTS.findIndex(v => v.id === (params.get('variant') || 'A').toUpperCase()))
+if (params.get('theme') === 'light') state.theme = 'light'
+if (['awake', 'asleep', 'waiting'].includes(params.get('mood'))) {
+  state.mood = params.get('mood')
+  document.querySelector(`input[name=mood][value=${state.mood}]`).checked = true
+}
+document.fonts.load(`${GLYPH_PX}px 'Spline Sans Mono'`).catch(() => {}).then(() => {
+  rebuildLand()
+  setTheme(state.theme)
+  setVariant(startIdx, false)
+  motionNote()
+  restart()
+})
+</script>
+</body>
+</html>

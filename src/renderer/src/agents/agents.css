@@ -1,4 +1,0 @@
-.agent-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.agent-muted { color: var(--tt-text-muted); font-size: 12px; }
-.agent-error, .agent-notice { margin: 0; padding: 10px 13px; border-radius: 5px; background: var(--tt-surface); border-left: 3px solid var(--tt-border); font-size: 12px; overflow-wrap: anywhere; }
-.agent-error { border-color: var(--tt-error); color: var(--tt-error); }
