@@ -14,6 +14,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { WATCHER_CHANGED, watcherRoomStateSchema, type WatcherRoomState, type WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { stack, STREAMING_CHUNKS, STREAMING_CHUNK_GAP_MS, STREAMING_ROUNDS, records } from './windowThreadShellPipeline'
+import { sameShownRoom } from './watcherRoomCompletion'
 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 const copyCpu = (before: NodeJS.CpuUsage) => { const used = process.cpuUsage(before); return used.user + used.system }
@@ -164,9 +165,8 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
       // Payload accounting and equality run after both CPU reads. Keeping the latest projected room
       // independently catches a dropped trailing event rather than only checking last-send transport.
       counts.wireBytes = sentRooms.reduce((bytes, room) => bytes + serialize(room).length, 0)
-      // A room projected after the last send differs from it, if at all, only in when it was read.
-      const timeless = (room: WatcherRoomState) => JSON.stringify({ ...room, observedAt: undefined })
-      if (timeless(result.room) !== timeless(candidate.expected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
+      // A room projected after the last send differs from it, if at all, only in when it was read and which build it was.
+      if (!sameShownRoom(result.room, candidate.expected)) throw new Error('Latest projected room differs across actual IPC/contextBridge')
       if (counts.projectionShellReads !== 0) throw new Error('Room projection cloned a local shell')
       if (watcher.watchedThreadIds().length !== streamCount || result.room.watchedThreads.some(thread => thread.status !== 'idle')) throw new Error('Watcher fixture lost its participants or final quiet state')
       rows.push({ ...counts, completionAttempts, wallMs, mainCpuMs, mainProcessCpuMs, rendererCpuMs: result.cpuMs,
