@@ -8,7 +8,7 @@ import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
 import { useOptionalAgents } from './AgentContext'
 import { useHeldProviders } from '../state/owlFeature'
-import { newestModelsFirst } from './ModelPicker'
+import { modelSources, newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { CursorConnection, useCursorSignIn } from './CursorConnection'
@@ -208,13 +208,7 @@ export function ProvidersSettings(): ReactNode {
   const connectButton = <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={`${connected ? 'Disconnect' : status.connection === 'error' ? 'Retry' : 'Connect'} ${label}`}
     onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? 'Disconnecting…' : pending[selected] === 'refresh' ? 'Refreshing…' : 'Connecting…' : connected ? 'Disconnect' : status.connection === 'error' ? 'Retry connection' : 'Connect'}</Button>
   // Cursor's models arrive grouped by model maker, in Cursor's order (ADR-0127), and its Models tab keeps them so.
-  const makers = selected === 'cursor' && models.some(model => model.source) ? hostModels.filter(model => model.providerId === 'cursor').reduce((groups, model) => {
-    const maker = model.source ?? 'Cursor'
-    const group = groups.find(([name]) => name === maker)
-    if (group) group[1].push(model)
-    else groups.push([maker, [model]])
-    return groups
-  }, [] as [string, AgentModel[]][]) : undefined
+  const makers = selected === 'cursor' ? modelSources(hostModels.filter(model => model.providerId === 'cursor'), PROVIDER_LABELS.cursor) : undefined
   return <div className="providers-settings">
     {/* Your own model servers sit above the provider tiles, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
@@ -283,7 +277,7 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'muse' && <details className="provider-support"><summary>Threads with Muse</summary><p>Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.</p><p>On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
             {selected === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
             {selected === 'opencode' && <details className="provider-support"><summary>Threads with OpenCode</summary><p>Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.</p><p>Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.</p></details>}
-          </> : makers?.length ? <div aria-label={`${label} available models`} role="group">{makers.map(([maker, items]) => <section key={maker} aria-label={maker}>
+          </> : makers?.length ? <div aria-label={`${label} available models`} role="group">{makers.map(({ name: maker, models: items }) => <section key={maker} aria-label={maker}>
             <h5 className="provider-models__maker">{maker}</h5>
             <ul className="provider-models">{items.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul>
           </section>)}</div> : models.length ? <ul className="provider-models" aria-label={`${label} available models`}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? 'Agent setting' : 'Available' : 'Unavailable'}</small></li>)}</ul> : <p className="provider-models__empty">{connected ? 'No models were returned. Refresh this provider to check again.' : `Connect ${label} to load its models.`}</p>}
