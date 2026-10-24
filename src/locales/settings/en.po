@@ -1466,6 +1466,10 @@ msgstr "Commit and pull request style"
 msgid "Commit subject"
 msgstr "Commit subject"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
+msgstr "Compact idle threads"
+
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect"

@@ -124,7 +124,7 @@ it('names Sotto on an idle compaction and leads to the switch that stops it (ADR
   const view = render(<ThreadCompaction thread={idle('completed')} supported connected command={vi.fn()} />)
   expect(screen.getByRole('status')).toHaveTextContent('Sotto compacted this idle thread before its cache expired.')
   fireEvent.click(screen.getByRole('button', { name: 'Turn off idle compaction in Settings' }))
-  expect(navigate).toHaveBeenCalledWith('settings', 'settings-providers', ['Compact idle threads'])
+  expect(navigate).toHaveBeenCalledWith('settings', 'settings-providers', 'compact-idle-threads')
   expect(target.takeAimedProvider()).toBe('claude')
   view.rerender(<ThreadCompaction thread={idle('failed')} supported connected command={vi.fn()} />)
   expect(screen.getByRole('status')).toHaveTextContent('Sotto could not compact this idle thread. Its full history is kept.')

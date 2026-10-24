@@ -102,6 +102,7 @@ interface SettingSpec {
   readonly section: SettingsSectionId
   readonly words?: string
   readonly fallback?: string
+  readonly provider?: ProviderId
   readonly gate?: SettingGate
 }
 

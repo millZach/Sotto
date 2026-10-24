@@ -24,7 +24,7 @@ it('opens Claude Code’s page with the switch in focus when a thread’s Turn o
   provideAgents()
   const onUpdateSettings = vi.fn(async () => true)
   aimProviderSettings('claude')
-  render(<SettingsView {...baseProps({ onUpdateSettings, openSection: { section: 'settings-providers', key: 1, settings: ['Compact idle threads'] } })} />)
+  render(<SettingsView {...baseProps({ onUpdateSettings, openSection: { section: 'settings-providers', key: 1, setting: 'compact-idle-threads' } })} />)
   const toggle = await screen.findByRole('switch', { name: 'Compact idle threads' })
   await waitFor(() => expect(toggle).toHaveFocus())
   expect(toggle).toHaveAttribute('aria-checked', String(DEFAULT_SETTINGS.compactIdleThreads))
