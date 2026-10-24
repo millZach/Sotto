@@ -177,12 +177,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     const text = p.prompt.filter(part => part.type === 'text').map(part => part.text).join('')
     session.history.push({ sessionUpdate: 'user_message_chunk', content: { type: 'text', text } }); save(p.sessionId)
     prompt = { id: frame.id, sessionId: p.sessionId }
-    // Cursor names a session on its first prompt; it is also the first sign the prompt was taken.
-    const taken = () => send({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'session_info_update', title: 'Fixture title' } } })
-    if (script.delayPrompt) setTimeout(taken, script.delayPrompt); else taken()
-    // A delay is spent once. The script is rewritten only then, and moved into place whole, so a process starting
+    // Cursor names a session on its first prompt; it is also the first sign the prompt was taken. `dropPromptAck` loses
+    // that sign for one prompt: the fake shows nothing of the prompt until a test moves its turn on.
+    if (!script.dropPromptAck) send({ method: 'session/update', params: { sessionId: p.sessionId, update: { sessionUpdate: 'session_info_update', title: 'Fixture title' } } })
+    // A drop is spent once. The script is rewritten only then, and moved into place whole, so a process starting
     // meanwhile, or the fixture merging a script of its own, never reads half a file and takes it for none.
-    if (script.delayPrompt) { const staged = path(`script.json.${process.pid}.tmp`); writeFileSync(staged, JSON.stringify({ ...script, delayPrompt: undefined })); renameSync(staged, path('script.json')) }
+    if (script.dropPromptAck) { const staged = path(`script.json.${process.pid}.tmp`); writeFileSync(staged, JSON.stringify({ ...script, dropPromptAck: undefined })); renameSync(staged, path('script.json')) }
   } else if (frame.method === 'session/cancel') {
     finish('cancelled')
   } else if (frame.id !== undefined) send({ id: frame.id, error: { code: -32601, message: 'Method not found' } })

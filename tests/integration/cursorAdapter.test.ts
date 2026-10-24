@@ -154,10 +154,12 @@ describe('Cursor ACP adapter', () => {
   })
 
   it('waits for a Cursor process that is slow to start, rather than reading its start as a lost answer', async () => {
-    f = await cursorFixture()
+    // Which deadline a start waits is what this checks, so the acknowledgement deadline is set below the start on purpose;
+    // nothing is lost, and the start's own deadline stays the adapter's generous default.
+    f = await cursorFixture(undefined, 2_000)
     await f.host.connect()
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
-    // Past the fixture's two-second acknowledgement deadline, as a process start on a loaded machine can be.
+    // Past that acknowledgement deadline, as a process start on a loaded machine can be.
     await f.script({ startDelayMs: 2_500 })
     const id = randomUUID()
     expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Slow start' })).toEqual({ accepted: true })
