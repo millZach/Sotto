@@ -34,7 +34,7 @@ import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
-import type { AgentState } from '../../src/shared/agents'
+import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
 
 /** These tests run on the real clock: ordinary news waits as long as a question does (#1190's timing has unit tests). */
 const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
@@ -568,9 +568,11 @@ it('picks a default send’s delivery on the desktop and sends a paired host the
   const packets: WatcherHostControl[] = []
   const original = f.socket.watcherControl.bind(f.socket)
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(packet => { packets.push(structuredClone(packet)); return original(packet) })
-  const steered = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default steer' })
+  // A head fence comes before the picked delivery in the call as made; the host still finds the digest it was sent.
+  const head = await vi.waitFor(() => { const id = lastUserMessageIdOf(f.socket.shell().host.threads.find(item => item.id === target.threadId)!); if (!id) throw new Error('No head yet'); return id })
+  const steered = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default steer', expectedLastUserMessageId: head })
   expect(steered, JSON.stringify(steered)).toMatchObject({ status: 'ok', delivery: 'steer' })
-  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
+  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'steer', expectedTurnId: turnId, expectedLastUserMessageId: head })
   await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/steer')).toHaveLength(1))
   await native.driver.completeTurn(nativeId, 'Synthetic completion')
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)).toMatchObject({ status: 'idle', lastTurn: { status: 'completed' } }))

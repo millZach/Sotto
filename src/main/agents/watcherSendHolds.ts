@@ -1,4 +1,5 @@
 import type { AgentThread } from '../../shared/agents'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { CheckoutPendingWork } from './checkoutMutations'
 
 /**
@@ -34,13 +35,14 @@ export function queuedSendHeld(reason: 'paused-followups' | 'failed-followups'):
 
 /**
  * What a Watcher send that names no delivery does (ADR-0130): it steers a running turn, with the turn it reads as running
- * when the send names none, and goes now to a thread whose turn is over, so steering an idle thread never fails. Only a
- * running thread whose provider cannot steer queues it. A thread waiting on the user's card was refused before this.
+ * when the send names none, and goes now to a thread whose turn is over, so steering an idle thread never fails. A turn
+ * still under way that cannot be steered, on a provider that does not steer or ending after its thread reads idle, takes
+ * it queued. A thread waiting on the user's card was refused before this.
  */
 export function defaultDelivery(thread: Pick<AgentThread, 'status' | 'lastTurn'>,
   canSteer: boolean, expectedTurnId: string | undefined): { readonly delivery: 'now' | 'queue' | 'steer'; readonly expectedTurnId?: string } {
-  if (thread.status !== 'running') return { delivery: 'now', ...(expectedTurnId ? { expectedTurnId } : {}) }
-  if (!canSteer) return { delivery: 'queue', ...(expectedTurnId ? { expectedTurnId } : {}) }
+  if (!isThreadTurnRunning(thread)) return { delivery: 'now', ...(expectedTurnId ? { expectedTurnId } : {}) }
+  if (!canSteer || thread.status !== 'running') return { delivery: 'queue', ...(expectedTurnId ? { expectedTurnId } : {}) }
   const turnId = expectedTurnId ?? (thread.lastTurn?.status === 'running' ? thread.lastTurn.id : undefined)
   return { delivery: 'steer', ...(turnId ? { expectedTurnId: turnId } : {}) }
 }

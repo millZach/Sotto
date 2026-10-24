@@ -53,7 +53,7 @@ export class WatcherToolServer implements WatcherProfileTools {
     this.definitions = options.roles === true ? watcherToolDefinitions(true) : WATCHER_TOOL_DEFINITIONS
     this.instructions = options.roles === true ? watcherSystemPrompt(true) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
-      instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name another delivery. Read receipts instead of replaying uncertain delivery.',
+      instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name another delivery; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },
     this.definitions, (threadId, name, args, context) => this.call(threadId, name, args, context), threadId => this.service.isCurrent(threadId) ? this.definitions : [])
   }

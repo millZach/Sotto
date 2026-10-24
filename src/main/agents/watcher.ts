@@ -2704,7 +2704,8 @@ export class WatcherService implements WatcherControlHooks {
       const defaulted = Boolean(thread && send && !(input as WatcherToolInput<'send_to_thread'>).delivery)
       if (thread && defaulted) {
         const { expectedTurnId, ...sent } = input as WatcherToolInput<'send_to_thread'>
-        input = { ...sent, ...defaultDelivery(thread, capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer === true, expectedTurnId) }
+        // Parsed again so its keys fall in the schema's order, as a paired host parses it before checking the digest.
+        input = watcherToolSchemas.send_to_thread.input.parse({ ...sent, ...defaultDelivery(thread, capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer === true, expectedTurnId) })
       }
       if (thread && send) {
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)

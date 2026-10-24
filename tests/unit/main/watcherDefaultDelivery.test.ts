@@ -26,7 +26,9 @@ describe('what a Watcher send that names no delivery does (ADR-0130)', () => {
     expect(defaultDelivery({ status: 'idle' }, false, undefined)).toEqual({ delivery: 'now' })
   })
 
-  it('queues only for a running thread whose provider cannot steer', () => {
+  it('queues only for a turn under way that cannot be steered', () => {
     expect(defaultDelivery({ status: 'running', lastTurn: { id: 'turn-1', status: 'running' } }, false, undefined)).toEqual({ delivery: 'queue' })
+    // Native idle can come before the turn's completion: the turn is still under way, so a send now would start another.
+    expect(defaultDelivery({ status: 'idle', lastTurn: { id: 'turn-1', status: 'running' } }, true, undefined)).toEqual({ delivery: 'queue' })
   })
 })

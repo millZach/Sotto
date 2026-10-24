@@ -105,6 +105,15 @@ it('queues for a running thread whose provider cannot steer, says so, and goes n
   expect(await f.send('Synthetic default now')).toMatchObject({ status: 'ok', delivery: 'now', receipt: { deliveryState: 'accepted' } })
 })
 
+it('queues for a turn still ending after its thread reads idle, rather than start a second turn', async () => {
+  const f = await fixture('codex')
+  await f.turn('running')
+  f.native().thread.status = 'idle'
+  await f.refresh()
+  expect(await f.send('Synthetic ending turn')).toMatchObject({ status: 'ok', delivery: 'queue' })
+  expect(f.commands('send', 'Synthetic ending turn') + f.commands('steer', 'Synthetic ending turn')).toBe(0)
+})
+
 it('lets a named delivery win over the default', async () => {
   const f = await fixture('codex')
   await f.turn('running')

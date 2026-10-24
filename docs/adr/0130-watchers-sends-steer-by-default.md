@@ -16,8 +16,10 @@ A steer reaches the running turn at once. A Claude steer that lands while Claude
 
 - **A running turn** is steered. With no `expectedTurnId`, the steer goes into the turn Sotto reads as running; one the send names still fences it, and a turn that has moved on refuses it, as a named steer is refused.
 - **A thread whose turn is over** takes the send now and starts a new turn. Steering an idle thread does not fail. The checks a send now has still apply: a queued prompt that goes first, or one waiting for the user's review, holds it and the refusal says so.
-- **A running thread whose provider cannot steer** queues the send, the only way to reach it until its turn ends.
+- **A running thread whose provider cannot steer** queues the send, the only way to reach it until its turn ends. So does a turn still under way after its thread reads idle, which Sotto counts as running (`isThreadTurnRunning`) and which a steer cannot reach: a send now would start a second turn beside it.
 - **A thread waiting on the user's question or permission card** takes nothing, as before: the send is refused with `PENDING_USER_REQUEST`, nothing is queued, and Watcher tells the user. Zach chose this over holding one message for after the card, or steering into the waiting turn. Only the user answers a card (ADR-0004), and a steer into a turn blocked on one could read as its answer. The refusal comes before the default is picked, so it holds for every delivery.
+
+The user's own running turn still takes only a steer from Watcher (ADR-0073), so on a provider that cannot steer, the queued default is refused until that turn ends, as a named queue is.
 
 The result's `delivery` says which mode was used, and the operation keeps it, so receipts, outcomes, the user's own turn rule (Watcher may only steer it) and the writer's checks read it as if the send had named it.
 
