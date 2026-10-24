@@ -117,10 +117,10 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
     for (const { params } of launches) expect((params!.mcpServers as { name: string }[]).map(server => server.name).sort()).toEqual([...names].sort())
-    // Cursor takes no instructions from a client, so they go ahead of each message to Watcher.
+    // Cursor takes no instructions from a client, so they go ahead of Watcher's first message on a process.
     const prompts = records.filter(record => record.method === 'session/prompt')
     expect(prompts.length).toBeGreaterThan(0)
-    for (const record of prompts) expect((record.params!.prompt as { text: string }[])[0]!.text.startsWith(cursorWatcherInstructions())).toBe(true)
+    expect((prompts[0]!.params!.prompt as { text: string }[])[0]!.text.startsWith(cursorWatcherInstructions())).toBe(true)
   } else {
     const launches = records.filter(record => ['session/new', 'session/load'].includes(record.method ?? ''))
     expect(launches.length).toBeGreaterThan(0)
@@ -240,6 +240,9 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     // Muse is told Watcher's instructions once on a host (#1418): the turns after the first carry the message alone.
     const museTurns = async () => (await f.driver.requests()).filter(record => record.method === 'turn/start').map(record => record.params!.input as unknown[])
     if (provider === 'muse') expect((await museTurns()).map(input => input.length)).toEqual([2, ...modes.map(() => 1)])
+    // Cursor is told them once on a process (#1418), and a mode change starts a new process, so each of these turns has them.
+    const cursorPrompts = async () => (await f.driver.requests()).filter(record => record.method === 'session/prompt').map(record => (record.params!.prompt as { text: string }[])[0]!.text)
+    if (provider === 'cursor') expect((await cursorPrompts()).map(text => text.startsWith(cursorWatcherInstructions()))).toEqual([true, ...modes.map(() => true)])
     await expect(f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, providerMode: 'anything' })).rejects.toThrow('ordinary permission modes')
     const beforeModelChange = (await f.driver.requests()).length
     expect((await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, reasoningEffort: 'high', modelId: 'fixture-second-model' })).accepted).toBe(true)
@@ -272,6 +275,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     assertConfiguration(provider, await f.driver.requests())
     // A cold resume is a new host, which tells the resumed session the instructions again.
     if (provider === 'muse') expect((await museTurns()).at(-1)![0]).toEqual({ type: 'text', text: MUSE_WATCHER_INSTRUCTIONS })
+    if (provider === 'cursor') expect((await cursorPrompts()).at(-1)).toBe(cursorWatcherInstructions() + 'Synthetic resumed turn')
     assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeResume), 'full-access')
     expect(tools.revoke).not.toHaveBeenCalled()
     if (provider === 'codex') {
@@ -286,7 +290,7 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
 })
 
 /** A Watcher thread and an ordinary thread beside it on one provider, for the request note checks. */
-async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok' | 'muse', instructions?: string) {
+async function watcherBesideOrdinary(f: { host: AgentHost; root: string; projectId: string; modelId: string }, provider: 'codex' | 'claude' | 'grok' | 'muse' | 'cursor', instructions?: string) {
   const id = randomUUID(), ordinary = randomUUID()
   await attach(f.host, f.root, id, f.projectId, provider, randomUUID(), instructions)
   await f.host.connect()
@@ -417,6 +421,39 @@ it('tells a Muse Watcher its profile’s instructions once, again after a compac
   expect(turns.map(input => input[0]!.text === instructions.text)).toEqual([true, false, true, false, true, false])
   const shown = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)
   expect(shown).toEqual(['Synthetic first', 'Synthetic second', 'Synthetic after compaction', 'Synthetic fourth', 'Synthetic after a compaction Muse made', 'Synthetic before reading state'])
+})
+
+it('tells a Cursor Watcher its profile’s instructions once on a process, again when the note says the conversation is new, and shows each message as typed', async () => {
+  const f = await cursorFixture(undefined, 10_000); cleanups.push(f.cleanup)
+  // With worker roles on, the profile's instructions carry the roles lines (#1417).
+  const { id } = await watcherBesideOrdinary(f, 'cursor', watcherSystemPrompt(true))
+  const send = async (text: string, note: string) => {
+    expect((await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text, watcherRequestNote: note })).accepted).toBe(true)
+    await f.driver.completeTurn(id, 'Synthetic complete')
+    await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  }
+  const note = () => watcherRequestNote(randomUUID(), randomUUID())
+  const instructions = cursorWatcherInstructions(watcherSystemPrompt(true))
+  const first = note(), second = note()
+  await send('Synthetic first', first)
+  await send('Synthetic second', second)
+  // A note that says the conversation is new or was compacted brings them back, once while the line stays in each note.
+  const compacted = watcherRequestNote(randomUUID(), randomUUID(), true)
+  expect(compacted).toContain(WATCHER_COMPACTED_NOTE)
+  await send('Synthetic in a new conversation', compacted)
+  await send('Synthetic before reading state', watcherRequestNote(randomUUID(), randomUUID(), true))
+  // A new process tells the session it loads them again, though its replayed history carried them.
+  f.host.disconnect(); await f.adapter.closed(); await f.host.connect(); await f.host.startThreadSession!(id)
+  await send('Synthetic on a new process', note())
+  await send('Synthetic after that', note())
+  const prompts = (await f.driver.requests()).filter(record => record.method === 'session/prompt').map(record => (record.params!.prompt as { text: string }[])[0]!.text)
+  expect(prompts[0]).toBe(instructions + 'Synthetic first' + watcherRequestLine(first))
+  expect(prompts[0]).toContain(WATCHER_ROLES_PROMPT)
+  expect(prompts[1]).toBe('Synthetic second' + watcherRequestLine(second))
+  expect(prompts.map(text => text.startsWith(instructions))).toEqual([true, false, true, false, true, false])
+  // Replayed on the new process and live, each shows as typed: Sotto's instructions and a note alone both come off.
+  const shown = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages.filter(message => message.role === 'user').map(message => message.text)
+  expect(shown).toEqual(['Synthetic first', 'Synthetic second', 'Synthetic in a new conversation', 'Synthetic before reading state', 'Synthetic on a new process', 'Synthetic after that'])
 })
 
 it('keeps words a user typed that look like Watcher’s instructions in a Muse message shown from its wire text', async () => {

@@ -34,7 +34,7 @@ import { markTurnActivity } from './turnActivity'
 import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
-import { watcherRequestLine } from './watcherRequestNote'
+import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
 
 /**
  * Cursor as a thread provider (ADR-0125): one `agent acp` process per thread, started from Cursor's own program with
@@ -82,13 +82,15 @@ const commandsSchema = z.array(z.object({ name: z.string().min(1).max(256), desc
 export const CURSOR_ALLOW_EDITS_NOTICE = 'Cursor has no Allow edits mode, so this thread asks for approval. Cursor still makes edits inside the project folder without asking.'
 const PROCESS_LOST = 'Cursor stopped before this reply finished, so it may be cut short. Send a message to carry on.'
 /**
- * Watcher's instructions on Cursor (ADR-0125). Cursor's ACP agent takes no system prompt or instructions from a client,
- * and its rules are files one Cursor folder shares with every thread, so they travel ahead of each message Sotto sends
- * Watcher, in the same text part, marked as Sotto's. Cursor replays a message exactly as it was sent, so the counts Sotto
- * keeps take them off again, and every surface shows the message as typed.
+ * Watcher's instructions on Cursor (ADR-0125): `instructions` is the profile's own, with the worker-role lines when that
+ * feature is on, or the base prompt (#1417). Cursor's ACP agent takes no system prompt or instructions from a client, and
+ * its rules are files one Cursor folder shares with every thread, so they travel in the message's text part, marked as
+ * Sotto's, ahead of the first message Sotto sends Watcher's session on a process and again when the request note says the
+ * conversation is new or was compacted (#1418). Cursor replays a message exactly as it was sent, so the counts Sotto keeps
+ * take them off again, whichever wording they were sent in, and every surface shows the message as typed.
  */
 export const cursorWatcherInstructions = (instructions: string = WATCHER_SYSTEM_PROMPT): string =>
-  `[Sotto: Watcher's instructions. Cursor takes no instructions from Sotto any other way, so they come ahead of each message Sotto sends you. They are not the user's words.]
+  `[Sotto: Watcher's instructions. Cursor takes no instructions from Sotto any other way, so they come with Sotto's first message to you, and again when this conversation is resumed or may have lost them. They are not the user's words.]
 ${instructions}
 [End of Watcher's instructions. The message follows.]
 
@@ -128,6 +130,8 @@ interface Replay { messages: AgentMessage[]; activities: AgentActivity[]; turns:
 interface LiveTurn {
   readonly places: TurnPlaces
   readonly origin: Origin | undefined
+  /** The process whose session this prompt gives Watcher's instructions: it holds them once Cursor shows it took the prompt. */
+  readonly instructs?: Connection
   taken: boolean
   ended: boolean
   wake: (() => void) | undefined
@@ -140,6 +144,19 @@ interface Connection {
   readonly mode: CursorRuntimeMode
   /** Started for Watcher's thread with its launch profile: its session has Watcher's tools, never the browser (ADR-0073). */
   readonly watcher: boolean
+  /**
+   * Watcher's instructions are in this process's session: a prompt Cursor took on this process carried them, and no note
+   * since said the conversation is new or was compacted (#1418). A new process, after a restart, a lost process, an idle
+   * close, a mode change or a client update, starts without, so the session it loads is told them again: Cursor may have
+   * compacted the conversation by itself, which it never says over ACP, so a replayed message that carried them is no
+   * proof the model still has them.
+   */
+  instructed?: boolean
+  /**
+   * The last note sent to Watcher said the conversation is new or was compacted. That line stays in each note until Watcher
+   * reads its state, so only the first note to carry it, after one that did not, asks for the instructions again.
+   */
+  reminded?: boolean
   closing: boolean
   /** The model and effort this process's session is on, as Cursor last said. */
   model: string | undefined
@@ -749,7 +766,7 @@ export class CursorAcpHost implements AgentHost {
   /** Cursor has shown it is working on the prompt Sotto sent: the send waiting on it is woken. */
   private taken(id: string): void {
     const turn = this.turns.get(id)
-    if (turn && !turn.taken) { turn.taken = true; turn.wake?.() }
+    if (turn && !turn.taken) { turn.taken = true; if (turn.instructs) turn.instructs.instructed = true; turn.wake?.() }
   }
   /** A turn ended: how, its thoughts settled, and the thread ready for the next prompt. */
   private endTurn(id: string, status: 'completed' | 'interrupted' | 'failed', error?: string): void {
@@ -927,11 +944,20 @@ export class CursorAcpHost implements AgentHost {
     verifyFileMentions(command.text, command.files)
     // A skill is Cursor's own `/name`, read at the start of the prompt.
     const skills = (command.skills ?? []).map(skill => `/${skill.name}`).filter(token => !new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}(\\s|$)`, 'u').test(command.text))
-    // Watcher's instructions go ahead of the words and its request note's line after them, in the one text part Cursor
-    // replays as it was sent (ADR-0125); a wake-up's news for Watcher goes the same way as the note. An ordinary thread
-    // is sent the words alone, even when a command carried a note.
+    // Watcher's request note's line goes after the words, and its instructions, when its session needs them, ahead of
+    // them, in the one text part Cursor replays as it was sent (ADR-0125); a wake-up's news for Watcher goes the same way
+    // as the note. An ordinary thread is sent the words alone, even when a command carried a note.
     const note = profile ? command.watcherRequestNote ?? command.watcherNews : undefined
-    const head = (skills.length ? `${skills.join(' ')} ` : '') + (profile ? cursorWatcherInstructions(profile.instructions) : '')
+    // Once per conversation, not with every message (#1418): with the first message on this process, and again when the
+    // note says the conversation is new or was compacted. The line stays until Watcher reads its state, so only its first
+    // note asks again.
+    if (profile) {
+      const reminder = note?.includes(WATCHER_COMPACTED_NOTE) === true
+      if (reminder && !connection.reminded) connection.instructed = false
+      connection.reminded = reminder
+    }
+    const instructing = profile !== undefined && !connection.instructed
+    const head = (skills.length ? `${skills.join(' ')} ` : '') + (instructing ? cursorWatcherInstructions(profile.instructions) : '')
     const tail = note ? watcherRequestLine(note) : ''
     const nativeText = head + command.text + tail
     const images: { type: 'image'; mimeType: string; data: string }[] = []
@@ -947,7 +973,8 @@ export class CursorAcpHost implements AgentHost {
     try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
-    const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, wake: undefined }
+    // A prompt Cursor did not take keeps the instructions owed.
+    const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, ...(instructing ? { instructs: connection } : {}), taken: false, ended: false, wake: undefined }
     this.turns.set(id, turn)
     this.log.add(id, { id: origin.messageId, role: 'user', text: command.text, commandId: origin.commandId, createdAt: origin.createdAt,
       ...(origin.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}) })
@@ -959,6 +986,8 @@ export class CursorAcpHost implements AgentHost {
     void connection.rpc.request('session/prompt', { sessionId: alias.cursorSessionId, prompt: [{ type: 'text', text: nativeText }, ...images] }, value => {
       if (superseded()) return
       const stop = promptAnswerSchema.parse(value).stopReason
+      // Cursor answered the prompt, so its session holds what the prompt carried.
+      if (instructing) connection.instructed = true
       this.endTurn(id, stop === 'end_turn' ? 'completed' : stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
         stop === 'refusal' ? 'Cursor refused this turn. Nothing else was lost.' : undefined)
       this.emit()
