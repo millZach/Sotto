@@ -1,0 +1,271 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: the user selects words in an agent's reply and adds them to the next prompt, so the agent knows
+  "this is from your earlier reply". What appears on the selection, what waits on the composer, and how does the
+  sent message show it?
+  Selection: A a small "Add to prompt" button above the selection (Claude Code Desktop), B a two-button bar
+  (Add to prompt, Copy), C a button in the margin beside the selection.
+  Composer: 1 a chip like a review comment, 2 a quote card above the editor showing the passage.
+  Sent: the user's bubble shows the quote above their words; the model gets the text shown under "What the model reads".
+  Picked: A and 1, the user's pick on 2026-10-24: one Add to prompt button above the selection, and a chip on the
+  composer like a review comment's. An Owl feature, held in the window only, not saved with the draft.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quote a reply into the prompt</title>
+<style>
+  :root, [data-theme='dark'] {
+    --canvas: #121211; --card: #1f1f1e; --bubble: #262624; --hairline: #3a3936; --text: #faf7ec; --text-2: #d0cdc0; --muted: #a3a197;
+    --accent: #e3c34a; --on-accent: #1a1708; --accent-wash: color-mix(in srgb, #e3c34a 12%, transparent); --accent-border: color-mix(in srgb, #e3c34a 40%, transparent);
+    --hover: #2e2d2b; --code-bg: #1a1a19; --shadow: rgb(0 0 0 / 0.45); --select: color-mix(in srgb, #e3c34a 30%, transparent);
+  }
+  [data-theme='light'] {
+    --canvas: oklch(0.972 0.008 98.9); --card: oklch(0.93 0.006 92); --bubble: oklch(0.915 0.007 92); --hairline: oklch(0.852 0.0099 91.9);
+    --text: oklch(0.2016 0.0296 92.8); --text-2: oklch(0.40 0.02 93); --muted: oklch(0.48 0.018 93);
+    --accent: #8a6d00; --on-accent: #fff; --accent-wash: color-mix(in srgb, #8a6d00 10%, transparent); --accent-border: color-mix(in srgb, #8a6d00 40%, transparent);
+    --hover: oklch(0.89 0.007 92); --code-bg: oklch(0.932 0.0099 91.9); --shadow: rgb(60 50 20 / 0.16); --select: color-mix(in srgb, #8a6d00 22%, transparent);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--canvas); color: var(--text); font-family: Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .bar { display: flex; flex-wrap: wrap; flex: none; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+  .bar b { font-weight: 600; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--hairline); border-radius: 8px; }
+  .seg button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; }
+  .seg button[aria-pressed='true'] { background: var(--hover); color: var(--text); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .note { flex-basis: 100%; margin: 0; color: var(--text-2); line-height: 1.45; }
+  .stage { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+  @media (max-width: 1100px) { .stage { grid-template-columns: 1fr; } .wire { display: none; } }
+
+  .room { position: relative; min-height: 0; overflow: hidden; }
+  .transcript { position: absolute; inset: 0; overflow-y: auto; padding: 28px 0 260px; scrollbar-width: thin; }
+  .col { position: relative; max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  .msg { margin: 0 0 22px; font-size: 15px; line-height: 1.7; }
+  .msg p { margin: 0 0 12px; }
+  .msg[data-role='agent'] ::selection { background: var(--select); }
+  .msg[data-role='user'] { width: fit-content; max-width: 78%; margin-left: auto; padding: 12px 16px; border-radius: 16px; background: var(--bubble); }
+  .msg[data-role='user'] p:last-child { margin: 0; }
+  .msg code { padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--code-bg); font-size: 13.5px; }
+  .msg ul { margin: 0 0 12px; padding-left: 22px; }
+
+  /* What appears on a selection. */
+  .pop { position: absolute; z-index: 5; display: none; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--card); box-shadow: 0 8px 22px var(--shadow); }
+  .pop[data-shown] { display: inline-flex; }
+  .pop button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .pop button:hover { background: var(--hover); }
+  .pop kbd { color: var(--muted); font: inherit; font-size: 12px; }
+  .pop .sep { width: 1px; height: 18px; background: var(--hairline); }
+  [data-sel='c'] .pop { padding: 2px; border-radius: 14px; }
+  [data-sel='c'] .pop button { width: 28px; padding: 0; justify-content: center; border-radius: 12px; }
+  [data-sel='c'] .pop .label, [data-sel='c'] .pop kbd { display: none; }
+
+  /* The composer. */
+  .compose { position: absolute; right: 0; bottom: 0; left: 0; padding: 0 max(24px, calc((100% - 760px) / 2)) 16px; }
+  .card { margin: 0 auto; padding: 12px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--card); box-shadow: 0 12px 32px var(--shadow); }
+  .card:focus-within { border-color: var(--accent-border); }
+  .quotes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+  .quotes:empty { display: none; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; padding: 0 3px 0 9px; border: 1px solid var(--accent-border); border-radius: 5px; background: var(--accent-wash); font-size: 12.5px; white-space: nowrap; animation: arrive .18s cubic-bezier(.2,.8,.2,1); }
+  .chip .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .chip svg, .qcard svg { flex: none; color: var(--muted); }
+  .x { display: grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+  .x:hover { background: var(--hover); color: var(--text); }
+  [data-comp='2'] .quotes { flex-direction: column; flex-wrap: nowrap; }
+  .qcard { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; width: 100%; padding: 6px 4px 6px 12px; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; background: var(--accent-wash); animation: arrive .18s cubic-bezier(.2,.8,.2,1); }
+  .qcard .from { color: var(--muted); font-size: 12px; }
+  .qcard .body { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); font-size: 13px; line-height: 1.45; }
+  .qcard .x { grid-column: 2; grid-row: 1 / 3; align-self: start; }
+  @keyframes arrive { from { opacity: 0; transform: translateY(4px); } }
+  @media (prefers-reduced-motion: reduce) { .chip, .qcard, .flash { animation: none !important; } }
+
+  .editor { min-height: 52px; max-height: 200px; overflow-y: auto; outline: 0; font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
+  .editor:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; color: var(--muted); font-size: 13px; }
+  .send { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+
+  /* A quote in a sent bubble. */
+  .sentq { margin: 0 0 8px; padding: 2px 0 2px 10px; border-left: 2px solid var(--accent-border); color: var(--text-2); font-size: 13.5px; line-height: 1.5; }
+  .sentq .from { display: block; color: var(--muted); font-size: 12px; }
+  .flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { background: var(--select); } 100% { background: transparent; } }
+
+  .wire { min-height: 0; overflow-y: auto; padding: 18px 16px; border-left: 1px solid var(--hairline); font-size: 13px; color: var(--text-2); }
+  .wire h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text); }
+  .wire pre { margin: 0; padding: 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--code-bg); color: var(--text); font: 12.5px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wire p { line-height: 1.5; }
+</style>
+</head>
+<body data-sel="a" data-comp="1">
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <b>Selection</b>
+  <span class="seg" data-group="sel">
+    <button data-v="a" aria-pressed="true">A Button above</button>
+    <button data-v="b" aria-pressed="false">B Two-button bar</button>
+    <button data-v="c" aria-pressed="false">C Icon only</button>
+  </span>
+  <b>Composer</b>
+  <span class="seg" data-group="comp">
+    <button data-v="1" aria-pressed="true">1 Chip</button>
+    <button data-v="2" aria-pressed="false">2 Quote card</button>
+  </span>
+  <b>Theme</b>
+  <span class="seg" data-group="theme">
+    <button data-v="dark" aria-pressed="true">Dark</button>
+    <button data-v="light" aria-pressed="false">Light</button>
+  </span>
+  <p class="note">Select words in the agent's reply, then press <b>Add to prompt</b> (or ⌘⇧A / Ctrl+Shift+A). Add more than one. Type a message and send it to see the sent bubble and what the model reads on the right. Press a quote in a sent bubble to jump to where it came from.</p>
+</div>
+
+<div class="stage">
+  <div class="room">
+    <div class="transcript" id="transcript">
+      <div class="col" id="col">
+        <div class="msg" data-role="user"><p>Why does the composer lose its draft when I switch threads?</p></div>
+        <div class="msg" data-role="agent" data-reply="r1">
+          <p>The draft lives in <code>ThreadDraftStore</code>, keyed by thread ID, so switching threads should keep it. The loss comes from the editor: it mounts with <code>key={threadId}</code>, and its first effect writes its empty initial text back to the store before the saved draft has been read.</p>
+          <p>There are two ways to fix it:</p>
+          <ul>
+            <li>Read the saved draft synchronously when the editor mounts, so the first render already has it.</li>
+            <li>Skip the write-back until the editor has seen one user edit.</li>
+          </ul>
+          <p>The first is smaller and keeps one source of truth. The second leaves a window where a dictation landing during mount could still be dropped, because the dictation path writes through the same effect.</p>
+        </div>
+      </div>
+      <div class="pop" id="pop" role="toolbar" aria-label="Selection">
+        <button id="add" type="button" aria-label="Add to prompt" title="Add to prompt">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
+          <span class="label">Add to prompt</span><kbd>⌘⇧A</kbd>
+        </button>
+        <span class="sep" id="sep" hidden></span>
+        <button id="copy" type="button" hidden><span class="label">Copy</span></button>
+      </div>
+    </div>
+    <div class="compose">
+      <div class="card">
+        <ul class="quotes" id="quotes" aria-label="Quoted from replies"></ul>
+        <div class="editor" id="editor" contenteditable="true" role="textbox" aria-label="Prompt" data-placeholder="Ask for follow-up changes"></div>
+        <div class="row"><span>Claude · Opus 5.5 · medium</span>
+          <button class="send" id="send" type="button" aria-label="Send">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="wire">
+    <h2>What the model reads</h2>
+    <pre id="wire">Nothing sent yet.</pre>
+    <p>Plain text, the way review comments go, so Claude, Codex, Grok, Devin and the rest read it the same way. The quote comes before your words so "this" in your message has something to point at.</p>
+  </aside>
+</div>
+
+<script>
+const $ = id => document.getElementById(id)
+const quoteIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>'
+const xIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+let quotes = []
+let pending = null
+
+document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
+  const g = seg.dataset.group
+  if (g === 'theme') document.documentElement.dataset.theme = b.dataset.v
+  else document.body.dataset[g] = b.dataset.v
+  $('copy').hidden = $('sep').hidden = document.body.dataset.sel !== 'b'
+  hidePop(); render()
+}))
+
+function selectionInReply() {
+  const s = window.getSelection()
+  if (!s || s.isCollapsed) return null
+  const reply = s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentElement).closest('[data-role="agent"]')
+  if (!reply || !reply.contains(s.focusNode)) return null
+  const text = s.toString().trim()
+  return text ? { text, reply, range: s.getRangeAt(0).cloneRange() } : null
+}
+function hidePop() { $('pop').removeAttribute('data-shown'); pending = null }
+function showPop() {
+  const sel = selectionInReply()
+  if (!sel) { hidePop(); return }
+  pending = sel
+  const pop = $('pop'), t = $('transcript').getBoundingClientRect(), r = sel.range.getBoundingClientRect(), col = $('col').getBoundingClientRect()
+  pop.setAttribute('data-shown', '')
+  const top = r.top - t.top + $('transcript').scrollTop
+  if (document.body.dataset.sel === 'c') {
+    pop.style.left = (col.left - t.left - 6) + 'px'; pop.style.top = (top - 2) + 'px'
+  } else {
+    const w = pop.offsetWidth
+    pop.style.left = Math.max(8, Math.min(r.left - t.left + r.width / 2 - w / 2, t.width - w - 8)) + 'px'
+    // Above the selection, or under it when the top of the room would cut it off.
+    const above = top - pop.offsetHeight - 8
+    pop.style.top = (above < $('transcript').scrollTop + 8 ? top + r.height + 8 : above) + 'px'
+  }
+}
+document.addEventListener('mouseup', e => { if (!e.target.closest('.pop')) setTimeout(showPop, 0) })
+document.addEventListener('keyup', e => { if (e.key.startsWith('Arrow') || e.key === 'Shift') showPop() })
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('pop').hasAttribute('data-shown')) { hidePop(); window.getSelection().removeAllRanges() }
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'a') { const s = selectionInReply(); if (s) { e.preventDefault(); pending = s; add() } }
+})
+$('add').addEventListener('click', add)
+$('copy').addEventListener('click', () => { if (pending) navigator.clipboard?.writeText(pending.text); hidePop() })
+
+function add() {
+  if (!pending) return
+  quotes.push({ id: crypto.randomUUID(), text: pending.text, reply: pending.reply.dataset.reply })
+  window.getSelection().removeAllRanges(); hidePop(); render()
+  $('editor').focus()
+}
+function label(text) { const words = text.split(/\s+/); return '“' + words.slice(0, 6).join(' ') + (words.length > 6 ? '…' : '') + '”' }
+function render() {
+  const list = $('quotes'); list.innerHTML = ''
+  for (const q of quotes) {
+    const li = document.createElement('li')
+    if (document.body.dataset.comp === '1') {
+      li.className = 'chip'; li.title = q.text
+      li.innerHTML = `${quoteIcon}<span class="label"></span><button class="x" type="button" aria-label="Remove quote" title="Remove quote">${xIcon}</button>`
+      li.querySelector('.label').textContent = label(q.text)
+    } else {
+      li.className = 'qcard'
+      li.innerHTML = `<span class="from">From Claude's reply</span><button class="x" type="button" aria-label="Remove quote" title="Remove quote">${xIcon}</button><span class="body"></span>`
+      li.querySelector('.body').textContent = q.text
+    }
+    li.querySelector('.x').addEventListener('click', () => { quotes = quotes.filter(x => x !== q); render(); $('editor').focus() })
+    list.append(li)
+  }
+}
+
+function wireText(message, qs) {
+  const parts = qs.map(q => 'From your earlier reply:\n' + q.text.split('\n').map(l => '> ' + l).join('\n'))
+  return [...parts, message].filter(Boolean).join('\n\n')
+}
+function send() {
+  const message = $('editor').innerText.trim()
+  if (!message && !quotes.length) return
+  const bubble = document.createElement('div'); bubble.className = 'msg'; bubble.dataset.role = 'user'
+  for (const q of quotes) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'sentq'
+    b.style.cssText = 'display:block;width:100%;text-align:left;font:inherit;font-size:13.5px;background:none;border-top:0;border-right:0;border-bottom:0;cursor:pointer'
+    b.title = 'Show where it came from'
+    b.innerHTML = '<span class="from">From Claude\'s reply</span><span class="t"></span>'
+    b.querySelector('.t').textContent = q.text.length > 180 ? q.text.slice(0, 180) + '…' : q.text
+    b.addEventListener('click', () => { const r = document.querySelector(`[data-reply="${q.reply}"]`); r.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash') })
+    bubble.append(b)
+  }
+  if (message) { const p = document.createElement('p'); p.textContent = message; bubble.append(p) }
+  $('col').append(bubble)
+  $('wire').textContent = wireText(message, quotes)
+  quotes = []; $('editor').textContent = ''; render()
+  $('transcript').scrollTop = $('transcript').scrollHeight
+}
+$('send').addEventListener('click', send)
+$('editor').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } })
+$('transcript').addEventListener('scroll', () => { if (pending) showPop() })
+</script>
+</body>
+</html>
