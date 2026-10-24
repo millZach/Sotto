@@ -14,6 +14,7 @@ import {
 } from '../../../../../src/renderer/src/features/settings/settingsPages'
 import type { NotificationsBridge } from '../../../../../src/shared/desktopNotifications'
 import type { MainActivityBridge, MainActivityState } from '../../../../../src/shared/mainActivity'
+import type { OwnServersBridge } from '../../../../../src/shared/ownModelServers'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 
@@ -31,7 +32,9 @@ function withMain(): void {
   const activity: MainActivityState = { reading: { blockedShare: 0.03, longestFreezeMs: 90, freezesOver100ms: 0, bars: Array.from({ length: 60 }, () => 20), frozen: false }, recording: { phase: 'idle' }, noticeHidden: false }
   const mainActivity: MainActivityBridge = { read: vi.fn(async () => activity), command: vi.fn(async () => activity), onChanged: () => () => undefined }
   const notifications: NotificationsBridge = { test: vi.fn(async () => 'shown' as const), onOpened: () => () => undefined }
-  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications })
+  // Your own model servers, with none saved: the group shows only with its bridge (ADR-0124).
+  const ownServers: OwnServersBridge = { list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
+  vi.stubGlobal('sotto', { ...window.sotto, phones: phonesBridgeFixture().bridge, mainActivity, notifications, ownServers })
 }
 
 function withAgents(): void {
@@ -188,6 +191,24 @@ describe('Find a setting', () => {
     render(<SettingsView {...baseProps({ settings: { ...baseProps().settings, dictationEnabled: false } })} />)
     await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'paste')
     expect(screen.getByText('No setting matches “paste”.')).toBeVisible()
+  })
+
+  it('finds Your own model servers only on Owl, where main gave the window its bridge, and opens Providers at the group', async () => {
+    const user = userEvent.setup()
+    withAgents()
+    withMain()
+    owl.on = false
+    const stable = render(<SettingsView {...baseProps()} />)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'model servers')
+    expect(screen.getByText('No setting matches “model servers”.')).toBeVisible()
+    stable.unmount()
+    owl.on = true
+    render(<SettingsView {...baseProps()} />)
+    await waitFor(() => expect(document.getElementById('settings-providers')?.querySelector('.own-servers')).not.toBeNull())
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'ollama')
+    await user.click(within(screen.getByRole('list', { name: 'Settings found' })).getByRole('button', { name: /Your own model servers/u }))
+    expect(settingsTab('Providers')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Add a server' })).toHaveFocus()
   })
 
   it('finds a setting by its translated name and still by its English one, and lands on the translated control', async () => {
