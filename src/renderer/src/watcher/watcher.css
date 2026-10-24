@@ -125,14 +125,14 @@
 
 /* Conversation, Watched and Visualize, beside All threads: three icons with no track (Drake's pick on October 24, 2026).
    The one shown takes All threads' hover look; the others stay quieter until hovered. Watched's count is a badge in its
-   corner, inverted so it reads apart from the eye, and the icons need no word's room at any width. */
+   corner, in the pill colours so it reads apart from the eye, and the icons need no word's room at any width. */
 .watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; }
 .watcher-tabs__tab { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; cursor: pointer; }
 .watcher-tabs__tab:hover { color: var(--tt-text); }
 .watcher-tabs__tab[aria-selected='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-tabs__icon { display: block; }
-.watcher-tabs__count { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-text);
-  box-shadow: 0 0 0 1.5px var(--tt-canvas); color: var(--tt-canvas); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+.watcher-tabs__count { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-pill);
+  box-shadow: 0 0 0 1.5px var(--tt-canvas); color: var(--tt-pill-ink); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
 @container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } }
 /* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
    uncapped. These widths were set for the tabs' old words and hold the 94-pixel icon tabs with room to spare. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
