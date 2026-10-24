@@ -60,6 +60,24 @@ const contentText = (content: readonly unknown[] | undefined): string[] => (cont
   return part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
 })
 const unquoted = (title: string): string => title.replace(/^`([\s\S]*)`$/u, '$1')
+const object = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+/**
+ * The files a permission would change, with each change as the card shows it: ACP's `diff` blocks, in the shape a Cursor
+ * file change's row takes (`--- before`, then the old text, `+++ after`, then the new), and the paths the call names.
+ */
+function fileChanges(toolCall: Permission['toolCall']): { paths: string[]; diffs: string[] } {
+  const diffs: string[] = [], paths = new Set<string>()
+  for (const item of toolCall.content ?? []) {
+    const block = object(item)
+    if (block?.type !== 'diff' || typeof block.path !== 'string') continue
+    paths.add(block.path.slice(0, 4_096))
+    diffs.push(`${block.path}\n--- before\n${typeof block.oldText === 'string' ? block.oldText : ''}\n+++ after\n${typeof block.newText === 'string' ? block.newText : ''}`)
+  }
+  for (const location of Array.isArray(toolCall.locations) ? toolCall.locations : []) { const path = object(location)?.path; if (typeof path === 'string') paths.add(path.slice(0, 4_096)) }
+  const input = object(toolCall.rawInput)
+  if (typeof input?.path === 'string') paths.add(input.path.slice(0, 4_096))
+  return { paths: [...paths].slice(0, 50), diffs }
+}
 
 /**
  * One request Cursor sent, as Sotto shows it, or undefined for a request Sotto does not read. `threadId` is the thread
@@ -82,13 +100,17 @@ export function cursorPending(wireId: string | number, method: string, params: u
     }
     const title = permission.toolCall.title ?? 'Cursor asks to use a tool.'
     const command = permission.toolCall.kind === 'execute' ? unquoted(title) : undefined
+    // A file change names its files beside the title, unless the title already does, and carries each change.
+    const { paths, diffs } = command ? { paths: [], diffs: [] } : fileChanges(permission.toolCall)
+    const unnamed = paths.filter(path => !title.includes(path))
+    const details = [...said, ...diffs].join('\n')
     return { wireId, threadId, kind: 'permission', toolCallId: permission.toolCall.toolCallId, permission, request: { id, kind: 'permission',
-      text: [title, ...said].join('\n').slice(0, TEXT_LIMIT), options: [],
+      text: [title, ...(unnamed.length ? [unnamed.join('\n')] : []), ...said].join('\n').slice(0, TEXT_LIMIT), options: [],
       // Allow once and reject only: Cursor's allow-always would save a rule in Sotto's Cursor folder (ADR-0127).
       permissionChoices: permission.options.flatMap((option): NonNullable<AgentRequest['permissionChoices']> => option.kind === 'allow_once' ? [{ id: option.optionId, label: 'Allow once', kind: 'allow-once' }]
         : option.kind === 'reject_once' ? [{ id: option.optionId, label: 'Reject', kind: 'deny' }] : []),
       context: { toolCallId: permission.toolCall.toolCallId, ...(command ? { command: command.slice(0, TEXT_LIMIT) } : {}),
-        ...(said.length ? { details: said.join('\n').slice(0, 100_000) } : {}) } } }
+        ...(details ? { details: details.slice(0, 100_000) } : {}) } } }
   }
   if (method === CURSOR_QUESTION) {
     const parsed = questionSchema.safeParse(params)

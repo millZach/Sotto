@@ -22,6 +22,19 @@ describe('Cursor’s permission requests', () => {
     expect(() => cursorAnswer(pending, '', true, undefined, 'allow-always')).toThrow('not offered')
     expect(cursorDecline(pending)).toEqual({ outcome: { outcome: 'cancelled' } })
   })
+  it('carries a file change’s path and its change into the request card', () => {
+    const path = 'C:\\outside\\notes.md'
+    const edit = cursorPending(9, 'session/request_permission', { ...permission, toolCall: { toolCallId: 'call_e', title: 'Edit File', kind: 'edit', status: 'pending',
+      rawInput: { path }, locations: [{ path }],
+      content: [{ type: 'diff', path, oldText: 'old line', newText: 'new line' }, { type: 'content', content: { type: 'text', text: 'Outside the workspace' } }] } }, 'thread')!
+    expect(edit.request.text).toBe(`Edit File\n${path}\nOutside the workspace`)
+    expect(edit.request.context).toEqual({ toolCallId: 'call_e', details: `Outside the workspace\n${path}\n--- before\nold line\n+++ after\nnew line` })
+    // A title that already names the file is not given it twice.
+    const named = cursorPending(10, 'session/request_permission', { ...permission, toolCall: { toolCallId: 'call_n', title: `Edit \`${path}\``, kind: 'edit', status: 'pending',
+      content: [{ type: 'diff', path, oldText: null, newText: 'new file' }] } }, 'thread')!
+    expect(named.request.text).toBe(`Edit \`${path}\``)
+    expect(named.request.context?.details).toBe(`${path}\n--- before\n\n+++ after\nnew file`)
+  })
   it('answers nothing it cannot allow once', () => {
     const always = cursorPending(8, 'session/request_permission', { ...permission, options: [permission.options[1]] }, 'thread')!
     expect(always.request.permissionChoices).toEqual([])
