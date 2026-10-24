@@ -310,6 +310,10 @@
   --tt-provider-grok: #c9baff;
   --tt-provider-devin: #a5d8f5;
   --tt-provider-opencode: #ece3d0;
+  /* Settings → Providers draws each mark in the ink on a badge of its provider's colour. Muse has no other colour
+     here, and OpenCode's badge keeps a pale shade in both modes: its light glyph colour is too dark under the ink. */
+  --tt-provider-muse: #e6e1d6;
+  --tt-provider-opencode-badge: #ece3d0;
   --tt-provider-ink: #080b0a;
   /* Chart series (Usage's split chart). Constants per mode like the provider marks: a theme carries T3 Code's
      roles, which name no categorical hues. Six hues and an Other grey, each at least 3:1 on every built-in theme's
@@ -373,6 +377,8 @@
   --tt-provider-devin: #8fcaef;
   /* OpenCode's mark is drawn straight from its token in both modes, so the light one is already dark enough to read. */
   --tt-provider-opencode: #625843;
+  --tt-provider-muse: #d9d3c4;
+  --tt-provider-opencode-badge: #e4dac4;
   --tt-provider-ink: #0b0d0c;
   --tt-chart-1: #0554a3;
   --tt-chart-2: #883c04;

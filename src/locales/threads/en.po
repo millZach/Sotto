@@ -54,6 +54,10 @@ msgstr "{host} turned down the key. Nothing was saved. Check the key with whoeve
 msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
 msgstr "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
 
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{label} details"
+msgstr "{label} details"
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
 msgstr "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
@@ -198,6 +202,10 @@ msgstr "mise does not list {to} yet"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
 msgstr "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Models"
+msgstr "Models"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Models found"
@@ -404,6 +412,26 @@ msgstr "Try again, sending your last message to {name} again"
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
 msgstr "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update {label} to {version}"
+msgstr "Update {label} to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update to {version}"
+msgstr "Update to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating {label} to {version}"
+msgstr "Updating {label} to {version}"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating…"
+msgstr "Updating…"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Waiting to update"
+msgstr "Waiting to update"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "What the model menu calls it."
