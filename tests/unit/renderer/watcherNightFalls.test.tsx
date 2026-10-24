@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   cancelNightFalls, frontEdge, frontStar, frontTimeAt, NIGHT_FALLS_MS, nightFallsAvailable, nightFallsRun, nightFallsShipped, playNightFalls, revealPolygon, STARS,
@@ -123,6 +123,8 @@ describe('the night falls Owl gate', () => {
 describe('the run a move plays', () => {
   const owl = { owlFeatures: owlFeaturesForTrack('owl') } as never
   const stars = { roomTransition: true, roomTransitionSpeed: 1.5, roomTransitionLook: 'stars' } as const
+  // A run can play only where view transitions exist and motion is not reduced.
+  beforeEach(() => { fakeViewTransitions() })
 
   it('plays the look and the speed set, the way the move goes', () => {
     expect(nightFallsRun('threads', 'watcher', owl, stars)).toEqual({ forward: true, speed: 1.5, look: 'stars' })
@@ -142,6 +144,19 @@ describe('the run a move plays', () => {
 
   it('plays the band at speed 1 before the settings are read', () => {
     expect(nightFallsRun('threads', 'watcher', owl, null)).toEqual({ forward: true, speed: 1, look: 'band' })
+  })
+
+  it('plays nothing and never reads the look under reduced motion', () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    let lookReads = 0
+    const settings = { roomTransition: true, roomTransitionSpeed: 1, get roomTransitionLook() { lookReads++; return 'stars' as const } }
+    expect(nightFallsRun('threads', 'watcher', owl, settings)).toBeNull()
+    expect(lookReads).toBe(0)
+  })
+
+  it('plays nothing where view transitions do not exist', () => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition
+    expect(nightFallsRun('threads', 'watcher', owl, stars)).toBeNull()
   })
 })
 

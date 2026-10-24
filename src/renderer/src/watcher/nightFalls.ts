@@ -258,13 +258,14 @@ export function nightFallsShipped(update: UpdateStatus | null | undefined): bool
 
 /**
  * The run a move from page `from` to page `to` plays, or null where the page swaps at once: the move is not between
- * Threads and Watcher's room, this build has no night falls, or its switch is off. Settings not yet read play the band at
- * speed 1, as the defaults do.
+ * Threads and Watcher's room, this build has no night falls, its switch is off, or no run can play here (reduced motion,
+ * or no view transitions), in which case the look is never read. Settings not yet read play the band at speed 1, as the
+ * defaults do.
  */
 export function nightFallsRun(from: string, to: string, update: UpdateStatus | null | undefined,
   settings: Pick<AppSettings, 'roomTransition' | 'roomTransitionSpeed' | 'roomTransitionLook'> | null | undefined): NightFallsOptions | null {
   const betweenRooms = (from === 'threads' && to === 'watcher') || (from === 'watcher' && to === 'threads')
-  if (!betweenRooms || !nightFallsShipped(update) || settings?.roomTransition === false) return null
+  if (!betweenRooms || !nightFallsShipped(update) || !nightFallsAvailable() || settings?.roomTransition === false) return null
   return { forward: to === 'watcher', speed: settings?.roomTransitionSpeed ?? 1, look: settings?.roomTransitionLook ?? 'band' }
 }
 
