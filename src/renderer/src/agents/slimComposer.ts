@@ -62,30 +62,42 @@ export function typesIntoComposer(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' |
 }
 
 /**
+ * The composer's mark while its card moves between slim and full. The composer keeps the full card's room and stands
+ * the card at its foot, as it does while slim (threads.css), so the card's moving height never reaches the transcript,
+ * the pane or Watcher's night scene.
+ */
+export const SLIM_MOVING_ATTRIBUTE = 'data-slim-moving'
+
+/**
  * The card's change of height, slim or full: it moves from where it stood to where it now stands, over SLIM_MS, or at
  * once with motion reduced. The card's box is read once, in the render that changes `slim`, before the page changes.
+ * The card stands at the composer's foot while it moves, so its top follows its height; its foot moves only by what
+ * steps away under it, such as the row under the card, and that is all the card is moved by.
  */
 export function useSlimMotion(compose: RefObject<HTMLElement | null>, slim: boolean, onSettled: () => void = () => undefined): void {
   const shown = useRef(slim)
   const before = useRef<DOMRect | null>(null)
   if (shown.current !== slim) {
     shown.current = slim
-    before.current = compose.current?.querySelector('.thread-prompt')?.getBoundingClientRect() ?? null
+    before.current = compose.current?.querySelector(':scope > .thread-prompt')?.getBoundingClientRect() ?? null
   }
   useLayoutEffect(() => {
     const from = before.current
     before.current = null
-    const card = compose.current?.querySelector<HTMLElement>('.thread-prompt')
-    if (from === null || card == null || typeof card.animate !== 'function' || prefersReducedMotion()) return
+    const box = compose.current
+    const card = box?.querySelector<HTMLElement>(':scope > .thread-prompt')
+    if (from === null || box == null || card == null || typeof card.animate !== 'function' || prefersReducedMotion()) return
+    box.setAttribute(SLIM_MOVING_ATTRIBUTE, '')
     const to = card.getBoundingClientRect()
-    if (Math.abs(from.height - to.height) < 1 && Math.abs(from.top - to.top) < 1) return
+    if (Math.abs(from.height - to.height) < 1 && Math.abs(from.bottom - to.bottom) < 1) { box.removeAttribute(SLIM_MOVING_ATTRIBUTE); return }
     // What the card holds is cut at its moving foot; the creature standing above it and the effort ring stay whole.
     const clip = 'inset(-200px -4px 0 -4px)'
     const motion = card.animate([
-      { height: `${from.height}px`, transform: `translateY(${from.top - to.top}px)`, clipPath: clip },
+      { height: `${from.height}px`, transform: `translateY(${from.bottom - to.bottom}px)`, clipPath: clip },
       { height: `${to.height}px`, transform: 'none', clipPath: clip },
     ], { id: SLIM_MOTION_ID, duration: SLIM_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' })
-    motion.addEventListener('finish', onSettled)
-    return () => { motion.removeEventListener('finish', onSettled); motion.cancel() }
+    const settled = (): void => { box.removeAttribute(SLIM_MOVING_ATTRIBUTE); onSettled() }
+    motion.addEventListener('finish', settled)
+    return () => { motion.removeEventListener('finish', settled); motion.cancel(); box.removeAttribute(SLIM_MOVING_ATTRIBUTE) }
   }, [compose, slim, onSettled])
 }

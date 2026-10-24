@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, boxDistance, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  addRipple, along, boxDistance, heldRoom, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
   glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
@@ -452,5 +452,29 @@ describe('the night scene and the display’s scaling', () => {
     expect(queries[1]!.listeners.size).toBe(1)
     stop()
     expect(queries[1]!.listeners.size).toBe(0)
+  })
+})
+
+describe('the night scene while the composer is slim (ADR-0125)', () => {
+  const full = room(1280, 800, { words: [{ x: 260, y: 724, w: 120, h: 17 }], lane: { x: 216, y: 87, w: 44, h: 659 } })
+  // Slim, the card is one line at the composer's foot and the row under it, with its words, has stepped away.
+  const slim = { ...full, composer: { ...full.composer, y: full.composer.y + 117, h: 41 }, words: [] }
+
+  it('keeps the full card’s room, so it holds still as the composer slims and the row under it steps away', () => {
+    expect(heldRoom(slim, full)).toBe(full)
+    // A fraction of a pixel from the layout's own rounding is the same room.
+    expect(heldRoom({ ...slim, height: full.height + 0.4, lane: { ...full.lane!, h: full.lane!.h + 0.4 } }, full)).toBe(full)
+  })
+
+  it('takes the room as it is when the pane, its header or the scrubber’s lane changed while the composer was slim', () => {
+    for (const changed of [{ width: full.width - 100 }, { height: full.height - 60 }, { header: full.header + 30 }, { lane: { ...full.lane!, x: 211 } }, { lane: undefined }]) {
+      const room = { ...slim, ...changed }
+      expect(heldRoom(room, full), JSON.stringify(changed)).toBe(room)
+    }
+  })
+
+  it('takes the room as it is before the composer has been seen full, and has none without a composer', () => {
+    expect(heldRoom(slim, null)).toBe(slim)
+    expect(heldRoom(null, full)).toBeNull()
   })
 })

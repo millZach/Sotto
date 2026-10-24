@@ -1,12 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { E2E_THREADS_NOW } from '../../src/shared/e2e'
-import type { WatcherRoomState } from '../../src/shared/watcherRoom'
-import { WATCHER_STAND_IN_KEY, type WatcherStandInSeed } from '../../src/renderer/src/e2e/watcherStandIn'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
@@ -15,6 +11,7 @@ import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
+import { seedWatcherRoom } from './support/watcherRoom'
 
 /**
  * Watcher's conversation column on the built app (the user's picks on October 23, 2026: D of
@@ -29,10 +26,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 const evidence = evidenceDirectory('artifacts/watcher-column')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = ['t3-code', 'hush', 'linen', 'nocturne', 'tropic', 'citrine'] as const
-const CURRENT = 'release-notes'
 const recorded: Record<string, unknown> = {}
-
-type Row = WatcherRoomState['watchedThreads'][number]
 
 function launchOptions(appearance: 'dark' | 'light') {
   return {
@@ -43,32 +37,7 @@ function launchOptions(appearance: 'dark' | 'light') {
 
 /** `release-notes` as a Watcher with a long conversation, watching three threads of the design fixture. */
 async function seedRoom(page: Page): Promise<void> {
-  const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
-  expect(hostId, 'the window names its host').toBeTruthy()
-  const target = (threadId: string) => ({ hostId: hostId!, threadId })
-  const row = (threadId: string): Row => ({ target: target(threadId), title: threadId, watched: true, paused: false, status: 'idle', connected: true,
-    settled: false, backgroundWorkCount: 0, participation: [], waitsOn: [] })
-  const identity = { target: target(CURRENT), projectId: 'workshop', provider: 'codex' as const, creationOperationId: randomUUID(),
-    createdAt: new Date(E2E_THREADS_NOW - 60_000).toISOString() }
-  const seed: WatcherStandInSeed = {
-    state: {
-      current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true },
-      history: [], runtimeMode: 'approval-required', ownChanges: [], standingWatches: [], requests: [], watchedThreads: ['footer-links', 'visual-gate', 'weekly-note'].map(row),
-      receipts: [], recoveryNotice: null, observedAt: new Date(E2E_THREADS_NOW).toISOString(),
-    },
-    created: identity,
-  }
-  await page.evaluate(async ({ key, seed, thread, now }) => {
-    localStorage.setItem(key, JSON.stringify(seed))
-    await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: 24 }, (_, index) => ({
-      id: `column-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
-      text: index % 2
-        ? `Watching it. Package (Windows) is still running for the release thread (${(index + 1) / 2}). The footer links thread waits on review, and the visual gate passed on its [second run](https://github.com/millZach/Sotto/actions).`
-        : `Is the release thread green yet? (${index / 2 + 1})`,
-      createdAt: new Date(now - (24 - index) * 60_000).toISOString() })) })
-  }, { key: WATCHER_STAND_IN_KEY, seed, thread: CURRENT, now: E2E_THREADS_NOW })
-  await page.reload()
-  await openThreads(page)
+  await seedWatcherRoom(page, { watched: ['footer-links', 'visual-gate', 'weekly-note'], idPrefix: 'column' })
 }
 
 async function openRoom(page: Page): Promise<void> {

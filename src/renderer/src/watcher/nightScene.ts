@@ -155,6 +155,19 @@ function limbSpots(along: Limb, kind: SpotKind, clear: readonly { readonly x: nu
   return out
 }
 
+/**
+ * What the scene lays out by while the composer is slim (ADR-0125): the room as it was with the full card, while the
+ * pane, its header and the scrubber's lane stand as they did, so the scene holds still as the composer slims and widens
+ * and as the row under the card steps away and back. A room that changed while the composer was slim is taken as it is.
+ */
+export function heldRoom(slim: SceneMeasure | null, full: SceneMeasure | null): SceneMeasure | null {
+  if (slim === null || full === null) return slim
+  const near = (a: number, b: number): boolean => Math.abs(a - b) < 1
+  const lane = slim.lane === undefined || full.lane === undefined ? slim.lane === full.lane
+    : near(slim.lane.x, full.lane.x) && near(slim.lane.y, full.lane.y) && near(slim.lane.w, full.lane.w) && near(slim.lane.h, full.lane.h)
+  return near(slim.width, full.width) && near(slim.height, full.height) && near(slim.header, full.header) && lane ? full : slim
+}
+
 /** Lays the scene out in the margins beside the composer's column: two trees, the moon on the right, the ground behind the composer. */
 export function layoutScene(measure: SceneMeasure): SceneLayout {
   const { width: W, height: H, composer: comp, header } = measure
