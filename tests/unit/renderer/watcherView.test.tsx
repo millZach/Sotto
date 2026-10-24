@@ -669,6 +669,38 @@ describe("Watcher's room", () => {
     expect(screen.queryByText('Threads in flight')).toBeNull()
   })
 
+  it('draws the tabs as icons named on hover and to assistive technology, with the watched count as a badge', async () => {
+    const watched = (count: number): WatcherRoomState['watchedThreads'] => Array.from({ length: count }, (_, index) =>
+      ({ ...roomState().watchedThreads[0]!, target: target(`watched-${index}`), title: `Watched ${index}` }))
+    const badge = (pane: HTMLElement): string | null => pane.querySelector('.watcher-tabs__count')?.textContent ?? null
+    for (const [count, name, shown] of [[0, 'Watched, 0 threads', null], [1, 'Watched, 1 thread', '1'], [7, 'Watched, 7 threads', '7'], [120, 'Watched, 120 threads', '99+']] as const) {
+      const { unmount } = renderRoom(stateWithWatcher(), roomState({ watchedThreads: watched(count) }))
+      const pane = await screen.findByRole('region', { name: 'Watcher' })
+      const tab = await within(pane).findByRole('tab', { name })
+      expect(tab).toHaveAttribute('title', 'Watched')
+      expect(badge(pane)).toBe(shown)
+      unmount()
+    }
+    renderRoom(stateWithWatcher(), roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    const tabs = within(pane).getAllByRole('tab')
+    expect(tabs.map(tab => [tab.getAttribute('aria-label'), tab.getAttribute('title'), tab.textContent])).toEqual([
+      ['Conversation', 'Conversation', ''], ['Watched, 1 thread', 'Watched', '1'], ['Visualize', 'Visualize', '']])
+    expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1])
+    fireEvent.click(tabs[1]!)
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(tabs[1]!, { key: 'ArrowRight' })
+    expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs[2]).toHaveFocus()
+    fireEvent.keyDown(tabs[2]!, { key: 'ArrowRight' })
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(tabs[0]!, { key: 'End' })
+    expect(tabs[2]).toHaveFocus()
+    fireEvent.keyDown(tabs[2]!, { key: 'Home' })
+    expect(tabs[0]).toHaveFocus()
+    expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1])
+  })
+
   /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
   function withBrowser(): { readonly browser: ReturnType<typeof browserBridgeFixture>; readonly openExternalLink: ReturnType<typeof vi.fn>; readonly restore: () => void } {
     const workspace = { threadId: 'footer-links', projectId: 'workshop', workingDirectory: 'D:/work/workshop', workspaceId: '0f8fad5b-d9cb-469f-a165-70867728950e' }
