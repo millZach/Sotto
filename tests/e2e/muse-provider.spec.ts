@@ -34,7 +34,7 @@ async function textContrast(locator: Locator): Promise<number> {
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('region', { name: 'Provider configuration', exact: true })
+  return page.getByRole('region', { name: 'Muse details', exact: true })
 }
 
 /** Keyboard activation waits for the previous command's lane to release before taking focus. */
@@ -78,9 +78,10 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     const panel = await providerPanel(page)
     await page.getByRole('button', { name: 'Muse', exact: true }).focus()
     await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: 'Muse', exact: true })).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByRole('switch', { name: 'Enable Muse' })).toHaveAttribute('aria-checked', 'false')
     await expect(panel).toContainText('Uses your Muse sign-in on this computer.')
-    await expect(panel.locator('svg[data-provider="muse"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Muse', exact: true }).locator('.provider-badge svg[data-provider="muse"]')).toBeVisible()
     await page.getByRole('button', { name: 'Copy Muse login command' }).focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('button', { name: 'Copy Muse login command' })).toHaveText('Copied')
@@ -108,12 +109,14 @@ test('uses Muse in Owl, settles requests and steered activity, and preserves it 
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'settings-connected-1280-dark.png') })
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
     if (await deferUpdates.count()) await deferUpdates.click()
-    await panel.getByRole('tab', { name: 'Configuration' }).focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(panel.getByRole('tab', { name: 'Models' })).toBeFocused()
-    await expect(panel.getByRole('tabpanel')).toContainText('Fixture Muse')
-    await page.keyboard.press('ArrowLeft')
-    await expect(panel.getByRole('tab', { name: 'Configuration' })).toBeFocused()
+    await expect(panel.getByRole('list', { name: 'Muse available models' })).toContainText('Fixture Muse')
+    // Escape closes the open row from inside it and gives focus back to its header; Enter opens it again.
+    await panel.getByRole('button', { name: 'Check again', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('button', { name: 'Muse', exact: true })).toBeFocused()
+    await expect(page.getByRole('button', { name: 'Muse', exact: true })).toHaveAttribute('aria-expanded', 'false')
+    await page.keyboard.press('Enter')
+    await expect(panel.getByRole('button', { name: 'Disconnect Muse' })).toBeVisible()
 
     // Supply an owned fixture folder, then use the current instant-creation flow and composer picker.
     const prepared = await page.evaluate(async path => {

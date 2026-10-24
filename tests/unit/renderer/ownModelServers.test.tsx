@@ -77,10 +77,10 @@ describe('Your own model servers on Settings › Providers', () => {
     await screen.findByRole('button', { name: 'Codex' })
   }
 
-  it('is above the provider tiles while the Owl feature is on and main gave the window its bridge', async () => {
+  it('is above the provider list while the Owl feature is on and main gave the window its bridge', async () => {
     await mount(true, fake({ list: vi.fn(async () => [SPARK]) }))
     const group = await screen.findByRole('region', { name: 'Your own model servers' })
-    expect(group.compareDocumentPosition(screen.getByRole('navigation', { name: 'Thread providers' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(group.compareDocumentPosition(screen.getByRole('list', { name: 'Thread providers' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(await within(group).findByText('spark-head')).toBeVisible()
   })
 

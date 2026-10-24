@@ -267,12 +267,15 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
-    // The night in the room's corner sits between the canvas and the header: text over it is measured against both.
+    // The night in the room's corner sits between the canvas and the header: text over it is measured against both,
+    // unless the text sits on an opaque fill of its own, such as Watched's badge, which hides the night under it.
     const sky = document.querySelector('.watcher-room__sky')?.getBoundingClientRect()
     const surfaces = (element: Element): string[] => {
       const under = background(element)
       const bounds = element.getBoundingClientRect()
-      const onSky = sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
+      const fill = getComputedStyle(element).backgroundColor
+      const ownFill = fill !== 'transparent' && !fill.startsWith('rgba(') && !fill.includes('/')
+      const onSky = !ownFill && sky !== undefined && element.closest('.watcher-pane') !== null && bounds.top < sky.bottom && bounds.left < sky.right
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
@@ -1460,8 +1463,8 @@ test.describe("Watcher's room on the built app", () => {
           await expect(beside(page)).toBeVisible()
           await expect(page.locator('.watcher-head .watcher-stop-all')).toHaveCount(stopAll ? 1 : 0)
           for (const counts of ['seeded', 'three-digit'] as const) {
-            // The counts are uncapped. The second pass draws both as 100, the widest three digits in tabular figures, at the
-            // window sizes whose panes span the sweep.
+            // All threads' count is uncapped and Watched's badge stops at 99+. The second pass draws both as 100, wider than
+            // either can be drawn, at the window sizes whose panes span the sweep.
             if (counts === 'three-digit') await page.locator('.watcher-head').evaluate(head => {
               for (const count of head.querySelectorAll('.watcher-head__count, .watcher-tabs__count')) count.textContent = '100'
             })
