@@ -114,8 +114,11 @@ it('applies updates measured from a whole room that arrives while it reads, and 
   receive({}, { revision: 6, base: null, room: room(2) })
   receive({}, { revision: 7, base: 6, room: { recoveryNotice: 'last', observedAt: at(3) } })
   expect(listener).toHaveBeenLastCalledWith(room(3, 'last'))
+  // A whole room came while the read was out, so the read's answer is not handed on: the page keeps what main sent since.
+  const calls = listener.mock.calls.length
   answers.shift()!({ status: 'ok', state: room(1, 'read') })
-  await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(1, 'read')))
+  await new Promise(resolve => { setTimeout(resolve, 0) })
+  expect(listener).toHaveBeenCalledTimes(calls)
   // The read did not drop the room it held: the next update still applies, and nothing is read again.
   receive({}, { revision: 8, base: 7, room: { observedAt: at(4) } })
   expect(listener).toHaveBeenLastCalledWith(room(4, 'last'))
@@ -128,8 +131,32 @@ it('applies updates measured from a whole room that arrives while it reads, and 
   expect(ipc.invoke).toHaveBeenCalledTimes(2)
   answers.shift()!({ status: 'ok', state: room(6, 'second read') })
   await vi.waitFor(() => expect(ipc.invoke).toHaveBeenCalledTimes(3))
+  expect(listener).not.toHaveBeenCalledWith(room(6, 'second read'))
+  // No whole room came during the third read, so its answer is the newest room and is handed on.
   answers.shift()!({ status: 'ok', state: room(8, 'third read') })
   await vi.waitFor(() => expect(listener).toHaveBeenLastCalledWith(room(8, 'third read')))
   expect(ipc.invoke).toHaveBeenCalledTimes(3)
+  off()
+})
+
+it('does not hand on a recovery read\'s answer over a whole room main sent while it was out, even read in the same millisecond', async () => {
+  const ipc = preloadElectron().ipcRenderer
+  const listener = vi.fn(), off = createSottoBridge(ipc, 'win32', true).watcher!.onChanged(listener)
+  const receive = ipc.on.mock.calls.find(call => call[0] === WATCHER_CHANGED)![1] as (event: unknown, ...payload: unknown[]) => void
+  const at = '2026-10-23T00:00:00.000Z'
+  const room = (notice: string): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [], watchedThreads: [],
+    receipts: [], recoveryNotice: notice, observedAt: at })
+  let answer!: (value: unknown) => void
+  ipc.invoke.mockReturnValueOnce(new Promise(resolve => { answer = resolve }))
+  receive({}, { revision: 5, base: 4, room: { observedAt: at } })
+  expect(ipc.invoke).toHaveBeenCalledOnce()
+  // Main took the read with room A, then sent room B whole, built in the same millisecond.
+  receive({}, { revision: 6, base: null, room: room('B') })
+  expect(listener).toHaveBeenLastCalledWith(room('B'))
+  answer({ status: 'ok', state: room('A') })
+  await new Promise(resolve => { setTimeout(resolve, 0) })
+  // The page would take A over B on a tie, so the preload must not hand it on.
+  expect(listener).toHaveBeenCalledOnce()
+  expect(listener).toHaveBeenLastCalledWith(room('B'))
   off()
 })

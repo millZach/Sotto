@@ -39,6 +39,12 @@ const isWatcherRoomUpdate = (value: unknown): value is WatcherRoomUpdate => type
  * and hands that room on. While the read is out, an update it cannot apply was sent before main took the read, and the
  * read's answer covers it; a whole room main sent after it is held, and updates measured from it apply as ever. One that
  * cannot apply after such a whole room is read again once the read answers, so the window always ends with main's room.
+ *
+ * Once a whole room has come during the read, the read's answer is not handed on. That room is at least as new as the
+ * answer: main sends no update between taking the read and answering it but the one its answer flushes, so a whole room
+ * main sent before taking the read is followed by updates for every change since, and one sent after it is newer. The
+ * page orders rooms by when they were read, and a tie goes to the later arrival, so handing on an answer read in the
+ * same millisecond as a newer room would leave the page on the older one.
  */
 export function watcherRoomChanges(renderer: WatcherRoomRenderer): WatcherBridge['onChanged'] {
   const listeners = new Set<(state: WatcherRoomState) => void>()
@@ -51,7 +57,7 @@ export function watcherRoomChanges(renderer: WatcherRoomRenderer): WatcherBridge
     reading = true; whole = false; again = false
     const answered = (): void => { reading = false; if (again && listeners.size) read() }
     void renderer.invoke(WATCHER_GET).then(value => watcherRoomResultSchema.parse(value)).then(result => {
-      if (result.status === 'ok' && listeners.size) deliver(result.state)
+      if (result.status === 'ok' && listeners.size && !whole) deliver(result.state)
       answered()
     }, answered)
   }
