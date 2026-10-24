@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setImmediate as nextTask, setTimeout as delay } from 'node:timers/promises'
@@ -18,18 +18,62 @@ import { builtCheckpointWorker, walIndex } from '../fixtures/walCheckpointWorker
  */
 const at = '2026-10-23T10:00:00.000Z'
 const message = (id: string, text = randomBytes(1_200).toString('base64')): AgentMessage => ({ id, role: 'assistant', text, createdAt: at })
-type Internals = { db: DatabaseSync; checkpointer: { aside<T>(work: () => T): T; worker: { terminate(): Promise<number> } } | undefined }
+type Internals = { db: DatabaseSync; checkpointer: { aside<T>(work: () => T): T; worker: { terminate(): Promise<number> }; control: Int32Array } | undefined }
 const internals = (store: ThreadStore): Internals => store as unknown as Internals
+/** The control array main shares with its store's worker: slot 0 is the checkpoint's state, slot 1 the worker's life. */
+const controlOf = (store: ThreadStore): Int32Array => internals(store).checkpointer!.control
+
+/**
+ * Workers that stand in for the checkpoint worker, speaking its control array (`walCheckpointer.ts`), so a test can put
+ * main in the moment it means to test without timing it.
+ */
+const STUBS = {
+  // Opens nothing, starts a checkpoint at once and finishes it only once main is waiting for it: a removal that arrives
+  // during a checkpoint. Atomics.notify answers how many it woke, so it knows when main waits.
+  checkpointInFlight: `
+    const { parentPort, workerData } = require('node:worker_threads')
+    const control = new Int32Array(workerData.control)
+    const pause = new Int32Array(new SharedArrayBuffer(4))
+    Atomics.compareExchange(control, 1, 0, 3)
+    Atomics.store(control, 0, 1)
+    while (Atomics.notify(control, 0, 1) === 0) Atomics.wait(pause, 0, 0, 1)
+    Atomics.store(control, 0, 0)
+    Atomics.notify(control, 0)
+    parentPort.on('message', message => { if (message === 'stop') { Atomics.store(control, 1, 2); Atomics.notify(control, 1) } })
+  `,
+  // Says it has stopped, as a worker whose start-up or checkpoint failed does, and stays alive, so its exit never
+  // reaches main; it answers no message.
+  stoppedEarly: `
+    const { workerData } = require('node:worker_threads')
+    const control = new Int32Array(workerData.control)
+    Atomics.store(control, 1, 2)
+    Atomics.notify(control, 1)
+    setInterval(() => undefined, 1 << 30)
+  `,
+}
 
 describe('thread store checkpoints off main', () => {
   let worker: Awaited<ReturnType<typeof builtCheckpointWorker>>
+  const stubs = { checkpointInFlight: '', stoppedEarly: '' }
   const roots: string[] = []
   const stores: ThreadStore[] = []
-  beforeAll(async () => { worker = await builtCheckpointWorker() })
-  afterAll(async () => { await worker?.dispose() })
+  beforeAll(async () => {
+    worker = await builtCheckpointWorker()
+    const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-stubs-')); roots.push(root)
+    for (const [name, source] of Object.entries(STUBS)) {
+      const path = join(root, `${name}.cjs`)
+      await writeFile(path, source)
+      stubs[name as keyof typeof stubs] = path
+    }
+  })
+  afterAll(async () => {
+    await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+    await worker?.dispose()
+  })
   afterEach(async () => {
     for (const store of stores.splice(0)) store.close()
-    await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+    // The stubs' folder stays for the whole file.
+    await Promise.all(roots.splice(1).map(root => rm(root, { recursive: true, force: true })))
   })
   async function openStore(checkpointWorker: string | null = worker.path): Promise<{ store: ThreadStore; path: string; root: string }> {
     const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-')); roots.push(root)
@@ -113,6 +157,55 @@ describe('thread store checkpoints off main', () => {
     store.append('thread', { kind: 'message-added', at, message: message('after') })
     expect(store.messageCount('thread')).toBe(1)
   })
+
+  it('waits out a checkpoint in flight before a removal\'s own checkpoint, then clears the words', async () => {
+    const { store, path } = await openStore(stubs.checkpointInFlight)
+    const marker = `forget-me-${randomBytes(8).toString('hex')}`
+    store.append('forgotten', { kind: 'message-added', at, message: message('words', `${marker} ${randomBytes(4_000).toString('base64')}`) })
+    for (let index = 0; index < 20; index++) store.append('kept', { kind: 'message-added', at, message: message(`k-${index}`) })
+    const control = controlOf(store)
+    // The stub has started a checkpoint, and finishes it only once main is waiting for it.
+    while (Atomics.load(control, 0) !== 1) await nextTask()
+    store.forget('forgotten')
+    expect(Atomics.load(control, 0)).toBe(0)
+    const bytes = Buffer.concat([readFileSync(path), existsSync(`${path}-wal`) ? readFileSync(`${path}-wal`) : Buffer.alloc(0)])
+    expect(bytes.includes(Buffer.from(marker))).toBe(false)
+    expect(store.messageCount('kept')).toBe(20)
+  }, 60_000)
+
+  it('fails a removal whose checkpoint finds the log busy, and clears the words when it is tried again', async () => {
+    const { store, path } = await openStore()
+    const marker = `forget-me-${randomBytes(8).toString('hex')}`
+    store.append('forgotten', { kind: 'message-added', at, message: message('words', `${marker} ${randomBytes(4_000).toString('base64')}`) })
+    await caughtUp(path)
+    // A reader holding an older snapshot keeps the log from being cleared. Main answers a busy lock at once here, rather
+    // than after its five seconds.
+    const reader = new DatabaseSync(path)
+    internals(store).db.exec('PRAGMA busy_timeout=0')
+    try {
+      reader.exec('BEGIN')
+      reader.prepare('SELECT COUNT(*) FROM events').get()
+      expect(() => store.redactAll()).toThrow('The history log could not be cleared')
+    } finally {
+      reader.exec('COMMIT')
+      reader.close()
+    }
+    // What Keep local history's maintenance does after a failed removal: it asks again.
+    store.redactAll()
+    const bytes = Buffer.concat([readFileSync(path), existsSync(`${path}-wal`) ? readFileSync(`${path}-wal`) : Buffer.alloc(0)])
+    expect(bytes.includes(Buffer.from(marker))).toBe(false)
+  }, 60_000)
+
+  it('closes at once a worker that stopped before main heard it go', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-')); roots.push(root)
+    const checkpointer = WalCheckpointer.start(join(root, 'threads.sqlite'), stubs.stoppedEarly, () => undefined)!
+    const control = (checkpointer as unknown as { control: Int32Array }).control
+    // The stub says it has stopped, as a worker whose start-up or checkpoint failed does, and its exit has not reached main.
+    while (Atomics.load(control, 1) !== 2) await nextTask()
+    checkpointer.stop()
+    // Main did not ask it to stop and wait for an answer that cannot come.
+    expect(Atomics.load(control, 1)).toBe(2)
+  }, 60_000)
 
   it('starts the log over while saves keep coming, rather than letting it grow', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-checkpoint-')); roots.push(root)

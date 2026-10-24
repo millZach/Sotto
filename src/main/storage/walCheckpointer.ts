@@ -10,11 +10,11 @@ import { SAVE_SYNCHRONOUS } from './sqliteDurability'
  * With WAL, SQLite runs a checkpoint inside the commit that grows the log past its threshold: it flushes the log, copies
  * its pages into the file and flushes the file, all on the thread that committed. On an 860 MB `threads.sqlite` that
  * commit held main for over a second. Main's connection turns the automatic checkpoint off while this runs, and the
- * worker's own connection runs a PASSIVE checkpoint every `CHECKPOINT_INTERVAL_MS`, which takes no lock a save waits
- * for. While saves keep coming, a passive checkpoint can fall behind and the log never starts over, so once it holds
- * `RESTART_PAGES` the worker also runs a RESTART, which holds the next save for as long as it takes to copy and flush
- * what the passive one just before it left. Where the worker cannot be had (no built file beside this module, as under the test runner, or a
- * worker that failed), main's connection keeps SQLite's own automatic checkpoint.
+ * worker's own connection runs a PASSIVE checkpoint `CHECKPOINT_INTERVAL_MS` after its last one finished, which takes no
+ * lock a save waits for. While saves keep coming, a passive checkpoint can fall behind and the log never starts over, so
+ * once it holds `RESTART_PAGES` the worker also runs a RESTART, which holds the next save for as long as it takes to copy
+ * and flush what the passive one just before it left. Where the worker cannot be had (no built file beside this module,
+ * as under the test runner, or a worker that failed), main's connection keeps SQLite's own automatic checkpoint.
  */
 export const BUILT_CHECKPOINT_WORKER = join(__dirname, 'walCheckpointWorker.js')
 export const CHECKPOINT_INTERVAL_MS = 500
@@ -29,11 +29,11 @@ export const AUTOMATIC_CHECKPOINT = 'PRAGMA wal_autocheckpoint=1000'
  * The slots of the control array main and the worker share, and their values; `walCheckpointWorker.ts` keeps its own
  * copy, since it must not import this module. STATE says whether a checkpoint is running or main holds the worker aside.
  * LIFE goes STARTING, then OPEN once the worker opens its connection, then STOPPED once it has closed it (or never
- * opened it); STOPPING asks an open worker to close. OPEN is 3, set by the worker alone.
+ * opened it); STOPPING asks an open worker to close. Only the worker sets OPEN.
  */
 const STATE = 0, LIFE = 1
 const IDLE = 0, RUNNING = 1, HELD = 2
-const STARTING = 0, STOPPING = 1, STOPPED = 2
+const STARTING = 0, STOPPING = 1, STOPPED = 2, OPEN = 3
 /** How long a hold or a stop waits for a checkpoint in flight before going on without it. */
 const WAIT_LIMIT_MS = 10_000
 
@@ -87,13 +87,16 @@ export class WalCheckpointer {
   stop(): void {
     if (this.stopped) return
     this.stopped = true
-    // A worker that has not opened its connection yet never will.
-    if (Atomics.compareExchange(this.control, LIFE, STARTING, STOPPED) !== STARTING) {
+    // A worker that has not opened its connection yet never will. One that has already stopped, as when its start-up or a
+    // checkpoint failed before main heard it go, has closed its connection and answers nothing, so nothing is waited for.
+    if (Atomics.compareExchange(this.control, LIFE, STARTING, STOPPED) === OPEN) {
       this.hold()
-      Atomics.store(this.control, LIFE, STOPPING)
-      this.worker.postMessage('stop')
-      const deadline = performance.now() + WAIT_LIMIT_MS
-      while (Atomics.load(this.control, LIFE) !== STOPPED && performance.now() < deadline) Atomics.wait(this.control, LIFE, STOPPING, 100)
+      // It may have stopped while the hold waited.
+      if (Atomics.compareExchange(this.control, LIFE, OPEN, STOPPING) === OPEN) {
+        this.worker.postMessage('stop')
+        const deadline = performance.now() + WAIT_LIMIT_MS
+        while (Atomics.load(this.control, LIFE) !== STOPPED && performance.now() < deadline) Atomics.wait(this.control, LIFE, STOPPING, 100)
+      }
     }
     void this.worker.terminate().catch(() => undefined)
   }

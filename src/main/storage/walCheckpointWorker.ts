@@ -1,8 +1,8 @@
 /**
  * The worker thread that checkpoints a history store's write-ahead log for main (`walCheckpointer.ts`). It opens its
  * own connection to the file and imports Node builtins alone, so the build emits it as a file of its own beside the
- * bundle that starts it. It runs a PASSIVE checkpoint every interval, and a RESTART once the log has grown past the
- * restart size, and none while main holds it aside.
+ * bundle that starts it. It runs a PASSIVE checkpoint an interval after its last one finished, and a RESTART once the
+ * log has grown past the restart size, and none while main holds it aside.
  */
 import { DatabaseSync } from 'node:sqlite'
 import { parentPort, workerData } from 'node:worker_threads'
