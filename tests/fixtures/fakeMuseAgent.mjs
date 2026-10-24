@@ -179,6 +179,8 @@ function check() {
   else if (action.type === 'complete') completeReply(session, action.text)
   else if (action.type === 'reply-start') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'inProgress', revision: 1,
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text })
+  else if (action.type === 'tool-item') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'toolCall', status: 'completed', revision: 1,
+    turnId: session.activeTurnId ?? null, recordedAt: stamp(), tool: action.tool ?? 'read_file', callId: `call-${randomUUID()}`, args: '{}' })
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'release-set-model') { const answer = parkedSetModel; parkedSetModel = undefined; answer?.() }
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })

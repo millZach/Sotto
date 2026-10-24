@@ -219,16 +219,25 @@ it('moves a compacted thread onto a copy of its conversation when a new host can
   const { f, id } = await open({ compactedToolsBug: true })
   const send = (g: Fixture, text: string) => g.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text })
   const texts = async (g: Fixture) => (await thread(g, id)).messages.map(message => message.text)
-  await send(f, 'Before the compaction')
+  const toolTurn = async (g: Fixture) => (await thread(g, id)).activities?.find(record => record.kind !== 'turn' && record.turnId === firstMessage)?.turnId
+  const firstMessage = randomUUID()
+  await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: firstMessage, text: 'Before the compaction' })
+  await f.action(id, { type: 'tool-item' })
+  await expect.poll(async () => toolTurn(f)).toBe(firstMessage)
   await f.driver.completeTurn(id, 'First reply')
   await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
-  expect(await f.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })).toMatchObject({ accepted: true })
+  /** Compact the thread, then restart Sotto, so a new host resumes the compacted session with the thread's tools. */
+  const compactAndRestart = async (from: Fixture): Promise<Fixture> => {
+    expect(await from.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })).toMatchObject({ accepted: true })
+    const g = await from.driver.restart() as unknown as Fixture
+    closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
+    equip(g)
+    await g.host.connect()
+    g.host.observeThreads?.([id])
+    return g
+  }
   const before = await f.realId(id)
-  const g = await f.driver.restart() as unknown as Fixture
-  closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
-  equip(g)
-  await g.host.connect()
-  g.host.observeThreads?.([id])
+  const g = await compactAndRestart(f)
   await send(g, 'After the restart')
   await expect.poll(async () => (await records(g, 'session/fork')).length).toBe(1)
   await expect.poll(async () => g.realId(id)).not.toBe(before)
@@ -242,8 +251,19 @@ it('moves a compacted thread onto a copy of its conversation when a new host can
   expect(resumes.length).toBeGreaterThan(0)
   expect(Object.keys(servers(resumes[0]) ?? {}).map(name => name.replace(SUFFIX, ''))).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
   expect(await texts(g)).toEqual(['Before the compaction', 'First reply', 'After the restart', 'Sent again', 'Second reply'])
-  // Once per thread in a run: the copy is not copied again.
-  expect(await records(g, 'session/fork')).toHaveLength(1)
+  // The copy's rebuilt history still names the first turn, so its tool call stays with it.
+  expect(await toolTurn(g)).toBe(firstMessage)
+  // When the copy compacts and a later run resumes it, it is copied again.
+  const h = await compactAndRestart(g)
+  await send(h, 'After the second restart')
+  await expect.poll(async () => (await records(h, 'session/fork')).length).toBe(2)
+  await expect.poll(async () => h.realId(id)).not.toBe(forked)
+  await send(h, 'Sent once more')
+  await h.driver.completeTurn(id, 'Third reply')
+  await expect.poll(async () => (await thread(h, id)).status).toBe('idle')
+  // This run's log starts from what the copy served (the app's own history holds the rest): nothing Muse rebuilt.
+  expect(await texts(h)).toEqual(['Sent again', 'Second reply', 'After the second restart', 'Sent once more', 'Third reply'])
+  expect(await toolTurn(h)).toBe(firstMessage)
 })
 
 it('says so, and keeps the thread on its session, when Muse will not copy a compacted conversation', async () => {

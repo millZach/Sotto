@@ -1021,7 +1021,7 @@ export class MuseMspHost implements AgentHost {
       if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
       const fold = this.fold(id)
       fold.viewCursor = resumed.viewCursor
-      for (const item of this.unforked(alias, items)) this.foldItem(id, item)
+      this.foldHistory(id, alias, items)
       // Nothing is held back while the model is set again, and a running turn is left alone: the next send asks again.
       // A turn can start while the resume is answered, so the live turn counts as well as the session's description.
       const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
@@ -1200,7 +1200,7 @@ export class MuseMspHost implements AgentHost {
    * stream both come through here, and the log works out what is new, so reading the same history twice
    * records nothing twice. Older revisions are ignored; an equal-revision reply may still restate its stream.
    */
-  private foldItem(id: string, item: MuseItem): void {
+  private foldItem(id: string, item: MuseItem, turnOnly = false): void {
     const alias = this.aliases[id]; if (!alias) return
     const fold = this.fold(id)
     const previous = fold.items.get(item.itemId)
@@ -1219,6 +1219,7 @@ export class MuseMspHost implements AgentHost {
         const active = this.activeTurns.get(id)
         if (active?.turnId === merged.turnId) active.messageId = messageId
       }
+      if (turnOnly) return
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
       // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
       const text = !origin ? merged.text : merged.displayText !== undefined && !merged.truncated ? merged.displayText
@@ -1239,6 +1240,7 @@ export class MuseMspHost implements AgentHost {
       return
     }
     if (merged.kind === 'agentMessage') {
+      if (turnOnly) return
       const messageId = `muse-msg-${merged.itemId}`
       const message: AgentMessage = { id: messageId, role: 'assistant', text: merged.text ?? '', createdAt: merged.recordedAt ?? new Date().toISOString() }
       if (museTerminal(merged.status)) {
@@ -1305,9 +1307,12 @@ export class MuseMspHost implements AgentHost {
    */
   private toolsLostToCompaction(id: string, entry: ThreadProcess, error: { kind: string; message: string } | undefined): boolean {
     if (error?.kind !== 'configError' || !error.message.includes(MUSE_TOOL_AUDIT_FAILED)) return false
-    if (!entry.resumedWithTools || this.copied.has(id) || !this.aliases[id]?.museSessionId) return false
+    const session = this.aliases[id]?.museSessionId
+    // A move waits for the thread's open to finish, so the open cannot end on the session it leaves.
+    if (!entry.resumedWithTools || !session || this.copied.has(session) || this.loading.has(id) || !this.loaded.has(id)) return false
     return [...this.fold(id).items.values()].some(item => item.kind === 'compaction')
   }
+  /** Sessions this run is moving or has moved a thread off, so a failure the move did not clear is not moved again. */
   private readonly copied = new Set<string>()
   /**
    * Move the thread onto a fork of its session, then reopen it on a new host with its tools: the fork loaded its runtime
@@ -1318,7 +1323,8 @@ export class MuseMspHost implements AgentHost {
    */
   private moveToCopy(id: string, entry: ThreadProcess, messageId: string | undefined): void {
     const alias = this.aliases[id]!, from = alias.museSessionId!, generation = this.generation
-    this.copied.add(id); this.loaded.delete(id)
+    this.copied.add(from); this.loaded.delete(id)
+    let moved = false
     // Set before its first await returns, so the end of the move finds itself in `loading`.
     const move: { work?: Promise<void> } = {}
     const work = move.work = (async () => {
@@ -1330,13 +1336,18 @@ export class MuseMspHost implements AgentHost {
         if (!items) throw new MuseUnreadable('Muse did not serve the copy’s history.')
         if (this.processes.get(id) === entry) await this.stopSession(id)
         this.assertGeneration(generation)
+        // Requests the old host raised while it forked end with it; the copy's own are listed when it opens.
+        for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
+        const thread = this.threads.get(id)
+        if (thread) thread.requests = []
         alias.museSessionId = forked.session.sessionId
         alias.forkedMessages = items.filter(item => item.kind === 'userMessage' || item.kind === 'agentMessage').map(item => item.itemId)
         delete alias.forkCommandId; delete alias.endedTurn
+        moved = true
         await this.persist()
       } catch (error) {
+        if (!moved) this.copied.delete(from)
         if (generation !== this.generation) throw error
-        this.copied.delete(id)
         const thread = this.threads.get(id)
         // The failed turn said a copy was on its way; its record now says there is none.
         if (thread) {
@@ -1351,11 +1362,13 @@ export class MuseMspHost implements AgentHost {
     work.catch(() => undefined)
     this.loading.set(id, work)
   }
-  /** A history Muse served, without the messages it rebuilt when it made the thread's copy. */
-  private unforked(alias: Alias, items: readonly MuseItem[]): readonly MuseItem[] {
-    if (!alias.forkedMessages?.length) return items
-    const forked = new Set(alias.forkedMessages)
-    return items.filter(item => !forked.has(item.itemId))
+  /**
+   * Fold a history Muse served. The messages it rebuilt when it made the thread's copy still name their turns, so the
+   * activity of those turns keeps its place, but their words never reach the log: it already holds what was said.
+   */
+  private foldHistory(id: string, alias: Alias, items: readonly MuseItem[]): void {
+    const forked = alias.forkedMessages?.length ? new Set(alias.forkedMessages) : undefined
+    for (const item of items) this.foldItem(id, item, forked?.has(item.itemId) === true)
   }
   /** Settle a turn Muse ended: its record, the thread's state, and any work it left showing as running. */
   /** Output of the thread's running turn arrived: an item, a delta or a token record, never the user's own message. */
@@ -1987,7 +2000,7 @@ export class MuseMspHost implements AgentHost {
     if (entry.watcher) await this.proveReviewer(id, entry, resumed.session)
     const items = resumed.history.items ?? resumed.history.snapshot?.state.items
     if (!items) throw new MuseUnreadable('Muse did not serve this thread’s history.')
-    for (const item of this.unforked(alias, items)) this.foldItem(id, item)
+    this.foldHistory(id, alias, items)
     this.fold(id).viewCursor = resumed.viewCursor
     // A running turn is left alone: the next send asks for the thread's model again.
     const running = resumed.session.status === 'running' || this.activeTurns.has(id) || this.activePrompts.has(id)
