@@ -558,18 +558,28 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   </article>
 }
 
-/** Where a reader is reading: the first messages reaching into the view, and how far below its top each one starts. */
-interface ReadingPlace { readonly threadId: string; readonly marks: readonly { readonly messageId: string; readonly offset: number }[] }
-/** How many messages in view the place is kept by, for when the first of them is folded away by the update. */
+/**
+ * Where a reader is reading: the first messages reaching into the view and how far below its top each one starts, and
+ * how far the transcript was scrolled then. `held` while the transcript was too short to put the place back.
+ */
+interface ReadingPlace {
+  readonly threadId: string
+  readonly marks: readonly { readonly messageId: string; readonly offset: number }[]
+  readonly top: number
+  readonly held?: true
+}
+/** How many messages in view the place is kept by, for when the first of them is folded away by an update. */
 const READING_MARKS = 3
-const readingMessages = (scroller: HTMLElement): HTMLElement[] => [...scroller.querySelectorAll<HTMLElement>('.thread-message[data-message-id]')]
 
-/** The place of a reader in this transcript, or null when no message reaches into the view. */
+/**
+ * The place of a reader in this transcript, or null when no message reaches into the view. It reads the messages as the
+ * window keeps them, without copying the list, and finds the first one in view by halves, so what it reads does not grow
+ * with how much of the history is drawn.
+ */
 function readingPlace(scroller: HTMLElement, threadId: string): ReadingPlace | null {
   const view = scroller.getBoundingClientRect()
   const bottom = view.top + scroller.clientHeight
-  const drawn = readingMessages(scroller)
-  // Messages are drawn top to bottom, so the first one still in view is found by halves, whatever the history's length.
+  const drawn = scroller.getElementsByClassName('thread-message')
   let low = 0, high = drawn.length
   while (low < high) {
     const middle = (low + high) >> 1
@@ -577,21 +587,33 @@ function readingPlace(scroller: HTMLElement, threadId: string): ReadingPlace | n
     else low = middle + 1
   }
   const marks: { messageId: string; offset: number }[] = []
-  for (const message of drawn.slice(low, low + READING_MARKS)) {
+  for (let index = low; index < drawn.length && marks.length < READING_MARKS; index++) {
+    const message = drawn[index]!
+    const messageId = message.getAttribute('data-message-id')
+    if (messageId === null) continue
     const box = message.getBoundingClientRect()
     if (box.top >= bottom) break
-    marks.push({ messageId: message.dataset['messageId']!, offset: box.top - view.top })
+    marks.push({ messageId, offset: box.top - view.top })
   }
-  return marks.length ? { threadId, marks } : null
+  return marks.length ? { threadId, marks, top: scroller.scrollTop } : null
 }
 
-/** Scrolls the first of the place's messages still drawn back to where it was. */
-function keepReadingPlace(scroller: HTMLElement, place: ReadingPlace): void {
-  const drawn = new Map(readingMessages(scroller).map(message => [message.dataset['messageId'], message] as const))
-  const mark = place.marks.find(item => drawn.has(item.messageId))
-  if (mark === undefined) return
-  const moved = drawn.get(mark.messageId)!.getBoundingClientRect().top - scroller.getBoundingClientRect().top - mark.offset
-  if (Math.abs(moved) >= 1) scroller.scrollTop += moved
+/**
+ * Scrolls the first of the place's messages still drawn back to where it was, looking each one up by its ID. The place
+ * that stands after: read afresh once it is back, or held, at the scroll the transcript allows, while the transcript is too
+ * short to put it back, so a later update can.
+ */
+function keepReadingPlace(scroller: HTMLElement, place: ReadingPlace): ReadingPlace | null {
+  for (const mark of place.marks) {
+    const message = scroller.querySelector(`[data-message-id="${mark.messageId.replace(/["\\]/gu, '\\$&')}"]`)
+    if (message === null) continue
+    const offset = (): number => message.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    const moved = offset() - mark.offset
+    if (Math.abs(moved) >= 1) scroller.scrollTop += moved
+    if (Math.abs(offset() - mark.offset) >= 1) return { ...place, top: scroller.scrollTop, held: true }
+    break
+  }
+  return readingPlace(scroller, place.threadId)
 }
 
 /** The floating Jump to latest button's band at the bottom of the transcript: its offset, height and a little air. */
@@ -732,17 +754,22 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // A reader who is not following the end stays where they are reading, whatever an update folds, opens or resizes above
   // them (#1452). The window's own scroll anchoring holds an element only while it lives, and a turn that changes between
   // its running and finished layouts draws its messages again as new elements, so the transcript holds the place itself, by
-  // message: where the first messages in view were just before this update is committed, and where they are after it.
-  // Show earlier, Load earlier and the scrubber's landing put the reader somewhere on purpose, so they are left alone.
+  // message. The place is read when the reader scrolls and again after each update has put it back; an update that leaves
+  // the transcript too short to put it back holds it for the next. Show earlier, Load earlier and the scrubber's landing put
+  // the reader somewhere on purpose, and a scroll the transcript did not make is where the reader now is.
   const reading = useRef<ReadingPlace | null>(null)
-  reading.current = !following.current && anchor.current === null && landing.current === null && scroller.current !== null
-    ? readingPlace(scroller.current, thread.id) : null
   useLayoutEffect(() => {
-    const place = reading.current
-    reading.current = null
     const element = scroller.current
-    if (place === null || element === null || place.threadId !== thread.id || following.current || anchor.current !== null || landing.current !== null) return
-    keepReadingPlace(element, place)
+    const place = reading.current
+    if (element === null || place === null) return
+    if (place.threadId !== thread.id || following.current) { reading.current = null; return }
+    if (anchor.current !== null || landing.current !== null) return
+    // Scrolled since the place was read, by the reader before their scroll was heard or by the window's own anchoring. A
+    // transcript cut short pulls the scroll up to its end, which is not the reader's doing.
+    const top = element.scrollTop
+    const cutShort = top < place.top && top >= element.scrollHeight - element.clientHeight - 1
+    if (Math.abs(top - place.top) >= 1 && place.held !== true && !cutShort) { reading.current = readingPlace(element, thread.id); return }
+    reading.current = keepReadingPlace(element, place)
   })
 
   useLayoutEffect(() => {
@@ -803,6 +830,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     if (isAway !== away) setAway(isAway)
     if (following.current && unseen) setUnseen(false)
     setRequestUnderJump(reachesJumpBand(element))
+    // The reader's own scroll, or the window's anchoring, says where they read now; the transcript's own does not.
+    const place = reading.current
+    if (following.current) reading.current = null
+    else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, thread.id)
   }
 
   // Opening or closing activity keeps the control under the pointer: the end-follow would otherwise pull it away.

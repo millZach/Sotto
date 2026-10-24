@@ -603,57 +603,138 @@ describe('Thread transcript scrolling', () => {
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
   })
 
-  it('keeps a reader above the end where they are reading while the turn above opens and folds again (#1452)', () => {
-    // Lays each message out one row for each paragraph of the answer, so the answer can be read from its middle.
-    const height = (element: HTMLElement): number => [...element.querySelectorAll('.thread-message')].reduce((sum, message) => sum + rows(message), 0) * ROW
-    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
-    vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+  describe('a reader above the end (#1452)', () => {
+    // Lays each message out one row for each paragraph of an answer, so an answer can be read from its middle, and counts
+    // each message the transcript reads: its box, its ID, or its place in a list of every message drawn.
+    const select = Element.prototype.querySelectorAll
     const rows = (message: Element): number => Math.max(1, (message.textContent ?? '').split('Answer paragraph').length - 1)
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const log = this.closest<HTMLElement>('.thread-workspace__transcript')
-      const drawn = log === null ? [] : [...log.querySelectorAll('.thread-message')]
-      const index = drawn.indexOf(this)
-      const top = index < 0 ? 0 : drawn.slice(0, index).reduce((sum, message) => sum + rows(message), 0) * ROW - log!.scrollTop
-      const height = index < 0 ? VIEW : rows(this) * ROW
-      return { top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    const drawnIn = (element: Element): Element[] => [...select.call(element, '.thread-message')]
+    const height = (element: HTMLElement): number => drawnIn(element).reduce((sum, message) => sum + rows(message), 0) * ROW
+    let visits = 0
+    beforeEach(() => {
+      visits = 0
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const log = this.closest<HTMLElement>('.thread-workspace__transcript')
+        const drawn = log === null ? [] : drawnIn(log)
+        const index = drawn.indexOf(this)
+        if (index >= 0) visits++
+        const top = index < 0 ? 0 : drawn.slice(0, index).reduce((sum, message) => sum + rows(message), 0) * ROW - log!.scrollTop
+        const tall = index < 0 ? VIEW : rows(this) * ROW
+        return { top, bottom: top + tall, left: 0, right: 600, width: 600, height: tall, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+      })
+      const dataset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'dataset')!.get!
+      vi.spyOn(HTMLElement.prototype, 'dataset', 'get').mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('thread-message')) visits++
+        return dataset.call(this) as DOMStringMap
+      })
+      vi.spyOn(Element.prototype, 'querySelectorAll').mockImplementation(function (this: Element, selectors: string) {
+        const found = select.call(this, selectors)
+        if (selectors.includes('thread-message')) visits += found.length
+        return found
+      })
     })
-    const state = manualState()
     const at = (minute: number): string => new Date(NOW - (30 - minute) * 60_000).toISOString()
-    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
-    thread.status = 'idle'
-    thread.messages = [
-      { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
-      ...[1, 2, 3].map(step => ({ id: `step-${step}`, role: 'assistant' as const, text: `Looking at part ${step}.`, createdAt: at(step) })),
-      { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
-    ]
-    thread.activities = [
-      { id: 'turn-ask', turnId: 'ask', afterMessageId: 'ask', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(5) },
-      { id: 'ask-tool', turnId: 'ask', afterMessageId: 'ask', sequence: 1, kind: 'tool', status: 'completed', title: 'read_file', startedAt: at(0), completedAt: at(1) },
-    ]
-    const { live } = mount(state)
-    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
-    const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
-    expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
-    // Reading the answer's third paragraph: the answer begins two rows above the view's top.
-    transcript.scrollTop = 3 * ROW
-    fireEvent.scroll(transcript)
-    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
-    const status = (next: 'running' | 'idle'): void => act(() => {
-      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, status: next } : item) } })
+    /** Your message, three replies on the way and a ten-paragraph answer, folded under the turn's line once it ended. */
+    function answered(): AgentState {
+      const state = manualState()
+      const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+      thread.status = 'idle'
+      thread.messages = [
+        { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
+        ...[1, 2, 3].map(step => ({ id: `step-${step}`, role: 'assistant' as const, text: `Looking at part ${step}.`, createdAt: at(step) })),
+        { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
+      ]
+      thread.activities = [
+        { id: 'turn-ask', turnId: 'ask', afterMessageId: 'ask', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(5) },
+        { id: 'ask-tool', turnId: 'ask', afterMessageId: 'ask', sequence: 1, kind: 'tool', status: 'completed', title: 'read_file', startedAt: at(0), completedAt: at(1) },
+      ]
+      return state
+    }
+    type Thread = AgentState['host']['threads'][number]
+    function mountWith(state: AgentState, responseStreaming: 'live' | 'complete' = 'live') {
+      const live = liveAgentState(state)
+      vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), responseStreaming }))
+      render(<ThreadsView now={NOW} />)
+      const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+      const update = (change: (thread: Thread) => Partial<Thread>): void => act(() => {
+        live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, ...change(item) } : item) } })
+      })
+      const scrollTo = (top: number): void => { transcript.scrollTop = top; fireEvent.scroll(transcript) }
+      return { transcript, update, scrollTo }
+    }
+
+    it('stays where they are reading while the turn above opens and folds again, and the end is still followed', () => {
+      const { transcript, update, scrollTo } = mountWith(answered())
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+      // Reading the answer's third paragraph: the answer begins two rows above the view's top.
+      scrollTo(3 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      // The thread runs again with nothing new of its own (as Claude does to report background work): its last turn opens.
+      update(() => ({ status: 'running' }))
+      expect(transcript.querySelector('[data-message-id="step-1"]')).not.toBeNull()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'idle' }))
+      expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      // At the end, the transcript still follows what arrives.
+      fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
+      update(item => ({ messages: [...item.messages, { id: 'later', role: 'user' as const, text: 'Now the header links.', createdAt: at(6) }] }))
+      expect(transcript.scrollHeight).toBe(12 * ROW)
+      expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
     })
-    // The thread runs again with nothing new of its own (as Claude does to report background work): its last turn opens.
-    status('running')
-    expect(transcript.querySelector('[data-message-id="step-1"]')).not.toBeNull()
-    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
-    status('idle')
-    expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
-    expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
-    // At the end, the transcript still follows what arrives.
-    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
-    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews'
-      ? { ...item, messages: [...item.messages, { id: 'later', role: 'user' as const, text: 'Now the header links.', createdAt: at(6) }] } : item) } }) })
-    expect(transcript.scrollHeight).toBe(12 * ROW)
-    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+
+    it('comes back to where they were reading when the answer is held back while written and then shown whole', () => {
+      // With replies shown once complete, the reopened turn's answer reads "Writing a reply…": the transcript grows too short
+      // to keep the place, and the window can only scroll to its top. When the answer is whole again, so is the place.
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(3 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+      expect(transcript.scrollTop).toBe(0)
+      update(() => ({ status: 'idle' }))
+      expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    })
+
+    it('keeps a scroll the reader made while an update was on its way', () => {
+      const LATE = '2026-07-12T19:39:59.999Z'
+      const { transcript, update, scrollTo } = mountWith(answered())
+      scrollTo(5 * ROW)
+      // The update is drawn, and before it is put on screen the reader scrolls on: while its new message is drawn, after the
+      // transcript itself was.
+      const parse = Date.parse
+      let armed = true
+      vi.spyOn(Date, 'parse').mockImplementation((value: string) => {
+        if (armed && value === LATE && new Error().stack?.includes('MessageArticle')) { armed = false; tops.set(transcript, 7 * ROW) }
+        return parse(value)
+      })
+      update(item => ({ messages: [...item.messages, { id: 'late', role: 'user' as const, text: 'And the header?', createdAt: LATE }] }))
+      expect(armed).toBe(false)
+      expect(transcript.scrollTop).toBe(7 * ROW)
+    })
+
+    it('reads no more messages for an update when more of the history is drawn', () => {
+      const state = manualState()
+      state.host.threads.find(item => item.id === 'grok-previews')!.messages = Array.from({ length: 500 }, (_, index) => ({
+        id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: new Date(NOW).toISOString() }))
+      const { transcript, update, scrollTo } = mountWith(state)
+      const visitsForAnUpdate = (): number => {
+        scrollTo(Math.round(transcript.scrollHeight / 2))
+        visits = 0
+        update(item => ({ status: item.status === 'running' ? 'idle' : 'running' }))
+        return visits
+      }
+      const few = visitsForAnUpdate()
+      for (let page = 0; page < 4; page++) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
+      expect(drawnIn(transcript)).toHaveLength(400)
+      const many = visitsForAnUpdate()
+      expect(many - few).toBeLessThanOrEqual(8)
+    })
   })
 
   it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {
