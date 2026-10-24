@@ -555,6 +555,31 @@ it('routes steer and queue by turn identity and fences a native takeover before 
   expect(written.filter(item => item.method === 'request/answer')).toHaveLength(0)
 }, 60_000)
 
+it('picks a default send’s delivery on the desktop and sends a paired host the one it picked (ADR-0130)', async () => {
+  const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
+  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok') throw new Error('start-refused')
+  const target = first.target
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)?.lastTurn?.status).toBe('running'))
+  const turnId = f.socket.shell().host.threads.find(item => item.id === target.threadId)!.lastTurn!.id
+  const codexId = (await native.driver.requests()).findLast(item => item.method === 'turn/start')!.params!.threadId as string
+  const aliases = JSON.parse(await readFile(join(native.root, 'codex-threads.json'), 'utf8')) as Record<string, { codexThreadId: string }>
+  const nativeId = Object.entries(aliases).find(([, value]) => value.codexThreadId === codexId)![0]
+  const packets: WatcherHostControl[] = []
+  const original = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(packet => { packets.push(structuredClone(packet)); return original(packet) })
+  const steered = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default steer' })
+  expect(steered, JSON.stringify(steered)).toMatchObject({ status: 'ok', delivery: 'steer' })
+  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/steer')).toHaveLength(1))
+  await native.driver.completeTurn(nativeId, 'Synthetic completion')
+  await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === target.threadId)).toMatchObject({ status: 'idle', lastTurn: { status: 'completed' } }))
+  const sent = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target, text: 'Synthetic default now' })
+  expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok', delivery: 'now' })
+  expect(packets.at(-1)!.call.input).toMatchObject({ delivery: 'now' })
+  await vi.waitFor(async () => expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(2))
+}, 60_000)
+
 it('fences native input arriving at a prepared paired queue writer before another turn starts', async () => {
   // Only the writer's targeted read can ingest the native input added while preparation is held.
   const native = await codexFixture(undefined, false, 10_000, { pollIntervalMs: 600_000 }); cleanups.push(native.cleanup)
