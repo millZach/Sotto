@@ -1,30 +1,39 @@
 import { createContext } from 'react'
 
+/** What marks a message row on the page: the transcript's walk in page order looks for these. */
+const ROW = '.thread-message[data-message-id]'
+
 /**
  * The message rows a transcript draws, while they are drawn: each one's element by its message ID, and every row in the
  * order the transcript shows them, which is not always the order the messages were written (a reply that carries receipt
  * cards stays in view after an open fold of the replies around it). Rows add themselves as they are drawn and leave as
- * they go, so the transcript finds a message, and the first one in view, without searching the page or walking the
- * messages it does not draw (#1452).
+ * they go, so the transcript finds a message, and the first one in view, without searching the page for it (#1452).
  *
- * The order is put right only when it is read, for every row that came or went since. A few new rows each take their place
- * by halves, as a new message at the end does; more are sorted in with the rest at once, as Show earlier draws them. Rows
- * that went are taken out in one pass. So drawing or letting go of many rows costs about what sorting them does, never a
- * shift of the whole order for each row, and a transcript that goes takes nothing out at all.
+ * The order is put right only when it is read. A new row right after the last one, as a new message at the end is, joins
+ * the end after a look at the rows just before it. Rows that only went are taken out in one pass. Anything else (Show
+ * earlier, a fold opening, a row moved) is read again from the page in one walk of the transcript in page order. No row's
+ * place is ever found by comparing it with rows far from it, so the work is the rows drawn, at most, and only when they
+ * changed.
  */
 export class MessageRows {
   private readonly byId = new Map<string, HTMLElement>()
   private readonly ids = new WeakMap<HTMLElement, string>()
+  private readonly drawn = new Set<HTMLElement>()
   private shown: HTMLElement[] = []
   private readonly came = new Set<HTMLElement>()
   private readonly went = new Set<HTMLElement>()
+  /** A row the order holds was taken off the page and put back, perhaps somewhere else. */
+  private moved = false
   /** Adds a drawn row; the function it returns lets that row go. */
   add(messageId: string, element: HTMLElement): () => void {
     this.byId.set(messageId, element)
     this.ids.set(element, messageId)
-    if (!this.went.delete(element)) this.came.add(element)
+    this.drawn.add(element)
+    if (this.went.delete(element)) this.moved = true
+    else this.came.add(element)
     return () => {
       if (this.byId.get(messageId) === element) this.byId.delete(messageId)
+      this.drawn.delete(element)
       if (!this.came.delete(element)) this.went.add(element)
     }
   }
@@ -32,41 +41,39 @@ export class MessageRows {
   element(messageId: string): HTMLElement | undefined {
     return this.byId.get(messageId)
   }
-  /** How many rows are drawn. */
-  get size(): number { return this.settled().length }
-  /** The row at a place among the rows shown, top first. */
-  at(index: number): HTMLElement | undefined { return this.settled()[index] }
   /** The message a drawn row shows. */
   messageOf(element: HTMLElement): string | undefined { return this.ids.get(element) }
-  /** The rows in the order shown, with every row that came or went since it was last read put right. */
-  private settled(): HTMLElement[] {
-    if (this.went.size) {
+  /** The rows drawn in `transcript`, top first, with every row that came or went since this was last read put right. */
+  inOrder(transcript: HTMLElement): readonly HTMLElement[] {
+    if (this.went.size && !this.came.size && !this.moved) {
       const went = this.went
       this.shown = this.shown.filter(element => !went.has(element))
-      went.clear()
+    } else if (this.came.size === 1 && !this.moved && !this.went.size && this.follows([...this.came][0]!)) {
+      this.shown.push([...this.came][0]!)
+    } else if (this.came.size || this.went.size || this.moved) {
+      const drawn = this.drawn
+      this.shown = [...transcript.querySelectorAll<HTMLElement>(ROW)].filter(element => drawn.has(element))
     }
-    if (this.came.size > FEW_ROWS) {
-      this.shown = this.shown.concat([...this.came]).sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
-      this.came.clear()
-    } else if (this.came.size) {
-      for (const element of this.came) this.shown.splice(this.place(element), 0, element)
-      this.came.clear()
-    }
+    this.came.clear()
+    this.went.clear()
+    this.moved = false
     return this.shown
   }
-  /** Where a row goes among the rows shown: after every row the page puts before it. */
-  private place(element: HTMLElement): number {
-    let low = 0, high = this.shown.length
-    while (low < high) {
-      const middle = (low + high) >> 1
-      if (element.compareDocumentPosition(this.shown[middle]!) & Node.DOCUMENT_POSITION_PRECEDING) low = middle + 1
-      else high = middle
+  /**
+   * Whether a new row comes right after the last row in the order: the first row it finds looking back through its
+   * siblings is that one, or there is none in the order yet. A new message at the end is found by its next sibling up.
+   */
+  private follows(element: HTMLElement): boolean {
+    const last = this.shown.at(-1)
+    if (last === undefined) return true
+    for (let sibling = element.previousElementSibling; sibling !== null; sibling = sibling.previousElementSibling) {
+      if (sibling === last) return true
+      if (sibling instanceof HTMLElement && this.drawn.has(sibling)) return false
+      if (sibling.contains(last)) return true
     }
-    return low
+    return false
   }
 }
-/** Up to this many rows that came since the order was read take their places one by one; more are sorted in at once. */
-const FEW_ROWS = 16
 
 /** The rows of the transcript a message is drawn in. Outside a transcript, a row adds itself nowhere. */
 export const MessageRowsContext = createContext<MessageRows | null>(null)
@@ -86,12 +93,12 @@ export interface ReadingPlace {
 /** How many messages in view the place is kept by, for when the first of them is folded away by an update. */
 const READING_MARKS = 3
 
-/** The first row shown that reaches below `top`, found by halves over the rows drawn, or `rows.size` when none does. */
-function firstReaching(rows: MessageRows, top: number): number {
-  let low = 0, high = rows.size
+/** The first row shown that reaches below `top`, found by halves over the rows drawn, or the number of rows when none does. */
+function firstReaching(shown: readonly HTMLElement[], top: number): number {
+  let low = 0, high = shown.length
   while (low < high) {
     const middle = (low + high) >> 1
-    if (rows.at(middle)!.getBoundingClientRect().bottom > top) high = middle
+    if (shown[middle]!.getBoundingClientRect().bottom > top) high = middle
     else low = middle + 1
   }
   return low
@@ -101,9 +108,10 @@ function firstReaching(rows: MessageRows, top: number): number {
 export function readingPlace(scroller: HTMLElement, rows: MessageRows, threadId: string): ReadingPlace | null {
   const view = scroller.getBoundingClientRect()
   const bottom = view.top + scroller.clientHeight
+  const shown = rows.inOrder(scroller)
   const marks: { messageId: string; offset: number }[] = []
-  for (let index = firstReaching(rows, view.top); index < rows.size && marks.length < READING_MARKS; index++) {
-    const row = rows.at(index)!
+  for (let index = firstReaching(shown, view.top); index < shown.length && marks.length < READING_MARKS; index++) {
+    const row = shown[index]!
     const box = row.getBoundingClientRect()
     if (box.top >= bottom) break
     marks.push({ messageId: rows.messageOf(row)!, offset: box.top - view.top })

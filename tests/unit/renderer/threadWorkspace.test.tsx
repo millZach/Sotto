@@ -653,7 +653,7 @@ describe('Thread transcript scrolling', () => {
         return one.call(this, selectors)
       })
       // Each row the transcript reads through its rows, by its message's ID or by its place among the rows drawn.
-      for (const name of ['element', 'at'] as const) {
+      for (const name of ['element', 'inOrder'] as const) {
         const read = (MessageRows.prototype as unknown as Record<string, ((...args: unknown[]) => unknown) | undefined>)[name]
         if (read === undefined) continue
         vi.spyOn(MessageRows.prototype as unknown as Record<string, (...args: unknown[]) => unknown>, name).mockImplementation(function (this: MessageRows, ...args: unknown[]) {
