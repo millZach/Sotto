@@ -39,7 +39,7 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
 const originSchema = z.object({
   nativeMessageId: z.string().uuid(), messageId: z.string(), commandId: z.string(),
   digest: z.string(), createdAt: z.string(), confirmed: z.boolean().default(false),
-  /** The files the prompt carried (ADR-0127), by reference, so its message shows them however it is read back. */
+  /** The files the prompt carried (ADR-0131), by reference, so its message shows them however it is read back. */
   attachments: z.array(agentAttachmentReferenceSchema).optional(),
 })
 const aliasSchema = z.object({
@@ -749,7 +749,7 @@ export class DevinAcpHost implements AgentHost {
     const alias = this.aliases[id]!
     let changed = false
     for (const replayed of transcript.messages) {
-      // A user's words without the note naming their attached files, when the origin of that ID recorded one (ADR-0127);
+      // A user's words without the note naming their attached files, when the origin of that ID recorded one (ADR-0131);
       // the transcript keeps what Devin said.
       const read = replayed.role === 'user' ? readBackUserText(replayed.text, () => alias.origins.find(origin => origin.messageId === replayed.id)) : undefined
       const message = read ? { ...replayed, text: read.text } : replayed
@@ -1021,7 +1021,7 @@ export class DevinAcpHost implements AgentHost {
       return previous.confirmed ? { accepted: true } : { accepted: false, uncertain: true }
     }
     // Devin reads no images, so every attachment here is a file: saved into the thread's folder and named in a note after
-    // the user's words (ADR-0127). The origin's digest is the words alone, as the replay is read without the note.
+    // the user's words (ADR-0131). The origin's digest is the words alone, as the replay is read without the note.
     const filesNote = (await deliverAttachments(alias.cwd, command.attachments)).note
     // A dispatch no replay has confirmed yet, as a turn taken on the stream can leave one, has its replay read before
     // the next prompt goes out, joining a read already running. A replay that contradicts it refuses this send.

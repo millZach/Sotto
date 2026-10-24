@@ -5,7 +5,7 @@ import {
 } from '../../../shared/agents'
 
 /**
- * What the composer says about attachments once any file can be attached (ADR-0127), in the interface language (ADR-0123).
+ * What the composer says about attachments once any file can be attached (ADR-0131), in the interface language (ADR-0123).
  * The refusals match main's English constants in src/shared/agents.ts, which the host says when it refuses a file itself;
  * the window says its own here, before anything is read. With the Owl feature off, the composer keeps its screenshot words.
  */
@@ -45,7 +45,7 @@ export function addFailedWords(name: string, remaining: number, next: string | n
 
 const nothingAttached = (): string => t`Nothing was attached.`
 /**
- * A sentence main or a host says about attachments (ADR-0127), built in English in shared code, as the window says it in
+ * A sentence main or a host says about attachments (ADR-0131), built in English in shared code, as the window says it in
  * the interface language (ADR-0123). Any sentence this does not know is shown as it came.
  */
 export function attachmentRefusal(sentence: string): string {

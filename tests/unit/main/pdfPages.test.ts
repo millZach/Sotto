@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isPdfBytes, NATIVE_ATTACHMENT_BYTES, nativePdfSelection, pdfFitsNatively, pdfPageCount } from '../../../src/main/agents/pdfPages'
 import { objectStreamPdf, tinyPdf } from '../../fixtures/tinyPdfs'
 
-describe('PDF page counting for the native rule (ADR-0127)', () => {
+describe('PDF page counting for the native rule (ADR-0131)', () => {
   it('counts the pages of an uncompressed page tree', () => {
     expect(pdfPageCount(tinyPdf(1))).toBe(1)
     expect(pdfPageCount(tinyPdf(3))).toBe(3)

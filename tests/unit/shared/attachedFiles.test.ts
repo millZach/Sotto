@@ -8,7 +8,7 @@ const MB = 1024 * 1024
 let next = 0
 const handle = (mimeType: string, sizeBytes: number): AgentAttachmentHandle => ({ id: `item-${next++}`, name: 'item', mimeType, sizeBytes, digest: 'a'.repeat(64) })
 
-describe('attached files in the shared schemas (ADR-0127)', () => {
+describe('attached files in the shared schemas (ADR-0131)', () => {
   it('tells an image from a file by its type alone', () => {
     for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp']) expect(isImageAttachment(type)).toBe(true)
     for (const type of ['image/svg+xml', 'image/heic', 'application/pdf', 'text/plain', AGENT_GENERIC_FILE_MIME_TYPE]) expect(isImageAttachment(type)).toBe(false)
@@ -51,7 +51,7 @@ describe('attached files in the shared schemas (ADR-0127)', () => {
   })
 
   it('lists attaching any file as an Owl feature, off on stable and on Owl, and a host feature for it', () => {
-    expect(OWL_FEATURES).toContainEqual({ id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0127-any-file-can-be-attached.md', sentToStable: false })
+    expect(OWL_FEATURES).toContainEqual({ id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false })
     expect(isOwlFeatureEnabled('attach-any-file', 'stable')).toBe(false)
     expect(isOwlFeatureEnabled('attach-any-file', 'owl')).toBe(true)
     expect(owlFeaturesForTrack('stable')['attach-any-file']).toBe(false)

@@ -486,7 +486,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly answering: boolean
   readonly placeholder: string
   readonly supported: boolean
-  /** Whether the draft takes attachments at all, whatever the model reads: once any file can be attached (ADR-0127). */
+  /** Whether the draft takes attachments at all, whatever the model reads: once any file can be attached (ADR-0131). */
   readonly attachable: boolean
   /** Watcher's composer offers no native skills. */
   readonly watcher: boolean

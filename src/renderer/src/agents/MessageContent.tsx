@@ -400,7 +400,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
   /** Whether the tile is showing its image, which is what puts it in the viewer. */
   onShown: (id: string, shown: boolean) => void
-  /** Once any file can be attached (ADR-0127), a file's tile names its type and claims no preview it could never have. */
+  /** Once any file can be attached (ADR-0131), a file's tile names its type and claims no preview it could never have. */
   anyFile: boolean
 }): ReactNode {
   const { source, awaiting } = useAttachmentSource(attachment, origin)
@@ -412,7 +412,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
-  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0127).
+  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0131).
   const isImage = attachment.mimeType ? anyFile ? isImageAttachment(attachment.mimeType) : attachment.mimeType.startsWith('image/') : false
   const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
@@ -459,7 +459,7 @@ function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
 export function AttachmentPreviews({ attachments: given, notice, origin }: AttachmentPreviewsProps): ReactNode {
   const anyFile = useOwlFeature('attach-any-file')
-  // Images come first, then every other file (ADR-0127).
+  // Images come first, then every other file (ADR-0131).
   const attachments = useMemo(() => anyFile ? [...given.filter(item => attachmentKind(item.name, item.mimeType) === 'image' || !item.mimeType),
     ...given.filter(item => item.mimeType && attachmentKind(item.name, item.mimeType) !== 'image')] : given, [anyFile, given])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)

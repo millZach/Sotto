@@ -45,7 +45,7 @@ export interface AdapterFixture {
     permissionDecision(record: RecordedRpc): boolean | undefined
   }
   /**
-   * Where the provider's model reads a PDF as part of the prompt (ADR-0127): Claude's `document` block, and OpenCode's
+   * Where the provider's model reads a PDF as part of the prompt (ADR-0131): Claude's `document` block, and OpenCode's
    * `file` part for a model whose catalog lists PDF input. Absent, a PDF goes by path alone.
    */
   nativePdf?: boolean

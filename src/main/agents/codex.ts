@@ -859,7 +859,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   /**
    * Send and steer share native reference validation and input mapping. Any attached file that is not an image is saved
-   * into the thread's folder and named in a `text` input item of its own, after everything else (ADR-0127); Codex has no
+   * into the thread's folder and named in a `text` input item of its own, after everything else (ADR-0131); Codex has no
    * input type for a file, so a PDF goes by path too. `userItemText` leaves that item out when the message is read back.
    */
   async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = [], attachments: readonly PromptImage[] = []) {
@@ -1228,7 +1228,7 @@ export class CodexAppServerHost implements AgentHost {
   }
   /**
    * A user item's text. The item naming attached files is left out only when the origin the rest then matches, by
-   * client ID or item ID with its digest, recorded an attached file, since only then did Sotto send it (ADR-0127).
+   * client ID or item ID with its digest, recorded an attached file, since only then did Sotto send it (ADR-0131).
    */
   private userItemText(item: z.infer<typeof itemSchema>, origins: readonly Origin[], turnId: string | undefined): string {
     const content = userContent.parse(item.content)

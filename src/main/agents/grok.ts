@@ -97,7 +97,7 @@ const QUOTA_REUSE_MS = 5 * 60_000
  */
 const LIVE_BILLING_TIMEOUT_MS = 5_000
 const THREAD_PROCESS_LOST = 'Grok Build stopped before this reply finished, so it may be cut short. Send a message to carry on.'
-/** `attachments`: the files a prompt carried (ADR-0127), by reference, so its message shows them however it is read back. */
+/** `attachments`: the files a prompt carried (ADR-0131), by reference, so its message shows them however it is read back. */
 const originSchema = z.object({ messageId: z.string(), commandId: z.string(), digest: z.string(), createdAt: z.string(), entryKey: z.string().optional(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
 const aliasSchema = z.object({ grokSessionId: z.string().uuid().optional(), projectId: z.string().optional(), kind: z.literal('personal').optional(), cwd: z.string(), title: z.string(), modelId: z.string(), nativeModelId: z.string().optional(), settingsConfirmed: z.boolean().default(false), createdAt: z.string(), origins: z.array(originSchema), reasoningEffort: z.string().optional(), runtimeMode: grokRuntimeModeSchema.optional(), pendingRuntimeMode: grokRuntimeModeSchema.optional(), answeredRequestIds: z.array(z.string()).default([]), endedTurn: z.object({ id: z.string(), outcome: z.enum(['failed', 'interrupted']) }).optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
@@ -1306,7 +1306,7 @@ export class GrokAcpHost implements AgentHost {
           const requestLine = note && await this.launchProfile(command.threadId) ? watcherRequestLine(note) : ''
           const nativeText = skillText + requestLine
           // Grok reads no images, so every attachment here is a file: saved into the thread's folder and named in a note
-          // after everything else (ADR-0127). The origin's digest leaves the note out, as the history read takes it off.
+          // after everything else (ADR-0131). The origin's digest leaves the note out, as the history read takes it off.
           const filesNote = (await deliverAttachments(alias.cwd, command.attachments)).note
           this.assertGeneration(generation)
           // Direct sends run beside configure-thread; a mode change that began during the awaits above owns the session now.

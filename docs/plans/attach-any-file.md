@@ -1,6 +1,6 @@
 # Attach any file
 
-The composer attaches PNG, JPEG, GIF and WebP screenshots only. Zach asked to attach any file (October 24, 2026). This plan records the decisions and the build. The decision itself goes in ADR-0127, which amends ADR-0031.
+The composer attaches PNG, JPEG, GIF and WebP screenshots only. Zach asked to attach any file (October 24, 2026). This plan records the decisions and the build. The decision itself goes in ADR-0131, which amends ADR-0031.
 
 ## Decisions (Zach, October 24, 2026)
 
@@ -77,4 +77,4 @@ New words go through the Lingui catalogs, as `OwnModelServers.tsx` does.
 
 ## Documents
 
-ADR-0127 (amends ADR-0031, and ADR-0030 only by name); `CONTEXT.md` (**attached file**, beside **staged image**); `README.md` "Privacy and cost" (the copy in `.sotto/attachments/`, and PDFs sent to Claude and OpenCode); `docs/guide.md` (attaching); the Owl entry in `src/shared/owlFeatures.ts`.
+ADR-0131 (amends ADR-0031, and ADR-0030 only by name); `CONTEXT.md` (**attached file**, beside **staged image**); `README.md` "Privacy and cost" (the copy in `.sotto/attachments/`, and PDFs sent to Claude and OpenCode); `docs/guide.md` (attaching); the Owl entry in `src/shared/owlFeatures.ts`.

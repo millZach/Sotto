@@ -32,7 +32,7 @@ const pdf = { name: 'quarterly-report.pdf', mimeType: 'application/pdf', bytes: 
 const digestOf = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const index = async (root: string) => JSON.parse(await readFile(join(root, 'attachments', 'index.json'), 'utf8')) as { entries: { digest: string; mimeType: string }[] }
 
-describe('the attachment store with attached files (ADR-0127)', () => {
+describe('the attachment store with attached files (ADR-0131)', () => {
   it('keeps a file as <digest>.bin with its type in the index, without reading its bytes, and finds it again after a restart', async () => {
     const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
     const handle = await store.stage(pdf)
@@ -92,7 +92,7 @@ describe('the attachment store with attached files (ADR-0127)', () => {
   })
 })
 
-describe('attached files in prompts (ADR-0127)', () => {
+describe('attached files in prompts (ADR-0131)', () => {
   const file: AgentAttachmentHandle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'a'.repeat(64) }
   it('asks image support of images alone, a working folder of files alone, and refuses files where this build takes none', async () => {
     const snapshot = await new E2EAgentHost().connect()
@@ -134,7 +134,7 @@ async function coordinator(attachAnyFile: boolean) {
   return { root, host, get control() { return control }, async restart() { control.dispose(); await control.privacyChanged(); control = create(); await control.start(); await control.command({ type: 'connect' }) } }
 }
 
-describe('attached files through the coordinator (ADR-0127)', () => {
+describe('attached files through the coordinator (ADR-0131)', () => {
   it('keeps a file handle in a draft and a follow-up across a restart, and hands none of its bytes back for a chip', async () => {
     const f = await coordinator(true)
     const file = await f.control.stageAttachment(pdf)

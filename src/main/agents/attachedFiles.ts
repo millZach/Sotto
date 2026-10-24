@@ -7,7 +7,7 @@ import type { PromptImage } from './host'
 import { isPdfBytes, nativePdfSelection } from './pdfPages'
 
 /**
- * How an attached file reaches an agent (ADR-0127): copied into the thread's working folder under
+ * How an attached file reaches an agent (ADR-0131): copied into the thread's working folder under
  * `.sotto/attachments/<first 12 hex of its digest>/<safe name>`, and named in a note the adapter adds to what the
  * provider receives, apart from the user's own words. Adapters call this at the protocol boundary, where they read staged
  * images (ADR-0031). Nothing here logs a name, a path or a byte, and nothing it writes is ever opened or run by Sotto.

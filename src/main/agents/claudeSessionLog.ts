@@ -12,7 +12,7 @@ export function claudeText(content: unknown): string {
 }
 /**
  * A user prompt's own words: its text blocks without the block naming its attached files, which Sotto sends apart from
- * them (ADR-0127), so a prompt reads back, and matches its origin's digest, as the user wrote it.
+ * them (ADR-0131), so a prompt reads back, and matches its origin's digest, as the user wrote it.
  */
 export function claudeUserText(content: unknown): string {
   if (!Array.isArray(content)) return stripAttachedFilesNote(claudeText(content))

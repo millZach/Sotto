@@ -66,7 +66,7 @@ function Chip({ target, attachment, disabled, onRemove, removeLabel }: { readonl
 const BIDI_CONTROLS = /\p{Bidi_Control}/gu
 
 /**
- * One attached file that is not an image (ADR-0127): its type icon, its name cut in the middle so the extension stays
+ * One attached file that is not an image (ADR-0131): its type icon, its name cut in the middle so the extension stays
  * in view, its size, and a button that takes it off the draft.
  */
 function FilePill({ attachment, disabled, onRemove }: { readonly attachment: AgentAttachmentHandle; readonly disabled: boolean; readonly onRemove: () => void }): ReactNode {
@@ -85,7 +85,7 @@ function FilePill({ attachment, disabled, onRemove }: { readonly attachment: Age
 interface Incoming { readonly file: File; readonly mimeType: string; readonly name: string; readonly image: boolean }
 
 /**
- * Every refusal the files' types and sizes decide once any file can be attached (ADR-0127), in the plan's order, or null
+ * Every refusal the files' types and sizes decide once any file can be attached (ADR-0131), in the plan's order, or null
  * when they may be read. `imagesSupported` is whether the thread's model reads images; files go to every model.
  */
 function refusalBeforeReading(incoming: readonly Incoming[], current: readonly AgentAttachmentHandle[], imagesSupported: boolean): string | null {
@@ -117,7 +117,7 @@ function addAnyFailed(item: Incoming, remaining: number, first: boolean, cause: 
 /**
  * Where screenshots join a draft. Each is scaled to the screenshot bound when it is past it, then staged once, on
  * the host that runs `target` (ADR-0031), and the draft carries its handle; the chips draw their own thumbnails.
- * With `attach-any-file` on (ADR-0127), any file joins it too: images as before, every other file staged with its
+ * With `attach-any-file` on (ADR-0131), any file joins it too: images as before, every other file staged with its
  * bytes as they are and shown as a pill under the images.
  */
 export function ScreenshotInput({ target, attachments, onChange, disabled, supported, imagesSupported, children, reads }: {

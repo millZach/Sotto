@@ -325,7 +325,7 @@ export class OpenCodeHost implements AgentHost {
   /** When each prompt's answer was lost, by its inbox ID, while that still holds its server. */
   private readonly lostPrompts = new Map<string, number>()
   private readonly activePrompts = new Set<string>()
-  /** The Sotto IDs of the models whose catalog lists PDF input, which may take a PDF as part of the prompt (ADR-0127). */
+  /** The Sotto IDs of the models whose catalog lists PDF input, which may take a PDF as part of the prompt (ADR-0131). */
   private pdfModels = new Set<string>()
   /** The turn each thread is running, by the Sotto ID of the user message that opened it. */
   private readonly activeTurns = new Map<string, { messageId: string }>()
@@ -1272,7 +1272,7 @@ export class OpenCodeHost implements AgentHost {
     }
   }
   /**
-   * Record a user's message, without the note naming its attached files when its origin recorded one (ADR-0127); returns
+   * Record a user's message, without the note naming its attached files when its origin recorded one (ADR-0131); returns
    * the Sotto message ID it is recorded under.
    */
   private recordUser(id: string, inboxId: string, text: string, at: number | undefined): string | undefined {
@@ -1681,7 +1681,7 @@ export class OpenCodeHost implements AgentHost {
           verifyFileMentions(command.text, command.files)
           // Images go as data URIs, which OpenCode stores with the provider session and hands the model itself (ADR-0087).
           // Any other file is saved into the thread's folder and named in a note after the user's words, and a PDF goes as
-          // a data URI too when the model's catalog lists PDF input and it passes the native rule (ADR-0127).
+          // a data URI too when the model's catalog lists PDF input and it passes the native rule (ADR-0131).
           const delivered = await deliverAttachments(alias.cwd, attachments, { nativePdf: this.pdfModels.has(alias.modelId) })
           const files: { uri: string; name: string }[] = []
           for (const attachment of delivered.images) files.push({ uri: `data:${attachment.mimeType};base64,${Buffer.from(await attachment.read()).toString('base64')}`, name: attachment.name })

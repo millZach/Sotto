@@ -254,7 +254,7 @@ describe('desktop host routing', () => {
     await expect(router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes })).rejects.toThrow('Nothing was attached.')
     expect(await router.attachmentContent({ threadId: hostEntityKey(REMOTE, 'thread'), digest: handle.digest })).toBeNull()
   })
-  it('asks no host to keep a file while this desktop’s attach-any-file answer is off, and forwards one when it is on (ADR-0127)', async () => {
+  it('asks no host to keep a file while this desktop’s attach-any-file answer is off, and forwards one when it is on (ADR-0131)', async () => {
     const handle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'b'.repeat(64) }
     const bytes = new Uint8Array([104, 101, 108, 108, 111])
     for (const attachAnyFile of [undefined, false, true]) {

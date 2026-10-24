@@ -98,7 +98,7 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
-      // An attached file in parts (ADR-0127): staging, the same trust as an image's, which pairing gives.
+      // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
       'stage-file-part',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,

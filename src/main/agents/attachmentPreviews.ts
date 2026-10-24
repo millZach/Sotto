@@ -23,7 +23,7 @@ type Cached = Entry & { retain: boolean }
  * Submitted content only. No native transcript ingestion, URL fetching, or path resolution. An entry names the
  * staged attachments its message carried; the bytes are the attachment store's, which keeps an image's while an entry
  * here (or anything else) owns them. Retention here is the entries': seven days and 100 MiB of the images' sizes. A
- * file that is not an image has no preview (ADR-0127): its entry keeps the handle for the tile's name, type and size,
+ * file that is not an image has no preview (ADR-0131): its entry keeps the handle for the tile's name, type and size,
  * and owns none of its bytes.
  */
 export class AttachmentPreviews {

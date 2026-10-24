@@ -654,7 +654,7 @@ export class AgentControl {
   private readonly attachmentPreviews: AttachmentPreviews
   /** This host's staged images (ADR-0031); what keeps each one is `ownedAttachments()`. */
   private readonly attachments: AttachmentStore
-  /** What a prompt's attachments are held to here: with `attach-any-file` off, a file is refused even when a handle names one (ADR-0127). */
+  /** What a prompt's attachments are held to here: with `attach-any-file` off, a file is refused even when a handle names one (ADR-0131). */
   private get attachmentRules(): { readonly acceptsFiles: boolean } { return { acceptsFiles: this.dependencies.attachAnyFile === true } }
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
@@ -815,7 +815,7 @@ export class AgentControl {
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
     /** The sentence a send is refused with when an image it names is no longer kept; a headless host names itself. */
     missingAttachment?: string
-    /** The Owl answer for attaching any file (ADR-0127), read once at start: the store keeps files that are not images. */
+    /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
     attachAnyFile?: boolean
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
@@ -1590,7 +1590,7 @@ export class AgentControl {
   }
   /**
    * A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it.
-   * A file draws no chip, so its bytes are never handed back (ADR-0127).
+   * A file draws no chip, so its bytes are never handed back (ADR-0131).
    */
   async attachmentContent(digest: string): Promise<AgentAttachmentContent | null> {
     const kept = this.attachments.mimeType(digest)

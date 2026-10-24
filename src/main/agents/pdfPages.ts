@@ -1,7 +1,7 @@
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../shared/agents'
 
 /**
- * Whether a PDF may also go to a provider as part of the prompt itself (ADR-0127), beside its copy in the working folder.
+ * Whether a PDF may also go to a provider as part of the prompt itself (ADR-0131), beside its copy in the working folder.
  * A PDF block Claude cannot read stays in its session and fails every later turn, so this is strict: a PDF goes natively
  * only when its page count can be read from its uncompressed page tree and is at most 100, and only while the message's
  * native bytes, images included, stay within 20 MiB. Anything else goes by path alone.

@@ -1224,7 +1224,7 @@ export class MuseMspHost implements AgentHost {
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
       // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
       // The note naming attached files comes off first, when the origin recorded one: it is the last thing Sotto put in
-      // the words (ADR-0127).
+      // the words (ADR-0131).
       const wire = merged.text === undefined ? undefined : readBackUserText(merged.text, () => origin).text
       const text = !origin ? wire : merged.displayText !== undefined && !merged.truncated ? merged.displayText
         : museWatcherTyped(wire ?? '', origin.digest) ?? wire
@@ -1802,7 +1802,7 @@ export class MuseMspHost implements AgentHost {
           const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
           const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
           // Any attached file that is not an image is saved into the thread's folder and named in a note after everything
-          // else in the words (ADR-0127), which the display text leaves out as it leaves out Watcher's note.
+          // else in the words (ADR-0131), which the display text leaves out as it leaves out Watcher's note.
           const delivered = await deliverAttachments(alias.cwd, attachments)
           const parts: Record<string, unknown>[] = [{ type: 'text', text: withAttachedFilesNote(command.text + note, delivered.note) }]
           const display = (watcherProfile || delivered.note) && command.type === 'send' ? { displayText: command.text } : {}

@@ -82,7 +82,7 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The Owl list's answer for attaching any file (ADR-0127), read once by the process owner. With it the store keeps files
+   * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
    */
   attachAnyFile?: boolean

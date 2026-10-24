@@ -274,11 +274,11 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'activity-bodies' || options.admin !== false || options.tailnet !== undefined)
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
-    // Attached files (ADR-0127) only where the host's Owl answer turns them on and it keeps attachments at all.
+    // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined))
   /**
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
-   * sockets it opens (ADR-0127). A part may come on any of its sockets; the upload goes when the last of them closes.
+   * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
   const uploads = new FileUploads<string>()
   const connected = (clientId: string): boolean => {

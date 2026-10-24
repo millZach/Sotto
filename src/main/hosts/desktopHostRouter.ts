@@ -282,7 +282,7 @@ export class DesktopHostRouter {
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
     /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
     heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
-    /** This desktop's Owl answer for attaching any file (ADR-0127), read once at start: with it off, no host is asked to keep a file. */
+    /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
     attachAnyFile?: boolean } = {}) {
     this.held = heldProvidersOption(options)
   }

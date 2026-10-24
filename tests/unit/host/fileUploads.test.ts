@@ -28,7 +28,7 @@ const refusal = (run: () => unknown): string => {
   throw new Error('The part was not refused.')
 }
 
-describe('a file sent to a host in parts (ADR-0127)', () => {
+describe('a file sent to a host in parts (ADR-0131)', () => {
   it('puts parts that arrive in order back together, and answers only once the last has come', () => {
     const uploads = new FileUploads<string>()
     const bytes = Buffer.alloc(20 * 1024 * 1024 + 5, 7)

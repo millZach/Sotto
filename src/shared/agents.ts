@@ -65,7 +65,7 @@ export const AGENT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', '
 export type AgentImageMimeType = typeof AGENT_IMAGE_MIME_TYPES[number]
 /**
  * Whether an attachment is an image: one of the four raster types a model reads as a picture (ADR-0031). Anything else
- * is an attached file (ADR-0127), whose bytes Sotto never inspects.
+ * is an attached file (ADR-0131), whose bytes Sotto never inspects.
  */
 export function isImageAttachment(mimeType: string): mimeType is AgentImageMimeType {
   return (AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType)
@@ -85,9 +85,9 @@ export const AGENT_DISMISS_FAILURES_MAX = 500
 export const AGENT_MAX_IMAGE_BYTES = 10 * 1024 * 1024
 /** The bytes a set's images may hold between them, which keeps a Claude request under its 32 MB cap. */
 export const AGENT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-/** The most one attached file may hold (ADR-0127). */
+/** The most one attached file may hold (ADR-0131). */
 export const AGENT_MAX_FILE_BYTES = 25 * 1024 * 1024
-/** The most a set's images and files may hold between them (ADR-0127). */
+/** The most a set's images and files may hold between them (ADR-0131). */
 export const AGENT_MAX_ATTACHMENTS_TOTAL_BYTES = 50 * 1024 * 1024
 /** The most one attachment may hold, by what it is. */
 export function attachmentLimitBytes(mimeType: string): number {
@@ -99,7 +99,7 @@ export const SCREENSHOT_WRONG_TYPE = 'Only PNG, JPEG, GIF, and WebP screenshots 
 export const SCREENSHOT_TOO_LARGE = 'Each screenshot must be 10 MB or smaller. Nothing was attached. Choose a smaller file.'
 export const SCREENSHOTS_TOO_LARGE_IN_TOTAL = 'Screenshots must total 20 MB or less. Nothing was attached. Remove an image or choose smaller files.'
 export const SCREENSHOT_NOT_ITS_TYPE = 'This screenshot’s content does not match its file type. Nothing was attached. Save it again as PNG, JPEG, GIF, or WebP, then attach it.'
-// The same refusals once any file can be attached (ADR-0127). The window says them through its catalogs; these are
+// The same refusals once any file can be attached (ADR-0131). The window says them through its catalogs; these are
 // main's and the host's, in English, and match the window's source text.
 export const ATTACHMENTS_TOO_MANY = 'Attach up to 8 files at a time. Nothing was attached.'
 export const ATTACHED_FILE_TOO_LARGE = 'Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file.'
@@ -111,7 +111,7 @@ export function imagesNotReadRefusal(name: string): string {
   return `This model does not read images. Choose a model with image support, or remove ${name}.`
 }
 /**
- * A send that carries an attached file on a thread with no working folder to copy it into (ADR-0127). Checked before
+ * A send that carries an attached file on a thread with no working folder to copy it into (ADR-0131). Checked before
  * the provider hears anything.
  */
 export const ATTACHED_FILES_NEED_A_FOLDER = 'This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved.'
@@ -138,9 +138,9 @@ export function nameHostInRefusal(message: string, name: string): string {
 }
 /** What a host from before staged images (ADR-0031) is refused with when asked to keep one. */
 export const HOST_CANNOT_STAGE_SCREENSHOTS = 'This host cannot keep screenshots. Update Sotto there, then attach them again. Nothing was attached.'
-/** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0127). */
+/** What a host without `file-staging` is refused with when asked to keep a file that is not an image (ADR-0131). */
 export const HOST_CANNOT_STAGE_FILES = 'This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.'
-/** What a file is refused with when the host that would keep it is not connected (ADR-0127). */
+/** What a file is refused with when the host that would keep it is not connected (ADR-0131). */
 export const HOST_DISCONNECTED_BEFORE_FILES = 'This host is disconnected. Connect again before attaching files. Nothing was attached.'
 /** A file part a host refuses as not the one its upload expects: out of order, from an upload it no longer holds, or too large. */
 export const FILE_UPLOAD_INCOMPLETE = 'This file did not reach the host whole. Nothing was attached. Attach it again.'

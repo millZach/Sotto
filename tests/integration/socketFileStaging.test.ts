@@ -31,7 +31,7 @@ async function hostWithFiles(on: boolean) {
   return { root, host, client, url, token: result.token, hostId: result.hostId }
 }
 
-describe('attached files on a remote host (ADR-0127)', () => {
+describe('attached files on a remote host (ADR-0131)', () => {
   it('stages a 20 MiB file over the socket in parts, kept on the host with its exact bytes', async () => {
     const { root, host, client } = await hostWithFiles(true)
     expect(host.descriptor!.features).toContain('file-staging')

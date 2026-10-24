@@ -10,7 +10,7 @@ import { AttachmentPreviews } from '../../../src/renderer/src/agents/MessageCont
 import { attachmentKind, fileTypeLabel, splitAttachmentName } from '../../../src/renderer/src/agents/attachmentKinds'
 import { handleOf } from '../../fixtures/stagedImages'
 
-// Attaching any file is an Owl feature (ADR-0072, ADR-0127); each test says whether this build has it.
+// Attaching any file is an Owl feature (ADR-0072, ADR-0131); each test says whether this build has it.
 const gate = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
@@ -40,7 +40,7 @@ function Harness({ imagesSupported = true, initial = [] }: { imagesSupported?: b
 }
 const pick = (...files: File[]) => fireEvent.change(screen.getByLabelText('Files to attach'), { target: { files } })
 
-describe('attaching any file in the composer (ADR-0127)', () => {
+describe('attaching any file in the composer (ADR-0131)', () => {
   it('takes any file from the picker, with no accept filter, and stages its bytes as they are', async () => {
     render(<Harness />)
     const picker = screen.getByLabelText('Files to attach')
@@ -201,7 +201,7 @@ describe('attaching any file in the composer (ADR-0127)', () => {
   })
 })
 
-describe('a sent file\'s tile (ADR-0127)', () => {
+describe('a sent file\'s tile (ADR-0131)', () => {
   const files = [
     { id: 'zip', name: 'build-output.zip', mimeType: 'application/x-zip-compressed', sizeBytes: 3 * MB },
     { id: 'pdf', name: 'quarterly-report.pdf', mimeType: 'application/pdf', sizeBytes: Math.round(2.4 * MB) },

@@ -220,7 +220,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * record knows of each thread delegated below one thread, both levels: the delegating thread, the kind of work, when it
  * started, its outcome and the start of its brief, never a reply. A thread's sub-agents come from `subagents`. Only a host
  * whose Owl answer turns it on lists it; where delegation does not run, every thread reads as having none.
- * `file-staging`: the host keeps an attached file that is not an image (ADR-0127), sent in parts with `stage-file-part`,
+ * `file-staging`: the host keeps an attached file that is not an image (ADR-0131), sent in parts with `stage-file-part`,
  * since a file in base64 can be larger than a frame. It keeps one upload per client in memory, drops it after two
  * minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then answers
  * with the handle. Images still go by `stage-attachment`. Only a host whose Owl answer for `attach-any-file` is on lists
@@ -375,7 +375,7 @@ export const HOST_FILE_PART_BYTES = 8 * 1024 * 1024
 /** The most parts a file may take: a 25 MiB file in 8 MiB parts. */
 export const HOST_FILE_PARTS_MAX = Math.ceil(AGENT_MAX_FILE_BYTES / HOST_FILE_PART_BYTES)
 /**
- * One part of an attached file on its way to a host (`file-staging`, ADR-0127). Every part names the whole file, so the
+ * One part of an attached file on its way to a host (`file-staging`, ADR-0131). Every part names the whole file, so the
  * host can tell a part of this upload from one of another; parts go in order, from 0 to `count - 1`.
  */
 export const hostFilePartSchema = z.object({

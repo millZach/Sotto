@@ -115,7 +115,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
-  // Attached files (ADR-0127): the host keeps them and lists `file-staging` only on its own Owl answer.
+  // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
   const attachAnyFile = owlFeatures['attach-any-file']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)

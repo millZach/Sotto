@@ -1779,7 +1779,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
     let origin = alias.origins.find(value => value.uuid === uuid)
-    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0127).
+    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0131).
     const words = frame.type === 'user' ? claudeUserText(message?.content) : text
     if (words !== text) {
       const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(words)) : undefined)
@@ -1968,7 +1968,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /**
    * A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol
    * boundary (ADR-0031). Any other attached file is saved into the thread's folder and named in a text block of its own,
-   * after the user's words, and a PDF that passes the native rule goes as a `document` block too (ADR-0127). The origin's
+   * after the user's words, and a PDF that passes the native rule goes as a `document` block too (ADR-0131). The origin's
    * digest is the user's words alone, which is what `claudeUserText` reads back.
    */
   private async nativePrompt(id: string, command: Extract<AgentHostCommand, { type: 'send' | 'steer' }>): Promise<{ content: unknown; nativeText: string; origin: Alias['origins'][number] }> {

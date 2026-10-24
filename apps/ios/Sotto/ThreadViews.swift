@@ -784,7 +784,7 @@ private struct MessageView: View, Equatable {
                 MarkdownText(text: message.text).equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other photo is named, and so is a file, with a
-            // document symbol (ADR-0127). Only the four photo types are photos: an SVG or a HEIC is a file here.
+            // document symbol (ADR-0131). Only the four photo types are photos: an SVG or a HEIC is a file here.
             ForEach((message.attachments ?? []).filter { message.role != "user" || !$0.hasPreview }) { attachment in
                 Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted)

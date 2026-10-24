@@ -1114,7 +1114,7 @@ export class SocketHostService implements HostService {
     this.previewTail = result.catch(() => undefined); return result
   }
   /**
-   * Stages an attached file that is not an image on the host (ADR-0127), in parts of at most HOST_FILE_PART_BYTES, since
+   * Stages an attached file that is not an image on the host (ADR-0131), in parts of at most HOST_FILE_PART_BYTES, since
    * a file in base64 can be larger than a frame. A host that does not list `file-staging` keeps no files, and is sent
    * nothing. The whole upload is queued behind previews and content reads, so the host holds one of this client's at a
    * time; the last part's answer is the handle.

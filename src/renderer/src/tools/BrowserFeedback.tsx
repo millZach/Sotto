@@ -25,7 +25,7 @@ export async function appendBrowserFeedback(store: ThreadDraftStore, threadId: s
   if (signal?.aborted) return null
   const { dimensions } = prepared
   const before = store.draft(threadId)
-  // Images are held to their own total; attached files count only toward the whole (ADR-0127).
+  // Images are held to their own total; attached files count only toward the whole (ADR-0131).
   if (before.attachments.length >= AGENT_MAX_ATTACHMENTS || attachmentImagesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENT_BYTES
     || attachmentHandlesBytes(before.attachments) + prepared.blob.size > AGENT_MAX_ATTACHMENTS_TOTAL_BYTES) return DOES_NOT_FIT
   let image

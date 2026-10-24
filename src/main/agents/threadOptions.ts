@@ -25,7 +25,7 @@ export function effortAfterChange(snapshot: AgentHostSnapshot, options: AgentThr
 /**
  * A prompt's staged attachments against the thread's model and folder. The content itself was checked when it was staged;
  * what is checked here is the handles (count, totals, unique IDs), that the model takes images when an image is attached,
- * and, for an attached file (ADR-0127), that this build takes files (`acceptsFiles`, the coordinator's Owl answer, a
+ * and, for an attached file (ADR-0131), that this build takes files (`acceptsFiles`, the coordinator's Owl answer, a
  * defence behind the composer) and that the thread has a working folder to copy it into, when the caller names the folder.
  */
 export function validatePromptAttachments<T extends AgentAttachmentHandle>(snapshot: AgentHostSnapshot, modelId: string, attachments: readonly T[] = [],

@@ -2,7 +2,7 @@ import { AGENT_GENERIC_FILE_MIME_TYPE, isImageAttachment } from './agents'
 
 /**
  * How an attachment is named in words: its type and its size. The window's tiles and pills use these, and so does the
- * note the adapters give a provider beside an attached file (ADR-0127), so both say "PDF · 2.4 MB" alike.
+ * note the adapters give a provider beside an attached file (ADR-0131), so both say "PDF · 2.4 MB" alike.
  */
 
 /** The MIME types a zip archive comes with. */

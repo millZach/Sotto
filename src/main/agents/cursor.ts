@@ -1043,7 +1043,7 @@ export class CursorAcpHost implements AgentHost {
     // words. Sotto keeps where its own part starts and how long it is, never the words.
     const head = (skills.length ? `${skills.join(' ')} ` : '') + (instructing ? cursorWatcherInstructions(profile.instructions) : '')
     const tail = note ? watcherRequestLine(note) : ''
-    // Files that are not images are saved into the thread's folder and named in a note after everything else (ADR-0127),
+    // Files that are not images are saved into the thread's folder and named in a note after everything else (ADR-0131),
     // which joins Sotto's own tail: the replay takes it off by its length, so words that only look like a note stay.
     const delivered = await deliverAttachments(alias.cwd, attachments)
     const nativeText = withAttachedFilesNote(lead + head + command.text.slice(lead.length) + tail, delivered.note)

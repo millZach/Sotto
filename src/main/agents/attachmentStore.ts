@@ -10,7 +10,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 const EXTENSIONS: Record<AgentImageMimeType, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
 const TYPES = new Map(Object.entries(EXTENSIONS).map(([type, extension]) => [extension, type as AgentImageMimeType]))
-/** A file that is not an image is kept as `<digest>.bin`, its MIME type in the index alone (ADR-0127). */
+/** A file that is not an image is kept as `<digest>.bin`, its MIME type in the index alone (ADR-0131). */
 const FILE_EXTENSION = 'bin'
 const CONTENT_FILE = /^([a-f0-9]{64})\.(png|jpg|gif|webp|bin)$/u
 const INDEX_FILE = 'index.json'
@@ -74,7 +74,7 @@ export class AttachmentStore {
    * MISSING_REMOTE_ATTACHMENT on a headless host, whose refusals a desktop shows.
    */
   readonly missing: string
-  /** Whether this store keeps files that are not images: the `attach-any-file` Owl answer, read once at start (ADR-0127). */
+  /** Whether this store keeps files that are not images: the `attach-any-file` Owl answer, read once at start (ADR-0131). */
   readonly acceptsFiles: boolean
   constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), missing = MISSING_ATTACHMENT, acceptsFiles = false }: {
     readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly missing?: string | undefined; readonly acceptsFiles?: boolean | undefined } = {}) {
@@ -134,7 +134,7 @@ export class AttachmentStore {
   /**
    * Keeps an attachment's bytes once and answers with its handle. The type, size and, for an image, its signature are
    * checked here, whoever sent them; a file's bytes are not inspected. A store that does not accept files refuses
-   * anything but the four image types, as before ADR-0127. With history on the bytes are on disk, and in the index,
+   * anything but the four image types, as before ADR-0131. With history on the bytes are on disk, and in the index,
    * before this resolves; with it off they are kept in memory and nothing is written. `onDisk` writes them whatever the
    * setting, for bytes that were already on disk elsewhere (`inlineStager`) and so are not new.
    */

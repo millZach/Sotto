@@ -358,7 +358,7 @@ export class ThreadDraftStore {
     threadId = this.recoveredThreadId(threadId)
     const recovering = this.refusedDrafts.get(threadId)
     const draft = recovering?.at(-1) ?? this.draft(threadId)
-    // A model that reads no images still takes attached files (ADR-0127); with none attached this is the screenshots alone.
+    // A model that reads no images still takes attached files (ADR-0131); with none attached this is the screenshots alone.
     const takes = (image: AgentAttachmentHandle): boolean => imagesSupported || !isImageAttachment(image.mimeType)
     if (draft.requestId === null && images.every(takes) && (recovering || this.recoveryThreads.has(threadId))) {
       const added = images.map(image => ({ ...EMPTY, attachments: [image] }))

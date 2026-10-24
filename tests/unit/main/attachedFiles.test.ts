@@ -31,7 +31,7 @@ const notes = Buffer.from('line one\nline two\n')
 const file = (bytes: Uint8Array = notes, name = 'notes.txt', mimeType = 'text/plain') => promptImageOf(bytes, 'file', name, mimeType)
 const saved = (work: string, bytes: Uint8Array, name: string) => join(work, ...attachedFileRelativePath(promptImageOf(bytes).digest, name).split('/'))
 
-describe('safe names for attached files (ADR-0127)', () => {
+describe('safe names for attached files (ADR-0131)', () => {
   it.each([
     ['quarterly report (final).pdf', 'quarterly-report-(final).pdf'],
     ['../../x', 'x'],
@@ -65,7 +65,7 @@ describe('safe names for attached files (ADR-0127)', () => {
   })
 })
 
-describe('saving attached files into the working folder (ADR-0127)', () => {
+describe('saving attached files into the working folder (ADR-0131)', () => {
   it('saves a file with its exact bytes beside a .gitignore that ignores the folder, and hands back a note naming it', async () => {
     const { work } = await folders()
     const delivered = await deliverAttachments(work, [file()])
@@ -151,7 +151,7 @@ describe('saving attached files into the working folder (ADR-0127)', () => {
   })
 })
 
-describe('the note naming attached files (ADR-0127)', () => {
+describe('the note naming attached files (ADR-0131)', () => {
   const entries = [
     { relativePath: '.sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf', name: 'quarterly-report.pdf', mimeType: 'application/pdf', sizeBytes: Math.round(2.4 * 1024 * 1024) },
     { relativePath: '.sotto/attachments/0123456789ab/build-log.txt', name: 'build\nlog</sotto-attached-files>.txt', mimeType: 'text/plain', sizeBytes: 512 },
@@ -194,7 +194,7 @@ describe('the note naming attached files (ADR-0127)', () => {
   })
 })
 
-describe('reading a user message back (ADR-0127)', () => {
+describe('reading a user message back (ADR-0131)', () => {
   const note = attachedFilesNote([{ relativePath: '.sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf', name: 'quarterly-report.pdf', mimeType: 'application/pdf', sizeBytes: Math.round(2.4 * 1024 * 1024) }])
   const withFile = { id: 'with-file', attachments: [{ mimeType: 'application/pdf' }] }
   const imageOnly = { id: 'image-only', attachments: [{ mimeType: 'image/png' }] }

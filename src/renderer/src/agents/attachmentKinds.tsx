@@ -5,7 +5,7 @@ import { attachmentExtension, ZIP_MIME_TYPES } from '../../../shared/attachmentL
 
 export { attachmentExtension, fileTypeLabel } from '../../../shared/attachmentLabels'
 
-/** What an attachment is to look at: an image, or a file of text, an archive, code, or anything else (ADR-0127). */
+/** What an attachment is to look at: an image, or a file of text, an archive, code, or anything else (ADR-0131). */
 export type AttachmentKind = 'image' | 'text' | 'archive' | 'code' | 'file'
 
 const ARCHIVES = new Set(['zip', 'gz', 'tgz', 'tar', '7z', 'rar', 'xz', 'bz2', 'zst'])

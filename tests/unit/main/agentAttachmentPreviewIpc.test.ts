@@ -65,7 +65,7 @@ describe('attachment preview IPC', () => {
     await expect(f.call(AGENT_ATTACHMENT_CONTENT, { threadId: 'workshop', digest: f.handle.digest })).resolves.toEqual({ mimeType: 'image/png', bytes: new Uint8Array([1]) })
     await expect(f.call(AGENT_ATTACHMENT_STAGE, stage, f.stranger)).rejects.toThrow('AGENT_SENDER_REJECTED')
     await expect(f.call(AGENT_ATTACHMENT_CONTENT, { threadId: null, digest: f.handle.digest }, f.stranger)).rejects.toThrow('AGENT_SENDER_REJECTED')
-    // Any well-formed type is an attached file since ADR-0127, which main itself refuses while the Owl feature is off.
+    // Any well-formed type is an attached file since ADR-0131, which main itself refuses while the Owl feature is off.
     for (const payload of [{ ...stage, mimeType: 'image/svg+xml; charset=utf-8' }, { ...stage, bytes: 'data:image/png;base64,AAAA' }, { ...stage, bytes: new Uint8Array() },
       { ...stage, bytes: new Uint8Array(10 * 1024 * 1024 + 1) }, { ...stage, extra: 1 }]) {
       await expect(f.call(AGENT_ATTACHMENT_STAGE, payload)).rejects.toThrow()

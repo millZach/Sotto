@@ -12,7 +12,7 @@ type TextContent = { type: string; text?: string | undefined }[]
 export const textOf = (content?: TextContent): string => (content ?? []).filter(c => c.type === 'text').map(c => c.text ?? '').join('\n')
 /**
  * A user message's text items without one that is exactly the note naming attached files, which Sotto sends apart from
- * the user's words (ADR-0127). Readers use it only when the message's origin recorded an attached file.
+ * the user's words (ADR-0131). Readers use it only when the message's origin recorded an attached file.
  */
 export const wordsOf = (content?: TextContent): string => (content ?? [])
   .filter(c => c.type === 'text' && !isAttachedFilesNote(c.text ?? '')).map(c => c.text ?? '').join('\n')
@@ -39,7 +39,7 @@ export class CodexSessionLogWatcher {
     if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities() })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
-  /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0127). */
+  /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
   sent(threadId: string, messageId: string, text: string, files = false): void { this.sentDigest(threadId, messageId, promptDigest(text), files) }
   sentDigest(threadId: string, messageId: string, digest: string, files = false): void {
     this.observe(threadId)
@@ -140,7 +140,7 @@ export class CodexSessionLogWatcher {
       if (!item && event.type !== 'user_message') return
       const clientId = item?.client_id ?? event.client_id
       // A rollout's `message` may join the input's text items, the note naming attached files among them. It comes off
-      // only for a prompt Sotto sent with an attached file, found by its client ID or, without one, by its words (ADR-0127).
+      // only for a prompt Sotto sent with an attached file, found by its client ID or, without one, by its words (ADR-0131).
       const all = item ? textOf(item.content) : event.message ?? event.text ?? textOf(event.content)
       const words = item ? wordsOf(item.content) : stripAttachedFilesNote(all)
       const sentWithFiles = (digest: string): boolean => clientId ? tail.files.has(clientId) && tail.own.get(clientId) === digest

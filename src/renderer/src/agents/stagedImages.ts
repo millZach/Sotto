@@ -122,7 +122,7 @@ export async function stageImage(threadId: string | null, image: { readonly name
 }
 
 /**
- * Hands an attached file's bytes to main once, as they are, and answers with its handle (ADR-0127). A file draws no
+ * Hands an attached file's bytes to main once, as they are, and answers with its handle (ADR-0131). A file draws no
  * chip, so no thumbnail is made or kept. `failed` and `unread` are the window's own sentences for a staging that gave
  * no reason of its own and for a file that could not be read.
  */

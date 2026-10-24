@@ -101,7 +101,7 @@ describe('app-owned submitted attachment previews', () => {
       expect(agentAttachmentPreviewSchema.safeParse({ dataUrl }).success).toBe(false)
     }
     // A handle is a name for staged content: a path, a URL or a type that is not a MIME type in its place is refused.
-    // Any well-formed type is an attached file since ADR-0127, which has no preview to forge.
+    // Any well-formed type is an attached file since ADR-0131, which has no preview to forge.
     for (const forged of [{ ...image, digest: '../../secret.png' }, { ...image, digest: 'https://example.test/a.png' },
       { ...image, mimeType: 'image/svg+xml; charset=utf-8' }, { ...image, mimeType: 'Image/PNG' }, { ...image, sizeBytes: 0 }, { ...image, dataUrl: PIXEL_DATA_URL }]) {
       await expect(store.remember('thread', 'bad', 'command', [forged as AgentAttachmentHandle])).rejects.toThrow()

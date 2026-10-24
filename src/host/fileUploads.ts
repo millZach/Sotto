@@ -4,7 +4,7 @@ import { HOST_FILE_PART_BYTES, type HostFilePart } from '../shared/hostProtocol'
 
 export { FILE_UPLOAD_INCOMPLETE, FILE_UPLOAD_MISMATCH }
 
-/** How long an upload waits for its next part before the host lets it go (ADR-0127). */
+/** How long an upload waits for its next part before the host lets it go (ADR-0131). */
 export const FILE_UPLOAD_IDLE_MS = 2 * 60_000
 
 /** A part refused for what it is, whose sentence the client is shown. */
@@ -23,7 +23,7 @@ interface Upload {
 }
 
 /**
- * The parts of attached files on their way to this host (`file-staging`, ADR-0127). A client holds one upload at a time:
+ * The parts of attached files on their way to this host (`file-staging`, ADR-0131). A client holds one upload at a time:
  * a first part starts it, replacing any other that client had under way, so an upload the client gave up on never holds
  * the next one back. Parts come in order. An upload is let go two minutes after its last part, when its client leaves
  * (`drop`), or once its last part arrives, when its size and digest are checked. Nothing here reaches disk or a log.

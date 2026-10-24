@@ -180,7 +180,7 @@ export interface HostService {
   subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
   /** The host offers the iPhone's Agents view (ADR-0103): its Owl answer turns it on. */
   readonly supportsAgentsView?: boolean
-  /** The host keeps attached files that are not images (`file-staging`, ADR-0127): its Owl answer turns it on. */
+  /** The host keeps attached files that are not images (`file-staging`, ADR-0131): its Owl answer turns it on. */
   readonly supportsFileStaging?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
@@ -289,7 +289,7 @@ export class LocalHostService implements HostService {
     prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
-    /** Attached files that are not images (ADR-0127), true only when the host's Owl answer turns it on. */
+    /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only

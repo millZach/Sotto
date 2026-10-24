@@ -199,7 +199,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         .toEqual([{ id: handle.id, name: handle.name, mimeType: handle.mimeType, sizeBytes: handle.sizeBytes }])
       expect(JSON.stringify(await thread())).not.toContain(base64)
     })
-    it('saves an attached file in the working folder and names it to the provider, with a PDF in the prompt where it reads one, and the thread shows only the user’s words (ADR-0127)', withFixtureSkip(skips.attachedFiles), async () => {
+    it('saves an attached file in the working folder and names it to the provider, with a PDF in the prompt where it reads one, and the thread shows only the user’s words (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
       const notes = Buffer.from('Contract notes\nsecond line\n'); const pdf = tinyPdf(1)
       const attachments = [promptImageOf(notes, 'contract-file', 'Contract notes.txt', 'text/plain'), promptImageOf(pdf, 'contract-pdf', 'Contract.pdf', 'application/pdf')]
       const text = 'Read the attached files'
@@ -226,7 +226,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await shown())?.text).toBe(text)
       expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
     })
-    it('shows a prompt the user typed in the note’s shape in full when it carries no attached file (ADR-0127)', withFixtureSkip(skips.attachedFiles), async () => {
+    it('shows a prompt the user typed in the note’s shape in full when it carries no attached file (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
       // The plan's example, pasted as a prompt with no attachments: only a note Sotto added comes off.
       const note = ['<sotto-attached-files>', 'The user attached these files. They are saved in this working folder:',
         '- .sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf (quarterly-report.pdf, PDF, 2.4 MB)', '</sotto-attached-files>'].join('\n')
