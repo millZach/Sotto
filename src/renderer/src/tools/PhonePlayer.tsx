@@ -11,6 +11,7 @@ import { useOverlayOpen } from './browserOverlay'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import type { ToolsPanelStore } from './toolsPanelStore'
 import type { WindowSize } from './browserPlayerStore'
+import { shownCount } from './toolsWords'
 import {
   PHONE_PLAYER_CHROME_HEIGHT, PHONE_PLAYER_MOVE_STEP, PHONE_PLAYER_MOVE_STEP_LARGE, PHONE_SIZES, phoneLayout, phonePlayerStore,
   usePhonePlacement, usePhonePlayerOpen, type PhonePlayerStore,
@@ -175,7 +176,8 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
   const dragLabel = cloudLive ? t`Move the cloud iPhone. Drag, or use the arrow keys; hold Shift to move further.`
     : t`Move the test iPhone. Drag, or use the arrow keys; hold Shift to move further.`
   const title = thread.title
-  const sessionMinutes = cloudSession?.minutes ?? 0
+  // The count in the interface language, and in English as it always read: a plural's own # would group its digits.
+  const sessionMinutes = cloudSession?.minutes ?? 0, shownMinutes = shownCount(sessionMinutes)
   const sizeLabel = PHONE_SIZES.find(item => item.id === placement.size)!.label
   const resize = cloudLive
     ? nextSize.id === 'small' ? t`Make the cloud iPhone small` : nextSize.id === 'medium' ? t`Make the cloud iPhone medium` : t`Make the cloud iPhone large`
@@ -186,12 +188,12 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
 
   return <aside ref={root} className="phone-player" aria-label={cloudLive ? t({ message: `Cloud iPhone for ${title}`, comment: '{title} is a thread\'s title.' }) : t({ message: `Test iPhone for ${title}`, comment: '{title} is a thread\'s title.' })} data-covers-native-view
     style={{ left: point.x, top: point.y, width: layout.width }} onKeyDown={escape}>
-    <div className="phone-player__label" role="group" aria-roledescription="drag handle" tabIndex={0}
+    <div className="phone-player__label" role="group" aria-roledescription={t({ message: 'drag handle', comment: 'What a screen reader calls the bar that moves a floating player, read after its name.' })} tabIndex={0}
       aria-label={dragLabel} title={t`Drag to move`} onPointerDown={startDrag} onKeyDown={labelKeyDown}>
       <span className="phone-player__grip" aria-hidden="true" />
       <Smartphone size={14} aria-hidden="true" />
       <span className="phone-player__name">{label}</span>
-      {cloudLive ? <span className="phone-player__name" title={cloudSession!.device ?? undefined}>{plural(sessionMinutes, { other: '# min' })}</span> : null}
+      {cloudLive ? <span className="phone-player__name" title={cloudSession!.device ?? undefined}>{plural(sessionMinutes, { other: `${shownMinutes} min` })}</span> : null}
       <button type="button" className="phone-player__size tt-focusable" aria-label={resize} title={t({ message: `Size: ${sizeLabel}`, comment: '{sizeLabel} is Small, Medium or Large.' })}
         onClick={() => phoneStore.setSize(nextSize.id)}>{sizeLabel}</button>
       <button type="button" className="files-icon tt-focusable" aria-label={cloudLive ? t`Show the cloud iPhone in Tools` : t`Show the test iPhone in Tools`} title={t`Show in Tools`} onClick={showInTools}><PanelRight size={14} aria-hidden="true" /></button>
@@ -200,11 +202,11 @@ export function PhonePlayer({ state, focusedThreadId, bridge, store, autoShow = 
     <div className="phone-player__phone" style={{ padding: layout.bezel, borderRadius: Math.round(layout.screen.width * 0.12) + layout.bezel }}>
       <div ref={screen} className="phone-player__screen" title={cloudLive ? cloudSession!.device ?? t`Cloud iPhone` : t({ message: `${pageHost} at ${width} by ${height}`, comment: '{pageHost} is a web address\'s host; {width} and {height} are sizes in pixels.' })}
         style={{ width: layout.screen.width, height: layout.screen.height, borderRadius: Math.round(layout.screen.width * 0.12) }} data-covered={covered || undefined}>
-        {cloudLive ? cloudSession!.status === 'starting' ? <p className="phone-player__note" role="status">{t`Starting…`}</p> : covered ? <p className="phone-player__note">{steppingAside}</p> : null
+        {cloudLive ? cloudSession!.status === 'starting' ? <p className="phone-player__note" role="status">{t`Starting…`}</p> : covered ? <p className="phone-player__note tt-paragraph">{steppingAside}</p> : null
           : page!.status === 'unavailable' ? <div className="phone-player__note" role="status">
-            <p>{t`This page could not load.`}</p>
+            <p className="tt-paragraph">{t`This page could not load.`}</p>
             <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.browser.history(bridge, threadId, page!.id, 'reload')}><RotateCw size={13} aria-hidden="true" />{t`Try again`}</button>
-          </div> : covered ? <p className="phone-player__note">{steppingAside}</p> : null}
+          </div> : covered ? <p className="phone-player__note tt-paragraph">{steppingAside}</p> : null}
       </div>
     </div>
     <div className="phone-player__status">

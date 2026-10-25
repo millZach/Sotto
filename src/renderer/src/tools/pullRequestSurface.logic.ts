@@ -1,4 +1,5 @@
 import { plural, t } from '@lingui/core/macro'
+import { shownCount } from './toolsWords'
 import { GIT_PULL_REQUEST_MERGE_METHOD_LABELS, type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestLinkSource, type GitPullRequestMergeMethod } from '../../../shared/gitPullRequests'
 
 type Detail = Pick<GitPullRequestDetail, 'state' | 'draft' | 'checks' | 'checksUnknown' | 'reviewDecision' | 'reviews' | 'mergeable' | 'behindBy' | 'canUpdateBranch' | 'baseBranch' | 'url'>
@@ -95,11 +96,12 @@ function upToDateLine(detail: Detail): ChecklistLine {
   if (detail.state === 'merged') return { ...line, tone: 'done', why: t`Merged into ${base}`, fix: null }
   if (detail.behindBy === null) return { ...line, tone: 'unknown', why: t`GitHub could not compare it with ${base}`, fix: null }
   if (detail.behindBy === 0) return { ...line, tone: 'done', why: t`Has every commit on ${base}`, fix: null }
-  const behindBy = detail.behindBy
-  const behind = plural(behindBy, { one: `# commit behind ${base}`, other: `# commits behind ${base}` })
+  // The count in the interface language, and in English as it always read: a plural's own # would group its digits.
+  const behindBy = detail.behindBy, commits = shownCount(behindBy)
+  const behind = plural(behindBy, { one: `${commits} commit behind ${base}`, other: `${commits} commits behind ${base}` })
   if (detail.state !== 'open') return { ...line, tone: 'todo', why: behind, fix: null }
   return detail.canUpdateBranch ? { ...line, tone: 'todo', why: behind, fix: { kind: 'update-branch' } }
-    : { ...line, tone: 'todo', why: plural(behindBy, { one: `# commit behind ${base}. GitHub does not let this account update it`, other: `# commits behind ${base}. GitHub does not let this account update it` }), fix: null }
+    : { ...line, tone: 'todo', why: plural(behindBy, { one: `${commits} commit behind ${base}. GitHub does not let this account update it`, other: `${commits} commits behind ${base}. GitHub does not let this account update it` }), fix: null }
 }
 
 function conflictsLine(detail: Detail): ChecklistLine {
@@ -175,7 +177,7 @@ export function mergeEffect(method: GitPullRequestMergeMethod, base: string): st
 export function stateLabel(detail: Pick<GitPullRequestDetail, 'state' | 'draft'>): string {
   if (detail.state === 'merged') return t({ message: 'Merged', comment: 'A pull request\'s state.' })
   if (detail.state === 'closed') return t({ message: 'Closed', comment: 'A pull request\'s state.' })
-  return detail.draft ? t({ message: 'Draft', comment: 'A pull request\'s state.' }) : t({ message: 'Open', comment: 'A pull request\'s state: open, not merged or closed.' })
+  return detail.draft ? t({ message: 'Draft', comment: 'A pull request\'s state.' }) : t({ message: 'Open', context: 'pull request state', comment: 'A pull request\'s state: open, not merged or closed.' })
 }
 export const LINK_SOURCE: Readonly<Record<GitPullRequestLinkSource, string>> = {
   get created() { return t`Created from this thread` },

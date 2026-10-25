@@ -173,7 +173,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const noticeLine = (docked = false): ReactNode => <>
     {notice && !docked ? <p className="pr-surface__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
     {/* A read that failed under a checklist already shown: the checklist is the last one GitHub gave, and says so. */}
-    {failure && detail ? <p className="pr-surface__notice" data-tone="error" role="alert">{t({ message: `${failure} What shows below is from the last read.`, comment: '{failure} says why the latest read of the pull request failed, in a sentence.' })}</p> : null}
+    {failure && detail ? <p className="pr-surface__notice tt-paragraph" data-tone="error" role="alert">{t({ message: `${failure} What shows below is from the last read.`, comment: '{failure} says why the latest read of the pull request failed, in a sentence.' })}</p> : null}
   </>
   const linked = <LinkedFold thread={thread} open={linksOpen} onToggle={() => setLinksOpen(value => !value)} onShow={show} onLink={command ? () => setLinking(true) : null} />
   const refresh = <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh pull request`} title={t`Refresh pull request`} data-busy={loading || undefined} onClick={() => { setNotice(null); void load() }}><RotateCw size={15} aria-hidden="true" /></button>
@@ -215,7 +215,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
   const ending = babysitEndedOf(thread, detail.url)
   const endingShown = ending ? { threadId: thread.id, url: ending.url, endedAt: ending.endedAt } : null
   const line = endingShown && endings.dismissed(endingShown) ? null
-    : babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? 'the agent', offered: offerBabysit })
+    : babysitLine({ thread, pullRequest: detail, agent: babysit?.agent ?? t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' }), offered: offerBabysit })
   /** Dismiss takes its own line away; focus waits on ··· beside an open pull request, where Babysit pull request is, else on the pull request. */
   const dismissEnding = (): void => {
     if (!endingShown) return
@@ -291,7 +291,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
           <div><strong><Trans comment="{baseBranch} is a Git branch name, as in main.">Merged into <bdi>{baseBranch}</bdi></Trans></strong>{when ? <span>{when}</span> : null}</div></div>
           : detail.state === 'closed' ? <div className="pr-surface__finished" data-state="closed"><Circle size={20} aria-hidden="true" />
             <div><strong>{t`Closed without merging`}</strong></div>
-            <Button variant="secondary" disabled={running} onClick={() => void act('reopen')}>{busy === 'reopen' ? busyLabel('reopen') : t({ message: 'Reopen', comment: 'Reopens a closed pull request.' })}</Button></div>
+            <Button variant="secondary" disabled={running} onClick={() => void act('reopen')}>{busy === 'reopen' ? busyLabel('reopen') : t({ message: 'Reopen', context: 'pull request', comment: 'Reopens a closed pull request.' })}</Button></div>
             : detail.autoMerge ? <div className="pr-surface__finished" data-state="auto"><CircleDashed size={20} aria-hidden="true" />
               <div><strong>{t`Auto-merge is on`}</strong><span>{autoMethod ? t({ message: `GitHub merges this with ${autoMethod} when every line is done.`, comment: '{autoMethod} is the merge method, as in "squash and merge".' }) : t`GitHub merges this when every line is done.`}</span></div>
               <Button variant="secondary" aria-label={t`Turn off auto-merge`} disabled={running} onClick={() => void act('disable-auto-merge')}>{busy === 'disable-auto-merge' ? busyLabel('disable-auto-merge') : t({ message: 'Turn off', comment: 'Turns off auto-merge.' })}</Button></div>
@@ -302,7 +302,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
                     <GitMerge size={17} aria-hidden="true" />{busy === 'merge' ? busyLabel('merge') : t({ message: `Merge #${number}`, comment: '{number} is the pull request\'s number.' })}</Button>
                   {allowed.length > 1 ? <MergeMethodMenu allowed={allowed} selected={selected} base={detail.baseBranch} disabled={running} onChoose={choosePreferred} /> : null}
                 </div>
-                <p id={hintId} className="pr-surface__hint">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? t`This repository allows no merge method. Change that on GitHub.` : <>{linesLeft(lines)}{autoMerge
+                <p id={hintId} className="pr-surface__hint tt-paragraph">{ready ? `${mergeEffect(selected, detail.baseBranch)}.` : allowed.length === 0 ? t`This repository allows no merge method. Change that on GitHub.` : <>{linesLeft(lines)}{autoMerge
                   ? <> <button type="button" className="pr-surface__textlink tt-focusable" disabled={running} onClick={() => setConfirming('enable-auto-merge')}>{t`Merge when ready`}</button></> : null}</>}</p>
               </>}
         {/* Under a merged or closed pull request goes what ended babysitting it, or, until the next pass sees the
@@ -310,7 +310,7 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
         {!open ? dock : null}
       </div>
       <Fold label={t({ message: 'Description', comment: 'A pull request\'s description, which folds away.' })} open={descriptionOpen} onToggle={() => setDescriptionOpen(value => !value)}>
-        {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet">{t`No description.`}</p>}
+        {detail.body.trim() ? <div className="pr-surface__description">{detail.body}</div> : <p className="pr-surface__quiet tt-paragraph">{t`No description.`}</p>}
       </Fold>
       {linked}
     </div>

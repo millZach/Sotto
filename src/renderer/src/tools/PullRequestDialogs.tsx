@@ -136,7 +136,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog pull-request-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={preparing !== null || undefined}>
       <h2 id={titleId}>{t`Checkout pull request`}</h2>
-      <div id={descriptionId} className="tt-dialog__description tt-paragraph">{t`Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.`}{localMovesToCheckout ? <p className="pull-request-dialog__note">{t`Local: this thread will work in the project checkout.`}</p> : null}</div>
+      <div id={descriptionId} className="tt-dialog__description tt-paragraph">{t`Resolve a GitHub pull request, then check it out in this thread's folder, or in a worktree of its own for a thread that has not started.`}{localMovesToCheckout ? <p className="pull-request-dialog__note tt-paragraph">{t`Local: this thread will work in the project checkout.`}</p> : null}</div>
       <label htmlFor={fieldId}>{t`Pull request`}</label>
       <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder={t`PR URL, checkout command, or #42`} maxLength={2_048} autoComplete="off" spellCheck={false}
         aria-invalid={problem ? true : undefined}
@@ -153,7 +153,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
         <Button variant="secondary" disabled={preparing !== null} onClick={onClose}>{t`Cancel`}</Button>
         <Button variant="secondary" disabled={!ready} onClick={() => void confirm('local')}>{preparing === 'local' ? t`Preparing local...` : t({ message: 'Local', comment: 'Checks a pull request out in the thread\'s own folder.' })}</Button>
         <Button variant="primary" disabled={!ready || !worktreeAllowed} title={worktreeAllowed ? undefined : t`Only a thread that has not started can take a worktree of its own. Use Local, or start a new thread.`}
-          aria-description={worktreeAllowed ? undefined : t`Only a thread that has not started can take a worktree of its own.`} onClick={() => void confirm('worktree')}>{preparing === 'worktree' ? t`Preparing worktree...` : t({ message: 'Worktree', comment: 'Checks a pull request out into a worktree of its own.' })}</Button>
+          aria-description={worktreeAllowed ? undefined : t`Only a thread that has not started can take a worktree of its own.`} onClick={() => void confirm('worktree')}>{preparing === 'worktree' ? t`Preparing worktree...` : t({ message: 'Worktree', context: 'pull request checkout', comment: 'Checks a pull request out into a worktree of its own.' })}</Button>
       </div>
     </section>
   </div>

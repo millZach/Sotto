@@ -12,6 +12,7 @@ import { normalizeAddress, phonePage, useBrowserTasks, useThreadBrowser, type Br
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { phonePlayerStore, usePhonePlayerOpen, type PhonePlayerStore } from './phonePlayerStore'
 import { ToolsChrome } from './ToolsChrome'
+import { shownCount, shownNotice } from './toolsWords'
 import './iphoneSurface.css'
 
 export interface IPhoneSurfaceProps {
@@ -43,15 +44,16 @@ function CloudIphoneCard({ threadId, bridge, store }: { readonly threadId: strin
   const capMinutes = status?.capMinutes ?? 0
   const idleMinutes = app?.settings?.cloudIphoneIdleMinutes ?? 5
   const end = (): void => { setEnding(true); void store.end(bridge, session).finally(() => setEnding(false)) }
-  const sessionMinutes = session.minutes
+  // Counts in the interface language, and in English as they always read: a plural's own # would group their digits.
+  const sessionMinutes = shownCount(session.minutes), usedMinutes = shownCount(monthMinutes), cap = shownCount(capMinutes)
   const price = CLOUD_IPHONE_PRICE_PER_MINUTE_USD.toFixed(2)
   const cloudIphone = t`Cloud iPhone`
   return <section className="iphone-surface__card" aria-label={cloudIphone}>
-    <h3>{cloudIphone}{live ? <span className="iphone-surface__cloud-badge">{t({ message: 'Running', comment: 'A cloud iPhone session is running.' })}</span> : null}</h3>
+    <h3>{cloudIphone}{live ? <span className="iphone-surface__cloud-badge">{t({ message: 'Running', context: 'cloud iPhone session', comment: 'A cloud iPhone session is running.' })}</span> : null}</h3>
     <dl className="iphone-surface__facts">
       <dt>{t({ message: 'Build', comment: 'The app build a cloud iPhone runs.' })}</dt><dd>{session.buildPath}</dd>
       <dt>{t`Device`}</dt><dd>{session.device ?? t`Starting…`} · run.cloud</dd>
-      <dt>{t`This month`}</dt><dd>{plural(capMinutes, { other: `${monthMinutes} of # minutes` })}
+      <dt>{t`This month`}</dt><dd>{plural(capMinutes, { other: `${usedMinutes} of ${cap} minutes` })}
         <div className="iphone-surface__cloud-meter" role="meter" aria-label={t`Cloud iPhone minutes used this month`} aria-valuenow={monthMinutes} aria-valuemin={0} aria-valuemax={capMinutes}>
           <i style={{ width: `${capMinutes > 0 ? Math.min(100, Math.round(monthMinutes / capMinutes * 100)) : 0}%` }} />
         </div></dd>
@@ -163,12 +165,12 @@ export function IPhoneSurface({ threadId, store, bridge, phoneStore = phonePlaye
           </> : null}
         </form>
         {problem ? <p className="browser-problem" id="iphone-address-problem" role="alert">{problem}</p> : null}
-        {page?.status === 'unavailable' ? <p className="browser-problem" role="status">{pageError !== undefined ? t({ message: `${pageError} Check that its server is running, then reload.`, comment: '{pageError} says why the page could not load, in a sentence.' }) : t`This page could not load. Check that its server is running, then reload.`}</p>
+        {page?.status === 'unavailable' ? <p className="browser-problem tt-paragraph" role="status">{pageError !== undefined ? t({ message: `${pageError} Check that its server is running, then reload.`, comment: '{pageError} says why the page could not load, in a sentence.' }) : t`This page could not load. Check that its server is running, then reload.`}</p>
           : page?.error && !task?.pendingAction ? <p className="browser-problem" role="status">{page.error}</p> : null}
-        {browser.notice ? <p className="terminal-notice" role="alert">{browser.notice}</p> : null}
+        {browser.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(browser.notice)}</p> : null}
         <dl className="iphone-surface__facts">
-          <dt>{t`Runs as`}</dt><dd>{t({ message: `A ${width} by ${height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS.`, comment: '{width} and {height} are sizes in pixels.' })}</dd>
-          {page ? <><dt>{t({ message: 'Agent', comment: 'What the thread\'s agent can do with the test iPhone.' })}</dt><dd>{agentToolsUnavailable ? t`This provider does not support Sotto browser tools.`
+          <dt>{t`Runs as`}</dt><dd className="tt-paragraph">{t({ message: `A ${width} by ${height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS.`, comment: '{width} and {height} are sizes in pixels.' })}</dd>
+          {page ? <><dt>{t({ message: 'Agent', comment: 'What the thread\'s agent can do with the test iPhone.' })}</dt><dd className="tt-paragraph">{agentToolsUnavailable ? t`This provider does not support Sotto browser tools.`
             : page.sharedOrigin ? t`Can read and screenshot this page.` : t`Cannot see this page until you share it.`}
             {!agentToolsUnavailable ? <button type="button" className="browser-review-link tt-focusable" aria-pressed={Boolean(page.sharedOrigin)} disabled={busy} onClick={() => void share()}
               title={page.sharedOrigin ? t`Stop sharing the test iPhone with the agent` : t`Let the agent in this thread read the test iPhone and take screenshots`}>

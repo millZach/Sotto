@@ -10,11 +10,18 @@ import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
-import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
+import { CHANGE_STATUS, collapsedIn, fileProblemWords, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
 import { GitActions } from './GitActions'
 import { ToolsChrome } from './ToolsChrome'
 import './changes.css'
 import { useDiffPreferences } from '../state/gitSettings'
+import { inEnglish } from '../state/interfaceLanguage'
+import { shownWords } from '../features/settings/laterWords'
+import { shownCount, shownNotice } from './toolsWords'
+
+const BINARY_DIFF = msg`Binary file: no text diff.`
+const TOO_LARGE_DIFF = msg`Too large to show as a diff.`
+const NO_DIFF = msg`No diff is available for this file.`
 
 /** A long file shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -136,10 +143,10 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
         <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>{t`Try again`}</button></div>
         <ElsewhereComments threadId={threadId} files={NO_FILES} store={comments} /></>
       : !review ? <p className="files-preview__loading" role="status">{i18n._(SCOPE_LOADING[changes.scope.kind])}</p>
-        : review.notice ? <><div className="files-problem" role="status"><strong>{review.notice}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
+        : review.notice ? <><div className="files-problem" role="status"><strong>{shownNotice(review.notice)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
           : files.length === 0 ? <><div className="files-problem" role="status"><strong>{emptyWords(changes.scope, review, view)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
             : <>
-              {review.truncated ? <p className="changes-note">{t`Git reported more files than Sotto lists.`}</p> : null}
+              {review.truncated ? <p className="changes-note tt-paragraph">{t`Git reported more files than Sotto lists.`}</p> : null}
               <div className="changes-review" data-tree={tree || undefined}>
                 <ChangesFiles key={`${threadId}\n${scopeKey(changes.scope)}`} changes={changes} review={review} view={view} store={store} comments={comments}
                   onCopy={copy} onReveal={reveal} onOpenFile={onOpenFile} platform={platform} />
@@ -154,9 +161,9 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
  * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
  */
 function Totals({ additions, deletions, place }: { readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar' }): ReactNode {
-  // The count as it reads now; a plural's own # would group its digits.
-  const added = String(additions)
-  const words = plural(additions, { other: `${added} lines added, ${deletions} removed` })
+  // Each count in the interface language, and in English as it always read: a plural's own # would group its digits.
+  const added = shownCount(additions), removed = shownCount(deletions)
+  const words = plural(additions, { other: `${added} lines added, ${removed} removed` })
   return <span className={`changes-counts changes-counts--${place}`} title={words}>
     <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
     <span className="tt-visually-hidden">{words}</span>
@@ -411,7 +418,7 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
       <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t({ message: `Copy path: ${path}`, comment: '{path} is a file\'s path.' })} title={t`Copy path`} onClick={() => onCopy(file.path)}><Copy size={14} aria-hidden="true" /></button>
     </div>
     {!collapsed ? <>
-      {originalPath ? <p className="changes-note"><Trans comment="{originalPath} is the file's path before it was renamed.">Renamed from <code>{originalPath}</code></Trans></p> : null}
+      {originalPath ? <p className="changes-note tt-paragraph"><Trans comment="{originalPath} is the file's path before it was renamed.">Renamed from <code>{originalPath}</code></Trans></p> : null}
       <FileBody file={file} split={split} labels={labels} onReveal={onReveal ? () => onReveal(file.path) : undefined} platform={platform} review={review} />
     </> : null}
   </section>
@@ -466,11 +473,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const draftAnchor = draft && selectable.length > 0 ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
 
   if (file.content.kind !== 'text') {
-    const title = file.content.kind === 'binary' ? t`Binary file: no text diff.` : file.content.kind === 'too-large' ? t`Too large to show as a diff.` : t`No diff is available for this file.`
-    return <div className="changes-file__problem" role="note"><strong>{title}</strong>{file.content.message && file.content.message !== title ? <p>{file.content.message}</p> : null}
+    // Main writes its message in English, so it is compared with the English title and shown only when it says more.
+    const title = file.content.kind === 'binary' ? BINARY_DIFF : file.content.kind === 'too-large' ? TOO_LARGE_DIFF : NO_DIFF
+    const detail = file.content.message && file.content.message !== inEnglish(title) ? fileProblemWords(file.content.message) : null
+    return <div className="changes-file__problem" role="note"><strong>{i18n._(title)}</strong>{detail !== null ? <p className={typeof detail === 'string' ? undefined : 'tt-paragraph'}>{shownWords(detail)}</p> : null}
       {file.status !== 'deleted' && onReveal ? <button type="button" className="files-link tt-focusable" onClick={onReveal}>{revealLabel(platform)}</button> : null}</div>
   }
-  if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>{t`No line changes.`}</strong><p>{t`Only the file’s mode or name changed.`}</p></div>
+  if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>{t`No line changes.`}</strong><p className="tt-paragraph">{t`Only the file’s mode or name changed.`}</p></div>
 
   const selection = picked && picked.patch === patch && picked.split === split ? picked : null
   const from = selection ? Math.min(selection.anchor, selection.focus) : -1
@@ -650,7 +659,7 @@ function CommentDraft({ draft, full, focus, standalone = false, onText, onCancel
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
         else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (ready) onAdd() }
       }} />
-    {full ? <p className="changes-comment__note">{plural(MAX_REVIEW_COMMENTS, { other: 'A message carries at most # comments. Send it or delete one first.' })}</p> : null}
+    {full ? <p className="changes-comment__note tt-paragraph">{plural(MAX_REVIEW_COMMENTS, { other: 'A message carries at most # comments. Send it or delete one first.' })}</p> : null}
     <div className="changes-comment__actions">
       <span className="changes-comment__hint" aria-hidden="true">{t`Esc cancels`}</span>
       <Button variant="ghost" onClick={onCancel}>{t`Cancel`}</Button>

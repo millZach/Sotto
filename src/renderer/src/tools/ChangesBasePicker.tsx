@@ -133,8 +133,8 @@ export function ChangesBasePicker({ threadId, selected, resolved, refs, onPick }
         })}
       </ul>
       {page.status === 'loading' ? <p className="changes-base__note" role="status">{t`Reading branches…`}</p>
-        : page.status === 'error' ? <p className="changes-base__note" role="status">{t`Sotto could not read this repository’s branches.`}</p>
-          : choices.length === 0 && needle ? <p className="changes-base__note" role="status">{t`No matching refs.`}</p> : null}
+        : page.status === 'error' ? <p className="changes-base__note tt-paragraph" role="status">{t`Sotto could not read this repository’s branches.`}</p>
+          : choices.length === 0 && needle ? <p className="changes-base__note tt-paragraph" role="status">{t`No matching refs.`}</p> : null}
     </div> : null}
   </div>
 }

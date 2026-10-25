@@ -8,6 +8,7 @@ import type { Checkpoint, checkpointInspectionSchema, checkpointListingSchema } 
 import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { ToolsResult } from '../../../shared/tools'
 import type { ChangesStore, ThreadChanges } from './changesStore'
+import { shownCount } from './toolsWords'
 
 /**
  * The Checkpoints drawer. It opens under the Changes line of chrome, and its toggle is drawn into that line
@@ -63,17 +64,18 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot }: {
   const toggles = bridge.checkpoints ? <button type="button" className="tools-chrome__button tt-focusable" title={checkpointsLabel} aria-expanded={open} onClick={toggle}>
     <History size={16} aria-hidden="true" /><span className="tools-chrome__button-label">{checkpointsLabel}</span></button> : null
   const drawer = open || busy || status !== ''
-  const restoring = inspection?.checkpoint.files.length ?? 0
+  // File counts in the interface language, and in English as they always read: a plural's own # would group their digits.
+  const restoring = inspection?.checkpoint.files.length ?? 0, restoringCount = shownCount(restoring)
   return <>
     {toggleSlot && toggles ? createPortal(toggles, toggleSlot) : null}
     {drawer ? <section className="git-actions" aria-label={checkpointsLabel}>
     {open ? <div className="git-actions__drawer">
       {!checkpoints ? <p role="status">{t`Reading checkpoints…`}</p> : <>
         {checkpoints.reason ? <p>{checkpoints.reason}</p> : null}
-        {checkpoints.checkpoints.length === 0 ? <p>{t`No completed checkpoints yet.`}</p> : <ul className="checkpoint-list">{checkpoints.checkpoints.map((checkpoint, index) => {
-          const number = checkpoints.checkpoints.length - index, files = checkpoint.files.length, state = checkpoint.status
+        {checkpoints.checkpoints.length === 0 ? <p className="tt-paragraph">{t`No completed checkpoints yet.`}</p> : <ul className="checkpoint-list">{checkpoints.checkpoints.map((checkpoint, index) => {
+          const number = checkpoints.checkpoints.length - index, files = checkpoint.files.length, fileCount = shownCount(files), state = checkpoint.status
           return <li key={checkpoint.id}>
-            <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => select(checkpoint)}>{t({ message: `Checkpoint ${number} · ${plural(files, { one: '# file', other: '# files' })} · ${state}`, comment: '{state} is the checkpoint\'s status as Sotto records it, such as ready or reverted.' })}</button>
+            <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => select(checkpoint)}>{t({ message: `Checkpoint ${number} · ${plural(files, { one: `${fileCount} file`, other: `${fileCount} files` })} · ${state}`, comment: '{state} is the checkpoint\'s status as Sotto records it, such as ready or reverted.' })}</button>
           </li>
         })}</ul>}
       </>}
@@ -81,7 +83,7 @@ export function GitActions({ threadId, changes, bridge, store, toggleSlot }: {
         {inspection.patches.map(patch => <details key={patch.path} className="checkpoint-file"><summary className="tt-focusable">{patch.path}</summary>{patch.binary ? <p className="tt-paragraph">{t`Binary or large file. File contents will be restored from its saved checkpoint.`}</p> : <div className="checkpoint-versions"><div><strong>{t`Restore to`}</strong><pre>{patch.before ?? t`(file did not exist)`}</pre></div><div><strong>{t`After turn`}</strong><pre>{patch.after ?? t`(file deleted)`}</pre></div></div>}</details>)}
         {inspection.checkpoint.reason ? <p>{inspection.checkpoint.reason}</p> : null}
         {inspection.checkpoint.supported && inspection.checkpoint.status === 'ready' ? <>
-          <label className="checkpoint-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{plural(restoring, { one: 'Restore this file and remove this completed turn from the native conversation.', other: 'Restore these # files and remove this completed turn from the native conversation.' })}</label>
+          <label className="checkpoint-confirm"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{plural(restoring, { one: 'Restore this file and remove this completed turn from the native conversation.', other: `Restore these ${restoringCount} files and remove this completed turn from the native conversation.` })}</label>
           <button type="button" className="files-link tt-focusable" disabled={busy || !confirmed} onClick={() => revert(false)}>{t`Revert files and conversation`}</button>
         </> : null}
         {['uncertain', 'reverting'].includes(inspection.checkpoint.status) ? <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => revert(true)}>{t`Check recovery`}</button> : null}

@@ -1,8 +1,11 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { t } from '@lingui/core/macro'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
 import type { FileWorkspace } from '../../../shared/files'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
+import type { LaterWords } from '../features/settings/laterWords'
+import { errorWords, ownError, type ToolsNotice } from './toolsWords'
 
 export interface ThreadBrowser {
   readonly threadId: string
@@ -13,15 +16,15 @@ export interface ThreadBrowser {
   readonly activePageId: string | null
   /** A create, navigation or close is on its way. */
   readonly busy: boolean
-  /** The last action that failed, in words. */
-  readonly notice: string | null
+  /** The last action that failed, kept as words to show in the interface language (`shownNotice`). */
+  readonly notice: ToolsNotice | null
   /** A page main would not show, and why. It stays off the window until the reader tries again. */
-  readonly placementProblem: { readonly pageId: string; readonly message: string } | null
+  readonly placementProblem: { readonly pageId: string; readonly message: LaterWords } | null
   /** The thread's browser grant while it lives: it opens, navigates, clicks and types without asking (ADR-0029). */
   readonly grant: BrowserGrantView | null
 }
 
-const unavailable: ToolsError = { code: 'unavailable', get message() { return t`Browser is not available in this window.` } }
+const unavailable = ownError('unavailable', msg`Browser is not available in this window.`)
 
 /** Local development hosts open over plain HTTP; everything else typed without a scheme gets HTTPS. */
 const LOCAL_HOST = /^(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?::\d+)?(?:[/?#]|$)/iu
@@ -188,18 +191,18 @@ export class BrowserStore {
     if (!bridge || !target) return false
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.create({ ...target, url, ...(device ? { device } : {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, device ? t`Could not open the test iPhone.` : t`Could not open the page.`); return false }
+    if (!result.ok) { this.fail(bridge, threadId, result.error, device ? msg`Could not open the test iPhone.` : msg`Could not open the page.`); return false }
     this.upsert(result.value)
     this.patch(threadId, device ? { busy: false } : { busy: false, activePageId: result.value.id })
     return true
   }
 
   async navigate(bridge: BrowserBridge | undefined, threadId: string, pageId: string, url: string): Promise<boolean> {
-    return this.pageAction(bridge, threadId, pageId, target => bridge!.navigate({ ...target, pageId, url }), t`Could not open that address.`)
+    return this.pageAction(bridge, threadId, pageId, target => bridge!.navigate({ ...target, pageId, url }), msg`Could not open that address.`)
   }
 
   async history(bridge: BrowserBridge | undefined, threadId: string, pageId: string, action: 'back' | 'forward' | 'reload'): Promise<boolean> {
-    return this.pageAction(bridge, threadId, pageId, target => bridge![action]({ ...target, pageId }), action === 'reload' ? t`Could not reload the page.` : t`Could not go there.`)
+    return this.pageAction(bridge, threadId, pageId, target => bridge![action]({ ...target, pageId }), action === 'reload' ? msg`Could not reload the page.` : msg`Could not go there.`)
   }
 
   async close(bridge: BrowserBridge | undefined, threadId: string, pageId: string): Promise<void> {
@@ -208,7 +211,7 @@ export class BrowserStore {
     this.forgetPlacement(pageId)
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.close({ threadId, workspaceId: workspace.workspaceId, pageId }))
-    if (!result.ok && result.error.code !== 'page-unavailable') { this.fail(bridge, threadId, result.error, t`Could not close the page.`); return }
+    if (!result.ok && result.error.code !== 'page-unavailable') { this.fail(bridge, threadId, result.error, msg`Could not close the page.`); return }
     this.remove(threadId, pageId)
     this.patch(threadId, { busy: false })
   }
@@ -272,7 +275,7 @@ export class BrowserStore {
     if (this.threads.get(threadId)?.placementProblem?.pageId === pageId) this.patch(threadId, { placementProblem: null })
   }
 
-  private async pageAction(bridge: BrowserBridge | undefined, threadId: string, pageId: string, run: (target: { threadId: string; workspaceId: string }) => Promise<ToolsResult<BrowserPage>>, words: string): Promise<boolean> {
+  private async pageAction(bridge: BrowserBridge | undefined, threadId: string, pageId: string, run: (target: { threadId: string; workspaceId: string }) => Promise<ToolsResult<BrowserPage>>, words: MessageDescriptor): Promise<boolean> {
     const workspace = this.threads.get(threadId)?.workspace
     if (!bridge || !workspace) return false
     this.patch(threadId, { busy: true, notice: null })
@@ -328,8 +331,8 @@ export class BrowserStore {
     this.setThread({ ...thread, pages, activePageId: active, placementProblem })
   }
 
-  private fail(bridge: BrowserBridge, threadId: string, error: ToolsError, words: string): void {
-    const reason = error.code === 'busy' ? t`The browser is busy. Try again in a moment.` : `${words} ${error.message}`.trim()
+  private fail(bridge: BrowserBridge, threadId: string, error: ToolsError, words: MessageDescriptor): void {
+    const reason: ToolsNotice = error.code === 'busy' ? { words: msg`The browser is busy. Try again in a moment.` } : { words, detail: errorWords(error) }
     this.patch(threadId, { busy: false, notice: reason })
     if (error.code === 'workspace-changed' || error.code === 'page-unavailable') void this.activate(bridge, threadId)
   }
@@ -346,17 +349,17 @@ export class BrowserStore {
 }
 
 /** Why main would not show a page, in the browser's words; main's folder messages are written for Files. */
-function placementReason(error: ToolsError): string {
+function placementReason(error: ToolsError): LaterWords {
   switch (error.code) {
-    case 'workspace-unavailable': return t`The working folder is not available.`
-    case 'workspace-changed': return t`The working folder changed.`
-    case 'busy': return t`The browser is busy.`
-    default: return error.message
+    case 'workspace-unavailable': return msg`The working folder is not available.`
+    case 'workspace-changed': return msg`The working folder changed.`
+    case 'busy': return msg`The browser is busy.`
+    default: return errorWords(error)
   }
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: t`Sotto did not answer.` } } }
+  try { return await request } catch { return { ok: false, error: ownError('unavailable', msg`Sotto did not answer.`) } }
 }
 
 export function useThreadBrowser(store: BrowserStore, threadId: string | null): ThreadBrowser | undefined {

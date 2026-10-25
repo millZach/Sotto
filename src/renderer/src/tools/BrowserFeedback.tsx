@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
-import { useLingui } from '@lingui/react/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { BrowserBridge, BrowserCapture, BrowserPage } from '../../../shared/browser'
 import { AGENT_MAX_ATTACHMENT_BYTES, AGENT_MAX_ATTACHMENTS, AGENT_MAX_ATTACHMENTS_TOTAL_BYTES, agentAttachmentHandlesSchema, attachmentHandlesBytes, attachmentImagesBytes } from '../../../shared/agents'
 import { dataUrlBlob, prepareScreenshot, wasResized, type PreparedScreenshot } from '../agents/screenshotResize'
@@ -102,8 +102,9 @@ export function BrowserFeedback({ page, initial, bridge, onAdd, onClose }: {
   }
   const { x, y } = point
   const selected = capture.element ? capture.element.name || capture.element.text || capture.element.tag : ''
+  const modes = <select aria-label={t`Selection mode`} className="tt-focusable" value={mode} disabled={busy} onChange={event => { setMode(event.currentTarget.value as 'element' | 'region'); setAnchor(null); setBox(null); setCapture(initial); setSelectionValid(true); setProblem(null) }}><option value="element">{t({ message: 'Element', comment: 'An element of a web page, chosen to give feedback on.' })}</option><option value="region">{t({ message: 'Region', comment: 'A rectangle of a web page, chosen to give feedback on.' })}</option></select>
   return <section className="browser-feedback" aria-label={t`Browser feedback`} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel() } }}>
-    <label className="browser-feedback__mode">{t({ message: 'Select', comment: 'Before a list: select an element or a region of the page.' })} <select aria-label={t`Selection mode`} className="tt-focusable" value={mode} disabled={busy} onChange={event => { setMode(event.currentTarget.value as 'element' | 'region'); setAnchor(null); setBox(null); setCapture(initial); setSelectionValid(true); setProblem(null) }}><option value="element">{t({ message: 'Element', comment: 'An element of a web page, chosen to give feedback on.' })}</option><option value="region">{t({ message: 'Region', comment: 'A rectangle of a web page, chosen to give feedback on.' })}</option></select></label>
+    <label className="browser-feedback__mode"><Trans comment="{modes} is a list to choose from: Element or Region of the page.">Select {modes}</Trans></label>
     <p className="tt-paragraph">{mode === 'element' ? t`Click an element, or use arrow keys and Enter.` : anchor ? t`Move the other corner with arrow keys, then press Enter. Space starts again.` : t`Drag a region, or move with arrow keys and press Space to set its first corner.`}</p>
     <button type="button" className="browser-feedback__image tt-focusable" aria-label={mode === 'element' ? t({ message: `Select page element at ${x}, ${y}`, comment: '{x} and {y} are pixel positions on the page.' }) : t({ message: `Select page region at ${x}, ${y}`, comment: '{x} and {y} are pixel positions on the page.' })} disabled={busy}
       onPointerDown={event => { if (event.button !== 0) return; start.current = locate(event); setPoint(start.current); setBox(null); event.currentTarget.setPointerCapture?.(event.pointerId) }}

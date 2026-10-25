@@ -38,9 +38,9 @@ function BrowserPlayerFrame({ page, mount, boundary }: {
   const show = page !== undefined && page.status !== 'unavailable' && covered === false
   useBrowserPageMount(host, show, mount)
   return <div className="browser-player__frame">
-    {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note">{t`This page could not load.`}</p>
+    {!page ? null : page.status === 'unavailable' ? <p className="browser-player__frame-note tt-paragraph">{t`This page could not load.`}</p>
       : <div ref={host} className="browser-player__viewport" data-covered={covered || undefined}>
-        {covered ? <p className="browser-player__frame-note">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
+        {covered ? <p className="browser-player__frame-note tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
       </div>}
   </div>
 }
@@ -196,7 +196,7 @@ export function BrowserPlayer({ state, focusedThreadId, bridge, store, autoShow 
   }
 
   return <aside ref={playerRoot} className="browser-player" aria-label={t({ message: `Browser for ${title}`, comment: '{title} is a thread\'s title.' })} data-covers-native-view style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }} onKeyDown={escape}>
-    <div className="browser-player__bar" role="group" aria-roledescription="drag handle" tabIndex={0}
+    <div className="browser-player__bar" role="group" aria-roledescription={t({ message: 'drag handle', comment: 'What a screen reader calls the bar that moves a floating player, read after its name.' })} tabIndex={0}
       aria-label={t`Move the browser. Drag, or use the arrow keys; hold Shift to move further.`}
       title={t`Drag to move`} onPointerDown={startDrag} onKeyDown={barKeyDown}>
       <Globe size={15} aria-hidden="true" />

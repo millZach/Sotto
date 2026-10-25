@@ -24,6 +24,7 @@ import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
+import { shownCount } from './toolsWords'
 import { chosenThreadChord } from '../agents/threadShortcuts'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
@@ -169,7 +170,7 @@ function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thre
   const Icon = facts.status === 'pending' || facts.status === 'error' ? FolderGit2 : facts.mode === 'independent' && facts.branch ? GitBranch : Folder
   const branch = facts.branch ?? knownBranch
   // A ready record's label is its branch, which now has its own place; the folder's kind stands in for it.
-  const place = facts.status === 'ready' && facts.mode === 'independent' ? t({ message: 'Worktree', comment: 'The kind of folder a thread works in: a worktree of its own.' }) : facts.status === 'ready' && facts.mode === 'shared' && facts.label === facts.branch ? t`Project folder` : facts.label
+  const place = facts.status === 'ready' && facts.mode === 'independent' ? t({ message: 'Worktree', context: 'thread folder', comment: 'The kind of folder a thread works in: a worktree of its own.' }) : facts.status === 'ready' && facts.mode === 'shared' && facts.label === facts.branch ? t`Project folder` : facts.label
   const onHost = host === undefined ? undefined : t({ message: `on ${host}`, comment: '{host} is the name of a paired host, as in forge.' })
   const words = [project?.title, branch === undefined ? undefined : t({ message: `Branch ${branch}`, comment: '{branch} is a Git branch name.' }), place, onHost].filter(Boolean).join(' · ')
   return <div className="tools-panel__copy" title={words}>
@@ -254,8 +255,8 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
     const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
     if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = t`Has uncommitted changes` }
     else if (changed !== null && changed.count > 0) {
-      // The count as it reads now; a plural's own # would group its digits.
-      const count = changed.count, files = String(count)
+      // The count in the interface language, and in English as it always read: a plural's own # would group its digits.
+      const count = changed.count, files = shownCount(count)
       live.changes = changed.truncated ? plural(count, { other: `${files}+ changed files` }) : plural(count, { one: `${files} changed file`, other: `${files} changed files` })
     }
   }
@@ -501,7 +502,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Babysit pull request is offered where the thread's host babysits (ADR-0061 decision 11), naming the agent as the transcript does.
   else if (chrome.surface === 'pull-request') body = <PullRequestSurface key={thread.id} thread={thread} command={command} onStatus={showStatus}
     babysit={offersBabysitting(state.host.clientHosts, thread) ? { agent: resolveModel(hostForThread(state.host, thread).models, thread.modelId)?.provider
-      ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : 'the agent') } : undefined} />
+      ?? (thread.providerId ? PROVIDER_LABELS[thread.providerId] : t({ message: 'the agent', comment: 'Stands in for the provider\'s name, as in "Started by the agent".' })) } : undefined} />
   // Files, Changes and Agents are read from a paired host; its terminal, browser and test iPhone are on that machine.
   else if (thread.remoteHost && (chrome.surface === 'terminal' || chrome.surface === 'browser' || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.

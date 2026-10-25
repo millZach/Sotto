@@ -1,9 +1,12 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { t } from '@lingui/core/macro'
+import { msg, t } from '@lingui/core/macro'
 import type { Checkpoint } from '../../../shared/checkpoints'
 import type { FileWorkspace } from '../../../shared/files'
 import type { GitChange, GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
+import { inEnglish } from '../state/interfaceLanguage'
+import type { LaterWords } from '../features/settings/laterWords'
+import { errorWords, ownError, type ToolsNotice } from './toolsWords'
 import { turnPatch } from './turnDiff'
 
 export type ChangesListState =
@@ -48,7 +51,7 @@ export interface ChangesReview {
   readonly branch?: { readonly base: string | null; readonly automatic: boolean; readonly head: string | null }
   readonly turn?: { readonly number: number; readonly checkpoint: Checkpoint }
   /** Why there is nothing to show, when the comparison itself could not be made: no turns yet, a checkpoint unavailable. */
-  readonly notice?: string
+  readonly notice?: ToolsNotice
 }
 
 export type ChangesReviewState =
@@ -70,7 +73,14 @@ export interface ThreadChanges {
   readonly refreshing: boolean
 }
 
-const unavailable: ToolsError = { code: 'unavailable', get message() { return t`Changes is not available in this window.` } }
+const unavailable = ownError('unavailable', msg`Changes is not available in this window.`)
+/** A turn's file with no text diff. A file's message is main's English, so it is kept in English and shown as this message. */
+const TURN_BINARY = msg`Binary or larger than 256 KiB: no text diff.`
+
+/** A file's problem as shown: main's words as written, or a turn's binary file in the interface language. */
+export function fileProblemWords(message: string): LaterWords {
+  return message === inEnglish(TURN_BINARY) ? TURN_BINARY : message
+}
 const NO_FILES: ReadonlySet<string> = new Set()
 
 /** The key a comparison is kept under: scope, base or turn, and whether whitespace is hidden. */
@@ -293,27 +303,25 @@ export class ChangesStore {
 
   /** A turn's comparison from its checkpoint; a checkpoint that cannot be read says so rather than showing nothing. */
   private async readTurn(bridge: GitChangesBridge, target: { threadId: string; workspaceId: string }, checkpointId: string | null, key: string, ignoreWhitespace: boolean): Promise<ChangesReviewState> {
-    if (!bridge.checkpoints || !bridge.inspectCheckpoint) return { status: 'error', error: { code: 'unavailable', message: t`Checkpoints are unavailable in this window.` } }
+    if (!bridge.checkpoints || !bridge.inspectCheckpoint) return { status: 'error', error: ownError('unavailable', msg`Checkpoints are unavailable in this window.`) }
     const listing = await settle(bridge.checkpoints(target))
     if (!listing.ok) return { status: 'error', error: listing.error }
     const turns = listing.value.checkpoints
     const latest = this.threads.get(target.threadId)
     if (latest && !sameTurns(turns, latest.turns)) this.set({ ...latest, turns })
     const checkpoint = checkpointId === null ? turns[0] : turns.find(turn => turn.id === checkpointId)
-    if (!checkpoint) return { status: 'ready', review: { key, files: [], truncated: false, notice: checkpointId === null ? t`No completed turns yet.` : t`This turn is no longer listed.` } }
+    if (!checkpoint) return { status: 'ready', review: { key, files: [], truncated: false, notice: { words: checkpointId === null ? msg`No completed turns yet.` : msg`This turn is no longer listed.` } } }
     const number = turnNumber(turns, checkpoint.id)
-    const unavailableTurn = (reason: string | undefined): ChangesReviewState => ({ status: 'ready', review: { key, files: [], truncated: false, turn: { number, checkpoint },
-      notice: reason
-        ? t({ message: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown. ${reason}`, comment: '{number} counts the thread\'s turns; {reason} says why, in a sentence.' })
-        : t({ message: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown.`, comment: '{number} counts the thread\'s turns.' }) } })
+    const unavailableTurn = (reason: LaterWords | undefined): ChangesReviewState => ({ status: 'ready', review: { key, files: [], truncated: false, turn: { number, checkpoint },
+      notice: { words: msg({ message: `Turn ${number}’s checkpoint is unavailable, so its changes cannot be shown.`, comment: '{number} counts the thread\'s turns.' }), detail: reason || null } } })
     if (checkpoint.status === 'unavailable') return unavailableTurn(checkpoint.reason)
     const inspection = await settle(bridge.inspectCheckpoint({ ...target, checkpointId: checkpoint.id }))
-    if (!inspection.ok) return unavailableTurn(inspection.error.message)
+    if (!inspection.ok) return unavailableTurn(errorWords(inspection.error))
     const change = new Map(inspection.value.checkpoint.files.map(file => [file.path, file.change]))
     const files: GitReviewFile[] = []
     for (const patch of inspection.value.patches) {
       const status = change.get(patch.path) ?? 'modified'
-      if (patch.binary) { files.push({ path: patch.path, status, additions: null, deletions: null, content: { kind: 'binary', message: t`Binary or larger than 256 KiB: no text diff.` } }); continue }
+      if (patch.binary) { files.push({ path: patch.path, status, additions: null, deletions: null, content: { kind: 'binary', message: inEnglish(TURN_BINARY) } }); continue }
       const built = turnPatch(patch.path, status === 'added' ? null : patch.before ?? '', status === 'deleted' ? null : patch.after ?? '', ignoreWhitespace)
       if (!built.patch) continue
       files.push({ path: patch.path, status, additions: built.additions, deletions: built.deletions, content: { kind: 'text', patch: built.patch } })
@@ -349,7 +357,7 @@ export class ChangesStore {
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: t`Sotto did not answer.` } } }
+  try { return await request } catch { return { ok: false, error: ownError('unavailable', msg`Sotto did not answer.`) } }
 }
 
 export function useThreadChanges(store: ChangesStore, threadId: string | null): ThreadChanges | undefined {

@@ -123,7 +123,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
         ? <span className="delegated-row__shown"><Eye size={13} aria-hidden="true" />{t`In the pane`}</span>
         : <button type="button" className="delegated-row__open tt-focusable" data-needs={action.kind === 'answer' || undefined} aria-label={action.name} title={action.name}
           onClick={() => { onOpen(row.thread.id); head.current?.focus() }}>
-          {action.kind === 'answer' ? action.label : <><SquareArrowOutUpRight size={13} aria-hidden="true" /><span className="delegated-row__open-long">{action.label}</span><span className="delegated-row__open-short" aria-hidden="true">{t({ message: 'Open', comment: 'Short form of "Open as thread": opens a delegated thread in the pane.' })}</span></>}
+          {action.kind === 'answer' ? action.label : <><SquareArrowOutUpRight size={13} aria-hidden="true" /><span className="delegated-row__open-long">{action.label}</span><span className="delegated-row__open-short" aria-hidden="true">{t({ message: 'Open', context: 'delegated thread', comment: 'Short form of "Open as thread": opens a delegated thread in the pane.' })}</span></>}
         </button>}
     </div>
     {open ? <div className="subagent-details" id={id}>

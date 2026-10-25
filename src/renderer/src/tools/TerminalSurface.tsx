@@ -9,6 +9,8 @@ import { TerminalViewProblem } from './TerminalViewProblem'
 import { ToolsChrome } from './ToolsChrome'
 import type { ToolsError } from '../../../shared/tools'
 import { sessionStatusText, useThreadTerminals, type TerminalStore, type TerminalViewFactory } from './terminalStore'
+import { shownNotice } from './toolsWords'
+import { shownWords } from '../features/settings/laterWords'
 
 export interface TerminalSurfaceProps {
   readonly threadId: string
@@ -113,7 +115,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
         <p className="tt-paragraph">{t`A terminal starts in the thread’s working folder and keeps running while you work elsewhere.`}</p>
         <button type="button" className="tt-button tt-button--primary tt-focusable" title={full ? limitHint : undefined} disabled={terminals.busy || full || !bridge} onClick={start}>{t`Start terminal`}</button>
         {full ? <p className="terminal-notice" role="status">{limitHint}</p> : null}
-        {terminals.notice ? <p className="terminal-notice" role="alert">{terminals.notice}</p> : null}
+        {terminals.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(terminals.notice)}</p> : null}
       </div>
     </div>
   }
@@ -157,7 +159,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
     {confirming !== null && confirming === active?.id ? <CloseConfirm name={names.get(active.id) ?? t({ message: 'this terminal', comment: 'Stands in for a terminal\'s name, as in "End this terminal?".' })}
       onEnd={() => { setConfirming(null); void store.close(bridge, threadId, active.id).then(() => { const next = store.thread(threadId)?.activeSessionId; if (next) focusTab(next) }) }}
       onKeep={() => { setConfirming(null); focusTab(active.id) }} /> : null}
-    {terminals.notice || full ? <p className="terminal-notice" role={terminals.notice ? 'alert' : 'status'}>{terminals.notice ?? limitHint}</p> : null}
+    {terminals.notice || full ? <p className={`terminal-notice${terminals.notice ? ' tt-paragraph' : ''}`} role={terminals.notice ? 'alert' : 'status'}>{shownNotice(terminals.notice) ?? limitHint}</p> : null}
     {active ? <TerminalScreen key={active.id} session={active} name={names.get(active.id) ?? i18n._(TERMINAL)} threadId={threadId} store={store} bridge={bridge}
       viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} screenId={screenId} /> : null}
   </div>
@@ -206,16 +208,16 @@ function TerminalScreen({ session, name, threadId, store, bridge, viewFactory, v
   const ended = session.status !== 'running'
   return <div className="terminal-screen" id={screenId} role="tabpanel" aria-labelledby={`terminal-tab-${sessionId}`} data-ended={ended || undefined}>
     {ended ? <div className="terminal-ended" role="status">
-      <p><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? t`Nothing it showed was kept.`
+      <p className="tt-paragraph"><strong>{sessionStatusText(session)}.</strong> {session.status === 'interrupted' ? t`Nothing it showed was kept.`
         : session.status === 'unavailable' ? t`The shell could not start in this folder.` : t`Its output stays here until you close it.`}</p>
       <button type="button" className="files-link tt-focusable" disabled={busy} onClick={() => { focusNext.current = true; void store.reopen(bridge, threadId, sessionId) }}>
-        <RotateCcw size={14} aria-hidden="true" />{t({ message: 'Reopen', comment: 'Starts an ended terminal again.' })}</button>
+        <RotateCcw size={14} aria-hidden="true" />{t({ message: 'Reopen', context: 'terminal', comment: 'Starts an ended terminal again.' })}</button>
     </div> : null}
     {viewFailed ? <TerminalViewProblem /> : null}
-    {loadError ? <div className="files-problem" role="status"><strong>{loadError}</strong>
+    {loadError ? <div className="files-problem" role="status"><strong>{shownWords(loadError)}</strong>
       <button type="button" className="files-link tt-focusable" onClick={() => store.retry(bridge, threadId, sessionId)}>{t`Try again`}</button></div> : null}
     <div className="terminal-view" ref={host} aria-label={t({ message: `${name}, terminal`, comment: '{name} is a terminal\'s name.' })} aria-busy={viewFactory === null && !viewFailed || undefined} data-replaying={replaying || undefined} />
     {replaying ? <p className="terminal-restoring" role="status">{t`Restoring output…`}</p> : null}
-    <p className="terminal-hint">{t`Ctrl+C copies a selection or stops the command · Ctrl+Tab leaves the terminal`}</p>
+    <p className="terminal-hint tt-paragraph">{t`Ctrl+C copies a selection or stops the command · Ctrl+Tab leaves the terminal`}</p>
   </div>
 }

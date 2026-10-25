@@ -92,7 +92,7 @@ function AssignmentDetails({ threadId, row, bridge }: { readonly threadId: strin
   return <>
     {current ? <AssignmentText assignment={current} /> : <><h3>{t({ message: 'Task', comment: 'Heading over what a subagent was asked to do.' })}</h3><p>{row.description || row.title}</p></>}
     {loading ? <p role="status">{t`Loading assignments…`}</p> : null}
-    {error ? <p role="status">{t`Could not load assignments. Saved work is unchanged.`} <button className="files-link tt-focusable" type="button" onClick={() => void load()}>{t`Try again`}</button></p> : null}
+    {error ? <p className="tt-paragraph" role="status">{t`Could not load assignments. Saved work is unchanged.`} <button className="files-link tt-focusable" type="button" onClick={() => void load()}>{t`Try again`}</button></p> : null}
     {assignments.filter(assignment => assignment.id !== row.assignmentId).map(assignment => {
       const status = i18n._(STATUS[assignment.status])
       return <details className="subagent-previous" key={assignment.id}>
@@ -220,7 +220,7 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
       <div className="subagent-details subagent-workflow__details"><AssignmentDetails threadId={threadId} row={row} bridge={bridge} /></div>
     </section>
     <h3 className="subagent-workflow__heading" id={`${row.id}-agents`}>{t({ message: 'Agents', comment: 'The subagents a provider reports for a thread.' })}</h3>
-    {!agents.length ? <p className="subagent-workflow__empty">{t`No agents reported yet.`}</p> : null}
+    {!agents.length ? <p className="subagent-workflow__empty tt-paragraph">{t`No agents reported yet.`}</p> : null}
     <ul className="subagents-list" aria-labelledby={`${row.id}-agents`}>{agents.map(({ row: agent, depth }) => <AgentRow key={agent.id} threadId={threadId} row={agent} depth={depth} bridge={bridge} />)}</ul>
   </>
 }
@@ -289,7 +289,7 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
       : <ToolsChrome title={total > 0 ? plural(total, { one: '# agent', other: '# agents' }) : t({ message: 'Agents', comment: 'The subagents a provider reports for a thread.' })} detail={total > 0 ? working ? plural(working, { other: '# working' }) : unknown ? t`Activity not confirmed` : t`None working` : null} />}
     <div className="subagents-roster">
       {open ? <WorkflowPage key={`${state.resetVersion}:${open.id}`} threadId={threadId} row={open} agents={pageAgents} bridge={bridge} /> : <>
-        {!roster.length && !blocks && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p>{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
+        {!roster.length && !blocks && !state.error ? <div className="subagents-empty"><Users size={25} aria-hidden="true" /><p className="tt-paragraph">{state.loading ? t`Loading agents…` : t`No agents spawned in this thread yet.`}</p></div> : null}
         {blocks && onOpenThread
           // Delegated threads and the provider's own agents in one list, newest start first (ADR-0081, variant B).
           ? <ul className="subagents-list" data-mixed="" aria-label={t`Delegated threads and agents, newest first`}>{blocks.flatMap(block => block.kind === 'threads'

@@ -14,6 +14,8 @@ import { browserPages, useBrowserTasks, normalizeAddress, pageLabel, useThreadBr
 import { useBrowserPageMount } from './useBrowserPageMount'
 import { useOverlayOpen } from './browserOverlay'
 import { ToolsChrome } from './ToolsChrome'
+import { shownNotice } from './toolsWords'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 
 export interface BrowserSurfaceProps {
   readonly threadId: string
@@ -201,7 +203,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
           if (creating && pages.length > 0) { event.preventDefault(); event.stopPropagation(); setCreating(false); setDraft(null); if (activeId) focusTab(activeId) }
           else if (draft !== null) { event.preventDefault(); event.stopPropagation(); setDraft(null); setProblem(null) }
         }} />
-      {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>{t({ message: 'Open', comment: 'Opens the address typed beside it as a new browser page.' })}</button>
+      {newPage ? <button type="submit" className="tt-button tt-button--primary tt-focusable browser-go" disabled={browser.busy || !bridge}>{t({ message: 'Open', context: 'browser address', comment: 'Opens the address typed beside it as a new browser page.' })}</button>
         : active ? <>
           <button type="button" className="files-icon tt-focusable" aria-label={openInSystemBrowser} title={openInSystemBrowser} onClick={() => openExternally(active.url)}><ExternalLink size={16} aria-hidden="true" /></button>
           <select className="browser-viewport-size tt-focusable" aria-label={t`Browser viewport size`} title={t`Browser viewport size`} value={active.viewport ? `${active.viewport.width}x${active.viewport.height}` : 'fit'} disabled={reviewBusy || feedback !== null} onChange={event => void reviewPage('viewport', event.currentTarget.value)}>
@@ -219,12 +221,12 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
       <span>{t`This page is private. The agent cannot see it`}</span><span aria-hidden="true">·</span>
       <button type="button" className="browser-review-link tt-focusable" disabled={reviewBusy} onClick={() => void reviewPage('share').then(() => requestAnimationFrame(() => shareButton.current?.focus()))}>{shareWithAgent}</button>
     </div> : null}
-    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable">{t`This provider does not support Sotto browser tools.`}</p> : null}
+    {active && !newPage && agentToolsUnavailable ? <p className="browser-review-unavailable tt-paragraph">{t`This provider does not support Sotto browser tools.`}</p> : null}
     {pageTasks.length > 1 && !feedback && !newPage ? <label className="browser-task-picker">{t`Browser checks`}<select aria-label={t`Browser check`} className="tt-focusable" value={task?.id ?? ''} onChange={event => setSelectedTask(event.currentTarget.value)}>{pageTasks.map(item => <option key={item.id} value={item.id}>{item.description} - {item.status}</option>)}</select></label> : null}
     {task && !feedback && !newPage ? <BrowserTaskDetails key={task.id} task={task} store={store} bridge={bridge} /> : null}
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}
     {active?.error && active.status !== 'unavailable' && !task?.pendingAction ? <p className="browser-problem" role="status">{active.error}</p> : null}
-    {browser.notice ? <p className="terminal-notice" role="alert">{browser.notice}</p> : null}
+    {browser.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(browser.notice)}</p> : null}
 
     {feedback && active && bridge ? <BrowserFeedback key={active.id} page={active} initial={feedback} bridge={bridge} onClose={() => { setFeedback(null); requestAnimationFrame(() => address.current?.focus()) }} onAdd={async (capture, comment, signal) => {
       if (!agents) return t`The draft for this thread is not available.`
@@ -244,7 +246,7 @@ export function BrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
 
 function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenExternally }: {
   readonly page: BrowserPage; readonly threadId: string; readonly store: BrowserStore; readonly bridge: BrowserBridge | undefined
-  readonly surface: React.RefObject<HTMLDivElement | null>; readonly refused: string | null; readonly onOpenExternally: () => void
+  readonly surface: React.RefObject<HTMLDivElement | null>; readonly refused: LaterWords | null; readonly onOpenExternally: () => void
 }): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
@@ -268,12 +270,12 @@ function PageViewport({ page, threadId, store, bridge, surface, refused, onOpenE
     </div> : <div ref={host} className="browser-viewport" data-covered={covered || undefined} data-refused={refused !== null || undefined}>
       {refused !== null ? <div className="files-problem browser-unavailable" role="alert">
         <strong>{t`This page could not be shown.`}</strong>{' '}
-        <p>{refused}</p>
+        <p className={typeof refused === 'string' ? undefined : 'tt-paragraph'}>{shownWords(refused)}</p>
         <div className="browser-unavailable__actions">
           <button type="button" className="files-link tt-focusable" onClick={() => store.retryPlacement(threadId, pageId)}>{t`Try again`}</button>
           <button type="button" className="files-link tt-focusable" onClick={onOpenExternally}>{openInSystemBrowser}</button>
         </div>
-      </div> : covered ? <p className="browser-viewport__covered">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
+      </div> : covered ? <p className="browser-viewport__covered tt-paragraph">{t`The page steps aside while a menu or dialog is open.`}</p> : null}
     </div>}
   </div>
 }

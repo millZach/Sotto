@@ -36,8 +36,8 @@ msgid "(file did not exist)"
 msgstr "(file did not exist)"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
-msgid "{additions, plural, other {{added} lines added, {deletions} removed}}"
-msgstr "{additions, plural, other {{added} lines added, {deletions} removed}}"
+msgid "{additions, plural, other {{added} lines added, {removed} removed}}"
+msgstr "{additions, plural, other {{added} lines added, {removed} removed}}"
 
 #: src/renderer/src/tools/ChangesSurface.tsx
 msgid "{additions} added, {deletions} removed"
@@ -60,16 +60,16 @@ msgid "{author} asked for changes. This repository does not require a review"
 msgstr "{author} asked for changes. This repository does not require a review"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{behindBy, plural, one {# commit behind {base}. GitHub does not let this account update it} other {# commits behind {base}. GitHub does not let this account update it}}"
-msgstr "{behindBy, plural, one {# commit behind {base}. GitHub does not let this account update it} other {# commits behind {base}. GitHub does not let this account update it}}"
+msgid "{behindBy, plural, one {{commits} commit behind {base}. GitHub does not let this account update it} other {{commits} commits behind {base}. GitHub does not let this account update it}}"
+msgstr "{behindBy, plural, one {{commits} commit behind {base}. GitHub does not let this account update it} other {{commits} commits behind {base}. GitHub does not let this account update it}}"
 
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
-msgid "{behindBy, plural, one {# commit behind {base}} other {# commits behind {base}}}"
-msgstr "{behindBy, plural, one {# commit behind {base}} other {# commits behind {base}}}"
+msgid "{behindBy, plural, one {{commits} commit behind {base}} other {{commits} commits behind {base}}}"
+msgstr "{behindBy, plural, one {{commits} commit behind {base}} other {{commits} commits behind {base}}}"
 
 #: src/renderer/src/tools/IPhoneSurface.tsx
-msgid "{capMinutes, plural, other {{monthMinutes} of # minutes}}"
-msgstr "{capMinutes, plural, other {{monthMinutes} of # minutes}}"
+msgid "{capMinutes, plural, other {{usedMinutes} of {cap} minutes}}"
+msgstr "{capMinutes, plural, other {{usedMinutes} of {cap} minutes}}"
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "{count, plural, one {{files} changed file} other {{files} changed files}}"
@@ -221,8 +221,8 @@ msgid "{queued, plural, other {# waiting to start}}"
 msgstr "{queued, plural, other {# waiting to start}}"
 
 #: src/renderer/src/tools/GitActions.tsx
-msgid "{restoring, plural, one {Restore this file and remove this completed turn from the native conversation.} other {Restore these # files and remove this completed turn from the native conversation.}}"
-msgstr "{restoring, plural, one {Restore this file and remove this completed turn from the native conversation.} other {Restore these # files and remove this completed turn from the native conversation.}}"
+msgid "{restoring, plural, one {Restore this file and remove this completed turn from the native conversation.} other {Restore these {restoringCount} files and remove this completed turn from the native conversation.}}"
+msgstr "{restoring, plural, one {Restore this file and remove this completed turn from the native conversation.} other {Restore these {restoringCount} files and remove this completed turn from the native conversation.}}"
 
 #. {reveal} is "Show in File Explorer" or the like; {folder} is a folder path.
 #: src/renderer/src/tools/ToolsPanel.tsx
@@ -240,8 +240,8 @@ msgid "{reveal}: working folder"
 msgstr "{reveal}: working folder"
 
 #: src/renderer/src/tools/PhonePlayer.tsx
-msgid "{sessionMinutes, plural, other {# min}}"
-msgstr "{sessionMinutes, plural, other {# min}}"
+msgid "{sessionMinutes, plural, other {{shownMinutes} min}}"
+msgstr "{sessionMinutes, plural, other {{shownMinutes} min}}"
 
 #. {size} is a file size, as in "12 KB".
 #: src/renderer/src/tools/FilePreview.tsx
@@ -699,8 +699,8 @@ msgstr "Checkout pull request"
 
 #. {state} is the checkpoint's status as Sotto records it, such as ready or reverted.
 #: src/renderer/src/tools/GitActions.tsx
-msgid "Checkpoint {number} · {files, plural, one {# file} other {# files}} · {state}"
-msgstr "Checkpoint {number} · {files, plural, one {# file} other {# files}} · {state}"
+msgid "Checkpoint {number} · {files, plural, one {{fileCount} file} other {{fileCount} files}} · {state}"
+msgstr "Checkpoint {number} · {files, plural, one {{fileCount} file} other {{fileCount} files}} · {state}"
 
 #: src/renderer/src/tools/GitActions.tsx
 msgid "Checkpoint review"
@@ -1126,6 +1126,13 @@ msgstr "Draft"
 #: src/renderer/src/tools/BrowserFeedback.tsx
 msgid "Drag a region, or move with arrow keys and press Space to set its first corner."
 msgstr "Drag a region, or move with arrow keys and press Space to set its first corner."
+
+#. What a screen reader calls the bar that moves a floating player, read after its name.
+#. What a screen reader calls the bar that moves a floating player, read after its name.
+#: src/renderer/src/tools/BrowserPlayer.tsx
+#: src/renderer/src/tools/PhonePlayer.tsx
+msgid "drag handle"
+msgstr "drag handle"
 
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
@@ -1971,12 +1978,21 @@ msgstr "Only the file’s mode or name changed."
 msgid "Only web pages open in Sotto’s browser."
 msgstr "Only web pages open in Sotto’s browser."
 
-#. A pull request's state: open, not merged or closed.
 #. Opens the address typed beside it as a new browser page.
-#. Short form of "Open as thread": opens a delegated thread in the pane.
 #: src/renderer/src/tools/BrowserSurface.tsx
+msgctxt "browser address"
+msgid "Open"
+msgstr "Open"
+
+#. Short form of "Open as thread": opens a delegated thread in the pane.
 #: src/renderer/src/tools/DelegatedThreads.tsx
+msgctxt "delegated thread"
+msgid "Open"
+msgstr "Open"
+
+#. A pull request's state: open, not merged or closed.
 #: src/renderer/src/tools/pullRequestSurface.logic.ts
+msgctxt "pull request state"
 msgid "Open"
 msgstr "Open"
 
@@ -2367,9 +2383,14 @@ msgid "Renamed from <0>{originalPath}</0>"
 msgstr "Renamed from <0>{originalPath}</0>"
 
 #. Reopens a closed pull request.
-#. Starts an ended terminal again.
 #: src/renderer/src/tools/PullRequestSurface.tsx
+msgctxt "pull request"
+msgid "Reopen"
+msgstr "Reopen"
+
+#. Starts an ended terminal again.
 #: src/renderer/src/tools/TerminalSurface.tsx
+msgctxt "terminal"
 msgid "Reopen"
 msgstr "Reopen"
 
@@ -2460,9 +2481,14 @@ msgid "Reviewers wait until it is ready"
 msgstr "Reviewers wait until it is ready"
 
 #. A cloud iPhone session is running.
-#. A terminal's shell is running.
 #: src/renderer/src/tools/IPhoneSurface.tsx
+msgctxt "cloud iPhone session"
+msgid "Running"
+msgstr "Running"
+
+#. A terminal's shell is running.
 #: src/renderer/src/tools/terminalStore.ts
+msgctxt "terminal"
 msgid "Running"
 msgstr "Running"
 
@@ -2486,10 +2512,10 @@ msgstr "Search refs..."
 msgid "Search terminal output"
 msgstr "Search terminal output"
 
-#. Before a list: select an element or a region of the page.
+#. {modes} is a list to choose from: Element or Region of the page.
 #: src/renderer/src/tools/BrowserFeedback.tsx
-msgid "Select"
-msgstr "Select"
+msgid "Select {modes}"
+msgstr "Select {modes}"
 
 #. {x} and {y} are pixel positions on the page.
 #: src/renderer/src/tools/BrowserFeedback.tsx
@@ -2821,6 +2847,13 @@ msgstr "Text, Markdown and PNG, JPEG, GIF or WebP images preview here."
 #: src/renderer/src/tools/browserStore.ts
 msgid "That is not a web address the browser can open."
 msgstr "That is not a web address the browser can open."
+
+#. Stands in for the provider's name, as in "Started by the agent".
+#. Stands in for the provider's name, as in "Started by the agent".
+#: src/renderer/src/tools/PullRequestSurface.tsx
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "the agent"
+msgstr "the agent"
 
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The agent in this thread can see and use this page. Stop sharing keeps it private."
@@ -3218,11 +3251,6 @@ msgstr "Turn {number} (unavailable)"
 msgid "Turn {number}’s checkpoint is unavailable, so its changes cannot be shown."
 msgstr "Turn {number}’s checkpoint is unavailable, so its changes cannot be shown."
 
-#. {number} counts the thread's turns; {reason} says why, in a sentence.
-#: src/renderer/src/tools/changesStore.ts
-msgid "Turn {number}’s checkpoint is unavailable, so its changes cannot be shown. {reason}"
-msgstr "Turn {number}’s checkpoint is unavailable, so its changes cannot be shown. {reason}"
-
 #. Turns off auto-merge.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Turn off"
@@ -3364,9 +3392,14 @@ msgid "Working…"
 msgstr "Working…"
 
 #. Checks a pull request out into a worktree of its own.
-#. The kind of folder a thread works in: a worktree of its own.
 #: src/renderer/src/tools/PullRequestDialogs.tsx
+msgctxt "pull request checkout"
+msgid "Worktree"
+msgstr "Worktree"
+
+#. The kind of folder a thread works in: a worktree of its own.
 #: src/renderer/src/tools/ToolsPanel.tsx
+msgctxt "thread folder"
 msgid "Worktree"
 msgstr "Worktree"
 
