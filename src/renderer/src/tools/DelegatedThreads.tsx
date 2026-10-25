@@ -8,6 +8,7 @@ import { useShared } from '../agents/stateSharing'
 import { delegatedRoster, delegatingBelow, openAction, rosterMachine, threadsMissingStarts, type DelegatedRosterRow, type DelegationReads } from './delegatedRoster'
 import { clockLabel } from '../agents/threadFacts'
 import { useOwlFeature } from '../state/owlFeature'
+import { useLingui } from '@lingui/react/macro'
 import { elapsedLabel } from './rosterTime'
 import '../agents/delegation.css'
 
@@ -60,6 +61,7 @@ export function delegatedStatusWord(row: Pick<DelegatedRosterRow, 'status' | 'wa
 
 /** How long it has worked, counting each second while it does; the time it took once its outcome is in. */
 function DelegatedElapsed({ row, live }: { readonly row: DelegatedRosterRow; readonly live: boolean }): ReactNode {
+  const { t } = useLingui()
   const working = row.status === 'working' || row.status === 'background' || (row.status === 'needs' && !Number.isFinite(row.endedAt))
   const [now, setNow] = useState(Date.now)
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
@@ -76,7 +78,7 @@ function DelegatedElapsed({ row, live }: { readonly row: DelegatedRosterRow; rea
     const timer = setInterval(() => setNow(Date.now()), 1_000)
     return () => clearInterval(timer)
   }, [ticking])
-  if (row.lastRead && Number.isFinite(row.asOf)) return <span title="When Sotto last read it">as of {clockLabel(row.asOf)}</span>
+  if (row.lastRead && Number.isFinite(row.asOf)) { const time = clockLabel(row.asOf); return <span title={t`When Sotto last read it`}>{t`as of ${time}`}</span> }
   const duration = (working ? now : row.endedAt) - row.startedAt
   return Number.isFinite(duration) ? <span>{elapsedLabel(duration)}</span> : null
 }
@@ -106,6 +108,9 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
   const status = delegatedStatusWord(row)
   const action = openAction(row, shown)
   const outcome = row.status === 'needs' ? 'needs' : row.finished ? 'finished' : row.status
+  // Read in the interface language, and drawn again when it changes (ADR-0123).
+  const { t } = useLingui()
+  const machine = row.machine.name
   const held = row.held && !row.lastRead ? heldLine(row.held, row.machine.name) : undefined
   // The preview is the excerpt the window holds; open, the row reads the whole brief from main.
   const brief = useFullBrief(row.thread.id, row.newest?.id, open) ?? row.brief
@@ -138,7 +143,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
         </button>}
     </div>
     {open ? <div className="subagent-details" id={id}>
-      {brief ? <><h3>Brief</h3>{row.lastRead && brief === row.brief ? <p className="delegated-row__source">The start of the brief, as Sotto last read it from {row.machine.name}.</p> : null}<p>{brief}</p></> : null}
+      {brief ? <><h3>Brief</h3>{row.lastRead && brief === row.brief ? <p className="delegated-row__source tt-paragraph">{t`The start of the brief, as Sotto last read it from ${machine}.`}</p> : null}<p>{brief}</p></> : null}
       <h3>Latest outcome</h3>
       <p className="subagent-result" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
     </div> : null}

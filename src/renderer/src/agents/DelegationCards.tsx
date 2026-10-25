@@ -10,6 +10,8 @@ import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedNote, delegationRefusalLin
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
+import { t } from '@lingui/core/macro'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import './delegation.css'
 
 /** What a card needs of the window besides its delegation: the threads it names, where they run, and a way to open one. */
@@ -49,7 +51,7 @@ export function useDelegationCardWorld(state: AgentState, command: AgentConnecti
         if (from === undefined) void command({ type: 'select-thread', threadId: id })
         else openDelegatedThread(command, id, from)
       }, liveClock: now === undefined, now,
-      machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? 'this computer' : listed.name },
+      machineName: hostId => { const listed = connections?.find(item => item.hostId === hostId); return listed === undefined ? undefined : listed.kind === 'local' ? t`this computer` : listed.name },
       ...(awayName !== undefined ? { away: { name: awayName, connected: awayConnected !== false, lastReadAt: lastReadAt ?? Number.NaN } } : {}) }
   }, [threads, connections, command, now, awayName, awayConnected, lastReadAt])
 }
@@ -84,7 +86,7 @@ function Where({ id, provider, thread, world, children, machine: shown = true }:
   readonly world: DelegationCardWorld; readonly children?: ReactNode
   /** False for a refused start of a thread on another machine, which names no machine it could have started on (#1310). */
   readonly machine?: boolean }): ReactNode {
-  const machine = thread ? world.hostName(thread) : 'This computer'
+  const machine = thread ? world.hostName(thread) : t`This computer`
   const Machine = thread?.remoteHost ? Server : Laptop
   return <p id={id} className="delegation-card__meta">
     {provider ? <><ProviderMark provider={provider} name={PROVIDER_LABELS[provider]} size={12} /><span>{PROVIDER_LABELS[provider]}</span>{shown ? <span aria-hidden="true">·</span> : null}</> : null}
@@ -120,6 +122,8 @@ function RefusedDelegationCard({ view, world }: { readonly view: RefusedView; re
  */
 export function DelegationCard({ view }: { readonly view: DelegationView }): ReactNode {
   const world = useContext(DelegationCardContext)
+  // Its words are messages; reading the language draws the card again when it changes (ADR-0123).
+  useInterfaceLanguageState()
   if (world === null) return null
   if (view.outcome === 'refused') return <RefusedDelegationCard view={view} world={world} />
   const thread = world.thread(view.thread)

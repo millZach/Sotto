@@ -2,7 +2,7 @@ import { lastUserMessageIdOf, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, type DelegatedView, type DelegationOutcome, type RefusedView } from '../../../shared/delegation'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { clockLabel } from './threadFacts'
-import { WORKER_SYSTEM_WORDS } from '../../../shared/workerMachine'
+import { t } from '@lingui/core/macro'
 
 /**
  * The words delegation shows in the window (#1029, design A): a card's outcome and its wait line, "Delegated by", and
@@ -87,8 +87,9 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
   // A thread on another machine delegates only on its own machine until #1316 (#1310). With what it asked for recorded,
   // Zach's words (October 23, 2026); without, as the remote roster prototype words it.
   if (view.refusal === 'MACHINE_UNAVAILABLE' && parentMachine !== undefined) {
-    return asked !== undefined ? `Asked for ${asked}. ${parentMachine} can start threads only on ${parentMachine} for now. ${nothing}`
-      : `This thread runs on ${parentMachine}, and a thread on ${parentMachine} can start threads only on ${parentMachine}. ${nothing} Ask again without naming a machine to start it on ${parentMachine}.`
+    const machine = parentMachine
+    return asked !== undefined ? t`Asked for ${asked}. ${machine} can start threads only on ${machine} for now. Nothing was started.`
+      : t`This thread runs on ${machine}, and a thread on ${machine} can start threads only on ${machine}. Nothing was started. Ask again without naming a machine to start it on ${machine}.`
   }
   switch (view.refusal) {
     case 'NOT_ADMITTED': return `This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. ${nothing}`
@@ -116,24 +117,57 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
 
 /**
  * A delegated thread's outcome as Sotto last read it, its machine not connected now (#1310, Zach's word on October 23,
- * 2026): "Working when last read", never Unknown for what was known.
+ * 2026): "Working when last read", never Unknown for what was known. Each a message of its own (ADR-0123).
  */
-export const lastReadWord = (outcome: DelegationOutcome): string => `${DELEGATION_OUTCOME_WORDS[outcome]} when last read`
+export function lastReadWord(outcome: DelegationOutcome): string {
+  switch (outcome) {
+    case 'working': return t`Working when last read`
+    case 'background': return t`Background work when last read`
+    case 'answered': return t`Answered when last read`
+    case 'failed': return t`Failed when last read`
+    case 'stopped': return t`Stopped when last read`
+    case 'paused': return t`Paused when last read`
+    case 'unknown': return t`Unknown when last read`
+    case 'refused': return t`Refused when last read`
+  }
+}
 
-const LAST_READ_WAS: Readonly<Record<DelegationOutcome | 'needs', string>> = {
-  working: 'It was working', background: 'Its background work was still running', answered: 'It had answered', failed: 'It had failed',
-  stopped: 'It had stopped', paused: 'It was paused', unknown: 'Sotto could not tell how it stood', refused: 'It was refused', needs: 'It was waiting for you',
+/** How it stood when Sotto last read it, at `time` when known: the first sentence of `lastReadOutcome`. */
+function lastReadStood(outcome: DelegationOutcome | 'needs', time: string | undefined): string {
+  if (time === undefined) {
+    switch (outcome) {
+      case 'working': return t`It was working when Sotto last read it.`
+      case 'background': return t`Its background work was still running when Sotto last read it.`
+      case 'answered': return t`It had answered when Sotto last read it.`
+      case 'failed': return t`It had failed when Sotto last read it.`
+      case 'stopped': return t`It had stopped when Sotto last read it.`
+      case 'paused': return t`It was paused when Sotto last read it.`
+      case 'unknown': return t`Sotto could not tell how it stood when it last read it.`
+      case 'refused': return t`It was refused when Sotto last read it.`
+      case 'needs': return t`It was waiting for you when Sotto last read it.`
+    }
+  }
+  switch (outcome) {
+    case 'working': return t`It was working at ${time}, when Sotto last read it.`
+    case 'background': return t`Its background work was still running at ${time}, when Sotto last read it.`
+    case 'answered': return t`It had answered at ${time}, when Sotto last read it.`
+    case 'failed': return t`It had failed at ${time}, when Sotto last read it.`
+    case 'stopped': return t`It had stopped at ${time}, when Sotto last read it.`
+    case 'paused': return t`It was paused at ${time}, when Sotto last read it.`
+    case 'unknown': return t`Sotto could not tell how it stood at ${time}, when it last read it.`
+    case 'refused': return t`It was refused at ${time}, when Sotto last read it.`
+    case 'needs': return t`It was waiting for you at ${time}, when Sotto last read it.`
+  }
 }
 /**
- * How a delegated thread stood when Sotto last read it on `machine`, which is not connected now, at `asOf` when known: what
- * a roster row's details and a card's line say (#1310). Losing the connection stops nothing there.
+ * How a delegated thread stood when Sotto last read it on `machine`, at `asOf` when known: what a roster row's details and
+ * a card's line say (#1310). Not connected, losing the connection stops nothing there; connected, the last read failed.
  */
 export function lastReadOutcome(machine: string, outcome: DelegationOutcome | 'needs' | undefined, asOf: number, connected = false): string {
-  const when = Number.isFinite(asOf) ? ` at ${clockLabel(asOf)}` : ''
-  const was = outcome === undefined ? '' : `${LAST_READ_WAS[outcome]}${when}, when Sotto last read it. `
-  // Connected, but the last read there failed: said as such, and read again when the machine next names it as changed.
-  if (connected) return `${was}Sotto could not read it again on ${machine} just now. It reads it again when ${machine} says it changed.`
-  return `${was}${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
+  const was = outcome === undefined ? undefined : lastReadStood(outcome, Number.isFinite(asOf) ? clockLabel(asOf) : undefined)
+  const now = connected ? t`Sotto could not read it again on ${machine} just now. It reads it again when ${machine} says it changed.`
+    : t`${machine} is not connected, so Sotto cannot read how it went since. It reads it again when ${machine} reconnects.`
+  return was === undefined ? now : `${was} ${now}`
 }
 
 type HostHold = NonNullable<DelegatedView['held']>
@@ -143,21 +177,23 @@ type HostHold = NonNullable<DelegatedView['held']>
  * only until a control of its own lets this computer answer there (#1447), and for a grant taken away, with no fix.
  */
 export function heldLine(held: HostHold, machine: string): string {
-  if (held === 'not-told') return `Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
-  if (held === 'answers-revoked') return `Held at Ask for approval: ${machine} no longer lets this computer answer there.`
-  return `Held at Ask for approval: this computer can't answer on ${machine}.`
+  if (held === 'not-told') return t`Started at Ask for approval: ${machine} had no new-thread default from this computer yet.`
+  if (held === 'answers-revoked') return t`Held at Ask for approval: ${machine} no longer lets this computer answer there.`
+  return t`Held at Ask for approval: this computer can't answer on ${machine}.`
 }
 /** The same, in full, where a row's details say its latest outcome. */
 export function heldOutcome(held: HostHold, machine: string): string {
   // Zach's words (October 23, 2026), held to what is true: a start after that can still be held where this computer cannot answer.
-  if (held === 'not-told') return `${machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there.`
-  if (held === 'answers-revoked') return `It started at Ask for approval, because ${machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more.`
-  return `It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more.`
+  if (held === 'not-told') return t`${machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there.`
+  if (held === 'answers-revoked') return t`It started at Ask for approval, because ${machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more.`
+  return t`It started at Ask for approval, because this computer can't answer permission requests on ${machine}, so a thread there cannot be given more.`
 }
 /** What a refused start asked for, by the window's names for its machines (#1310): "this computer", "forge", "a Mac". */
 export function askedFor(asked: NonNullable<RefusedView['asked']>, machineName: (hostId: string) => string | undefined): string | undefined {
-  if (asked.machine !== undefined) return machineName(asked.machine) ?? 'another machine'
-  return asked.os !== undefined ? WORKER_SYSTEM_WORDS[asked.os].a : undefined
+  if (asked.machine !== undefined) return machineName(asked.machine) ?? t`another machine`
+  if (asked.os === 'windows') return t`a Windows machine`
+  if (asked.os === 'macos') return t`a Mac`
+  return asked.os === 'linux' ? t`a Linux machine` : undefined
 }
 
 /** The delegated threads below this one, at both levels, whose turn is running now: what Stop on it also stops. */

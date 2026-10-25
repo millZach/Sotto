@@ -8,6 +8,7 @@ import { effortLabel } from '../agents/EffortPicker'
 import type { AgentConnection } from '../agents/AgentContext'
 import { clockLabel } from '../agents/threadFacts'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
+import { plural as pluralMessage, t } from '@lingui/core/macro'
 
 /**
  * Delegated threads in Tools › Agents (ADR-0081, as Zach settled it on October 17, 2026, variant B of the roster
@@ -97,7 +98,11 @@ export interface RosterMachine {
   readonly connected: boolean
 }
 /** Every thread on this computer, as a roster without Work across machines sees them all. */
-export const THIS_COMPUTER: RosterMachine = { hostId: undefined, name: 'This computer', remote: false, connected: true }
+export const THIS_COMPUTER: RosterMachine = {
+  hostId: undefined, remote: false, connected: true,
+  // Read when shown, so it is in the interface language of the moment (ADR-0123).
+  get name() { return t`This computer` },
+}
 
 const time = (iso: string | undefined): number => iso === undefined ? Number.NaN : Date.parse(iso)
 
@@ -192,7 +197,7 @@ export function delegatedRoster(ownerId: string, threads: readonly AgentThread[]
 export function rosterMachine(connections: AgentState['connections'], thread: Pick<AgentThread, 'hostId' | 'remoteHost' | 'hostLabel' | 'clientConnected' | 'clientReconnecting'>): RosterMachine {
   if (thread.remoteHost !== true) return { ...THIS_COMPUTER, hostId: thread.hostId }
   const listed = connections?.find(item => item.hostId === thread.hostId)
-  return { hostId: thread.hostId, name: listed?.name ?? thread.hostLabel ?? 'Remote host', remote: true,
+  return { hostId: thread.hostId, name: listed?.name ?? thread.hostLabel ?? t`Remote host`, remote: true,
     connected: (listed?.connected ?? thread.clientConnected !== false) && thread.clientReconnecting !== true }
 }
 
@@ -240,7 +245,9 @@ export function rosterByMachine(owner: RosterMachine, families: readonly Delegat
 export function machineCount(group: Pick<RosterMachineGroup, 'machine' | 'families'>, agents: Pick<SubagentSummary, 'total' | 'working'> | undefined): string {
   const rows = group.families.flat()
   const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + (agents?.working ?? 0)
-  return [plural(rows.length, 'thread'), ...agents?.total ? [plural(agents.total, 'agent')] : [], ...group.machine.connected && working ? [`${working} working`] : []].join(' · ')
+  const threads = rows.length, agentCount = agents?.total ?? 0
+  return [pluralMessage(threads, { one: '# thread', other: '# threads' }), ...agentCount ? [pluralMessage(agentCount, { one: '# agent', other: '# agents' })] : [],
+    ...group.machine.connected && working ? [t`${working} working`] : []].join(' · ')
 }
 
 function families(ownerId: string, threads: readonly AgentThread[]): { readonly thread: AgentThread; readonly below: readonly AgentThread[] }[] {

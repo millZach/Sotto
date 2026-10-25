@@ -6,3 +6,171 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: mr\n"
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{machine} hasn't had this computer's defaults yet. It gets them the next time this computer connects to it; new threads there use them from then, unless this computer can't answer there."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{machine} is not connected, so Sotto cannot read how it went since. It reads it again when {machine} reconnects."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Linux machine"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Mac"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "a Windows machine"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "another machine"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Answered when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Background work when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Failed when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Held at Ask for approval: {machine} no longer lets this computer answer there."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Held at Ask for approval: this computer can't answer on {machine}."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had answered at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had answered when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had failed at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had failed when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had stopped at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It had stopped when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It started at Ask for approval, because {machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It started at Ask for approval, because this computer can't answer permission requests on {machine}, so a thread there cannot be given more."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was paused at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was paused when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was refused at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was refused when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was waiting for you at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was waiting for you when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was working at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It was working when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Its background work was still running at {time}, when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Its background work was still running when Sotto last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Paused when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Refused when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not tell how it stood at {time}, when it last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Sotto could not tell how it stood when it last read it."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Started at Ask for approval: {machine} had no new-thread default from this computer yet."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Stopped when last read"
+msgstr ""
+
+#: src/renderer/src/agents/DelegationCards.tsx
+msgid "this computer"
+msgstr ""
+
+#: src/renderer/src/agents/DelegationCards.tsx
+msgid "This computer"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This thread runs on {machine}, and a thread on {machine} can start threads only on {machine}. Nothing was started. Ask again without naming a machine to start it on {machine}."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Unknown when last read"
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Working when last read"
+msgstr ""

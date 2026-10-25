@@ -9,6 +9,9 @@ import { clockLabel } from '../agents/threadFacts'
 import { DelegatedThreadRow, useDelegatedRoster, type DelegatedRosterSource } from './DelegatedThreads'
 import { machineCount, mixedRoster, rosterByMachine, rosterCounts, rosterMachine, THIS_COMPUTER, type RosterBlock, type RosterMachineGroup } from './delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
+import { t } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { elapsedLabel } from './rosterTime'
 import './agentsSurface.css'
 
@@ -204,15 +207,27 @@ function WorkflowPage({ threadId, row, agents, bridge }: { readonly threadId: st
   </>
 }
 
+/** A machine whose Sotto does not report its threads' delegations, under its heading (#1310). */
+function olderHostNote(name: string): string {
+  return t`${name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update ${name} in Settings › Hosts & phones to see them.`
+}
+/** The name of one machine's list in the grouped roster: what it holds and where (#1310). */
+function rosterListName(machine: string, agents: boolean): string {
+  return agents ? t`Delegated threads and agents on ${machine}, newest first` : t`Delegated threads on ${machine}, newest first`
+}
+
 /**
  * A machine that is not connected, above the roster (#1310): its threads are as Sotto last read them, and losing the
  * connection stopped nothing there.
  */
 function MachineAway({ group }: { readonly group: RosterMachineGroup }): ReactNode {
   const asOf = group.families.flat().map(row => row.asOf).find(Number.isFinite)
-  const name = group.machine.name
-  return <p className="roster-notice" role="status"><Unplug size={15} aria-hidden="true" />
-    <span>{name} is not connected. {group.families.length ? `These threads are as Sotto last read them${asOf === undefined ? '' : ` at ${clockLabel(asOf)}`}. ` : ''}Losing the connection stops nothing on {name}.</span></p>
+  const name = group.machine.name, time = asOf === undefined ? '' : clockLabel(asOf)
+  const { t } = useLingui()
+  return <p className="roster-notice tt-paragraph" role="status"><Unplug size={15} aria-hidden="true" />
+    <span>{!group.families.length ? t`${name} is not connected. Losing the connection stops nothing on ${name}.`
+      : asOf === undefined ? t`${name} is not connected. These threads are as Sotto last read them. Losing the connection stops nothing on ${name}.`
+        : t`${name} is not connected. These threads are as Sotto last read them at ${time}. Losing the connection stops nothing on ${name}.`}</span></p>
 }
 
 /**
@@ -265,6 +280,8 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
   }, [openId])
   const { total, working, unknown } = state.summary
   // Beside delegated threads, the count names both and says what needs you (variant B of the roster prototype).
+  // The grouped roster's words are messages; reading the language here draws them again when it changes (ADR-0123).
+  useInterfaceLanguageState()
   const counts = families.length ? rosterCounts(delegatedRows, state.summary) : null
   const blocks = useMemo(() => families.length ? mixedRoster(roster, families) : null, [families, roster])
   const grouped = useMemo(() => groups?.map(group => ({ group, blocks: mixedRoster(group.own ? roster : [], group.families) })).filter(item => item.blocks.length) ?? null, [groups, roster])
@@ -299,10 +316,10 @@ export function AgentsSurface({ threadId, store, bridge, rosterSignal, continuat
               <h3 className="roster-machine__head" id={`${headingId}-${index}`}>
                 <span className="roster-machine__name">{group.machine.remote ? <Server size={13} aria-hidden="true" /> : <Laptop size={13} aria-hidden="true" />}{group.machine.name}</span>
                 <span>{machineCount(group, group.own ? state.summary : undefined)}</span>
-                {group.machine.connected ? null : <span className="roster-machine__off">not connected</span>}
+                {group.machine.connected ? null : <span className="roster-machine__off">{t`not connected`}</span>}
               </h3>
-              {group.olderHost ? <p className="roster-machine__note">{group.machine.name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {group.machine.name} in Settings › Hosts & phones to see them.</p> : null}
-              <ul className="subagents-list" data-mixed="" aria-label={`Delegated threads${group.own && roster.length ? ' and agents' : ''} on ${group.machine.name}, newest first`}>{rosterItems(machineBlocks)}</ul>
+              {group.olderHost ? <p className="roster-machine__note tt-paragraph">{olderHostNote(group.machine.name)}</p> : null}
+              <ul className="subagents-list" data-mixed="" aria-label={rosterListName(group.machine.name, group.own && roster.length > 0)}>{rosterItems(machineBlocks)}</ul>
             </section>)}
           </>
           : blocks && onOpenThread

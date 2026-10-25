@@ -6,3 +6,63 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{agentCount, plural, one {# agent} other {# agents}}"
+msgstr "{agentCount, plural, one {# agent} other {# agents}}"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. Losing the connection stops nothing on {name}."
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. These threads are as Sotto last read them at {time}. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. These threads are as Sotto last read them at {time}. Losing the connection stops nothing on {name}."
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name} is not connected. These threads are as Sotto last read them. Losing the connection stops nothing on {name}."
+msgstr "{name} is not connected. These threads are as Sotto last read them. Losing the connection stops nothing on {name}."
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "{name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {name} in Settings › Hosts & phones to see them."
+msgstr "{name}’s Sotto does not report how these threads’ delegations stand, so they show no brief or outcome. Update {name} in Settings › Hosts & phones to see them."
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{threads, plural, one {# thread} other {# threads}}"
+msgstr "{threads, plural, one {# thread} other {# threads}}"
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "{working} working"
+msgstr "{working} working"
+
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "as of {time}"
+msgstr "as of {time}"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Delegated threads and agents on {machine}, newest first"
+msgstr "Delegated threads and agents on {machine}, newest first"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "Delegated threads on {machine}, newest first"
+msgstr "Delegated threads on {machine}, newest first"
+
+#: src/renderer/src/tools/AgentsSurface.tsx
+msgid "not connected"
+msgstr "not connected"
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "Remote host"
+msgstr "Remote host"
+
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "The start of the brief, as Sotto last read it from {machine}."
+msgstr "The start of the brief, as Sotto last read it from {machine}."
+
+#: src/renderer/src/tools/delegatedRoster.ts
+msgid "This computer"
+msgstr "This computer"
+
+#: src/renderer/src/tools/DelegatedThreads.tsx
+msgid "When Sotto last read it"
+msgstr "When Sotto last read it"
