@@ -38,3 +38,13 @@ Zach asked for the steps to shrink under the words, with a slow glow crossing th
 - The steps of a running turn are one press away instead of in view, so a reader who watched commands run now opens the line to do it.
 - The glow runs in CSS on the desktop, on the words alone, and in Core Animation on the iPhone, so neither redraws the transcript to move it.
 - The Spaceballs words are written twice, in `ThreadActivity.tsx` and in the iPhone's `WorkingWords`; `tests/unit/shared/iosWorkingWords.test.ts` fails when the two differ.
+
+## October 25 amendment: a light you can see, and the clock back
+
+Zach found the light too faint to see and asked for the time the turn has been working beside the words. On a dark theme the muted ink and the accent's text tone are nearly the same lightness, so a band that blended one into the other changed only the hue, and only at its centre. He picked the letters lighting up with no accent halo, from `docs/prototypes/working-words-glow-strength-prototype.html`, with the clock after the words and nothing between them.
+
+**The light.** The words keep their muted ink, and a copy of them in `--tt-working-light` shows only through a band that sweeps across them, as the iPhone already draws it. `--tt-working-light` is the theme's accent at its most vivid: lifted to at least 0.9 lightness in dark and deepened to at most 0.38 in light, with its chroma raised by half again up to 0.2, so the lit letters stand clear of the muted ink on every theme, however dull its accent. The band is wider at full strength than before, with no halo. The timing is unchanged: across in 72% of a 4.2 second cycle, then a rest. Reduced motion is unchanged: nothing moves, the words keep their ink and the still dot stands beside them.
+
+**The clock.** The line now reads the words, then how long the turn has run ("Combing the desert 1m 04s"), in the muted ink a size smaller, counting from the turn's start, or from Send while the prompt is on its way. It uses the transcript's clock: whole seconds under a minute, then "1m 04s" and "1h 02m", and it updates its own text once a second without redrawing the transcript. Like every clock in the transcript it shows only while the provider is connected, so **Last seen working** has none. The button keeps its name, "Working, 12 steps so far"; a name that changed every second would be read out again and again.
+
+This replaces "There is no clock on the line" above and the light's description in the Decision, and the considered option **A clock on the line** is now the decision. It applies to the desktop's threads, threads beside Watcher and Watcher's conversation. The iPhone keeps the light and line of ADR-0051's October 24 amendment, without a clock, until Zach asks for it there.
