@@ -309,7 +309,8 @@ const urlTransform: UrlTransform = (url, key, node) =>
 
 const components: Components = {
   a: ({ href, title, children }) => <InsideLinkContext.Provider value={true}><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLinkContext.Provider>,
-  // `pre` below draws fenced blocks itself, so this only ever sees inline code.
+  // Also called for a fenced block's own <code>, which `pre` below then ignores: that text always ends in the newline
+  // Markdown adds to fenced code, so `runnableInline` refuses it and only inline spans offer Run.
   code: ({ node, children }) => <InlineCode node={node}>{children}</InlineCode>,
   img: ({ src, alt }) => <BlockedImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
   pre: ({ node }) => {

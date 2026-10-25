@@ -129,6 +129,11 @@ export class TerminalStore {
     this.setThread({ ...latest, workspace, status: 'ready', error: null, sessions, activeSessionId: active })
   }
 
+  /** Drops the last failure's words, such as when its drawer is hidden, so they do not greet the next opening. */
+  clearNotice(threadId: string): void {
+    if (this.threads.get(threadId)?.notice) this.patch(threadId, { notice: null })
+  }
+
   select(threadId: string, sessionId: string): void {
     const current = this.threads.get(threadId)
     if (current?.sessions.some(session => session.id === sessionId)) this.patch(threadId, { activeSessionId: sessionId })

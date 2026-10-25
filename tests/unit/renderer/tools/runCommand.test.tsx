@@ -63,11 +63,16 @@ describe('running a reply\'s command in the drawer (ADR-0136)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(`The command did not run. ${TERMINAL_LIMIT_MESSAGE}`)
     expect(screen.getByRole('button', { name: 'Start terminal' })).toBeInTheDocument()
     expect(create).toHaveBeenCalledOnce()
+    // Hidden and opened again, the drawer has forgotten the failure and starts a shell as usual.
+    act(() => chromeStore.setOpen('thread-a', false))
+    act(() => chromeStore.setOpen('thread-a', true))
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    expect(create.mock.calls[1]![0]).not.toHaveProperty('run')
   })
 
   it('cuts a long tab name in the middle and keeps the whole of it for screen readers', () => {
     expect(middleCut('zsh')).toBe('zsh')
-    expect(middleCut('sudo ~/Developer/mac-security-agent/mac/install.sh')).toBe('sudo ~/Develo…install.sh')
+    expect(middleCut('sudo ~/Developer/mac-security-agent/mac/install.sh')).toBe('sudo ~/Deve…stall.sh')
   })
 })
 

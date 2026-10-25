@@ -122,7 +122,9 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
       else chromeStore.setOpen(threadId, false)
     }
   }, [chrome.open, terminals, chromeStore, threadId])
-  useLayoutEffect(() => { if (!chrome.open) hadSessions.current = false }, [chrome.open])
+  // A hidden drawer forgets its last failure, so opening it again starts a shell as usual; a Run that fails while it
+  // is open leaves its notice up, and the drawer starts no plain shell in that command's place (ADR-0136).
+  useLayoutEffect(() => { if (!chrome.open) { hadSessions.current = false; store.clearNotice(threadId) } }, [chrome.open, store, threadId])
 
   // The Ctrl+J shortcut sets this before opening by keyboard; consumed at most once, it reaches the terminal
   // once its first shell is ready, the same way the "Start terminal" and "Reopen" buttons already do. This runs

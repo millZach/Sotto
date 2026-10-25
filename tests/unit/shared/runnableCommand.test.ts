@@ -24,6 +24,8 @@ describe('runnable inline code (ADR-0136)', () => {
     ['foo(bar) baz', false],
     ['git status\nrm -rf /', false],
     ['git status\r', false],
+    // A fenced block's own <code> reaches the inline handler too, always ending in a newline.
+    ['git status\n', false],
     ['echo \u001b[31mred', false],
     ['echo ‮evil', false],
     ['', false],

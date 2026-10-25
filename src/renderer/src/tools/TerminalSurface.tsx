@@ -61,7 +61,7 @@ function sessionNames(sessions: readonly TerminalSession[]): Map<string, string>
 }
 
 /** A long tab name, such as a command a reply ran (ADR-0136), keeps its start and its end; the tab's title holds all of it. */
-export function middleCut(name: string, limit = 24): string {
+export function middleCut(name: string, limit = 20): string {
   const characters = [...name]
   if (characters.length <= limit) return name
   const head = Math.ceil((limit - 1) * 0.55)
