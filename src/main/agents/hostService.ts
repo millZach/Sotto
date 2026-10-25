@@ -20,7 +20,7 @@ import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { QuestionPageTarget } from './questionPages'
@@ -153,6 +153,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
@@ -234,6 +236,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -387,6 +390,7 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)

@@ -408,7 +408,7 @@ private struct Conversation: View {
             }
             ForEach(pending) { item in
                 UnconfirmedRow(item: item, text: model.submitted[item.id], photos: model.submittedPhotos[item.id] ?? [],
-                               sending: model.isSending(item)) { dismissMarker = item }
+                               files: model.submittedFiles[item.id] ?? [], sending: model.isSending(item)) { dismissMarker = item }
             }
             if let text = model.failedReplies[ref.id] {
                 FailedReplyCard(ref: ref, text: text)
@@ -421,7 +421,8 @@ private struct Conversation: View {
                                       scroll: ScrollViewProxy) -> some View {
         switch row.item {
         case .message(let message):
-            MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref) { viewing = $0 }.equatable()
+            MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
+                        opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
@@ -716,11 +717,13 @@ private struct MessageView: View, Equatable {
     let provider: String
     let showsWho: Bool
     let ref: ThreadRef
+    /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
+    let opensFiles: Bool
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
-        a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref
+        a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
         if message.role == "user" {
@@ -736,13 +739,17 @@ private struct MessageView: View, Equatable {
         UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20, bottomTrailingRadius: 6, topTrailingRadius: 20, style: .continuous)
     }
 
-    /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages.
+    /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages,
+    /// and under the photos their files, each a pill that opens it in Quick Look where the computer hands files back.
     private var userMessage: some View {
-        let photos = (message.attachments ?? []).filter(\.hasPreview)
+        let attachments = message.attachments ?? []
+        let photos = attachments.filter(\.hasPreview)
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
-            if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
-                content(ink: Palette.bubbleInk)
+            if !files.isEmpty { SentFilePills(ref: ref, messageID: message.id, attachments: files) }
+            if !message.text.isEmpty || photos.count + files.count != attachments.count {
+                content(ink: Palette.bubbleInk, drawn: Set(files.map(\.id)))
                     .padding(.horizontal, Space.s4)
                     .padding(.vertical, Space.dense(Space.s3, density))
                     .background(Palette.bubble, in: bubble)
@@ -772,14 +779,15 @@ private struct MessageView: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func content(ink: ThemeRole) -> some View {
+    /// `drawn`: the files already drawn as pills above.
+    private func content(ink: ThemeRole, drawn: Set<String> = []) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if !message.text.isEmpty {
                 MarkdownText(text: message.text).equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other photo is named, and so is a file, with a
             // document symbol (ADR-0131). Only the four photo types are photos: an SVG or a HEIC is a file here.
-            ForEach((message.attachments ?? []).filter { message.role != "user" || !$0.hasPreview }) { attachment in
+            ForEach((message.attachments ?? []).filter { (message.role != "user" || !$0.hasPreview) && !drawn.contains($0.id) }) { attachment in
                 Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
@@ -1457,6 +1465,7 @@ private struct UnconfirmedRow: View {
     let item: PendingOperation
     let text: String?
     let photos: [DraftPhoto]
+    let files: [DraftFile]
     let sending: Bool
     let dismiss: () -> Void
     var body: some View {
@@ -1466,6 +1475,9 @@ private struct UnconfirmedRow: View {
                     Image(decorative: thumbnail, scale: 1).resizable().scaledToFit().frame(maxWidth: 220, maxHeight: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).opacity(0.6).padding(.leading, 48)
                 }
+            }
+            ForEach(files) { file in
+                FilePill(name: file.name, sizeBytes: file.sizeBytes).opacity(0.6).padding(.leading, 48)
             }
             if let text, !text.isEmpty {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
@@ -1520,18 +1532,20 @@ private struct FailedReplyCard: View {
     let ref: ThreadRef
     let text: String
     var body: some View {
-        let photos = model.failedPhotos[ref.id] ?? []
+        let photos = model.failedPhotos[ref.id] ?? [], files = model.failedFiles[ref.id] ?? []
         VStack(alignment: .leading, spacing: Space.s3) {
             Text("Your reply wasn’t sent").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             if !text.isEmpty {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
             }
-            if !photos.isEmpty {
-                Text(photos.count == 1 ? "With 1 photo" : "With \(photos.count) photos").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            if !photos.isEmpty || !files.isEmpty {
+                let carried = [photos.isEmpty ? "" : photos.count == 1 ? "1 photo" : "\(photos.count) photos",
+                               files.isEmpty ? "" : files.count == 1 ? "1 file" : "\(files.count) files"].filter { !$0.isEmpty }
+                Text("With " + carried.joined(separator: " and ")).font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             Button("Put it back in the reply box") { model.restoreReply(ref) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[ref.id] ?? "").isEmpty || !model.photos(ref).isEmpty)
+                .disabled(!(model.drafts[ref.id] ?? "").isEmpty || !model.photos(ref).isEmpty || !model.files(ref).isEmpty)
         }
         .card()
     }
@@ -1641,14 +1655,15 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let photos = model.photos(ref)
-        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
+        let photos = model.photos(ref), files = model.files(ref)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty && files.isEmpty ? 26 : 22, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? "Reply while it works" : "Reply to this thread"
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: .thread(ref))
-            // Photos wait inside the reply box, above the words, as in Messages.
+            // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
+                if !files.isEmpty { DraftFilePills(ref: ref).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.updatesFrequently)
@@ -1685,6 +1700,7 @@ private struct ReplyDock: View, Equatable {
     @ViewBuilder private var trailingButtons: some View {
         let stops = model.canInterrupt(ref)
         let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+            || !model.files(ref).isEmpty
         if stops { stopButton }
         if !stops || written { sendButton }
     }
