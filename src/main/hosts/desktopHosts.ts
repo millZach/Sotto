@@ -695,7 +695,7 @@ export class DesktopHosts {
     await this.save()
     if (host.hostId) await this.retainedDrafts.forgetHost(host.hostId)
     await this.forgetTailnet(host.id)
-    this.status.delete(host.id)
+    this.status.delete(host.id); this.failures.delete(host.id)
     const revoke = cause && host.clientId ? { cause, command: revokeByHandCommand({ installPath: host.installPath, dataDirectory: host.dataDirectory, clientId: host.clientId, node: this.nodePaths.get(host.id) }) } : undefined
     if (revoke || unitLeft) {
       this.forgotten = [...this.forgotten.filter(item => item.id !== host.id), { id: host.id, name: host.name, ...(revoke ? { revoke } : {}), ...(unitLeft ? { bootCommand: bootRemovalCommand(host.installPath) } : {}) }]
@@ -757,7 +757,7 @@ export class DesktopHosts {
     const active = this.live.get(id)
     if (host.clientId && active && this.onSsh(id)) { active.closing = true; await this.press(host, connection => connection.revokeClient(host.clientId!)).catch(() => false) }
     await this.disconnect(id)
-    this.status.delete(id)
+    this.status.delete(id); this.failures.delete(id)
     this.nodePaths.delete(id); this.systems.delete(id)
     await this.forgetCredential(id)
     await this.forgetTailnet(id)

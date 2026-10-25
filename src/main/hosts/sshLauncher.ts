@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { t } from '@lingui/core/macro'
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -7,6 +8,7 @@ import { createServer } from 'node:net'
 import { z } from 'zod'
 import { parseSshResolution, type SshHostConfiguration, type SshRoute, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { validateSshHost } from './sshHostValidation'
+import { CONNECT_FAILURES } from './hostFailureWords'
 import { CONTROL_OPTIONS, openSshVersion, spawnSsh, sshExecutable, tooOld, type SpawnSsh } from './sshProcess'
 import { HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS, HOST_STOP_REPLY_MS, LAUNCH_SCRIPT_SOURCE, launchScriptCommand, type LaunchOperation } from './launchScript'
 import { AskpassBroker, type AskpassQuestion } from './sshAskpass'
@@ -647,7 +649,7 @@ export class SshHostLauncher {
     } finally { attempt.busy = false }
   }
   private pairingCode(attempt: Attempt): Promise<SshPairingCode> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before requesting a pairing code.`))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(Object.assign(new SshFailure('not-connected', i18n._(CONNECT_FAILURES.pairingNotConnected().saved)), { words: CONNECT_FAILURES.pairingNotConnected() }))
     const hostId = attempt.ready.hostId
     return this.request(attempt, { op: 'pairing-code', hostId }, 'pairing-failed', REQUEST_BUDGET_MS, value => {
       const code = pairingSchema.safeParse(value)

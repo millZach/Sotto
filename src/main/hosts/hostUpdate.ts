@@ -90,6 +90,8 @@ interface Entry {
   shown?: { readonly locale: string; readonly stopped: StoppedUpdate; readonly failure: HostUpdateFailure } | undefined
   /** Why the last press was refused: the host was not connected. Worded when the panel reads it. */
   error?: 'not-connected' | undefined
+  /** The refusal as last worded: for which host name, in which language. */
+  shownError?: { readonly locale: string; readonly name: string; readonly error: string } | undefined
   /** The launch script's code, or this computer's, for the failure shown. */
   reason?: string | undefined
   /** The archive the host asked for, which names its platform. */
@@ -496,8 +498,7 @@ export class HostUpdates {
     const withdrawn = entry.phase === 'done' && entry.withdrawn
       ? t`${{ host: entry.name }} was already installing ${{ to: entry.to }} when this computer stopped updating to it, so it finished. Nothing was lost. ${{ host: entry.name }} runs a newer Sotto than this computer until this computer updates too.`
       : undefined
-    const refused = entry.error === 'not-connected'
-      ? t`${{ host: entry.name }} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.` : undefined
+    const refused = entry.error === 'not-connected' ? this.notConnected(entry) : undefined
     const error = refused ?? withdrawn ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
     const failure = entry.stopped ? this.failure(entry, entry.stopped) : undefined
     return { id: entry.id, name: entry.name, from: entry.from, to: entry.to, phase: entry.phase, owned: entry.owned,
@@ -515,6 +516,14 @@ export class HostUpdates {
     const failure = this.describe(stopped)
     entry.shown = { locale: i18n.locale, stopped, failure }
     return failure
+  }
+  /** Retry's refusal for a host that is not connected, worded once for its name and the interface language. */
+  private notConnected(entry: Entry): string {
+    const shown = entry.shownError
+    if (shown?.name === entry.name && shown.locale === i18n.locale) return shown.error
+    const error = t`${{ host: entry.name }} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.`
+    entry.shownError = { locale: i18n.locale, name: entry.name, error }
+    return error
   }
   /** The interface language changed: a failure or refusal on the panel is worded again in it (ADR-0123). */
   languageChanged(): void {

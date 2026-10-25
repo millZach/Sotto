@@ -81,6 +81,8 @@ export const CONNECT_FAILURES = {
   olderOwned: (version: string): FailureWords => ({ saved: msg`This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, press Stop host, then connect again.`, unsaved: msg`This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, press Stop host, then connect again.` }),
   olderNotOwned: (version: string): FailureWords => ({ saved: msg`This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.`, unsaved: msg`This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.` }),
   differentOwned: (version: string): FailureWords => ({ saved: msg`This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, press Stop host, then connect again.`, unsaved: msg`This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, press Stop host, then connect again.` }),
+  sshHelper: (): FailureWords => ({ saved: msg`Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect.`, unsaved: msg`Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then add the host again.` }),
+  pairingNotConnected: (): FailureWords => ({ saved: msg`Connect to the SSH host before requesting a pairing code.`, unsaved: msg`Connect to the SSH host before requesting a pairing code. Nothing was saved.` }),
   differentNotOwned: (version: string): FailureWords => ({ saved: msg`This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.`, unsaved: msg`This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.` }),
 } as const
 
@@ -162,16 +164,19 @@ function standardFixWords(code: SshFailureCode, fix: SshFix): Said {
 
 /** A failure's words, or its message for both when it has none of Sotto's: a system error, shown as it came. */
 export function failureWords(failure: Error): { readonly saved: Said; readonly unsaved: Said } {
-  const own = failure instanceof SshFailure ? sshFailureWords(failure) : failure instanceof WordedError ? failure.words : (failure as { words?: FailureWords }).words
+  const own = failure instanceof WordedError ? failure.words : (failure as { words?: FailureWords }).words ?? (failure instanceof SshFailure ? sshFailureWords(failure) : undefined)
   return own ?? { saved: failure.message, unsaved: unsavedText(failure.message) }
 }
 /**
- * Add host's sentence for text that is none of Sotto's messages, such as a system error, which is shown as it came: the
- * row's English with "Nothing was saved." after its first sentence. Sotto's own failures have whole Add host messages above.
+ * Add host's sentence for text that is none of Sotto's messages, such as a system error: that text as it came, and
+ * Sotto's "Nothing was saved." after its first sentence, said in the interface language (or English, for a model).
  */
-export function unsavedText(message: string): string {
-  const next = message.replace(/,? then reconnect\.$/u, ', then add the host again.').replace(/ and reconnect\.$/u, ' and add the host again.')
-    .replace(/ before reconnecting\.$/u, ' before adding the host again.').replace(/Connect again (to|when)/u, 'Add the host again $1')
-  const end = next.search(/[.!?]\s/u)
-  return end < 0 ? `${next} Nothing was saved.` : `${next.slice(0, end + 1)} Nothing was saved. ${next.slice(end + 2)}`
+export function unsavedText(message: string): MessageDescriptor {
+  const end = message.search(/[.!?]\s/u)
+  if (end < 0) {
+    const happened = message
+    return msg({ message: `${happened} Nothing was saved.`, comment: '{happened} is a system’s own error, shown as it came, such as “fetch failed”.' })
+  }
+  const happened = message.slice(0, end + 1), rest = message.slice(end + 2)
+  return msg({ message: `${happened} Nothing was saved. ${rest}`, comment: '{happened} and {rest} are the first sentence of a system’s own error and the rest of it, shown as they came.' })
 }

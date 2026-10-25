@@ -292,7 +292,7 @@ export class SocketHostService implements HostService {
       request.on('upgrade', (response, stream, head) => {
         // A host from before compression answers without the extension, and its messages are read as they come.
         const deflate = offer ? deflateAccepted(response.headers['sec-websocket-extensions']) : false
-        if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError(t`The host did not accept this protocol.`, 'invalid_request')); return }
+        if (response.headers['sec-websocket-accept'] !== expected) { stream.destroy(); reject(new HostConnectionError(CONNECT_FAILURES.protocol(), 'invalid_request')); return }
         // An answer to compression this desktop never offered fails that connection (RFC 7692 section 5); the next one
         // asks for none, so a host or a proxy that gets the extension wrong still connects, as one from before it does.
         if (deflate === 'invalid') { stream.destroy(); resolve('refused'); return }
@@ -307,7 +307,7 @@ export class SocketHostService implements HostService {
     })
     const offered = await upgrade(true)
     const opened = offered === 'refused' ? await upgrade(false) : offered
-    if (opened === 'refused') throw new HostConnectionError(t`The host did not accept this protocol.`, 'invalid_request')
+    if (opened === 'refused') throw new HostConnectionError(CONNECT_FAILURES.protocol(), 'invalid_request')
     this.frames = opened
     if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected') }
     try {

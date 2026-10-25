@@ -59,6 +59,16 @@ msgstr ""
 msgid "{file} is too large to be a theme file."
 msgstr ""
 
+#. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
+#: src/main/hosts/hostFailureWords.ts
+msgid "{happened} Nothing was saved."
+msgstr ""
+
+#. {happened} and {rest} are the first sentence of a system’s own error and the rest of it, shown as they came.
+#: src/main/hosts/hostFailureWords.ts
+msgid "{happened} Nothing was saved. {rest}"
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "{host} could not read this thread's agents. Nothing was changed. Try again."
 msgstr ""
@@ -545,8 +555,12 @@ msgstr ""
 msgid "Connect to the SSH host before forgetting a client."
 msgstr ""
 
-#: src/main/hosts/sshLauncher.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "Connect to the SSH host before requesting a pairing code."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Connect to the SSH host before requesting a pairing code. Nothing was saved."
 msgstr ""
 
 #: src/main/hosts/sshLauncher.ts
@@ -1121,7 +1135,11 @@ msgstr ""
 msgid "Sotto could not seal this page from the network, so it is not shown."
 msgstr ""
 
-#: src/main/hosts/sshAskpass.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect."
 msgstr ""
 
@@ -1623,7 +1641,6 @@ msgstr ""
 msgid "The host could not start. Nothing was saved. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
 #: src/main/hosts/hostFailureWords.ts
 msgid "The host did not accept this protocol."
 msgstr ""

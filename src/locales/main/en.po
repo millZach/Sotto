@@ -59,6 +59,16 @@ msgstr "{file} is not valid JSON."
 msgid "{file} is too large to be a theme file."
 msgstr "{file} is too large to be a theme file."
 
+#. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
+#: src/main/hosts/hostFailureWords.ts
+msgid "{happened} Nothing was saved."
+msgstr "{happened} Nothing was saved."
+
+#. {happened} and {rest} are the first sentence of a system’s own error and the rest of it, shown as they came.
+#: src/main/hosts/hostFailureWords.ts
+msgid "{happened} Nothing was saved. {rest}"
+msgstr "{happened} Nothing was saved. {rest}"
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "{host} could not read this thread's agents. Nothing was changed. Try again."
 msgstr "{host} could not read this thread's agents. Nothing was changed. Try again."
@@ -546,9 +556,13 @@ msgstr "Connect to the SSH host before changing whether it starts at boot."
 msgid "Connect to the SSH host before forgetting a client."
 msgstr "Connect to the SSH host before forgetting a client."
 
-#: src/main/hosts/sshLauncher.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "Connect to the SSH host before requesting a pairing code."
 msgstr "Connect to the SSH host before requesting a pairing code."
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Connect to the SSH host before requesting a pairing code. Nothing was saved."
+msgstr "Connect to the SSH host before requesting a pairing code. Nothing was saved."
 
 #: src/main/hosts/sshLauncher.ts
 msgid "Connect to the SSH host before setting up desktop permissions."
@@ -1122,7 +1136,11 @@ msgstr "Sotto could not save the shortcut. Your previous keys are back in Hyprla
 msgid "Sotto could not seal this page from the network, so it is not shown."
 msgstr "Sotto could not seal this page from the network, so it is not shown."
 
-#: src/main/hosts/sshAskpass.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then add the host again."
+msgstr "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then add the host again."
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect."
 msgstr "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect."
 
@@ -1624,7 +1642,6 @@ msgstr "The host could not start. Check its installation and data folder on the 
 msgid "The host could not start. Nothing was saved. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account."
 msgstr "The host could not start. Nothing was saved. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account."
 
-#: src/main/agents/socketHostService.ts
 #: src/main/hosts/hostFailureWords.ts
 msgid "The host did not accept this protocol."
 msgstr "The host did not accept this protocol."
