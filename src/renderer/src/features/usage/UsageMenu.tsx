@@ -1,6 +1,7 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, MoreHorizontal } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 
 /**
  * A popup under its button, drawn over the room so the scrolling page never clips it. It opens with a press, Enter,
@@ -86,10 +87,12 @@ export function ChoiceMenu<T extends string>({ name, value, options, onChoose, a
   readonly onChoose: (value: T) => void
   readonly align?: 'start' | 'end'
 }): ReactNode {
+  const { t } = useLingui()
   const menu = usePopup(align)
   const current = options.find(option => option.value === value)?.label ?? ''
   return <>
-    <button ref={menu.button} type="button" className="usage-filter tt-focusable" aria-haspopup="listbox" aria-expanded={menu.open} aria-label={`${name}: ${current}`}
+    <button ref={menu.button} type="button" className="usage-filter tt-focusable" aria-haspopup="listbox" aria-expanded={menu.open}
+      aria-label={t({ message: `${name}: ${current}`, comment: 'A filter on the Usage page and its current choice: "Date range: Last 30 days"' })}
       onClick={() => (menu.open ? menu.close(false) : menu.setOpen(true))} onKeyDown={menu.onButtonKey}>
       <span>{current}</span><ChevronDown size={14} aria-hidden="true" />
     </button>

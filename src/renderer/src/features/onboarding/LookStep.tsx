@@ -1,4 +1,5 @@
 import React, { useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
@@ -40,6 +41,7 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
   const settingsRef = useRef(settings)
   settingsRef.current = settings
   const [saveFailed, setSaveFailed] = useState(false)
+  const { t } = useLingui()
 
   // A choice that cannot be saved falls back to the saved look, and says so.
   const choose = async (patch: Partial<AppearanceChoice> & SettingsPatch): Promise<void> => {
@@ -51,13 +53,13 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
   }
 
   const system = platform === 'darwin' ? 'macOS' : platform === 'linux' ? 'Linux' : 'Windows'
-  const modes = [['light', 'Light'], ['system', `Match ${system}`], ['dark', 'Dark']] as const
+  const modes = [['light', t({ message: 'Light', comment: 'Colour scheme' })], ['system', t`Match ${system}`], ['dark', t({ message: 'Dark', comment: 'Colour scheme' })]] as const
   const shownTheme = resolved === 'dark' ? shown.darkTheme : shown.lightTheme
 
   return (
     <section aria-labelledby="onboarding-heading">
       {heading}
-      <div className="onboarding-look__modes" role="radiogroup" aria-label="Appearance" onKeyDown={onRadioKey}>
+      <div className="onboarding-look__modes" role="radiogroup" aria-label={t`Appearance`} onKeyDown={onRadioKey}>
         {modes.map(([mode, label]) => (
           <button
             key={mode}
@@ -72,7 +74,7 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
           </button>
         ))}
       </div>
-      <div className="onboarding-look__themes" role="radiogroup" aria-label="Theme" onKeyDown={onRadioKey}>
+      <div className="onboarding-look__themes" role="radiogroup" aria-label={t`Theme`} onKeyDown={onRadioKey}>
         {BUILT_IN_THEMES.map(theme => {
           const { colors } = resolveThemeFor({ lightTheme: theme.id, darkTheme: theme.id, customThemes: [] }, resolved)
           const brand = themeBrand(colors, resolved, { appIcon: wearsAppIcon(theme.id) })
@@ -99,8 +101,8 @@ export function LookStep({ settings, platform, onUpdateSettings, heading }: Look
           )
         })}
       </div>
-      {saveFailed ? <p className="onboarding-recovery" role="alert">That look could not be saved. Your previous look is still on. Choose it again to retry.</p> : null}
-      <p className="onboarding-aside">Change it any time, or make your own theme, in Settings › Appearance.</p>
+      {saveFailed ? <p className="onboarding-recovery tt-paragraph" role="alert"><Trans>That look could not be saved. Your previous look is still on. Choose it again to retry.</Trans></p> : null}
+      <p className="onboarding-aside tt-paragraph"><Trans>Change it any time, or make your own theme, in Settings › Appearance.</Trans></p>
     </section>
   )
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { CircleAlert, RefreshCw } from 'lucide-react'
-import { useLingui } from '@lingui/react/macro'
+import { i18n as interfaceI18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { OpenRouterModelList } from '../../../shared/contracts'
 import type { OwnServer, OwnServersBridge } from '../../../shared/ownModelServers'
@@ -11,7 +13,8 @@ import { Field } from './Field'
 import { SegmentedControl } from './SegmentedControl'
 
 type Model = { readonly id: string; readonly name: string }
-const DEFAULT: Model = { id: '', name: 'Default' }
+/** Sotto's own choice, named in the interface language. */
+const defaultModel = (): Model => ({ id: '', name: interfaceI18n._(msg({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' })) })
 /** A model on one of the user's own servers (ADR-0136); `id` keys the row and never meets an OpenRouter slug. */
 type OwnModel = Model & { readonly own: OwnCleanupChoice; readonly serverName: string }
 type Option = Model | OwnModel
@@ -22,14 +25,14 @@ const MAX_ROWS = 200
 
 function failureCopy(reason: 'http' | 'network' | 'timeout'): string {
   return reason === 'http'
-    ? 'OpenRouter did not send its models. The saved choice still works. Try Refresh.'
-    : 'Could not reach OpenRouter. The saved choice still works. Try Refresh.'
+    ? interfaceI18n._(msg`OpenRouter did not send its models. The saved choice still works. Try Refresh.`)
+    : interfaceI18n._(msg`Could not reach OpenRouter. The saved choice still works. Try Refresh.`)
 }
 
 /** The models whose name or slug holds every word typed, Default first while nothing is typed. */
 export function matchModels(models: readonly Model[], query: string): Model[] {
   const words = query.toLowerCase().split(/\s+/u).filter(Boolean)
-  if (words.length === 0) return [DEFAULT, ...models].slice(0, MAX_ROWS)
+  if (words.length === 0) return [defaultModel(), ...models].slice(0, MAX_ROWS)
   return models.filter(model => {
     const text = `${model.name} ${model.id}`.toLowerCase()
     return words.every(word => text.includes(word))
@@ -72,7 +75,8 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
   const [models, setModels] = useState<readonly Model[] | null>(null)
   const [complete, setComplete] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
+  // Why the list could not be read, named in words only when it is shown, so a new interface language reaches it too.
+  const [failure, setFailure] = useState<'http' | 'network' | 'timeout' | null>(null)
   const [open, setOpen] = useState(false)
   const [above, setAbove] = useState(false)
   const [query, setQuery] = useState('')
@@ -86,7 +90,7 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
   const ownModel = ownChoice === null ? undefined : ownServer?.models.find(model => model.id === ownChoice.model)
   const chosen: Option = ownChoice !== null
     ? { id: ownKey(ownChoice), own: ownChoice, name: ownModel?.name ?? ownChoice.model, serverName: ownServer?.name ?? '' }
-    : settings.llmModel === null ? DEFAULT
+    : settings.llmModel === null ? defaultModel()
       : models?.find(model => model.id === settings.llmModel) ?? { id: settings.llmModel, name: settings.llmModel }
   // Only a whole list can say a model is gone; one cut short may hold it on a page not read.
   const gone = ownChoice === null && settings.llmModel !== null && models !== null && complete && !models.some(model => model.id === settings.llmModel)
@@ -97,9 +101,10 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
   const matches = useMemo((): Option[] => {
     const openRouter = matchModels(models ?? [], query)
     const own = ownOn ? matchOwnModels(servers ?? [], query) : []
-    // Default stays first; the user's own servers come before OpenRouter's long list.
-    return openRouter[0] === DEFAULT ? [DEFAULT, ...own, ...openRouter.slice(1)] : [...own, ...openRouter]
-  }, [models, servers, ownOn, query])
+    // Default stays first; the user's own servers come before OpenRouter's long list. No OpenRouter slug is empty.
+    return openRouter[0]?.id === '' ? [openRouter[0], ...own, ...openRouter.slice(1)] : [...own, ...openRouter]
+    // Default is named in the interface language, so a new language lists it again.
+  }, [models, servers, ownOn, query, i18n.locale])
 
   // The saved servers and measures are read from main, on this computer, never from a server. A list that could not be
   // read stays unread rather than empty, so a saved choice is not called gone; opening the list reads it again.
@@ -132,7 +137,7 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
     if (current !== request.current) return
     setLoading(false)
     if (result.ok) { setModels(result.models); setComplete(result.complete) }
-    else setFailure(failureCopy(result.reason))
+    else setFailure(result.reason)
   }
 
   // Opening is the only thing that reads the list: focus alone, as when tabbing past, asks OpenRouter nothing.
@@ -189,26 +194,28 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
     if (open) document.getElementById(`${id}-model-${active}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [id, open, active])
   const descriptionId = `${id}-description`
+  const chosenName = chosen.name
 
   return <>
     <div className="tt-field cleanup-model">
-      <label className="tt-field__label" htmlFor={`${id}-input`}>Cleanup model</label>
-      <p className="tt-field__description" id={descriptionId}>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</p>
+      <label className="tt-field__label" htmlFor={`${id}-input`}><Trans>Cleanup model</Trans></label>
+      <p className="tt-field__description tt-paragraph" id={descriptionId}><Trans>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</Trans></p>
       <div className="cleanup-model__control">
         <input ref={input} id={`${id}-input`} data-setting="cleanup-model" className="tt-input tt-focusable" type="text" role="combobox" autoComplete="off" spellCheck={false}
           aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-describedby={descriptionId}
           {...(open && matches[active] ? { 'aria-activedescendant': optionId(active) } : {})}
           value={open ? query : chosen.name}
-          placeholder={open ? 'Search models' : undefined}
+          placeholder={open ? t`Search models` : undefined}
           onClick={() => { if (!open) show() }} onBlur={close}
           onChange={event => show(event.currentTarget.value)}
           onKeyDown={onKeyDown} />
-        <button type="button" className="cleanup-model__refresh tt-focusable" aria-label="Refresh models" title="Refresh models" disabled={loading} onClick={() => void load()}>
+        <button type="button" className="cleanup-model__refresh tt-focusable" aria-label={t`Refresh models`} title={t`Refresh models`} disabled={loading} onClick={() => void load()}>
           <RefreshCw size={15} aria-hidden="true" />
         </button>
-        {open ? <ul className="cleanup-model__list" data-above={above || undefined} id={listId} role="listbox" aria-label="Cleanup models">
+        {open ? <ul className="cleanup-model__list" data-above={above || undefined} id={listId} role="listbox" aria-label={t`Cleanup models`}>
           {matches.map((model, index) => {
             const previous = matches[index - 1]
+            const slug = isOwn(model) ? model.own.model : '', server = isOwn(model) ? model.serverName : ''
             const heading = ownOn && isOwn(model) && (previous === undefined || !isOwn(previous)) ? t`Your own servers`
               : ownOn && !isOwn(model) && model.id !== '' && previous !== undefined && isOwn(previous) ? 'OpenRouter' : null
             return <React.Fragment key={model.id || 'default'}>
@@ -217,34 +224,34 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
                 aria-selected={model.id === chosen.id} data-active={index === active || undefined}
                 onMouseDown={event => { event.preventDefault(); pick(model) }} onMouseMove={() => setActive(index)}>
                 <span className="cleanup-model__name">{model.name}</span>
-                {isOwn(model) ? <span className="cleanup-model__slug">{t`${model.own.model} on ${model.serverName}`}</span>
-                  : model.id ? <span className="cleanup-model__slug">{model.id}</span> : <span className="cleanup-model__slug">Sotto’s choice</span>}
+                {isOwn(model) ? <span className="cleanup-model__slug">{t`${slug} on ${server}`}</span>
+                  : model.id ? <span className="cleanup-model__slug">{model.id}</span> : <span className="cleanup-model__slug"><Trans>Sotto’s choice</Trans></span>}
               </li>
             </React.Fragment>
           })}
           {ownOn && keyedServers ? <li className="cleanup-model__empty" role="presentation">{t`Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it.`}</li> : null}
-          {matches.length === 0 ? <li className="cleanup-model__empty" role="presentation">{loading ? 'Loading models…' : models === null ? 'No models yet.' : 'No model matches.'}</li> : null}
+          {matches.length === 0 ? <li className="cleanup-model__empty" role="presentation">{loading ? t`Loading models…` : models === null ? t`No models yet.` : t`No model matches.`}</li> : null}
         </ul> : null}
       </div>
     </div>
-    {failure === null && !gone ? null : <p className="settings-remote-status settings-remote-status--error" role="status">
-      <CircleAlert size={16} aria-hidden="true" />{failure ?? 'OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.'}
+    {failure === null && !gone ? null : <p className="settings-remote-status settings-remote-status--error tt-paragraph" role="status">
+      <CircleAlert size={16} aria-hidden="true" />{failure !== null ? failureCopy(failure) : t`OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.`}
     </p>}
     {ownChoice === null ? null : <OwnModelStatus
       words={ownGone ? { error: true, text: goneWords() }
         : ownKeyed ? { error: true, text: keyedWords() }
-        : measuring.state === 'measuring' ? { error: false, text: t`Measuring ${chosen.name}. Sotto cleans up a built-in sample on the server, never your dictation.` }
+        : measuring.state === 'measuring' ? { error: false, text: t`Measuring ${chosenName}. Sotto cleans up a built-in sample on the server, never your dictation.` }
         : measuring.state === 'refused' ? { error: true, text: measureRefusal(measuring.reason) }
         : tuning === undefined ? { error: false, text: t`Not measured yet. Measure again finds the fastest setting for this server.` }
-        : tuning.status === 'none-passed' ? { error: true, text: t`No setting passed the test cleanups on ${chosen.name}, so Mercury 2 cleans up instead. Change the server, then measure again.` }
+        : tuning.status === 'none-passed' ? { error: true, text: t`No setting passed the test cleanups on ${chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again.` }
         : { error: false, text: fastestWords(tuning.thinking, tuning.ms) }}
       measureLabel={t`Measure again`}
       measuring={measuring.state === 'measuring'}
       canMeasure={!ownGone && !ownKeyed}
       onMeasure={() => { void measure(ownChoice) }} />}
-    {ownChoice !== null ? null : <Field label="Mode" description="How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.">
-      <SegmentedControl setting="cleanup-mode" label="Mode" value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
-        options={[{ value: 'default', label: 'Default' }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
+    {ownChoice !== null ? null : <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
+      <SegmentedControl setting="cleanup-mode" label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
+        options={[{ value: 'default', label: t({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' }) }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
     </Field>}
   </>
 

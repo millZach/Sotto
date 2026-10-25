@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import type { UsageActivityAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
 import { NO_TOKENS, type TokenFigure } from './usagePresentation'
 
@@ -154,9 +156,9 @@ export interface TotalDay { readonly prompts: number; readonly input: number; re
 /** The Total view as it was before the split: prompts in the accent; tokens as input under output, or one line of both. */
 export function totalPlan(metric: ChartMetric, kind: ChartKind, days: readonly TotalDay[]): ChartPlan {
   const make = (key: string, name: string, tone: SeriesTone, values: number[]): ChartSeries => makeSeries(key, name, tone, values.map(wholeFigure))
-  if (metric === 'prompts') return plan([make('prompts', 'Prompts', 'strong', days.map(day => day.prompts))], kind)
-  if (kind === 'lines') return plan([make('tokens', 'Input and output', 'strong', days.map(day => day.input + day.output))], kind)
-  return plan([make('input', 'Input', 'input', days.map(day => day.input)), make('output', 'Output', 'output', days.map(day => day.output))], kind)
+  if (metric === 'prompts') return plan([make('prompts', t`Prompts`, 'strong', days.map(day => day.prompts))], kind)
+  if (kind === 'lines') return plan([make('tokens', t`Input and output`, 'strong', days.map(day => day.input + day.output))], kind)
+  return plan([make('input', t`Input`, 'input', days.map(day => day.input)), make('output', t`Output`, 'output', days.map(day => day.output))], kind)
 }
 
 export interface SplitInput {
@@ -190,7 +192,8 @@ export function splitPlan({ kind, choice, totals, values, slots, incomplete = fa
     const other = values === undefined ? zeros() : totals.map((total, index) => remainder(total, drawn.map(item => item.figures[index]!)))
     const named = choice.rest.map(item => item.name)
     if (choice.rest.length > 0 || sum(other.map(item => item.value)) > 0) {
-      series.push(makeSeries('other', choice.rest.length > 0 && !incomplete ? `Other (${choice.rest.length})` : 'Other', 'other', other,
+      const count = choice.rest.length
+      series.push(makeSeries('other', choice.rest.length > 0 && !incomplete ? t`Other (${count})` : t`Other`, 'other', other,
         named.length > 0 ? named.join(', ') : undefined))
     }
   }

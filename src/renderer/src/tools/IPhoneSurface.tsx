@@ -12,7 +12,8 @@ import { normalizeAddress, phonePage, useBrowserTasks, useThreadBrowser, type Br
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import { phonePlayerStore, usePhonePlayerOpen, type PhonePlayerStore } from './phonePlayerStore'
 import { ToolsChrome } from './ToolsChrome'
-import { shownCount, shownNotice } from './toolsWords'
+import { shownCount } from '../state/interfaceNumbers'
+import { shownNotice } from './toolsWords'
 import './iphoneSurface.css'
 
 export interface IPhoneSurfaceProps {

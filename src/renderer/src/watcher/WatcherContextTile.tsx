@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Shrink } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
@@ -10,7 +13,8 @@ import { useAgents } from '../agents/AgentContext'
 import type { WatcherRoom } from './watcherRoom'
 import { WatcherOwl } from './WatcherOwl'
 
-export const WATCHER_CONTEXT_LABEL = 'Watcher’s context and state'
+const COMPACT_FAILED = msg`Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.`
+
 /** How close to the compaction point Watcher's context is before the tile carries its dot and the panel says so. */
 const NEAR = 0.9
 
@@ -27,25 +31,35 @@ function contextFacts(context: RoomContext | null, provider: string | null) {
   const near = canCompact && !compacting && share !== null && share >= NEAR
   const point = compactAt === null ? null : formatTokenCount(compactAt)
   const said: string[] = []
-  if (compacting) said.push('Compacting Watcher’s conversation.')
+  if (compacting) said.push(i18n._(msg`Compacting Watcher’s conversation.`))
   else {
-    if (tokens === null) said.push('Its provider has not reported its context yet.')
-    if (!canCompact) said.push(`${provider ?? 'Its provider'} cannot compact, so each message rereads all of it.`)
-    else if (point !== null) said.push(`${near ? `Close to ${point}. ` : ''}Sotto compacts Watcher’s conversation once it passes ${point}, between turns.`)
+    if (tokens === null) said.push(i18n._(msg`Its provider has not reported its context yet.`))
+    if (!canCompact) said.push(provider === null ? i18n._(msg`Its provider cannot compact, so each message rereads all of it.`) : i18n._(msg`${provider} cannot compact, so each message rereads all of it.`))
+    else if (point !== null) {
+      if (near) said.push(i18n._(msg`Close to ${point}.`))
+      said.push(i18n._(msg`Sotto compacts Watcher’s conversation once it passes ${point}, between turns.`))
+    }
   }
   return { tokens, compactAt, canCompact, compacting, share, near, point, sentence: said.join(' ') }
 }
 
-/** One group of Watcher's state: its label, how many, and its items, or "None". */
 /** What one item waits on the user for, in the panel's words. */
 function waitingWords(item: RoomKept['waitingOnUser'][number]): string {
-  const what = item.waitsFor === 'question' ? 'Question' : item.waitsFor === 'permission' ? 'Permission request' : 'Prototype to review'
-  return item.delegatedThreadId === undefined ? what : `${what} in a thread it delegated to`
+  const delegated = item.delegatedThreadId !== undefined
+  switch (item.waitsFor) {
+    case 'question': return delegated ? i18n._(msg`Question in a thread it delegated to`) : i18n._(msg({ message: 'Question', comment: 'What a thread waits on the user for, in Watcher’s state' }))
+    case 'permission': return delegated ? i18n._(msg`Permission request in a thread it delegated to`) : i18n._(msg`Permission request`)
+    default: return delegated ? i18n._(msg`Prototype to review in a thread it delegated to`) : i18n._(msg`Prototype to review`)
+  }
 }
+
+/** One group of Watcher's state: its label, how many, and its items, or "None". */
 function StateGroup({ label, items }: { readonly label: string; readonly items: readonly ReactNode[] }): ReactNode {
+  const { t } = useLingui()
+  const count = items.length
   return <section className="watcher-context__group">
-    <h4>{items.length > 0 ? `${label}, ${items.length}` : label}</h4>
-    {items.length > 0 ? <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="watcher-context__none">None</p>}
+    <h4>{count > 0 ? t({ message: `${label}, ${count}`, comment: 'A group of Watcher’s state and how many items it holds' }) : label}</h4>
+    {count > 0 ? <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="watcher-context__none tt-paragraph">{t({ message: 'None', comment: 'A group of Watcher’s state with nothing in it' })}</p>}
   </section>
 }
 
@@ -57,11 +71,12 @@ function StateGroup({ label, items }: { readonly label: string; readonly items: 
  * app mark sits in the window's corner, the button wears Watcher's owl instead of the mark.
  */
 export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): ReactNode {
+  const { t } = useLingui()
   const agents = useAgents()
   const mac = useOptionalApp()?.platform === 'darwin'
   const [open, setOpen] = useState(false)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageDescriptor | null>(null)
   const sent = useRef(false)
   const tile = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -94,15 +109,18 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
     sent.current = true; setSending(true); setError(null)
     // The window's command lane answers null when main could not confirm the command.
     try {
-      if (await agents.command({ type: 'compact-thread', threadId }) === null) setError('Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.')
-    } catch { setError('Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.') }
+      if (await agents.command({ type: 'compact-thread', threadId }) === null) setError(COMPACT_FAILED)
+    } catch { setError(COMPACT_FAILED) }
     finally { sent.current = false; setSending(false) }
   }
 
-  const summary = facts.compacting ? 'Compacting.'
-    : facts.tokens === null ? 'Not reported yet.'
-    : facts.canCompact && facts.point !== null ? `${formatTokenCount(facts.tokens)} of ${facts.point}${facts.near ? ', close to the point' : ''}.`
-    : `${formatTokenCount(facts.tokens)}.`
+  const used = formatTokenCount(facts.tokens ?? 0)
+  const point = facts.point
+  const summary = facts.compacting ? t`Compacting.`
+    : facts.tokens === null ? t`Not reported yet.`
+    : facts.canCompact && point !== null ? (facts.near ? t`${used} of ${point}, close to the point.` : t`${used} of ${point}.`)
+    : `${used}.`
+  const label = t`Watcher’s context and state`
   const showBar = facts.canCompact && (facts.compacting || facts.share !== null)
   const fill = facts.compacting ? 'busy' : facts.near ? 'near' : undefined
   const kept = state?.state
@@ -121,7 +139,7 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
 
   // Escape answers on the tile as well as in the panel: Shift+Tab back to the tile leaves the panel open.
   return <div className="watcher-context" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
-    <button ref={tile} type="button" className="watcher-head__tile watcher-context__tile tt-focusable" aria-label={WATCHER_CONTEXT_LABEL} title={WATCHER_CONTEXT_LABEL}
+    <button ref={tile} type="button" className="watcher-head__tile watcher-context__tile tt-focusable" aria-label={label} title={label}
       aria-describedby={summaryId} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
       {mac ? <WatcherOwl size={24} /> : <SottoMark className="thread-nav__tile" />}
       {showBar ? <span className="watcher-context__bar" aria-hidden="true">
@@ -132,33 +150,33 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
     </button>
     {open ? <div ref={panel} id={panelId} className="watcher-context__panel" role="dialog" aria-labelledby={headingId} tabIndex={-1}
       onBlur={event => { const next = event.relatedTarget as Node | null; if (next !== null && !event.currentTarget.contains(next) && next !== tile.current) setOpen(false) }}>
-      <h2 id={headingId}>Watcher’s context</h2>
+      <h2 id={headingId}><Trans>Watcher’s context</Trans></h2>
       {facts.tokens !== null ? <p className="watcher-context__figure">
         <b data-near={facts.near || undefined}>{formatTokenCount(facts.tokens)}</b>
-        <span>{facts.canCompact && facts.point !== null ? `context, compacts at ${facts.point}` : 'context'}</span>
+        <span>{facts.canCompact && point !== null ? t`context, compacts at ${point}` : t({ message: 'context', comment: 'Follows a token count: how much of the model’s context Watcher uses' })}</span>
       </p> : null}
       {facts.canCompact && facts.compactAt !== null && (facts.compacting || facts.tokens !== null) ? <div className="watcher-context__meter" role="meter"
-        aria-label="Watcher’s context" aria-valuemin={0} aria-valuemax={facts.compactAt} aria-valuenow={facts.tokens ?? 0}
-        aria-valuetext={facts.compacting ? 'Compacting' : `${formatTokenCount(facts.tokens ?? 0)} of ${facts.point}`}>
+        aria-label={t`Watcher’s context`} aria-valuemin={0} aria-valuemax={facts.compactAt} aria-valuenow={facts.tokens ?? 0}
+        aria-valuetext={facts.compacting ? t`Compacting` : t`${used} of ${point}`}>
         <i data-fill={fill} style={facts.compacting ? undefined : { width: `${Math.round((facts.share ?? 0) * 100)}%` }} />
       </div> : null}
-      {facts.sentence !== '' ? <p className="watcher-context__said">{facts.sentence}</p> : null}
+      {facts.sentence !== '' ? <p className="watcher-context__said tt-paragraph">{facts.sentence}</p> : null}
       <div className="watcher-context__actions">
         <Button variant="secondary" disabled={!canPress} onClick={() => void compact()}
-          title={!facts.canCompact ? `${provider ?? 'Its provider'} cannot compact` : facts.compacting ? 'Compacting now' : running ? 'Waits for Watcher’s turn to end' : undefined}>
-          <Shrink size={14} aria-hidden="true" />Compact context
+          title={!facts.canCompact ? (provider === null ? t`Its provider cannot compact` : t`${provider} cannot compact`) : facts.compacting ? t`Compacting now` : running ? t`Waits for Watcher’s turn to end` : undefined}>
+          <Shrink size={14} aria-hidden="true" /><Trans>Compact context</Trans>
         </Button>
       </div>
-      {error ? <p className="watcher-context__error" role="alert">{error}</p> : null}
+      {error ? <p className="watcher-context__error tt-paragraph" role="alert">{i18n._(error)}</p> : null}
       <div className="watcher-context__state">
-        <h3>Watcher’s state</h3>
+        <h3><Trans>Watcher’s state</Trans></h3>
         <div className="watcher-context__groups">
-          <StateGroup label="Watching" items={watching} />
-          <StateGroup label="Waiting on you" items={waiting} />
-          {state?.state?.unread ? <p className="watcher-context__said" role="status">Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</p> : <>
-            <StateGroup label="Decisions it noted" items={openLines(groups.decisions)} />
-            <StateGroup label="Your rules" items={openLines(groups.rules)} />
-            <StateGroup label="Issues filed" items={openLines(groups.issues)} />
+          <StateGroup label={t({ message: 'Watching', comment: 'The threads Watcher watches, a group of its state' })} items={watching} />
+          <StateGroup label={t`Waiting on you`} items={waiting} />
+          {state?.state?.unread ? <p className="watcher-context__said tt-paragraph" role="status"><Trans>Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</Trans></p> : <>
+            <StateGroup label={t`Decisions it noted`} items={openLines(groups.decisions)} />
+            <StateGroup label={t`Your rules`} items={openLines(groups.rules)} />
+            <StateGroup label={t`Issues filed`} items={openLines(groups.issues)} />
           </>}
         </div>
       </div>
