@@ -408,16 +408,20 @@ export class DelegationService {
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) {
       // A start refused here never runs, so the branch landed for it is let go.
-      if (branch) await this.options.branchMoves?.forgetHere({ projectId: branch.projectId, moveId: branch.moveId }).catch(() => undefined)
+      await this.letGo(branch)
       return error instanceof Refusal ? await this.refused(threadId, input, error.result)
         : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
     const record = admitted.record
-    if (admitted.retry) return this.result(record)
+    // A call that raced the first one with the same retry key copied a branch of its own, which no thread will use.
+    if (admitted.retry) { await this.letGo(branch); return this.result(record) }
     const start = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
     this.calling.add(record.id)
     try {
       await this.execute(record, input.brief, start)
+      // A new thread that could not be made owns no branch, and nothing started from it.
+      const made = !admitted.start || this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)
+      if (!made) await this.letGo(branch)
       // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so. The
       // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
       // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
@@ -435,7 +439,7 @@ export class DelegationService {
       }
       const answer = await this.result(this.record(record.id)!)
       return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {},
-        ...admitted.start && branch ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
+        ...admitted.start && branch && made ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -704,6 +708,10 @@ export class DelegationService {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
     if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
+  }
+  /** Lets go of the incoming ref a branch copy landed for a start that will not use it. Best effort. */
+  private async letGo(branch: { readonly moveId: string; readonly projectId: string } | undefined): Promise<void> {
+    if (branch) await this.options.branchMoves?.forgetHere({ projectId: branch.projectId, moveId: branch.moveId }).catch(() => undefined)
   }
   /** The delegation `callerId` already made under `retryKey`, if any. */
   private retried(callerId: string, retryKey: string | undefined): DelegationRecord | undefined {

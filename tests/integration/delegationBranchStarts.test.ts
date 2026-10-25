@@ -4,7 +4,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { branchMoveWords } from '../../src/shared/branchMoves'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture } from '../fixtures/delegationFixture'
@@ -81,4 +81,31 @@ it('finds a retry without walking the record, however many delegations it holds 
   f.ok(await f.start({ retry_key: randomUUID() }))
   expect(counting).toBe(false)
   expect(reads).toBe(0)
+})
+
+it('lets go of the branch a racing retry landed, so one start leaves one incoming ref (#1033)', async () => {
+  const f = await fixture()
+  const retryKey = randomUUID()
+  // Both calls copy the branch before either is admitted; admission takes the first and answers the second as its retry.
+  const answers = await Promise.all([f.start({ retry_key: retryKey }), f.start({ retry_key: retryKey })])
+  expect(answers.map(answer => answer.status)).toEqual(['ok', 'ok'])
+  expect(new Set(answers.map(answer => (answer as ReturnType<typeof f.ok>).delegation.id)).size).toBe(1)
+  await f.worktreeOf((answers[0] as ReturnType<typeof f.ok>).delegation.thread)
+  await expect.poll(() => git(f.folder, 'for-each-ref', '--format=%(refname)', 'refs/sotto').split('\n').filter(Boolean).length).toBe(1)
+})
+
+it('lets go of the branch and says nothing of a start when the new thread could not be made (#1033)', async () => {
+  const f = await fixture()
+  const command = f.control.commandFromDelegation.bind(f.control)
+  const failing = vi.spyOn(f.control, 'commandFromDelegation').mockImplementation(async (request, ...rest) => {
+    if (request.type !== 'create-thread') return command(request, ...rest)
+    const answer = await command({ ...request, projectId: 'synthetic-missing-project' }, ...rest)
+    expect(answer.error).not.toBeNull()
+    return answer
+  })
+  try {
+    const answer = await f.start()
+    expect(answer).not.toHaveProperty('startedFrom')
+    expect(git(f.folder, 'for-each-ref', 'refs/sotto')).toBe('')
+  } finally { failing.mockRestore() }
 })
