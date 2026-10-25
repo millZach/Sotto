@@ -113,7 +113,7 @@ export class SubagentStore {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);')
   }
   /**
-   * Cleared threads' rosters go whole (ADR-0126): their rows, tasks, results and classifications, in one transaction whose
+   * Cleared threads' rosters go whole (ADR-0140): their rows, tasks, results and classifications, in one transaction whose
    * commit waits for the disk, then one scrub. Their identities are remembered as erased, as turning history off does.
    */
   forgetMany(threadIds: readonly string[]): void {

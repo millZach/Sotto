@@ -26,7 +26,7 @@ export interface WorktreeCleanupDependencies {
   /** The Auto-settle merged threads setting, read at every sweep; absent, no thread is settled on its own. */
   readonly autoSettleMerged?: () => boolean
   /**
-   * Clear settled threads after (ADR-0126), given only while the Owl feature is on: the setting, read at every sweep, and
+   * Clear settled threads after (ADR-0140), given only while the Owl feature is on: the setting, read at every sweep, and
    * the coordinator's clear. It runs after the folders, so a folder a rule removes first is not read twice.
    */
   readonly clearSettledThreads?: { readonly afterDays: () => number | null; readonly clear: (days: number) => Promise<void> }

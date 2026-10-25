@@ -467,7 +467,7 @@ export const worktreeReclaimPreviewSchema = z.object({
 }).strict()
 export type WorktreeReclaimPreview = z.infer<typeof worktreeReclaimPreviewSchema>
 /**
- * What Delete thread… shows before it asks (ADR-0126): why the thread is kept, or null when it may go, and, for a thread
+ * What Delete thread… shows before it asks (ADR-0140): why the thread is kept, or null when it may go, and, for a thread
  * with a worktree folder of its own, what removing that folder would take, so the window can List and tick ignored items
  * and nested work the way Remove worktree does (ADR-0041). Null when the thread has no folder of its own.
  */
@@ -733,7 +733,7 @@ export const agentClientHostSchema = z.object({ hostId: z.uuid(), connected: z.b
   clientUpdates: z.array(providerClientUpdateSchema).max(PROVIDER_COUNT).optional(), clientUpdateRun: clientUpdateRunSchema.optional(),
   /** The host lists `pull-request-babysit`: the Pull request surface offers Babysit pull request on its threads (ADR-0061 decision 11). */
   pullRequestBabysit: z.literal(true).optional(),
-  /** The host deletes its settled threads when asked: it lists `thread-delete` (ADR-0126 decision 7). Absent, Delete thread… is off. */
+  /** The host deletes its settled threads when asked: it lists `thread-delete` (ADR-0140 decision 7). Absent, Delete thread… is off. */
   threadDelete: z.literal(true).optional(),
   /** Where a new project goes on this host, in its own format, for Settings → Threads' row per computer (ADR-0074). */
   projectsDirectory: z.string().max(4_096).optional(),
@@ -919,7 +919,7 @@ export const providerUpgradeSchema = z.object({ recoveryPath: z.string(), migrat
 export const agentStateSchema = z.object({
   legacyManagement: z.boolean().optional(),
   worktreeReclaimPreview: worktreeReclaimPreviewSchema.optional(),
-  /** The answers of `preview-delete-thread`, `preview-clear-threads` and `clear-threads` (ADR-0126), on that reply alone. */
+  /** The answers of `preview-delete-thread`, `preview-clear-threads` and `clear-threads` (ADR-0140), on that reply alone. */
   threadDeletePreview: threadDeletePreviewSchema.optional(),
   threadClearPreview: threadClearPreviewSchema.optional(),
   threadClearResult: threadClearResultSchema.optional(),
@@ -1253,12 +1253,12 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settle-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('restore-thread'), threadId: id }).strict(),
   /**
-   * Clearing settled threads (ADR-0126), an Owl feature. `preview-delete-thread` says whether one settled thread may be
+   * Clearing settled threads (ADR-0140), an Owl feature. `preview-delete-thread` says whether one settled thread may be
    * deleted and what its own worktree would take; `delete-thread` deletes it, with the same confirmations Remove worktree
    * takes for its folder. `preview-clear-threads` lists this computer's settled threads quiet longer than `olderThanDays`
    * (0 is any age) that would go and those kept; `clear-threads` deletes those of `threadIds` that still qualify. Each is
    * checked again as it is deleted, and nothing can be taken back. Unlike Remove worktree, `delete-thread` takes no answer
-   * to uncommitted changes: a thread whose worktree has them is kept (ADR-0126 decision 3).
+   * to uncommitted changes: a thread whose worktree has them is kept (ADR-0140 decision 3).
    */
   z.object({ type: z.literal('preview-delete-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('delete-thread'), threadId: id, confirmedIgnored: z.array(z.string()).optional(), confirmedItems: z.array(z.object({ path: z.string(), fileCount: z.number().int().nonnegative() }).strict()).optional(), confirmedRepositories: z.array(z.object({ path: z.string(), changeCount: z.number().int().nonnegative(), unpushedCommitCount: z.number().int().nonnegative().optional(), kind: z.enum(['worktree', 'repository']) }).strict()).optional() }).strict(),

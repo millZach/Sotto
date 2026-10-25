@@ -883,7 +883,7 @@ export class AgentControl {
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
   /** Threads already asked about this run, so a failure is not retried on every provider frame. */
   private readonly titled = new Set<string>()
-  /** Clearing commands and the automatic rule, one at a time (ADR-0126). */
+  /** Clearing commands and the automatic rule, one at a time (ADR-0140). */
   private clearing: Promise<unknown> = Promise.resolve()
   private readonly deletedListeners = new Set<(threadIds: readonly string[]) => void>()
   private readonly titleWrites = new Set<Promise<void>>()
@@ -950,7 +950,7 @@ export class AgentControl {
     installedProviders?: () => Promise<readonly ProviderId[]>
     /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, read once at start. Absent fails closed. */
     threadStartsEnabled?: boolean
-    /** Clearing settled threads (ADR-0126): the Owl list's answer, read once at start. Absent fails closed. */
+    /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent fails closed. */
     clearThreadsEnabled?: boolean
     /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
     logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
@@ -1251,7 +1251,7 @@ export class AgentControl {
     void this.persist().catch(() => undefined)
   }
   /**
-   * Called with the IDs of threads deleted on this host (ADR-0126), once their records are gone, so a service that keeps
+   * Called with the IDs of threads deleted on this host (ADR-0140), once their records are gone, so a service that keeps
    * something of them (delegation, answer drafts) lets it go too.
    */
   onThreadsDeleted(listener: (threadIds: readonly string[]) => void): () => void {
@@ -1266,7 +1266,7 @@ export class AgentControl {
       pending: id => this.hasPendingThreadWork(id) || this.outbox.some(item => item.threadId === id),
       watched: id => watched.has(id) }
   }
-  /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0126 decision 3). */
+  /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0140 decision 3). */
   private clearHold(threadId: string, facts = this.clearFacts()): ThreadClearKeptReason | null {
     return threadClearHold(this.state.host.threads.find(thread => thread.id === threadId), facts)
   }
@@ -1279,7 +1279,7 @@ export class AgentControl {
     return new Map(this.state.host.threads.map(thread => [thread.id, { title: thread.title.slice(0, 512), projectTitle: (projects.get(thread.projectId) ?? '').slice(0, 512) }]))
   }
   /**
-   * This host's settled threads quiet longer than `days`, oldest first, with when each went quiet (ADR-0126 decision 2).
+   * This host's settled threads quiet longer than `days`, oldest first, with when each went quiet (ADR-0140 decision 2).
    * Hidden threads are not among them: they are not this run's to show or clear.
    */
   private settledThreadsOlderThan(days: number): { thread: AgentThread; quietSince: number }[] {
@@ -1354,7 +1354,7 @@ export class AgentControl {
   }
   /**
    * Deletes those of `threadIds` that still qualify: settled, quiet longer than `olderThanDays`, and kept back by nothing
-   * (ADR-0126). Each is checked again as it is deleted. `automatic` is the rule's run, which says nothing on screen.
+   * (ADR-0140). Each is checked again as it is deleted. `automatic` is the rule's run, which says nothing on screen.
    */
   private async clearThreads(threadIds: readonly string[], olderThanDays: number, automatic: boolean): Promise<AgentState> {
     const host = this.dependencies.host
@@ -1380,7 +1380,7 @@ export class AgentControl {
     return this.clearReply({ error: null, threadClearResult: { cleared: count, kept: result.kept.slice(0, THREAD_CLEAR_MAX).map(item => this.clearKept(item, titles)) } })
   }
   /**
-   * Clear settled threads after (ADR-0126 decision 2): this host's settled threads quiet longer than `days` are cleared on
+   * Clear settled threads after (ADR-0140 decision 2): this host's settled threads quiet longer than `days` are cleared on
    * their own. It runs nothing while the Owl feature is off, and says nothing on screen; the log has the count.
    */
   clearSettledThreads(days: number): Promise<void> {
@@ -1394,7 +1394,7 @@ export class AgentControl {
     try { this.dependencies.logClear?.(event, detail) } catch { /* Logging never stops a clear. */ }
   }
   /**
-   * What the coordinator kept of deleted threads goes too (ADR-0126 decision 4): their drafts, delivery receipts, queued
+   * What the coordinator kept of deleted threads goes too (ADR-0140 decision 4): their drafts, delivery receipts, queued
    * wake-ups and queue receipts, attachment previews, and the composer when it was theirs.
    * Listeners then forget their own records of them.
    */

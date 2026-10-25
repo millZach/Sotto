@@ -162,7 +162,7 @@ describe('retained subagent roster', () => {
     store.close(); store.open()
     expect(store.assignments({ threadId: 'thread', agentId: 'agent' }).assignments[0]!.result).toBe('Newly retained result')
   })
-  it('forgets cleared threads’ rosters whole, tasks and results included, and keeps the rest (ADR-0126)', async () => {
+  it('forgets cleared threads’ rosters whole, tasks and results included, and keeps the rest (ADR-0140)', async () => {
     const { store, root } = await fixture()
     store.ingest('cleared', [observation({ prompt: 'Cleared-prompt-marker', status: 'completed', completedAt: at(1), message: 'Cleared-result-marker' })])
     store.ingest('kept', [observation({ prompt: 'Kept-prompt-marker' })])

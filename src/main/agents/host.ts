@@ -335,15 +335,15 @@ export interface AgentHost {
   dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
   /**
-   * A cleared thread is gone from the adapter (ADR-0126): its process, if it has one, is stopped, its alias record and
+   * A cleared thread is gone from the adapter (ADR-0140): its process, if it has one, is stopped, its alias record and
    * every per-thread record the adapter keeps for it are removed and saved, and its next snapshots leave it out. Wrappers
    * translate the Sotto thread ID to the adapter's own, as for every other call. The provider's own transcript is kept.
    * Resolves once the removal is on disk; a thread the adapter does not hold resolves at once.
    */
   forgetThread?(threadId: string): Promise<void>
-  /** Why deleting this thread is held back by the workspace, and its own worktree's facts (ADR-0126). WorkspaceHost's. */
+  /** Why deleting this thread is held back by the workspace, and its own worktree's facts (ADR-0140). WorkspaceHost's. */
   previewThreadDeletion?(threadId: string, automatic?: boolean): Promise<{ kept: ThreadClearKeptReason | null; worktree: WorktreeReclaimPreview | null }>
-  /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0126). WorkspaceHost's. */
+  /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0140). WorkspaceHost's. */
   deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
     readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
   /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */

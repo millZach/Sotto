@@ -897,7 +897,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     attachAnyFile: owlFeatures['attach-any-file'],
-    // Clearing settled threads (ADR-0126): Owl's answer, read once here. The log names the event and a count or a reason's code.
+    // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
     ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
@@ -976,7 +976,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
-    // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0126).
+    // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
   })
   quitHandles.hostRouter = hostRouter
@@ -1152,7 +1152,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     return localRuntime?.agentHost.dormantThreadIds?.().includes(key?.id ?? owner.ownerId) ?? false
   }, () => requestDraftWatcherOwnerIds(agentControl, () => localRuntime?.agentHost.dormantThreadIds?.(), hostRouter))
   await requestDrafts.start()
-  // This computer's deleted threads take their answer drafts too, under either name the window gave them (ADR-0126).
+  // This computer's deleted threads take their answer drafts too, under either name the window gave them (ADR-0140).
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)

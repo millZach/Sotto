@@ -322,7 +322,7 @@ export class OpenCodeHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
-  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0140). */
   private aliasesLoaded = false
   /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
   private readonly forgottenAliasIds = new Set<string>()
@@ -475,7 +475,7 @@ export class OpenCodeHost implements AgentHost {
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(structuredClone(this.aliases)); return this.writing }
   /**
-   * ADR-0126: stop the thread's own server if it has one, remove its alias and every per-thread record this
+   * ADR-0140: stop the thread's own server if it has one, remove its alias and every per-thread record this
    * adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store
    * before this removal reaches disk (see there).
    */

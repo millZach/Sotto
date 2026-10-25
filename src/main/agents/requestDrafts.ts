@@ -318,7 +318,7 @@ export class RequestDraftService {
   }
 
   /**
-   * Cleared threads' answer drafts and their retired answers go (ADR-0126): every form and ledger entry whose thread owner
+   * Cleared threads' answer drafts and their retired answers go (ADR-0140): every form and ledger entry whose thread owner
    * is one of `ownerIds`, as the window names them.
    */
   forgetThreads(ownerIds: ReadonlySet<string>): Promise<void> {

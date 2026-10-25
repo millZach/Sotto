@@ -296,7 +296,7 @@ export class DesktopHostRouter {
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
     /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
     heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
-    /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0126). */
+    /** Told the window's keys of threads a paired host deleted, so what this computer kept of them goes too (ADR-0140). */
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
     attachAnyFile?: boolean } = {}) {
@@ -672,7 +672,7 @@ export class DesktopHostRouter {
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdates ? { clientUpdates: original.clientUpdates } : {}),
           ...((connection.kind === 'local' || connection.offersClientUpdates?.()) && original.clientUpdateRun ? { clientUpdateRun: original.clientUpdateRun } : {}),
           ...(connection.offersBabysitting?.() ? { pullRequestBabysit: true as const } : {}),
-          // Delete thread… is on only for a host that deletes its threads (ADR-0126 decision 7).
+          // Delete thread… is on only for a host that deletes its threads (ADR-0140 decision 7).
           ...(connection.service.supportsThreadDelete === true ? { threadDelete: true as const } : {}),
           projectsDirectory: original.configuration.projectsDirectory,
           // This computer may always answer its own host; a remote one says so in the shell it sends this client.
@@ -1114,7 +1114,7 @@ export class DesktopHostRouter {
       if (left.length) this.notice = { message: dismissLeft(left) }
       return this.shell()
     }
-    // Clear now acts on this computer's own threads, whichever host is selected (ADR-0126 decision 7).
+    // Clear now acts on this computer's own threads, whichever host is selected (ADR-0140 decision 7).
     if (type === 'preview-clear-threads' || type === 'clear-threads') return this.clearLocalThreads(input, client)
     const { connection, command, hostNamed } = this.route(input)
     if (this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
@@ -1240,13 +1240,13 @@ export class DesktopHostRouter {
     return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
   }
-  /** A clearing or deleting command's answer (ADR-0126): the shell as it is now, built only when one answers, with its outcome. */
+  /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {
     const shell = this.shell()
     return { ...withoutHistory ? agentShell(shell) : shell, ...outcome }
   }
   /**
-   * Clear now (ADR-0126): this computer's own settled threads, listed or cleared by its own coordinator, with every thread ID
+   * Clear now (ADR-0140): this computer's own settled threads, listed or cleared by its own coordinator, with every thread ID
    * in the answer as this window's key. Threads the window names on another host are not this computer's and are left.
    */
   private async clearLocalThreads(input: unknown, client: ClientIdentity): Promise<AgentState> {

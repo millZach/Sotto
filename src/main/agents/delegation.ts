@@ -1364,7 +1364,7 @@ export class DelegationService {
     if (this.links.size > RECORDS_MAX) for (const threadId of [...this.links.keys()].slice(0, this.links.size - RECORDS_MAX)) if (!kept.has(threadId)) this.links.delete(threadId)
   }
   /**
-   * Cleared threads leave the record (ADR-0126 decision 4): every finished delegation either side of them, their links,
+   * Cleared threads leave the record (ADR-0140 decision 4): every finished delegation either side of them, their links,
    * their turn roots and the refusals they were told. A delegation still open is kept: clearing never takes a thread
    * whose delegated threads are working, so one is left only by a race, and its outcome still needs its record.
    */

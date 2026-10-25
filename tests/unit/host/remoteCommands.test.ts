@@ -5,7 +5,7 @@ import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agent
 import { HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
-// Clear now and its preview act on the computer whose Settings set them (ADR-0126 decision 7).
+// Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
 const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
@@ -190,7 +190,7 @@ describe('remote command allow-list', () => {
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread' }).success).toBe(true)
     expect(hostRequestSchema.safeParse({ ...base, op: 'start-handover', threadId: 'thread', text: 'words' }).success).toBe(false)
   })
-  it('deletes a thread only on a listener that offers thread-delete, and only for a client that may answer (ADR-0126)', () => {
+  it('deletes a thread only on a listener that offers thread-delete, and only for a client that may answer (ADR-0140)', () => {
     const remove = { type: 'delete-thread', threadId: 'thread' } as AgentCommand
     const preview = { type: 'preview-delete-thread', threadId: 'thread' } as AgentCommand
     // A host that does not offer it refuses both, whatever the client's policy.

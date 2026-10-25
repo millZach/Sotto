@@ -3,7 +3,7 @@ import { delegatedThreadsBelow } from '../../shared/delegation'
 import { isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 
-/** What the coordinator knows of one thread beside its record, for the clearing check (ADR-0126 decision 3). */
+/** What the coordinator knows of one thread beside its record, for the clearing check (ADR-0140 decision 3). */
 export interface ThreadClearFacts {
   readonly threads: readonly AgentThread[]
   /** The threads that delegated to another, read once for a whole list (`threadDelegators`). */
@@ -33,7 +33,7 @@ export function threadDelegators(threads: readonly Pick<AgentThread, 'delegatedB
   return new Set(threads.flatMap(thread => thread.delegatedBy === undefined ? [] : [thread.delegatedBy]))
 }
 /**
- * Why the coordinator keeps a thread back from clearing, or null (ADR-0126 decision 3): hidden, not settled, working,
+ * Why the coordinator keeps a thread back from clearing, or null (ADR-0140 decision 3): hidden, not settled, working,
  * waiting on the user, something queued or unknown, an open pull request of its own or of a thread it delegated to, a
  * delegated thread not at rest, babysat, or watched. The worktree's own reasons are the workspace's, read from the folder.
  */

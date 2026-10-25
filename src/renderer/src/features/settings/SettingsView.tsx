@@ -731,7 +731,7 @@ export function SettingsView({
                   <Toggle setting="browser-without-asking" label={t`Let agents use the browser without asking`} checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description={t`Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.`} />
                   <Toggle setting="visuals-in-threads" label={t`Let agents draw visuals in threads`} checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description={t`Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.`} />
                 </SettingsGroup>
-                {/* ADR-0126: an Owl feature. Last on the page, since what it does cannot be taken back. */}
+                {/* ADR-0140: an Owl feature. Last on the page, since what it does cannot be taken back. */}
                 {clearThreadsOn ? <ClearThreadsSettings settings={settings} onSave={save} onNotice={text => setNotice({ text, error: false })} /> : null}
               </Card>
 

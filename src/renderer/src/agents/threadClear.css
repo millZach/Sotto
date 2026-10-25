@@ -1,4 +1,4 @@
-/* Clearing settled threads (ADR-0126): Settings' Clear now row, Clear settled threads and Delete thread…. */
+/* Clearing settled threads (ADR-0140): Settings' Clear now row, Clear settled threads and Delete thread…. */
 
 /* Clear now: its words and age on the left, the button that opens the list on the right, as other Settings rows sit. */
 .thread-clear-now { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 20px; }

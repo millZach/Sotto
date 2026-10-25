@@ -386,7 +386,7 @@ export class FollowupStore {
     return items.filter(item => item.wakeUp && item.news?.some(isWatcherNews) && this.active(item.threadId) && !this.dormant.has(item.id))
   }
   /**
-   * Cleared threads' queue goes (ADR-0126): a wake-up still waiting for one and every receipt of what was sent to it. Clearing
+   * Cleared threads' queue goes (ADR-0140): a wake-up still waiting for one and every receipt of what was sent to it. Clearing
    * never takes a thread with a follow-up of the user's queued, so nothing the user wrote waits here.
    */
   forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {

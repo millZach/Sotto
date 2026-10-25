@@ -83,7 +83,7 @@ export interface AgentRuntimeOptions {
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
-  /** Clearing settled threads (ADR-0126): the Owl list's answer, read once at start. Absent, nothing is deleted. */
+  /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
   clearLog?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
@@ -319,7 +319,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {} })
-    // A cleared thread's finished delegations and links go with it (ADR-0126 decision 4).
+    // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4).
     const record = delegation
     agentControl.onThreadsDeleted(threadIds => { void record.forgetThreads(new Set(threadIds)) })
   }
@@ -338,7 +338,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
-  // Clear settled threads after (ADR-0126) rides the same hour, on the computer whose setting it is, and only on Owl.
+  // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl.
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
     ...options.clearThreadsEnabled === true ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays, clear: (days: number) => agentControl.clearSettledThreads(days) } } : {},

@@ -158,7 +158,7 @@ export class AttachmentPreviews {
     await this.store.write({ version: this.dormant.length ? this.savedVersion : 2, entries })
     this.dirty = false
   }
-  /** Cleared threads' previews go at once (ADR-0126); the attachment sweep after lets go of the images nothing else names. */
+  /** Cleared threads' previews go at once (ADR-0140); the attachment sweep after lets go of the images nothing else names. */
   forgetThreads(threadIds: ReadonlySet<string>): Promise<void> {
     return this.enqueue(async () => {
       const before = this.entries.length

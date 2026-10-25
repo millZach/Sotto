@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 
-// ADR-0126: a cleared thread's own app-server is stopped, its alias is removed from disk, and its next snapshot
+// ADR-0140: a cleared thread's own app-server is stopped, its alias is removed from disk, and its next snapshot
 // leaves it out, while another thread's own alias and session are untouched.
 
 const fixtures: Awaited<ReturnType<typeof codexFixture>>[] = []
@@ -23,7 +23,7 @@ async function fixture() {
   return { f, create }
 }
 
-describe('Codex forgetThread (ADR-0126)', () => {
+describe('Codex forgetThread (ADR-0140)', () => {
   it('stops the thread’s own app-server, drops its alias and leaves it out of the next snapshot, keeping the other thread', async () => {
     const { f, create } = await fixture()
     const gone = await create('Gone'), kept = await create('Kept')

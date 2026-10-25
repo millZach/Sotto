@@ -170,7 +170,7 @@ export function worktreeListedPaths(preview: Pick<WorktreeReclaimPreview, 'ignor
 
 /**
  * ADR-0041's List and tick: the ignored items and nested work a worktree folder holds, and the tick that agrees to delete
- * them with it. Remove worktree and Delete thread… (ADR-0126) both ask it. Nothing is drawn for a folder with none.
+ * them with it. Remove worktree and Delete thread… (ADR-0140) both ask it. Nothing is drawn for a folder with none.
  */
 export function WorktreeFilesToTick({ preview, tickable, acknowledged, onAcknowledge }: {
   readonly preview: WorktreeReclaimPreview

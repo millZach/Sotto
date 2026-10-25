@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { AgentProject, AgentThread } from './agents'
 
 /**
- * Clearing settled threads (ADR-0126): what the commands, the confirmation and the automatic rule share. Main works out
+ * Clearing settled threads (ADR-0140): what the commands, the confirmation and the automatic rule share. Main works out
  * every list and checks each thread again as it is deleted; the window only shows them.
  */
 
@@ -18,7 +18,7 @@ export type ClearSettledThreadsAfterDays = z.infer<typeof clearSettledThreadsAft
 export const THREAD_CLEAR_MAX = 1_000
 
 /**
- * Why a settled thread is kept back (ADR-0126 decision 3), as a code the window words with `threadClearKeptWords` and the
+ * Why a settled thread is kept back (ADR-0140 decision 3), as a code the window words with `threadClearKeptWords` and the
  * log names as it is. `worktree-error` is a worktree Sotto tried to remove and could not, for a reason the other codes do
  * not cover: a folder with no branch checked out, or one Git refused.
  */
@@ -69,7 +69,7 @@ const timeOf = (value: string | null | undefined): number | undefined => {
   return Number.isFinite(time) ? time : undefined
 }
 /**
- * When a settled thread went quiet, in milliseconds (ADR-0126 decision 2): the later of the settle that applies, its own
+ * When a settled thread went quiet, in milliseconds (ADR-0140 decision 2): the later of the settle that applies, its own
  * or else its project's, and its last activity. Undefined for a thread that is not settled.
  */
 export function threadQuietSince(thread: Pick<AgentThread, 'workspaceSettledAt' | 'updatedAt' | 'summary'>, project?: Pick<AgentProject, 'workspaceSettledAt'>): number | undefined {

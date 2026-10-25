@@ -249,7 +249,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * names, host, owner and name only, so a desktop placing a worker can find the same project on this machine (#1032). Only
  * a host whose Owl answer turns on Work across machines lists it, and only to a desktop; one that does not cannot be
  * matched by repository, and a start must name one of its projects instead.
- * `thread-delete`: the host takes `preview-delete-thread` and `delete-thread` for one of its settled threads (ADR-0126),
+ * `thread-delete`: the host takes `preview-delete-thread` and `delete-thread` for one of its settled threads (ADR-0140),
  * from a client whose `remote-answer` policy lets it answer, since a deletion cannot be taken back. Only a host whose Owl
  * answer turns clearing on lists it; a desktop shows Delete thread… off for a host that does not, and says to update it.
  */

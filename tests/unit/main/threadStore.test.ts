@@ -215,7 +215,7 @@ describe('thread store', () => {
     expect(reopened.store.messageCount('kept')).toBe(0)
   })
 
-  it('forgets many threads in one transaction and one scrub, leaving the rest (ADR-0126)', async () => {
+  it('forgets many threads in one transaction and one scrub, leaving the rest (ADR-0140)', async () => {
     const f = await store()
     f.store.replaceThreadMessages('kept', [message('k0', 'user', 'Keep this one')])
     f.store.replaceThreadMessages('first', [message('a0', 'user', 'Clear the first')])

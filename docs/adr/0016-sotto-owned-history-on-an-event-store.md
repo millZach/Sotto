@@ -230,7 +230,7 @@ With 200 threads and one streaming, the objects copied per thread per coordinato
 
 ## Amendment: clearing a thread forgets it (October 23, 2026)
 
-[ADR-0126](0126-settled-threads-can-be-cleared.md) gives `ThreadStore.forget` its first caller: deleting a settled thread, on Owl. A clear of many threads forgets them in one transaction with one scrub, and commits at FULL like every removal the user asks for. The workspace also keeps the cleared thread IDs and refuses them in provider snapshots and thread events, so an event for a cleared thread is never appended again.
+[ADR-0140](0140-settled-threads-can-be-cleared.md) gives `ThreadStore.forget` its first caller: deleting a settled thread, on Owl. A clear of many threads forgets them in one transaction with one scrub, and commits at FULL like every removal the user asks for. The workspace also keeps the cleared thread IDs and refuses them in provider snapshots and thread events, so an event for a cleared thread is never appended again.
 
 ## Amendment: the broadcast shell is shared and frozen across broadcasts (October 23, 2026, #1334)
 

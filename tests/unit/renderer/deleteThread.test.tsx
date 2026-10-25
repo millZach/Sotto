@@ -20,7 +20,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
 /**
- * Delete thread… in a settled thread's pane menu (ADR-0126; Owl only): offered last, only on a thread settled on its own or
+ * Delete thread… in a settled thread's pane menu (ADR-0140; Owl only): offered last, only on a thread settled on its own or
  * with its project, off with a reason for a paired host that cannot delete yet, and a dialog that asks main first.
  */
 const THREAD = 'old-settled'

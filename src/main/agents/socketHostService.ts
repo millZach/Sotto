@@ -719,7 +719,7 @@ export class SocketHostService implements HostService {
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
-  /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0126). */
+  /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
   get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
@@ -778,7 +778,7 @@ export class SocketHostService implements HostService {
       releaseAdmission?.()
       const result = await executing
       if (admitted.type === 'preview-reclaim-thread-worktree' || admitted.type === 'preview-delete-thread') return result
-      // A deleted thread's draft, kept here for its host, goes with it (ADR-0126).
+      // A deleted thread's draft, kept here for its host, goes with it (ADR-0140).
       if (admitted.type === 'delete-thread' && result.error === null) {
         this.retainedDrafts.remove(this.retainedHostId(), admitted.threadId)
       }

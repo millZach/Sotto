@@ -902,7 +902,7 @@ export class ThreadStore {
   }
 
   /**
-   * The same for several threads at once, as clearing settled threads asks (ADR-0126): one transaction, one commit that
+   * The same for several threads at once, as clearing settled threads asks (ADR-0140): one transaction, one commit that
    * waits for the disk, and one scrub, however many threads go.
    */
   forgetMany(threadIds: readonly string[]): void {

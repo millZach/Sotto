@@ -336,7 +336,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private readonly client: ClaudeSubscriptionClient
   private aliases: Record<string, Alias> = {}
-  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0126). */
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0140). */
   private aliasesLoaded = false
   /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
   private readonly forgottenAliasIds = new Set<string>()
@@ -2163,7 +2163,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     await Promise.all(pending.map(request => this.reply(runtime, request.id, request.resumeDialog ? { behavior: 'cancelled' } : claudeDenial())))
   }
   /**
-   * ADR-0126: stop the thread's own CLI if it has one, remove its alias and every per-thread record this adapter
+   * ADR-0140: stop the thread's own CLI if it has one, remove its alias and every per-thread record this adapter
    * keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the alias store before
    * this removal reaches disk (see there); `inAliasOrder` already serializes this against `persist()`/`readAliases()`.
    */

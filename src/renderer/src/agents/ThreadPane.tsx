@@ -339,7 +339,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
-  // Delete thread… (ADR-0126; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
+  // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
   const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.

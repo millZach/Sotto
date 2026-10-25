@@ -111,7 +111,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
-  // Deleting settled threads (ADR-0126): a desktop deletes this host's threads only where this answer turns it on.
+  // Deleting settled threads (ADR-0140): a desktop deletes this host's threads only where this answer turns it on.
   const clearThreadsEnabled = owlFeatures['clear-threads']
   const pullRequestViewEnabled = owlFeatures['iphone-pull-request-view']
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.

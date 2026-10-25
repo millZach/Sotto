@@ -12,7 +12,7 @@ import { DevinAcpHost } from '../../../src/main/agents/devin'
 import { MuseMspHost } from '../../../src/main/agents/muse'
 import { OpenCodeHost } from '../../../src/main/agents/opencode'
 
-// ADR-0126: `forgetThread` must remove exactly the one alias asked for, on disk, even when the adapter has never
+// ADR-0140: `forgetThread` must remove exactly the one alias asked for, on disk, even when the adapter has never
 // connected and so holds no in-memory copy of the store to mutate. Each adapter here is cheap to construct without
 // a provider binary, so these exercise the not-loaded, direct-read-modify-write path `forgetThread` falls back to;
 // a fully connected round trip (process spawned, snapshot omits the thread) needs each provider's own protocol

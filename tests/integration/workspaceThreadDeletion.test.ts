@@ -43,7 +43,7 @@ async function fixture() {
 }
 const automatic = { automatic: true, hold: () => null }
 
-describe('deleting settled threads (ADR-0126)', () => {
+describe('deleting settled threads (ADR-0140)', () => {
   it('removes the record and its history, forgets the alias, and keeps the thread cleared across snapshots and restarts', async () => {
     const f = await fixture()
     const host = await f.open()

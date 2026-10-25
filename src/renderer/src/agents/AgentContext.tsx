@@ -229,7 +229,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           // a reply causes yields to the next keystroke instead of holding it (October 20, 2026: with a few hundred
           // threads that render took 60-70 ms, once per saved pause).
           const urgent = request.type !== 'save-thread-draft'
-          // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0126).
+          // A preview's answer belongs to the dialog that asked, never to the shared state (ADR-0041, ADR-0140).
           if (!PREVIEW_COMMANDS.has(request.type) && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)

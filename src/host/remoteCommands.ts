@@ -49,7 +49,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'restore-thread-branch': ['threadId', 'withUncommittedChanges'],
   'preview-reclaim-thread-worktree': ['threadId'],
   // Deleting a settled thread cannot be taken back, so it takes the remote-answer policy, as clearing Usage does, and only
-  // on a listener that offers `thread-delete` (ADR-0126): see remoteCommandRefusal. Clear now and the automatic rule act
+  // on a listener that offers `thread-delete` (ADR-0140): see remoteCommandRefusal. Clear now and the automatic rule act
   // on the computer whose Settings set them, so neither is a remote command.
   'preview-delete-thread': ['threadId'],
   'delete-thread': ['threadId', 'confirmedIgnored', 'confirmedItems', 'confirmedRepositories'],
@@ -154,7 +154,7 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   readonly clientUpdates?: boolean | undefined
   /** Whether this listener offers `thread-starts`: only a host whose Owl answer turns them on (#1028). */
   readonly threadStarts?: boolean | undefined
-  /** Whether this listener offers `thread-delete`: only a host whose Owl answer turns clearing on, to a desktop (ADR-0126). */
+  /** Whether this listener offers `thread-delete`: only a host whose Owl answer turns clearing on, to a desktop (ADR-0140). */
   readonly threadDelete?: boolean | undefined }): 'forbidden' | null {
   if (managementCommandRefusal(command)) return 'forbidden'
   if (command.type === 'connect' && command.notice !== undefined && command.notice !== false) return 'forbidden'

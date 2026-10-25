@@ -46,7 +46,7 @@ function clearedWords(cleared: number, changed: number): LaterWords {
 }
 
 /**
- * Settings → Threads, Clearing threads (ADR-0126; Owl only, Zach's pick C): Clear settled threads after, the rule that
+ * Settings → Threads, Clearing threads (ADR-0140; Owl only, Zach's pick C): Clear settled threads after, the rule that
  * clears on its own, and Clear now, which lists what would go before anything does. Both act on this computer's threads.
  */
 export function ClearThreadsSettings({ settings, onSave, onNotice }: {
@@ -92,7 +92,7 @@ export function ClearThreadsSettings({ settings, onSave, onNotice }: {
 }
 
 /**
- * Clear settled threads (ADR-0126 decision 2): the age to clear past, the threads that go and the ones kept with why, and
+ * Clear settled threads (ADR-0140 decision 2): the age to clear past, the threads that go and the ones kept with why, and
  * what clearing keeps. Main makes both lists, and checks each thread again as it goes; one that changed is kept. Thread
  * titles and main's reasons are shown as written.
  */

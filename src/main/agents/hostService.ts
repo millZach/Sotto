@@ -117,7 +117,7 @@ export interface HostService {
   readonly supportsFailureSeen?: boolean
   /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
   readonly supportsPullRequestView?: boolean
-  /** The host deletes its settled threads when asked (ADR-0126), present only when its Owl answer turns clearing on. */
+  /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
   readonly supportsThreadDelete?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
@@ -300,7 +300,7 @@ export class LocalHostService implements HostService {
     prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
-    /** Deleting settled threads (ADR-0126), true only when the host's Owl answer turns clearing on. */
+    /** Deleting settled threads (ADR-0140), true only when the host's Owl answer turns clearing on. */
     threadDelete?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean

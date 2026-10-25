@@ -12,7 +12,7 @@ function facts(threads: AgentThread[], extra: Partial<ThreadClearFacts> = {}): T
 }
 const hold = (subject: AgentThread, others: AgentThread[] = [], extra: Partial<ThreadClearFacts> = {}) => threadClearHold(subject, facts([subject, ...others], extra))
 
-describe('what keeps a settled thread back from clearing (ADR-0126 decision 3)', () => {
+describe('what keeps a settled thread back from clearing (ADR-0140 decision 3)', () => {
   it('lets a settled thread at rest go', () => {
     expect(hold(thread('a'))).toBeNull()
     // A thread settled with its project goes too.

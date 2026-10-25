@@ -258,7 +258,7 @@ export class SottoThreadHost implements AgentHost {
     return this.inner.rollbackThread(binding.sessionId, removedUserMessages, expectedUserMessageIds)
   }
   /**
-   * A cleared thread is forgotten by the adapter under its own session ID (ADR-0126). The binding stays: it holds IDs
+   * A cleared thread is forgotten by the adapter under its own session ID (ADR-0140). The binding stays: it holds IDs
    * alone, and a provider that reports the session again is then read under the same Sotto thread ID, which the
    * workspace's cleared list refuses, rather than under a new one that would bring the thread back.
    */

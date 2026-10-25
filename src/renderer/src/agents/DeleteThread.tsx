@@ -18,7 +18,7 @@ const CHECK_FAILED = 'Sotto could not check this thread. Nothing was deleted. Cl
 const DELETE_UNCONFIRMED = 'Sotto could not confirm the delete. If the thread is still listed, nothing was deleted.'
 
 /**
- * Whether this thread's host deletes threads when asked (ADR-0126 decision 7): this computer, or a paired host that lists
+ * Whether this thread's host deletes threads when asked (ADR-0140 decision 7): this computer, or a paired host that lists
  * `thread-delete`, which the desktop marks on the host's `clientHosts` entry. A window shown no host list is this computer's own.
  */
 export function offersThreadDelete(clientHosts: readonly Pick<AgentClientHost, 'hostId' | 'threadDelete'>[] | undefined,
@@ -28,7 +28,7 @@ export function offersThreadDelete(clientHosts: readonly Pick<AgentClientHost, '
 }
 
 /**
- * Delete thread… for a pane's More menu (ADR-0126; Owl only): offered on a thread settled on its own or with its project,
+ * Delete thread… for a pane's More menu (ADR-0140; Owl only): offered on a thread settled on its own or with its project,
  * never on Watcher's own, last and in the error colour. On a paired host that cannot delete yet it is listed off, saying
  * to update the host. Returns the menu's group, empty when it is not offered, and the dialog while it is open.
  */
@@ -71,7 +71,7 @@ function keptWords(preview: ThreadDeletePreview): string {
 }
 
 /**
- * Delete “title”? (ADR-0126): asks main what deleting this one thread would do, then says why it is kept, or lists what goes
+ * Delete “title”? (ADR-0140): asks main what deleting this one thread would do, then says why it is kept, or lists what goes
  * and what stays, with ADR-0041's List and tick for a worktree holding ignored files or nested work. Nothing can be taken back.
  */
 export function DeleteThreadDialog({ threadId, title, provider, command, onClose }: {
