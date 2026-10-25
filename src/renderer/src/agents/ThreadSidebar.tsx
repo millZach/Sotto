@@ -448,10 +448,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
         event.preventDefault()
-        void settle(row.thread, row.project)
         // The collapsed rail keeps showing the focused thread even once settled, so move on to the top open one.
         const next = collapsed ? openRows.find(item => item.thread.id !== row.thread.id) : undefined
-        if (next) onOpen(next.thread.id)
+        void settle(row.thread, row.project).then(settled => { if (settled && next) onOpen(next.thread.id) })
         return
       }
       if (press(restoreChord)) {
