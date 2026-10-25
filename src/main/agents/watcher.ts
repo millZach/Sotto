@@ -3406,8 +3406,6 @@ ${operation.draftId}`)
         call: { name, input } } as WatcherHostControl)
       const parsed = watcherToolSchemas[name].output.parse(result)
       const receipt = 'receipt' in parsed ? parsed.receipt : undefined
-      // The host answers a start with its thread only once it has made it.
-      if (name === 'start_thread' && parsed.status === 'ok') this.rememberCreatedRemotely(operation.id)
       if (parsed.status === 'refused' && !receipt) {
         // The host refused the start before acting on it, so it made no thread to own the branch.
         await this.releaseMove(landed)
