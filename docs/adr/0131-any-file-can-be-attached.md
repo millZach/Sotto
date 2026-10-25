@@ -74,7 +74,7 @@ The iPhone attaches files to a reply, and opens a sent file on the phone. Zach c
 
 It is removed when the preview closes, when the app moves to the background, and, for anything a crash left, at the next launch. Its bytes are never logged. Quick Look's own Share button stays, so the user can save or send the file themselves, as they could from the desktop. That is the user's choice, not something Sotto does.
 
-**Built in two steps.** The host's side, `attachment-files` and `attachment-file`, comes first; the phone's picker, pills, uploads and Quick Look follow once #1446 (photos to Watcher) has moved the reply box onto one box for a thread or Watcher, which this builds on.
+**Built on the shared reply box.** #1446 (photos to Watcher) moved the phone's reply box onto one box for a thread or Watcher. Files ride on it: the + menu, the eight attachments the photos and files share, and the per-computer queue are the box's. Only a thread's box offers Files. A file chosen in Files that is one of the four photo types goes as a photo, made ready as one from the library is. A sent file being brought back shows how much has come on its own pill, in place of its size, rather than on a page of its own, and Quick Look opens over whatever is showing once it is in.
 
 **Not in this amendment.** Watcher's reply box on the phone (#1446 adds photos there) takes files later, through the same box abstraction. Files from the Android client follow ADR-0059's port.
 

@@ -917,6 +917,43 @@ struct DraftPhoto: Identifiable {
     }
 }
 
+/// Where a file comes from (ADR-0131): its name, the size the Files app gives for it, when it gives one, and its bytes,
+/// read when its turn comes.
+struct FileSource: Sendable {
+    let name: String
+    let sizeBytes: Int?
+    let load: @Sendable () async throws -> Data
+}
+
+/// A file in a thread's reply box. It is read into memory on this iPhone, then staged on the thread's computer in parts,
+/// and stays in memory until its reply is sent or the file is removed. Nothing is written to disk.
+struct DraftFile: Identifiable {
+    let id = UUID()
+    let name: String
+    let mimeType: String
+    /// The size the Files app gave until it is read, then its own.
+    var sizeBytes: Int
+    var bytes: Data?
+    var digest: String?
+    var staged: StagedFile?
+    var stagedAt: Date?
+    var stagedGeneration: UUID?
+    /// The share of it its computer has, from 0 to 1, while it is being sent there.
+    var progress: Double?
+    var reading: Bool { bytes == nil }
+    func needsStaging(generation: UUID?) -> Bool {
+        staged == nil || stagedGeneration != generation || stagedAt.map { Photos.needsRestaging(stagedAt: $0) } != false
+    }
+}
+
+/// What came of asking a thread's computer for a sent file to open.
+enum SentFileOutcome: Equatable {
+    case file(name: String, data: Data)
+    /// The computer no longer keeps it.
+    case notKept
+    case failed
+}
+
 /// A photo's original on its way: whichever of its arrival, its time limit or its removal comes first decides,
 /// and the others are ignored.
 @MainActor private final class PhotoLoad {
@@ -1049,6 +1086,11 @@ struct HeldDetail {
     /// The photos of a reply on its way, by operation ID, and of a refused reply, by `ThreadRef.id`.
     @Published private(set) var submittedPhotos: [String: [DraftPhoto]] = [:]
     @Published private(set) var failedPhotos: [String: [DraftPhoto]] = [:]
+    /// Files in each thread's reply box, by `ThreadRef.id`, in the order they were chosen (ADR-0131); and those of a reply
+    /// on its way, by operation ID, and of a refused reply, by `ThreadRef.id`. Their notices are the photos'.
+    @Published private(set) var draftFiles: [String: [DraftFile]] = [:]
+    @Published private(set) var submittedFiles: [String: [DraftFile]] = [:]
+    @Published private(set) var failedFiles: [String: [DraftFile]] = [:]
     /// Reply boxes, by `PhotoBox.id`, whose message is having its photos staged again before it is sent, and Watcher's
     /// until its computer answers. A second press finds it here.
     @Published private(set) var preparingSends: Set<String> = []
@@ -1068,6 +1110,9 @@ struct HeldDetail {
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
     private var stagingTasks: [UUID: Task<Bool, Never>] = [:]
+    private var fileStagingTasks: [UUID: Task<Bool, Never>] = [:]
+    /// Files are read one at a time, so several large files are never read at once.
+    private var fileWork: Task<Void, Never>?
     /// The last large request queued for each computer, which refuses a second while one is on its way.
     private var largeRequests: [String: Task<Void, Never>] = [:]
     /// Photos are prepared one at a time, so several large photos are never decoded at once.
@@ -1821,13 +1866,23 @@ struct HeldDetail {
     /// Whether the reply box holds something to send and nothing still being made ready: words or photos,
     /// every photo prepared, and none of them on a thread whose model can't take them.
     func canSendReply(_ ref: ThreadRef) -> Bool {
-        let photos = self.photos(ref)
+        let photos = self.photos(ref), files = self.files(ref)
         let written = !(drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty)
+        return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty || !files.isEmpty)
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(ref) == .available)
+            && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
     }
     func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
     func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
+    /// A thread's reply box's files. Watcher's box takes none yet (ADR-0131, October 25 amendment).
+    func files(_ ref: ThreadRef) -> [DraftFile] { draftFiles[ref.id] ?? [] }
+    func files(_ box: PhotoBox) -> [DraftFile] { if case .thread(let ref) = box { return files(ref) }; return [] }
+    /// Whether a thread's reply box can take files: its computer keeps them only where its own `attach-any-file` answer is on.
+    func fileSupport(_ ref: ThreadRef) -> FileSupport {
+        FileSupport(online: online(ref.hostID), features: live[ref.hostID]?.features ?? [])
+    }
+    /// Whether a thread's computer hands its sent files back to open here (`attachment-files`).
+    func opensSentFiles(_ hostID: String) -> Bool { live[hostID]?.features.contains(FileLimits.openingFeature) == true }
     func photoSupport(_ ref: ThreadRef) -> PhotoSupport { photoSupport(.thread(ref)) }
     func photoSupport(_ box: PhotoBox) -> PhotoSupport {
         let hostID = box.hostID, host = live[hostID]?.shell?.host, features = live[hostID]?.features ?? []
@@ -2019,6 +2074,8 @@ struct HeldDetail {
     func waitForPhotos() async {
         await photoWork?.value
         for task in Array(stagingTasks.values) { _ = await task.value }
+        await fileWork?.value
+        for task in Array(fileStagingTasks.values) { _ = await task.value }
     }
     /// Connects every computer that hasn't given up. One that gave up waits for its Try again or Reconnect.
     func reconnectAll() async {
@@ -2285,9 +2342,12 @@ struct HeldDetail {
         failedReplies = failedReplies.filter { !$0.key.hasPrefix(prefix) }
         draftPhotos = draftPhotos.filter { !$0.key.hasPrefix(prefix) }
         failedPhotos = failedPhotos.filter { !$0.key.hasPrefix(prefix) }
+        draftFiles = draftFiles.filter { !$0.key.hasPrefix(prefix) }
+        failedFiles = failedFiles.filter { !$0.key.hasPrefix(prefix) }
         photoNotices = photoNotices.filter { !$0.key.hasPrefix(prefix) }
         submitted = submitted.filter { !gone.contains($0.key) }
         submittedPhotos = submittedPhotos.filter { !gone.contains($0.key) }
+        submittedFiles = submittedFiles.filter { !gone.contains($0.key) }
         gone.forEach { dispatchingOperations[$0] = nil; receiptFollowers[$0] = nil }
         largeRequests[hostID] = nil
         let words = outcome.words(name: saved.name, clientID: saved.pairing.clientId)
@@ -2423,29 +2483,34 @@ struct HeldDetail {
         // The words as pressed. The reply box is locked while its photos are staged, so nothing typed
         // after the press joins a reply already on its way.
         let text = drafts[ref.id] ?? ""
-        var images: [StagedImage] = []
-        if !photos(ref).isEmpty {
+        var images: [StagedImage] = [], stagedFiles: [StagedFile] = []
+        if !photos(ref).isEmpty || !files(ref).isEmpty {
             preparingSends.insert(ref.id)
-            let ready = await readyPhotos(.thread(ref))
+            var ready: [StagedImage]? = []
+            if !photos(ref).isEmpty { ready = await readyPhotos(.thread(ref)) }
+            var readyFiles: [StagedFile]? = []
+            if ready != nil, !files(ref).isEmpty { readyFiles = await self.readyFiles(ref) }
             preparingSends.remove(ref.id)
-            guard let ready else { return }
-            images = ready
+            guard let ready, let readyFiles else { return }
+            images = ready; stagedFiles = readyFiles
         }
         // Nothing below waits until the marker is kept, so the checks hold when it is.
-        guard canSend(ref), images.isEmpty || photoSupport(ref) == .available, let computer = self.computer(ref.hostID) else {
-            if !images.isEmpty { photoNotices[ref.id] = "Your reply wasn’t sent. It’s still in the reply box." }
+        guard canSend(ref), images.isEmpty || photoSupport(ref) == .available, stagedFiles.isEmpty || fileSupport(ref) == .available,
+              let computer = self.computer(ref.hostID) else {
+            if !images.isEmpty || !stagedFiles.isEmpty { photoNotices[ref.id] = "Your reply wasn’t sent. It’s still in the reply box." }
             return
         }
         let draft = UUID().uuidString
         // Read at the last moment: a turn that ended while the photos were staged takes the reply now, unqueued.
         let queuing = queuesReply(ref)
         do {
-            let command = try queuing ? Commands.queue(threadID: ref.threadID, text: text, draftID: draft, images: images)
-                : Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images)
+            let command = try queuing ? Commands.queue(threadID: ref.threadID, text: text, draftID: draft, images: images, files: stagedFiles)
+                : Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images, files: stagedFiles)
             let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID,
                                              draftID: draft, kind: queuing ? "queue" : "reply")
             try remember(operation); submitted[operation.id] = text; drafts[ref.id] = ""
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
+            if !stagedFiles.isEmpty { submittedFiles[operation.id] = files(ref); draftFiles[ref.id] = nil }
             photoNotices[ref.id] = nil
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
@@ -2459,11 +2524,13 @@ struct HeldDetail {
     /// order chosen, one at a time, so several large photos are never held decoded at once.
     func attachPhotos(_ box: PhotoBox, from sources: [PhotoSource]) {
         guard !sources.isEmpty, photoSupport(box) == .available, !preparingSends.contains(box.id) else { return }
-        let room = PhotoLimits.count - photos(box).count
-        guard room > 0 else { photoNotices[box.id] = "\(box.carrier) can carry \(PhotoLimits.count) photos."; return }
+        // Files count toward the eight (ADR-0131).
+        let room = PhotoLimits.count - photos(box).count - files(box).count
+        guard room > 0 else { photoNotices[box.id] = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full; return }
         let added = sources.prefix(room).map { (photo: DraftPhoto(), source: $0) }
         draftPhotos[box.id, default: []] += added.map { $0.photo }
-        photoNotices[box.id] = sources.count > room ? "\(box.carrier) can carry \(PhotoLimits.count) photos. The others weren’t added." : nil
+        let carries = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full
+        photoNotices[box.id] = sources.count > room ? carries + " The others weren’t added." : nil
         let previous = photoWork
         photoWork = Task { [weak self] in
             await previous?.value
@@ -2478,11 +2545,14 @@ struct HeldDetail {
         // Removed while it waited its turn: nothing is read.
         guard photo(id, in: box) != nil else { return }
         do {
-            let prepared = try await preparePhoto(try await loaded(source, for: id), source.name)
+            let prepared = try await preparePhoto(try await loaded(source.load, for: id), source.name)
             guard photo(id, in: box) != nil else { return }
             let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
             guard Photos.fits(prepared.byteCount, with: others) else {
                 throw ClientError.rejected("These photos would take \(box.carried) over 20 MB, so this one wasn’t added. Send these first, or remove one.")
+            }
+            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else {
+                throw ClientError.rejected(FileWords.tooLargeInTotal)
             }
             change(id, in: box) { $0.prepared = prepared }
             // Staged on its own, so a slow computer never holds up preparing photos for any other reply.
@@ -2496,16 +2566,16 @@ struct HeldDetail {
     /// A photo's original bytes, or `tooSlow` once the limit passes, so one that never arrives can't hold up the
     /// photos chosen after it, and removing the photo ends the wait at once. A load that ignores cancellation is
     /// left to finish on its own.
-    private func loaded(_ source: PhotoSource, for id: UUID) async throws -> Data {
-        let load = PhotoLoad()
-        photoLoads[id] = load
+    private func loaded(_ load: @escaping @Sendable () async throws -> Data, for id: UUID) async throws -> Data {
+        let waiting = PhotoLoad()
+        photoLoads[id] = waiting
         defer { photoLoads[id] = nil }
         let limit = photoLoadLimit
         return try await withCheckedThrowingContinuation { continuation in
-            load.continuation = continuation
-            load.tasks = [
-                Task { do { load.finish(.success(try await source.load())) } catch { load.finish(.failure(error)) } },
-                Task { do { try await limit(); load.finish(.failure(PhotoPipelineError.tooSlow)) } catch {} },
+            waiting.continuation = continuation
+            waiting.tasks = [
+                Task { do { waiting.finish(.success(try await load())) } catch { waiting.finish(.failure(error)) } },
+                Task { do { try await limit(); waiting.finish(.failure(PhotoPipelineError.tooSlow)) } catch {} },
             ]
         }
     }
@@ -2588,6 +2658,150 @@ struct HeldDetail {
         largeRequests[hostID] = Task { _ = try? await task.value }
         return try await task.value
     }
+    // MARK: Files in the reply box (ADR-0131)
+
+    /// Adds files to a thread's reply box. As on the desktop, nothing is attached when one is past the host's limits, and
+    /// that is decided by the sizes the Files app gives, before any is read. Each is then read into memory and staged on the
+    /// thread's computer in the order chosen, one at a time.
+    func attachFiles(_ ref: ThreadRef, from sources: [FileSource]) {
+        guard !sources.isEmpty, fileSupport(ref) == .available, !preparingSends.contains(ref.id) else { return }
+        let others = photos(ref).map { $0.prepared?.byteCount ?? 0 } + files(ref).map(\.sizeBytes)
+        if let refusal = Files.refusal(adding: sources.map { $0.sizeBytes ?? 0 }, to: others) { photoNotices[ref.id] = refusal; return }
+        let added = sources.map { (file: DraftFile(name: $0.name, mimeType: Files.mimeType(forName: $0.name), sizeBytes: $0.sizeBytes ?? 0), source: $0) }
+        draftFiles[ref.id, default: []] += added.map { $0.file }
+        photoNotices[ref.id] = nil
+        let previous = fileWork
+        fileWork = Task { [weak self] in
+            await previous?.value
+            for item in added { await self?.readFile(item.file.id, in: ref, from: item.source) }
+        }
+    }
+    func removeFile(_ id: UUID, from ref: ThreadRef) {
+        guard !preparingSends.contains(ref.id) else { return }
+        dropFile(id, in: ref, reason: nil)
+    }
+    private func readFile(_ id: UUID, in ref: ThreadRef, from source: FileSource) async {
+        // Removed while it waited its turn: nothing is read.
+        guard file(id, in: ref) != nil else { return }
+        do {
+            let bytes = try await loaded(source.load, for: id)
+            guard file(id, in: ref) != nil else { return }
+            guard !bytes.isEmpty else { throw ClientError.rejected(FileWords.empty) }
+            let others = photos(ref).compactMap { $0.prepared?.byteCount } + files(ref).filter { $0.id != id }.map(\.sizeBytes)
+            // The size the Files app gave may not have been the file's own.
+            if let refusal = Files.refusal(adding: [bytes.count], to: others) { throw ClientError.rejected(refusal) }
+            let digest = await Task.detached { Files.digest(bytes) }.value
+            changeFile(id, in: ref) { $0.bytes = bytes; $0.sizeBytes = bytes.count; $0.digest = digest }
+            // Staged on its own, so a slow computer never holds up reading the files chosen after it.
+            _ = fileStaging(id, in: ref)
+        } catch {
+            let reason = (error as? PhotoPipelineError) == .tooSlow ? FileWords.tooSlow : (error as? ClientError)?.errorDescription
+            dropFile(id, in: ref, reason: reason ?? FileWords.unreadable)
+        }
+    }
+    /// A file's staging, started now unless it is already under way: a file is never staged twice at once.
+    private func fileStaging(_ id: UUID, in ref: ThreadRef) -> Task<Bool, Never>? {
+        if let running = fileStagingTasks[id] { return running }
+        guard let file = file(id, in: ref), let bytes = file.bytes, let digest = file.digest else { return nil }
+        changeFile(id, in: ref) { $0.progress = 0 }
+        let task = Task { [weak self] () -> Bool in
+            let staged = await self?.requestFileStaging(file.name, mimeType: file.mimeType, bytes: bytes, digest: digest, as: id, in: ref) ?? false
+            self?.fileStagingTasks[id] = nil
+            self?.changeFile(id, in: ref) { $0.progress = nil }
+            return staged
+        }
+        fileStagingTasks[id] = task
+        return task
+    }
+    /// Stages one file on its thread's computer with `stage-file-part`, its parts in order as one large request, so no other
+    /// upload on this iPhone comes between them: the computer keeps one upload a client. The last part's answer is the
+    /// handle. A file that couldn't reach the computer stays in the box and is staged when the reply is sent; one the
+    /// computer refused for what it is leaves the box, with its reason.
+    private func requestFileStaging(_ name: String, mimeType: String, bytes: Data, digest: String, as id: UUID, in ref: ThreadRef) async -> Bool {
+        let over = generations[ref.hostID]
+        let ranges = Files.partRanges(bytes.count), upload = UUID()
+        do {
+            let handle = try await largeRequest(on: ref.hostID) { [weak self] connection -> StagedFile in
+                for (index, range) in ranges.enumerated() {
+                    // A file removed while it goes stops going; the computer lets the parts it has go.
+                    guard self?.file(id, in: ref) != nil else { throw CancellationError() }
+                    let operation = try await Task.detached {
+                        try Files.stagePart(uploadID: upload, index: index, count: ranges.count, name: name, mimeType: mimeType,
+                                            sizeBytes: bytes.count, digest: digest, data: bytes.subdata(in: range))
+                    }.value
+                    let answer = try await connection.call(operation, as: Optional<StagedFile>.self)
+                    self?.changeFile(id, in: ref) { $0.progress = Double(index + 1) / Double(ranges.count) }
+                    guard index == ranges.count - 1 else { if answer != nil { throw ClientError.invalidProtocol }; continue }
+                    guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == bytes.count else { throw ClientError.invalidProtocol }
+                    return answer
+                }
+                throw ClientError.invalidProtocol
+            }
+            changeFile(id, in: ref) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
+            return true
+        } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" {
+            dropFile(id, in: ref, reason: refusal.failure.message)
+        } catch {}
+        return false
+    }
+    /// Every file in the reply box with a handle its computer still keeps, as `readyPhotos` does for photos.
+    private func readyFiles(_ ref: ThreadRef) async -> [StagedFile]? {
+        for id in files(ref).map(\.id) {
+            guard let file = file(id, in: ref) else { return nil }
+            guard fileStagingTasks[id] != nil || file.needsStaging(generation: generations[ref.hostID]) else { continue }
+            guard await fileStaging(id, in: ref)?.value ?? false else {
+                if photoNotices[ref.id] == nil {
+                    photoNotices[ref.id] = "A file couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected."
+                }
+                return nil
+            }
+        }
+        let current = files(ref)
+        let staged = current.compactMap(\.staged)
+        return !staged.isEmpty && staged.count == current.count ? staged : nil
+    }
+    private func file(_ id: UUID, in ref: ThreadRef) -> DraftFile? { draftFiles[ref.id]?.first { $0.id == id } }
+    private func changeFile(_ id: UUID, in ref: ThreadRef, _ edit: (inout DraftFile) -> Void) {
+        guard let index = draftFiles[ref.id]?.firstIndex(where: { $0.id == id }) else { return }
+        edit(&draftFiles[ref.id]![index])
+    }
+    /// Takes a file out of its reply box, saying why when it wasn't the user's choice.
+    private func dropFile(_ id: UUID, in ref: ThreadRef, reason: String?) {
+        guard file(id, in: ref) != nil else { return }
+        photoLoads[id]?.finish(.failure(CancellationError()))
+        draftFiles[ref.id]?.removeAll { $0.id == id }
+        if draftFiles[ref.id]?.isEmpty == true { draftFiles[ref.id] = nil }
+        photoNotices[ref.id] = reason
+    }
+    /// A sent file's bytes from the computer that keeps it, for Quick Look (`attachment-file`): part by part, each waiting
+    /// its turn behind other large requests to that computer, and none asked for once nothing `wanted` it. The parts must
+    /// make the file their first one named, its size and digest, or none of it is kept.
+    func sentFile(_ ref: ThreadRef, messageID: String, attachmentID: String, progress: @escaping @MainActor (Double) -> Void,
+                  wanted: @escaping @MainActor () -> Bool) async -> SentFileOutcome {
+        guard opensSentFiles(ref.hostID) else { return .failed }
+        var assembly: SentFileAssembly?
+        repeat {
+            let operation = Files.open(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID, part: assembly?.received ?? 0)
+            let part: SentFilePart?
+            do {
+                part = try await largeRequest(on: ref.hostID) { connection -> SentFilePart? in
+                    guard wanted() else { throw CancellationError() }
+                    return try await connection.call(operation, as: Optional<SentFilePart>.self)
+                }
+            } catch { return .failed }
+            guard let part else { return assembly == nil ? .notKept : .failed }
+            let before = assembly
+            let next = await Task.detached { () -> SentFileAssembly? in
+                guard var whole = before else { return SentFileAssembly(first: part) }
+                return whole.add(part) ? whole : nil
+            }.value
+            guard let next else { return .failed }
+            assembly = next
+            progress(next.progress)
+        } while assembly?.complete == false
+        guard let assembly, let data = await Task.detached(operation: { assembly.finish() }).value else { return .failed }
+        return .file(name: assembly.name, data: data)
+    }
     /// A sent photo's bytes from the computer that keeps it. It waits its turn behind other large requests to
     /// that computer, and is never made if nothing on screen still `wanted` it by then.
     func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, wanted: @escaping @MainActor () -> Bool) async -> Data? {
@@ -2658,7 +2872,7 @@ struct HeldDetail {
     }
     private func forgetMarker(_ id: String) throws {
         let next = pending.filter { $0.id != id }; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
-        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id)
+        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
         let hostID = operation.hostID, current = generations[hostID]
@@ -2815,16 +3029,20 @@ struct HeldDetail {
             let ref = ThreadRef(hostID: operation.hostID, threadID: operation.threadID)
             failedReplies[ref.id] = text
             failedPhotos[ref.id] = submittedPhotos[operation.id]
+            failedFiles[ref.id] = submittedFiles[operation.id]
         }
         try forgetMarker(operation.id)
     }
     func restoreReply(_ ref: ThreadRef) {
-        guard (drafts[ref.id] ?? "").isEmpty, photos(ref).isEmpty, let text = failedReplies[ref.id] else { return }
+        guard (drafts[ref.id] ?? "").isEmpty, photos(ref).isEmpty, files(ref).isEmpty, let text = failedReplies[ref.id] else { return }
         drafts[ref.id] = text; failedReplies.removeValue(forKey: ref.id)
         // Its photos come back too; any the computer may have let go are staged again when it is sent.
         // Staged again when sent: the computer may have refused it because it no longer kept a photo.
         if let photos = failedPhotos.removeValue(forKey: ref.id), !photos.isEmpty {
             draftPhotos[ref.id] = photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo }
+        }
+        if let files = failedFiles.removeValue(forKey: ref.id), !files.isEmpty {
+            draftFiles[ref.id] = files.map { var file = $0; file.staged = nil; file.stagedAt = nil; return file }
         }
     }
     func acknowledgeUnknown(_ id: String) {
