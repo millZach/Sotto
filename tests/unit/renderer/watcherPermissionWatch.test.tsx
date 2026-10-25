@@ -340,9 +340,9 @@ describe('watching a thread', () => {
     expect(bridge.watchThread).toHaveBeenCalledWith({ target: target('footer-links') })
     await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
     expect(watch).toHaveFocus()
-    // The owl follows the logo, the composer says what watching means, and the toast says it was done.
+    // The owl follows the logo and the toast says it was done; nothing stays under the composer.
     expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
-    expect(within(pane).getByText(/It keeps this thread going/)).toBeInTheDocument()
+    expect(within(pane).queryByText(/Watched by Watcher\./)).toBeNull()
     const toast = document.querySelector('.watch-toast')
     expect(toast).toHaveAttribute('role', 'status')
     expect(toast).toHaveTextContent('Watcher is watching Footer links.')
@@ -355,14 +355,15 @@ describe('watching a thread', () => {
     expect(prompt).toHaveFocus()
   })
 
-  it('keeps the keyboard in the composer when Stop watching or a toast’s Dismiss goes away', async () => {
+  it('keeps the keyboard in the composer when a toast’s Dismiss goes away', async () => {
     const user = userEvent.setup()
     const { bridge } = renderThreads(roomState())
     const pane = await screen.findByRole('region', { name: 'Footer links' })
     const prompt = within(pane).getByRole('textbox', { name: 'Prompt' })
-    await user.click(await within(pane).findByRole('button', { name: 'Stop watching Footer links' }))
-    await waitFor(() => expect(within(pane).queryByRole('button', { name: 'Stop watching Footer links' })).toBeNull())
-    expect(prompt).toHaveFocus()
+    const watch = within(pane).getByRole('button', { name: 'Watch Footer links' })
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
+    await user.click(watch)
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'false'))
     // A refused press says why, with Dismiss; Dismiss takes the toast away and hands the keyboard back to the composer.
     bridge.watchThread.mockResolvedValueOnce({ status: 'refused', code: 'HOST_DISCONNECTED', message: 'Sotto Site’s host is not connected, so Footer links is not watched.', retryable: true })
     await user.click(within(pane).getByRole('button', { name: 'Watch Footer links' }))
@@ -373,28 +374,25 @@ describe('watching a thread', () => {
     expect(prompt).toHaveFocus()
   })
 
-  it('stops watching from under the composer, and says a refusal in main’s words', async () => {
+  it('stops watching from the pane header, and says a refusal in main’s words', async () => {
     const { bridge } = renderThreads(roomState())
     const pane = await screen.findByRole('region', { name: 'Footer links' })
     bridge.unwatchThread.mockResolvedValueOnce({ status: 'refused', code: 'HOST_DISCONNECTED', message: 'Sotto Site’s host is not connected, so Footer links is still watched.', retryable: true })
-    fireEvent.click(await within(pane).findByRole('button', { name: 'Stop watching Footer links' }))
+    const watch = within(pane).getByRole('button', { name: 'Watch Footer links' })
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
+    fireEvent.click(watch)
     expect(await screen.findByRole('alert')).toHaveTextContent('Sotto Site’s host is not connected, so Footer links is still watched.')
     expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('promises a thread watched only for a request nothing past the user’s own send, under its composer and over Watched', async () => {
+  it('promises a thread watched only for a request nothing past the user’s own send, over Watched', async () => {
     const user = userEvent.setup()
     // Footer links takes part in Watcher's request, with no standing watch.
     const participant = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target('footer-links'), promptCount: 1 }
     const room = roomState({ standingWatches: [], requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
       watchedThreads: [row('footer-links', 'Footer links', { participation: [participant] })] })
-    renderThreads(room)
-    const pane = await screen.findByRole('region', { name: 'Footer links' })
-    expect(await within(pane).findByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeInTheDocument()
-    expect(within(pane).queryByText(/keeps this thread going/)).toBeNull()
-    cleanup()
     renderRoom(room)
     const room1 = await watcherPane()
     await user.click(within(room1).getByRole('tab', { name: 'Watched, 1 thread' }))
@@ -402,12 +400,6 @@ describe('watching a thread', () => {
       'Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.')
     expect(within(room1).queryByText(/until you stop it/)).toBeNull()
     expect(watchedLead(3, 1)).toBe('Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.')
-  })
-
-  it('says a paused watch waits for the user’s own turn', async () => {
-    renderThreads(roomState({ watchedThreads: [row('footer-links', 'Footer links', { paused: true })] }))
-    const pane = await screen.findByRole('region', { name: 'Footer links' })
-    expect(await within(pane).findByText('Watched by Watcher. While your own turn here runs, it can only steer that turn.')).toBeInTheDocument()
   })
 
   it('puts the owl among each sidebar row’s actions, pressed while watched', async () => {
