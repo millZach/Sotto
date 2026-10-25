@@ -46,6 +46,7 @@ const customSettings = {
   resumeThreadsAfterRestart: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
+  watcherCompactAtTokens: 650_000,
   compactIdleThreads: false,
   reducedMotion: 'on',
   roomTransition: false,
@@ -345,6 +346,7 @@ describe('settings', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
       watcherSettlesFinishedThreads: true,
+      watcherCompactAtTokens: 400_000,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -622,6 +624,24 @@ describe('settings', () => {
     first.theme = 'light'
     expect(second.theme).toBe('dark')
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
+
+describe('Compact Watcher at', () => {
+  it('compacts Watcher at 400K by default and keeps a saved point from 200K to 1M on a 50K step', () => {
+    expect(DEFAULT_SETTINGS.watcherCompactAtTokens).toBe(400_000)
+    for (const tokens of [200_000, 250_000, 650_000, 1_000_000]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens).toBe(tokens)
+    }
+  })
+
+  it('falls back to 400K for a point off the slider, or a saved file from before it', () => {
+    for (const tokens of [150_000, 199_999, 1_050_000, 425_000, Number.NaN, '600000', null]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens, String(tokens)).toBe(400_000)
+    }
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.watcherCompactAtTokens
+    expect(parseSettings(older).watcherCompactAtTokens).toBe(400_000)
   })
 })
 

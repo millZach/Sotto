@@ -220,6 +220,11 @@ msgstr "{label} saturation and brightness"
 msgid "{list} and {last}"
 msgstr "{list} and {last}"
 
+#. The ends of the Compact Watcher at slider, such as 200k to 1M
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "{low} to {high}"
+msgstr "{low} to {high}"
+
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
 msgstr "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
@@ -533,6 +538,10 @@ msgstr "{seconds, plural, one {# second} other {# seconds}}"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{seconds, plural, one {Checks origin every # second for ahead and behind, while this window is in front.} other {Checks origin every # seconds for ahead and behind, while this window is in front.}}"
 msgstr "{seconds, plural, one {Checks origin every # second for ahead and behind, while this window is in front.} other {Checks origin every # seconds for ahead and behind, while this window is in front.}}"
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "{shown} tokens"
+msgstr "{shown} tokens"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{startProvider} has no “{wantedMode}”, so its workers start on “{startModeName}”."
@@ -1473,6 +1482,15 @@ msgstr "Commit subject"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Compact idle threads"
 msgstr "Compact idle threads"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Compact Watcher at"
+msgstr "Compact Watcher at"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Compaction"
+msgstr "Compaction"
 
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -5550,6 +5568,18 @@ msgstr "Watched threads"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher can’t run on {provider} yet."
 msgstr "Watcher can’t run on {provider} yet."
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
+msgstr "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher is at {size}: it compacts at its next rest."
+msgstr "Watcher is at {size}: it compacts at its next rest."
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher is at {size}."
+msgstr "Watcher is at {size}."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher runs on {watcherProviders}. Connect one to choose its model."

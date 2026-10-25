@@ -182,6 +182,7 @@ const settingKeys = [
   'resumeThreadsAfterRestart',
   'workerRoles',
   'watcherSettlesFinishedThreads',
+  'watcherCompactAtTokens',
   'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',

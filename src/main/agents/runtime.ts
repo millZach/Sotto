@@ -290,7 +290,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
-      settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...options.watcherLog ? { log: options.watcherLog } : {},
+      settleFinished: () => options.settings().watcherSettlesFinishedThreads, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()

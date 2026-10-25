@@ -620,3 +620,9 @@ The phone's page called Watcher working while its own turn ran or any thread it 
 `send_to_thread`'s `delivery` is optional. A send that names none steers a running turn, goes now to a thread whose turn
 is over, and queues only where the provider cannot steer. A thread waiting on the user's card is still refused, and a
 named delivery still wins. [ADR-0130](0130-watchers-sends-steer-by-default.md) has the decision.
+
+## October 24, 2026: Compact Watcher at is a setting
+
+Zach asked to choose the point where Watcher's conversation is compacted. This amends "Compaction at 400,000 tokens" of October 19: **Compact Watcher at** (`watcherCompactAtTokens`), under Settings › Watcher in its own Compaction group, goes from 200,000 to 1,000,000 tokens in steps of 50,000 and starts at 400,000. A saved value off those steps falls back to 400,000. It is part of Watcher's Owl feature. Watcher reads it at every look, so a change applies without a restart: lowered below Watcher's conversation, it compacts Watcher at its next rest, by the rule it already had. The room's context panel and `read_state`'s `compactAtTokens` give the point chosen.
+
+Of four slider designs in an HTML prototype (captured as the tag `prototype/watcher-compaction-target`), after rejecting a first round that looked like Sotto's existing sliders, Zach chose C: a bar that is Watcher's conversation as its provider last reported it, hatched, with a line on it where Watcher compacts, dragged or moved with the arrow keys and saved when let go. The hatching turns to the accent when the line is below the conversation, and a sentence says Watcher compacts at its next rest. Under the drawing is an ordinary range input, so the keyboard and screen readers get a slider. The other sliders in Settings keep their look for now.

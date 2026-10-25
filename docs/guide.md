@@ -983,11 +983,11 @@ Observed evidence is separate from what a worker said. Git totals describe the w
 
 ### Watcher's context and state
 
-Every message Watcher reads or sends reads its whole conversation again, so a long Watcher session costs more with each turn. Sotto compacts Watcher's conversation once it passes 400k tokens, between turns: never while Watcher is working, answering a card, or has news or your messages waiting. Claude Code, Codex and Muse can compact; Grok Build can't, so a Grok Watcher keeps all of it.
+Every message Watcher reads or sends reads its whole conversation again, so a long Watcher session costs more with each turn. Sotto compacts Watcher's conversation once it passes 400k tokens, or the point you chose, between turns: never while Watcher is working, answering a card, or has news or your messages waiting. To move that point, drag the line on **Compact Watcher at** in **Settings › Watcher**, or use the arrow keys on it: from 200k to 1M in steps of 50k. The bar under the line is Watcher's conversation now. Set below it, Watcher compacts at its next rest. Claude Code, Codex and Muse can compact; Grok Build can't, so a Grok Watcher keeps all of it.
 
 Watcher keeps what it must not lose through compaction: your pending decisions and the standing rules you gave it, in your words, and the issues it filed. Sotto works out the rest from live data each time Watcher reads its state, so none of it goes out of date: the threads Watcher watches, what each waits on and its open pull requests, the merge queue (open pull requests that aren't drafts and whose checks passed, oldest pass first), and the finished threads Settle finished threads is waiting to settle and what holds each. Sotto also points out any kept note that names a settled or unwatched thread or a merged or closed pull request, so Watcher checks it rather than trusting it. After a compaction, Watcher reads all of that back before anything else. With Keep local history off, Watcher's kept words stay in memory only.
 
-Press the owl in Watcher's header to see its context against the 400k point, **Compact context** to compact it now, and Watcher's state as it stands. The thin bar under the owl fills toward the point, and a dot shows when it is close. Escape closes the panel.
+Press the owl in Watcher's header to see its context against the compaction point, **Compact context** to compact it now, and Watcher's state as it stands. The thin bar under the owl fills toward the point, and a dot shows when it is close. Escape closes the panel.
 
 ### Watcher permissions and standing watching
 
