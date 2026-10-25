@@ -311,8 +311,8 @@ export class BranchBundles {
 
   /**
    * Lands a whole bundle: its size and SHA-256 as the sender named them, `git bundle verify` in the receiving repository,
-   * and exactly one ref, the sender's outgoing ref for this move, naming the commit. The move is recorded, the objects
-   * imported without writing any ref, and the incoming ref created only if it does not exist, then read back. The staged
+   * and exactly one ref, the sender's outgoing ref for this move, naming the commit. The objects are imported without
+   * writing any ref, the commit is checked to be a commit, the move is recorded, and the incoming ref created only if it does not exist, then read back. The staged
    * file is removed whatever happens.
    */
   async finish(incoming: IncomingBundle): Promise<BranchMoved | BranchMoveRefusal> {
@@ -327,8 +327,12 @@ export class BranchBundles {
       const landed = await this.landed(repository, moveId, ref, commit)
       if (landed) return landed
       if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
-      await this.record(moveId, commit, ref)
       await this.git(repository, ['bundle', 'unbundle', path], undefined, 600_000)
+      // A bundle whose one ref names a blob or a tree verifies and imports like any other, so its object's type is
+      // checked before the move is recorded: a record of what never landed would turn a good retry into move-differs.
+      if (!await this.isCommit(repository, commit)) return branchMoveRefusal('not-whole', branchMoveWords.notWhole)
+      if (incoming.cancelled) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+      await this.record(moveId, commit, ref)
       // The fence: a move ended while it was checked or imported creates no ref. Its objects stay, unreferenced, for Git
       // to collect, and its record lets a retry go ahead.
       const landing = incoming.land(() => this.createRef(repository, moveId, branch, commit))
