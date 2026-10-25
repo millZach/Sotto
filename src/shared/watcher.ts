@@ -183,6 +183,10 @@ export function watcherResultFromHostV1(value: unknown): unknown {
  * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old.
  */
 export const WATCHER_MACHINES_MAX = 100
+/** Why a machine in list_machines has no facts: the words Watcher reads, which the room tells apart by them (#1032). */
+export const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of machine it is. Update Sotto on it to see.'
+export const MACHINE_FACTS_UNREAD = 'This machine’s facts could not be read just now. Nothing was changed. Ask again.'
+export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it from the Threads page to see its facts.'
 
 /**
  * Watcher's state (#1189): what it must not lose when its conversation is compacted. Watcher keeps the user's pending

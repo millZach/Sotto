@@ -281,6 +281,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/hostBoot.css',
       'src/renderer/src/features/settings/hostProviders.css',
       'src/renderer/src/features/settings/workerRoles.css',
+      'src/renderer/src/features/settings/workerMachine.css',
       'src/renderer/src/features/settings/watcherCompaction.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/threadShortcuts.css',

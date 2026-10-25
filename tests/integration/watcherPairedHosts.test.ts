@@ -1683,6 +1683,10 @@ it('starts on This computer and says why when the paired machine new workers sta
   const started = await f.startHere(f.staysHere())
   expect(started).toMatchObject({ status: 'ok', target: { hostId: f.control.hostId() }, placement: { hostId: f.control.hostId(), awayFromDefault: true,
     note: 'Synthetic remote, where new workers start, is not connected, so this one started on This computer.' } })
+  // The room shows the same placement under the start's card, from memory as the receipt holds it.
+  const room = f.watcher.get()
+  if (room.status !== 'ok' || started.status !== 'ok' || !('receipt' in started)) throw new Error('room-unreadable')
+  expect(room.state.receiptPlacements).toContainEqual({ operationId: started.receipt.operationId, placement: started.placement })
 })
 
 it('keeps a start that reuses a worktree or a base branch read here on This computer, away from the default, and says why (#1032)', async () => {
@@ -1928,4 +1932,6 @@ it('refuses a machine or system while Work across machines is off, and lists no 
   const listed = await f.call('list_machines', {})
   expect(listed).not.toHaveProperty('newWorkersStart')
   expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')
+  const room = f.watcher.get()
+  expect(room.status === 'ok' && room.state.receiptPlacements).toBeFalsy()
 })
