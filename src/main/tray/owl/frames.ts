@@ -19,8 +19,8 @@ import { OWL_HEIGHT, OWL_WIDTH, allOwlPoses, poseKey } from './poses.mjs'
 
 export interface OwlManifest {
   readonly version: 1
-  readonly width: 27
-  readonly height: 22
+  readonly width: 18
+  readonly height: 18
   readonly frames: number
   readonly poseKeys: readonly string[]
   readonly palettes: readonly { body: MenuBarOwlBody; eyes: MenuBarOwlEyes; file: string; bytes: number }[]
@@ -30,8 +30,8 @@ const FRAME_BYTES = OWL_WIDTH * OWL_HEIGHT * 4
 
 const manifestSchema = z.object({
   version: z.literal(1),
-  width: z.literal(27),
-  height: z.literal(22),
+  width: z.literal(18),
+  height: z.literal(18),
   frames: z.number().int().positive(),
   poseKeys: z.array(z.string()),
   palettes: z.array(z.object({
@@ -116,7 +116,7 @@ export function encodePng(rgba: Uint8Array, width: number, height: number): Buff
   ])
 }
 
-/** One palette's frames as PNGs at 1x (27x22) and pixel-doubled 2x (54x44), in frame-number order. */
+/** One palette's frames as PNGs at 1x (18x18) and pixel-doubled 2x (36x36), in frame-number order. */
 export function owlFramePngs(deflated: Uint8Array, manifest: OwlManifest): readonly { readonly png1x: Buffer; readonly png2x: Buffer }[] {
   // Capped at the size the manifest promises, so a damaged file fails here instead of filling memory.
   const raw = inflateSync(deflated, { maxOutputLength: manifest.frames * FRAME_BYTES })
