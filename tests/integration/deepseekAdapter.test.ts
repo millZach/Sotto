@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
 import { deepseekFixture, deepseekFixtureSkips, FIXTURE_SERVER } from '../fixtures/fakeDeepSeekFixture'
+import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
 
 describeAdapterContract('DeepSeek Harness ACP', session => deepseekFixture(undefined, undefined, session), deepseekFixtureSkips)
 
@@ -110,6 +111,44 @@ describe('DeepSeek Harness ACP adapter', () => {
     const sets = (await f!.requests()).filter(record => record.method === 'session/set_config_option')
     expect(sets.some(record => record.params?.configId === 'reasoning_effort' && record.params?.value === 'low')).toBe(true)
     expect((await thread(id)).reasoningEffort).toBe('low')
+  })
+
+  it('sends an image as an ACP image block once the harness takes images, and refuses one before reading it otherwise', async () => {
+    f = await deepseekFixture(undefined, undefined, {}, {}, [{ ...FIXTURE_SERVER, models: [{ ...FIXTURE_SERVER.models[0]!, images: true }, FIXTURE_SERVER.models[1]!] }])
+    await f.script({ images: true })
+    await f.host.connect()
+    // Until a process has said it takes images, no model offers them.
+    expect((await f.host.snapshot()).models.map(model => model.supportsImages)).toEqual([undefined, undefined])
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Images' })
+    f.host.observeThreads?.([id])
+    const handle = handleOf(PIXEL_PNG, 'contract-image', 'Contract.png')
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'image', text: 'Look', attachments: [{ ...handle, read: async () => PIXEL_PNG }] })
+    expect((await f.host.snapshot()).models.map(model => model.supportsImages)).toEqual([true, undefined])
+    const prompt = (await f.requests()).find(record => record.method === 'session/prompt')!
+    expect(prompt.params?.prompt).toEqual([{ type: 'text', text: 'Look' }, { type: 'image', mimeType: 'image/png', data: PIXEL_PNG.toString('base64') }])
+    await f.driver.completeTurn(id, 'Seen')
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    // The plain model's record does not read images, so its image is refused before a byte is read.
+    await f.host.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: 'own-fixture/fixture-plain' })
+    let reads = 0
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'refused', text: 'Look', attachments: [{ ...handle, read: async () => { reads++; return PIXEL_PNG } }] }))
+      .rejects.toThrow(/image support/)
+    expect(reads).toBe(0)
+  })
+
+  it('offers no images when the harness does not advertise them, whatever the record says', async () => {
+    f = await deepseekFixture(undefined, undefined, {}, {}, [{ ...FIXTURE_SERVER, models: [{ ...FIXTURE_SERVER.models[0]!, images: true }] }])
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'No images' })
+    f.host.observeThreads?.([id])
+    const handle = handleOf(PIXEL_PNG, 'contract-image', 'Contract.png')
+    await expect(f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'refused', text: 'Look', attachments: [{ ...handle, read: async () => PIXEL_PNG }] }))
+      .rejects.toThrow(/image support/)
+    expect((await f.requests()).filter(record => record.method === 'session/prompt')).toHaveLength(0)
   })
 
   it('reads context fullness from usage updates, and no token counts', async () => {

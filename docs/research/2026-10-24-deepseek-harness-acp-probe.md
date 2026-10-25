@@ -69,7 +69,9 @@ and resumes the session, as Cursor's do.
   the whole session (`failOnStartupError`), stdio commands must be absolute, and server names normalize to 32
   characters. Sotto's tool servers fit, behind a preflight.
 - A direct instruction to use a question tool produced only a text reply; elicitation is outside this surface, so
-  questions would be prose. Images were not advertised on either route tried.
+  questions would be prose. Images were not advertised on either route tried. (Correction, October 25, 2026: both
+  overlays declared `input: [text]`, and the bridge advertises images only when the ACP entry's default model declares
+  image input, so this was the probe's own declaration reported back. See ADR-0138.)
 
 ## What remains open
 

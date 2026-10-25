@@ -135,6 +135,13 @@ export interface DeliveredAttachments {
   readonly nativePdfs: readonly { readonly name: string; readonly bytes: Uint8Array }[]
 }
 
+/** Images as ACP prompt content blocks, inline base64, in the order they were attached (Cursor, DeepSeek Harness). */
+export async function acpImageBlocks(images: readonly PromptImage[]): Promise<{ type: 'image'; mimeType: string; data: string }[]> {
+  const blocks: { type: 'image'; mimeType: string; data: string }[] = []
+  for (const image of images) blocks.push({ type: 'image', mimeType: image.mimeType, data: Buffer.from(await image.read()).toString('base64') })
+  return blocks
+}
+
 const isPdf = (file: Pick<PromptImage, 'mimeType' | 'name'>): boolean =>
   file.mimeType === 'application/pdf' || file.mimeType === AGENT_GENERIC_FILE_MIME_TYPE && attachmentExtension(file.name) === 'pdf'
 
