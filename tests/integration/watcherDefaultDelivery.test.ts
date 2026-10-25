@@ -3,13 +3,14 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { NO_TURN_TO_STEER } from '../../src/main/agents/watcherSendHolds'
+import { STEER_TURN_CHANGED, steerFallbackNote } from '../../src/main/agents/watcherSendHolds'
 import { watcherToolSchemas } from '../../src/shared/watcher'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 
-// ADR-0130: a Watcher send that names no delivery steers a running turn, goes now to an idle thread, and queues only where
-// the provider cannot steer. A thread waiting on the user's card still takes nothing, and a named delivery still wins.
+// ADR-0130: a Watcher send that names no delivery, or names steer, steers a running turn, goes now to an idle thread, and
+// queues only where the provider cannot steer. A thread waiting on the user's card still takes nothing, and a named now or
+// queue still wins.
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
@@ -72,18 +73,44 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     expect(f.control.watcherRecord().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
   })
 
-  it('steers a running turn Sotto never confirmed, as one resumed after the user answered its card (#1490)', async () => {
+  // Each case sends one steer: the fake provider never shows a steer, so a second send would wait on the first one's receipt.
+  it.each([
+    ['resumed after the user answered its card', 'names steer', 'completed', { delivery: 'steer' }],
+    ['resumed by Sotto’s restart note', 'names steer', 'failed', { delivery: 'steer' }],
+    ['resumed after the user answered its card', 'names no delivery', 'completed', {}],
+    ['resumed by Sotto’s restart note', 'names no delivery', 'failed', {}],
+  ] as const)('steers a running turn Sotto never confirmed, as one %s (#1490), when the send %s', async (_case, _how, before, named) => {
     const f = await fixture(provider)
     await f.turn('finished')
-    // The turn runs again, but the newest turn Sotto knows is still the finished one.
+    // The turn runs again, but the newest turn Sotto knows is still the one that ended.
+    f.native().thread.lastTurn = { ...f.native().thread.lastTurn!, status: before }
     f.native().thread.status = 'running'
     await f.refresh()
-    // A named steer still needs a confirmed turn to name, and a send now still waits for the turn.
-    expect(await f.send('Synthetic named steer', { delivery: 'steer' })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE' })
+    // A send now still waits for the turn, but a steer goes into the turn that runs, unfenced.
     expect(await f.send('Synthetic named now', { delivery: 'now' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
-    expect(await f.send('Synthetic unconfirmed steer')).toMatchObject({ status: 'ok', delivery: 'steer' })
+    const steered = await f.send('Synthetic unconfirmed steer', named)
+    expect(steered).toMatchObject({ status: 'ok', delivery: 'steer' })
+    expect(steered).not.toHaveProperty('note')
     expect(f.commands('steer', 'Synthetic unconfirmed steer')).toBe(1)
     expect(f.control.watcherRecord().operations.find(item => item.action === 'send' && item.delivery === 'steer')).not.toHaveProperty('expectedTurnId')
+  })
+
+  it('steers a confirmed running turn on a named steer that names no turn, into the turn it reads as running', async () => {
+    const f = await fixture(provider)
+    const turnId = await f.turn('running')
+    expect(await f.send('Synthetic named confirmed steer', { delivery: 'steer' })).toMatchObject({ status: 'ok', delivery: 'steer' })
+    expect(f.commands('steer', 'Synthetic named confirmed steer')).toBe(1)
+    expect(f.control.watcherRecord().operations.find(item => item.action === 'send')).toMatchObject({ delivery: 'steer', expectedTurnId: turnId })
+  })
+
+  it('sends a named steer now to a thread whose turn is over, and says so', async () => {
+    const f = await fixture(provider)
+    await f.turn('finished')
+    expect(await f.send('Synthetic idle steer', { delivery: 'steer' }))
+      .toMatchObject({ status: 'ok', delivery: 'now', note: steerFallbackNote('now'), receipt: { deliveryState: 'accepted' } })
+    expect(f.commands('send', 'Synthetic idle steer')).toBe(1)
+    expect(f.commands('steer', 'Synthetic idle steer')).toBe(0)
+    expect(f.native().thread.status).toBe('running')
   })
 
   it('goes now to a thread whose turn is over, rather than failing as a steer', async () => {
@@ -101,6 +128,7 @@ describe.each(['codex', 'claude'] as const)('a Watcher send that names no delive
     await f.refresh()
     const operations = f.control.watcherRecord().operations.length
     expect(await f.send('Synthetic blocked')).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
+    expect(await f.send('Synthetic blocked', { delivery: 'steer' })).toMatchObject({ status: 'refused', code: 'PENDING_USER_REQUEST' })
     expect(f.control.watcherRecord().operations).toHaveLength(operations)
     expect(f.commands('steer', 'Synthetic blocked') + f.commands('send', 'Synthetic blocked')).toBe(0)
     expect(f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
@@ -119,6 +147,14 @@ it('queues for a running thread whose provider cannot steer, says so, and goes n
   expect(await f.send('Synthetic default now')).toMatchObject({ status: 'ok', delivery: 'now', receipt: { deliveryState: 'accepted' } })
 })
 
+it('queues a named steer for a running thread whose provider cannot steer, and says so', async () => {
+  const f = await fixture('grok')
+  await f.turn('running')
+  expect(await f.send('Synthetic named steer to grok', { delivery: 'steer' }))
+    .toMatchObject({ status: 'ok', delivery: 'queue', note: steerFallbackNote('queue'), receipt: { deliveryState: 'queued' } })
+  expect(f.commands('steer', 'Synthetic named steer to grok')).toBe(0)
+})
+
 it('queues for a turn still ending after its thread reads idle, rather than start a second turn', async () => {
   const f = await fixture('codex')
   await f.turn('running')
@@ -133,19 +169,17 @@ it('lets a named delivery win over the default', async () => {
   await f.turn('running')
   expect(await f.send('Synthetic named queue', { delivery: 'queue' })).toMatchObject({ status: 'ok', delivery: 'queue', receipt: { deliveryState: 'queued' } })
   expect(f.commands('steer', 'Synthetic named queue')).toBe(0)
-  // A named steer to a thread whose turn is over is still refused: only the default turns into a send now.
-  const g = await fixture('codex')
-  await g.turn('finished')
-  expect(await g.send('Synthetic named steer', { delivery: 'steer', expectedTurnId: g.native().thread.lastTurn!.id }))
-    .toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: NO_TURN_TO_STEER })
-  expect(g.commands('send', 'Synthetic named steer')).toBe(0)
+  // A named now still waits for the running turn.
+  expect(await f.send('Synthetic named now', { delivery: 'now' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
+  expect(f.commands('send', 'Synthetic named now')).toBe(0)
 })
 
 it('refuses a default steer into a turn other than the one the send names', async () => {
   const f = await fixture('codex')
   const first = await f.turn('running')
   await f.turn('running')
-  expect(await f.send('Synthetic stale steer', { expectedTurnId: first })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE' })
+  expect(await f.send('Synthetic stale steer', { expectedTurnId: first })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
+  expect(await f.send('Synthetic stale steer', { delivery: 'steer', expectedTurnId: first })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
   expect(f.commands('steer', 'Synthetic stale steer')).toBe(0)
 })
 
@@ -163,4 +197,20 @@ it('answers a retry of a default send with its first receipt, whatever the threa
   expect(f.commands('steer', 'Synthetic retried steer') + f.commands('send', 'Synthetic retried steer')).toBe(1)
   // The same key with a named delivery is another call.
   expect(await f.call('send_to_thread', { ...input, delivery: 'steer' })).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+})
+
+it('answers a retry of a named steer that went now with its first receipt and note', async () => {
+  const f = await fixture('codex')
+  await f.turn('finished')
+  const input = { requestId: f.requestId, retryKey: randomUUID(), target: f.target, text: 'Synthetic retried idle steer', delivery: 'steer' }
+  const first = await f.call('send_to_thread', input)
+  expect(first).toMatchObject({ status: 'ok', delivery: 'now', note: steerFallbackNote('now') })
+  await f.turn('running')
+  const again = await f.call('send_to_thread', input)
+  if (first.status !== 'ok' || !('receipt' in first)) throw new Error('send refused')
+  expect(again).toMatchObject({ status: 'ok', delivery: 'now', note: steerFallbackNote('now'), receipt: { operationId: first.receipt.operationId } })
+  expect(f.commands('send', 'Synthetic retried idle steer') + f.commands('steer', 'Synthetic retried idle steer')).toBe(1)
+  // The same key with no delivery is another call.
+  const { delivery: _delivery, ...unnamed } = input; void _delivery
+  expect(await f.call('send_to_thread', unnamed)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
 })
