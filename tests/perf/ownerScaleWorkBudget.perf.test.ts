@@ -454,8 +454,10 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * and the adapter and the wrapper count, as the records they touched, the records their changes carried. Two counts are
  * added, the records and removals the wrapper's and the switch's thread changes carry (`wrapperChangeRecords`,
  * `switchChangeRecords`): the threads that changed and no more, the same as the adapter's on every scenario, flat along
- * both lines, and budgeted at today's count. The switch's are built for the fixture alone until the workspace reads them
- * in step 4, so building them is left out of every other count. Measured, on Owl at the owner's scale:
+ * both lines, and budgeted at today's count. Only the fixture reads the switch's until the workspace does in step 4, but
+ * building them is counted as main's work all the same, so a cost they add shows before it is real; it moved no count
+ * here. A provider connecting with every thread new is not a scenario here; `hostThreadChanges.test.ts` holds the work of
+ * building that publication in proportion to the threads. Measured, on Owl at the owner's scale:
  * - `threadRecordsTouched` falls from 1,310 to 889 per streamed update on one thread, 1,317 to 899 on three, and 5,800 to
  *   4,299 per send (stable 1,396 to 939, 1,315 to 897 and 5,786 to 4,286). The adapter and the wrapper touch about one
  *   record an update where each touched 212. The switch still walks its threads once (212) to build the snapshot the

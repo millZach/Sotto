@@ -81,16 +81,30 @@ function slotThreads(records: readonly AgentThread[] = []): ThreadMap {
 
 /**
  * Placements in the order they apply: each puts its thread just before the thread that follows it once all apply, so a
- * thread is placed only after the thread it goes before has been, when that one is placed too.
+ * thread is placed only after the thread it goes before has been, when that one is placed too. A placement's depth is how
+ * many placed threads stand between it and a thread that stays; each is worked out once, walking only to the first thread
+ * whose depth is known, and the placements go out shallowest first. A batch costs what it holds: a provider that connects
+ * with every one of its threads new places them all, and walking each one's chain on its own was quadratic.
  */
 function inPlacingOrder(placements: ThreadPlacement[]): ThreadPlacement[] {
   const byId = new Map(placements.map(placement => [placement.id, placement]))
-  const depth = (placement: ThreadPlacement): number => {
-    let steps = 0
-    for (let next = placement.beforeId; next !== null && byId.has(next) && steps <= byId.size; next = byId.get(next)!.beforeId) steps++
-    return steps
+  const depths = new Map<string, number>()
+  const levels: ThreadPlacement[][] = []
+  for (const placement of placements) {
+    // The placed threads from this one to the first whose depth is known or that goes before a thread that stays.
+    const chain: ThreadPlacement[] = []
+    let next: ThreadPlacement | undefined = placement
+    while (next && !depths.has(next.id) && chain.length <= byId.size) {
+      chain.push(next)
+      next = next.beforeId === null ? undefined : byId.get(next.beforeId)
+    }
+    let depth = next ? (depths.get(next.id) ?? 0) + 1 : 0
+    for (let at = chain.length - 1; at >= 0; at--, depth++) {
+      depths.set(chain[at]!.id, depth)
+      ;(levels[depth] ??= []).push(chain[at]!)
+    }
   }
-  return placements.map(placement => ({ placement, depth: depth(placement) })).sort((a, b) => a.depth - b.depth).map(({ placement }) => placement)
+  return levels.flat()
 }
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */

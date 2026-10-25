@@ -315,6 +315,20 @@ describe('the provider switch\'s thread changes', () => {
     expect(sequences).toEqual(sequences.map((_, index) => sequences[0]! + index))
   })
 
+  it('places new threads that land in several places at once, each before the thread that follows it', async () => {
+    const { claude, codex, host, sotto } = await switched()
+    const one = watch(host)
+    codex.emit(); claude.emit()
+    // A read brings four new threads: two together at the front, one in the middle and one at the end.
+    claude.state.threads.splice(0, 0, thread('n1'), thread('n2'))
+    claude.state.threads.splice(3, 0, thread('n3'))
+    claude.state.threads.push(thread('n4'))
+    await host.snapshot()
+    expect(one.last().whole).toBeUndefined()
+    expect(one.last().placements?.map(placement => placement.id).sort()).toEqual(['n1', 'n2', 'n3', 'n4'].map(id => sotto('claude', id)).sort())
+    expect(one.ids().filter(id => one.map.get(id)?.providerId === 'claude')).toEqual(['n1', 'n2', 'a1', 'n3', 'a2', 'a3', 'n4'].map(id => sotto('claude', id)))
+  })
+
   it('hands an unchanged thread out as the same record in its changes and its snapshots', async () => {
     const { claude, codex, host, sotto } = await switched()
     const one = watch(host)
@@ -326,4 +340,42 @@ describe('the provider switch\'s thread changes', () => {
     expect(one.latest().threads.find(item => item.id === record.id)).toBe(record)
   })
 
+})
+
+describe('the provider switch\'s work for a provider that connects', () => {
+  /**
+   * Connects a provider holding `count` threads to a switch that already published to a change subscriber, so every one
+   * of its threads comes as a placement, and counts the map reads that building that publication makes: each placement's
+   * successor, each look-up of a placed thread, and the rest.
+   */
+  async function connectWork(count: number): Promise<{ reads: number; placements: number; whole: boolean }> {
+    const registry = await registryIn()
+    const claude = new StreamingAdapter(state(Array.from({ length: count }, (_, index) => `t${index}`)))
+    const host = new ConfiguredProviderHost({ provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
+      hosts: { claude: new SottoThreadHost('claude', claude, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
+        muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() } })
+    cleanup.push(() => host.disconnect())
+    const map = new ThreadMap({ verify: false })
+    const received: AgentHostChanges[] = []
+    const off = host.subscribeActivityChanges(changes => { received.push(changes); map.apply(changes) }, { historyFromEvents: true })
+    cleanup.push(() => off())
+    const inside = host as unknown as { switchChanges: (...args: unknown[]) => unknown }
+    const build = inside.switchChanges.bind(host)
+    const { get, has } = Map.prototype
+    let reads = 0, counting = false
+    inside.switchChanges = (...args: unknown[]) => { counting = true; try { return build(...args) } finally { counting = false } }
+    Map.prototype.get = function (this: Map<unknown, unknown>, key: unknown) { if (counting) reads++; return get.call(this, key) }
+    Map.prototype.has = function (this: Map<unknown, unknown>, key: unknown) { if (counting) reads++; return has.call(this, key) }
+    try { await host.connect() } finally { Map.prototype.get = get; Map.prototype.has = has }
+    expect(map.size).toBe(count)
+    expect(threadMapDifferences(map, { ...(await host.snapshot()), threads: [...map.threads()] })).toEqual([])
+    const last = received.at(-1)!
+    return { reads, placements: last.placements?.length ?? 0, whole: last.whole === true }
+  }
+
+  it('builds the publication of a connecting provider\'s threads in work that grows with them, not faster', async () => {
+    const small = await connectWork(200), large = await connectWork(400)
+    console.log(`Map reads building the connect's publication: ${small.reads} for 200 threads, ${large.reads} for 400`)
+    expect(large.reads, `${small.reads} map reads for 200 threads and ${large.reads} for 400`).toBeLessThanOrEqual(small.reads * 2.2)
+  })
 })

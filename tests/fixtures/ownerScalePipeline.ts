@@ -197,15 +197,12 @@ class ShadowThreadMaps {
   /**
    * The provider switch's thread changes, which nothing in main subscribes to until the workspace moves onto them (#925,
    * step 4): this subscribes, in the form the workspace asks for so the switch subscribes to its providers as it does
-   * without it, and counts what each publication carries. Building them is left out of every count, as no work main does.
+   * without it, and counts what each publication carries. Building them is counted as main's work, as it will be once the
+   * workspace reads them; only this subscriber's own work is left out.
    * Verifying, its map is checked against the switch's activity snapshot from the same publish, which reaches its
    * subscribers first. Call it before anything subscribes to the switch's activity snapshots.
    */
   tapSwitchChanges(native: ConfiguredProviderHost): void {
-    const publisher = (native as unknown as { changes?: { publishChanges?: (build: unknown) => void } }).changes
-    if (typeof publisher?.publishChanges !== 'function') throw new Error('The provider switch keeps its thread changes publisher elsewhere; leave building its changes out of the counts another way.')
-    const publishChanges = publisher.publishChanges.bind(publisher)
-    publisher.publishChanges = build => this.uncounted(() => publishChanges(build))
     let latest: AgentHostSnapshot | undefined
     const subscribe = native.subscribeActivitySnapshots.bind(native)
     native.subscribeActivitySnapshots = (listener, options) => subscribe(snapshot => { latest = snapshot; listener(snapshot) }, options)
