@@ -11,9 +11,9 @@ import { ProviderMark } from '../agents/ProviderMark'
 import type { ThreadRow } from '../agents/threadFacts'
 import { AgentRequestCard } from '../agents/requests/AgentRequestCard'
 import { messageLinks } from '../agents/requests/messageLinks'
-import { answeredChoices, answerWords, chosenWords, OWN_WORDS } from '../agents/requests/answeredChoices'
+import { answeredChoices, chosenWords, OWN_WORDS } from '../agents/requests/answeredChoices'
 import { requestAnswerOwnerKey, requestAnswerStore } from '../agents/requests/requestAnswers'
-import { threadRequestBlocked, threadRequestOwner } from '../agents/requests/threadRequests'
+import { threadRequestBlocked, threadRequestOwner, threadRequestSubmit } from '../agents/requests/threadRequests'
 import type { ConversationThread } from './WatcherReceipts'
 
 /** One request a wake-up said waited on the user, placed under the message of Watcher's conversation its card goes under. */
@@ -160,11 +160,7 @@ function WatcherAskCard({ row, request, facts, answering, press }: {
     <AgentRequestCard ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={threadRequestBlocked(row, state)} draftOwner={owner}
       messageLinks={request.kind === 'question' ? messageLinks(thread.messages) : []}
       onWriteAnswer={() => answering.openAtRequest(thread.id, document.activeElement instanceof HTMLElement ? document.activeElement : null)}
-      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
-        // Main took it: the line that replaces the card can say what was chosen, even when the request left first.
-        if (result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
-        return result === null ? null : { error: result.error }
-      })}
+      onSubmit={threadRequestSubmit(command, thread, request, true)}
       onCheck={() => answering.check(thread.id)} />
   </section>
 }
