@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature, isImageAttachment,
   type AgentAttachmentHandle, type AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { HOST_FILE_PART_BYTES, type HostAttachmentFile } from '../../shared/hostProtocol'
 import type { AttachmentStore, StageInline } from './attachmentStore'
 
 export const ATTACHMENT_PREVIEW_RETENTION_MS = 7 * 86_400_000
@@ -249,4 +250,29 @@ export class AttachmentPreviews {
     const bytes = attachment ? await this.content.read(attachment.digest) : null
     return attachment && bytes ? `data:${attachment.mimeType};base64,${bytes.toString('base64')}` : null
   }
+  /**
+   * A sent attached file the message carries, never an image, with its bytes; null when the message, its preview entry or
+   * the bytes are gone. For the iPhone's Quick Look (ADR-0131, October 25 amendment): a file is found by its message, as
+   * an image's preview is, so a client reads only what a thread it reads carries.
+   */
+  async file(snapshot: AgentHostSnapshot, threadId: string, messageId: string, attachmentId: string): Promise<{ readonly handle: AgentAttachmentHandle; readonly bytes: Buffer } | null> {
+    const entry = this.live().get(JSON.stringify([threadId, messageId]))
+    if (!entry) return null
+    const message = snapshot.threads.find(thread => thread.id === threadId)?.messages.find(item => item.id === messageId)
+    if (!message || !this.permits(message, entry)) return null
+    const handle = entry.attachments.find(item => item.id === attachmentId && !isImageAttachment(item.mimeType))
+    const bytes = handle ? await this.content.read(handle.digest) : null
+    return handle && bytes ? { handle, bytes } : null
+  }
+}
+
+/**
+ * One part of a sent file's bytes, at most `HOST_FILE_PART_BYTES` of them, with what the whole file is so the client can
+ * check it once every part is in; null for a part past the last.
+ */
+export function attachedFilePart(handle: AgentAttachmentHandle, bytes: Buffer, part: number): HostAttachmentFile {
+  const parts = Math.max(1, Math.ceil(bytes.byteLength / HOST_FILE_PART_BYTES))
+  if (!Number.isInteger(part) || part < 0 || part >= parts) return null
+  const { name, mimeType, sizeBytes, digest } = handle
+  return { name, mimeType, sizeBytes, digest, part, parts, data: bytes.subarray(part * HOST_FILE_PART_BYTES, (part + 1) * HOST_FILE_PART_BYTES).toString('base64') }
 }
