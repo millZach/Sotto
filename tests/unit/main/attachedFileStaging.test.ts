@@ -33,6 +33,61 @@ const digestOf = (bytes: Uint8Array) => createHash('sha256').update(bytes).diges
 const index = async (root: string) => JSON.parse(await readFile(join(root, 'attachments', 'index.json'), 'utf8')) as { entries: { digest: string; mimeType: string }[] }
 
 describe('the attachment store with attached files (ADR-0131)', () => {
+  it('keeps the type each handle was attached as when the same bytes are an image and then a file', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const image = await store.stage({ name: 'shot.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    const file = await store.stage({ name: 'data.bin', mimeType: 'application/octet-stream', bytes: PIXEL_PNG })
+    expect(file).toMatchObject({ mimeType: 'application/octet-stream', digest: image.digest })
+    expect(() => store.verify([image, file])).not.toThrow()
+    expect(store.keeps(file)).toBe(true)
+    // The content stays the image it was checked as, so the image's chip and preview still read it.
+    expect(store.mimeType(image.digest)).toBe('image/png')
+    expect(await store.read(file.digest)).toEqual(PIXEL_PNG)
+    // A file handle on a model without image support is a file, which goes by path.
+    const snapshot = { models: [{ id: 'text', name: 'Text', provider: 'Grok', ready: true, runtimeModes: [], supportsImages: false }] } as unknown as AgentHostSnapshot
+    expect(() => validatePromptAttachments(snapshot, 'text', [file], { workingDirectory: root })).not.toThrow()
+    expect(() => validatePromptAttachments(snapshot, 'text', [image], { workingDirectory: root })).toThrow()
+  })
+
+  it('keeps bytes first staged as a file as the image they are once they are attached as one', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const file = await store.stage({ name: 'data.bin', mimeType: 'application/octet-stream', bytes: PIXEL_PNG })
+    const image = await store.stage({ name: 'shot.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    expect(image.mimeType).toBe('image/png')
+    expect(store.mimeType(file.digest)).toBe('image/png')
+    expect(() => store.verify([file, image])).not.toThrow()
+    expect((await readdir(join(root, 'attachments'))).filter(name => name !== 'index.json').sort()).toEqual([`${file.digest}.png`])
+    expect(await index(root)).toMatchObject({ entries: [{ digest: file.digest, mimeType: 'image/png' }] })
+    expect(await store.read(file.digest)).toEqual(PIXEL_PNG)
+    const restarted = new AttachmentStore(root, { acceptsFiles: true }); await restarted.load()
+    expect(() => restarted.verify([file, image])).not.toThrow()
+    expect(await restarted.read(image.digest)).toEqual(PIXEL_PNG)
+  })
+
+  it('keeps content as the image it became when a crash left both its image and its file copy', async () => {
+    for (const indexedAs of ['image/png', 'application/octet-stream']) {
+      const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+      const file = await store.stage({ name: 'data.bin', mimeType: 'application/octet-stream', bytes: PIXEL_PNG })
+      // A crash inside keepAsImage: the image's file is written, the index may or may not say so, and the .bin stays.
+      await writeFile(join(root, 'attachments', `${file.digest}.png`), PIXEL_PNG)
+      const saved = await index(root)
+      await writeFile(join(root, 'attachments', 'index.json'), JSON.stringify({ ...saved, entries: saved.entries.map(entry => ({ ...entry, mimeType: indexedAs })) }))
+      const restarted = new AttachmentStore(root, { acceptsFiles: true }); await restarted.load()
+      expect(restarted.mimeType(file.digest)).toBe('image/png')
+      expect(restarted.keeps({ ...file, mimeType: 'image/png' })).toBe(true)
+      expect(restarted.keeps(file)).toBe(true)
+      expect((await readdir(join(root, 'attachments'))).filter(name => name !== 'index.json')).toEqual([`${file.digest}.png`])
+      expect(await restarted.read(file.digest)).toEqual(PIXEL_PNG)
+    }
+  })
+
+  it('still refuses an image handle whose type the kept content does not have', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const image = await store.stage({ name: 'shot.png', mimeType: 'image/png', bytes: PIXEL_PNG })
+    expect(() => store.verify([{ ...image, mimeType: 'image/jpeg' }])).toThrow()
+    expect(() => store.verify([{ ...image, mimeType: 'application/octet-stream', sizeBytes: image.sizeBytes + 1 }])).toThrow()
+  })
+
   it('keeps a file as <digest>.bin with its type in the index, without reading its bytes, and finds it again after a restart', async () => {
     const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
     const handle = await store.stage(pdf)
@@ -100,6 +155,11 @@ describe('attached files in prompts (ADR-0131)', () => {
     model.supportsImages = false
     expect(validatePromptAttachments(snapshot, model.id, [file])).toEqual([file])
     expect(() => validatePromptAttachments(snapshot, model.id, [file, handleOf(PIXEL_PNG)])).toThrow('This model does not advertise image support.')
+    // Where files can be attached, the refusal names the image, since the files beside it are taken.
+    const shot = { ...handleOf(PIXEL_PNG), name: 'photo.png' }
+    expect(() => validatePromptAttachments(snapshot, model.id, [file, shot], { acceptsFiles: true }))
+      .toThrow('This model does not read images. Choose a model with image support, or remove photo.png.')
+    expect(() => validatePromptAttachments(snapshot, model.id, [shot], { acceptsFiles: false })).toThrow('This model does not advertise image support.')
     // A thread whose folder the adapter names has somewhere to copy a file; one with none is refused before anything is read.
     expect(validatePromptAttachments(snapshot, model.id, [file], { workingDirectory: '/work' })).toEqual([file])
     for (const workingDirectory of [undefined, null, '']) expect(() => validatePromptAttachments(snapshot, model.id, [file], { workingDirectory })).toThrow(ATTACHED_FILES_NEED_A_FOLDER)
