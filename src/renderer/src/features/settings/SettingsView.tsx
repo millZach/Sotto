@@ -2,6 +2,7 @@ import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
+import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
 import { useRevisionDraft } from './useRevisionDraft'
 import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
@@ -123,6 +124,7 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-capture': Mic,
   'settings-formatting': Sparkles,
   'settings-agents': MessagesSquare,
+  'settings-keyboard': Keyboard,
   'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   'settings-watcher': WatcherNavIcon,
@@ -718,6 +720,11 @@ export function SettingsView({
                   <Toggle setting="browser-without-asking" label={t`Let agents use the browser without asking`} checked={settings.browserWithoutAsking} onCheckedChange={checked => void save({ browserWithoutAsking: checked })} description={t`Agents can open pages, click and type in Sotto's browser, and see every page there, signed-in sites included. Stop it for a page or thread in Tools > Browser.`} />
                   <Toggle setting="visuals-in-threads" label={t`Let agents draw visuals in threads`} checked={settings.visualsInThreads} onCheckedChange={checked => void save({ visualsInThreads: checked })} description={t`Agents can draw diagrams and small interactive pages in a thread. Visuals are made on this computer and never go online.`} />
                 </SettingsGroup>
+              </Card>
+
+              <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
+                <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
+                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
               </Card>
 
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>

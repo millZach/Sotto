@@ -5,6 +5,7 @@ import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -235,6 +236,12 @@ export interface AppSettings {
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
+  /**
+   * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
+   * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
+   * Read live, so a change in Settings reaches every button and listener at once.
+   */
+  threadShortcuts: ThreadShortcutChoices
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -393,6 +400,7 @@ const fieldSchemas = {
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
@@ -494,6 +502,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
   holdShortcuts: [],
+  // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
+  threadShortcuts: {},
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
@@ -660,6 +670,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    // Row by row, so one damaged shortcut falls back to its own default and no other.
+    threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
