@@ -1,7 +1,9 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
+import { SIGN_IN_INTERFACE_WORDS } from '../../shared/interfaceWords'
 import {
   modelSourcesSchema, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
-  OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, SIGN_IN_WORDS, signInDoneSchema, signInResultSchema,
+  OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, signInDoneSchema, signInResultSchema,
   signInStartSchema, signInWaitSchema,
 } from '../../shared/opencodeSignIn'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -10,7 +12,8 @@ import type { OpenCodeSignIn } from './opencodeSignIn'
 /** What the bridge reaches: this computer's OpenCode sign-in, or nothing while OpenCode is held off this run. */
 export type OpenCodeSignInCalls = Pick<OpenCodeSignIn, 'sources' | 'signInWithKey' | 'startBrowserSignIn' | 'useExternalSignIn' | 'wait' | 'finish' | 'reopenPage' | 'cancel' | 'signOut'>
 
-const NOT_RUNNING = { status: 'refused', message: SIGN_IN_WORDS.notRunning } as const
+/** Written as it is answered, so it is in the interface language shown now (ADR-0123). */
+const notRunning = () => ({ status: 'refused', message: SIGN_IN_INTERFACE_WORDS.notRunning() }) as const
 
 /**
  * The main window's bridge to OpenCode's sign-in (#1104). OpenCode's Owl answer decides whether the handlers exist:
@@ -22,10 +25,10 @@ export function registerOpenCodeSignInIpc(ipc: IpcMainAdapter, calls: OpenCodeSi
   if (!calls) return () => undefined
   const handle = <T>(channel: string, schema: z.ZodType<T>, run: (request: unknown) => Promise<T>): void => {
     ipc.handle(channel, async (event, ...args) => {
-      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Sign in to model sources from the main Sotto window.')
+      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Sign in to model sources from the main Sotto window.`)
       const request: unknown = args[0]
       let answer: unknown
-      try { answer = await run(request) } catch { answer = NOT_RUNNING }
+      try { answer = await run(request) } catch { answer = notRunning() }
       return schema.parse(answer)
     })
   }

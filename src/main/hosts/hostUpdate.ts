@@ -1,3 +1,4 @@
+import { plural, t } from '@lingui/core/macro'
 import { createHash } from 'node:crypto'
 import { LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
 import { compareHostToTarget } from '../../shared/hostSelfUpdate'
@@ -103,8 +104,10 @@ interface StopDetail { readonly file?: string | undefined; readonly restarted?: 
 class UpdateStopped extends Error {
   constructor(readonly reason: string, readonly step: HostUpdateStep, readonly detail: StopDetail = {}) { super(reason) }
 }
-const STEP_VERBS: Readonly<Record<HostUpdateStep, (to: string) => string>> = {
-  download: to => `download ${to}`, check: () => 'check the download', install: to => `install ${to}`, restart: () => 'restart the host',
+/** What a step that stopped for a reason of its own says, one whole sentence per step. */
+const STEP_STOPPED: Readonly<Record<HostUpdateStep, (to: string, name: string) => string>> = {
+  download: (to, name) => t`Sotto could not download ${to} on ${name}.`, check: (_to, name) => t`Sotto could not check the download on ${name}.`,
+  install: (to, name) => t`Sotto could not install ${to} on ${name}.`, restart: (_to, name) => t`Sotto could not restart the host on ${name}.`,
 }
 export { compareOwlHostTarget }
 /** A path for a POSIX shell: as it is when it is plain, quoted otherwise, with a leading `~/` left for the shell to expand. */
@@ -228,7 +231,7 @@ export class HostUpdates {
   /** Why another command on this saved host must wait, while its update is under way. */
   busy(id: string): string | undefined {
     const entry = this.entries.get(id)
-    return entry?.phase === 'updating' ? `Sotto is updating the host on ${entry.name}. Nothing was changed. Wait for the update to finish, then try again.` : undefined
+    return entry?.phase === 'updating' ? t`Sotto is updating the host on ${{ host: entry.name }}. Nothing was changed. Wait for the update to finish, then try again.` : undefined
   }
   /**
    * Why Sotto must not restart into its update now: a host update is under way, and the restart would close the SSH
@@ -238,10 +241,17 @@ export class HostUpdates {
     const names = [...this.entries.values()].filter(entry => entry.phase === 'updating').map(entry => entry.name)
     if (!names.length) return undefined
     const one = names.length === 1
-    const say = (what: string): string => `Sotto did not restart while it was updating ${what}. Nothing was lost. Restart again once ${one ? 'that update has' : 'those updates have'} finished.`
-    const named = say(one ? `the host on ${names[0]!}` : `the hosts on ${names.slice(0, -1).join(', ')} and ${names.at(-1)!}`)
+    const host = names[0]!, hosts = names.slice(0, -1).join(', '), last = names.at(-1)!, count = names.length
+    const named = one
+      ? t`Sotto did not restart while it was updating the host on ${host}. Nothing was lost. Restart again once that update has finished.`
+      : t`Sotto did not restart while it was updating the hosts on ${hosts} and ${last}. Nothing was lost. Restart again once those updates have finished.`
     // An update's problem is at most 240 characters; long host names give way to a count.
-    return named.length <= 240 ? named : say(one ? 'a host' : `${names.length} hosts`)
+    return named.length <= 240 ? named : one
+      ? t`Sotto did not restart while it was updating a host. Nothing was lost. Restart again once that update has finished.`
+      : plural(count, {
+        one: 'Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.',
+        other: 'Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.',
+      })
   }
   /**
    * Sotto is quitting. A download still under way stops, as Cancel update would. An update the host has begun to unpack
@@ -258,7 +268,7 @@ export class HostUpdates {
 
   async command(id: string, action: HostUpdateAction): Promise<void> {
     const entry = this.entries.get(id)
-    if (!entry) throw new Error('This host no longer needs an update. Nothing was changed.')
+    if (!entry) throw new Error(t`This host no longer needs an update. Nothing was changed.`)
     delete entry.error
     try {
       if (action === 'update') this.update(entry)
@@ -266,7 +276,7 @@ export class HostUpdates {
       else if (action === 'stop-threads') { if (entry.phase === 'confirm' || entry.phase === 'waiting') await this.stopThreadsAndUpdate(entry) }
       else if (action === 'cancel') this.cancel(entry)
       else if (action === 'not-now') {
-        if (entry.phase === 'updating') throw new Error(`The update of ${entry.name} is under way and cannot be hidden. Nothing was changed.`)
+        if (entry.phase === 'updating') throw new Error(t`The update of ${{ host: entry.name }} is under way and cannot be hidden. Nothing was changed.`)
         this.notNow.add(id)
         if (entry.phase === 'confirm' || entry.phase === 'waiting') entry.phase = 'needs'
       }
@@ -280,9 +290,9 @@ export class HostUpdates {
    */
   private update(entry: Entry): void {
     if (entry.phase !== 'needs' && entry.phase !== 'failed') return
-    if (!entry.owned) throw new Error(`Sotto did not start the host on ${entry.name}, so it cannot restart it. Nothing was changed. Update it on ${entry.name} with the commands below.`)
+    if (!entry.owned) throw new Error(t`Sotto did not start the host on ${{ host: entry.name }}, so it cannot restart it. Nothing was changed. Update it on ${{ host: entry.name }} with the commands below.`)
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
-    if (!candidate) { entry.error = `${entry.name} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.`; return }
+    if (!candidate) { entry.error = t`${{ host: entry.name }} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.`; return }
     this.refresh(entry, candidate)
     if (!this.needsUpdate(candidate)) { this.entries.delete(entry.id); return }
     if (this.workingNow(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
@@ -295,7 +305,7 @@ export class HostUpdates {
   private cancel(entry: Entry): void {
     if (entry.phase === 'confirm' || entry.phase === 'waiting') { entry.phase = 'needs'; return }
     if (entry.phase !== 'updating') return
-    if ((entry.step !== 'download' && entry.step !== 'check') || entry.installing) throw new Error(`${entry.name} is already installing ${entry.to}, which cannot be stopped partway. Nothing was changed.`)
+    if ((entry.step !== 'download' && entry.step !== 'check') || entry.installing) throw new Error(t`${{ host: entry.name }} is already installing ${{ to: entry.to }}, which cannot be stopped partway. Nothing was changed.`)
     const run = entry.run
     delete entry.run
     Object.assign(entry, { phase: 'needs', step: undefined, route: undefined, held: undefined })
@@ -415,35 +425,43 @@ export class HostUpdates {
   /** What happened, what runs now, and what to do: the three sentences a failure shows. */
   private describe(entry: Entry, stopped: UpdateStopped): HostUpdateFailure {
     const { name, from, to } = entry
-    const kept = `${name} still runs ${from}. Nothing was lost.`
-    const byHand = `Try again, or update it by hand on ${name} with the commands below.`
+    const kept = t`${name} still runs ${from}. Nothing was lost.`
+    const byHand = t`Try again, or update it by hand on ${name} with the commands below.`
+    const back = (): string => t`${name}'s threads are back. Nothing was lost.`
     const say = (message: string, next = byHand, keptNow = kept): HostUpdateFailure => ({ step: stopped.step, message, kept: keptNow, next })
     const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-\d+\.\d+\.\d+(?:-owl\.\d{8}\.[1-9]\d*)?-/u, '').replace(/\.tar\.gz$/u, '')
     switch (stopped.reason) {
-      case 'desktop-unreachable': return say(`${name} could not download ${to} from GitHub, and this computer could not download it either.`, `Check that this computer and ${name} are online, then try again, or update it by hand on ${name}.`)
-      case 'copy-incomplete': return say(`${name} could not reach GitHub, so this computer downloaded ${to}, but copying it to ${name} over SSH stopped partway.`, `Check that ${name} is online, then try again, or update it by hand on ${name}.`)
-      case 'download-unreachable': case 'download-failed': return say(`${name} could not download ${to} from GitHub.`, `Check that ${name} is online, then try again, or update it by hand on ${name}.`)
-      case 'archive-unavailable': return say(`The releases page has no Sotto ${to} host for ${name}${platform ? `'s system (${platform})` : ''}.`, `Keep using ${from}, or update it by hand on ${name} once one is published.`)
-      case 'checksum-mismatch': return say(`The download on ${name} did not match the release's checksum, so Sotto deleted it and installed nothing.`, `Try again to download it fresh, or update it by hand on ${name}.`)
-      case 'desktop-checksum-mismatch': return say(`The download on this computer did not match the release's checksum, so Sotto installed nothing on ${name}.`, `Try again to download it fresh, or update it by hand on ${name}.`)
-      case 'unpack-failed': return say(`Sotto ${to} could not be unpacked on ${name}, so nothing was installed.`)
-      case 'archive-invalid': return say(`The archive on the releases page is not the Sotto ${to} host, so nothing was installed on ${name}.`, `Keep using ${from}, and tell whoever publishes Sotto's releases.`)
-      case 'update-version-conflict': return say(`The existing versions/${to} folder on ${name} differs from the release. Sotto kept it unchanged.`, `Use a newer Sotto build, or stop the host on ${name}, keep that folder as a backup and move it aside before trying again.`)
-      case 'node-unsupported': return say(`Sotto ${to}'s host needs Node ${stopped.detail.range ?? 'another version'}, and ${name} runs Node ${stopped.detail.node ?? 'another version'}, so nothing was installed.`, `Install that Node for the SSH account on ${name}, then try again.`)
-      case 'update-busy': return say(`Another Sotto is updating the host on ${name} right now, so this one stopped before changing anything.`, 'Wait a minute, then try again.')
-      case 'update-not-owned': return say(`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, `Stop the host on ${name}, then connect to it again from Settings > Hosts & phones, and Sotto starts ${to}.`)
-      case 'restart-not-sent': return say(`Sotto could not ask ${name}'s host to restart, so ${to} is installed beside ${from}, which still runs.`, `Try again, or press Stop host for ${name} in Settings > Hosts & phones and switch it on again, which starts ${to}.`)
-      case 'update-stop-failed': return say(`${name}'s host did not stop, so Sotto left ${from} running.`, `Try again, or stop the host on ${name} by hand, then connect to it again.`)
+      case 'desktop-unreachable': return say(t`${name} could not download ${to} from GitHub, and this computer could not download it either.`, t`Check that this computer and ${name} are online, then try again, or update it by hand on ${name}.`)
+      case 'copy-incomplete': return say(t`${name} could not reach GitHub, so this computer downloaded ${to}, but copying it to ${name} over SSH stopped partway.`, t`Check that ${name} is online, then try again, or update it by hand on ${name}.`)
+      case 'download-unreachable': case 'download-failed': return say(t`${name} could not download ${to} from GitHub.`, t`Check that ${name} is online, then try again, or update it by hand on ${name}.`)
+      case 'archive-unavailable': return say(platform ? t`The releases page has no Sotto ${to} host for ${name}'s system (${platform}).` : t`The releases page has no Sotto ${to} host for ${name}.`, t`Keep using ${from}, or update it by hand on ${name} once one is published.`)
+      case 'checksum-mismatch': return say(t`The download on ${name} did not match the release's checksum, so Sotto deleted it and installed nothing.`, t`Try again to download it fresh, or update it by hand on ${name}.`)
+      case 'desktop-checksum-mismatch': return say(t`The download on this computer did not match the release's checksum, so Sotto installed nothing on ${name}.`, t`Try again to download it fresh, or update it by hand on ${name}.`)
+      case 'unpack-failed': return say(t`Sotto ${to} could not be unpacked on ${name}, so nothing was installed.`)
+      case 'archive-invalid': return say(t`The archive on the releases page is not the Sotto ${to} host, so nothing was installed on ${name}.`, t`Keep using ${from}, and tell whoever publishes Sotto's releases.`)
+      case 'update-version-conflict': return say(t`The existing versions/${to} folder on ${name} differs from the release. Sotto kept it unchanged.`, t`Use a newer Sotto build, or stop the host on ${name}, keep that folder as a backup and move it aside before trying again.`)
+      case 'node-unsupported': {
+        const another = t({ message: 'another version', comment: 'Stands for a Node version Sotto could not read: "needs Node another version".' })
+        const range = stopped.detail.range ?? another, node = stopped.detail.node ?? another
+        return say(t`Sotto ${to}'s host needs Node ${range}, and ${name} runs Node ${node}, so nothing was installed.`, t`Install that Node for the SSH account on ${name}, then try again.`)
+      }
+      case 'update-busy': return say(t`Another Sotto is updating the host on ${name} right now, so this one stopped before changing anything.`, t`Wait a minute, then try again.`)
+      case 'update-not-owned': return say(t`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, t`Stop the host on ${name}, then connect to it again from Settings > Hosts & phones, and Sotto starts ${to}.`)
+      case 'restart-not-sent': return say(t`Sotto could not ask ${name}'s host to restart, so ${to} is installed beside ${from}, which still runs.`, t`Try again, or press Stop host for ${name} in Settings > Hosts & phones and switch it on again, which starts ${to}.`)
+      case 'update-stop-failed': return say(t`${name}'s host did not stop, so Sotto left ${from} running.`, t`Try again, or stop the host on ${name} by hand, then connect to it again.`)
       case 'update-start-failed': return stopped.detail.restarted
-        ? say(`${to} installed on ${name}, but its host did not start, so Sotto started ${from} again.`, `Try again, or see what the new host says: press Stop host for ${name} in Settings > Hosts & phones, then run the commands below on ${name}.`, `${name}'s threads are back. Nothing was lost.`)
-        : say(`${to} installed on ${name}, but its host did not start, and ${from} did not start again either.`, `Run the commands below on ${name} to see what the host says, then connect to it again from Settings > Hosts & phones.`, `Nothing on ${name} was lost: its threads are saved there.`)
-      case 'update-wrong-version': return say(`${name} restarted, but its host says it runs ${stopped.detail.version ?? from}.`, byHand, `${name}'s threads are back. Nothing was lost.`)
+        ? say(t`${to} installed on ${name}, but its host did not start, so Sotto started ${from} again.`, t`Try again, or see what the new host says: press Stop host for ${name} in Settings > Hosts & phones, then run the commands below on ${name}.`, back())
+        : say(t`${to} installed on ${name}, but its host did not start, and ${from} did not start again either.`, t`Run the commands below on ${name} to see what the host says, then connect to it again from Settings > Hosts & phones.`, t`Nothing on ${name} was lost: its threads are saved there.`)
+      case 'update-wrong-version': {
+        const version = stopped.detail.version ?? from
+        return say(t`${name} restarted, but its host says it runs ${version}.`, byHand, back())
+      }
       case 'update-lost':
-        if (stopped.step !== 'restart') return say(`The connection to ${name} closed during the update, before anything was switched.`)
+        if (stopped.step !== 'restart') return say(t`The connection to ${name} closed during the update, before anything was switched.`)
         return stopped.detail.version
-          ? say(`The connection to ${name} closed while its host restarted, and it came back on ${stopped.detail.version}.`, byHand, `${name}'s threads are back. Nothing was lost.`)
-          : say(`The connection to ${name} closed while its host restarted, so Sotto cannot tell which version is running.`, `Sotto keeps connecting to ${name}. If it still runs ${from}, it shows here again.`, `Nothing on ${name} was lost.`)
-      default: return say(`Sotto could not ${STEP_VERBS[stopped.step](to)} on ${name}.`)
+          ? say(t`The connection to ${name} closed while its host restarted, and it came back on ${{ version: stopped.detail.version }}.`, byHand, back())
+          : say(t`The connection to ${name} closed while its host restarted, so Sotto cannot tell which version is running.`, t`Sotto keeps connecting to ${name}. If it still runs ${from}, it shows here again.`, t`Nothing on ${name} was lost.`)
+      default: return say(STEP_STOPPED[stopped.step](to, name))
     }
   }
   /** The commands that update the host by hand, which the panel offers to copy. Sotto never runs them. */
@@ -467,7 +485,7 @@ export class HostUpdates {
   }
   private view(entry: Entry): HostUpdateState {
     const withdrawn = entry.phase === 'done' && entry.withdrawn
-      ? `${entry.name} was already installing ${entry.to} when this computer stopped updating to it, so it finished. Nothing was lost. ${entry.name} runs a newer Sotto than this computer until this computer updates too.`
+      ? t`${{ host: entry.name }} was already installing ${{ to: entry.to }} when this computer stopped updating to it, so it finished. Nothing was lost. ${{ host: entry.name }} runs a newer Sotto than this computer until this computer updates too.`
       : undefined
     const error = entry.error ?? withdrawn ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
     return { id: entry.id, name: entry.name, from: entry.from, to: entry.to, phase: entry.phase, owned: entry.owned,

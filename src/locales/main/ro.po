@@ -7,26 +7,986 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: ro\n"
 
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} finished on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} finished."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} is asking a question on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} is asking a question."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} is asking for permission on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "{agent} is asking for permission."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "{count, plural, one {{list} does nothing now.} other {{list} do nothing now.}}"
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "{count, plural, one {{list} is Voxtype’s again.} other {{list} are Voxtype’s again.}}"
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{count, plural, one {Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.} other {Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.}}"
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{file} includes a file outside the extension."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{file} is not a theme file."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{file} is not valid JSON."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{file} is too large to be a theme file."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} could not read this thread's agents. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} could not read this thread's changes. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} could not read this thread's files. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{host} is already installing {to}, which cannot be stopped partway. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} is disconnected. Nothing was sent. Try again once it reconnects."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "{host} is no longer saved. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{host} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "{host} is not connected. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "{host} is not connected. Nothing was changed. Switch it on, then try again."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "{host} is not connected. Nothing was started. Switch it on, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{host} runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{host} was already installing {to} when this computer stopped updating to it, so it finished. Nothing was lost. {host} runs a newer Sotto than this computer until this computer updates too."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "{host} was saved as a host but is not connected. {why}"
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "{host} was saved as a host just as the setup stopped, and Sotto could not forget it again. Forget it in Settings > Hosts & phones if you do not want it."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "{host} was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "{host}'s host can already use {name}, so there is nothing for an agent to install, update or fix. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "{hosts} kept their threads as they were, so those still say Needs attention. Nothing was changed there. Update or connect to each host in Settings > Hosts & phones, then press Dismiss all again."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+#: src/main/hosts/hostSetup.ts
+msgid "{message} Nothing was started."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{name} contributes no color themes."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name} could not download {to} from GitHub, and this computer could not download it either."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name} could not download {to} from GitHub."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name} could not reach GitHub, so this computer downloaded {to}, but copying it to {name} over SSH stopped partway."
+msgstr ""
+
+#: src/main/hosts/hostPhones.ts
+msgid "{name} did not answer about phone access in time. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "{name} is available in Sotto Owl. Nothing was sent."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{name} is licensed as {license}, which Sotto does not import."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "{name} is licensed as unknown, which Sotto does not import."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name} restarted, but its host says it runs {version}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name} still runs {from}. Nothing was lost."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "{name} would not turn on linger without an administrator. Without it, a unit would stop {name}’s host whenever its account signs out, so Sotto installed nothing."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name}'s host did not stop, so Sotto left {from} running."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "{name}’s systemd would not take the unit, so Sotto took it away again. Nothing was changed, and the host keeps running as before. Check systemd for {name}’s account, then try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{name}'s threads are back. Nothing was lost."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "{problem} Sotto could not restore the keys. Check that ~/.config/hypr is writable, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "{problem} Sotto restored your files. Fix the error, then try again."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "{sentence} Nothing was changed on {name}."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "{target} is already saved as {name}. Nothing was saved. Switch it on in the list instead."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "{target} is already saved as {saved}. Nothing was started. Switch it on in the list instead."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{to} installed on {name}, but its host did not start, and {from} did not start again either."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "{to} installed on {name}, but its host did not start, so Sotto started {from} again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "A browser action is still running."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "A checkpoint file backup failed its integrity check."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "A checkpoint path is outside the working folder."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A color theme contribution has a missing or unsafe path; nothing was imported."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A color theme contribution has no path; nothing was imported."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A color theme could not be imported; nothing was imported. {detail}"
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A contributed color theme is missing or outside the extension; nothing was imported."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "A new-window request was blocked. Use a link destination action or open this page externally."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "A remote host address must use HTTPS."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A theme file includes itself."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A theme file includes too many other files."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "A theme include must be a relative file path."
+msgstr ""
+
+#. A notification’s title when the thread has no title
+#: src/main/notifications/desktopNotifier.ts
+msgid "A thread"
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "Add {host}"
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "Add {host} as a host?\n"
+"Sotto connects to {target}, starts the host there if it is not running and pairs this computer. {host} is saved in Settings > Hosts & phones once it answers."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Add host is connecting to {host} right now. Nothing was saved. Wait for it to finish, then try again."
+msgstr ""
+
+#: src/main/agents/subagentIpc.ts
+msgid "Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Agents is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "An agent cannot set up a host from this window. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "An agent cannot work on a host's providers from this window. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "An agent is connecting to {host} for its host setup right now. Nothing was saved. Wait for it, or stop the setup first."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is fixing {provider} on {host} now. Stop it first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is fixing {provider} on {host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is installing {provider} on {host} now. Stop it first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is installing {provider} on {host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started."
+msgstr ""
+
+#: src/main/index.ts
+msgid "An agent is setting up {host} now. Stop that setup first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is updating {provider} on {host} now. Stop it first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "An agent is updating {provider} on {host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostSetupThreads.ts
+msgid "An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "An Omarchy palette was installed by hand. Sotto leaves it alone."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Another Sotto installation on {name} already has a unit named sotto-host. Nothing was changed, and the host keeps running as before. Remove that unit on {name}, then try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Another Sotto is updating the host on {name} right now, so this one stopped before changing anything."
+msgstr ""
+
+#. Stands for a Node version Sotto could not read: "needs Node another version".
+#: src/main/hosts/hostUpdate.ts
+msgid "another version"
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Answer the request to open this page first."
+msgstr ""
+
 #: src/main/tray/trayController.ts
 msgid "Auto-paste"
 msgstr "Lipire automată"
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Branches are unavailable on this host."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+msgid "Branches are unavailable."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Capture the page again before selecting feedback."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Changed files are unavailable on this host."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+msgid "Changed files are unavailable."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "Changes cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "Changes reads this thread again when its host says its files changed, so there is nothing to watch here. Nothing was changed."
+msgstr ""
 
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
 msgid "Check for Updates…"
 msgstr "Caută actualizări…"
 
+#: src/main/hosts/hostUpdate.ts
+msgid "Check that {name} is online, then try again, or update it by hand on {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Check that this computer and {name} are online, then try again, or update it by hand on {name}."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "Checkpoint capture requires regular files without hard links."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Checkpoint capture was interrupted before its completed file snapshot was saved. Later edits cannot be safely attributed to that turn."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+#: src/main/tools/checkpoints.ts
+msgid "Checkpoint paths cannot follow symbolic links or directory junctions."
+msgstr ""
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Choose a host port between 1 and 65535."
+msgstr ""
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Choose a SSH port between 1 and 65535."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Choose a valid paired client."
+msgstr ""
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Choose an absolute host data path, or a path starting with ~/."
+msgstr ""
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Choose an absolute host installation path, or a path starting with ~/."
+msgstr ""
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Choose an absolute path for the SSH identity file."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Choose each computer once before clearing usage."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Choose whether to give these keys to Sotto first."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Choose whether to trust this SSH host key."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Clipboard unavailable. Recording kept. Open Dictate."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Completed file snapshot was unavailable."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Connect a host in Settings > Hosts & phones to continue."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Connect this host before selecting it."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Connect to {host} before changing whether its host starts at boot. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Connect to {host} before stopping its host."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Connect to {host} over SSH once before choosing how Sotto connects. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Connect to the host before reading its state."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Connect to the host before saving this draft."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before changing its phone access."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before changing whether it starts at boot."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before forgetting a client."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before requesting a pairing code."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before setting up desktop permissions."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before stopping it."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Connect to the SSH host before updating it."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Connect to this host before changing whether it starts at boot. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/continueThreadIpc.ts
+msgid "Continue a thread from the main Sotto window."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Continue with a new message on the desktop that owns this thread. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+msgid "Continuing an agent as a thread is unavailable in this window."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Copied — paste with Super+V"
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Could not transcribe. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Could not transcribe. Recording lost. Dictate again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Dictation failed. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Dictation failed. Recording lost. Dictate again."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "Don’t add"
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Downloads are blocked here. Open this page externally to download."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Each shortcut can be in only one row, once. Pick other keys."
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 msgid "Edit"
 msgstr "Editare"
+
+#: src/main/hosts/sshConfiguration.ts
+msgid "Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Enter one SSH answer without a line break."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "File checkpoint capture was unavailable."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "Files cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Files is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Finish or resolve active and pending work before reverting."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Git history or staging changed after this checkpoint. Preserve those changes before reverting."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Hosts cannot be updated from this window. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "How Sotto connects to {host} could not be changed. Nothing was changed. Check that {host} is reachable over SSH and its host is running, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland already uses {keys} for “{use}”. Pick other keys."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland can’t bind those keys. Use a letter, a number, an F key, Space or an arrow key, with modifiers."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland could not reload. Try again in your desktop session."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland is not using Sotto’s keys."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland reloaded with no new errors."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland reloaded with no new errors. Voxtype keeps running without these keys."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Hyprland reported an error after Sotto’s change. Hyprland said: “{said}”."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Install that Node for the SSH account on {name}, then try again."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "Its row in Settings > Hosts & phones says what to do."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Keep using {from}, and tell whoever publishes Sotto's releases."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Keep using {from}, or update it by hand on {name} once one is published."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Later edits in {path} would be overwritten."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Later edits in {path} would be overwritten. Preserve them before reverting."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Left alone. Your keys still run what they did before."
+msgstr ""
+
+#: src/main/settings/retiredChats.ts
+msgid "Local history is off, but saved Chats could not be cleared. Restore access to personal-chat/chats.json and save Settings again."
+msgstr ""
+
+#: src/main/settings/retiredChats.ts
+msgid "Local history is off, but saved Chats could not be read safely. The original personal-chat/chats.json is unchanged. Repair that file and save Settings again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Matching native conversation rollback is unavailable."
+msgstr ""
+
+#: src/main/memory/ipc.ts
+msgid "Memory is unavailable. Restart Sotto and try again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Microphone access denied. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Microphone access was denied. Allow it, then try again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Microphone could not start. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Microphone lost. Recording lost. Connect it again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Native conversation rollback is unavailable for this provider."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Native rollback has not been confirmed. Check recovery before continuing; Sotto will not send it again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Native rollback is still unconfirmed. No files were changed and rollback was not sent again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "No element is available there. Use Region to comment on the saved screenshot."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "No microphone found. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "No microphone set up. Recording kept. Check Settings."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "No microphone was found. Connect one, then try again."
+msgstr ""
+
+#: src/main/hosts/hostSetupThreads.ts
+msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "No speech was heard. Dictate again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "No speech was heard. Recording kept."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "None of the themes in {name} could be read."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Nothing on {name} was lost: its threads are saved there."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Nothing on {name} was lost."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Nothing was saved."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "Notifications are on."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Omarchy did not render Sotto’s colours. Choose another theme, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Omarchy has not rendered Sotto’s colours."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening."
+msgstr ""
+
+#: src/main/terminals/clipboard.ts
+msgid "Only a PNG image up to 10 MiB can be pasted into a terminal."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Only an allowed action can be granted for the whole thread. Answer this one once."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
+msgstr ""
+
+#: src/main/agents/subagentIpc.ts
+msgid "Open Agents in the main Sotto window."
+msgstr ""
+
+#: src/main/agents/delegationIpc.ts
+msgid "Open delegations in the main Sotto window."
+msgstr ""
+
+#: src/main/hosts/ipc.ts
+msgid "Open Hosts in the main Sotto window."
+msgstr ""
+
+#: src/main/phones/ipc.ts
+msgid "Open Phones in the main Sotto window."
+msgstr ""
+
+#: src/main/notifications/notificationIpc.ts
+#: src/main/performance/mainActivityIpc.ts
+msgid "Open Settings in the main Sotto window."
+msgstr ""
+
+#: src/main/agents/usageIpc.ts
+msgid "Open Usage in the main Sotto window."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX answered with an error ({status}). Try again later."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX could not be reached. Check your connection and try again."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX did not describe that extension completely."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX metadata does not match the selected extension."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX publishes no checksum for {name}, so Sotto did not download it."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX redirected somewhere Sotto does not download from."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX redirected too many times."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX sent a response Sotto could not read."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX sent a search response Sotto could not read."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Open VSX sent more data than a theme needs, so the download was stopped."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Other thread work overlapped in this shared working copy. Its files cannot be safely attributed to this turn."
+msgstr ""
+
+#: src/main/hosts/hostPhones.ts
+msgid "Phone access on {name} could not be reached. Nothing was changed. Check that {name} is connected, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Phone access on hosts cannot be changed from this window. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Pull requests are unavailable on this host."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+msgid "Pull requests are unavailable."
+msgstr ""
 
 #: src/main/tray/trayController.ts
 msgid "Quit"
 msgstr "Ieșire"
 
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Recording stopped and was lost. Dictate again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Recording stopped unexpectedly. Recording kept."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "Refresh the workspace and select a file."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "Refresh the workspace and select a path."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "Refresh the workspace and use a relative directory path."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Removal stopped before it finished. Try again to finish removing this piece."
+msgstr ""
+
+#. What an Omarchy setup piece is doing now, on its row in Settings › Dictation.
+#: src/main/omarchy/setup.ts
+msgid "Removing"
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Revert was interrupted. Check recovery to reconcile native history and finish restoring files."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Run the commands below on {name} to see what the host says, then connect to it again from Settings > Hosts & phones."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Run this on {name}, then press Start at boot again. Sotto never runs sudo."
+msgstr ""
+
+#: src/main/agents/retainedDraftStore.ts
+msgid "Saved remote drafts could not be read. The original file was preserved. Repair local storage before saving draft text."
+msgstr ""
+
+#: src/main/hosts/inactiveLocalHost.ts
+msgid "Saved thread ownership could not be read. Your saved answers have not changed."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+msgid "Screenshots cannot be attached in this window. Nothing was attached."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Secure credential storage is unavailable. Unlock it before connecting again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Select a region inside the captured page."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Select a thread before opening an embedded page."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Set up by hand. Sotto leaves these files alone."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Set up your microphone in Settings."
+msgstr ""
+
+#. What an Omarchy setup piece is doing now, on its row in Settings › Dictation.
+#: src/main/omarchy/setup.ts
+msgid "Setting up"
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Settings could not be read. Open Sotto and try again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Settings could not be read. Recording kept. Open Sotto."
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 msgid "Settings…"
 msgstr "Setări…"
+
+#: src/main/omarchy/setup.ts
+msgid "Setup stopped before it finished. Try again, or remove it in Settings › Dictation."
+msgstr ""
 
 #: src/main/app/applicationMenu.ts
 #: src/main/tray/trayController.ts
@@ -37,6 +997,258 @@ msgstr "Afișează înregistrările recente ale turelor"
 msgid "Show Sotto"
 msgstr "Afișează Sotto"
 
+#: src/main/files/ipc.ts
+msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
+msgstr ""
+
+#: src/main/agents/opencodeSignInIpc.ts
+msgid "Sign in to model sources from the main Sotto window."
+msgstr ""
+
+#: src/main/themes/ipc.ts
+msgid "Something went wrong. Try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto {to} could not be unpacked on {name}, so nothing was installed."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto {to}'s host needs Node {range}, and {name} runs Node {node}, so nothing was installed."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto {version} has a newer owl. Updating restarts the bar for a moment."
+msgstr ""
+
+#: src/main/hosts/adminConnection.ts
+msgid "Sotto closed the connection to the host. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto could not ask {name}'s host to restart, so {to} is installed beside {from}, which still runs."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not check Hyprland’s configuration. Your keys were left alone."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto could not check the download on {name}."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not check the reloaded keys. Try again in your desktop session."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto could not download {to} on {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto could not install {to} on {name}."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not read Hyprland’s keys. Open Sotto in your Omarchy desktop session, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not read its Omarchy setup record. Your files were left alone. Restore the record, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not read or change these files. Check that your configuration is readable and writable, then try again."
+msgstr ""
+
+#: src/main/hosts/ipc.ts
+msgid "Sotto could not read that request, so nothing was sent to the host. Close this and try again."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not remove the Omarchy theme. Finish any theme switch in progress, then try again. Your files and Appearance choices were restored."
+msgstr ""
+
+#: src/main/performance/mainActivityService.ts
+msgid "Sotto could not remove the recording you stopped. It is in performance-recordings as {folder}, kept like a saved recording until five newer ones are saved."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not render the Omarchy theme. Choose an Omarchy theme and finish any switch in progress, then try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto could not restart the host on {name}."
+msgstr ""
+
+#: src/main/startup/linuxAutostart.ts
+msgid "Sotto could not save its sign-in command. Reinstall the package and try again."
+msgstr ""
+
+#: src/main/performance/mainActivityService.ts
+msgid "Sotto could not save the recording, and could not remove the unfinished folder {folder} in performance-recordings. Sotto removes it the next time it starts or saves a recording. Try Record a minute again."
+msgstr ""
+
+#: src/main/performance/mainActivityService.ts
+msgid "Sotto could not save the recording. Nothing was kept. Try Record a minute again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not save the shortcut or put your previous keys back. {problem}"
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto could not save the shortcut. Your previous keys are back in Hyprland."
+msgstr ""
+
+#: src/main/agents/visualSandbox.ts
+msgid "Sotto could not seal this page from the network, so it is not shown."
+msgstr ""
+
+#: src/main/hosts/sshAskpass.ts
+msgid "Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect."
+msgstr ""
+
+#: src/main/performance/mainActivityService.ts
+msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto did not restart while it was updating a host. Nothing was lost. Restart again once that update has finished."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto did not restart while it was updating the host on {host}. Nothing was lost. Restart again once that update has finished."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto did not restart while it was updating the hosts on {hosts} and {last}. Nothing was lost. Restart again once those updates have finished."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto did not start the host now running on {name}, so it did not restart it. {to} is installed beside {from}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto did not start the host on {host}, so it cannot restart it. Nothing was changed. Update it on {host} with the commands below."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Sotto did not start the host on {host}, so it cannot stop it. Stop it on that machine."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto follows the Omarchy theme."
+msgstr ""
+
+#: src/main/omarchy/files.ts
+msgid "Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Sotto is already changing whether the host on {host} starts at boot. Wait for it to finish."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "Sotto is already setting up {host}. Stop that setup first. Nothing was started."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Sotto is already updating or changing the host on {name}. Nothing was changed, and the host keeps running as before. Wait a minute, then try again."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Sotto is changing whether the host on {host} starts at boot. Nothing was changed. Wait for it to finish, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Sotto is closing. Nothing was checked."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Sotto is still connecting to {host}. Wait for it, or cancel it first."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto is updating the host on {host}. Nothing was changed. Wait for the update to finish, then try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Sotto keeps connecting to {name}. If it still runs {from}, it shows here again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr."
+msgstr ""
+
+#: src/main/agents/visualPageStore.ts
+msgid "Sotto no longer has this page, so it is not shown."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Sotto set aside a checkpoint file it could not read as {file} and kept the rest."
+msgstr ""
+
+#: src/main/hosts/adminConnection.ts
+msgid "Sotto stopped signing in to the host. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Sotto turned off start at boot on {name} but could not remove the unit’s files there. Nothing was lost, and this computer starts the host again when it connects."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto wears the theme it had before."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Speech model not ready. Nothing recorded. See Settings."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Speech model not ready. Recording kept. See Settings."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Speech model not ready. Recording lost. See Settings."
+msgstr ""
+
+#: src/main/index.ts
+msgid "Standalone chats are no longer available."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Start at boot cannot be changed from this window. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Start at boot is off on {name}, but its host did not start again. Nothing in its data folder was lost. Sotto starts it again when it next connects."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "Start at boot on {name} did not change. Nothing was changed, and the host keeps running as before. Try again, and if it fails again, check the host on {name}."
+msgstr ""
+
 #: src/main/tray/trayController.ts
 msgid "Start Dictation"
 msgstr "Pornește dictarea"
@@ -45,10 +1257,1021 @@ msgstr "Pornește dictarea"
 msgid "Stop Dictation"
 msgstr "Oprește dictarea"
 
+#: src/main/hosts/hostUpdate.ts
+msgid "Stop the host on {name}, then connect to it again from Settings > Hosts & phones, and Sotto starts {to}."
+msgstr ""
+
+#: src/main/hosts/hostPhones.ts
+msgid "Tailscale did not give a page to open. Open the Tailscale admin console to turn on Serve."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "Tailscale is no longer waiting for this approval. Nothing was opened."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "Terminal is shutting down."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Text could not be delivered. Recording kept. Open Sotto."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Text delivered and on the clipboard. History not saved."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Text delivered; history failed. Recording kept."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "Text kept in Sotto. Open Dictate to copy it."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "That address is not an Open VSX address."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "That element changed. Use Region to comment on the saved screenshot, or capture it again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "That element is outside the captured page."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "That extension is no longer on Open VSX."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "That is not an Open VSX extension name."
+msgstr ""
+
+#: src/main/hosts/hostSetupThreads.ts
+msgid "That model cannot set up a host. Choose a ready Claude Code, Codex or Grok Build model."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+#: src/main/hosts/hostSetup.ts
+msgid "That model is not ready on this computer. Choose another one. Nothing was started."
+msgstr ""
+
+#: src/main/themes/ipc.ts
+msgid "That theme could not be exported."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent finished on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent finished."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent is asking a question on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent is asking a question."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent is asking for permission on {computer}."
+msgstr ""
+
+#: src/main/notifications/desktopNotifier.ts
+msgid "The agent is asking for permission."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The approval page could not be opened from this window. Approve the connection in Tailscale on this computer."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The approval page could not open in your browser. Nothing was changed. Try Open approval page again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The archive on the releases page is not the Sotto {to} host, so nothing was installed on {name}."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The bar could not restart with the newer owl. Your previous owl was restored. Try again."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The checksum from Open VSX could not be read."
+msgstr ""
+
+#: src/main/tools/cloudIphone/service.ts
+msgid "The cloud iPhone’s viewer address is not secure enough to show."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The connection closed before the host confirmed this command. Refresh before deciding what to do next."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The connection closed before this draft was sent. Your draft is kept on this computer. Reconnect to save it on the host."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The connection closed before this request could be confirmed."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The connection to {name} closed before start at boot changed. Nothing was lost. Its row shows whether start at boot changed once it connects again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The connection to {name} closed during the update, before anything was switched."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The connection to {name} closed while its host restarted, and it came back on {version}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The connection to {name} closed while its host restarted, so Sotto cannot tell which version is running."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The connection was closed while this computer paired."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The download did not match the checksum Open VSX publishes, so it was discarded."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The download on {name} did not match the release's checksum, so Sotto deleted it and installed nothing."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The download on this computer did not match the release's checksum, so Sotto installed nothing on {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The existing versions/{to} folder on {name} differs from the release. Sotto kept it unchanged."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension contains duplicate ZIP entry names."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension contains too many color themes to import safely."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension expands to more data than a theme needs."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension has too many files to be a theme."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension is compressed suspiciously well, so it was not opened."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension is encrypted."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension is missing {name}."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension is not a valid VSIX archive."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension is too large to import safely."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension manifest is not valid JSON."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension package does not match its advertised license."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension package does not match the selected Open VSX theme."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension uses a compression method Sotto does not read."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "The extension uses a ZIP format Sotto does not read."
+msgstr ""
+
+#. Stands in for a saved host’s name at the start of a sentence: “The host did not answer…”.
+#: src/main/hosts/desktopHosts.ts
+msgid "The host"
+msgstr ""
+
+#: src/main/hosts/hostAdminRequest.ts
+msgid "The host answered with something else."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host answered with something else. Connect again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host confirmed the command, but its latest details could not be read. Nothing was lost. Refresh or reconnect to see them."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host connection closed. Connect again to refresh."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host connection could not be opened."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "The host could not be read. Nothing was changed. Try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host could not connect. Check its SSH settings and try again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host could not forget this device. Connect again and retry."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host did not accept this protocol."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host did not answer in time. Try refreshing."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host did not answer its health check. Connect again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host disconnected while connecting. Try connecting again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host has not confirmed this command. Refresh before deciding what to do next."
+msgstr ""
+
+#: src/main/hosts/hostAdminRequest.ts
+msgid "The host identity changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host identity changed. Check its data folder before connecting again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host identity changed. Connect again."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The host installation on {name} is missing files the unit would run. Nothing was changed, and the host keeps running as before. Update the host, then try again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host is disconnected. Connect again before sending."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host is still saving earlier edits. Your draft is kept on this computer until it can be saved on the host."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} can’t be reached over your tailnet until it is updated. Nothing was changed. Update the host on {host} from the Threads page, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} cannot sign in its providers from here. Nothing was changed. Put this computer's version of the host on {host}, stop the host and connect again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} cannot update its clients from here. Nothing was changed. Put this computer's version of the host on {host}, stop the host and connect again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} could not be stopped and may still be running. Check it on that machine, then connect and try again."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The host on {host} did not answer. Connect to it again to see whether start at boot changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} is busy. Nothing was changed. Try again in a moment."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The host on {host} refused the change. Nothing was changed. Check the host on {host}, then try again."
+msgstr ""
+
+#: src/main/hosts/hostPhones.ts
+msgid "The host on {name} can’t share phone access with this computer. Nothing was changed. Update the host on {name} from the Threads page, then try again."
+msgstr ""
+
+#: src/main/hosts/hostAdminRequest.ts
+msgid "The host refused the administrative token."
+msgstr ""
+
+#: src/main/hosts/hostAdminRequest.ts
+msgid "The host refused the request."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host refused this connection. Connect again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host returned a different thread. Refresh before continuing."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "The host returned another host identity. Reconnect before continuing."
+msgstr ""
+
+#: src/main/hosts/hostSetupThreads.ts
+msgid "The Host setup project could not be made."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The host Sotto started on {name} would not stop, so Sotto took the unit away again. The host keeps running, and nothing was lost. Try again in a minute."
+msgstr ""
+
+#: src/main/terminals/clipboard.ts
+msgid "The image could not be saved under this folder. Paste it again after restoring access."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "The image was saved, but this terminal has exited. Reopen it before pasting again."
+msgstr ""
+
+#: src/main/updates/updateService.ts
+msgid "The installer could not be started."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The line Sotto added changed. Your keys were left alone."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The line Sotto added to bindings.lua changed. Sotto leaves your file alone."
+msgstr ""
+
+#: src/main/hosts/inactiveLocalHost.ts
+msgid "The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto."
+msgstr ""
+
+#: src/main/tools/browser.ts
+#: src/main/tools/cloudIphone/service.ts
+msgid "The main window is unavailable."
+msgstr ""
+
+#: src/main/hotkeys/dictationStateFile.ts
+msgid "The microphone could not start. Try again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "The native conversation binding changed during this turn."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The Omarchy shell isn’t running, so the owl can’t go on the bar. Nothing was copied or removed. Start the shell with omarchy restart shell, then try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The owl is not on the bar."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The owl is off the bar and the floating widget is back."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The owl is on the bar. The shell pill takes the floating widget’s place."
+msgstr ""
+
+#: src/main/updates/owlGitHubProvider.ts
+msgid "The Owl release has inconsistent update information. Try again after the release is corrected."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The owl update stopped before it finished. Updating it restarts the bar for a moment."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The owl was changed by hand. Sotto left it alone."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "The page changed. Capture it again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "The page changed. Use Region to comment on the saved screenshot, or capture it again."
+msgstr ""
+
+#: src/main/omarchy/files.ts
+msgid "The plugin folder is not a folder. Sotto left it alone."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The releases page has no Sotto {to} host for {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The releases page has no Sotto {to} host for {name}'s system ({platform})."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The revoke failed."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "The setup thread could not start."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "The setup thread did not start working. {message} Nothing was saved as a host."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not find Sotto’s owl. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not keep the owl’s saved options. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not move Sotto’s owl from its service entry to the bar. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not put the owl on the bar. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not read its saved configuration. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell could not take the owl off the bar. Nothing else was removed. Try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell did not pick up Sotto’s owl. Try again in your desktop session."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The shell did not save the owl’s place on the bar. Sotto restored the previous setup. Try again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The sign-in page could not be opened from this window. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "The SSH settings for {host} are saved, but how Sotto connects did not change. Check that {host} is reachable with them, then choose again in Edit connection."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "The terminal could not start or save its session. Check that the shell is available and app storage is writable."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "The test iPhone keeps its own size."
+msgstr ""
+
+#: src/main/themes/ipc.ts
+msgid "The theme file could not be written there. Choose another folder."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "The theme template was changed by hand. Sotto left it alone."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "The thread {title} did not start working. {message} Nothing was changed on {host}."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "The thread could not start."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "The threads to dismiss could not be read."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The unit did not bring {name}’s host back, so Sotto took the unit away again and started the host the way it always has. Turns that were running stopped; drafts and history stay."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "The unit did not bring {name}’s host back, so Sotto took the unit away again, and the host did not start without it either. Nothing in its data folder was lost. Sotto starts it again when it next connects."
+msgstr ""
+
+#: src/main/updates/updateService.ts
+msgid "The update check could not be completed. Check the connection and try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "The update of {host} is under way and cannot be hidden. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "The viewed threads could not be read."
+msgstr ""
+
+#. The file type a theme is exported as, in the save dialog
+#: src/main/index.ts
+msgid "Theme"
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "These files changed outside Sotto. Sotto leaves them alone."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "These keys were changed by hand. Sotto left them alone."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This action includes items from different hosts. Select items from one host."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This address belongs to a different host. Check the connection before continuing."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This browser request changed or expired. Ask the agent to try again."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This browser task has finished."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "This checkpoint expired or local history changed. No rollback was sent. Review the working copy."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "This checkpoint has no completed file snapshot."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "This checkpoint no longer matches the selected native thread and working copy."
+msgstr ""
+
+#: src/main/tools/cloudIphone/service.ts
+msgid "This cloud iPhone request already changed or expired. Ask again."
+msgstr ""
+
+#: src/main/tools/cloudIphone/service.ts
+msgid "This cloud iPhone session belongs to another workspace or is gone."
+msgstr ""
+
+#: src/main/tools/cloudIphone/service.ts
+msgid "This cloud iPhone session has already finished."
+msgstr ""
+
+#: src/main/tools/cloudIphone/service.ts
+msgid "This cloud iPhone session is not running."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This computer could not save your draft. Keep your text and images and try saving again."
+msgstr ""
+
+#: src/main/agents/retainedDraftStore.ts
+msgid "This computer has too many unsent remote drafts. Save or clear a draft before starting another."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This device is no longer paired and could not pair again. Check the host, then connect again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This device needs to connect again or be paired on the host."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This draft could not be saved on the host. Reconnect and try again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
+msgstr ""
+
+#: src/main/files/ipc.ts
+#: src/main/tools/ipc.ts
+msgid "This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This folder is on the host machine. Open it there."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This host already runs Sotto {version}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again."
+msgstr ""
+
+#: src/main/agents/ipc.ts
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host cannot list its folders yet. Update Sotto on it, then try again."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This host connection was closed."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host could not check the worktree. Nothing was removed. Update the host and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is already connected."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This host is already saved."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Connect again before attaching images. Nothing was attached."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Connect again to read its branches."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Connect again to read its changes."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Connect again to read its pull requests."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Connect again to read the handover. Nothing was sent."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Nothing is lost. The rest shows when it reconnects."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Nothing was changed. Connect again to read its agents."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Nothing was changed. Connect again to read its changes."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Nothing was changed. Connect again to read its files."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is disconnected. Nothing was changed. Connect again to see its folders."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This host is no longer saved. Add it again in Settings > Hosts & phones."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This host is no longer saved. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/hostPhones.ts
+msgid "This host is not connected, so its phone access cannot be changed. Nothing was changed. Connect it, then try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This host is not connected. Nothing was changed."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This host is not connected. Nothing was changed. Switch it on, then try again."
+msgstr ""
+
+#: src/main/hosts/hostProviderJob.ts
+msgid "This host is not connected. Nothing was started. Switch it on, then try again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "This host no longer needs an update. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This host refused this device here. The pairing is kept."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This host was forgotten. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This is a different host. Check the address before pairing."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
+msgstr ""
+
+#: src/main/memory/profile.ts
+msgid "This memory has been superseded. Edit its current replacement."
+msgstr ""
+
+#: src/main/memory/profile.ts
+msgid "This memory no longer exists. Refresh the inspector."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This navigation is blocked. Only HTTP and HTTPS pages can open here."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again."
+msgstr ""
+
+#: src/main/agents/visualSandbox.ts
+msgid "This page belongs to a thread on another computer, so it is not shown here."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This page closed."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This page is unavailable. Check the address or start its local server, then reload."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This page stopped unexpectedly. Reload to reopen it."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This pairing code could not be used. Make a new code on the host and try again."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "This path is unavailable or changed. Refresh Files and try again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "This provider does not expose matching native conversation rollback."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This question is no longer pending or has changed. Your answer is kept; review it before starting a new prompt."
+msgstr ""
+
+#: src/main/hosts/hostSetup.ts
+msgid "This request is no longer pending. Refresh the thread."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "This result belongs to an earlier connection. Refresh the host."
+msgstr ""
+
+#: src/main/hosts/desktopHosts.ts
+msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "This Sotto install is missing its keys. Install Sotto again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "This Sotto install is missing its Omarchy files. Install Sotto again, then try again."
+msgstr ""
+
+#: src/main/hosts/sshLauncher.ts
+msgid "This SSH prompt is no longer waiting. Reconnect if needed."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "This start at boot change is no longer there. Nothing was changed."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal belongs to a different workspace or was closed."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal has closed."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal has exited."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal has exited. Reopen it before pasting an image."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal has exited. Reopen it to start a new shell."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal is already reopening."
+msgstr ""
+
+#: src/main/tools/terminal.ts
+msgid "This terminal is still running; select it instead."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "This tool request is invalid. Refresh the tools panel."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "This turn changed Git history or staging. Review and restore it with Git."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "This working copy contains a file name that checkpoint storage cannot safely represent."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "This working copy exceeds the {limit}-file checkpoint limit."
+msgstr ""
+
+#: src/main/tools/checkpointCapture.ts
+msgid "This working copy exceeds the checkpoint size limit ({total} MiB total, {file} MiB per file)."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Thread work changed while checking the checkpoint. Review it again before reverting."
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "To remove them, run this on {name}:"
+msgstr ""
+
+#: src/main/hosts/hostBootStart.ts
+msgid "To see why the unit failed, run this on {name}:"
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Try again to download it fresh, or update it by hand on {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Try again, or press Stop host for {name} in Settings > Hosts & phones and switch it on again, which starts {to}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Try again, or see what the new host says: press Stop host for {name} in Settings > Hosts & phones, then run the commands below on {name}."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Try again, or stop the host on {name} by hand, then connect to it again."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Try again, or update it by hand on {name} with the commands below."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "Turn checkpoints are kept only for threads on this computer. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/watcherRoomDesktop.ts
+msgid "Turn on Run the local host in Settings and restart Sotto to use Watcher."
+msgstr ""
+
+#: src/main/hosts/inactiveLocalHost.ts
+msgid "Turn on the local host in Settings > Hosts & phones and restart Sotto before turning off local history. Your saved history has not changed."
+msgstr ""
+
+#: src/main/themes/openVsx.ts
+msgid "Type up to 100 characters to search."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Update the host before checking this unconfirmed answer. Your saved answer is kept."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Update the host before saving or sending this draft. Your draft is kept on this computer."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Update the host before sending this draft. Your draft is kept on this computer."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Update this host before Watcher directs its threads. Nothing was sent."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Update this host before Watcher reads its threads."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Update this host before Watcher watches its threads. Nothing was changed."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Updated for Sotto {version}."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Updated. The bar restarted with the newer owl."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Usage could not be read."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Use a host HTTP or HTTPS address without credentials in its URL."
+msgstr ""
+
+#: src/main/hosts/hostUpdate.ts
+msgid "Use a newer Sotto build, or stop the host on {name}, keep that folder as a backup and move it aside before trying again."
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 msgid "View"
 msgstr "Vizualizare"
 
+#: src/main/hosts/hostUpdate.ts
+msgid "Wait a minute, then try again."
+msgstr ""
+
+#: src/main/tools/checkpoints.ts
+msgid "Wait for active or pending work to finish before recovery."
+msgstr ""
+
+#: src/main/agents/socketHostService.ts
+msgid "Wait for the pending host request to finish."
+msgstr ""
+
 #: src/main/app/applicationMenu.ts
 msgid "Window"
 msgstr "Fereastră"
+
+#: src/main/agents/ipc.ts
+msgid "Working-copy choices are unavailable. Reopen the project and try again."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Your bindings.lua already gives {keys} to Sotto. Leaving those lines alone."
+msgstr ""
+
+#: src/main/omarchy/setup.ts
+msgid "Your keys run what they did before."
+msgstr ""

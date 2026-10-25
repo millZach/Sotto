@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto'
 import { cp, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
+import { plural, t } from '@lingui/core/macro'
 import { z } from 'zod'
+
 
 import { OMARCHY_PIECES, shortcutsBlocked, type OmarchyPiece, type OmarchyPieceState, type OmarchySetupCommand, type OmarchySetupState } from '../../shared/omarchySetup'
 import type { DictationShortcutSet } from '../../shared/dictationShortcuts'
@@ -164,7 +166,7 @@ export class OmarchySetup {
     const saved = await contents(this.receiptPath)
     if (saved !== null) {
       const parsed = receiptSchema.safeParse(JSON.parse(saved))
-      if (!parsed.success) throw new Error('Sotto could not read its Omarchy setup record. Your files were left alone. Restore the record, then try again.')
+      if (!parsed.success) throw new Error(t`Sotto could not read its Omarchy setup record. Your files were left alone. Restore the record, then try again.`)
       this.receipt = parsed.data
     }
     this.loaded = true
@@ -201,14 +203,14 @@ export class OmarchySetup {
   private async renderKeys(set: DictationShortcutSet): Promise<string> {
     const template = await contents(join(this.options.resources, 'bindings.lua'))
     const rendered = template === null ? null : renderSottoBindings(set, template)
-    if (rendered === null) throw new Error('This Sotto install is missing its keys. Install Sotto again.')
+    if (rendered === null) throw new Error(t`This Sotto install is missing its keys. Install Sotto again.`)
     return rendered
   }
   private async bundledHash(piece: OmarchyPiece): Promise<string> {
     if (piece === 'keys') return digest(await this.renderKeys(await this.keyShortcuts()))
     const value = piece === 'owl' ? await treeDigest(join(this.options.resources, 'shell-plugin', ID))
       : await contents(join(this.options.resources, 'sotto.json.tpl'))
-    if (value === null) throw new Error('This Sotto install is missing its Omarchy files. Install Sotto again, then try again.')
+    if (value === null) throw new Error(t`This Sotto install is missing its Omarchy files. Install Sotto again, then try again.`)
     return piece === 'owl' ? value : digest(value)
   }
   private async installedHash(piece: OmarchyPiece): Promise<string | null> {
@@ -248,38 +250,38 @@ export class OmarchySetup {
         const installed = await this.installedHash(piece), ours = this.receipt.pieces[piece]
         let next: OmarchyPieceState
         if (installed === null) next = state('missing', '', !!ours)
-        else if (!ours) next = state('manual', 'Set up by hand. Sotto leaves these files alone.')
-        else if (!ownedHash(installed, ours)) next = state('conflict', 'These files changed outside Sotto. Sotto leaves them alone.', true)
+        else if (!ours) next = state('manual', t`Set up by hand. Sotto leaves these files alone.`)
+        else if (!ownedHash(installed, ours)) next = state('conflict', t`These files changed outside Sotto. Sotto leaves them alone.`, true)
         else next = state(installed === await this.bundledHash(piece) ? 'done' : 'stale', '', true)
         if (piece === 'keys') {
           const file = await contents(this.bindings)
           const bindingHash = file === null ? null : digest(file)
           const untouched = ours?.pending && (bindingHash === ours.pending.bindingsBeforeHash || bindingHash === ours.pending.bindingsAfterHash)
-          if (ours && installed !== null && !file?.includes(REQUIRE) && !untouched) next = state('conflict', 'The line Sotto added to bindings.lua changed. Sotto leaves your file alone.', true)
-          if (keys?.manual && !ours) next = state('manual', `Your bindings.lua already gives ${linuxKeyList(shortcuts)} to Sotto. Leaving those lines alone.`)
-          else if (keys && !keys.manual && next.status === 'manual') next = state('conflict', 'A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone.')
-          else if (keys && !keys.manual && next.status === 'done') next = state('missing', 'Hyprland is not using Sotto’s keys.', true)
+          if (ours && installed !== null && !file?.includes(REQUIRE) && !untouched) next = state('conflict', t`The line Sotto added to bindings.lua changed. Sotto leaves your file alone.`, true)
+          if (keys?.manual && !ours) next = state('manual', t`Your bindings.lua already gives ${{ keys: linuxKeyList(shortcuts) }} to Sotto. Leaving those lines alone.`)
+          else if (keys && !keys.manual && next.status === 'manual') next = state('conflict', t`A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone.`)
+          else if (keys && !keys.manual && next.status === 'done') next = state('missing', t`Hyprland is not using Sotto’s keys.`, true)
           else if (next.status === 'missing' && keys && keys.conflicts.length && !ours) next = state('conflict')
-          if (!keys) next = state('failed', 'Sotto could not read Hyprland’s keys. Open Sotto in your Omarchy desktop session, then try again.', !!ours)
+          if (!keys) next = state('failed', t`Sotto could not read Hyprland’s keys. Open Sotto in your Omarchy desktop session, then try again.`, !!ours)
         }
         if (piece === 'owl' && ['done', 'manual', 'stale'].includes(next.status) && !await this.onBar()) {
-          next = ours ? state(next.status === 'stale' ? 'stale' : 'missing', 'The owl is not on the bar.', true)
-            : state('conflict', 'A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone.')
+          next = ours ? state(next.status === 'stale' ? 'stale' : 'missing', t`The owl is not on the bar.`, true)
+            : state('conflict', t`A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone.`)
         }
         if (piece === 'theme' && next.status === 'manual' && await contents(this.rendered) === null) {
-          next = state('conflict', 'A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone.')
+          next = state('conflict', t`A template was installed by hand, but its colours have not been rendered. Sotto leaves it alone.`)
         }
         if (piece === 'theme' && ['done', 'stale'].includes(next.status) && await contents(this.rendered) === null) {
-          next = state('missing', 'Omarchy has not rendered Sotto’s colours.', true)
+          next = state('missing', t`Omarchy has not rendered Sotto’s colours.`, true)
         }
         if (piece === 'theme' && installed === null && !ours && await contents(this.rendered) !== null) {
-          next = state('manual', 'An Omarchy palette was installed by hand. Sotto leaves it alone.')
+          next = state('manual', t`An Omarchy palette was installed by hand. Sotto leaves it alone.`)
         }
-        if (next.status === 'stale' && piece === 'owl') next.message = `Sotto ${this.options.version} has a newer owl. Updating restarts the bar for a moment.`
+        if (next.status === 'stale' && piece === 'owl') next.message = t`Sotto ${{ version: this.options.version }} has a newer owl. Updating restarts the bar for a moment.`
         if (ours?.pending && next.status !== 'conflict') {
-          next = piece === 'owl' && ours.pending.restart ? state('stale', 'The owl update stopped before it finished. Updating it restarts the bar for a moment.', true)
-            : state('failed', ours.pending.operation === 'remove' ? 'Removal stopped before it finished. Try again to finish removing this piece.'
-              : 'Setup stopped before it finished. Try again, or remove it in Settings › Dictation.', true, ours.pending.operation)
+          next = piece === 'owl' && ours.pending.restart ? state('stale', t`The owl update stopped before it finished. Updating it restarts the bar for a moment.`, true)
+            : state('failed', ours.pending.operation === 'remove' ? t`Removal stopped before it finished. Try again to finish removing this piece.`
+              : t`Setup stopped before it finished. Try again, or remove it in Settings › Dictation.`, true, ours.pending.operation)
         }
         // Operation outcomes stay visible while detection continues to see that same outcome.
         const note = this.notes[piece]
@@ -291,7 +293,7 @@ export class OmarchySetup {
   }
   private explain(error: unknown): string {
     if (error instanceof Error && !('code' in error) && !(error instanceof z.ZodError) && !(error instanceof SyntaxError)) return error.message.slice(0, 8000)
-    return 'Sotto could not read or change these files. Check that your configuration is readable and writable, then try again.'
+    return t`Sotto could not read or change these files. Check that your configuration is readable and writable, then try again.`
   }
   private async inspect(): Promise<boolean> {
     try { await this.detect(); return true } catch (error) {
@@ -328,14 +330,14 @@ export class OmarchySetup {
           if (piece === 'keys' && command.type === 'setup' && this.snapshot.keyConflicts.length) {
             if (command.keys !== 'give') {
               this.notes.keys = state(command.keys === 'keep' ? 'skipped' : 'conflict', command.keys === 'keep'
-                ? 'Left alone. Your keys still run what they did before.' : 'Choose whether to give these keys to Sotto first.', previous.owned)
+                ? t`Left alone. Your keys still run what they did before.` : t`Choose whether to give these keys to Sotto first.`, previous.owned)
               this.snapshot.pieces.keys = this.notes.keys
               this.publish()
               continue
             }
           }
           delete this.notes[piece]
-          this.snapshot.pieces[piece] = state('working', command.type === 'remove' ? 'Removing' : 'Setting up', previous.owned)
+          this.snapshot.pieces[piece] = state('working', command.type === 'remove' ? t({ message: 'Removing', comment: 'What an Omarchy setup piece is doing now, on its row in Settings › Dictation.' }) : t({ message: 'Setting up', comment: 'What an Omarchy setup piece is doing now, on its row in Settings › Dictation.' }), previous.owned)
           this.publish()
           try {
             if (command.type === 'remove') await this.remove(piece)
@@ -351,7 +353,7 @@ export class OmarchySetup {
         await this.inspect()
       }
       if (command.type === 'remove' && pieces.length === 3 && keyBackup && !this.receipt.pieces.keys && this.notes.keys?.status === 'missing' &&
-        (await lstat(keyBackup).catch(() => null))?.isFile()) this.snapshot.notice = 'Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.'
+        (await lstat(keyBackup).catch(() => null))?.isFile()) this.snapshot.notice = t`Sotto kept the copy of bindings.lua it made at setup, in ~/.config/hypr.`
       return this.publish()
     })
   }
@@ -366,7 +368,7 @@ export class OmarchySetup {
         if (piece === 'keys' && this.snapshot.keyConflicts.length) continue
         try {
           await this.install(piece, false, true)
-          this.notes[piece] = state('done', `Updated for Sotto ${this.options.version}.`, true)
+          this.notes[piece] = state('done', t`Updated for Sotto ${{ version: this.options.version }}.`, true)
         } catch (error) { this.notes[piece] = state('failed', this.explain(error), true) }
       }
       await this.detect()
@@ -384,13 +386,13 @@ export class OmarchySetup {
       const unbindable = [...next.press, ...next.hold].find(chord => hyprlandChord(chord) === null)
       if (next.press.length === 0 || unbindable !== undefined) {
         return { ok: false, reason: 'invalid', ...(unbindable === undefined ? {} : { chord: unbindable }),
-          message: 'Hyprland can’t bind those keys. Use a letter, a number, an F key, Space or an arrow key, with modifiers.' }
+          message: t`Hyprland can’t bind those keys. Use a letter, a number, an F key, Space or an arrow key, with modifiers.` }
       }
       if (next.hold.some(chord => hyprlandChord(chord)!.modmask !== 0)) {
-        return { ok: false, reason: 'invalid', message: 'On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening.' }
+        return { ok: false, reason: 'invalid', message: t`On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening.` }
       }
       if (boundChords(next).length !== next.press.length + next.hold.length) {
-        return { ok: false, reason: 'invalid', message: 'Each shortcut can be in only one row, once. Pick other keys.' }
+        return { ok: false, reason: 'invalid', message: t`Each shortcut can be in only one row, once. Pick other keys.` }
       }
       const inspected = await this.inspect()
       const blocked = inspected ? shortcutsBlocked(this.snapshot.pieces.keys) : this.snapshot.pieces.keys.message
@@ -401,10 +403,10 @@ export class OmarchySetup {
       const active = await this.run('hyprctl', ['binds', '-j'])
       let binds: unknown
       try { binds = active.ok ? JSON.parse(active.stdout) : null } catch { binds = null }
-      if (!Array.isArray(binds)) return { ok: false, reason: 'unavailable', message: 'Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again.' }
+      if (!Array.isArray(binds)) return { ok: false, reason: 'unavailable', message: t`Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again.` }
       for (const chord of [...next.hold, ...next.press]) {
         const use = hyprlandUses(binds, chord)
-        if (use !== null) return { ok: false, reason: 'conflict', chord, message: `Hyprland already uses ${linuxChordWords(chord)} for “${use}”. Pick other keys.` }
+        if (use !== null) return { ok: false, reason: 'conflict', chord, message: t`Hyprland already uses ${{ keys: linuxChordWords(chord) }} for “${use}”. Pick other keys.` }
       }
       const previous = await this.keyShortcuts()
       this.snapshot.busy = true
@@ -413,9 +415,9 @@ export class OmarchySetup {
         try { await this.changeKeys(false, next) } catch (error) { return { ok: false, reason: 'unavailable', message: this.explain(error) } }
         try { await this.options.commitShortcuts?.(set) } catch {
           try { await this.changeKeys(false, previous) } catch (error) {
-            return { ok: false, reason: 'unavailable', message: `Sotto could not save the shortcut or put your previous keys back. ${this.explain(error)}` }
+            return { ok: false, reason: 'unavailable', message: t`Sotto could not save the shortcut or put your previous keys back. ${{ problem: this.explain(error) }}` }
           }
-          return { ok: false, reason: 'unavailable', message: 'Sotto could not save the shortcut. Your previous keys are back in Hyprland.' }
+          return { ok: false, reason: 'unavailable', message: t`Sotto could not save the shortcut. Your previous keys are back in Hyprland.` }
         }
         return { ok: true }
       } finally {
@@ -440,20 +442,20 @@ export class OmarchySetup {
   }
 
   private async configErrors(): Promise<string[]> {
-    return (await this.checked('hyprctl', ['configerrors'], 'Sotto could not check Hyprland’s configuration. Your keys were left alone.'))
+    return (await this.checked('hyprctl', ['configerrors'], t`Sotto could not check Hyprland’s configuration. Your keys were left alone.`))
       .split('\n').map(line => line.trim()).filter(Boolean)
   }
   private async reload(before: readonly string[]): Promise<void> {
-    await this.checked('hyprctl', ['reload'], 'Hyprland could not reload. Try again in your desktop session.')
+    await this.checked('hyprctl', ['reload'], t`Hyprland could not reload. Try again in your desktop session.`)
     const added = (await this.configErrors()).filter(line => !before.includes(line))
-    if (added.length) throw new Error(`Hyprland reported an error after Sotto’s change. Hyprland said: “${added.join('\n').slice(0, 6000)}”.`)
+    if (added.length) throw new Error(t`Hyprland reported an error after Sotto’s change. Hyprland said: “${{ said: added.join('\n').slice(0, 6000) }}”.`)
   }
   /** Writes Sotto's keys for the saved shortcuts, or for `change` when a shortcut is being changed, and removes them. */
   private async changeKeys(removing: boolean, change?: DictationShortcutSet): Promise<void> {
     const original = await contents(this.bindings), snippet = await contents(this.snippet), ours = this.receipt.pieces.keys
     const shortcuts = change ?? await this.keyShortcuts()
-    if (snippet !== null && !ownedHash(digest(snippet), ours)) throw new Error('These keys were changed by hand. Sotto left them alone.')
-    if (ours && original !== null && !original.includes(REQUIRE) && digest(original) !== ours.pending?.bindingsBeforeHash && digest(original) !== ours.pending?.bindingsAfterHash) throw new Error('The line Sotto added changed. Your keys were left alone.')
+    if (snippet !== null && !ownedHash(digest(snippet), ours)) throw new Error(t`These keys were changed by hand. Sotto left them alone.`)
+    if (ours && original !== null && !original.includes(REQUIRE) && digest(original) !== ours.pending?.bindingsBeforeHash && digest(original) !== ours.pending?.bindingsAfterHash) throw new Error(t`The line Sotto added changed. Your keys were left alone.`)
     const without = (original ?? '').replace(REQUIRE, '')
     // A shortcut change rewrites only Sotto's own snippet; bindings.lua keeps its require where it is.
     const next = removing ? without : change && original?.includes(REQUIRE) ? original : `${without}${without.endsWith('\n') || !without ? '' : '\n'}${REQUIRE}`
@@ -467,12 +469,12 @@ export class OmarchySetup {
     try {
       if (!keepBindings) {
         await writeFile(check, next, { flag: 'wx', mode: 0o600 })
-        await this.checked('luac', ['-p', check], 'Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.')
+        await this.checked('luac', ['-p', check], t`Sotto could not check bindings.lua with luac. Your file is as it was. Check its syntax and that Lua is installed, then try again.`)
         await rm(check)
       }
       if (!removing) {
         await writeFile(check, bundled, { flag: 'wx', mode: 0o600 })
-        await this.checked('luac', ['-p', check], 'Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again.')
+        await this.checked('luac', ['-p', check], t`Sotto’s keys could not be checked with luac. Your file is as it was. Install Sotto again, then try again.`)
       }
     } finally { await rm(check, { force: true }) }
     const before = await this.configErrors()
@@ -502,8 +504,8 @@ export class OmarchySetup {
       }
       await this.reload(before)
       if (!removing) {
-        const active = await this.checked('hyprctl', ['binds', '-j'], 'Sotto could not check the reloaded keys. Try again in your desktop session.')
-        if (!inspectDictationBindings(JSON.parse(active), false, shortcuts).manual) throw new Error('Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again.')
+        const active = await this.checked('hyprctl', ['binds', '-j'], t`Sotto could not check the reloaded keys. Try again in your desktop session.`)
+        if (!inspectDictationBindings(JSON.parse(active), false, shortcuts).manual) throw new Error(t`Hyprland did not load Sotto’s keys. Check that bindings.lua loads after Omarchy’s defaults, then try again.`)
       }
       await this.save('keys', removing ? undefined : nextReceipt)
     } catch (error) {
@@ -512,22 +514,24 @@ export class OmarchySetup {
         if (snippet === null) await rm(this.snippet, { force: true }); else await atomicWrite(this.snippet, snippet)
         await this.reload(before)
         await this.save('keys', ours)
-      } catch { throw new Error(`${this.explain(error)} Sotto could not restore the keys. Check that ~/.config/hypr is writable, then try again.`) }
-      throw new Error(`${this.explain(error)} Sotto restored your files. Fix the error, then try again.`, { cause: error })
+      } catch { throw new Error(t`${{ problem: this.explain(error) }} Sotto could not restore the keys. Check that ~/.config/hypr is writable, then try again.`) }
+      throw new Error(t`${{ problem: this.explain(error) }} Sotto restored your files. Fix the error, then try again.`, { cause: error })
     }
     if (removing) {
-      let message = 'Your keys run what they did before.'
+      let message = t`Your keys run what they did before.`
       try {
         const keys = inspectDictationBindings(JSON.parse((await this.run('hyprctl', ['binds', '-j'])).stdout), false, shortcuts)
-        const list = linuxKeyList(shortcuts), one = boundChords(shortcuts).length === 1
-        if (!keys.conflicts.length) message = keys.voxtype ? `${list} ${one ? 'is' : 'are'} Voxtype’s again.` : `${list} ${one ? 'does' : 'do'} nothing now.`
+        const list = linuxKeyList(shortcuts), count = boundChords(shortcuts).length
+        if (!keys.conflicts.length) message = keys.voxtype ? plural(count, { one: `${list} is Voxtype’s again.`, other: `${list} are Voxtype’s again.` })
+          : plural(count, { one: `${list} does nothing now.`, other: `${list} do nothing now.` })
       } catch { /* Do not guess a key owner after an unavailable read. */ }
       this.notes.keys = state('missing', message)
-    } else this.notes.keys = state('done', 'Hyprland reloaded with no new errors.' + (this.snapshot.voxtype ? ' Voxtype keeps running without these keys.' : ''), true)
+    } else this.notes.keys = state('done', this.snapshot.voxtype ? t`Hyprland reloaded with no new errors. Voxtype keeps running without these keys.` : t`Hyprland reloaded with no new errors.`, true)
+
   }
 
   private async changeOwl(removing: boolean, restart: boolean): Promise<void> {
-    if (!(await this.run('omarchy-shell', ['shell', 'ping'])).ok) throw new Error('The Omarchy shell isn’t running, so the owl can’t go on the bar. Nothing was copied or removed. Start the shell with omarchy restart shell, then try again.')
+    if (!(await this.run('omarchy-shell', ['shell', 'ping'])).ok) throw new Error(t`The Omarchy shell isn’t running, so the owl can’t go on the bar. Nothing was copied or removed. Start the shell with omarchy restart shell, then try again.`)
     const ours = this.receipt.pieces.owl
     const staging = join(dirname(this.plugin), `.${ID}.staging`)
     const previous = join(dirname(this.plugin), `.${ID}.previous`)
@@ -535,9 +539,9 @@ export class OmarchySetup {
     if (ours?.pending) {
       const older = await treeDigest(previous)
       if (older !== null) {
-        if (older !== ours.pending.previousHash) throw new Error('The previous owl folder changed. Sotto left it alone. Restore it before trying again.')
+        if (older !== ours.pending.previousHash) throw new Error(t`The previous owl folder changed. Sotto left it alone. Restore it before trying again.`)
         const current = await treeDigest(this.plugin)
-        if (current !== null && !ownedHash(current, ours)) throw new Error('The owl was changed by hand. Sotto left it alone.')
+        if (current !== null && !ownedHash(current, ours)) throw new Error(t`The owl was changed by hand. Sotto left it alone.`)
         await rm(this.plugin, { recursive: true, force: true })
         await rename(previous, this.plugin)
       }
@@ -545,10 +549,10 @@ export class OmarchySetup {
     }
     const leftovers = await readdir(dirname(this.plugin)).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
     if (leftovers.some(name => name === `.${ID}.staging` || name === `.${ID}.previous` || name.startsWith(`.${ID}.previous-`) || name.startsWith(`.${ID}.sotto-`))) {
-      throw new Error('An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again.')
+      throw new Error(t`An earlier owl setup is still waiting. Your files were left alone. Restore or remove its temporary folder, then try again.`)
     }
     const before = await contents(this.shellConfig), hash = await treeDigest(this.plugin)
-    if (hash !== null && !ownedHash(hash, ours)) throw new Error('The owl was changed by hand. Sotto left it alone.')
+    if (hash !== null && !ownedHash(hash, ours)) throw new Error(t`The owl was changed by hand. Sotto left it alone.`)
     const source = join(this.options.resources, 'shell-plugin', ID)
     const bundledHash = removing ? null : await this.bundledHash('owl')
     const pendingOptions = ours?.pending?.owlOptions
@@ -556,17 +560,17 @@ export class OmarchySetup {
     let moved = false, placed = false
     try {
       if (removing) {
-        await this.checked('omarchy', ['plugin', 'disable', ID], 'The shell could not take the owl off the bar. Nothing else was removed. Try again.')
+        await this.checked('omarchy', ['plugin', 'disable', ID], t`The shell could not take the owl off the bar. Nothing else was removed. Try again.`)
         await this.waitForBar(false)
       } else {
-        await this.checked('omarchy', ['plugin', 'validate', source], 'Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again.')
+        await this.checked('omarchy', ['plugin', 'validate', source], t`Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again.`)
         await mkdir(join(this.options.home, '.config/omarchy/plugins'), { recursive: true })
         await cp(source, staging, { recursive: true, filter: path => !path.endsWith('.d.mts') })
       }
       if (hash !== null) { await rename(this.plugin, previous); moved = true }
       if (!removing) {
         await rename(staging, this.plugin); placed = true
-        await this.checked('omarchy-shell', ['shell', 'rescanPlugins'], 'The shell could not find Sotto’s owl. Try again.')
+        await this.checked('omarchy-shell', ['shell', 'rescanPlugins'], t`The shell could not find Sotto’s owl. Try again.`)
         let found = false
         for (let attempt = 0; attempt < 50; attempt++) {
           const result = await this.run('omarchy-shell', ['shell', 'listPlugins'])
@@ -574,7 +578,7 @@ export class OmarchySetup {
           if (found) break
           await wait(100)
         }
-        if (!found) throw new Error('The shell did not pick up Sotto’s owl. Try again in your desktop session.')
+        if (!found) throw new Error(t`The shell did not pick up Sotto’s owl. Try again in your desktop session.`)
         const current = JSON.parse(await contents(this.shellConfig) ?? '{}') as {
           plugins?: Array<string | Record<string, unknown>>
           bar?: { layout?: Record<string, Array<string | Record<string, unknown>>> }
@@ -585,19 +589,19 @@ export class OmarchySetup {
         if (missingBar && current.plugins?.some(entry => entry === ID || typeof entry === 'object' && entry.id === ID)) {
           // Omarchy's put treats a top-level service as already enabled; move accepts only bar entries.
           if (savedOptions) await this.savePending('owl', { hash: bundledHash! }, hash, false, { restart, owlOptions: savedOptions })
-          await this.checked('omarchy-shell', ['shell', 'reloadConfig'], 'The shell could not read its saved configuration. Try again.')
-          await this.checked('omarchy', ['plugin', 'disable', ID], 'The shell could not move Sotto’s owl from its service entry to the bar. Try again.')
+          await this.checked('omarchy-shell', ['shell', 'reloadConfig'], t`The shell could not read its saved configuration. Try again.`)
+          await this.checked('omarchy', ['plugin', 'disable', ID], t`The shell could not move Sotto’s owl from its service entry to the bar. Try again.`)
         }
-        if (missingBar) await this.checked('omarchy', ['bar', 'put', ID, '--section', 'center', '--after', 'omarchy.indicators'], 'The shell could not put the owl on the bar. Try again.')
+        if (missingBar) await this.checked('omarchy', ['bar', 'put', ID, '--section', 'center', '--after', 'omarchy.indicators'], t`The shell could not put the owl on the bar. Try again.`)
         const barEntry = Object.values(current.bar?.layout ?? {}).flat().find(entry => typeof entry === 'object' && entry.id === ID)
         if (savedOptions && (missingBar || pendingOptions)) for (const [key, value] of Object.entries(savedOptions)) {
           // An interrupted transfer fills missing options; later saved values belong to the user.
           if (key !== 'id' && (missingBar || typeof barEntry !== 'object' || !(key in barEntry))) {
-            await this.checked('omarchy', ['bar', 'set', ID, key, JSON.stringify(value), '--json'], 'The shell could not keep the owl’s saved options. Try again.')
+            await this.checked('omarchy', ['bar', 'set', ID, key, JSON.stringify(value), '--json'], t`The shell could not keep the owl’s saved options. Try again.`)
           }
         }
         await this.waitForBar(true)
-        if (restart) await this.checked('omarchy', ['restart', 'shell'], 'The bar could not restart with the newer owl. Your previous owl was restored. Try again.')
+        if (restart) await this.checked('omarchy', ['restart', 'shell'], t`The bar could not restart with the newer owl. Your previous owl was restored. Try again.`)
       }
     } catch (error) {
       try {
@@ -613,15 +617,15 @@ export class OmarchySetup {
     }
     await rm(previous, { recursive: true, force: true })
     await this.save('owl', removing ? undefined : { hash: bundledHash! })
-    this.notes.owl = removing ? state('missing', 'The owl is off the bar and the floating widget is back.')
-      : state('done', restart ? 'Updated. The bar restarted with the newer owl.' : 'The owl is on the bar. The shell pill takes the floating widget’s place.', true)
+    this.notes.owl = removing ? state('missing', t`The owl is off the bar and the floating widget is back.`)
+      : state('done', restart ? t`Updated. The bar restarted with the newer owl.` : t`The owl is on the bar. The shell pill takes the floating widget’s place.`, true)
   }
   private async waitForBar(present: boolean): Promise<void> {
     for (let attempt = 0; attempt < 50; attempt++) {
       if (await this.onBar() === present) return
       await wait(100)
     }
-    throw new Error('The shell did not save the owl’s place on the bar. Sotto restored the previous setup. Try again.')
+    throw new Error(t`The shell did not save the owl’s place on the bar. Sotto restored the previous setup. Try again.`)
   }
 
   private async restoreOwlConfiguration(before: string | null): Promise<void> {
@@ -657,7 +661,7 @@ export class OmarchySetup {
 
   private async changeTheme(removing: boolean, refresh: boolean): Promise<void> {
     const original = await contents(this.template), rendered = await contents(this.rendered), ours = this.receipt.pieces.theme
-    if (original !== null && !ownedHash(digest(original), ours)) throw new Error('The theme template was changed by hand. Sotto left it alone.')
+    if (original !== null && !ownedHash(digest(original), ours)) throw new Error(t`The theme template was changed by hand. Sotto left it alone.`)
     const settings = await this.options.settings.get()
     const appearance = { appearance: settings.appearance, theme: settings.theme, lightTheme: settings.lightTheme, darkTheme: settings.darkTheme }
     const previous = ours?.appearance ?? appearance
@@ -670,15 +674,15 @@ export class OmarchySetup {
           ...(settings.lightTheme === OMARCHY_THEME_ID ? { lightTheme: previous.lightTheme } : {}),
           ...(settings.darkTheme === OMARCHY_THEME_ID ? { darkTheme: previous.darkTheme } : {}) })
         await plainPath(this.template); await plainPath(this.rendered)
-        await this.checked('bash', [join(this.options.resources, 'install-theme.sh'), '--uninstall', '--operation', pending.pending!.token], 'Sotto could not remove the Omarchy theme. Finish any theme switch in progress, then try again. Your files and Appearance choices were restored.')
+        await this.checked('bash', [join(this.options.resources, 'install-theme.sh'), '--uninstall', '--operation', pending.pending!.token], t`Sotto could not remove the Omarchy theme. Finish any theme switch in progress, then try again. Your files and Appearance choices were restored.`)
         await this.save('theme')
       } else {
         await plainPath(this.template); await plainPath(this.rendered)
-        await this.checked('bash', [join(this.options.resources, 'install-theme.sh'), '--operation', pending.pending!.token], 'Sotto could not render the Omarchy theme. Choose an Omarchy theme and finish any switch in progress, then try again.')
+        await this.checked('bash', [join(this.options.resources, 'install-theme.sh'), '--operation', pending.pending!.token], t`Sotto could not render the Omarchy theme. Choose an Omarchy theme and finish any switch in progress, then try again.`)
         const colours = await contents(this.rendered)
-        if (colours === null) throw new Error('Omarchy did not render Sotto’s colours. Choose another theme, then try again.')
+        if (colours === null) throw new Error(t`Omarchy did not render Sotto’s colours. Choose another theme, then try again.`)
         try { parseOmarchyTheme(JSON.parse(colours), 'Omarchy') }
-        catch { throw new Error('This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again.') }
+        catch { throw new Error(t`This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again.`) }
         if (!refresh) await this.options.settings.update({ appearance: 'system', theme: 'system', lightTheme: OMARCHY_THEME_ID, darkTheme: OMARCHY_THEME_ID })
         await this.save('theme', nextReceipt)
       }
@@ -691,6 +695,6 @@ export class OmarchySetup {
       } catch { throw new Error(`${this.explain(error)} Sotto could not restore the theme. Choose your previous themes in Settings › Appearance.`) }
       throw error
     }
-    this.notes.theme = removing ? state('missing', 'Sotto wears the theme it had before.') : state('done', 'Sotto follows the Omarchy theme.', true)
+    this.notes.theme = removing ? state('missing', t`Sotto wears the theme it had before.`) : state('done', t`Sotto follows the Omarchy theme.`, true)
   }
 }

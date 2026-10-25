@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import type { AgentRequest } from '../../shared/agents'
 import { HOST_SETUP_STEPS, type HostSetupChoice, type HostSetupState, type HostSetupStep, type HostsCommand, type HostStatus, type RemoteHost } from '../../shared/hosts'
@@ -115,14 +116,14 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     const run = this.current
     if (!run?.request || !run.threadId) return new Map()
     const request: AgentRequest = { id: run.request.id, kind: 'permission',
-      text: `Add ${run.name} as a host?\nSotto connects to ${run.connection.target}, starts the host there if it is not running and pairs this computer. ${run.name} is saved in Settings > Hosts & phones once it answers.`,
-      options: [], permissionChoices: [{ id: 'add', label: `Add ${run.name}`, kind: 'allow-once' }, { id: 'decline', label: 'Don’t add', kind: 'deny' }],
+      text: t`Add ${{ host: run.name }} as a host?\nSotto connects to ${{ target: run.connection.target }}, starts the host there if it is not running and pairs this computer. ${{ host: run.name }} is saved in Settings > Hosts & phones once it answers.`,
+      options: [], permissionChoices: [{ id: 'add', label: t`Add ${{ host: run.name }}`, kind: 'allow-once' }, { id: 'decline', label: t`Don’t add`, kind: 'deny' }],
       context: { toolName: 'Add host' } }
     return new Map([[run.threadId, [request]]])
   }
   answer(threadId: string, requestId: string, approved: boolean): void {
     const run = this.current
-    if (!run?.request || run.request.id !== requestId || run.threadId !== threadId) throw new Error('This request is no longer pending. Refresh the thread.')
+    if (!run?.request || run.request.id !== requestId || run.threadId !== threadId) throw new Error(t`This request is no longer pending. Refresh the thread.`)
     const { resolve } = run.request
     delete run.request
     resolve(approved ? 'add' : 'decline')
@@ -153,18 +154,18 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
   }
 
   private async start(command: Extract<HostsCommand, { type: 'start-setup' }>): Promise<void> {
-    if (running(this.current)) throw new Error(`Sotto is already setting up ${this.current.name}. Stop that setup first. Nothing was started.`)
+    if (running(this.current)) throw new Error(t`Sotto is already setting up ${{ host: this.current.name }}. Stop that setup first. Nothing was started.`)
     const busy = this.options.busy?.()
     if (busy) throw new Error(busy)
     const choice = this.options.threads.choice()
     if (choice.unavailable) throw new Error(choice.unavailable)
     const model = choice.models.find(item => item.id === command.modelId)
-    if (!model) throw new Error('That model is not ready on this computer. Choose another one. Nothing was started.')
+    if (!model) throw new Error(t`That model is not ready on this computer. Choose another one. Nothing was started.`)
     const connection = command.host
     validateSshHost({ target: connection.target, installPath: connection.installPath, dataDirectory: connection.dataDirectory,
       ...(connection.sshPort ? { sshPort: connection.sshPort } : {}), ...(connection.identityFile ? { identityFile: connection.identityFile } : {}) })
     const saved = this.options.hosts.savedAs(connection.target, connection.sshPort)
-    if (saved) throw new Error(`${connection.target} is already saved as ${saved}. Nothing was started. Switch it on in the list instead.`)
+    if (saved) throw new Error(t`${{ target: connection.target }} is already saved as ${saved}. Nothing was started. Switch it on in the list instead.`)
     // Have my agent fix this: the failed Add it attempt says where to start, and gives way to the setup.
     let failure: { step: HostSetupStep; reason?: string | undefined } | undefined
     if (command.after) {
@@ -182,11 +183,11 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
       await this.options.threads.start({ title: run.threadTitle, modelId: model.id, brief, created: threadId => { run.threadId = threadId; this.emit() } })
     } catch (error) {
       if (this.current !== run || run.phase !== 'starting') return
-      const message = error instanceof Error ? error.message : 'The setup thread could not start.'
+      const message = error instanceof Error ? error.message : t`The setup thread could not start.`
       this.end(run)
       // No thread: the form stays, with the reason. A thread that exists but did not take its brief stays open to look at.
-      if (!run.threadId) { this.current = undefined; this.emit(); throw new Error(`${message} Nothing was started.`, { cause: error }) }
-      run.phase = 'failed'; run.error = `The setup thread did not start working. ${message} Nothing was saved as a host.`
+      if (!run.threadId) { this.current = undefined; this.emit(); throw new Error(t`${message} Nothing was started.`, { cause: error }) }
+      run.phase = 'failed'; run.error = t`The setup thread did not start working. ${message} Nothing was saved as a host.`
       this.emit()
       return
     }
@@ -262,9 +263,12 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     // row says what to update, and the dialog must not go on saying nothing was saved.
     if (status && this.options.hosts.savedAs(run.connection.target, run.connection.sshPort)) {
       run.phase = 'failed'
-      run.error = `${run.name} was saved as a host but is not connected. ${status.error ?? 'Its row in Settings > Hosts & phones says what to do.'}`
+      const why = status.error ?? 'Its row in Settings > Hosts & phones says what to do.'
+      const shownWhy = status.error ?? t`Its row in Settings > Hosts & phones says what to do.`
+      run.error = t`${{ host: run.name }} was saved as a host but is not connected. ${{ why: shownWhy }}`
       this.end(run); this.emit()
-      return { isError: true, result: { added: true, connected: false, message: run.error } }
+      // The agent reads Sotto's words in English; the dialog shows them in the interface language.
+      return { isError: true, result: { added: true, connected: false, message: `${run.name} was saved as a host but is not connected. ${why}` } }
     }
     this.emit()
     return { isError: true, result: status ? { added: false, ...this.failure(status) } : { added: false, message: 'The add was cancelled before it finished. Nothing was saved.' } }
@@ -278,7 +282,7 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     const stopped = { isError: true, result: { added: false, message: 'The setup was stopped. Nothing was saved.' } }
     try { if (!(await this.options.hosts.forget(run.connection.id))) return stopped }
     catch {
-      run.error = `${run.name} was saved as a host just as the setup stopped, and Sotto could not forget it again. Forget it in Settings > Hosts & phones if you do not want it.`
+      run.error = t`${{ host: run.name }} was saved as a host just as the setup stopped, and Sotto could not forget it again. Forget it in Settings > Hosts & phones if you do not want it.`
       this.emit()
       return { isError: true, result: { added: true, message: 'The setup was stopped after the host was saved, and Sotto could not forget it again. The user can forget it in Settings > Hosts & phones.' } }
     }

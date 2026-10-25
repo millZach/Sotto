@@ -7,6 +7,7 @@ What a translation of Sotto's interface follows (ADR-0123). The catalogs are `sr
 - A paragraph or description whose words are a message carries the `tt-paragraph` class (`src/renderer/src/styles/global.css`). In Arabic and Urdu it then runs right to left from the right edge of its box; a heading, label or button keeps the English place and gets nothing (ADR-0123). Code, paths, branch names and terminal text inside a message stay left to right in their own element.
 - Components write `t` and `<Trans>` from `@lingui/react/macro`, which need no provider; main and module-level text use `@lingui/core/macro`, and a message kept for later is a `msg` descriptor read with `i18n._` when it is shown.
 - A message that reads a number writes it as a placeholder and lets `Intl` format it in the reader's language.
+- Main writes a sentence in the interface language when it says it: a refusal, a dialog, a notification. What it sends a model (a tool's result or description, a brief), writes to disk, logs or compares stays English. A reason kept on disk and shown later (a checkpoint's) stays English there and is said again in the interface language when it is read. A module the headless host also builds has no macros: its English gets a twin in `src/shared/interfaceWords.ts`, and `interfaceWords.test.ts` holds the two to the same English.
 
 ## How Sotto sounds
 

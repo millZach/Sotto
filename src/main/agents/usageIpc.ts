@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { USAGE_READ, USAGE_REFRESH, USAGE_CLEAR, USAGE_HOSTS_MAX, usageQuerySchema, usageRefreshQuerySchema, usageClearQuerySchema, usageDashboardReadSchema, usageClearResultSchema, type UsageBridge } from '../../shared/usageDashboard'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -6,7 +7,7 @@ import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } fro
 export function registerUsageIpc(ipc: IpcMainAdapter, usage: UsageBridge, senders: () => readonly TrustedIpcSender[], enabled: boolean): () => void {
   if (!enabled) return () => undefined
   const authorize = (event: Parameters<typeof isAuthorizedIpcSender>[0]): void => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open Usage in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Usage in the main Sotto window.`)
   }
   ipc.handle(USAGE_READ, (event, ...args) => {
     authorize(event)

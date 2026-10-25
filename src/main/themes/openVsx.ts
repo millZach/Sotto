@@ -27,6 +27,9 @@ import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
+
 import { parseJsonc } from '../../shared/themes/jsonc'
 
 import {
@@ -79,7 +82,7 @@ export class OpenVsxFailure extends Error {
   }
 }
 
-const NETWORK_MESSAGE = 'Open VSX could not be reached. Check your connection and try again.'
+const NETWORK_MESSAGE = msg`Open VSX could not be reached. Check your connection and try again.`
 
 // ---------------------------------------------------------------------------
 // Bounded HTTP
@@ -100,7 +103,7 @@ function allowedUrl(raw: string, hosts: ReadonlySet<string>): URL | null {
 
 async function readLimited(response: Response, maxBytes: number): Promise<Buffer> {
   const declared = Number(response.headers.get('content-length'))
-  if (Number.isFinite(declared) && declared > maxBytes) throw new OpenVsxFailure('too-large', 'Open VSX sent more data than a theme needs, so the download was stopped.')
+  if (Number.isFinite(declared) && declared > maxBytes) throw new OpenVsxFailure('too-large', t`Open VSX sent more data than a theme needs, so the download was stopped.`)
   if (!response.body) return Buffer.alloc(0)
   const reader = response.body.getReader()
   const chunks: Buffer[] = []
@@ -111,7 +114,7 @@ async function readLimited(response: Response, maxBytes: number): Promise<Buffer
     total += value.byteLength
     if (total > maxBytes) {
       await reader.cancel().catch(() => undefined)
-      throw new OpenVsxFailure('too-large', 'Open VSX sent more data than a theme needs, so the download was stopped.')
+      throw new OpenVsxFailure('too-large', t`Open VSX sent more data than a theme needs, so the download was stopped.`)
     }
     chunks.push(Buffer.from(value))
   }
@@ -129,7 +132,7 @@ export class OpenVsxClient {
       try {
         response = await this.fetchImpl(url.href, { redirect: 'manual', signal, headers: { accept: 'application/json, application/octet-stream;q=0.9, */*;q=0.1' } })
       } catch {
-        throw new OpenVsxFailure('network', NETWORK_MESSAGE)
+        throw new OpenVsxFailure('network', i18n._(NETWORK_MESSAGE))
       }
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location')
@@ -139,19 +142,19 @@ export class OpenVsxClient {
         } catch {
           url = null
         }
-        if (url === null) throw new OpenVsxFailure('rejected', 'Open VSX redirected somewhere Sotto does not download from.')
+        if (url === null) throw new OpenVsxFailure('rejected', t`Open VSX redirected somewhere Sotto does not download from.`)
         continue
       }
-      if (response.status === 404) throw new OpenVsxFailure('unavailable', 'That extension is no longer on Open VSX.')
-      if (!response.ok) throw new OpenVsxFailure('network', `Open VSX answered with an error (${response.status}). Try again later.`)
+      if (response.status === 404) throw new OpenVsxFailure('unavailable', t`That extension is no longer on Open VSX.`)
+      if (!response.ok) throw new OpenVsxFailure('network', t`Open VSX answered with an error (${{ status: response.status }}). Try again later.`)
       try {
         return await readLimited(response, maxBytes)
       } catch (cause) {
         if (cause instanceof OpenVsxFailure) throw cause
-        throw new OpenVsxFailure('network', NETWORK_MESSAGE)
+        throw new OpenVsxFailure('network', i18n._(NETWORK_MESSAGE))
       }
     }
-    throw new OpenVsxFailure('rejected', url === null ? 'That address is not an Open VSX address.' : 'Open VSX redirected too many times.')
+    throw new OpenVsxFailure('rejected', url === null ? t`That address is not an Open VSX address.` : t`Open VSX redirected too many times.`)
   }
 
   private async getJson(url: string, maxBytes: number): Promise<unknown> {
@@ -159,16 +162,16 @@ export class OpenVsxClient {
     try {
       return JSON.parse(body.toString('utf8'))
     } catch {
-      throw new OpenVsxFailure('network', 'Open VSX sent a response Sotto could not read.')
+      throw new OpenVsxFailure('network', t`Open VSX sent a response Sotto could not read.`)
     }
   }
 
   private async detail(namespace: string, name: string): Promise<{ extension: OpenVsxThemeExtension; download: string; sha256: string | null; manifest: string | null }> {
     const value = await this.getJson(`${OPEN_VSX_ORIGIN}/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, OPEN_VSX_LIMITS.detailBytes)
     const parsed = parseExtensionDetail(value)
-    if (!parsed) throw new OpenVsxFailure('unavailable', 'Open VSX did not describe that extension completely.')
+    if (!parsed) throw new OpenVsxFailure('unavailable', t`Open VSX did not describe that extension completely.`)
     if (parsed.extension.namespace.toLowerCase() !== namespace.toLowerCase() || parsed.extension.name.toLowerCase() !== name.toLowerCase()) {
-      reject('Open VSX metadata does not match the selected extension.')
+      reject(t`Open VSX metadata does not match the selected extension.`)
     }
     const manifest = isRecord(value) && isRecord(value.files) && typeof value.files.manifest === 'string' && allowedUrl(value.files.manifest, DOWNLOAD_HOSTS) ? value.files.manifest : null
     return { ...parsed, manifest }
@@ -176,7 +179,7 @@ export class OpenVsxClient {
 
   async search(input: unknown): Promise<OpenVsxThemeExtension[]> {
     const request = openVsxSearchRequestSchema.safeParse(input)
-    if (!request.success) throw new OpenVsxFailure('invalid-request', 'Type up to 100 characters to search.')
+    if (!request.success) throw new OpenVsxFailure('invalid-request', t`Type up to 100 characters to search.`)
     const query = new URLSearchParams({
       query: request.data.query,
       category: 'Themes',
@@ -187,7 +190,7 @@ export class OpenVsxClient {
       includeAllVersions: 'false',
     })
     const value = await this.getJson(`${OPEN_VSX_ORIGIN}/api/-/search?${query}`, OPEN_VSX_LIMITS.searchBytes)
-    if (!isRecord(value) || !Array.isArray(value.extensions)) throw new OpenVsxFailure('network', 'Open VSX sent a search response Sotto could not read.')
+    if (!isRecord(value) || !Array.isArray(value.extensions)) throw new OpenVsxFailure('network', t`Open VSX sent a search response Sotto could not read.`)
     const hits = value.extensions.slice(0, OPEN_VSX_LIMITS.searchResults)
     const identities = hits
       .map(hit => (isRecord(hit) && isIdentityPart(hit.namespace) && isIdentityPart(hit.name) ? { namespace: hit.namespace, name: hit.name } : null))
@@ -215,24 +218,24 @@ export class OpenVsxClient {
       }
     }
     await Promise.all([worker(), worker(), worker(), worker()])
-    if (identities.length > 0 && unreachable === identities.length) throw new OpenVsxFailure('network', NETWORK_MESSAGE)
+    if (identities.length > 0 && unreachable === identities.length) throw new OpenVsxFailure('network', i18n._(NETWORK_MESSAGE))
     return results.filter((result): result is OpenVsxThemeExtension => result !== null)
   }
 
   async install(input: unknown): Promise<OpenVsxInstallResult> {
     const request = openVsxInstallRequestSchema.safeParse(input)
-    if (!request.success) throw new OpenVsxFailure('invalid-request', 'That is not an Open VSX extension name.')
+    if (!request.success) throw new OpenVsxFailure('invalid-request', t`That is not an Open VSX extension name.`)
     const { extension, download, sha256 } = await this.detail(request.data.namespace, request.data.name)
     if (!OPEN_VSX_LICENSES.has(extension.license)) {
-      throw new OpenVsxFailure('rejected', `${extension.displayName} is licensed as ${extension.license || 'unknown'}, which Sotto does not import.`)
+      throw new OpenVsxFailure('rejected', extension.license ? t`${{ name: extension.displayName }} is licensed as ${{ license: extension.license }}, which Sotto does not import.` : t`${{ name: extension.displayName }} is licensed as unknown, which Sotto does not import.`)
     }
-    if (sha256 === null) throw new OpenVsxFailure('rejected', `Open VSX publishes no checksum for ${extension.displayName}, so Sotto did not download it.`)
+    if (sha256 === null) throw new OpenVsxFailure('rejected', t`Open VSX publishes no checksum for ${{ name: extension.displayName }}, so Sotto did not download it.`)
     const checksumText = await this.get(sha256, OPEN_VSX_LIMITS.checksumBytes, DOWNLOAD_HOSTS, OPEN_VSX_LIMITS.apiTimeoutMs)
     const expected = /\b([0-9a-f]{64})\b/iu.exec(checksumText.toString('utf8'))?.[1]?.toLowerCase()
-    if (!expected) throw new OpenVsxFailure('rejected', 'The checksum from Open VSX could not be read.')
+    if (!expected) throw new OpenVsxFailure('rejected', t`The checksum from Open VSX could not be read.`)
     const vsix = await this.get(download, OPEN_VSX_LIMITS.vsixBytes, DOWNLOAD_HOSTS, OPEN_VSX_LIMITS.downloadTimeoutMs)
     if (createHash('sha256').update(vsix).digest('hex') !== expected) {
-      throw new OpenVsxFailure('rejected', 'The download did not match the checksum Open VSX publishes, so it was discarded.')
+      throw new OpenVsxFailure('rejected', t`The download did not match the checksum Open VSX publishes, so it was discarded.`)
     }
     const themes = extractVsixThemes(vsix, extension)
     return { extension, themes }
@@ -305,22 +308,22 @@ export function readZipDirectory(archive: Buffer): Map<string, ZipEntry> {
       break
     }
   }
-  if (end < 0) reject('The extension is not a valid VSIX archive.')
+  if (end < 0) reject(t`The extension is not a valid VSIX archive.`)
   const disk = archive.readUInt16LE(end + 4)
   const directoryDisk = archive.readUInt16LE(end + 6)
   const diskCount = archive.readUInt16LE(end + 8)
   const count = archive.readUInt16LE(end + 10)
   const directorySize = archive.readUInt32LE(end + 12)
   const directoryOffset = archive.readUInt32LE(end + 16)
-  if (disk !== 0 || directoryDisk !== 0 || diskCount !== count || count === 0xffff || directoryOffset === 0xffffffff || directorySize === 0xffffffff) reject('The extension uses a ZIP format Sotto does not read.')
-  if (count > OPEN_VSX_LIMITS.archiveEntries) reject('The extension has too many files to be a theme.')
-  if (directoryOffset + directorySize !== end) reject('The extension is not a valid VSIX archive.')
+  if (disk !== 0 || directoryDisk !== 0 || diskCount !== count || count === 0xffff || directoryOffset === 0xffffffff || directorySize === 0xffffffff) reject(t`The extension uses a ZIP format Sotto does not read.`)
+  if (count > OPEN_VSX_LIMITS.archiveEntries) reject(t`The extension has too many files to be a theme.`)
+  if (directoryOffset + directorySize !== end) reject(t`The extension is not a valid VSIX archive.`)
   const entries = new Map<string, ZipEntry>()
   const names = new Set<string>()
   let totalSize = 0
   let offset = directoryOffset
   for (let index = 0; index < count; index += 1) {
-    if (offset + 46 > end || archive.readUInt32LE(offset) !== 0x02014b50) reject('The extension is not a valid VSIX archive.')
+    if (offset + 46 > end || archive.readUInt32LE(offset) !== 0x02014b50) reject(t`The extension is not a valid VSIX archive.`)
     const flags = archive.readUInt16LE(offset + 8)
     const method = archive.readUInt16LE(offset + 10)
     const compressedSize = archive.readUInt32LE(offset + 20)
@@ -330,23 +333,23 @@ export function readZipDirectory(archive: Buffer): Map<string, ZipEntry> {
     const commentLength = archive.readUInt16LE(offset + 32)
     const startDisk = archive.readUInt16LE(offset + 34)
     const localOffset = archive.readUInt32LE(offset + 42)
-    if (startDisk !== 0 || compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) reject('The extension uses a ZIP format Sotto does not read.')
-    if ((flags & 0x1) !== 0) reject('The extension is encrypted.')
-    if (method !== 0 && method !== 8) reject('The extension uses a compression method Sotto does not read.')
-    if (offset + 46 + nameLength + extraLength + commentLength > end) reject('The extension is not a valid VSIX archive.')
-    if (localOffset + 30 > directoryOffset || archive.readUInt32LE(localOffset) !== 0x04034b50) reject('The extension is not a valid VSIX archive.')
+    if (startDisk !== 0 || compressedSize === 0xffffffff || size === 0xffffffff || localOffset === 0xffffffff) reject(t`The extension uses a ZIP format Sotto does not read.`)
+    if ((flags & 0x1) !== 0) reject(t`The extension is encrypted.`)
+    if (method !== 0 && method !== 8) reject(t`The extension uses a compression method Sotto does not read.`)
+    if (offset + 46 + nameLength + extraLength + commentLength > end) reject(t`The extension is not a valid VSIX archive.`)
+    if (localOffset + 30 > directoryOffset || archive.readUInt32LE(localOffset) !== 0x04034b50) reject(t`The extension is not a valid VSIX archive.`)
     const dataStart = localOffset + 30 + archive.readUInt16LE(localOffset + 26) + archive.readUInt16LE(localOffset + 28)
-    if (dataStart + compressedSize > directoryOffset) reject('The extension is not a valid VSIX archive.')
+    if (dataStart + compressedSize > directoryOffset) reject(t`The extension is not a valid VSIX archive.`)
     totalSize += size
-    if (totalSize > OPEN_VSX_LIMITS.totalUncompressedBytes) reject('The extension expands to more data than a theme needs.')
-    if (size > 0 && (compressedSize === 0 || size / compressedSize > OPEN_VSX_LIMITS.compressionRatio)) reject('The extension is compressed suspiciously well, so it was not opened.')
+    if (totalSize > OPEN_VSX_LIMITS.totalUncompressedBytes) reject(t`The extension expands to more data than a theme needs.`)
+    if (size > 0 && (compressedSize === 0 || size / compressedSize > OPEN_VSX_LIMITS.compressionRatio)) reject(t`The extension is compressed suspiciously well, so it was not opened.`)
     const name = archive.toString('utf8', offset + 46, offset + 46 + nameLength)
-    if (names.has(name)) reject('The extension contains duplicate ZIP entry names.')
+    if (names.has(name)) reject(t`The extension contains duplicate ZIP entry names.`)
     names.add(name)
     offset += 46 + nameLength + extraLength + commentLength
     if (!name.endsWith('/')) entries.set(name, { name, method, compressedSize, size, localOffset })
   }
-  if (offset !== end) reject('The extension is not a valid VSIX archive.')
+  if (offset !== end) reject(t`The extension is not a valid VSIX archive.`)
   return entries
 }
 
@@ -364,15 +367,15 @@ class ZipReader {
 
   read(name: string, maxBytes: number): Buffer {
     const entry = this.entries.get(name)
-    if (!entry) reject(`The extension is missing ${name}.`)
-    if (entry.size > maxBytes) reject(`${posix.basename(name)} is too large to be a theme file.`)
-    if (entry.compressedSize > 0 && entry.size / entry.compressedSize > OPEN_VSX_LIMITS.compressionRatio) reject('The extension is compressed suspiciously well, so it was not opened.')
+    if (!entry) reject(t`The extension is missing ${name}.`)
+    if (entry.size > maxBytes) reject(t`${{ file: posix.basename(name) }} is too large to be a theme file.`)
+    if (entry.compressedSize > 0 && entry.size / entry.compressedSize > OPEN_VSX_LIMITS.compressionRatio) reject(t`The extension is compressed suspiciously well, so it was not opened.`)
     this.inflated += entry.size
-    if (this.inflated > OPEN_VSX_LIMITS.totalUncompressedBytes) reject('The extension expands to more data than a theme needs.')
+    if (this.inflated > OPEN_VSX_LIMITS.totalUncompressedBytes) reject(t`The extension expands to more data than a theme needs.`)
     const local = entry.localOffset
-    if (local + 30 > this.archive.length || this.archive.readUInt32LE(local) !== 0x04034b50) reject('The extension is not a valid VSIX archive.')
+    if (local + 30 > this.archive.length || this.archive.readUInt32LE(local) !== 0x04034b50) reject(t`The extension is not a valid VSIX archive.`)
     const start = local + 30 + this.archive.readUInt16LE(local + 26) + this.archive.readUInt16LE(local + 28)
-    if (start + entry.compressedSize > this.archive.length) reject('The extension is not a valid VSIX archive.')
+    if (start + entry.compressedSize > this.archive.length) reject(t`The extension is not a valid VSIX archive.`)
     const raw = this.archive.subarray(start, start + entry.compressedSize)
     let data: Buffer
     if (entry.method === 0) data = Buffer.from(raw)
@@ -380,10 +383,10 @@ class ZipReader {
       try {
         data = inflateRawSync(raw, { maxOutputLength: Math.max(1, entry.size) })
       } catch {
-        reject('The extension is not a valid VSIX archive.')
+        reject(t`The extension is not a valid VSIX archive.`)
       }
-    } else reject('The extension uses a compression method Sotto does not read.')
-    if (data.length !== entry.size) reject('The extension is not a valid VSIX archive.')
+    } else reject(t`The extension uses a compression method Sotto does not read.`)
+    if (data.length !== entry.size) reject(t`The extension is not a valid VSIX archive.`)
     return data
   }
 }
@@ -401,26 +404,26 @@ function parseManifest(bytes: Buffer): Record<string, unknown> {
     const value = parseJsonc(bytes.toString('utf8'))
     if (isRecord(value)) return value
   } catch { /* Report the manifest error without leaking parser internals. */ }
-  reject('The extension manifest is not valid JSON.')
+  reject(t`The extension manifest is not valid JSON.`)
 }
 
 function validateManifest(manifest: Record<string, unknown>, extension: OpenVsxThemeExtension): void {
   if (typeof manifest.publisher !== 'string' || manifest.publisher.toLowerCase() !== extension.namespace.toLowerCase() ||
       typeof manifest.name !== 'string' || manifest.name.toLowerCase() !== extension.name.toLowerCase() || manifest.version !== extension.version) {
-    reject('The extension package does not match the selected Open VSX theme.')
+    reject(t`The extension package does not match the selected Open VSX theme.`)
   }
   if (!OPEN_VSX_LICENSES.has(extension.license) || typeof manifest.license !== 'string' || manifest.license.trim().toLowerCase() !== extension.license.toLowerCase()) {
-    reject('The extension package does not match its advertised license.')
+    reject(t`The extension package does not match its advertised license.`)
   }
 }
 
 function themeContributions(manifest: Record<string, unknown>, extension: OpenVsxThemeExtension): Record<string, unknown>[] {
   const contributions = isRecord(manifest.contributes) && Array.isArray(manifest.contributes.themes) ? manifest.contributes.themes : []
-  if (contributions.length === 0) reject(`${extension.displayName} contributes no color themes.`)
-  if (contributions.length > OPEN_VSX_LIMITS.themes) reject('The extension contains too many color themes to import safely.')
+  if (contributions.length === 0) reject(t`${{ name: extension.displayName }} contributes no color themes.`)
+  if (contributions.length > OPEN_VSX_LIMITS.themes) reject(t`The extension contains too many color themes to import safely.`)
   return contributions.map(contribution => {
     if (!isRecord(contribution) || typeof contribution.path !== 'string' || extensionPath('extension/package.json', contribution.path) === null) {
-      reject('A color theme contribution has a missing or unsafe path; nothing was imported.')
+      reject(t`A color theme contribution has a missing or unsafe path; nothing was imported.`)
     }
     return contribution
   })
@@ -435,24 +438,24 @@ function extensionPath(fromFile: string, relative: string): string | null {
 
 /** The colours and type of a theme file and its includes, keeping only keys the importer reads. */
 function readThemeFile(zip: ZipReader, path: string, depth: number, seen: Set<string>): { colors: Record<string, string>; type: string | null; name: string | null } {
-  if (depth > OPEN_VSX_LIMITS.includeDepth) throw new ThemeFileProblem('A theme file includes too many other files.')
-  if (seen.has(path)) throw new ThemeFileProblem('A theme file includes itself.')
+  if (depth > OPEN_VSX_LIMITS.includeDepth) throw new ThemeFileProblem(t`A theme file includes too many other files.`)
+  if (seen.has(path)) throw new ThemeFileProblem(t`A theme file includes itself.`)
   seen.add(path)
   let value: unknown
   try {
     value = parseJsonc(zip.read(path, OPEN_VSX_LIMITS.themeFileBytes).toString('utf8'))
   } catch (cause) {
     if (cause instanceof OpenVsxFailure) throw cause
-    throw new ThemeFileProblem(`${posix.basename(path)} is not valid JSON.`)
+    throw new ThemeFileProblem(t`${{ file: posix.basename(path) }} is not valid JSON.`)
   }
-  if (!isRecord(value)) throw new ThemeFileProblem(`${posix.basename(path)} is not a theme file.`)
+  if (!isRecord(value)) throw new ThemeFileProblem(t`${{ file: posix.basename(path) }} is not a theme file.`)
   const colors: Record<string, string> = {}
   let type: string | null = null
   let name: string | null = null
-  if (value.include !== undefined && typeof value.include !== 'string') throw new ThemeFileProblem('A theme include must be a relative file path.')
+  if (value.include !== undefined && typeof value.include !== 'string') throw new ThemeFileProblem(t`A theme include must be a relative file path.`)
   if (typeof value.include === 'string') {
     const included = extensionPath(path, value.include)
-    if (included === null || !zip.has(included)) throw new ThemeFileProblem(`${posix.basename(path)} includes a file outside the extension.`)
+    if (included === null || !zip.has(included)) throw new ThemeFileProblem(t`${{ file: posix.basename(path) }} includes a file outside the extension.`)
     const base = readThemeFile(zip, included, depth + 1, seen)
     Object.assign(colors, base.colors)
     type = base.type
@@ -475,7 +478,7 @@ function themeIdFor(collectionId: string, label: string): string {
 
 /** Every colour theme an extension contributes, converted, paired and labelled as one collection. */
 export function extractVsixThemes(archive: Buffer, extension: OpenVsxThemeExtension): ThemeDefinition[] {
-  if (archive.length > OPEN_VSX_LIMITS.vsixBytes) reject('The extension is too large to import safely.')
+  if (archive.length > OPEN_VSX_LIMITS.vsixBytes) reject(t`The extension is too large to import safely.`)
   const zip = new ZipReader(archive)
   const manifest = parseManifest(zip.read('extension/package.json', OPEN_VSX_LIMITS.manifestBytes))
   validateManifest(manifest, extension)
@@ -483,9 +486,9 @@ export function extractVsixThemes(archive: Buffer, extension: OpenVsxThemeExtens
 
   const converted: Array<{ theme: ThemeDefinition; sourceName: string }> = []
   for (const contribution of contributions) {
-    if (typeof contribution.path !== 'string') reject('A color theme contribution has no path; nothing was imported.')
+    if (typeof contribution.path !== 'string') reject(t`A color theme contribution has no path; nothing was imported.`)
     const path = extensionPath('extension/package.json', contribution.path)
-    if (path === null || !zip.has(path)) reject('A contributed color theme is missing or outside the extension; nothing was imported.')
+    if (path === null || !zip.has(path)) reject(t`A contributed color theme is missing or outside the extension; nothing was imported.`)
     try {
       const file = readThemeFile(zip, path, 0, new Set())
       const uiType = contribution.uiTheme === 'vs' || contribution.uiTheme === 'hc-light' ? 'light' : contribution.uiTheme === 'vs-dark' || contribution.uiTheme === 'hc-black' ? 'dark' : null
@@ -496,10 +499,10 @@ export function extractVsixThemes(archive: Buffer, extension: OpenVsxThemeExtens
       })
     } catch (cause) {
       if (cause instanceof OpenVsxFailure) throw cause
-      reject(`A color theme could not be imported; nothing was imported. ${cause instanceof Error ? cause.message : ''}`)
+      reject(t`A color theme could not be imported; nothing was imported. ${{ detail: cause instanceof Error ? cause.message : '' }}`)
     }
   }
-  if (converted.length === 0) reject(`None of the themes in ${extension.displayName} could be read.`)
+  if (converted.length === 0) reject(t`None of the themes in ${{ name: extension.displayName }} could be read.`)
 
   const collection = { id: extension.collectionId, label: humanizeThemeName(extension.displayName).slice(0, 48).trim() || extension.name.slice(0, 48) }
   const taken = new Set<string>()

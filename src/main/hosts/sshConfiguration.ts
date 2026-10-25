@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { isIP } from 'node:net'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -20,14 +21,19 @@ export interface ValidatedSshHostConfiguration {
   readonly sshPort?: number
 }
 
-function remotePath(value: string, label: string): string {
+/** Which field a refusal is about: one whole sentence each, so each language can word it (ADR-0123). */
+function remotePath(value: string, field: 'installation' | 'data'): string {
   if (!value || value.length > 4096 || /[\p{Cc}]/u.test(value) || !(value.startsWith('/') || value.startsWith('~/'))) {
-    throw new Error(`Choose an absolute ${label} path, or a path starting with ~/.`)
+    throw new Error(field === 'installation'
+      ? t`Choose an absolute host installation path, or a path starting with ~/.`
+      : t`Choose an absolute host data path, or a path starting with ~/.`)
   }
   return value
 }
-function port(value: number | undefined, label: string, minimum = 1): number | undefined {
-  if (value !== undefined && (!Number.isInteger(value) || value < minimum || value > 65535)) throw new Error(`Choose a ${label} port between 1 and 65535.`)
+function port(value: number | undefined, field: 'host' | 'ssh', minimum = 1): number | undefined {
+  if (value !== undefined && (!Number.isInteger(value) || value < minimum || value > 65535)) {
+    throw new Error(field === 'host' ? t`Choose a host port between 1 and 65535.` : t`Choose a SSH port between 1 and 65535.`)
+  }
   return value
 }
 export function validateSshHost(configuration: SshHostConfiguration): ValidatedSshHostConfiguration {
@@ -37,17 +43,17 @@ export function validateSshHost(configuration: SshHostConfiguration): ValidatedS
   const host = parts.at(-1) ?? ''
   const validHost = host.startsWith('[') && host.endsWith(']') ? isIP(host.slice(1, -1)) === 6 : /^[a-z0-9][a-z0-9._-]*$/iu.test(host)
   if (!target || target.length > 320 || parts.length > 2 || !validHost || (user !== undefined && !/^[a-z0-9_][a-z0-9_.-]*$/iu.test(user))) {
-    throw new Error('Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration.')
+    throw new Error(t`Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration.`)
   }
   let identityFile = configuration.identityFile
   if (identityFile !== undefined && identityFile !== '') {
     if (identityFile.startsWith('~/') || identityFile.startsWith('~\\')) identityFile = join(homedir(), identityFile.slice(2))
-    if (!isAbsolute(identityFile) || identityFile.length > 4096 || /[\p{Cc}]/u.test(identityFile)) throw new Error('Choose an absolute path for the SSH identity file.')
+    if (!isAbsolute(identityFile) || identityFile.length > 4096 || /[\p{Cc}]/u.test(identityFile)) throw new Error(t`Choose an absolute path for the SSH identity file.`)
   } else identityFile = undefined
-  return { target, installPath: remotePath(configuration.installPath, 'host installation'),
-    dataDirectory: remotePath(configuration.dataDirectory ?? '~/.sotto', 'host data'),
+  return { target, installPath: remotePath(configuration.installPath, 'installation'),
+    dataDirectory: remotePath(configuration.dataDirectory ?? '~/.sotto', 'data'),
     remotePort: port(configuration.remotePort, 'host', 0) ?? 0,
-    ...(port(configuration.sshPort, 'SSH') !== undefined ? { sshPort: configuration.sshPort } : {}),
+    ...(port(configuration.sshPort, 'ssh') !== undefined ? { sshPort: configuration.sshPort } : {}),
     ...(identityFile !== undefined ? { identityFile } : {}) }
 }
 

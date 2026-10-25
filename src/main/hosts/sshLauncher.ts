@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import type { ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { access } from 'node:fs/promises'
@@ -367,9 +368,9 @@ export class SshHostLauncher {
 
   answerPrompt(id: string, answer: string): void {
     const attempt = this.attempt, prompt = attempt?.prompt
-    if (!attempt || attempt.closed || !prompt || prompt.id !== id) throw new Error('This SSH prompt is no longer waiting. Reconnect if needed.')
-    if (answer.length > 4096 || /[\r\n\0]/u.test(answer)) throw new Error('Enter one SSH answer without a line break.')
-    if (prompt.kind === 'host-key' && answer !== 'yes' && answer !== 'no') throw new Error('Choose whether to trust this SSH host key.')
+    if (!attempt || attempt.closed || !prompt || prompt.id !== id) throw new Error(t`This SSH prompt is no longer waiting. Reconnect if needed.`)
+    if (answer.length > 4096 || /[\r\n\0]/u.test(answer)) throw new Error(t`Enter one SSH answer without a line break.`)
+    if (prompt.kind === 'host-key' && answer !== 'yes' && answer !== 'no') throw new Error(t`Choose whether to trust this SSH host key.`)
     delete attempt.prompt
     attempt.callbacks.onPrompt?.(null)
     if (answer !== 'no' || prompt.kind !== 'host-key') attempt.answers.set(prompt.key, { answer, callers: new Set([prompt.caller]) })
@@ -591,7 +592,7 @@ export class SshHostLauncher {
       const run = [...attempt.runs].find(item => item.caller === caller)
       const deadline = Date.now() + 2000
       while (run && !run.hostKey && !attempt.closed && Date.now() < deadline) await delay(25)
-      text = [text.split('\n')[0], run?.hostKey ?? 'Sotto could not read the key fingerprint. Check the key on the host before you trust it.',
+      text = [text.split('\n')[0], run?.hostKey ?? t`Sotto could not read the key fingerprint. Check the key on the host before you trust it.`,
         'Are you sure you want to continue connecting?'].join('\n')
     }
     if (attempt.closed || withdrawn.aborted) return null
@@ -645,7 +646,7 @@ export class SshHostLauncher {
     } finally { attempt.busy = false }
   }
   private pairingCode(attempt: Attempt): Promise<SshPairingCode> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before requesting a pairing code.'))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before requesting a pairing code.`))
     const hostId = attempt.ready.hostId
     return this.request(attempt, { op: 'pairing-code', hostId }, 'pairing-failed', REQUEST_BUDGET_MS, value => {
       const code = pairingSchema.safeParse(value)
@@ -653,8 +654,8 @@ export class SshHostLauncher {
     })
   }
   private revokeClient(attempt: Attempt, clientId: string): Promise<boolean> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before forgetting a client.'))
-    if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) return Promise.reject(new Error('Choose a valid paired client.'))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before forgetting a client.`))
+    if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) return Promise.reject(new Error(t`Choose a valid paired client.`))
     const hostId = attempt.ready.hostId
     // `revoke-failed` is the launch script saying the host did not revoke; a request that got no answer is SSH failing,
     // which Forget must not report as the host refusing (ADR-0053).
@@ -664,13 +665,13 @@ export class SshHostLauncher {
     }, {}, 'ssh-failed')
   }
   private async adminToken(attempt: Attempt): Promise<string> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', 'Connect to the SSH host before changing its phone access.')
+    if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', t`Connect to the SSH host before changing its phone access.`)
     if (!attempt.ready.adminToken) throw new SshFailure('admin-failed')
     return attempt.ready.adminToken
   }
   private async ensureDesktopAnswers(attempt: Attempt, clientId: string): Promise<void> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', 'Connect to the SSH host before setting up desktop permissions.')
-    if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) throw new Error('Choose a valid paired client.')
+    if (attempt.closed || !attempt.connected || !attempt.ready) throw new SshFailure('not-connected', t`Connect to the SSH host before setting up desktop permissions.`)
+    if (!clientId || clientId.length > 512 || /[\p{Cc}]/u.test(clientId)) throw new Error(t`Choose a valid paired client.`)
     const hostId = attempt.ready.hostId
     await this.request(attempt, { op: 'desktop-answers', hostId, clientId }, 'permission-setup-failed', REQUEST_BUDGET_MS, value => {
       const result = desktopAnswersSchema.safeParse(value)
@@ -678,7 +679,7 @@ export class SshHostLauncher {
     })
   }
   private stopHost(attempt: Attempt): Promise<boolean> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before stopping it.'))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before stopping it.`))
     const hostId = attempt.ready.hostId
     return this.request(attempt, { op: 'stop-host', hostId }, 'stop-failed', HOST_STOP_REPLY_MS, value => {
       const stopped = stoppedSchema.safeParse(value)
@@ -690,7 +691,7 @@ export class SshHostLauncher {
    * in: two downloads, a copy, an unpack, or a stop and up to two starts (the new version, then the old one again).
    */
   private updateHost(attempt: Attempt, operation: SshHostUpdateOperation, options: SshHostUpdateOptions = {}): Promise<SshHostUpdateResult> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before updating it.'))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before updating it.`))
     const hostId = attempt.ready.hostId
     let launch: LaunchOperation, budget: number, stdin: Uint8Array | undefined
     if (operation.op === 'update-restart') { launch = { op: 'update-restart', hostId, version: operation.version }; budget = HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 10_000 }
@@ -707,7 +708,7 @@ export class SshHostLauncher {
    * it again, the way an update's restart does, and so get that budget; installing may also wait on linger.
    */
   private boot(attempt: Attempt, operation: SshBootOperation): Promise<SshBootResult> {
-    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', 'Connect to the SSH host before changing whether it starts at boot.'))
+    if (attempt.closed || !attempt.connected || !attempt.ready) return Promise.reject(new SshFailure('not-connected', t`Connect to the SSH host before changing whether it starts at boot.`))
     const hostId = attempt.ready.hostId
     const launch: LaunchOperation = operation.op === 'boot-install' ? { op: 'boot-install', hostId } : operation
     const budget = operation.op === 'boot-status' ? REQUEST_BUDGET_MS : HOST_STOP_DRAIN_MS + 2 * this.readyTimeout() + 60_000
