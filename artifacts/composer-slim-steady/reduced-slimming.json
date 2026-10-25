@@ -1,0 +1,272 @@
+[
+ {
+  "t": -1,
+  "slim": false,
+  "logHeight": 659,
+  "place": 153.1666717529297,
+  "asked": -396.333251953125,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   567.4166870117188,
+   702.7500305175781
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 74,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.1666870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 85,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.1666870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 118,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.3333740234375,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 143,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 157,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 174,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 191,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 208,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 226,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 240,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 258,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 273,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 294,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ },
+ {
+  "t": 308,
+  "slim": true,
+  "logHeight": 659,
+  "place": 549.4166870117188,
+  "asked": 0,
+  "cardShown": true,
+  "cardOpacity": 1,
+  "paneScroll": 0,
+  "overhang": 0,
+  "card": [
+   661.4166870117188,
+   702.7500228881836
+  ],
+  "paneBottom": 746,
+  "sceneLayouts": 6,
+  "sceneInk": 48379
+ }
+]

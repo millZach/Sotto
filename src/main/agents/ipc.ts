@@ -1,3 +1,4 @@
+import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, type AgentThreadPrompts, type AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import { mapHostReferences, parseHostEntityKey } from '../../shared/clientIdentity'
 import { z } from 'zod'
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
@@ -31,7 +32,7 @@ export interface AgentIpcOptions {
  * window is in the same process; every command goes through the host service with the identity of
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
-export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; startHandover?: (threadId: string) => Promise<AgentStartHandover | null>; activityBody?: (request: AgentActivityBodyRequest) => Promise<AgentActivity | null>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
+export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; startHandover?: (threadId: string) => Promise<AgentStartHandover | null>; activityBody?: (request: AgentActivityBodyRequest) => Promise<AgentActivity | null>; threadPrompts?: (request: AgentThreadPromptsRequest) => Promise<AgentThreadPrompts | null>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
   const { workingCopyOptions, encodeReceipt, windowRead } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
@@ -118,6 +119,12 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     const request = agentActivityBodyRequestSchema.parse(payload)
     return control.activityBody ? control.activityBody(request) : null
   })
+  // The prompts above a pane's window, read on the thread's own host for the message scrubber (ADR-0109).
+  ipc.handle(AGENT_THREAD_PROMPTS, (event, payload) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
+    const request = agentThreadPromptsRequestSchema.parse(payload)
+    return control.threadPrompts ? control.threadPrompts(request) : null
+  })
   ipc.handle(AGENT_COMMAND, (event, payload) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_SENDER_REJECTED')
     agentCommandSchema.parse(mapHostReferences(payload, id => parseHostEntityKey(id)?.id ?? id))
@@ -126,5 +133,5 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.
     return host.command(payload as AgentCommand, windowClient).then(encodeReceipt)
   })
-  return () => { ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_START_HANDOVER); ipc.removeHandler(AGENT_ACTIVITY_BODY); ipc.removeHandler(AGENT_COMMAND) }
+  return () => { ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_START_HANDOVER); ipc.removeHandler(AGENT_ACTIVITY_BODY); ipc.removeHandler(AGENT_THREAD_PROMPTS); ipc.removeHandler(AGENT_COMMAND) }
 }

@@ -10,6 +10,7 @@ import { devinFixture } from './devinFixture'
 import { grokFixture } from './fakeGrokThreadFixture'
 import { museFixture } from './museFixture'
 import { opencodeFixture } from './fakeOpenCodeFixture'
+import { cursorFixture } from './fakeCursorFixture'
 import { standInTailscale } from './standInTailscale'
 
 async function main(): Promise<void> {
@@ -17,9 +18,11 @@ async function main(): Promise<void> {
   const session = JSON.parse(sessionJson) as AdapterSessionOptions
   // With `tailnet`, the host's Tailscale is a stand-in whose Serve setting points at the host's tailnet listener (ADR-0053).
   const tailscale = mode === 'tailnet' ? standInTailscale() : undefined
-  const native = await ({ codex: () => codexFixture(root, false, 2000, session), claude: () => claudeFixture(root, 2000, undefined, session), grok: () => grokFixture(root, undefined, undefined, session), devin: () => devinFixture(root, 2000, 20, session), muse: () => museFixture(root, 2000, session), opencode: () => opencodeFixture(root, 2000, session) }[provider]())
-  // OpenCode is an Owl provider (ADR-0087): its host runs it only on an Owl build.
-  const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0, providers: { [provider]: native.host }, ...(provider === 'opencode' ? { sottoVersion: '0.1.37-owl.20261012.1' } : {}),
+  const factories = { codex: () => codexFixture(root, false, 2000, session), claude: () => claudeFixture(root, 2000, undefined, session), grok: () => grokFixture(root, undefined, undefined, session), devin: () => devinFixture(root, 2000, 20, session), muse: () => museFixture(root, 2000, session), opencode: () => opencodeFixture(root, 2000, session), cursor: () => cursorFixture(root, undefined, session) }
+  if (!(provider in factories)) throw new Error(`No socket host fixture for ${provider}.`)
+  const native = await factories[provider as keyof typeof factories]()
+  // OpenCode and Cursor are Owl providers (ADR-0087, ADR-0128): a host runs either only on an Owl build.
+  const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0, providers: { [provider]: native.host }, ...(provider === 'opencode' || provider === 'cursor' ? { sottoVersion: '0.1.37-owl.20261012.1' } : {}),
     ...(tailscale ? { tailscale: tailscale.tailscale } : {}) })
   await host.service.command({ type: 'configure', patch: { enabledProviders: [provider], provider } }, desktopWindowClient('socket-fixture'))
   const binding = async (id: string): Promise<string | undefined> => {

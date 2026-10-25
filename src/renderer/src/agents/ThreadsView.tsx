@@ -1,4 +1,5 @@
 import { focusedComposerField } from './promptSelection'
+import { Marked } from '../components/marks'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
@@ -16,7 +17,7 @@ import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFact
 import { useContinueEnabled } from './continuations'
 import { NewThreadDialog } from './NewThreadDialog'
 import { beginNewThread, unusedNewThread, type ThreadCreationStart } from './newThread'
-import { newThreadChord, newThreadChordLabel, newThreadChordPressed } from './newThreadShortcut'
+import { claimedThreadChord, threadChordLabel, threadChordPressed } from './threadShortcuts'
 import { ProviderUpgradeNotice, isRecoveredDraft } from './ProviderUpgradeNotice'
 import { EmptyWorkspace, type CarriedDraft } from './EmptyWorkspace'
 import { HostUpdateControl } from './HostUpdates'
@@ -235,19 +236,18 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     take()
     return onNewThreadIntent(take)
   }, [startNewThread])
-  // Ctrl+Shift+N (Cmd+Shift+N on a Mac): a new thread in the focused thread's project, or the chooser when none
-  // is focused. Checked against the dictation hotkey like every other chord; an open dialog or a terminal keeps
-  // its keys.
+  // New thread (Ctrl+Shift+N, Cmd+Shift+N on a Mac, until changed on Settings › Keyboard, ADR-0133): a new thread
+  // in the focused thread's project, or the chooser when none is focused. Checked against the dictation hotkey
+  // like every other chord; an open dialog or a terminal keeps its keys.
   const platform: SottoPlatform = app?.platform ?? 'win32'
-  const hotkey = app?.settings?.hotkey
-  const shortcutChord = newThreadChord(hotkey, platform)
+  const shortcutChord = claimedThreadChord(app?.settings, 'new-thread', platform)
   // Hoisted rather than a fresh object every render: passed down to the memoised sidebar rows, which compare it.
-  const newThreadShortcutLabel = useMemo(() => shortcutChord ? newThreadChordLabel(platform) : undefined, [shortcutChord, platform])
+  const newThreadShortcutLabel = useMemo(() => shortcutChord ? threadChordLabel(shortcutChord, platform) : undefined, [shortcutChord, platform])
   const dismissNewThreadError = useCallback((): void => setNewThreadError(null), [])
   useEffect(() => {
     if (shortcutChord === null) return
     const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (!newThreadChordPressed(event, shortcutChord, platform)) return
+      if (!threadChordPressed(event, shortcutChord, platform)) return
       event.preventDefault()
       // The focused pane's project, or the chooser: unlike the empty page's own button, this never falls back
       // to the last-active project, since no thread being focused is exactly when the project is unclear.
@@ -256,6 +256,19 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [shortcutChord, platform, focusedId, rowsById, openNewThread])
+  // Focus the prompt (Settings › Keyboard): the cursor lands in the focused pane's composer, the same landing
+  // a pane's own actions use. No focused pane, no landing.
+  const focusPromptChord = claimedThreadChord(app?.settings, 'focus-prompt', platform)
+  useEffect(() => {
+    if (focusPromptChord === null || focusedId === null) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (!threadChordPressed(event, focusPromptChord, platform)) return
+      event.preventDefault()
+      focusInPane(focusedId)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusPromptChord, platform, focusedId])
   // The pane actions are rebuilt every render from the current layout; the sidebar is handed a stable
   // entry point into the latest one instead.
   const gridRef = useRef<ReturnType<typeof paneGridActions> | null>(null)
@@ -302,19 +315,19 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} onKeyDown={grid.onKeyDown} {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
-      newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
+      newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive />
     <section className="thread-workspace" aria-label="Thread workspace">
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
-      <div className="thread-workspace__body">
+      <div className="thread-workspace__body" data-panes={paneIds.length > 0 || undefined}>
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
@@ -326,5 +339,5 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       </div>
     </section>
     <PageWindowControls />
-  </div></SidebarChromeProvider>
+  </div>}</Marked></SidebarChromeProvider>
 }

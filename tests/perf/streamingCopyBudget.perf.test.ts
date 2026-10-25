@@ -98,12 +98,16 @@ async function measure(threads: number, owl: boolean) {
     // The thread that delegated is shown without its hidden news, before the stream and while it runs.
     const parentShown = pipeline.control.threadDetail(pipeline.parentId)!.messages.map(message => message.id)
     if (!parentShown.includes('parent-reply') || parentShown.includes('parent-news')) throw new Error(`The delegating thread is not shown as its window would show it: ${JSON.stringify(parentShown)}`)
+    // The workspace saves once a window while the stream changes it; held here and made once at the end, the stream is
+    // counted with one save whatever the machine's speed, rather than one to three.
+    const releaseSaves = pipeline.holdSaves()
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
       pipeline.adapter.publish(true)
       await sleep(5)
     }
     await sleep(400)
+    await releaseSaves()
     counter.measuring = false
     const broadcasts = Math.max(1, pipeline.broadcasts())
     const per = (total: number, by: number) => Math.round(total / by * 100) / 100
@@ -164,9 +168,41 @@ async function measure(threads: number, owl: boolean) {
  * The budgets stay at 10 copies and 9 objects on Owl and 9.5 and 11 on stable: anything tighter is within a run's
  * spread.
  */
+/*
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copied everything but the threads on every broadcast, in two
+ * calls, and it now reads that part against the last broadcast's frozen copy and copies only what changed. Owl makes 7.3 to
+ * 7.8 copies per update, from 9.3 to 9.7, and stable 6.8 to 6.9, from 8.9; Owl's objects per thread per update stay within
+ * their spread (7.5 to 8.0) and stable's are 9.2 to 9.4, from 9.5 to 9.8. The budgets are 8.5 copies on Owl and 7.5 on
+ * stable, and 10 objects on stable.
+ */
+/*
+ * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, and
+ * copied for none of them, where the desktop room copied every room it kept for its window. With #1334 in, Owl makes 6.3
+ * to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5. The workspace's saves are held through the stream
+ * and made once at its end: it saves at most once a 250 ms window while anything changes, so one to three saves fell
+ * inside a stream as the machine was fast or slow, and on stable each copies the saved organization. Stable read 8.6 to
+ * 9.6 objects per thread per update by how many saves fell in, near its budget of 10; with one it reads 8.6 every run,
+ * and its budget is 9.5.
+ */
+/*
+ * October 24, 2026 (#925, step 3): the identity wrapper and the provider switch read thread changes, so nothing reads the
+ * adapter's activity snapshots and its copy of its whole view for them is gone. That copy was 611 objects a frame on Owl
+ * and 570 on stable, and objects per thread per update fall from 7.73 to 0.11 on Owl and from 8.64 to 1.06 on stable
+ * (the workspace's one save, a copy of the organization, is most of what is left there). It made no copy call here, being
+ * counted by its objects alone; the adapter's thread changes, which the wrapper now reads, copy the records that changed
+ * once an update in a call that is counted, so copies read 3 per update on Owl, from 2, and 3.07 on stable, from 2.13. The
+ * budgets are 3.5 copies on both, and 0.5 objects per thread on Owl and 1.5 on stable.
+ */
+/*
+ * October 25, 2026 (#925, step 4): the workspace reads the provider switch's thread changes, so nothing reads the switch's
+ * activity snapshot and the switch no longer builds it for each update, with its copy of every provider's status. Copies
+ * read 2.07 per update on Owl, from 3, and 2.13 on stable, from 3.07, and objects per thread per update fall from 0.11 to
+ * 0.04 on Owl and from 1.06 to 0.99 on stable, which is mostly the workspace's one save. The budgets are 2.5 copies on
+ * both, and 0.25 objects per thread on Owl; stable's stays at 1.5, since how many saves fall in a stream moves it.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 10, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 9.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 11, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 0.25, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 1.5, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

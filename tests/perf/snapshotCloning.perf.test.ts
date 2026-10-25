@@ -96,7 +96,7 @@ async function measure(threads: number, history: keyof typeof HISTORIES, window:
   const registry = new ThreadRegistry(f.root)
   const sotto = new SottoThreadHost('claude', f.host, registry)
   const providers = new ConfiguredProviderHost({ hosts: { codex: new FakeProviderHost(), claude: sotto,
-    grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }, provider: () => 'claude' })
+    grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() }, provider: () => 'claude' })
   const workspace = new WorkspaceHost(providers, f.root)
   try {
     await workspace.connect('claude')

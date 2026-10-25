@@ -3,6 +3,7 @@ import { PanelBottom } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
+import { chosenThreadChord } from '../agents/threadShortcuts'
 import { paneTerminalChord, paneTerminalShortcutKeys, paneTerminalShortcutLabel, type PaneTerminalShortcut } from './paneTerminalShortcut'
 import { paneTerminalChromeStore, usePaneTerminalChrome, type PaneTerminalChromeStore } from './paneTerminalStore'
 
@@ -15,8 +16,8 @@ export interface PaneTerminalToggleProps {
 export function usePaneTerminalShortcut(): PaneTerminalShortcut | null {
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
-  const chord = paneTerminalChord(app?.settings?.hotkey, platform)
-  return useMemo(() => chord === null ? null : { chord, platform, label: paneTerminalShortcutLabel(platform), keys: paneTerminalShortcutKeys(platform) }, [chord, platform])
+  const chord = paneTerminalChord(chosenThreadChord(app?.settings, 'terminal-drawer'), app?.settings?.hotkey, platform)
+  return useMemo(() => chord === null ? null : { chord, platform, label: paneTerminalShortcutLabel(chord, platform), keys: paneTerminalShortcutKeys(chord, platform) }, [chord, platform])
 }
 
 /**

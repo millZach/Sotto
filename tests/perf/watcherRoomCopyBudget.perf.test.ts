@@ -5,8 +5,9 @@
  *
  * The room hands out the record's own records rather than copies (#1327). Every change replaces the record instead of
  * editing it, so what the room hands out never changes under its holder, and no reader edits it: each reader here runs
- * over a deep-frozen record, where an edit throws. A publish is copied once, by the desktop room for its publish window,
- * where it used to be copied twice, and every reader gets the same room it got when the room copied its records.
+ * over a deep-frozen record, where an edit throws. Since #1450 a publish copies nothing: the desktop room builds the room
+ * when its update goes and hands it to the window at once, where it used to copy every room it kept for its publish window,
+ * and every reader gets the same room it got when the room copied its records.
  */
 import { randomUUID } from 'node:crypto'
 import { expect, it, vi } from 'vitest'
@@ -16,7 +17,7 @@ import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDeskt
 import type { PublishScheduler } from '../../src/main/agents/control'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import type { WatcherRecord } from '../../src/shared/watcher'
-import type { WatcherRoomState } from '../../src/shared/watcherRoom'
+import { applyWatcherRoomUpdate, type WatcherRoomHeld, type WatcherRoomState, type WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 
 const counter = vi.hoisted(() => ({ on: false, copied: [] as unknown[] }))
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
@@ -37,8 +38,8 @@ function roomRecords(record: Readonly<WatcherRecord>) {
   for (const request of copy.requests) delete request.phoneOrigin
   return { current: copy.current, history: copy.history, requests: copy.requests, standingWatches: copy.watches ?? [] }
 }
-/** A room without the time it was read at, which every read sets afresh. */
-const timeless = ({ observedAt: _observedAt, ...room }: WatcherRoomState) => { void _observedAt; return room }
+/** A room without the time it was read at and the number of its build, which every read sets afresh. */
+const timeless = ({ observedAt: _observedAt, sequence: _sequence, ...room }: WatcherRoomState) => { void _observedAt; void _sequence; return room }
 
 it.each([1, 6])('copies no private takeover proofs when reading the room with %i watches', async watches => {
   const f = await watcherObservePerformance({ watches, olderMessages: 20, retainedTakeovers: 200,
@@ -85,16 +86,18 @@ it.each([1, 6])('copies no private takeover proofs when reading the room with %i
   } finally { await f.close() }
 })
 
-it('hands every reader the room from the record\'s own records, which none of them edits, and copies a publish once', async () => {
+it('hands every reader the room from the record\'s own records, which none of them edits, and copies nothing for a publish', async () => {
   const f = await watcherObservePerformance({ watches: 6, olderMessages: 20, retainedTakeovers: 20,
     includeTakeoverMetadata: true, operationOutcome: 'working' })
   const pending: (() => void)[] = []
   const schedule: PublishScheduler = run => { pending.push(run); return () => { pending.splice(pending.indexOf(run), 1) } }
+  // The window's room is put back together from the updates the publish window sends (#1450).
   const sent = { captured: [] as WatcherRoomState[], legacy: [] as WatcherRoomState[] }
+  let held: WatcherRoomHeld | null = null
   const captured = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: true, watcher: f.watcher, schedule,
-    send: state => { sent.captured.push(state); return true } })!
+    send: update => { held = applyWatcherRoomUpdate(held, update as WatcherRoomUpdate); sent.captured.push(held!.room); return true } })!
   const legacy = createWatcherRoomDesktop({ watcherEnabled: true, streamingPublishCost: false, watcher: f.watcher,
-    send: state => { sent.legacy.push(state); return true } })!
+    send: state => { sent.legacy.push(state as WatcherRoomState); return true } })!
   const phone = new WatcherPhoneService(f.control, f.watcher)
   const publish = () => (f.watcher as unknown as { publish(observe?: boolean): void }).publish(false)
   try {
@@ -120,12 +123,11 @@ it('hands every reader the room from the record\'s own records, which none of th
 
     counter.copied = []; counter.on = true
     try { publish(); publish() } finally { counter.on = false }
-    // The first publish goes out at once and the second waits for the window: each copied once, by the desktop room alone.
-    const rooms = counter.copied.filter(value => typeof value === 'object' && value !== null && 'watchedThreads' in value)
-    expect(rooms).toHaveLength(2)
-    expect(counter.copied, 'a publish copied something besides the room the desktop keeps').toHaveLength(2)
+    // The first publish goes out at once and the second waits for the window; neither copies anything.
+    expect(counter.copied, 'a publish copied something').toHaveLength(0)
     pending.shift()!()
-    expect(sent.captured).toHaveLength(2)
+    // The second room changed nothing but the time it was read at, so no update went for it.
+    expect(sent.captured).toHaveLength(1)
     expect(sent.legacy).toHaveLength(2)
     const read = f.watcher.get()
     if (read.status !== 'ok') throw new Error('The room could not be read')
@@ -133,8 +135,8 @@ it('hands every reader the room from the record\'s own records, which none of th
       expect(state).toMatchObject(expected)
       expect(timeless(state)).toEqual(timeless(room))
     }
-    // The desktop room keeps a capture of its own for its window; with the window off it sends the room as it is.
-    expect(sent.captured[1]!.requests[1]).not.toBe(record.requests[1])
+    // Both hand the window the record's own records, which no one edits.
+    expect(sent.captured[0]!.requests[1]).toBe(record.requests[1])
     expect(sent.legacy[1]!.requests[1]).toBe(record.requests[1])
     // A phone reads the same room and is sent what it was sent before.
     const { observedAt: _before, ...phoneExpected } = phoneBefore, { observedAt: _after, ...phoneNow } = phone.state(true, true, true)

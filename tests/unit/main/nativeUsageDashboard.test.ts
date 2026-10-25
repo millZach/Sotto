@@ -533,7 +533,7 @@ it('maps native thread IDs before observing or visiting usage and qualifies mode
   const row: UsageTokenObservation = { providerId: 'codex', threadId: 'session-workshop', recordKey: 'a'.repeat(64), modelId: 'gpt-5', tokens: { input: 10, output: 1 }, phase: 'live', partial: false }
   native.visitUsage = (id, visitor) => { expect(id).toBe('session-workshop'); visitor(row) }
   const wrapped = new SottoThreadHost('codex', native, registry)
-  const host = new ConfiguredProviderHost({ hosts: { codex: wrapped, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }, provider: () => 'codex', threadProvider: id => registry.byThread(id)?.provider })
+  const host = new ConfiguredProviderHost({ hosts: { codex: wrapped, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() }, provider: () => 'codex', threadProvider: id => registry.byThread(id)?.provider })
   const seen: UsageTokenObservation[] = []; const off = host.subscribeUsage!(value => seen.push(value))
   const before = wrapped.subscribeUsage!(value => seen.push(value))
   expect(listener).toBeUndefined(); await registry.load()
@@ -551,7 +551,7 @@ it('drops numeric callbacks retained from a previous provider connection', async
   const native = new FakeProviderHost() as FakeProviderHost & { subscribeUsage: (listener: (record: UsageTokenObservation) => void) => () => void }
   const callbacks: Array<(record: UsageTokenObservation) => void> = []
   native.subscribeUsage = listener => { callbacks.push(listener); return () => undefined }
-  const host = new ConfiguredProviderHost({ hosts: { codex: native, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }, provider: () => 'codex' })
+  const host = new ConfiguredProviderHost({ hosts: { codex: native, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() }, provider: () => 'codex' })
   const seen: UsageTokenObservation[] = []; const off = host.subscribeUsage!(row => seen.push(row))
   const row: UsageTokenObservation = { providerId: 'codex', threadId: 'thread', recordKey: 'b'.repeat(64), modelId: 'gpt-5', tokens: { input: 1, output: 2 }, phase: 'live', partial: false }
   await host.connect('codex'); const old = callbacks[0]!

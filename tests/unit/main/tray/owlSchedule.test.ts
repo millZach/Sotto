@@ -19,9 +19,10 @@ interface Change { readonly t: number; readonly pose: OwlPose }
 
 /**
  * Runs a schedule on a made-up clock for `minutes`: an advance every 20 ms, and also at `nextAt` when that comes
- * sooner, as the animator's timer would, so each change is seen at its own time.
+ * sooner, as the animator's timer would, so each change is seen at its own time. `due` advances only at `nextAt`, for
+ * runs too long to tick through; the test below holds it to the same changes as the 20 ms ticks.
  */
-function simulate(seed: number, minutes: number, options?: OwlScheduleOptions) {
+function simulate(seed: number, minutes: number, options?: OwlScheduleOptions, stepping: 'ticks' | 'due' = 'ticks') {
   const schedule = createOwlSchedule(0, seeded(seed), options)
   const changes: Change[] = []
   const end = minutes * 60_000
@@ -30,7 +31,7 @@ function simulate(seed: number, minutes: number, options?: OwlScheduleOptions) {
     const pose = schedule.advance(t)
     if (pose) changes.push({ t, pose })
     if (schedule.nextAt < t) nextAtBehind++
-    t = schedule.nextAt > t ? Math.min(t + 20, schedule.nextAt) : t + 20
+    t = schedule.nextAt > t ? stepping === 'due' ? schedule.nextAt : Math.min(t + 20, schedule.nextAt) : t + 20
   }
   return { changes, end, nextAtBehind }
 }
@@ -47,20 +48,30 @@ describe('the menu bar owl schedule', () => {
     expect(keys(7)).not.toEqual(keys(11))
   })
 
+  it('changes at exactly the same times whether it is advanced every 20 ms or only when nextAt comes', () => {
+    // Between changes an advance plays nothing, so the 200-seed run below can step from one nextAt to the next (#1442).
+    for (const seed of [1, 2, 3, 100, 200]) {
+      const keys = (stepping: 'ticks' | 'due') => simulate(seed, 10, undefined, stepping).changes.map(change => `${change.t}:${poseKey(change.pose)}`)
+      expect(keys('due'), `seed ${seed}`).toEqual(keys('ticks'))
+    }
+  })
+
   it('flaps every 5 to 10 s start to start, changes often and never sits still for 8 s, over 200 seeds of 10 minutes', () => {
     const known = new Set(allOwlPoses().map(poseKey))
     const allGaps: number[] = []
     let swaps = 0
     let longestStill = 0
+    // Counted here and asserted once: an expect per change was most of what made this test slow.
+    let unknownPoses = 0, repeatedPoses = 0
     for (let seed = 1; seed <= 200; seed++) {
-      const { changes, end, nextAtBehind } = simulate(seed, 10)
+      const { changes, end, nextAtBehind } = simulate(seed, 10, undefined, 'due')
       expect(nextAtBehind).toBe(0)
       let previousKey = poseKey(allOwlPoses()[0]!)
       let previousT = 0
       for (const change of changes) {
         const key = poseKey(change.pose)
-        expect(known.has(key)).toBe(true)
-        expect(key).not.toBe(previousKey)
+        if (!known.has(key)) unknownPoses++
+        if (key === previousKey) repeatedPoses++
         longestStill = Math.max(longestStill, change.t - previousT)
         previousKey = key
         previousT = change.t
@@ -73,6 +84,8 @@ describe('the menu bar owl schedule', () => {
       allGaps.push(...gaps(starts))
       swaps += changes.length
     }
+    expect(unknownPoses).toBe(0)
+    expect(repeatedPoses).toBe(0)
     expect(Math.min(...allGaps)).toBeGreaterThanOrEqual(5000)
     expect(Math.max(...allGaps)).toBeLessThanOrEqual(10_000)
     expect(longestStill).toBeLessThan(8000)

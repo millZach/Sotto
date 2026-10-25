@@ -1,4 +1,4 @@
-import { isTerminalActivity, mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { isTerminalActivity, mergeAgentActivities, type AgentActivity, type OwnServerTurn } from '../../shared/agentActivity'
 
 /**
  * A turn's lifecycle as Sotto observed it. Codex reports its own; Claude and Grok report only the
@@ -16,6 +16,8 @@ export interface TurnMark {
   readonly error?: string | undefined
   /** An interrupted turn ended by a steer rather than by Stop. */
   readonly steered?: boolean | undefined
+  /** A turn on one of the user's own model servers (ADR-0124): what its words need, replacing what the record said. */
+  readonly ownServer?: OwnServerTurn | undefined
   /** Milliseconds since the epoch; defaults to now. */
   readonly at?: number | undefined
 }
@@ -39,5 +41,6 @@ export function markTurnActivity(previous: readonly AgentActivity[] | undefined,
     ...(isTerminalActivity(mark.status) ? { completedAt: now } : {}),
     ...(mark.error !== undefined ? { error: mark.error } : {}),
     ...(steered ? { steered: true } : {}),
+    ...(mark.ownServer !== undefined ? { ownServer: mark.ownServer } : {}),
   }])
 }

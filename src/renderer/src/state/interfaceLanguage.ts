@@ -48,6 +48,13 @@ export async function messageIn(language: ShownInterfaceLanguage, descriptor: Me
   return setupI18n({ locale: language, messages: { [language]: await messagesOf(language) } })._(descriptor)
 }
 
+const englishI18n = setupI18n({ locale: SOURCE_INTERFACE_LANGUAGE, messages: { [SOURCE_INTERFACE_LANGUAGE]: englishMessages } })
+
+/** A message in English whatever the window shows, so Find a setting still finds a setting by its English name. */
+export function inEnglish(descriptor: MessageDescriptor): string {
+  return englishI18n._(descriptor)
+}
+
 let state: InterfaceLanguageState = ENGLISH_INTERFACE
 let sequence = 0
 const listeners = new Set<() => void>()

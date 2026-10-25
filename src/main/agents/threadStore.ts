@@ -10,10 +10,12 @@ import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type Thr
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt, type AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
 import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
+import { AUTOMATIC_CHECKPOINT, BUILT_CHECKPOINT_WORKER, NO_AUTOMATIC_CHECKPOINT, WalCheckpointer } from '../storage/walCheckpointer'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -238,9 +240,15 @@ export class ThreadStore {
   /** Each thread's Watcher wake-up asks, by wake-up message ID, as last read or written. */
   private readonly wakeUpAskCache = new Map<string, ReadonlyMap<string, readonly WatcherAsk[]>>()
   private readonly hiddenWakeUpCache = new Map<string, ReadonlySet<string>>()
+  /** Checkpoints the durable file's log off main, so no save runs one (#1451); absent, SQLite checkpoints in the save. */
+  private checkpointer: WalCheckpointer | undefined
 
-  /** The main runtime supplies a path under `app.getPath('userData')`. */
-  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
+  /**
+   * The main runtime supplies a path under `app.getPath('userData')`. `checkpointWorker` is the built checkpoint worker,
+   * or null to leave checkpoints to SQLite, as where no worker file sits beside this module (the test runner).
+   */
+  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean,
+    private readonly checkpointWorker: string | null = BUILT_CHECKPOINT_WORKER) {}
 
   /** Opens the database. `ephemeral` keeps this run's history in memory, for Keep local history off. */
   open(options: { ephemeral?: boolean } = {}): void {
@@ -265,6 +273,7 @@ export class ThreadStore {
         this.activityRedactions.add(String(row.identity_hash))
       }
       for (const hash of redactions) this.activityRedactions.add(hash)
+      if (!ephemeral) this.startCheckpointer(db)
     } catch (error) {
       this.statements.clear()
       this.activityRedactions.clear()
@@ -273,6 +282,27 @@ export class ThreadStore {
       db.close()
       throw error
     }
+  }
+
+  /**
+   * Hands the log's checkpoints to a worker and turns SQLite's own off on this connection. A worker that goes without
+   * being stopped hands them back.
+   */
+  private startCheckpointer(db: DatabaseSync): void {
+    const checkpointer = WalCheckpointer.start(this.path, this.checkpointWorker, () => {
+      if (this.checkpointer !== checkpointer) return
+      this.checkpointer = undefined
+      if (this.db === db) try { db.exec(AUTOMATIC_CHECKPOINT) } catch { /* The connection is going; nothing waits on its log. */ }
+    })
+    if (checkpointer === undefined) return
+    try { db.exec(NO_AUTOMATIC_CHECKPOINT) } catch (error) { checkpointer.stop(); throw error }
+    this.checkpointer = checkpointer
+  }
+
+  /** Main's own checkpoint, with no checkpoint of the worker's in flight to make it find the log busy. */
+  private scrub(db: DatabaseSync): void {
+    if (this.checkpointer) this.checkpointer.aside(() => scrub(db))
+    else scrub(db)
   }
 
   /** True while this run's history is being kept in memory rather than on disk. */
@@ -313,6 +343,9 @@ export class ThreadStore {
     this.wakeUpCache.clear()
     this.wakeUpAskCache.clear()
     this.hiddenWakeUpCache.clear()
+    // The worker's connection closes first, so main's close is the file's last and checkpoints the log as it always did.
+    this.checkpointer?.stop()
+    this.checkpointer = undefined
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -343,7 +376,8 @@ export class ThreadStore {
       // Persist before accepting the activity in memory. Quitting while history is off must
       // not make a later provider replay eligible for retention.
       if (this.durableRedactions === undefined) {
-        const durable = new ThreadStore(this.path)
+        // It writes a few identity hashes, each waiting for the disk: SQLite's own checkpoints are enough for it.
+        const durable = new ThreadStore(this.path, undefined, null)
         durable.open()
         this.durableRedactions = durable
       }
@@ -760,6 +794,49 @@ export class ThreadStore {
     return row === undefined ? undefined : messageOf(row)
   }
 
+  /**
+   * The messages the user sent before this one, oldest first, each with its turn's last reply with words: what the message
+   * scrubber marks above a pane's window (ADR-0109). Only the start of each message and the start and end of each reply
+   * are read, a page of the newest at a time: `next` is the message the next page is read before, absent once the page
+   * reaches the first. A message the store does not hold has nothing before it.
+   */
+  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompts {
+    const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (before === null || before === undefined) return { prompts: [] }
+    // Only the newest prompts an answer carries are read, so a longer history costs no more. The page is counted in the
+    // messages the user's role sent, wake-ups among them, so where it starts says whether there is more.
+    const start = this.statement(`SELECT position, message_id FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)
+    const from = start?.position ?? 0
+    const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
+    const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
+      CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
+      FROM messages WHERE thread_id = ? AND position >= ? AND position < ? AND (role = 'user' OR trim(text, char(32, 9, 10, 11, 12, 13)) <> '') ORDER BY position`).all(threadId, from, before)
+    const prompts: { -readonly [K in keyof AgentThreadPrompt]: AgentThreadPrompt[K] }[] = []
+    let current: typeof prompts[number] | undefined
+    for (const row of rows) {
+      const id = String(row.message_id)
+      if (row.role === 'user') {
+        // A wake-up is Sotto's and starts a turn of its own, so what answers it is no prompt's reply.
+        if (skip.has(id)) { current = undefined; continue }
+        const attached = row.attachments === null || row.attachments === undefined ? 0 : (JSON.parse(String(row.attachments)) as unknown[]).length
+        current = { id, createdAt: String(row.created_at), text: clipText(String(row.head), THREAD_PROMPT_TEXT), ...(attached > 0 ? { attachments: Math.min(attached, 1000) } : {}) }
+        prompts.push(current)
+      } else if (current) {
+        const tail = row.tail === null || row.tail === undefined ? null : String(row.tail)
+        // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
+        if (tail !== null || String(row.head).trim().length > 0) current.reply = { id, text: promptReplyText(String(row.head), tail) }
+      }
+    }
+    return { prompts, ...(start !== undefined && Number(from) > 0 ? { next: String(start.message_id) } : {}) }
+  }
+
+  /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */
+  turnsFrom(threadId: string, messageId: string): number | undefined {
+    const at = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (at === null || at === undefined) return undefined
+    return Number(this.statement(`SELECT COUNT(*) AS turns FROM messages WHERE thread_id = ? AND role = 'user' AND position >= ?`).get(threadId, at)!.turns)
+  }
+
   /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */
   hasMessage(threadId: string, messageId: string): boolean {
     return this.statement('SELECT 1 AS found FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId) !== undefined
@@ -850,7 +927,7 @@ export class ThreadStore {
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    scrub(db)
+    this.scrub(db)
   }
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
@@ -887,7 +964,7 @@ export class ThreadStore {
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    scrub(db)
+    this.scrub(db)
   }
 
   /** The newest message the projection holds, and the newest user message: where a visual arriving now is drawn. */
@@ -1121,7 +1198,8 @@ function redactedPayload(payload: string): string | undefined {
  * checkpoint folds the log into the file and the vacuum rewrites it, so what was taken out is gone.
  */
 function scrub(db: DatabaseSync): void {
-  db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  // A checkpoint that found the log busy folded none of it: the redaction has not finished, and is retried as a failure.
+  if (Number(db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()?.busy ?? 0) !== 0) throw new Error('The history log could not be cleared')
   db.exec('VACUUM')
 }
 

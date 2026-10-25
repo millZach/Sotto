@@ -1,0 +1,155 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. "I am unable to attach photos" on the iPhone's Watcher tab (October 23, 2026).
+  The question: where do the + and the chosen photos go in Watcher's reply box?
+  Three layouts, switchable with ?variant=A|B|C, the bar at the bottom, or the left and right arrow keys; the buttons above
+  the phone show each state. Zach picked A, the thread reply box's own layout, on October 23, 2026 (ADR-0073).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · Watcher photos (iPhone)</title>
+<style>
+  :root {
+    --canvas: #040507; --surface: #090a0e; --raised: #111316; --overlay: #18191d; --ink: #f9fafd; --muted: #a0a5ae;
+    --hair: #2a2f39; --accent: #47b8a9; --on-accent: #070f0e; --accent-surface: #0c3b36; --accent-text: #6bc3b6;
+    --placeholder: #94979e; --danger: #ff7673; --fill-soft: #1c1f25;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #1d2026; font-family: Figtree, -apple-system, system-ui, sans-serif; color: var(--ink);
+    display: flex; flex-direction: column; align-items: center; padding: 20px 0 90px; gap: 14px; }
+  .states { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 520px; }
+  .states button { background: #2b2f37; color: #e6e8ee; border: 1px solid #3a3f49; border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .states button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .note { font-size: 13px; color: #b9bdc6; max-width: 420px; text-align: center; line-height: 1.4; }
+  .phone { width: 393px; height: 852px; border-radius: 54px; background: var(--canvas); border: 10px solid #000; position: relative; overflow: hidden;
+    box-shadow: 0 30px 60px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+  .status { height: 50px; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 30px 6px; font-weight: 600; font-size: 15px; }
+  .hero { padding: 10px 20px 6px; display: flex; flex-direction: column; gap: 8px; }
+  .hero h1 { margin: 0; font-size: 28px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .chip { font-size: 13px; padding: 5px 10px; border-radius: 999px; background: var(--raised); border: 1px solid var(--hair); color: var(--ink); display: inline-flex; gap: 6px; align-items: center; }
+  .chip.muted { color: var(--muted); }
+  .convo { flex: 1; overflow: hidden; padding: 10px 16px; display: flex; flex-direction: column; gap: 12px; justify-content: flex-end; }
+  .msg { max-width: 82%; padding: 10px 14px; border-radius: 20px; font-size: 16px; line-height: 1.35; }
+  .msg.me { align-self: flex-end; background: var(--accent-surface); }
+  .msg.w { align-self: flex-start; background: transparent; padding-left: 0; color: var(--ink); }
+  .working { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: p 1.2s infinite; }
+  @keyframes p { 50% { opacity: .3; } }
+  .dock { padding: 8px 12px 30px; position: relative; }
+  .pill { background: rgba(28,31,37,.82); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.08); padding: 6px; display: flex; align-items: flex-end; gap: 8px;
+    box-shadow: 0 8px 16px rgba(0,0,0,.22); }
+  .round { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 22px; font-weight: 600; border: 0; }
+  .plus { background: var(--raised); color: var(--ink); }
+  .plus.off { color: var(--muted); }
+  .send { background: var(--accent); color: var(--on-accent); font-size: 19px; }
+  .send.off { background: var(--fill-soft); color: var(--muted); }
+  .field { flex: 1; min-height: 44px; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 0 0 0 4px; }
+  .field .text { font-size: 17px; padding: 11px 0; color: var(--ink); }
+  .field .text.ph { color: var(--placeholder); }
+  .strip { display: flex; gap: 6px; padding-top: 4px; }
+  .thumb { height: 88px; border-radius: 12px; position: relative; flex: none; }
+  .thumb .x { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(249,250,253,.85); color: var(--canvas); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+  .thumb.busy::after { content: ""; position: absolute; inset: 0; border-radius: 12px; background: rgba(4,5,7,.55); }
+  .thumb.busy::before { content: ""; position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px; border: 2px solid #ccc; border-top-color: transparent; border-radius: 50%; animation: s 1s linear infinite; z-index: 1; }
+  @keyframes s { to { transform: rotate(360deg); } }
+  .p1 { width: 66px; background: linear-gradient(160deg, #6a8caf, #23384f 60%, #c49a6c); }
+  .p2 { width: 132px; background: linear-gradient(180deg, #e9eef4 0 18%, #1e2533 18% 100%); }
+  .p3 { width: 66px; background: linear-gradient(200deg, #8fb27b, #33502c); }
+  .menu { position: absolute; left: 14px; bottom: 96px; width: 260px; background: rgba(40,43,50,.96); backdrop-filter: blur(30px); border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.5); font-size: 16px; z-index: 5; }
+  .menu .row { padding: 12px 16px; display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .menu .row.off { color: #6f737b; }
+  .menu .why { padding: 10px 16px; font-size: 13px; color: #a0a5ae; line-height: 1.35; }
+  .tray { display: flex; gap: 6px; padding: 0 4px 8px; }
+  .tray .thumb { height: 64px; box-shadow: 0 4px 10px rgba(0,0,0,.4); }
+  .tray .p1, .tray .p3 { width: 48px; } .tray .p2 { width: 96px; }
+  .count { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 4px 4px 4px; border-radius: 10px; background: var(--raised); align-self: flex-start; margin-top: 6px; }
+  .count .mini { width: 26px; height: 26px; border-radius: 6px; }
+  .count span { padding-right: 8px; }
+  .notice { font-size: 13px; color: var(--danger); }
+  .bar { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #fff; color: #111; border-radius: 999px; display: flex; align-items: center; gap: 10px; padding: 6px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.45); font-size: 14px; font-weight: 600; z-index: 10; }
+  .bar button { border: 0; background: #111; color: #fff; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body>
+  <div class="note" id="note"></div>
+  <div class="states" id="states"></div>
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="hero">
+      <h1>🦉 Watcher</h1>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="convo" id="convo"></div>
+    <div class="dock" id="dock"></div>
+  </div>
+  <div class="bar"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const VARIANTS = { A: 'A: Like a thread’s reply box', B: '+ inside the box, photos above it', C: 'Add photos chip, count in the box' }
+const NOTES = {
+  A: 'The thread reply box’s layout: + to the left of the box, photos inside it above the words, as in Messages.',
+  B: 'The + moves inside the box. Photos wait on a tray above the box, so the box keeps its single-line shape.',
+  C: 'Add photos sits with Watcher’s chips under its name. The box shows a count of the photos; press it to see them.',
+}
+const STATES = { idle: 'Idle', menu: '+ menu open', photos: 'With photos', staging: 'Photo sending', steer: 'Working (steer)', queue: 'Working (queue)', off: 'Can’t take photos' }
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'A'
+let state = STATES[params.get('state')] ? params.get('state') : 'photos'
+
+function sync() { const p = new URLSearchParams({ variant, state }); history.replaceState(null, '', '?' + p) }
+function render() {
+  sync()
+  document.getElementById('label').textContent = variant + ' — ' + VARIANTS[variant].replace(/^A: /, '')
+  document.getElementById('note').textContent = NOTES[variant]
+  const states = document.getElementById('states'); states.innerHTML = ''
+  for (const [key, name] of Object.entries(STATES)) {
+    const b = document.createElement('button'); b.textContent = name; b.setAttribute('aria-pressed', key === state)
+    b.onclick = () => { state = key; render() }; states.append(b)
+  }
+  const working = state === 'steer' || state === 'queue'
+  const hasPhotos = ['photos', 'staging', 'steer', 'queue'].includes(state)
+  const off = state === 'off'
+  const chips = document.getElementById('chips')
+  chips.innerHTML = '<span class="chip">Opus 5.5 · High</span><span class="chip muted">Laptop</span><span class="chip">Ask for approval</span>'
+  if (variant === 'C') chips.innerHTML += `<span class="chip${off ? ' muted' : ''}">＋ Add photos</span>`
+  document.getElementById('convo').innerHTML = `
+    <div class="msg me">Start a thread to fix the photo button on the phone.</div>
+    <div class="msg w">Started <b>Fix the photo button</b> on Laptop. I’ll keep an eye on it.</div>
+    ${working ? '<div class="working"><span class="dot"></span>Watcher is working</div>' : ''}`
+  const words = state === 'idle' || state === 'menu' || state === 'off' ? '' : 'This is what the screen looks like'
+  const placeholder = working ? 'Ask Watcher while it works' : 'Ask Watcher'
+  const textHtml = words ? `<div class="text">${words}</div>` : `<div class="text ph">${placeholder}</div>`
+  const sendSym = state === 'queue' ? '☰+' : state === 'steer' ? '↱' : '↑'
+  const canSend = hasPhotos && state !== 'staging'
+  const send = `<button class="round send${canSend ? '' : ' off'}" title="${state === 'queue' ? 'Queue for after this turn' : state === 'steer' ? 'Steer into Watcher’s turn' : 'Send to Watcher'}">${sendSym}</button>`
+  const thumbs = (cls = '') => `<div class="thumb p1 ${cls}"><span class="x">✕</span></div><div class="thumb p2 ${state === 'staging' ? 'busy' : ''}"><span class="x">✕</span></div>`
+  const plus = `<button class="round plus${off ? ' off' : ''}" aria-label="Attach photos">＋</button>`
+  const menu = state === 'menu' || state === 'off' ? `<div class="menu" style="${variant === 'C' ? 'top:-560px;bottom:auto;left:120px' : variant === 'B' ? 'left:20px' : ''}">
+      <div class="row${off ? ' off' : ''}">Photo library <span>🖼</span></div>
+      <div class="row${off ? ' off' : ''}">Camera <span>📷</span></div>
+      ${off ? '<div class="why">Watcher’s model can’t take photos. Change Watcher’s model to attach them.</div>' : ''}
+    </div>` : ''
+  let html = ''
+  if (variant === 'A') {
+    html = `<div class="pill" style="border-radius:${hasPhotos ? 22 : 26}px">${plus}
+      <div class="field">${hasPhotos ? `<div class="strip">${thumbs()}</div>` : ''}${textHtml}</div>${send}</div>`
+  } else if (variant === 'B') {
+    html = `${hasPhotos ? `<div class="tray">${thumbs()}</div>` : ''}<div class="pill" style="border-radius:26px">
+      <button class="round plus${off ? ' off' : ''}" style="width:36px;height:36px;margin:4px 0;font-size:18px;background:transparent">＋</button>
+      <div class="field">${textHtml}</div>${send}</div>`
+  } else {
+    html = `<div class="pill" style="border-radius:${hasPhotos ? 22 : 26}px"><div class="field" style="padding-left:12px">
+      ${hasPhotos ? `<div class="count"><div class="mini p1"></div><div class="mini p2" style="width:26px"></div><span>2 photos${state === 'staging' ? ' · sending' : ''}</span></div>` : ''}${textHtml}</div>${send}</div>`
+  }
+  document.getElementById('dock').innerHTML = menu + html
+}
+function cycle(step) { const keys = Object.keys(VARIANTS); variant = keys[(keys.indexOf(variant) + step + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable]')) return; if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1) })
+render()
+</script>
+</body>
+</html>

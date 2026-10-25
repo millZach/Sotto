@@ -91,7 +91,9 @@ test('a Claude thread shows its thinking as a row before the first reply text', 
     await writeFile(join(client, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: REPLY, thinking: THINKING,
       holdInThinking: 'release-thinking', holdAfterThinking: 'release-reply' }))
 
-    // Mid-thought: the row is on screen and running, named for what it is, with the words so far, and no reply text is.
+    // Mid-thought: the step folds under the working line; opened, the row is running, named for what it is, with the
+    // words so far, and no reply text is on screen.
+    await transcript.getByRole('button', { name: 'Working, 1 step so far' }).click(wait)
     const firstHalf = THINKING.slice(0, Math.ceil(THINKING.length / 2)).trim()
     const running = transcript.getByRole('button', { name: `Thinking, ${firstHalf}, Running`, exact: true })
     await expect(running).toBeVisible(wait)

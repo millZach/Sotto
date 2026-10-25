@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { firstOutputBaseline, FirstOutputWatches, lendSendStages, markSendStage, SEND_STAGE_FIELDS, SendStageClock, showsFirstOutput } from '../../../src/main/agents/sendStages'
+import { firstOutputBaseline, FirstOutputWatches, holdTurnEnd, lendSendStages, markSendStage, SEND_STAGE_FIELDS, SendStageClock, showsFirstOutput } from '../../../src/main/agents/sendStages'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
@@ -85,6 +85,50 @@ describe('send stage clock', () => {
     expect(stages.durations()).toMatchObject({ preparationMs: 4, adapterMs: null })
   })
 
+  it('holds a record for the end of a turn its adapter times, until the adapter reports it, the clock closes or its limit passes (#1420)', async () => {
+    vi.useFakeTimers()
+    const { clock: timed } = clock(0)
+    timed.mark('acknowledged')
+    const giveBack = lendSendStages('command', timed)
+    const report = holdTurnEnd('command')!
+    giveBack()
+    expect(holdTurnEnd('command')).toBeUndefined()
+    // The first output ends that wait, not this one.
+    timed.mark('firstOutput')
+    expect([timed.awaitsFirstOutput(), timed.awaitsTurnEnd()]).toEqual([false, true])
+    let ended = false
+    const waiting = timed.untilTurnEnd().then(() => { ended = true })
+    await Promise.resolve()
+    expect(ended).toBe(false)
+    report({ turnFirstOutputMs: 1_234.4, turnFinishWaitMs: 21_600.6 })
+    await waiting
+    expect(timed.turnEndTimings()).toEqual({ turnFirstOutputMs: 1_234, turnFinishWaitMs: 21_601 })
+    // Only the first report counts, and a number that is not one is null.
+    report({ turnFirstOutputMs: 1, turnFinishWaitMs: 1 })
+    expect(timed.turnEndTimings()).toEqual({ turnFirstOutputMs: 1_234, turnFinishWaitMs: 21_601 })
+    const { clock: odd } = clock(0)
+    odd.holdTurnEnd()({ turnFirstOutputMs: Number.NaN, turnFinishWaitMs: null })
+    expect(odd.turnEndTimings()).toEqual({ turnFirstOutputMs: null, turnFinishWaitMs: null })
+
+    const { clock: closed } = clock(0)
+    const late = closed.holdTurnEnd()
+    const closing = closed.untilTurnEnd()
+    closed.close()
+    await closing
+    late({ turnFirstOutputMs: 5, turnFinishWaitMs: 5 })
+    expect([closed.awaitsTurnEnd(), closed.turnEndTimings()]).toEqual([false, undefined])
+    // A clock already closed holds nothing.
+    closed.holdTurnEnd()
+    expect(closed.awaitsTurnEnd()).toBe(false)
+
+    const { clock: limited } = clock(0)
+    limited.holdTurnEnd()
+    const limit = limited.untilTurnEnd(1_000)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await limit
+    expect([limited.awaitsTurnEnd(), limited.turnEndTimings()]).toEqual([false, undefined])
+  })
+
   it('never throws into the send that marks it', () => {
     const stages = new SendStageClock(0, () => { throw new Error('Synthetic clock failure') })
     const giveBack = lendSendStages('command', stages)
@@ -158,6 +202,37 @@ describe('first output', () => {
     expect([older.awaitsFirstOutput(), newer.awaitsFirstOutput()]).toEqual([false, true])
     watches.closeAll()
     expect(newer.awaitsFirstOutput()).toBe(false)
+  })
+
+  it('keeps watching a reply whose adapter times its turn until the turn shows ended, and closing them all ends that wait too (#1420)', () => {
+    const watches = new FirstOutputWatches()
+    const replied = (id: string, status: 'running' | 'idle') =>
+      ({ id, status, messages: [...thread.messages, message('reply', 'assistant')], activities: thread.activities })
+    const { clock: timed } = clock(0)
+    timed.mark('acknowledged'); timed.holdTurnEnd()
+    watches.watch('timed', timed, thread)
+    watches.observe([replied('timed', 'running')])
+    expect([timed.has('firstOutput'), timed.awaitsTurnEnd()]).toEqual([true, true])
+    // The adapter reports before its thread shows the turn ended; one that has not by then is given up.
+    watches.observe([replied('timed', 'idle')])
+    expect(timed.awaitsTurnEnd()).toBe(false)
+
+    const { clock: open } = clock(0)
+    open.mark('acknowledged'); open.holdTurnEnd()
+    watches.watch('open', open, thread)
+    watches.observe([replied('open', 'running')])
+    watches.closeAll()
+    expect(open.awaitsTurnEnd()).toBe(false)
+
+    // A hold that comes after the first output ended the watch is watched again, so Sotto stopping still ends it.
+    const { clock: late } = clock(0)
+    late.mark('acknowledged')
+    watches.watch('late', late, thread)
+    watches.observe([replied('late', 'running')])
+    expect([late.has('firstOutput'), late.awaitsTurnEnd()]).toEqual([true, false])
+    late.holdTurnEnd()
+    watches.closeAll()
+    expect(late.awaitsTurnEnd()).toBe(false)
   })
 
   it('is seen in the summary of a thread no pane shows, whose messages are not held', () => {

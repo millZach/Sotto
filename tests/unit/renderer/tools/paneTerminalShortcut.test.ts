@@ -20,13 +20,16 @@ function panes(): { readonly first: HTMLElement; readonly second: HTMLElement; r
 describe('the Terminal drawer shortcut', () => {
   afterEach(() => { document.body.innerHTML = '' })
 
-  it('is Ctrl+J, or Cmd+J on a Mac, and steps aside when the dictation hotkey means it', () => {
-    expect(paneTerminalChord(undefined, 'win32')).toBe('mod+j')
-    expect(paneTerminalChord('Control+J', 'win32')).toBeNull()
-    expect(paneTerminalChord('Command+J', 'darwin')).toBeNull()
-    expect(paneTerminalChord('Control+Shift+Space', 'win32')).toBe('mod+j')
-    expect(paneTerminalShortcutLabel('win32')).toBe('Ctrl+J')
-    expect(paneTerminalShortcutLabel('darwin')).toBe('Cmd+J')
+  it('is Ctrl+J, or Cmd+J on a Mac, at its default, and steps aside when the dictation hotkey means it', () => {
+    expect(paneTerminalChord('mod+j', undefined, 'win32')).toBe('mod+j')
+    expect(paneTerminalChord('mod+j', 'Control+J', 'win32')).toBeNull()
+    expect(paneTerminalChord('mod+j', 'Command+J', 'darwin')).toBeNull()
+    expect(paneTerminalChord('mod+j', 'Control+Shift+Space', 'win32')).toBe('mod+j')
+    expect(paneTerminalChord(null, undefined, 'win32')).toBeNull()
+    expect(paneTerminalShortcutLabel('mod+j', 'win32')).toBe('Ctrl+J')
+    expect(paneTerminalShortcutLabel('mod+j', 'darwin')).toBe('Cmd+J')
+    // The words follow the chord chosen on Settings › Keyboard, never the default (ADR-0133).
+    expect(paneTerminalShortcutLabel('mod+shift+t', 'darwin')).toBe('Cmd+Shift+T')
   })
 
   it('toggles the pane the key lands in, including from inside that pane’s own drawer terminal', () => {
