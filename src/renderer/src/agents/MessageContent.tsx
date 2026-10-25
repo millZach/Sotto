@@ -237,12 +237,24 @@ const heading = (level: 3 | 4 | 5 | 6, rank: number) => function Heading({ child
   return <Tag className={`rich-heading rich-heading--${rank}`}>{children}</Tag>
 }
 
+/** Inline code that is a whole home, absolute or drive path shows that file when pressed, as a file link does. */
+function InlineCode({ children }: { children?: ReactNode }): ReactNode {
+  const { reveal } = useContext(LinkContext)
+  const text = typeof children === 'string' ? children.trim() : ''
+  const file = reveal && /^(?:~[\\/]|\/[^/\s]|[a-z]:[\\/])\S*$/iu.test(text) ? localFilePath(text) : null
+  if (!file || !reveal) return <code>{children}</code>
+  return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={`Show in ${fileManager()}: ${file}`}
+    aria-label={`Show ${file} in ${fileManager()}`}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</code>
+}
+
 // Every URL-bearing element is rendered by a component below, which vets it before it reaches the DOM.
 const urlTransform: UrlTransform = (url, key, node) =>
   (node.tagName === 'a' && key === 'href') || (node.tagName === 'img' && key === 'src') ? url : defaultUrlTransform(url)
 
 const components: Components = {
   a: ({ href, title, children }) => <MarkdownLink href={href} title={title}>{children}</MarkdownLink>,
+  code: ({ children }) => <InlineCode>{children}</InlineCode>,
   img: ({ src, alt }) => <BlockedImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
   pre: ({ node }) => {
     const code = node?.children.find((child): child is Element => child.type === 'element' && child.tagName === 'code')
