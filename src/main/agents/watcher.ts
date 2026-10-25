@@ -3428,6 +3428,9 @@ ${operation.draftId}`)
         await this.reconcileRemote(operation.target.hostId).catch(() => {
           this.recoveryNotice = 'The host confirmed the operation, but its latest state could not be read. Reconnect to refresh it.'
         })
+        // A definite failure for this start, with no thread there to own the branch, lets the branch go. An uncertain
+        // receipt keeps it: the host may have made the thread. The host's own copy of the start landed nothing to release.
+        if (name === 'start_thread' && parsed.status === 'refused' && receipt.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed

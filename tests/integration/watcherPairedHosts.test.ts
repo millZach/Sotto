@@ -1813,6 +1813,21 @@ for (const where of ['paired', 'here'] as const) {
   })
 }
 
+it('lets go of a moved branch when the paired machine answers its start with a definite failure and no thread (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch has arrived on the paired machine; its answer is a failed receipt for this very start, and it made no thread.
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async request => {
+    const { operation } = request
+    return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Synthetic failure. Nothing was started.', retryable: false,
+      receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'failed', receiptId: operation.receiptId, cardId: operation.cardId } }
+  })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+    await expect.poll(async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { vi.restoreAllMocks() }
+})
+
 it('lets go of a moved branch when its permission is refused after the branch arrived, on This computer (#1033)', async () => {
   const f = await fromBranch()
   // The branch arrives, then the start's permission no longer fits, as when the user narrows New threads start with.
