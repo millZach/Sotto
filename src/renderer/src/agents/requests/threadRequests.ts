@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import { hostForThread, isThreadBusy, type AgentCommand, type AgentRequest, type AgentState, type AgentThread } from '../../../../shared/agents'
 import type { RequestDraftOwner } from '../../../../shared/requestDrafts'
 import type { ThreadRow } from '../threadFacts'
@@ -17,7 +19,8 @@ export function threadRequestOwner(row: ThreadRow, state: AgentState): RequestDr
 
 /** Why a thread's request cards cannot be answered right now, in the words the card shows, or null when they can. */
 export function threadRequestBlocked(row: ThreadRow, state: AgentState): string | null {
-  return isThreadBusy(state, row.thread.id) ? 'Waiting for Sotto…' : !row.connected ? `Reconnect ${row.provider} to answer.` : null
+  const provider = row.provider
+  return isThreadBusy(state, row.thread.id) ? t`Waiting for Sotto…` : !row.connected ? t`Reconnect ${provider} to answer.` : null
 }
 
 /**
