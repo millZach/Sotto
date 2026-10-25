@@ -596,6 +596,20 @@ describe('file links in a thread', () => {
     assertInert(container)
   })
 
+  it('shows a file named by an inline-code path, and leaves other inline code alone', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn(async () => ({ ok: true as const, value: {} }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="Double-click `~/Developer/santa.mobileconfig`, then run `npm test` in `src`." /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Show ~/Developer/santa.mobileconfig in Finder' })
+    expect(link.tagName).toBe('CODE')
+    await user.click(link)
+    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '~/Developer/santa.mobileconfig' })
+    link.focus(); await user.keyboard('{Enter}')
+    expect(revealLink).toHaveBeenCalledTimes(2)
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+  })
+
   it('names File Explorer on Windows and the file manager on Linux', () => {
     ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn() } }
     render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.pdf>)" /></ThreadWebLinks>)
