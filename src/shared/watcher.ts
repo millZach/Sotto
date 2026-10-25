@@ -256,7 +256,8 @@ export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS
 export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
 export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
-export const WATCHER_WAITING_ON_USER_MAX = 200
+/** What waits on the user, a hundred to a page with the watched threads. */
+export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
 export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
@@ -356,7 +357,7 @@ export const watcherToolSchemas = {
     // A hundred watched threads to a page; nextCursor reads the rest.
     input: z.object({ cursor: cursor.optional() }).strict(),
     // Computed from live data at each read (#1274). The merge queue and pending settles page with the watched threads, a
-    // hundred of each to a page; staleNotes and waitingOnUser are whole on every page.
+    // hundred of each to a page, and so does waitingOnUser; staleNotes is whole on every page.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settlesFinishedThreads: z.boolean(),
       pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX),

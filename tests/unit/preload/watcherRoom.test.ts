@@ -49,7 +49,7 @@ it('hands every Watcher room update to the page as main sent it and drops a mess
     requests: [], watchedThreads: [{ target: { hostId, threadId: 'worker' }, watched: true, paused: false, title: 'Worker', status: 'running',
       connected: true, settled: false, backgroundWorkCount: 0, evidence: [], waitsOn: [{ id: 'card', kind: 'question', openTarget: { hostId, threadId: 'worker' } }],
       participation: [] }], receipts: [], news: [], recoveryNotice: null, observedAt: at, creationStopped: false, handover: null,
-    receiptReplies: [], asks: [], context: null, state: { watching: [], kept: { decisions: [{ id: 'd1', text: 'Keep the branch', touchedAt: at }], rules: [], issues: [], updatedAt: at } } }
+    receiptReplies: [], asks: [], context: null, state: { watching: [], waitingOnUser: [], kept: { decisions: [{ id: 'd1', text: 'Keep the branch', touchedAt: at }], rules: [], issues: [], updatedAt: at } } }
   expect(watcherRoomStateSchema.parse(room)).toStrictEqual(room)
   receive({}, room)
   expect(listener).toHaveBeenCalledOnce()

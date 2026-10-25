@@ -62,6 +62,9 @@ it('closes a line with how it ended, keeps it out of the count, and clears it ab
   expect(store.read().issues.map(line => line.id)).toEqual(['i1', 'i2'])
   clock = Date.parse(AT) + 24 * HOUR
   expect(store.read().issues.map(line => line.id)).toEqual(['i2'])
+  // Read again and again after it cleared, the lists are not worked out again.
+  clock += HOUR
+  expect(store.read()).toBe(store.read())
   // The next write leaves it out of the file too.
   await store.keep({ add: [{ list: 'issues', text: '#1502 tray icon blurry' }] }, new Date(clock).toISOString())
   expect(await readFile(join(directory, 'watcher-state.json'), 'utf8')).not.toContain('#1490')

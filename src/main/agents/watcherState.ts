@@ -29,10 +29,13 @@ export function keptAsShown(record: WatcherKeptRecord, now: number): WatcherKept
   const stays = (line: WatcherKeptItem) => line.closedAt === undefined || Date.parse(line.closedAt) + WATCHER_KEPT_CLOSED_MS > now
   return { decisions: record.decisions.filter(stays), rules: record.rules.filter(stays), issues: record.issues.filter(stays), updatedAt: record.updatedAt }
 }
-/** When the next closed line clears, or Infinity when none is closed. */
-function nextClearing(record: WatcherKeptRecord): number {
+/** When the next closed line still shown clears, after `now`, or Infinity when none will. */
+function nextClearing(record: WatcherKeptRecord, now: number): number {
   let at = Infinity
-  for (const list of WATCHER_KEPT_LISTS) for (const line of record[list]) if (line.closedAt !== undefined) at = Math.min(at, Date.parse(line.closedAt) + WATCHER_KEPT_CLOSED_MS)
+  for (const list of WATCHER_KEPT_LISTS) for (const line of record[list]) {
+    const clears = line.closedAt === undefined ? Infinity : Date.parse(line.closedAt) + WATCHER_KEPT_CLOSED_MS
+    if (clears > now) at = Math.min(at, clears)
+  }
   return at
 }
 
@@ -153,7 +156,7 @@ export class WatcherStateStore {
     const now = this.clock(), shown = this.shown
     if (shown && shown.record === this.kept && now < shown.until) return shown.state
     const state = keptAsShown(this.kept, now)
-    this.shown = { record: this.kept, until: nextClearing(this.kept), state }
+    this.shown = { record: this.kept, until: nextClearing(this.kept, now), state }
     return state
   }
   /** Applies keep_state's change (`applyKeep`), or keeps nothing and says why. */

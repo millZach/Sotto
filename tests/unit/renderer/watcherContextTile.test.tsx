@@ -53,7 +53,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
   return {
     current: identity(), currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
     requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at,
-    context: context(), state: { watching: [], kept: emptyKept }, ...patch,
+    context: context(), state: { watching: [], waitingOnUser: [], kept: emptyKept }, ...patch,
   }
 }
 
@@ -200,8 +200,8 @@ describe('the Sotto tile in Watcher’s room', () => {
   it('shows Watcher’s state in four groups, each saying None when it is empty', async () => {
     renderRoom(roomState())
     const { panel } = await openPanel()
-    expect(within(panel).getByRole('heading', { name: 'Watcher’s state, kept through compaction' })).toBeInTheDocument()
-    for (const label of ['Watching', 'Waiting on you', 'Your rules', 'Issues filed']) {
+    expect(within(panel).getByRole('heading', { name: 'Watcher’s state' })).toBeInTheDocument()
+    for (const label of ['Watching', 'Waiting on you', 'Decisions it noted', 'Your rules', 'Issues filed']) {
       const group = within(panel).getByRole('heading', { name: label }).closest('section')!
       expect(within(group).getByText('None')).toBeInTheDocument()
     }
@@ -210,6 +210,10 @@ describe('the Sotto tile in Watcher’s room', () => {
   it('lists what Watcher watches and what it kept', async () => {
     renderRoom(roomState({ state: {
       watching: [{ target: { hostId: HOST, threadId: 'footer-links' }, title: 'Footer links', waitsOn: 'Waits on your permission to run npm test.' }],
+      // What waits on the user is Sotto's live list, not the decisions Watcher noted (October 24, 2026, Zach's pick A).
+      waitingOnUser: [{ target: { hostId: HOST, threadId: 'footer-links' }, title: 'Footer links', waitsFor: 'permission', requestCardId: 'card' },
+        { target: { hostId: HOST, threadId: 'tray' }, title: 'Tray icon', waitsFor: 'question', requestCardId: 'q', delegatedThreadId: 'child' },
+        { target: { hostId: HOST, threadId: 'composer' }, title: 'Composer images', waitsFor: 'prototype-review' }],
       kept: { decisions: [{ id: 'd1', text: 'Merge #1186 once CI is green?', touchedAt: at }],
         rules: [{ id: 'r2', text: 'Full test suites run in CI, not on the laptop.', touchedAt: at }, { id: 'r3', text: 'Ask before merging.', touchedAt: at }],
         // A closed line is done: Watcher reads it until Sotto clears it, and the panel leaves it out.
@@ -219,7 +223,9 @@ describe('the Sotto tile in Watcher’s room', () => {
     const { panel } = await openPanel()
     const group = (name: string): HTMLElement => within(panel).getByRole('heading', { name }).closest('section')!
     expect(within(group('Watching, 1')).getByRole('listitem')).toHaveTextContent('Footer linksWaits on your permission to run npm test.')
-    expect(within(group('Waiting on you, 1')).getByText('Merge #1186 once CI is green?')).toBeInTheDocument()
+    expect(within(group('Waiting on you, 3')).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Footer linksPermission request',
+      'Tray iconQuestion in a thread it delegated to', 'Composer imagesPrototype to review'])
+    expect(within(group('Decisions it noted, 1')).getByText('Merge #1186 once CI is green?')).toBeInTheDocument()
     expect(within(group('Your rules, 2')).getAllByRole('listitem')).toHaveLength(2)
     expect(within(group('Issues filed, 1')).getByText('#1189 Watcher: auto-compact its conversation')).toBeInTheDocument()
     expect(within(panel).queryByText('#1490 composer drops images')).toBeNull()
@@ -227,7 +233,7 @@ describe('the Sotto tile in Watcher’s room', () => {
   })
 
   it('says it could not read what Watcher kept, rather than that nothing was kept', async () => {
-    renderRoom(roomState({ state: { watching: [], kept: emptyKept, unread: true } }))
+    renderRoom(roomState({ state: { watching: [], waitingOnUser: [], kept: emptyKept, unread: true } }))
     const { panel } = await openPanel()
     expect(within(panel).getByRole('status')).toHaveTextContent('Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost.')
     expect(within(panel).queryByRole('heading', { name: 'Your rules' })).toBeNull()

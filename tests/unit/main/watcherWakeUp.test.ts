@@ -2108,6 +2108,35 @@ describe('news that a card or prototype no longer waits on the user', () => {
     expect(f.wakes.dueAll(closed)).toEqual([false])
   })
 
+  it('takes back a claim the user answered when that answer did not go, even once the closing is made', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const undo = f.wakes.answering(centerTarget, 'card', 'user')
+    f.thread.requests = []; f.wakes.observe()
+    expect(f.wakes.news().find(event => event.kind === 'request-closed')).toMatchObject({ answeredByUser: true })
+    undo(); await f.advance(WATCHER_BATCH_MAX_MS)
+    const closed = events(f).find(event => event.kind === 'request-closed')!
+    expect(closed).not.toHaveProperty('answeredByUser')
+  })
+
+  it('tells a card’s closing once Watcher heard of it, though the card changed since and its newer news never went', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.thread.requests = [{ ...card(), text: 'synthetic revised command' }]; f.wakes.observe()
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(events(f).filter(event => event.kind === 'request-closed')).toHaveLength(1)
+  })
+
+  it('tells a closing again when the wake-up that carried it may not have gone', async () => {
+    const f = fixture()
+    f.thread.requests = [card()]; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    f.wakes.settled(f.delivered[0]!.events, 'told')
+    f.thread.requests = []; f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(kinds(f.delivered.at(-1))).toEqual(['request-closed'])
+    f.wakes.settled(f.delivered.at(-1)!.events, 'unknown'); await f.wakes.drained(); await f.advance(WATCHER_BATCH_MAX_MS)
+    expect(f.delivered.map(kinds)).toEqual([['needs-user'], ['request-closed'], ['request-closed']])
+  })
+
   it('tells Watcher a prototype it was told of no longer waits on review, but not when its thread was settled', async () => {
     const f = fixture()
     finish(f.thread)

@@ -124,7 +124,9 @@ export type WatcherCardAnswerer = 'user' | 'sotto'
  * A thread holding cards: the watched thread itself, or one it delegated to, which tells its cards as that thread's news.
  * Each card keeps the ID of its needs-user news, so its closing is news only once that news was told.
  */
-interface CardHolder { readonly owner: string; readonly cards: ReadonlyMap<string, { readonly kind: 'question' | 'permission'; readonly told: string }> }
+interface CardHolder { readonly owner: string; readonly cards: ReadonlyMap<string, { readonly kind: 'question' | 'permission'; readonly told: readonly string[] }> }
+/** How many of a card's revisions keep their news ID, so a card told once and changed since still makes its closing news. */
+const CARD_REVISIONS_KEPT = 8
 /**
  * Each thread delegated from a watched thread, directly or through a thread it delegated to (ADR-0081), by its key: the
  * key of the topmost watched thread above it, which answers for it (#1190). A delegated thread's cards are that thread's
@@ -585,6 +587,14 @@ export class WatcherWakeUp {
     }
     this.recent = this.recent.filter(event => !events.some(item => item.id === event.id))
     for (const target of pullRequests.values()) this.evidenceChanged(target, [], false, 'again')
+    // A closing is news of a change, which observing afresh cannot see again, so it is made again here while still due.
+    for (const event of events) {
+      const { requestCardId, requestCardKind, delegatedThreadId, answeredByUser, messageId } = event
+      const fields = { ...requestCardId === undefined ? {} : { requestCardId }, ...requestCardKind === undefined ? {} : { requestCardKind },
+        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...answeredByUser ? { answeredByUser } : {}, ...messageId === undefined ? {} : { messageId } }
+      if (event.kind === 'request-closed' && this.due(event)) this.event('request-closed', event.target, [requestCardId, delegatedThreadId ?? null], fields)
+      if (event.kind === 'prototype-closed' && this.due(event)) this.event('prototype-closed', event.target, [watcherPrototypeSource(event)], fields)
+    }
   }
   /**
    * The events still due. Work-settled news whose work started again before delivery is not sent; its turn is owed it
@@ -1011,7 +1021,16 @@ export class WatcherWakeUp {
     const slot = JSON.stringify([targetKey(holder), requestId])
     this.answers.delete(slot); this.answers.set(slot, by)
     while (this.answers.size > 2_000) this.answers.delete(this.answers.keys().next().value!)
-    return () => { if (this.answers.get(slot) === by) this.answers.delete(slot) }
+    return () => {
+      if (this.answers.get(slot) !== by) return
+      this.answers.delete(slot)
+      // A closing already made while this answer went claims the user answered: not so, so the claim is taken back.
+      const claimed = (event: WatcherEvent) => event.kind === 'request-closed' && event.answeredByUser === true && event.requestCardId === requestId
+        && event.target.hostId === holder.hostId && (event.delegatedThreadId ?? event.target.threadId) === holder.threadId
+      const unclaimed = (event: WatcherEvent): WatcherEvent => { if (!claimed(event)) return event; const { answeredByUser: _claim, ...rest } = event; void _claim; return rest }
+      if (this.pending.some(claimed)) this.pending = this.pending.map(unclaimed)
+      if (this.recent.some(claimed)) this.recent = this.recent.map(unclaimed)
+    }
   }
   /**
    * News that a card Watcher was told of no longer waits on the user (October 24, 2026): one the holding thread had open at
@@ -1024,11 +1043,16 @@ export class WatcherWakeUp {
     // The ID its needs-user news has, as `event` gives a kind told once.
     const told = (card: AgentThread['requests'][number]) => observationDigest(['needs-user', owner,
       delegatedThreadId === undefined ? [card.id, requestRevision(card)] : [delegatedThreadId, card.id, requestRevision(card)]])
-    const cards = new Map(requests.map(card => [card.id, { kind: card.kind, told: told(card) }]))
+    // A card's news is told again for each revision, so each revision's ID is kept: one told is enough for its closing.
+    const earlier = before?.owner === ownerKey ? before.cards : undefined
+    const cards = new Map(requests.map(card => {
+      const ids = earlier?.get(card.id)?.told ?? [], id = told(card)
+      return [card.id, { kind: card.kind, told: ids.includes(id) ? ids : [...ids, id].slice(-CARD_REVISIONS_KEPT) }]
+    }))
     this.openCards.set(holderKey, { owner: ownerKey, cards })
-    if (before?.owner !== ownerKey) return
-    for (const [id, { kind, told: toldId }] of before.cards) {
-      if (cards.has(id) || !this.seen.has(toldId)) continue
+    if (!earlier) return
+    for (const [id, { kind, told: toldIds }] of earlier) {
+      if (cards.has(id) || !toldIds.some(toldId => this.seen.has(toldId))) continue
       const by = this.answers.get(JSON.stringify([holderKey, id]))
       if (by === 'sotto') continue
       this.event('request-closed', owner, [id, delegatedThreadId ?? null], { requestCardId: id, requestCardKind: kind,

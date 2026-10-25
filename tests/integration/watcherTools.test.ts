@@ -2200,22 +2200,46 @@ it('works out what waits on the user from live data at each read: open cards, a 
     return { ...snapshot, threads: [...snapshot.threads.map(thread => thread.id === parent.id ? { ...thread, requests: [{ id: 'question-card', kind: 'question' as const, text: 'synthetic private question', options: [] }] }
       : thread.id === other.target.threadId ? { ...thread, prototypeReady: { source: 'reply:synthetic-reply', pages: [{ token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }] } } : thread),
     { ...structuredClone(parent), id: 'synthetic-delegated', title: 'Delegated', delegatedBy: parent.id, status: 'idle',
-      requests: [{ id: 'permission-card', kind: 'permission', text: 'synthetic private command', options: [] }] }] }
+      requests: [{ id: 'permission-card', kind: 'permission', text: 'synthetic private command', options: [] }] },
+    // A thread the delegated one delegated in turn: its card is the watched thread's to bring the user too.
+    { ...structuredClone(parent), id: 'synthetic-delegated-below', title: 'Delegated below', delegatedBy: 'synthetic-delegated', status: 'idle',
+      requests: [{ id: 'question-below', kind: 'question', text: 'synthetic private question below', options: [] }] }] }
   })
   const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (read.status !== 'ok') throw new Error('read refused')
   expect(read.waitingOnUser).toEqual([
     { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
     { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
+    { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-below', delegatedThreadId: 'synthetic-delegated-below' },
     { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
   ])
   expect(JSON.stringify(read)).not.toContain('synthetic private')
+  // The owl panel reads the same live list (Zach's pick A).
+  expect(f.service.state().state?.waitingOnUser).toEqual(read.waitingOnUser)
   // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
   open = false
   const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
   if (after.status !== 'ok') throw new Error('read refused')
   expect(after.waitingOnUser).toEqual([])
+  expect(f.service.state().state?.waitingOnUser).toEqual([])
   expect(texts(after.kept.decisions)).toEqual(['Zach still has to answer the question on the parser thread'])
+})
+
+it('pages what waits on the user with the watched threads, a hundred to a page, leaving none out', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === started.target.threadId
+      ? { ...thread, requests: Array.from({ length: 130 }, (_, at) => ({ id: `card-${at}`, kind: 'question' as const, text: 'synthetic', options: [] })) } : thread) }
+  })
+  const first = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (first.status !== 'ok' || first.nextCursor === null) throw new Error('expected a second page')
+  const second = watcherToolSchemas.read_state.output.parse(await f.call('read_state', { cursor: first.nextCursor }))
+  if (second.status !== 'ok') throw new Error('read refused')
+  expect([...first.waitingOnUser, ...second.waitingOnUser].map(item => item.requestCardId)).toEqual(Array.from({ length: 130 }, (_, at) => `card-${at}`))
 })
 
 it('changes kept lines one at a time through keep_state, and refuses plainly when a list is full', async () => {
