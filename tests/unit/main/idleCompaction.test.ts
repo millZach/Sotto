@@ -36,25 +36,27 @@ describe('when a thread is due for idle compaction', () => {
     expect(idleCompactionDue(host([]), quiet({ providerId: 'codex' }), NOW)).toBe(false)
   })
 
-  it('leaves alone threads that are busy, waiting, closed, Watcher’s, or that cannot compact', () => {
+  it('leaves alone threads that are busy, waiting, closed, Watcher’s old conversations, or that cannot compact', () => {
     const not: Partial<AgentThread>[] = [
       { status: 'running' }, { status: 'error' }, { lastTurn: { id: 'turn', status: 'running' } },
       { requests: [{ id: 'ask', kind: 'question', text: 'Which?', options: [] }] },
       { compaction: { commandId: 'c', status: 'running' } }, { compaction: { commandId: 'c', status: 'uncertain' } },
       { backgroundWork: [{ id: 'build', label: 'Build', type: 'command' }] }, { monitoring: [{ id: '00000000-0000-4000-8000-000000000000', label: 'CI' }] },
       { settledAt: ago(0) }, { archivedAt: ago(0) }, { workspaceSettledAt: ago(0) },
-      { kind: 'watcher' }, { kind: 'watcher-history' },
+      { kind: 'watcher-history' },
       { manualCompactionSupported: false }, { nativeSessionStarted: false },
     ]
     for (const patch of not) expect(idleCompactionDue(host([]), quiet(patch), NOW), JSON.stringify(patch)).toBe(false)
     expect(idleCompactionDue(host([]), quiet({ compaction: { commandId: 'c', status: 'completed' } }), NOW)).toBe(true)
     // Empty lists are nothing running.
     expect(idleCompactionDue(host([]), quiet({ backgroundWork: [], monitoring: [] }), NOW)).toBe(true)
+    // Watcher's own conversation is due on the same terms; the sweep asks Watcher too.
+    expect(idleCompactionDue(host([]), quiet({ kind: 'watcher' }), NOW)).toBe(true)
   })
 })
 
 describe('the idle compaction sweep', () => {
-  const fixture = (threads: AgentThread[], options: { draft?: string; pending?: string; enabled?: () => boolean; fail?: boolean } = {}) => {
+  const fixture = (threads: AgentThread[], options: { draft?: string; pending?: string; enabled?: () => boolean; fail?: boolean; watcherAtRest?: (threadId: string) => boolean } = {}) => {
     const snapshot = host(threads)
     const asked: string[] = []; const guards: (() => void)[] = []
     const clock = { now: NOW }
@@ -66,7 +68,7 @@ describe('the idle compaction sweep', () => {
       hasPendingThreadWork: (id: string) => id === options.pending,
       compactIdleThread: async (id: string, guard: () => void) => { asked.push(id); guards.push(guard); guard(); await done; if (options.fail) throw new Error('refused') },
     }
-    const sweeper = new IdleCompaction({ control, enabled: options.enabled ?? (() => true), now: () => clock.now })
+    const sweeper = new IdleCompaction({ control, enabled: options.enabled ?? (() => true), now: () => clock.now, ...options.watcherAtRest ? { watcherAtRest: options.watcherAtRest } : {} })
     const thread = (id: string) => snapshot.threads.find(item => item.id === id)!
     /** The provider takes the compaction, shows it running, then shows its result, as Claude does. */
     const compacted = async (id: string, after: Partial<NonNullable<AgentThread['usage']>>): Promise<void> => {
@@ -107,6 +109,23 @@ describe('the idle compaction sweep', () => {
     expect(f.sweeper.sweep()).toEqual([])
     on = true
     expect(f.sweeper.sweep()).toEqual(['quiet'])
+  })
+
+  it('compacts Watcher’s own conversation only while Watcher rests, and never without Watcher', () => {
+    const watcher = () => quiet({ id: 'watcher', kind: 'watcher' })
+    // Without Watcher (its Owl feature off) its thread is left alone.
+    expect(fixture([watcher()]).sweeper.sweep()).toEqual([])
+    // Watcher has news queued, a compaction of its own or a change under way: not at rest.
+    expect(fixture([watcher()], { watcherAtRest: () => false }).sweeper.sweep()).toEqual([])
+    const asked: string[] = []
+    let resting = true
+    const f = fixture([watcher(), quiet()], { watcherAtRest: id => { asked.push(id); return resting } })
+    expect(f.sweeper.sweep()).toEqual(['watcher', 'quiet'])
+    // Only Watcher's thread asks it.
+    expect(new Set(asked)).toEqual(new Set(['watcher']))
+    // Asked again as the command dispatches: news that arrived since holds it.
+    resting = false
+    expect(() => f.guards[0]!()).toThrow('This thread is no longer idle.')
   })
 
   it('keeps two at once until each thread shows its result, not just until Claude takes the command', async () => {

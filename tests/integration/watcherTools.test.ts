@@ -2314,6 +2314,23 @@ it('compacts Watcher at the point chosen in Settings, read at every look, and re
   expect(f.service.state().context).toMatchObject({ compactAt: 450_000 })
 })
 
+it('says Watcher rests for idle compaction only for its own thread, with no news queued, and owes it its state after one', async () => {
+  const f = await fixture()
+  const w = compactableWatcher(f, 180_000)
+  await w.nudge()
+  expect(f.service.stateNote()).toBeUndefined()
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(true)
+  expect(f.service.restsForIdleCompaction('synthetic-other-thread')).toBe(false)
+  w.queued.mockReturnValue(true)
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(false)
+  w.queued.mockReturnValue(false)
+  // Sotto's idle compaction finished: Watcher's next turn is told to read its state back.
+  w.at.watcher = { ...w.at.watcher, compaction: { commandId: 'synthetic-idle-compaction', status: 'completed', idle: true }, usage: w.tokens(30_000, 55) }
+  await w.nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  expect(w.compactions()).toBe(0)
+})
+
 it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {
   const f = await fixture()
   const real = f.control.watcherSnapshot.bind(f.control)
