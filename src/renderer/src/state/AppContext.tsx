@@ -696,7 +696,7 @@ export function AppProvider({
         // A request is for one visit: Settings opened any other way starts on its first page again.
         setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1, ...(setting !== undefined ? { setting } : {}) } : null)
       }
-      // Between Threads and Watcher's room the window plays night falls, unless the setting is off.
+      // Between Dictate or Threads and Watcher's room the window plays night falls, unless the setting is off.
       const run = nightFallsRun(navigationRef.current, destination, updateRef.current, settingsRef.current)
       if (run !== null) playNightFalls(go, run)
       else { cancelNightFalls(); go() }
