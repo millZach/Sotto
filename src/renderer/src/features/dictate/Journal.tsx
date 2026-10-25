@@ -1,5 +1,7 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { DictationRecord } from '../../../../shared/dictationRecord'
@@ -71,7 +73,7 @@ export const Journal = memo(function Journal({
   const [deleteEntry, setDeleteEntry] = useState<HistoryEntry | null>(null)
   const [clearOpen, setClearOpen] = useState(false)
   const [copying, setCopying] = useState<{ id: string; done: boolean } | null>(null)
-  const [copyProblem, setCopyProblem] = useState<string | null>(null)
+  const [copyProblem, setCopyProblem] = useState<MessageDescriptor | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   // Where focus goes when a delete or a clear takes away the control that opened it.
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -129,7 +131,7 @@ export const Journal = memo(function Journal({
     if (copied) setCopying({ id: entry.id, done: true })
     else {
       setCopying(null)
-      setCopyProblem(t`Transcript could not be copied. Try again.`)
+      setCopyProblem(msg`Transcript could not be copied. Try again.`)
     }
   }
 
@@ -195,7 +197,7 @@ export const Journal = memo(function Journal({
           ) : null}
         </div>
       ) : null}
-      {copyProblem === null ? null : <p className="journal-alert tt-paragraph" role="alert">{copyProblem}</p>}
+      {copyProblem === null ? null : <p className="journal-alert tt-paragraph" role="alert">{i18n._(copyProblem)}</p>}
       {copying?.done ? <p className="tt-visually-hidden" role="status"><Trans>Transcript copied.</Trans></p> : null}
 
       {empty !== null ? (

@@ -4,6 +4,7 @@ import { SquarePen } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { stopAllRunning, type WatcherRoomState } from '../../../shared/watcherRoom'
@@ -58,7 +59,7 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
   const room = useWatcherRoom()
   const reasonId = useId()
   const [starting, setStarting] = useState(false)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<LaterWords | null>(null)
   const startNew = room?.startNew ?? null
   if (room === null || startNew === null) return null
   const why = starting ? t`Starting a new Watcher…` : newWatcherUnavailable(state, thread, room.state?.newWatcher)
@@ -66,9 +67,9 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
     if (why !== null) return
     setStarting(true); setRefusal(null)
     // Started, this composer goes with the last Watcher, and Watcher's pane gives focus to the new one's.
-    try { setRefusal(room.settle(await startNew())) } catch { setRefusal(t`Sotto could not reach Watcher, so no new Watcher was started. Try again.`) } finally { setStarting(false) }
+    try { setRefusal(room.settle(await startNew())) } catch { setRefusal(msg`Sotto could not reach Watcher, so no new Watcher was started. Try again.`) } finally { setStarting(false) }
   }
-  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{refusal}</span></p>
+  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(refusal)}</span></p>
   return <>
     <button type="button" className="thread-chip watcher-new tt-focusable" title={why ?? t`Start a new Watcher with a handover of this one`}
       aria-disabled={why !== null || undefined} aria-describedby={why !== null ? reasonId : undefined} onClick={() => void press()}>
@@ -125,19 +126,19 @@ export function NewWatcherNote({ model, carries }: { readonly model: string; rea
 export function WatcherStartStopped({ room }: { readonly room: WatcherRoom }): ReactNode {
   const { t } = useLingui()
   const [trying, setTrying] = useState(false)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<LaterWords | null>(null)
   const startNew = room.startNew
   const replaced = (room.state?.history.length ?? 0) > 0
   const retry = async (): Promise<void> => {
     if (startNew === null || trying) return
     setTrying(true); setRefusal(null)
-    try { setRefusal(room.settle(await startNew())) } catch { setRefusal(t`Sotto could not reach Watcher, so nothing was started. Try again.`) } finally { setTrying(false) }
+    try { setRefusal(room.settle(await startNew())) } catch { setRefusal(msg`Sotto could not reach Watcher, so nothing was started. Try again.`) } finally { setTrying(false) }
   }
   return <div className="watcher-room__stopped">
     <p className="tt-paragraph" role="status">{replaced
       ? t`The new Watcher could not be started. Nothing was sent, and the last conversation is in Watcher history on the Threads page.`
       : t`Watcher could not be started. Nothing was sent.`} {startNew === null ? t`Reopen Sotto to try again.` : t`Try again, or check its provider in Settings, under Providers.`}</p>
     {startNew === null ? null : <Button variant="secondary" aria-disabled={trying || undefined} onClick={() => void retry()}>{trying ? t`Trying again…` : t`Try again`}</Button>}
-    {refusal === null ? null : <p className="agent-error tt-paragraph" role="alert">{refusal}</p>}
+    {refusal === null ? null : <p className="agent-error tt-paragraph" role="alert">{shownWords(refusal)}</p>}
   </div>
 }

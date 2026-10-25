@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
 import { ChoiceChip, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
@@ -68,7 +69,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   const room = useWatcherRoom()
   const captionId = useId()
   const [pressed, setPressed] = useState<AgentRuntimeMode | null>(null)
-  const [refusal, setRefusal] = useState<string | null>(null)
+  const [refusal, setRefusal] = useState<LaterWords | null>(null)
   const state = room?.state ?? null
   const remembered = state?.runtimeMode ?? state?.currentOptions?.runtimeMode ?? FIRST_MODE
   const chosen = pressed ?? remembered
@@ -85,12 +86,12 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
       setRefusal(room.settle(await setPermission({ runtimeMode: mode })))
     } catch {
       const permissions = RUNTIME_LABELS[remembered]
-      setRefusal(t`Sotto could not reach Watcher to change its permissions. It stays on ${permissions}.`)
+      setRefusal(msg`Sotto could not reach Watcher to change its permissions. It stays on ${permissions}.`)
     } finally {
       setPressed(null)
     }
   }
-  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{refusal}</span></p>
+  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(refusal)}</span></p>
   return <>
     <ChoiceChip label={t`Watcher’s permissions`} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
       disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={t`When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.`} flip={flip} icon={PERMISSIONS_ICON}

@@ -1,11 +1,13 @@
 import { Check, ExternalLink } from 'lucide-react'
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
+import { shownWords, type LaterWords } from '../settings/laterWords'
 import { phonesFailure } from '../settings/PhonesSettings'
 import { countdown } from '../settings/phoneParts'
 
@@ -26,7 +28,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   const { t } = useLingui()
   const [state, setState] = useState<PhonesState | null>(null)
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const showButton = useRef<HTMLButtonElement>(null)
@@ -35,7 +37,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(t`Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones.`) })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(msg`Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones.`) })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -64,7 +66,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
     if (!bridge) return
     setError(null)
     try { setState(await bridge.command(command)) }
-    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : t`Phone access could not be changed. Nothing was changed. Try again.`) }
+    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`Phone access could not be changed. Nothing was changed. Try again.`) }
   }
 
   const openBeta = async (): Promise<void> => {
@@ -125,7 +127,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
               </div>
             ) : null}
             {on && !code ? <Button ref={showButton} variant="secondary" onClick={() => void run({ type: 'show-code' })}><Trans>Show a pairing code</Trans></Button> : null}
-            {error ? <span className="onboarding-recovery" role="alert">{error}</span> : null}
+            {error ? <span className="onboarding-recovery" role="alert">{shownWords(error)}</span> : null}
           </div>
         </li>
       </ol>

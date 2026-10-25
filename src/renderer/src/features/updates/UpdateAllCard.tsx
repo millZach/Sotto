@@ -144,7 +144,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
   const [pass, setPass] = useState<UpdateAllPass | null>(null)
   const [folded, setFolded] = useState(false)
   const [dismissed, setDismissed] = useState<string | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<MessageDescriptor | null>(null)
   const [busy, setBusy] = useState(false)
   /** Whether the pointer is over the card or its pill, and whether focus is inside either: both keep a finished run up. */
   const [pointerIn, setPointerIn] = useState(false)
@@ -355,8 +355,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
         const status = latest.current.app?.update?.phase
         const problem = status && 'problem' in status ? status.problem : null
         setFailure(problem === null || problem === undefined
-          ? i18n._(msg`Sotto could not install the update. Nothing was changed. Try again, or restart from the update control.`)
-          : i18n._(msg`Sotto could not install the update. ${problem} Try again, or restart from the update control.`))
+          ? msg`Sotto could not install the update. Nothing was changed. Try again, or restart from the update control.`
+          : msg`Sotto could not install the update. ${problem} Try again, or restart from the update control.`)
       }
     } finally { setBusy(false) }
   }, [])
@@ -473,7 +473,7 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
       </ol>
     </div>
     {words.notes.length ? <div className="update-all__notes">{words.notes.map(note => <p className="tt-paragraph" key={note}>{note}</p>)}</div> : null}
-    {failure ? <p className="update-all__error tt-paragraph" role="alert">{failure}</p> : null}
+    {failure ? <p className="update-all__error tt-paragraph" role="alert">{i18n._(failure)}</p> : null}
     {actions ? <div className="update-all__actions">{actions}</div> : null}
   </section>
 }

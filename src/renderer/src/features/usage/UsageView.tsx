@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { i18n as interfaceI18n, type MessageDescriptor } from '@lingui/core'
+import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { servedModelName } from '../../../../shared/modelCatalog'
@@ -56,7 +56,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [today, setToday] = useState(() => calendarDay(now(), timeZone))
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<MessageDescriptor | null>(null)
   const [clearRead, setClearRead] = useState<UsageDashboardRead | null>(null)
   const [refreshing, setRefreshing] = useState<ReadonlySet<UsageProviderId>>(() => new Set())
   const [announcement, setAnnouncement] = useState('')
@@ -149,7 +149,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       void bridge.refresh({ hostIds: [host.hostId], providerIds, background: true }).then(result => {
         if (!mounted.current) return
         usage.applyQuotas(result, providerIds); reloadRef.current([host.hostId])
-      }, () => { if (mounted.current) setNotice(interfaceI18n._(msg`Subscription limits could not be read again. Your saved figures are still here.`)) })
+      }, () => { if (mounted.current) setNotice(msg`Subscription limits could not be read again. Your saved figures are still here.`) })
     }
   }, [bridge, raw, clock, usage.applyQuotas])
 
@@ -175,7 +175,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       usage.applyQuotas(result, [providerId])
       announce(t`${name} limits read just now`)
     } catch {
-      if (mounted.current) setNotice(t`${name}'s limits could not be read again. The last reading is still shown. Try Read again.`)
+      if (mounted.current) setNotice(msg`${name}'s limits could not be read again. The last reading is still shown. Try Read again.`)
     } finally {
       if (mounted.current) setRefreshing(value => { const next = new Set(value); next.delete(providerId); return next })
     }
@@ -194,15 +194,15 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         const some = result.some(item => item.status === 'cleared')
         setNotice(result.some(item => item.status === 'stale')
           ? some
-            ? t`Some usage figures were cleared. Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
-            : t`Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
+            ? msg`Some usage figures were cleared. Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
+            : msg`Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
           : some
-            ? t`Some usage figures were cleared. Some computers could not confirm that usage was cleared. Review the current figures before trying again.`
-            : t`Some computers could not confirm that usage was cleared. Review the current figures before trying again.`)
+            ? msg`Some usage figures were cleared. Some computers could not confirm that usage was cleared. Review the current figures before trying again.`
+            : msg`Some computers could not confirm that usage was cleared. Review the current figures before trying again.`)
         reloadRef.current()
         return true
       }
-      setNotice(t`Saved usage figures were cleared on the selected computers.`); reloadRef.current(); return true
+      setNotice(msg`Saved usage figures were cleared on the selected computers.`); reloadRef.current(); return true
     } catch { return false }
   }
 
@@ -288,7 +288,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     </header>
     <div className="usage-notices">
       {invalidRange && activityFilters ? <p className="usage-notice tt-paragraph" role="alert"><Trans>Choose an end date on or after the start date.</Trans></p> : null}
-      {notice !== null ? <p className="usage-notice tt-paragraph" role="status">{notice}</p> : null}
+      {notice !== null ? <p className="usage-notice tt-paragraph" role="status">{i18n._(notice)}</p> : null}
       {usage.failed.map(item => {
         const from = item === EVERY_HOST ? '' : midSentence(hostName(item))
         return <p key={item} className="usage-notice tt-paragraph" role="alert">{item === EVERY_HOST ? t`Usage could not be read. Your saved figures were not changed.` : t`Usage could not be read from ${from}. Your saved figures were not changed.`} <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}><Trans>Try again</Trans></button></p>

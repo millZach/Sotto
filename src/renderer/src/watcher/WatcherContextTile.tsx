@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Shrink } from 'lucide-react'
-import { i18n } from '@lingui/core'
+import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS } from '../../../shared/agents'
@@ -12,6 +12,8 @@ import { useOptionalApp } from '../state/AppContext'
 import { useAgents } from '../agents/AgentContext'
 import type { WatcherRoom } from './watcherRoom'
 import { WatcherOwl } from './WatcherOwl'
+
+const COMPACT_FAILED = msg`Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.`
 
 /** How close to the compaction point Watcher's context is before the tile carries its dot and the panel says so. */
 const NEAR = 0.9
@@ -74,7 +76,7 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
   const mac = useOptionalApp()?.platform === 'darwin'
   const [open, setOpen] = useState(false)
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<MessageDescriptor | null>(null)
   const sent = useRef(false)
   const tile = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
@@ -107,8 +109,8 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
     sent.current = true; setSending(true); setError(null)
     // The window's command lane answers null when main could not confirm the command.
     try {
-      if (await agents.command({ type: 'compact-thread', threadId }) === null) setError(t`Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.`)
-    } catch { setError(t`Sotto could not start compacting Watcher’s conversation. Nothing was lost. Try again.`) }
+      if (await agents.command({ type: 'compact-thread', threadId }) === null) setError(COMPACT_FAILED)
+    } catch { setError(COMPACT_FAILED) }
     finally { sent.current = false; setSending(false) }
   }
 
@@ -165,7 +167,7 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
           <Shrink size={14} aria-hidden="true" /><Trans>Compact context</Trans>
         </Button>
       </div>
-      {error ? <p className="watcher-context__error tt-paragraph" role="alert">{error}</p> : null}
+      {error ? <p className="watcher-context__error tt-paragraph" role="alert">{i18n._(error)}</p> : null}
       <div className="watcher-context__state">
         <h3><Trans>Watcher’s state</Trans></h3>
         <div className="watcher-context__groups">

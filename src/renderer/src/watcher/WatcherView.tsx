@@ -3,6 +3,7 @@ import { Marked } from '../components/marks'
 import { ArrowUp, ChevronDown, Eye, List, MessageSquare, Waypoints } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { useReleaseTrack } from '../state/useReleaseTrack'
@@ -586,7 +587,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
   const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>
   if (room === null || room.status === 'unavailable') watcherContent = status(t`This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.`)
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? t`Opening Watcher…`)
-  else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)
+  else if (room.error !== null && room.state === null) watcherContent = status(shownWords(room.error), true)
   else if (current === null) watcherContent = <>{header}<WatcherFirstEntry state={state} room={room} /></>
   // A creation that stopped part-way leaves Watcher with no thread; the room says so and offers to finish it.
   else if (watcherRow === undefined) watcherContent = room.state?.creationStopped === true ? <>{header}<WatcherStartStopped room={room} /></> : status(t`Opening Watcher…`)

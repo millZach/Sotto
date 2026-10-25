@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
+import type { LaterWords } from '../features/settings/laterWords'
 
 /**
  * What the last Watch or Stop watching press did, for the toast that says so: done, with Undo, or main's refusal in
@@ -11,8 +12,8 @@ export interface WatchNotice {
   readonly title: string
   /** What the press asked for: watched, or not. */
   readonly watched: boolean
-  /** Main's refusal, or null when the press took. */
-  readonly refusal: string | null
+  /** Main's refusal, or Sotto's own when main could not be reached, or null when the press took. */
+  readonly refusal: LaterWords | null
 }
 
 /** How long a toast stays: long enough to reach Undo, or to read a refusal. */

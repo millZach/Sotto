@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownWords } from '../features/settings/laterWords'
 import { useWatchActions, useWatchedThread } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
 import { useWatchOnSend, watchOnSend } from './watchOnSend'
@@ -105,7 +106,7 @@ export function WatchToast(): ReactNode {
   if (actions === null || notice === null) return null
   const { id, target, title, watched, refusal } = notice
   if (refusal !== null) return <div className="watch-toast-anchor"><div className="watch-toast" data-tone="refused" role="alert">
-    <WatcherOwl size={15} /><span>{refusal}</span>
+    <WatcherOwl size={15} /><span>{shownWords(refusal)}</span>
     <button type="button" className="watch-toast__dismiss tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`}
       onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id) }}><X size={14} aria-hidden="true" /></button>
   </div></div>

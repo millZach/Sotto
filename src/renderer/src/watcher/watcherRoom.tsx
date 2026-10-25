@@ -1,11 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
+import type { LaterWords } from '../features/settings/laterWords'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
 import { watchNotices } from './watchNotice'
@@ -21,7 +21,7 @@ export interface WatcherRoom {
   readonly status: WatcherRoomStatus
   readonly state: WatcherRoomState | null
   /** Main's refusal or a failed read, in plain words; the room shows it where its content would be. */
-  readonly error: string | null
+  readonly error: LaterWords | null
   /** The thread that is the current Watcher, once main names it and the window has its row. */
   readonly currentThreadId: string | null
   readonly watchedThreadIds: ReadonlySet<string>
@@ -142,7 +142,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const agents = useOptionalAgents()
   const agentState = agents?.state ?? null
   const [state, setState] = useState<WatcherRoomState | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [answered, setAnswered] = useState(false)
   const live = enabled && bridge !== undefined
   useEffect(() => {
@@ -153,7 +153,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
       if (!active) return
       setAnswered(true)
       if (result.status === 'ok') { setState(current => newer(current, result.state)); setError(null) } else setError(result.message)
-    }, () => { if (active) { setAnswered(true); setError(i18n._(UNREADABLE)) } })
+    }, () => { if (active) { setAnswered(true); setError(UNREADABLE) } })
     return () => { active = false; unsubscribe() }
   }, [live, bridge])
   const settle = useCallback((result: WatcherRoomResult): string | null => {
@@ -197,11 +197,11 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     const watch = manage.watch
     if (!enabled || watch === null) return null
     const set = async (target: WatcherThreadTarget, title: string, watched: boolean): Promise<void> => {
-      let refusal: string | null
+      let refusal: LaterWords | null
       try {
         refusal = settle(await (watched ? watch.watchThread({ target }) : watch.unwatchThread({ target })))
       } catch {
-        refusal = watched ? i18n._(msg`Sotto could not reach Watcher, so ${title} is not watched. Try again.`) : i18n._(msg`Sotto could not reach Watcher, so ${title} is still watched. Try again.`)
+        refusal = watched ? msg`Sotto could not reach Watcher, so ${title} is not watched. Try again.` : msg`Sotto could not reach Watcher, so ${title} is still watched. Try again.`
       }
       watchNotices.show({ target, title, watched, refusal })
     }

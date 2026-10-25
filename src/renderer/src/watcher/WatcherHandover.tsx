@@ -3,6 +3,7 @@ import { ChevronRight, CornerDownRight, X } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentMessageHandover } from '../../../shared/agents'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { handoverLedger } from '../../../shared/handover'
@@ -56,7 +57,7 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
   const [text, setText] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [reading, setReading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const readButton = useRef<HTMLButtonElement>(null)
   const strip = useRef<HTMLElement>(null)
   const putAway = useRef<() => void>(() => undefined)
@@ -90,14 +91,14 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
     try {
       const read = await calls.read()
       if (read.status === 'ok') { setText(read.text); setOpen(true) } else setError(read.message)
-    } catch { setError(t`Sotto could not read the handover. Nothing was sent. Press Read it to try again.`) }
+    } catch { setError(msg`Sotto could not read the handover. Nothing was sent. Press Read it to try again.`) }
     finally { setReading(false) }
   }
   const dismiss = async (): Promise<void> => {
     setError(null)
     document.getElementById(composerId)?.focus()
     try { const refusal = room.settle(await calls.dismiss()); if (refusal !== null) setError(refusal) }
-    catch { setError(t`Sotto could not put the handover away, so it still goes with your next message. Nothing was sent. Press X to try again.`) }
+    catch { setError(msg`Sotto could not put the handover away, so it still goes with your next message. Nothing was sent. Press X to try again.`) }
   }
   putAway.current = () => { void dismiss() }
   const provider = PROVIDER_LABELS[offer.provider]
@@ -124,7 +125,7 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
         disabled={reading} onClick={() => void toggle()}>{open ? t`Hide it` : reading ? t`Reading it…` : t`Read it`}</button>
     </p>
     {open && text !== null ? <div id={regionId} className="watcher-handover__text tt-focusable" tabIndex={0} role="region" aria-label={t`The handover, word for word`}>{text}</div> : null}
-    {error === null ? null : <p className="watcher-handover__error tt-paragraph" role="alert">{error}</p>}
+    {error === null ? null : <p className="watcher-handover__error tt-paragraph" role="alert">{shownWords(error)}</p>}
   </section>
 }
 

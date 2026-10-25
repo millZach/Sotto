@@ -1,6 +1,8 @@
 import { MonitorSmartphone, Plus, Server } from 'lucide-react'
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { HostsBridge, HostsState } from '../../../../shared/hosts'
@@ -23,9 +25,9 @@ export interface ComputersStepProps {
  * this step keeps that state as the Hosts page does.
  */
 export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsChange }: ComputersStepProps): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   const [state, setState] = useState<HostsState | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<MessageDescriptor | null>(null)
   const [adding, setAdding] = useState(false)
   const addButton = useRef<HTMLButtonElement>(null)
   const tailscale = useTailscale(bridge)
@@ -35,7 +37,7 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setFailure(t`Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones.`) })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setFailure(msg`Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones.`) })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -70,7 +72,7 @@ export function ComputersStep({ heading, bridge = window.sotto?.hosts, onHostsCh
         <Plus aria-hidden="true" size={17} />
         {hosts.length > 0 ? t`Add another computer` : t`Add a computer`}
       </Button>
-      {failure ? <p className="onboarding-recovery tt-paragraph" role="alert">{failure}</p> : null}
+      {failure ? <p className="onboarding-recovery tt-paragraph" role="alert">{i18n._(failure)}</p> : null}
       <p className="onboarding-aside tt-paragraph"><Trans>Only using this computer? Skip this. Settings › Hosts & phones adds one any time.</Trans></p>
       {adding && bridge ? createPortal(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={state} tailscale={tailscale} agentSetup={false} onClose={close} />, document.body) : null}
     </section>
