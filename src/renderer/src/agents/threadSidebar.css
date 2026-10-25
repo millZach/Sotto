@@ -33,10 +33,7 @@
 .thread-nav__top .tt-button > svg { flex: none; }
 
 /* The room switch in the foot, and Watcher's floating switch, which draws the same one. */
-.thread-nav__seg { display: inline-flex; flex: none; padding: 3px; border-radius: 6px; background: var(--tt-surface-sunken, var(--tt-hover)); -webkit-app-region: no-drag; }
-.thread-nav__seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
-.thread-nav__seg button:hover { color: var(--tt-text); }
-.thread-nav__seg button[aria-selected='true'] { background: var(--tt-segment-on); color: var(--tt-text); box-shadow: var(--tt-shadow-sm); }
+.thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
 
 .thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px 10px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
 .threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }

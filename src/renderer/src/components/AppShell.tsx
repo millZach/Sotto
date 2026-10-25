@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { MessagesSquare } from 'lucide-react'
+import { MessagesSquare, Mic } from 'lucide-react'
 
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
@@ -11,7 +11,6 @@ import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
-import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 
@@ -96,11 +95,23 @@ export function roomKeyTarget(key: string, index: number, count: number): number
 /** What `useRoomSwitch` puts on each tab: its selection, its place in the Tab order, its name and what it answers. */
 export interface RoomTabProps {
   readonly 'aria-selected': boolean
-  readonly 'aria-label': string | undefined
+  readonly 'aria-label': string
   readonly title: string | undefined
   readonly tabIndex: 0 | -1
   readonly onClick: () => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+}
+
+/**
+ * What a room's tab shows in every switch: its icon, and its name beside it while it is the open room. The name is
+ * the tab's accessible name and, on a closed room, its tooltip (`useRoomSwitch`), so the icon alone never has to be
+ * guessed. Zach's pick, the no-tray icon dock in docs/prototypes/room-switch-in-place-prototype.html.
+ */
+export function RoomTabFace({ room }: { readonly room: Room }): ReactNode {
+  return <>
+    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
+    <span className="room-tab__name" aria-hidden="true">{room.label}</span>
+  </>
 }
 
 /**
@@ -124,8 +135,8 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
   const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); navigate(target.destination) }
   const tab = (target: Room, index: number): RoomTabProps => ({
     'aria-selected': target.id === room,
-    'aria-label': target.id === 'watcher' ? target.label : undefined,
-    title: target.id === 'watcher' ? target.label : undefined,
+    'aria-label': target.label,
+    title: target.id === room ? undefined : target.label,
     tabIndex: target.id === focusable ? 0 : -1,
     onClick: () => enter(target),
     onKeyDown: event => {
@@ -245,9 +256,7 @@ export function AppShell({
                   data-room={target.id}
                   {...roomSwitch.tab(target, index)}
                 >
-                  {target.id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
-                  {target.id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}
-                  {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}
+                  <RoomTabFace room={target} />
                 </button>
               ))}
             </div>
