@@ -32,8 +32,8 @@ msgid "{threads, plural, one {# thread} other {# threads}}"
 msgstr "{threads, plural, one {# thread} other {# threads}}"
 
 #: src/renderer/src/tools/delegatedRoster.ts
-msgid "{working} working"
-msgstr "{working} working"
+msgid "{working, plural, one {# working} other {# working}}"
+msgstr "{working, plural, one {# working} other {# working}}"
 
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "as of {time}"

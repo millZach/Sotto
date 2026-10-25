@@ -1,6 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { i18n } from '@lingui/core'
 import type { AgentState, AgentThread } from '../../../../src/shared/agents'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationsRead, DelegationView } from '../../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
@@ -80,6 +81,13 @@ describe('a remote parent\'s roster', () => {
     expect(groups.map(group => [group.machine.name, group.own, group.families.length, group.olderHost])).toEqual([['forge', true, 2, false]])
     expect(machineCount(groups[0]!, { total: 0, working: 0 })).toBe('3 threads · 1 working')
     expect(machineCount(groups[0]!, { total: 2, working: 1 })).toBe('3 threads · 2 agents · 2 working')
+    // Every count is in the reader's own digits, the working count too: Bengali, with no translation yet.
+    i18n.loadAndActivate({ locale: 'bn', messages: {} })
+    try {
+      expect(machineCount(groups[0]!, { total: 2, working: 1 })).toBe('৩ threads · ২ agents · ২ working')
+    } finally {
+      i18n.activate('en')
+    }
     // A roster of this computer's threads alone keeps its single list.
     const local = threadsStateFixture()
     expect(rosterByMachine(THIS_COMPUTER, delegatedRoster(PARENT, local.host.threads, new Map(), local.host), new Map(), undefined, true)).toBeNull()

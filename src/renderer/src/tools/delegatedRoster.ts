@@ -246,8 +246,9 @@ export function machineCount(group: Pick<RosterMachineGroup, 'machine' | 'famili
   const rows = group.families.flat()
   const working = rows.filter(row => !row.lastRead && (row.status === 'working' || row.status === 'background')).length + (agents?.working ?? 0)
   const threads = rows.length, agentCount = agents?.total ?? 0
+  // Each count is a plural message, so `#` is the number written in the reader's own digits (the translation glossary).
   return [pluralMessage(threads, { one: '# thread', other: '# threads' }), ...agentCount ? [pluralMessage(agentCount, { one: '# agent', other: '# agents' })] : [],
-    ...group.machine.connected && working ? [t`${working} working`] : []].join(' · ')
+    ...group.machine.connected && working ? [pluralMessage(working, { one: '# working', other: '# working' })] : []].join(' · ')
 }
 
 function families(ownerId: string, threads: readonly AgentThread[]): { readonly thread: AgentThread; readonly below: readonly AgentThread[] }[] {
