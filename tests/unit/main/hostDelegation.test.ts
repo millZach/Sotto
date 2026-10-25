@@ -216,6 +216,41 @@ describe('the desktop\'s push of its defaults', () => {
     expect(sent).toHaveLength(2)
   })
 
+  it('tries a failed send again while the host stays connected, so a narrowed default never stays wider there', async () => {
+    const sent: DesktopDefaultsInput[] = [], events: string[] = []
+    let failing = false
+    const host: DesktopDefaultsTarget = { hostId: 'host-a', kind: 'remote', service: { supportsHostDelegation: true, desktopDefaults: async defaults => {
+      await new Promise(resolve => setTimeout(resolve, 5))
+      if (failing) { failing = false; throw new Error('away') }
+      sent.push(defaults); return { receivedAt: new Date().toISOString() } } } }
+    const push = new DesktopDefaultsPush({ connections: () => [host], log: event => events.push(event), retryAfterMs: 20 })
+    push.update('full-access', undefined)
+    await push.settled()
+    // The narrowing fails once, and the same defaults again are deduplicated, so only the retry can reach the host.
+    failing = true
+    push.update('approval-required', undefined)
+    await push.settled()
+    push.update('approval-required', undefined)
+    await expect.poll(() => sent.at(-1)?.newThreadRuntimeMode, { timeout: 5_000 }).toBe('approval-required')
+    expect(events).toEqual(['desktop-defaults-sent', 'desktop-defaults-failed', 'desktop-defaults-sent'])
+    push.close()
+  })
+
+  it('stops trying a failed send once the host is gone or the push is closed', async () => {
+    const sent: DesktopDefaultsInput[] = []
+    let connected = true
+    const host = target('host-a', true, sent, true)
+    const push = new DesktopDefaultsPush({ connections: () => connected ? [host] : [], retryAfterMs: 10 })
+    push.update('auto', undefined)
+    await push.settled()
+    connected = false
+    await new Promise(resolve => setTimeout(resolve, 60))
+    await push.settled()
+    // One try, then the retry found the host gone and waits for its next connection.
+    expect(sent).toHaveLength(1)
+    push.close()
+  })
+
   it('follows the default the router publishes, whichever host gives it, and this computer\'s roles', async () => {
     const sent: DesktopDefaultsInput[] = []
     const host = target('host-a', true, sent)

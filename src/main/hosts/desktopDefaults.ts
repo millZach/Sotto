@@ -17,7 +17,11 @@ export interface DesktopDefaultsPushOptions {
   readonly connections: () => Iterable<DesktopDefaultsTarget>
   /** What happened, as stable event names; never a mode, a role or a host. */
   readonly log?: (event: DesktopDefaultsEvent) => void
+  /** How long after a failed send it is tried again while the host stays connected; each failure in a row doubles it, up to a minute. */
+  readonly retryAfterMs?: number
 }
+const RETRY_AFTER_MS = 2_000
+const RETRY_AFTER_MAX_MS = 60_000
 
 /**
  * Sends the desktop defaults (#1310, Owl `cross-machine-work`) to each connected host that runs delegation for its own
@@ -25,7 +29,9 @@ export interface DesktopDefaultsPushOptions {
  * whenever either changes. Main tells it what they are; it compares cheaply, by value for the mode and by identity for the
  * roles, which Settings replace whole when they change, so the update path that tells it many times a second copies
  * nothing. Sends to one host go one at a time, each reading the defaults as they are when it goes, so the last one a host
- * takes is the newest. A send that fails is tried again on the host's next connection. A host that does not list
+ * takes is the newest. A send that fails is tried again while the host stays connected, after a wait that doubles with each
+ * failure in a row, and on its next connection, so a narrowed default (Full access to Ask) never stays wider on a host for
+ * want of a retry. A host that does not list
  * `host-delegation`, an older or stable one, is never sent anything.
  */
 export class DesktopDefaultsPush {
@@ -33,6 +39,8 @@ export class DesktopDefaultsPush {
   private roles: WorkerRoleChoices | undefined
   private known = false
   private readonly sending = new Map<string, Promise<void>>()
+  /** Hosts whose last send failed: the retry waiting for each and how many failures in a row it follows. */
+  private readonly retries = new Map<string, { readonly timer: ReturnType<typeof setTimeout>; readonly failures: number }>()
   private closed = false
   constructor(private readonly options: DesktopDefaultsPushOptions) {}
 
@@ -45,7 +53,11 @@ export class DesktopDefaultsPush {
   }
   /** A host connected, new or again: it is told the defaults, once they are known. */
   connected(connection: DesktopDefaultsTarget): void { if (this.known) this.send(connection) }
-  close(): void { this.closed = true }
+  close(): void {
+    this.closed = true
+    for (const retry of this.retries.values()) clearTimeout(retry.timer)
+    this.retries.clear()
+  }
   private send(connection: DesktopDefaultsTarget): void {
     if (this.closed || connection.kind !== 'remote' || connection.service.supportsHostDelegation !== true || !connection.service.desktopDefaults) return
     const service = connection.service
@@ -53,11 +65,37 @@ export class DesktopDefaultsPush {
     const next = previous.then(async () => {
       if (this.closed) return
       const defaults: DesktopDefaultsInput = { newThreadRuntimeMode: this.mode, ...(this.roles ? { workerRoles: this.roles } : {}) }
-      try { await service.desktopDefaults!(defaults); this.options.log?.('desktop-defaults-sent') }
-      catch { this.options.log?.('desktop-defaults-failed') }
+      try {
+        await service.desktopDefaults!(defaults)
+        this.options.log?.('desktop-defaults-sent')
+        this.clearRetry(connection.hostId)
+      } catch {
+        this.options.log?.('desktop-defaults-failed')
+        this.retry(connection.hostId)
+      }
     })
     this.sending.set(connection.hostId, next)
     void next.finally(() => { if (this.sending.get(connection.hostId) === next) this.sending.delete(connection.hostId) })
+  }
+  /** After a failed send, tries the host again later if it is still connected then, with the defaults as they are then. */
+  private retry(hostId: string): void {
+    if (this.closed) return
+    const failures = (this.retries.get(hostId)?.failures ?? 0) + 1
+    this.clearRetry(hostId)
+    const wait = Math.min(RETRY_AFTER_MAX_MS, (this.options.retryAfterMs ?? RETRY_AFTER_MS) * 2 ** (failures - 1))
+    const timer = setTimeout(() => {
+      if (this.retries.get(hostId)?.timer !== timer || this.closed) return
+      for (const connection of this.options.connections()) if (connection.hostId === hostId) { this.send(connection); return }
+      // Not connected now: its next connection sends them.
+      this.retries.delete(hostId)
+    }, wait)
+    timer.unref?.()
+    this.retries.set(hostId, { timer, failures })
+  }
+  private clearRetry(hostId: string): void {
+    const retry = this.retries.get(hostId)
+    if (retry) clearTimeout(retry.timer)
+    this.retries.delete(hostId)
   }
   /** Settles once every send started so far has; for tests and for closing. */
   async settled(): Promise<void> { await Promise.allSettled([...this.sending.values()]) }
