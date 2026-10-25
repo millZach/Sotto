@@ -171,7 +171,7 @@ describe('the generation guard', () => {
       [idle({ lastTurn: { id: 't', status: 'failed' } }), {}],
       [idle({ kind: 'watcher' }), {}],
       [idle({ delegatedBy: 'delegating-thread' }), {}],
-      // A thread no window shows carries its summary alone: its history is not read from the store for this.
+      // A thread no window shows carries its summary alone: its history is not read from the store at the turn's end.
       [idle({ messages: [], earlierAvailable: true }), {}],
       [idle({ messages: [message('u1', 'user', 'Fix it')] }), {}],
       [idle(), { historyEnabled: () => false }],
@@ -183,6 +183,41 @@ describe('the generation guard', () => {
       await new Promise(resolve => setImmediate(resolve))
       expect(s.deps.write).not.toHaveBeenCalled()
     }
+  })
+
+  it('asks for a thread that finished unseen once a client shows it, from the store, once', async () => {
+    const stored = [message('u1', 'user', 'Fix the contrast'), message('a1', 'assistant', 'Fixed it.')]
+    const history = vi.fn(() => stored)
+    const s = service({ history })
+    const unseen = idle({ messages: [], earlierAvailable: true })
+    s.set(unseen)
+    s.prompts.finished(unseen)
+    await new Promise(resolve => setImmediate(resolve))
+    expect(s.deps.write).not.toHaveBeenCalled()
+    expect(history).not.toHaveBeenCalled()
+    s.prompts.shown(['other'])
+    expect(history).not.toHaveBeenCalled()
+    s.prompts.shown(['thread'])
+    await vi.waitFor(() => expect(s.published).toHaveLength(1))
+    expect(history).toHaveBeenCalledOnce()
+    expect(s.deps.write).toHaveBeenCalledWith('thread', [{ prompt: 'Fix the contrast', reply: 'Fixed it.' }], expect.any(AbortSignal))
+    s.prompts.shown(['thread'])
+    await new Promise(resolve => setImmediate(resolve))
+    expect(s.deps.write).toHaveBeenCalledOnce()
+  })
+
+  it('forgets an unseen finish once the thread starts again', async () => {
+    const history = vi.fn(() => [] as AgentMessage[])
+    const s = service({ history })
+    const unseen = idle({ messages: [], earlierAvailable: true })
+    s.set(unseen)
+    s.prompts.finished(unseen)
+    await new Promise(resolve => setImmediate(resolve))
+    s.prompts.started('thread')
+    s.prompts.shown(['thread'])
+    await new Promise(resolve => setImmediate(resolve))
+    expect(history).not.toHaveBeenCalled()
+    expect(s.deps.write).not.toHaveBeenCalled()
   })
 
   it('lets a send accepted after its own turn ended go of nothing newer', async () => {

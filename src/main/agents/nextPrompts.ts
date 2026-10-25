@@ -17,6 +17,8 @@ export interface NextPromptHooks {
   sending(threadId: string): number | undefined
   /** A thread that was working is idle with nothing waiting on the user. */
   finished(thread: AgentThread): void
+  /** The threads some client shows now: one that finished unseen is asked for then. */
+  shown?(threadIds: readonly string[]): void
 }
 
 export interface NextPromptsDependencies {
@@ -24,6 +26,8 @@ export interface NextPromptsDependencies {
   readonly write: (threadId: string, exchanges: readonly NextPromptExchange[], signal: AbortSignal) => Promise<string | null>
   /** The thread as the coordinator holds it now, with the messages a window has it hold in memory. */
   readonly thread: (threadId: string) => AgentThread | undefined
+  /** The thread's history from the store, read only when a client shows a thread that finished unseen: a user's action. */
+  readonly history?: (thread: AgentThread) => readonly AgentMessage[]
   /** Local history off means no thread content is kept, so none is sent for this either, as with titles. */
   readonly historyEnabled?: () => boolean
   /** Each change, for the window. */
@@ -38,6 +42,8 @@ interface Held {
   generation: number
   /** The side call in flight, aborted when a start or a newer finish supersedes it. */
   asking?: AbortController
+  /** The generation of a finish that was asked nothing because no window held its messages; showing the thread asks it. */
+  unseen?: number
   entry?: NextPromptEntry & { prompt: NextPrompt }
 }
 
@@ -97,6 +103,17 @@ export class NextPrompts implements NextPromptHooks {
     this.defer(() => { void this.ask(thread.id, generation) })
   }
 
+  shown(threadIds: readonly string[]): void {
+    if (this.closed) return
+    for (const id of threadIds) {
+      const held = this.held.get(id)
+      if (held?.unseen === undefined) continue
+      const generation = held.unseen
+      delete held.unseen
+      if (generation === held.generation && !held.entry && !held.asking) this.defer(() => { void this.ask(id, generation, true) })
+    }
+  }
+
   sending(threadId: string): number | undefined { return this.held.get(threadId)?.generation }
 
   /** What is held now, for a window that has just loaded. */
@@ -112,17 +129,20 @@ export class NextPrompts implements NextPromptHooks {
   /** A new generation: the side call asked for the old one is told to stop, so it costs nothing more. */
   private supersede(held: Held): void {
     held.generation += 1
+    delete held.unseen
     held.asking?.abort()
     delete held.asking
   }
 
-  private async ask(threadId: string, generation: number): Promise<void> {
+  private async ask(threadId: string, generation: number, fromHistory = false): Promise<void> {
     if (this.closed || this.dependencies.historyEnabled?.() === false) return
     const before = this.dependencies.thread(threadId)
     if (!before || !this.quiet(before) || this.held.get(threadId)?.generation !== generation) return
-    // Only what the coordinator already holds in memory: a thread no window is showing carries its summary alone, and its
-    // history is not read from the store at a turn's end for this. Such a thread is asked nothing.
-    const exchanges = recentExchanges(before.messages)
+    // At a turn's end, only what the coordinator already holds in memory: a thread no window is showing carries its summary
+    // alone, and its history is not read from the store then. Such a thread is asked once a client shows it, from the store.
+    const messages = fromHistory ? this.dependencies.history?.(before) ?? before.messages : before.messages
+    if (!fromHistory && messages.length === 0) { this.held.get(threadId)!.unseen = generation; return }
+    const exchanges = recentExchanges(messages)
     if (!exchanges) return
     const anchor = lastUserMessageIdOf(before) ?? ''
     const held = this.held.get(threadId)!

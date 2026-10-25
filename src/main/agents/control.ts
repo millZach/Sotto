@@ -1065,6 +1065,7 @@ export class AgentControl {
     const shown = threadIds.filter(id => this.threadAvailable(id))
     // Showing a thread reads its finish and sees its failure (ADR-0092), so both records hear every show.
     const finished = this.finishedUnread.show(shown)
+    this.dependencies.nextPrompts?.shown?.(shown)
     if (!this.failuresSeen.show(shown, this.state.host.threads) && !finished) return false
     this.publish()
     void this.persist().catch(() => undefined)
@@ -3029,7 +3030,7 @@ export class AgentControl {
   /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
   liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
-  private threadHistory(thread: AgentThread): readonly AgentMessage[] {
+  threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
     return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
   }
