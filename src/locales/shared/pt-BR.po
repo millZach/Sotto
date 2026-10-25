@@ -8,14 +8,6 @@ msgstr ""
 "Language: pt-BR\n"
 
 #: src/shared/interfaceWords.ts
-msgid "{host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
 msgid "{host} did not answer at first, so Sotto read its model sources again: {source} is signed in there."
 msgstr ""
 
@@ -49,18 +41,6 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "{host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -112,22 +92,6 @@ msgstr ""
 msgid "Computer use"
 msgstr ""
 
-#: src/shared/interfaceWords.ts
-msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Cursor could not sign out. Nothing was changed. Run agent logout in a terminal to try again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Cursor is signed out on this computer."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Cursor’s sign-in is not available right now. Nothing was changed."
-msgstr ""
-
 #. The name of an effort colourway.
 #: src/shared/interfaceWords.ts
 msgid "Cyberpunk"
@@ -140,10 +104,6 @@ msgstr ""
 #. The name of an effort colourway: the colour a thread’s effort control turns at the highest level.
 #: src/shared/interfaceWords.ts
 msgid "Ember"
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Finish signing in on cursor.com in your browser."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -198,10 +158,6 @@ msgid "Merge"
 msgstr ""
 
 #: src/shared/interfaceWords.ts
-msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
 msgid "Only PNG, JPEG, GIF, and WebP screenshots can be attached. Nothing was attached. Choose files of those types."
 msgstr ""
 
@@ -214,14 +170,6 @@ msgid "OpenCode could not start the {source} sign-in, so nothing was saved. Try 
 msgstr ""
 
 #: src/shared/interfaceWords.ts
-msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
 msgid "OpenCode does not run on {host}’s host. To use it there, put this computer’s version of the host on {host}, stop the host and connect again."
 msgstr ""
 
@@ -231,10 +179,6 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "OpenCode needs every question answered before it signs in to {source}. Nothing was saved. Fill them in and try again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -299,14 +243,6 @@ msgid "Signed out of {source}. Its sign-in is gone from Sotto’s OpenCode."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
-msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Sotto could not finish that, so nothing was changed. Try again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
 msgid "Sotto could not read OpenCode’s model list again, so the model menu may be out of date. Each thread still moves to the new sign-ins when it next goes idle. Press Refresh OpenCode to read the list again."
 msgstr ""
 
@@ -320,10 +256,6 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "Sotto could not tell whether OpenCode saved the {source} key, so it read OpenCode’s sign-ins again: {source} is not signed in, so nothing was saved. Paste the key again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -345,14 +277,6 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "Start update"
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "That server is no longer saved. Nothing was changed."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -409,26 +333,6 @@ msgid "This host has no systemd user manager, so Sotto cannot start it at boot."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
-msgid "This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, press Stop host, then connect again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, press Stop host, then connect again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
 msgid "This host runs macOS, where a program starts at boot only with an administrator’s help, so Sotto cannot start it at boot."
 msgstr ""
 
@@ -481,8 +385,4 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "Your browser did not open the sign-in page. Nothing was saved. Open this address in your browser yourself, or press Open the page again."
-msgstr ""
-
-#: src/shared/interfaceWords.ts
-msgid "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
 msgstr ""

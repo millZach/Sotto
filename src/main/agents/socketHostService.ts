@@ -24,8 +24,8 @@ import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../..
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
 import type { AgentThread, ProviderId } from '../../shared/agents'
-import { hostBusyWords, hostVersionMismatchWords } from '../../shared/interfaceWords'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
+import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
 import type { HostService, ClientIdentity, RequestAnswerRecovery } from './hostService'
@@ -51,7 +51,12 @@ type ComposeBatch = { command: TargetedCompose; draftId: string; commandId?: str
 
 /** `version_mismatch` is this client's own finding, never a code on the wire: the host speaks a protocol it cannot use. */
 export class HostConnectionError extends Error {
-  constructor(message: string, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) { super(message) }
+  /** Sotto's words for it, when it is one of a connect's failures, so the row, Add host and an agent each say it their way. */
+  readonly words?: FailureWords
+  constructor(message: string | FailureWords, readonly code: HostErrorCode | 'disconnected' | 'version_mismatch', readonly commandId?: string, readonly pairingRequired = false) {
+    super(typeof message === 'string' ? message : i18n._(message.saved))
+    if (typeof message !== 'string') this.words = message
+  }
 }
 /**
  * The host did not answer a request in time. Unlike a closed connection, which ends what the host was doing for it, the
@@ -62,7 +67,7 @@ export class HostRequestTimeoutError extends HostConnectionError {
 }
 /** The address answered as a host other than the one expected. Nothing of this computer's pairing was sent to its session. */
 export class WrongHostError extends HostConnectionError {
-  constructor(message = t`This address belongs to a different host. Check the connection before continuing.`) { super(message, 'unauthenticated') }
+  constructor(message: string | FailureWords = CONNECT_FAILURES.wrongHost()) { super(message, 'unauthenticated') }
 }
 export interface SocketHostServiceOptions {
   url: string; token: string; expectedHostId?: string
@@ -113,8 +118,8 @@ const field = (value: unknown, key: string): unknown => value !== null && typeof
  * the pairing: the host knows this client but will not take it here, as a tailnet listener refuses a client it does not
  * know as a desktop while phone access is off (ADR-0053).
  */
-const refusal = (status: number, otherwise: string, code: HostErrorCode, pairingRequired = false): HostConnectionError =>
-  status === 429 ? new HostConnectionError(hostBusyWords(), 'busy') : status === 403 ? new HostConnectionError(t`This host refused this device here. The pairing is kept.`, 'forbidden')
+const refusal = (status: number, otherwise: string | FailureWords, code: HostErrorCode, pairingRequired = false): HostConnectionError =>
+  status === 429 ? new HostConnectionError(CONNECT_FAILURES.busy(), 'busy') : status === 403 ? new HostConnectionError(CONNECT_FAILURES.refusedDevice(), 'forbidden')
     : new HostConnectionError(otherwise, code, undefined, pairingRequired)
 /** A transport cache, not a second coordinator. Losing a socket never replays a command. */
 export class SocketHostService implements HostService {
@@ -227,15 +232,15 @@ export class SocketHostService implements HostService {
    */
   static async pair(url: string, code: string, name: string): Promise<HostPairing> {
     const endpoint = new SocketHostService({ url, token: '' }).endpoint('/v1/pair')
-    if (endpoint.protocol !== 'http:' || !LOOPBACK.has(endpoint.hostname)) throw new Error(t`This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH.`)
+    if (endpoint.protocol !== 'http:' || !LOOPBACK.has(endpoint.hostname)) throw new WordedError(CONNECT_FAILURES.pairsOverSsh())
     const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code, name }), signal: AbortSignal.timeout(15000), redirect: 'error' })
-    if (!response.ok) throw refusal(response.status, t`This pairing code could not be used. Make a new code on the host and try again.`, 'unauthenticated')
+    if (!response.ok) throw refusal(response.status, CONNECT_FAILURES.pairingCodeUnused(), 'unauthenticated')
     return hostPairingSchema.parse(await response.json())
   }
   private endpoint(path: string): URL {
     const url = new URL(path, this.options.url)
-    if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error(t`Use a host HTTP or HTTPS address without credentials in its URL.`)
-    if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) throw new Error(t`A remote host address must use HTTPS.`)
+    if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new WordedError(CONNECT_FAILURES.addressCredentials())
+    if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) throw new WordedError(CONNECT_FAILURES.addressHttps())
     return url
   }
   connect(): Promise<HostHello> {
@@ -256,24 +261,24 @@ export class SocketHostService implements HostService {
     // The host says what it speaks before anything is sent to it, so a host of another version is named
     // as one instead of answering a request it cannot read with a refusal or a closed socket.
     const healthResponse = await fetch(this.endpoint('/v1/health'), { signal: AbortSignal.any([opening.signal, AbortSignal.timeout(this.options.healthTimeoutMs ?? 15000)]), redirect: 'error' })
-    if (generation !== this.generation) throw new HostConnectionError(t`This host connection was closed.`, 'disconnected')
-    if (!healthResponse.ok) throw new HostConnectionError(t`The host did not answer its health check. Connect again.`, 'unavailable')
+    if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected')
+    if (!healthResponse.ok) throw new HostConnectionError(CONNECT_FAILURES.healthCheck(), 'unavailable')
     const healthBody: unknown = await healthResponse.json().catch(() => null)
     const health = hostHealthFeatures(healthBody)
     if (!health) {
       // A host of another protocol version may still say which Sotto it runs, which decides the way out.
       const advertised = healthBody !== null && typeof healthBody === 'object' && 'sottoVersion' in healthBody ? healthBody.sottoVersion : undefined
       this.hostVersion = typeof advertised === 'string' ? advertised : undefined
-      throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+      throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     }
     this.hostVersion = health.sottoVersion; this.features = []
     // A host that says it is another one is not sent this device's token at all.
     if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
-    if (generation !== this.generation) throw new HostConnectionError(t`This host connection was closed.`, 'disconnected')
-    if (!response.ok) throw refusal(response.status, t`This device needs to connect again or be paired on the host.`, 'unauthenticated', response.status === 401)
+    if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected')
+    if (!response.ok) throw refusal(response.status, CONNECT_FAILURES.needsPairing(), 'unauthenticated', response.status === 401)
     const session = hostSessionSchema.parse(await response.json())
-    if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError(t`The host answered with something else. Connect again.`, 'unauthenticated')
+    if (session.v !== 1 || typeof session.session !== 'string') throw new HostConnectionError(CONNECT_FAILURES.answeredElse(), 'unauthenticated')
     if (this.options.expectedHostId && session.hostId !== this.options.expectedHostId) throw new WrongHostError()
     this.session = session
     this.details.clear(); this.tooLarge.clear(); this.lateDetails.clear(); this.behind.clear(); this.catalog = undefined
@@ -282,8 +287,8 @@ export class SocketHostService implements HostService {
     const upgrade = (offer: boolean) => new Promise<SocketFrames | 'refused'>((resolve, reject) => {
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, { signal: opening.signal, headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key, ...offer ? { 'Sec-WebSocket-Extensions': DEFLATE_OFFER } : {}, Authorization: 'Bearer ' + session.session } })
       request.setTimeout(15000, () => request.destroy(new Error('Host connection timed out.')))
-      request.on('error', () => reject(new HostConnectionError(t`The host connection could not be opened.`, 'disconnected')))
-      request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, t`The host refused this connection. Connect again.`, 'unavailable')) })
+      request.on('error', () => reject(new HostConnectionError(CONNECT_FAILURES.notOpened(), 'disconnected')))
+      request.on('response', response => { response.resume(); reject(refusal(response.statusCode ?? 503, CONNECT_FAILURES.refusedConnection(), 'unavailable')) })
       request.on('upgrade', (response, stream, head) => {
         // A host from before compression answers without the extension, and its messages are read as they come.
         const deflate = offer ? deflateAccepted(response.headers['sec-websocket-extensions']) : false
@@ -304,14 +309,14 @@ export class SocketHostService implements HostService {
     const opened = offered === 'refused' ? await upgrade(false) : offered
     if (opened === 'refused') throw new HostConnectionError(t`The host did not accept this protocol.`, 'invalid_request')
     this.frames = opened
-    if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError(t`This host connection was closed.`, 'disconnected') }
+    if (generation !== this.generation) { this.frames.close(); throw new HostConnectionError(CONNECT_FAILURES.connectionClosed(), 'disconnected') }
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
       const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
-      if (hello.hostId !== session.hostId) throw new HostConnectionError(t`The host identity changed. Connect again.`, 'unauthenticated')
+      if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
       this.hostVersion = hello.sottoVersion; this.features = hello.features
       this.publish(this.read(protocolAgentStateSchema, hello.shell), true)
       if (this.catchesUp) {
@@ -338,7 +343,7 @@ export class SocketHostService implements HostService {
     this.resetComposeQueue()
     for (const [id, item] of this.pending) {
       clearTimeout(item.timer)
-      item.reject(new HostConnectionError(item.command ? t`The connection closed before the host confirmed this command. Refresh before deciding what to do next.` : t`The host connection closed. Connect again to refresh.`, 'disconnected', item.command ? id : undefined))
+      item.reject(new HostConnectionError(item.command ? CONNECT_FAILURES.closedCommand() : CONNECT_FAILURES.closedRefresh(), 'disconnected', item.command ? id : undefined))
     }
     this.pending.clear(); this.lateDetails.clear(); this.behind.clear(); this.confirmedObserved = new Set()
     if (this.cached) this.publish({ ...this.cached, stale: true })
@@ -381,7 +386,7 @@ export class SocketHostService implements HostService {
         this.pending.delete(message.id); clearTimeout(pending.timer)
         if (message.ok) pending.resolve(message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
-        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? message.id : undefined))
+        else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? message.id : undefined))
         else pending.reject(new HostConnectionError(message.error.message, message.error.code, pending.command ? message.id : undefined))
       }
     } catch { this.frames?.close() }
@@ -398,7 +403,7 @@ export class SocketHostService implements HostService {
     // The sentence names no thread and no shell, so no arrival clears it; only a new connection does.
     if (id === undefined || !pending) { this.pushErrorThread = undefined; this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
-    pending.reject(new HostConnectionError(this.mismatch(), 'version_mismatch', pending.command ? id : undefined))
+    pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? id : undefined))
   }
   /** Keeps the answer to a thread read that timed out, as the answer in time would have been kept. */
   private lateDetail(message: HostResponse): void {
@@ -431,10 +436,16 @@ export class SocketHostService implements HostService {
    * The version sentence for this host, which says which side to bring up to date. A host already on the version this
    * computer is downloading needs nothing: this computer's restart brings the two together.
    */
-  private mismatch(): string {
+  /** The version sentence for this host, in the interface language shown now. */
+  private mismatch(): string { return i18n._(this.mismatchWords().saved) }
+  private mismatchWords(): FailureWords {
     const version = this.hostVersion
-    if (this.aheadForRestart() && version !== undefined) return t`This host already runs Sotto ${{ version }}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again.`
-    return hostVersionMismatchWords(this.clientVersion, this.hostVersion, this.options.owned ?? false, this.hostIsNewer())
+    if (this.aheadForRestart() && version !== undefined) return CONNECT_FAILURES.aheadForRestart(version)
+    if (this.hostIsNewer()) return CONNECT_FAILURES.newerHost()
+    // A host that said which older Sotto it runs is offered an update on the Threads page (ADR-0040).
+    const client = this.clientVersion, owned = this.options.owned ?? false
+    if (hostIsOlder(this.hostVersion, client)) return owned ? CONNECT_FAILURES.olderOwned(client) : CONNECT_FAILURES.olderNotOwned(client)
+    return owned ? CONNECT_FAILURES.differentOwned(client) : CONNECT_FAILURES.differentNotOwned(client)
   }
   /** Whether the host runs the version this computer's waiting update brings, ahead of this computer (ADR-0077). */
   aheadForRestart(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion && this.hostVersion === this.options.waitingVersion?.() }
@@ -453,7 +464,7 @@ export class SocketHostService implements HostService {
   private read<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value)
     if (parsed.success) return parsed.data
-    if (this.skewed()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (this.skewed()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     throw parsed.error
   }
   /**
@@ -519,23 +530,23 @@ export class SocketHostService implements HostService {
       : 'answer' in operation && operation.answer && 'threadId' in operation.answer ? operation.answer.threadId : operation.op === 'command' ? this.commandThreadId(operation.command) : undefined
     if (!this.threadAvailable(threadId)) return Promise.reject(new Error(this.threadRefusal(threadId)))
     const frames = this.frames, session = this.session
-    if (!frames || !session) return Promise.reject(new HostConnectionError(t`The host is disconnected. Connect again before sending.`, 'disconnected'))
-    if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError(t`Wait for the pending host request to finish.`, 'busy'))
+    if (!frames || !session) return Promise.reject(new HostConnectionError(CONNECT_FAILURES.requestDisconnected(), 'disconnected'))
+    if (this.pending.has(id) || this.pending.size >= 32) return Promise.reject(new HostConnectionError(CONNECT_FAILURES.requestPending(), 'busy'))
     return new Promise((resolve, reject) => {
       const command = operation.op === 'command'
       const timer = setTimeout(() => {
         this.pending.delete(id)
         if (operation.op === 'detail') { this.lateDetails.set(id, operation.threadId); if (this.lateDetails.size > 32) this.lateDetails.delete(this.lateDetails.keys().next().value!) }
-        reject(new HostRequestTimeoutError(command ? t`The host has not confirmed this command. Refresh before deciding what to do next.` : t`The host did not answer in time. Try refreshing.`, 'disconnected', command ? id : undefined))
+        reject(new HostRequestTimeoutError(command ? CONNECT_FAILURES.commandUnconfirmed() : CONNECT_FAILURES.requestTimeout(), 'disconnected', command ? id : undefined))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer, command })
       onPlacement?.()
-      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError(t`The connection closed before this request could be confirmed.`, 'disconnected', command ? id : undefined)) }
+      if (!frames.send({ v: 1, id, session: session.session, ...operation })) { clearTimeout(timer); this.pending.delete(id); reject(new HostConnectionError(CONNECT_FAILURES.closedBeforeConfirmed(), 'disconnected', command ? id : undefined)) }
     })
   }
   private validateState(state: AgentState): void {
     const hostId = this.session?.hostId
-    if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError(t`The host returned another host identity. Reconnect before continuing.`, 'unauthenticated')
+    if (hostId && (state.hostId !== hostId || state.host.hostId !== hostId || state.host.threads.some(thread => thread.hostId && thread.hostId !== hostId) || state.host.projects.some(project => project.hostId && project.hostId !== hostId))) throw new HostConnectionError(CONNECT_FAILURES.anotherIdentity(), 'unauthenticated')
   }
   private preserveConnectionFeedback(previous: string): void {
     for (const text of this.quietConnectionNotices.keys()) this.quietConnectionNotices.set(text, previous)
@@ -593,7 +604,7 @@ export class SocketHostService implements HostService {
     if (detail) for (const listener of this.detailListeners) listener(detail)
     if (this.pushErrorThread === threadId) this.clearPushError()
   }
-  private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError(t`This result belongs to an earlier connection. Refresh the host.`, 'disconnected') }
+  private sameGeneration(generation: number): void { if (generation !== this.generation) throw new HostConnectionError(CONNECT_FAILURES.earlierConnection(), 'disconnected') }
   private cacheEvents(page: HostEventPage, advance = true): void {
     for (const event of page.events) if (this.threadAvailable(event.threadId)) this.storedEvents.set(event.seq, event)
     if (advance) this.latestSeq = Math.max(this.latestSeq, page.latestSeq)
@@ -734,7 +745,7 @@ export class SocketHostService implements HostService {
     this.recoveryError = undefined
     const admitted = structuredClone(command)
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
-    if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -1118,7 +1129,7 @@ export class SocketHostService implements HostService {
   async stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     const { mimeType } = image
     if (!isImageAttachment(mimeType)) return this.stageFile(image)
-    if (!this.features.includes('attachment-staging')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('attachment-staging')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     const result = this.previewTail.then(async () => {
       const data = Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength).toString('base64')
       return this.read(agentAttachmentHandleSchema, await this.call({ op: 'stage-attachment', image: { name: image.name, mimeType, data,
@@ -1160,20 +1171,20 @@ export class SocketHostService implements HostService {
   }
   /** A host that does not list `git-refs` is from before the branch picker; the version sentence says which side to bring up to date, and nothing is sent. */
   async gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
-    if (!this.features.includes('git-refs')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-refs')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitRefsPageSchema, await this.call({ op: 'git-refs', request }))
   }
   async gitChangedFiles(request: GitChangedFilesRequest): Promise<GitChangedFiles> {
-    if (!this.features.includes('git-changed-files')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-changed-files')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitChangedFilesSchema, await this.call({ op: 'git-changed-files', request }))
   }
   async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
-    if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
   }
   /** A host that does not list `host-folders` is from before the folder browser; the version sentence says which side to bring up to date, and nothing is sent. */
   async hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> {
-    if (!this.features.includes('host-folders')) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes('host-folders')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(hostFoldersResultSchema, await this.call({ op: 'host-folders', request }))
   }
   /**
@@ -1270,7 +1281,7 @@ export class SocketHostService implements HostService {
   }
   /** Refuses with the version sentence, before anything is sent, a read whose feature this host does not list. */
   private offers(feature: HostFeature): void {
-    if (!this.features.includes(feature)) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.features.includes(feature)) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
   }
   /** A large read, queued behind previews and staged images: the host answers one of these frames at a time per client. */
   private large<T>(feature: HostFeature, read: () => Promise<T>): Promise<T> {
@@ -1293,7 +1304,7 @@ export class SocketHostService implements HostService {
    * is from before it; the version sentence says which side to bring up to date, and nothing is sent.
    */
   async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
-    if (!this.offersSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.offersSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(hostSignInSchema.nullable(), await this.call(operation))
   }
   /** Whether the host signs its own OpenCode in to model sources for this client (#1107). */
@@ -1304,7 +1315,7 @@ export class SocketHostService implements HostService {
    * The caller asks `offersOpenCodeSignIn` first, and says in words that an older host needs an update.
    */
   async opencodeSignIn<A extends OpenCodeHostCall['action']>(call: Extract<OpenCodeHostCall, { action: A }>): Promise<OpenCodeHostAnswer<A>> {
-    if (!this.offersOpenCodeSignIn()) throw new HostConnectionError(this.mismatch(), 'version_mismatch')
+    if (!this.offersOpenCodeSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     const schema: z.ZodType<OpenCodeHostAnswer<A>> = OPENCODE_HOST_ANSWERS[call.action as A] as never
     return this.read(schema, await this.call({ op: 'opencode-sign-in', call }))
   }

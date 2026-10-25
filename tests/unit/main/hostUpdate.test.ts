@@ -322,6 +322,8 @@ describe('an update', () => {
     await updates.command(ID, 'update')
     await vi.waitFor(() => expect(one().failure?.message).toBe('The connection to forge closed while its host restarted, and it came back on 0.1.22.'))
     expect(one().failure?.kept).toBe('forge\'s threads are back. Nothing was lost.')
+    // Worded once for the stop and the language, so the panel's frequent reads do not word it again.
+    expect(one().failure).toBe(one().failure)
   })
   it('says the old version still runs when the restart could not be asked for, and nothing was stopped', async () => {
     const { hosts, updates, one, settled } = setup()

@@ -1025,7 +1025,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? t`An agent is setting up ${{ host: setup.name }} now. Stop that setup first. Nothing was started.` : undefined } })
   const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
-      attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
+      attempt: id => desktopHosts.attempt(id), attemptInEnglish: id => desktopHosts.attemptInEnglish(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
   const hostSetupTools = new HostSetupToolServer(agentJobTools(hostSetup, providerJobs))
   quitHandles.providerJobs = providerJobs
@@ -1626,6 +1626,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         installApplicationMenu()
         windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
         windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        // Main's long-lived words follow at once: a host's connect failure, a host update's failure and Add host's question.
+        desktopHosts.languageChanged()
+        hostUpdates.languageChanged()
+        hostSetup.languageChanged()
       }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.

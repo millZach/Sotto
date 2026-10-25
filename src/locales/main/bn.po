@@ -248,6 +248,14 @@ msgstr ""
 msgid "A contributed color theme is missing or outside the extension; nothing was imported."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "A host process already holds that data folder but is not answering. Check it on the SSH host, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "A host process already holds that data folder but is not answering. Nothing was saved. Check it on the SSH host, then add the host again."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "A key snippet was installed by hand, but Hyprland is not using it. Sotto leaves it alone."
 msgstr ""
@@ -260,8 +268,12 @@ msgstr ""
 msgid "A plugin was installed by hand, but it is not on the bar. Sotto leaves it alone."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "A remote host address must use HTTPS."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "A remote host address must use HTTPS. Nothing was saved."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -358,6 +370,14 @@ msgstr ""
 msgid "An Omarchy palette was installed by hand. Sotto leaves it alone."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "Another program is using the port the host last listened on. Nothing was saved. Stop it on the SSH host, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Another program is using the port the host last listened on. Stop it on the SSH host, then reconnect."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "Another Sotto installation on {name} already has a unit named sotto-host. Nothing was changed, and the host keeps running as before. Remove that unit on {name}, then try again."
 msgstr ""
@@ -437,11 +457,11 @@ msgstr ""
 msgid "Checkpoint paths cannot follow symbolic links or directory junctions."
 msgstr ""
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Choose a host port between 1 and 65535."
 msgstr ""
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Choose a SSH port between 1 and 65535."
 msgstr ""
 
@@ -449,15 +469,15 @@ msgstr ""
 msgid "Choose a valid paired client."
 msgstr ""
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Choose an absolute host data path, or a path starting with ~/."
 msgstr ""
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Choose an absolute host installation path, or a path starting with ~/."
 msgstr ""
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Choose an absolute path for the SSH identity file."
 msgstr ""
 
@@ -473,8 +493,12 @@ msgstr ""
 msgid "Choose whether to trust this SSH host key."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Clipboard unavailable. Recording kept. Open Dictate."
+#: src/main/hosts/hostFailureWords.ts
+msgid "Client access could not be revoked. Check the host connection and try Forget again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Client access could not be revoked. Nothing was saved. Check the host connection and try Forget again."
 msgstr ""
 
 #: src/main/tools/checkpoints.ts
@@ -537,6 +561,14 @@ msgstr ""
 msgid "Connect to the SSH host before updating it."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "Connect to the SSH host first."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Connect to the SSH host first. Nothing was saved."
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "Connect to this host before changing whether it starts at boot. Nothing was changed."
 msgstr ""
@@ -553,28 +585,20 @@ msgstr ""
 msgid "Continuing an agent as a thread is unavailable in this window."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Copied — paste with Super+V"
+#: src/main/hosts/hostFailureWords.ts
+msgid "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Could not transcribe. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Could not transcribe. Recording lost. Dictate again."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Dictation failed. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Dictation failed. Recording lost. Dictate again."
+#: src/main/hosts/hostFailureWords.ts
+msgid "Desktop permissions could not be set up on the host. Nothing was saved. Nothing was replaced. Check its data folder, then add the host again."
 msgstr ""
 
 #: src/main/hosts/hostSetup.ts
 msgid "Don’t add"
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr ""
 
 #: src/main/tools/browser.ts
@@ -589,7 +613,7 @@ msgstr ""
 msgid "Edit"
 msgstr "সম্পাদনা"
 
-#: src/main/hosts/sshConfiguration.ts
+#: src/main/hosts/sshHostValidation.ts
 msgid "Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration."
 msgstr ""
 
@@ -709,22 +733,6 @@ msgstr ""
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Microphone access denied. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Microphone access was denied. Allow it, then try again."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Microphone could not start. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Microphone lost. Recording lost. Connect it again."
-msgstr ""
-
 #: src/main/tools/checkpoints.ts
 msgid "Native conversation rollback is unavailable for this provider."
 msgstr ""
@@ -741,28 +749,16 @@ msgstr ""
 msgid "No element is available there. Use Region to comment on the saved screenshot."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "No microphone found. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "No microphone set up. Recording kept. Check Settings."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "No microphone was found. Connect one, then try again."
-msgstr ""
-
 #: src/main/hosts/hostSetupThreads.ts
 msgid "No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "No speech was heard. Dictate again."
+#: src/main/hosts/hostFailureWords.ts
+msgid "Node was not found on the SSH host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "No speech was heard. Recording kept."
+#: src/main/hosts/hostFailureWords.ts
+msgid "Node was not found on the SSH host. Nothing was saved. Install Node {minimum} or a later Node {major} for that SSH account, then add the host again."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -775,10 +771,6 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Nothing on {name} was lost."
-msgstr ""
-
-#: src/main/hosts/desktopHosts.ts
-msgid "Nothing was saved."
 msgstr ""
 
 #: src/main/notifications/desktopNotifier.ts
@@ -795,6 +787,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "On Linux a hold shortcut is one F key on its own, such as F9. With a modifier, Hyprland can miss the release and keep listening."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Once you know the new key is the host's own, remove the old one from your known hosts on this computer:"
 msgstr ""
 
 #: src/main/terminals/clipboard.ts
@@ -886,6 +882,14 @@ msgstr ""
 msgid "Phone access on hosts cannot be changed from this window. Nothing was changed."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "Phone access on the host could not be reached. Nothing was changed. Check that the host is running, then try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
 msgstr ""
@@ -900,14 +904,6 @@ msgstr "প্রস্থান"
 
 #: src/main/agents/nextPromptIpc.ts
 msgid "Read next prompts from the main Sotto window."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Recording stopped and was lost. Dictate again."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Recording stopped unexpectedly. Recording kept."
 msgstr ""
 
 #: src/main/files/ipc.ts
@@ -955,7 +951,11 @@ msgstr ""
 msgid "Screenshots cannot be attached in this window. Nothing was attached."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "Secure credential storage is unavailable. Nothing was saved. Unlock it before connecting again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "Secure credential storage is unavailable. Unlock it before connecting again."
 msgstr ""
 
@@ -971,21 +971,9 @@ msgstr ""
 msgid "Set up by hand. Sotto leaves these files alone."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Set up your microphone in Settings."
-msgstr ""
-
 #. What an Omarchy setup piece is doing now, on its row in Settings › Dictation.
 #: src/main/omarchy/setup.ts
 msgid "Setting up"
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Settings could not be read. Open Sotto and try again."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Settings could not be read. Recording kept. Open Sotto."
 msgstr ""
 
 #: src/main/app/applicationMenu.ts
@@ -1237,16 +1225,44 @@ msgstr ""
 msgid "Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Speech model not ready. Nothing recorded. See Settings."
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not connect to the host. Check the host name and SSH access, then reconnect."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Speech model not ready. Recording kept. See Settings."
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not connect to the host. Nothing was saved. Check the host name and SSH access, then add the host again."
 msgstr ""
 
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Speech model not ready. Recording lost. See Settings."
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not reach the host. Check the host name and your network, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not reach the host. Nothing was saved. Check the host name and your network, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not start. Install OpenSSH and check that its executable is available."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH could not start. Nothing was saved. Install OpenSSH and check that its executable is available."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH did not finish connecting in time. Check the host and your network, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH did not finish connecting in time. Nothing was saved. Check the host and your network, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH waited too long for your answer, so Sotto stopped connecting. Connect again when you are ready to answer."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "SSH waited too long for your answer, so Sotto stopped connecting. Nothing was saved. Add the host again when you are ready to answer."
 msgstr ""
 
 #: src/main/index.ts
@@ -1285,24 +1301,32 @@ msgstr ""
 msgid "Tailscale is no longer waiting for this approval. Nothing was opened."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve the port forward as well, and closed it after 30 seconds without an approval. Nothing was saved. Try again, and approve it in your browser when Sotto asks."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve the port forward as well, and closed it after 30 seconds without an approval. Try again, and approve it in your browser when Sotto asks."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve this connection, and no approval came within 5 minutes, so Sotto stopped connecting. Approve it in your browser when Sotto asks, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve this connection, and no approval came within 5 minutes, so Sotto stopped connecting. Nothing was saved. Approve it in your browser when Sotto asks, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve this request, and Sotto shows an approval only while it connects. Nothing was changed. Switch the host off and on, approve the connection in your browser when Sotto asks, then try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Tailscale SSH asked you to approve this request, and Sotto shows an approval only while it connects. Nothing was saved. Nothing was changed. Switch the host off and on, approve the connection in your browser when Sotto asks, then try again."
+msgstr ""
+
 #: src/main/tools/terminal.ts
 msgid "Terminal is shutting down."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Text could not be delivered. Recording kept. Open Sotto."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Text delivered and on the clipboard. History not saved."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Text delivered; history failed. Recording kept."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "Text kept in Sotto. Open Dictate to copy it."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -1390,7 +1414,11 @@ msgstr ""
 msgid "The cloud iPhone’s viewer address is not secure enough to show."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection closed before the host confirmed this command. Nothing was saved. Refresh before deciding what to do next."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The connection closed before the host confirmed this command. Refresh before deciding what to do next."
 msgstr ""
 
@@ -1398,8 +1426,12 @@ msgstr ""
 msgid "The connection closed before this draft was sent. Your draft is kept on this computer. Reconnect to save it on the host."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The connection closed before this request could be confirmed."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection closed before this request could be confirmed. Nothing was saved."
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
@@ -1418,8 +1450,28 @@ msgstr ""
 msgid "The connection to {name} closed while its host restarted, so Sotto cannot tell which version is running."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection to the host closed before start at boot was changed. Connect again to see whether it changed."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection to the host closed before start at boot was changed. Nothing was saved. Add the host again to see whether it changed."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection to the host closed before this step of its update finished."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection to the host closed before this step of its update finished. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The connection was closed while this computer paired."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The connection was closed while this computer paired. Nothing was saved."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -1503,51 +1555,112 @@ msgstr ""
 msgid "The host answered with something else."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host answered with something else. Connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host answered with something else. Nothing was saved. Connect again."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
 msgid "The host confirmed the command, but its latest details could not be read. Nothing was lost. Refresh or reconnect to see them."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host connection closed. Connect again to refresh."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host connection closed. Nothing was saved. Add the host again to refresh."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host connection could not be opened."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host connection could not be opened. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host connection record could not be read. Check the host data folder before reconnecting."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host connection record could not be read. Nothing was saved. Check the host data folder before adding the host again."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "The host could not be read. Nothing was changed. Try again."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host could not be stopped. It may still be running on the SSH host."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host could not be stopped. Nothing was saved. It may still be running on the SSH host."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host could not connect. Check its SSH settings and try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host could not connect. Nothing was saved. Check its SSH settings and try again."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
 msgid "The host could not forget this device. Connect again and retry."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host could not start. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host could not start. Nothing was saved. Check its installation and data folder on the SSH host. If the data folder holds saved credentials, set SOTTO_HOST_KEY_FILE for that SSH account."
+msgstr ""
+
 #: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host did not accept this protocol."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host did not accept this protocol. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host did not answer in time. Nothing was saved. Try refreshing."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host did not answer in time. Try refreshing."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host did not answer its health check. Connect again."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host did not answer its health check. Nothing was saved. Connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host disconnected while connecting. Nothing was saved. Try connecting again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host disconnected while connecting. Try connecting again."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host has not confirmed this command. Nothing was saved. Refresh before deciding what to do next."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host has not confirmed this command. Refresh before deciding what to do next."
 msgstr ""
 
@@ -1555,20 +1668,56 @@ msgstr ""
 msgid "The host identity changed."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host identity changed. Check its data folder before connecting again."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host identity changed. Connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host identity changed. Nothing was saved. Check its data folder before connecting again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host identity changed. Nothing was saved. Connect again."
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
 msgid "The host installation on {name} is missing files the unit would run. Nothing was changed, and the host keeps running as before. Update the host, then try again."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host installation was not found. Check its folder on the SSH host and reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host installation was not found. Nothing was saved. Check its folder on the SSH host and add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host is busy. Nothing was lost. Try again in a moment."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host is busy. Nothing was saved. Nothing was lost. Try again in a moment."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host is disconnected. Connect again before sending."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host is disconnected. Nothing was saved. Connect again before sending."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host is not running on the SSH host, so nothing was changed there. Connect to it in Settings > Hosts & phones, which starts it, then try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host is not running on the SSH host, so nothing was changed there. Nothing was saved. Connect to it in Settings > Hosts & phones, which starts it, then try again."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
@@ -1615,15 +1764,23 @@ msgstr ""
 msgid "The host refused the request."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host refused this connection. Connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host refused this connection. Nothing was saved. Connect again."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
 msgid "The host returned a different thread. Refresh before continuing."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host returned another host identity. Nothing was saved. Reconnect before continuing."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "The host returned another host identity. Reconnect before continuing."
 msgstr ""
 
@@ -1633,6 +1790,30 @@ msgstr ""
 
 #: src/main/hosts/hostBootStart.ts
 msgid "The host Sotto started on {name} would not stop, so Sotto took the unit away again. The host keeps running, and nothing was lost. Try again in a minute."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host starts at boot, and its systemd unit stopped before the host was ready. Nothing was lost, and the unit may still be trying to start it. Check the unit on the SSH host, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host starts at boot, and its systemd unit stopped before the host was ready. Nothing was saved. Nothing was lost, and the unit may still be trying to start it. Check the unit on the SSH host, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host starts at boot, and its systemd unit would not start. Nothing was lost. Check the unit on the SSH host, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host starts at boot, and its systemd unit would not start. Nothing was saved. Nothing was lost. Check the unit on the SSH host, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host was not ready in time. Check that it starts on the SSH host, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The host was not ready in time. Nothing was saved. Check that it starts on the SSH host, then add the host again."
 msgstr ""
 
 #: src/main/terminals/clipboard.ts
@@ -1662,10 +1843,6 @@ msgstr ""
 #: src/main/tools/browser.ts
 #: src/main/tools/cloudIphone/service.ts
 msgid "The main window is unavailable."
-msgstr ""
-
-#: src/main/hotkeys/dictationStateFile.ts
-msgid "The microphone could not start. Try again."
 msgstr ""
 
 #: src/main/tools/checkpoints.ts
@@ -1706,6 +1883,14 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "The page changed. Use Region to comment on the saved screenshot, or capture it again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The pairing code could not be read from the host. Check that the host is running and try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 msgstr ""
 
 #: src/main/omarchy/files.ts
@@ -1780,6 +1965,94 @@ msgstr ""
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH connection was cancelled."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH connection was cancelled. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH forward was not ready in time. Check SSH access and reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH forward was not ready in time. Nothing was saved. Check SSH access and add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host key changed. Nothing was saved. Verify the host identity and update your SSH known hosts before adding the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host key changed. Verify the host identity and update your SSH known hosts before reconnecting."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host key was not trusted, so Sotto did not connect. Connect again to review the key."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host key was not trusted, so Sotto did not connect. Nothing was saved. Add the host again to review the key."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host refused your sign-in. Check the user name, password or identity file, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host refused your sign-in. Nothing was saved. Check the user name, password or identity file, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host runs Node {version}, which is newer than this host release supports. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host runs Node {version}, which is newer than this host release supports. Nothing was saved. Install Node {minimum} or a later Node {major} for that SSH account, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host runs Node {version}, which is too old for the host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host runs Node {version}, which is too old for the host. Nothing was saved. Install Node {minimum} or a later Node {major} for that SSH account, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host's Node is newer than this host release supports. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host's Node is newer than this host release supports. Nothing was saved. Install Node {minimum} or a later Node {major} for that SSH account, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host's Node is too old for the host. Install Node {minimum} or a later Node {major} for that SSH account, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH host's Node is too old for the host. Nothing was saved. Install Node {minimum} or a later Node {major} for that SSH account, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH identity file could not be read. Choose its current path and reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH identity file could not be read. Nothing was saved. Choose its current path and add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH port forward could not open. Nothing was saved. Reconnect, and if it fails again, check that the SSH server allows port forwarding."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "The SSH port forward could not open. Reconnect, and if it fails again, check that the SSH server allows port forwarding."
+msgstr ""
+
 #: src/main/hosts/desktopHosts.ts
 msgid "The SSH settings for {host} are saved, but how Sotto connects did not change. Check that {host} is reachable with them, then choose again in Edit connection."
 msgstr ""
@@ -1849,8 +2122,12 @@ msgstr ""
 msgid "This action includes items from different hosts. Select items from one host."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "This address belongs to a different host. Check the connection before continuing."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This address belongs to a different host. Nothing was saved. Check the connection before continuing."
 msgstr ""
 
 #: src/main/tools/browser.ts
@@ -1897,16 +2174,52 @@ msgstr ""
 msgid "This computer has too many unsent remote drafts. Save or clear a draft before starting another."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer pairs with a host only through its SSH connection. Nothing was saved. Nothing was sent. Connect again over SSH."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This computer pairs with a host only through its SSH connection. Nothing was sent. Connect again over SSH."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is too old. Nothing was saved. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is version {version}, which is too old. Nothing was saved. Sotto needs OpenSSH 8.4 or later. Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is version {version}, which is too old. Nothing was saved. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then add the host again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is version {version}, which is too old. Sotto needs OpenSSH 8.4 or later. Update it through Windows Update, or through OpenSSH Client in Settings > System > Optional features, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This computer's OpenSSH is version {version}, which is too old. Sotto needs OpenSSH 8.4 or later. Update OpenSSH on this computer, then reconnect."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This device is no longer paired and could not pair again. Check the host, then connect again."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This device is no longer paired and could not pair again. Nothing was saved. Check the host, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This device needs to connect again or be paired on the host."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This device needs to connect again or be paired on the host. Nothing was saved."
 msgstr ""
 
 #: src/main/agents/socketHostService.ts
@@ -1926,8 +2239,12 @@ msgstr ""
 msgid "This folder is on the host machine. Open it there."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "This host already runs Sotto {version}, which this computer installs when Sotto restarts. Nothing on the host was lost. Restart Sotto to finish its update, then try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host already runs Sotto {version}, which this computer installs when Sotto restarts. Nothing was saved. Nothing on the host was lost. Restart Sotto to finish its update, then try again."
 msgstr ""
 
 #: src/main/agents/ipc.ts
@@ -1935,8 +2252,12 @@ msgstr ""
 msgid "This host cannot list its folders yet. Update Sotto on it, then try again."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "This host connection was closed."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host connection was closed. Nothing was saved."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -2023,11 +2344,55 @@ msgstr ""
 msgid "This host is not connected. Nothing was started. Switch it on, then try again."
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, press Stop host, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, press Stop host, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, press Stop host, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, press Stop host, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a different version of Sotto. Nothing was saved. Nothing on the host was lost. Update it from the Threads page, or put the Sotto {version} host in its installation folder, stop the host on that machine, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host is running a newer version of Sotto than this computer. Nothing was saved. Nothing on the host was lost. Update Sotto on this computer, then connect again."
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "This host no longer needs an update. Nothing was changed."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This host refused this device here. Nothing was saved. The pairing is kept."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This host refused this device here. The pairing is kept."
 msgstr ""
 
@@ -2035,11 +2400,19 @@ msgstr ""
 msgid "This host was forgotten. Nothing was saved."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "This is a different host. Check the address before pairing."
 msgstr ""
 
-#: src/main/hosts/desktopHosts.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This is a different host. Nothing was saved. Check the address before pairing."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This is the same host as {host}, which is already saved. Nothing was saved. Switch {host} on in the list instead."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This is the same host as {host}, which is already saved. Switch {host} on in the list instead."
 msgstr ""
 
@@ -2075,8 +2448,12 @@ msgstr ""
 msgid "This page stopped unexpectedly. Reload to reopen it."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "This pairing code could not be used. Make a new code on the host and try again."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "This pairing code could not be used. Nothing was saved. Make a new code on the host and try again."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -2095,7 +2472,11 @@ msgstr ""
 msgid "This request is no longer pending. Refresh the thread."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "This result belongs to an earlier connection. Nothing was saved. Refresh the host."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr ""
 
@@ -2175,8 +2556,16 @@ msgstr ""
 msgid "To remove them, run this on {name}:"
 msgstr ""
 
+#: src/main/hosts/hostFailureWords.ts
+msgid "To see what SSH itself says, run this in a terminal on this computer:"
+msgstr ""
+
 #: src/main/hosts/hostBootStart.ts
 msgid "To see why the unit failed, run this on {name}:"
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "To see why, run this on the SSH host:"
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -2252,8 +2641,12 @@ msgstr ""
 msgid "Usage could not be read."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
 msgid "Use a host HTTP or HTTPS address without credentials in its URL."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Use a host HTTP or HTTPS address without credentials in its URL. Nothing was saved."
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -2272,8 +2665,20 @@ msgstr ""
 msgid "Wait for active or pending work to finish before recovery."
 msgstr ""
 
-#: src/main/agents/socketHostService.ts
+#: src/main/hosts/hostFailureWords.ts
+msgid "Wait for the current host request to finish."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Wait for the current host request to finish. Nothing was saved."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
 msgid "Wait for the pending host request to finish."
+msgstr ""
+
+#: src/main/hosts/hostFailureWords.ts
+msgid "Wait for the pending host request to finish. Nothing was saved."
 msgstr ""
 
 #: src/main/app/applicationMenu.ts

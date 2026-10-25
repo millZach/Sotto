@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
+import { shownSignInAnswer } from '../../shared/interfaceWords'
 import { HOSTS_GET, HOSTS_COMMAND, hostsCommandSchema, type HostsState } from '../../shared/hosts'
 import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCALE_DOWNLOAD } from '../../shared/hostDevices'
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostClientUpdateRequestSchema, hostOpenCodeSignInRequestSchema, hostProviderActionSchema, hostSignInRequestSchema } from '../../shared/hostProviders'
@@ -44,7 +45,8 @@ export function registerHostsIpc(ipc: IpcMainAdapter, hosts: DesktopHosts, sende
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Hosts in the main Sotto window.`)
     const parsed = z.tuple([hostOpenCodeSignInRequestSchema]).safeParse(args)
     if (!parsed.success) return { status: 'refused', message: t`Sotto could not read that request, so nothing was sent to the host. Close this and try again.` }
-    return hosts.opencodeSignIn(parsed.data[0])
+    // The host answers in English; this window reads OpenCode's sentences in the interface language (ADR-0123).
+    return hosts.opencodeSignIn(parsed.data[0]).then(shownSignInAnswer)
   })
   // Tailscale and the SSH setup are read on each request, so a device that just came online, or an alias
   // added a moment ago, is listed.

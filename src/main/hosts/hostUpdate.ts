@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 import { createHash } from 'node:crypto'
 import { LEGACY_MANAGEMENT_UPDATE } from '../../shared/hostProtocol'
@@ -81,7 +82,14 @@ interface Entry {
   /** The version this update installs: set while it is offered, and kept from the moment it starts. */
   to: string
   phase: HostUpdatePhase; step?: HostUpdateStep | undefined; route?: HostUpdateRoute | undefined
-  failure?: HostUpdateFailure | undefined; error?: string | undefined
+  /**
+   * Why the update stopped, and the names its sentences use as they were then. The sentences are worded when the panel
+   * reads them, in the interface language shown then (ADR-0123); `shown` keeps the last wording for that language.
+   */
+  stopped?: StoppedUpdate | undefined
+  shown?: { readonly locale: string; readonly stopped: StoppedUpdate; readonly failure: HostUpdateFailure } | undefined
+  /** Why the last press was refused: the host was not connected. Worded when the panel reads it. */
+  error?: 'not-connected' | undefined
   /** The launch script's code, or this computer's, for the failure shown. */
   reason?: string | undefined
   /** The archive the host asked for, which names its platform. */
@@ -98,6 +106,8 @@ interface Entry {
   /** The waiting version this update was installing went away partway, too late to stop: the card says so once it is done. */
   withdrawn?: boolean | undefined
 }
+/** A stopped update as the entry keeps it: the stop, and the host's name and versions its sentences name. */
+interface StoppedUpdate { readonly stop: UpdateStopped; readonly name: string; readonly from: string; readonly to: string; readonly file?: string | undefined }
 /** What a failure's sentence names: the archive, whether the old host started again, a Node range and version, a host version. */
 interface StopDetail { readonly file?: string | undefined; readonly restarted?: boolean | undefined; readonly range?: string | undefined; readonly node?: string | undefined; readonly version?: string | undefined }
 /** A failure the update itself found, with the launch script's code, or a code of its own for this computer's part. */
@@ -292,10 +302,10 @@ export class HostUpdates {
     if (entry.phase !== 'needs' && entry.phase !== 'failed') return
     if (!entry.owned) throw new Error(t`Sotto did not start the host on ${{ host: entry.name }}, so it cannot restart it. Nothing was changed. Update it on ${{ host: entry.name }} with the commands below.`)
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
-    if (!candidate) { entry.error = t`${{ host: entry.name }} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.`; return }
+    if (!candidate) { entry.error = 'not-connected'; return }
     this.refresh(entry, candidate)
     if (!this.needsUpdate(candidate)) { this.entries.delete(entry.id); return }
-    if (this.workingNow(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
+    if (this.workingNow(entry).length) { entry.phase = 'confirm'; delete entry.stopped; return }
     this.begin(entry)
   }
   private async stopThreadsAndUpdate(entry: Entry): Promise<void> {
@@ -316,14 +326,14 @@ export class HostUpdates {
     // update waits, and sync begins it once the line is empty. One pressed during the archive check has run nothing yet.
     if (this.clientsUpdating(entry)) {
       entry.run?.abort()
-      Object.assign(entry, { phase: 'waiting', step: undefined, route: undefined, held: undefined, run: undefined, failure: undefined, reason: undefined })
+      Object.assign(entry, { phase: 'waiting', step: undefined, route: undefined, held: undefined, run: undefined, stopped: undefined, reason: undefined })
       this.sync(true)
       return
     }
     const run = new AbortController()
     entry.run?.abort()
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
-    const start = { phase: 'updating', step: 'download', route: 'host', failure: undefined, reason: undefined, error: undefined, installing: false, withdrawn: undefined, run } as const
+    const start = { phase: 'updating', step: 'download', route: 'host', stopped: undefined, reason: undefined, error: undefined, installing: false, withdrawn: undefined, run } as const
     // The releases page has not yet said whether the waiting version's host is published: the update waits for its
     // answer before fixing the version, rather than installing this computer's and then the waiting one (sync resumes it).
     if (candidate && this.checkingFor(candidate)) { Object.assign(entry, start, { held: true }); this.sync(true); return }
@@ -374,7 +384,7 @@ export class HostUpdates {
       delete entry.run
       if (signal.aborted) { Object.assign(entry, { phase: 'needs', step: undefined, route: undefined }); return }
       const stopped = error instanceof UpdateStopped ? error : new UpdateStopped('update-lost', entry.step ?? 'download')
-      Object.assign(entry, { phase: 'failed', failure: this.describe(entry, stopped), reason: stopped.reason, step: undefined })
+      Object.assign(entry, { phase: 'failed', stopped: { stop: stopped, name: entry.name, from: entry.from, to: entry.to, file: entry.file }, reason: stopped.reason, step: undefined })
     } finally { this.sync(true) }
   }
   /** Resolves once the host's client update line is empty, or the update is no longer the one running. */
@@ -423,13 +433,12 @@ export class HostUpdates {
     return { file, sha256 }
   }
   /** What happened, what runs now, and what to do: the three sentences a failure shows. */
-  private describe(entry: Entry, stopped: UpdateStopped): HostUpdateFailure {
-    const { name, from, to } = entry
+  private describe({ stop: stopped, name, from, to, file }: StoppedUpdate): HostUpdateFailure {
     const kept = t`${name} still runs ${from}. Nothing was lost.`
     const byHand = t`Try again, or update it by hand on ${name} with the commands below.`
     const back = (): string => t`${name}'s threads are back. Nothing was lost.`
     const say = (message: string, next = byHand, keptNow = kept): HostUpdateFailure => ({ step: stopped.step, message, kept: keptNow, next })
-    const platform = (stopped.detail.file ?? entry.file)?.replace(/^Sotto-host-\d+\.\d+\.\d+(?:-owl\.\d{8}\.[1-9]\d*)?-/u, '').replace(/\.tar\.gz$/u, '')
+    const platform = (stopped.detail.file ?? file)?.replace(/^Sotto-host-\d+\.\d+\.\d+(?:-owl\.\d{8}\.[1-9]\d*)?-/u, '').replace(/\.tar\.gz$/u, '')
     switch (stopped.reason) {
       case 'desktop-unreachable': return say(t`${name} could not download ${to} from GitHub, and this computer could not download it either.`, t`Check that this computer and ${name} are online, then try again, or update it by hand on ${name}.`)
       case 'copy-incomplete': return say(t`${name} could not reach GitHub, so this computer downloaded ${to}, but copying it to ${name} over SSH stopped partway.`, t`Check that ${name} is online, then try again, or update it by hand on ${name}.`)
@@ -487,12 +496,29 @@ export class HostUpdates {
     const withdrawn = entry.phase === 'done' && entry.withdrawn
       ? t`${{ host: entry.name }} was already installing ${{ to: entry.to }} when this computer stopped updating to it, so it finished. Nothing was lost. ${{ host: entry.name }} runs a newer Sotto than this computer until this computer updates too.`
       : undefined
-    const error = entry.error ?? withdrawn ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
+    const refused = entry.error === 'not-connected'
+      ? t`${{ host: entry.name }} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.` : undefined
+    const error = refused ?? withdrawn ?? (this.options.requiresManagementUpdate?.(entry.hostId) ? LEGACY_MANAGEMENT_UPDATE : undefined)
+    const failure = entry.stopped ? this.failure(entry, entry.stopped) : undefined
     return { id: entry.id, name: entry.name, from: entry.from, to: entry.to, phase: entry.phase, owned: entry.owned,
       working: this.working(entry).length, commands: this.commands(entry), ...(entry.boot ? { boot: true } : {}),
       ...(this.clientsUpdating(entry) ? { clientsUpdating: true } : {}),
       ...(entry.step ? { step: entry.step } : {}), ...(entry.route ? { route: entry.route } : {}),
-      ...(entry.failure ? { failure: entry.failure } : {}), ...(error ? { error } : {}) }
+      ...(failure ? { failure } : {}), ...(error ? { error } : {}) }
+  }
+  /**
+   * A stopped update's three sentences, worded once for each stop and interface language. The panel's state is read on
+   * every change while a host waits for its clients, so the wording is not done again on each read.
+   */
+  private failure(entry: Entry, stopped: StoppedUpdate): HostUpdateFailure {
+    if (entry.shown?.stopped === stopped && entry.shown.locale === i18n.locale) return entry.shown.failure
+    const failure = this.describe(stopped)
+    entry.shown = { locale: i18n.locale, stopped, failure }
+    return failure
+  }
+  /** The interface language changed: a failure or refusal on the panel is worded again in it (ADR-0123). */
+  languageChanged(): void {
+    if ([...this.entries.values()].some(entry => entry.stopped || entry.error || entry.withdrawn)) this.sync(true)
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
   private workingNow(entry: Entry): readonly string[] { return this.options.threads.workingNow(entry.hostId) }

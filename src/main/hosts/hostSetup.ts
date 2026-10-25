@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import type { AgentRequest } from '../../shared/agents'
@@ -6,7 +7,8 @@ import { isSottoRequest, SOTTO_REQUEST_PREFIX, type SottoThreadRequests } from '
 import type { HostSetupSource } from './desktopHosts'
 import { hostSetupBrief } from './hostSetupBrief'
 import { HOST_SETUP_TOOL_NAMES, type AgentJobToolName, type HostSetupToolHandlers, type HostSetupToolReply } from './hostSetupTools'
-import { validateSshHost } from './sshConfiguration'
+import { validateSshHost } from './sshHostValidation'
+import { englishOf } from './hostFailureWords'
 
 type Connection = Omit<RemoteHost, 'enabled'>
 /** What the setup asks of the saved hosts: Add host's own check and add, and where each stands. */
@@ -18,6 +20,8 @@ export interface HostSetupHosts {
   /** Forgets the saved host with this ID, as its row's Forget does; false when it is not saved. */
   forget(id: string): Promise<boolean>
   attempt(id: string): HostStatus | undefined
+  /** The attempt as the agent reads it: its failure in English, whatever the interface language (ADR-0123). */
+  attemptInEnglish?(id: string): HostStatus | undefined
   cancelAttempt(id: string): Promise<void>
   /** The saved host's name when this target and port are saved already. */
   savedAs(target: string, sshPort: number | undefined): string | undefined
@@ -62,6 +66,7 @@ interface Run {
 }
 /** Reasons that are the user's to answer, not something the agent fixed, so a later pass is not the agent's. */
 const ANSWERED_BY_USER = new Set(['tailscale-unapproved', 'prompt-unanswered', 'host-key-rejected', 'cancelled'])
+const NO_REQUESTS: ReadonlyMap<string, readonly AgentRequest[]> = new Map()
 const running = (run: Run | undefined): run is Run => run !== undefined && (run.phase === 'starting' || run.phase === 'running')
 
 /**
@@ -72,6 +77,8 @@ const running = (run: Run | undefined): run is Run => run !== undefined && (run.
  */
 export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
   private current: Run | undefined
+  /** The waiting request as last worded: for which request and thread, in which language. */
+  private shownRequest: { readonly request: object; readonly threadId: string; readonly locale: string; readonly requests: ReadonlyMap<string, readonly AgentRequest[]> } | undefined
   private readonly listeners = new Set<() => void>()
   private readonly requestListeners = new Set<() => void>()
   private revokeTool: ((threadId: string) => void) | undefined
@@ -111,16 +118,24 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
       if (attemptId) await this.options.hosts.cancelAttempt(attemptId).catch(() => undefined)
     }
   }
-  // Sotto's own request in the setup thread: "Add forge as a host?".
+  // Sotto's own request in the setup thread: "Add forge as a host?". The coordinator reads it on every publication while
+  // it waits, so it is worded once for its request and the interface language, and read again only when either changes.
   requests(): ReadonlyMap<string, readonly AgentRequest[]> {
     const run = this.current
-    if (!run?.request || !run.threadId) return new Map()
+    if (!run?.request || !run.threadId) return NO_REQUESTS
+    const shown = this.shownRequest
+    if (shown?.request === run.request && shown.threadId === run.threadId && shown.locale === i18n.locale) return shown.requests
     const request: AgentRequest = { id: run.request.id, kind: 'permission',
-      text: t`Add ${{ host: run.name }} as a host?\nSotto connects to ${{ target: run.connection.target }}, starts the host there if it is not running and pairs this computer. ${{ host: run.name }} is saved in Settings > Hosts & phones once it answers.`,
+      text: t`Add ${{ host: run.name }} as a host?
+Sotto connects to ${{ target: run.connection.target }}, starts the host there if it is not running and pairs this computer. ${{ host: run.name }} is saved in Settings > Hosts & phones once it answers.`,
       options: [], permissionChoices: [{ id: 'add', label: t`Add ${{ host: run.name }}`, kind: 'allow-once' }, { id: 'decline', label: t`Don’t add`, kind: 'deny' }],
       context: { toolName: 'Add host' } }
-    return new Map([[run.threadId, [request]]])
+    const requests = new Map([[run.threadId, [request]]])
+    this.shownRequest = { request: run.request, threadId: run.threadId, locale: i18n.locale, requests }
+    return requests
   }
+  /** The interface language changed: a waiting "Add host?" is worded again in it (ADR-0123). */
+  languageChanged(): void { if (this.current?.request) this.requestsChanged() }
   answer(threadId: string, requestId: string, approved: boolean): void {
     const run = this.current
     if (!run?.request || run.request.id !== requestId || run.threadId !== threadId) throw new Error(t`This request is no longer pending. Refresh the thread.`)
@@ -229,14 +244,14 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     run.busy = true; run.attemptId = id; run.purpose = 'check'; this.emit()
     let status: HostStatus | undefined
     try { status = await this.options.hosts.check({ ...run.connection, id }) }
-    catch (error) { return { isError: true, result: { ok: false, message: error instanceof Error ? error.message : 'The check could not start. Nothing was changed.' } } }
+    catch (error) { return { isError: true, result: { ok: false, message: englishOf(error, 'The check could not start. Nothing was changed.') } } }
     finally { run.busy = false; this.emit() }
     if (this.current !== run || !running(run)) return { isError: true, result: { ok: false, message: 'The setup was stopped. Nothing was saved.' } }
     if (!status) return { isError: true, result: { ok: false, message: 'The check was cancelled before it finished. Nothing was saved.' } }
     this.learn(run, status)
     this.emit()
     if (status.checked) return { result: { ok: true, device: run.name, message: `${run.name} answered: Sotto reached it, signed in, found the host installed and started it. Nothing was paired or saved. Call host_add to add it.` } }
-    return { isError: true, result: this.failure(status) }
+    return { isError: true, result: this.failure(this.forAgent(id) ?? status) }
   }
   private async add(run: Run): Promise<HostSetupToolReply> {
     const answer = await new Promise<'add' | 'decline' | 'stopped'>(resolve => {
@@ -246,12 +261,12 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     if (answer === 'stopped' || this.current !== run || !running(run)) return { isError: true, result: { added: false, message: 'The setup was stopped. Nothing was saved.' } }
     if (answer === 'decline') return { result: { added: false, declined: true, message: `The user chose not to add ${run.name} now. Nothing was saved. Ask them what they want to do next.` } }
     run.busy = true; run.attemptId = run.connection.id; run.purpose = 'add'; this.emit()
-    let refused: unknown
+    let refused: string | undefined
     try { await this.options.hosts.add(run.connection) }
-    catch (error) { refused = error instanceof Error ? error : new Error('The host could not be added. Nothing was saved.') }
+    catch (error) { refused = error instanceof Error ? englishOf(error, '') : 'The host could not be added. Nothing was saved.' }
     finally { run.busy = false; this.emit() }
     if (this.current !== run || !running(run)) return this.stoppedDuringAdd(run)
-    if (refused instanceof Error) return { isError: true, result: { added: false, message: refused.message } }
+    if (refused !== undefined) return { isError: true, result: { added: false, message: refused } }
     const status = this.options.hosts.attempt(run.connection.id)
     if (status) this.learn(run, status)
     if (status?.phase === 'connected') {
@@ -263,7 +278,7 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     // row says what to update, and the dialog must not go on saying nothing was saved.
     if (status && this.options.hosts.savedAs(run.connection.target, run.connection.sshPort)) {
       run.phase = 'failed'
-      const why = status.error ?? 'Its row in Settings > Hosts & phones says what to do.'
+      const why = this.forAgent(run.connection.id)?.error ?? 'Its row in Settings > Hosts & phones says what to do.'
       const shownWhy = status.error ?? t`Its row in Settings > Hosts & phones says what to do.`
       run.error = t`${{ host: run.name }} was saved as a host but is not connected. ${{ why: shownWhy }}`
       this.end(run); this.emit()
@@ -271,7 +286,7 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
       return { isError: true, result: { added: true, connected: false, message: `${run.name} was saved as a host but is not connected. ${why}` } }
     }
     this.emit()
-    return { isError: true, result: status ? { added: false, ...this.failure(status) } : { added: false, message: 'The add was cancelled before it finished. Nothing was saved.' } }
+    return { isError: true, result: status ? { added: false, ...this.failure(this.forAgent(run.connection.id) ?? status) } : { added: false, message: 'The add was cancelled before it finished. Nothing was saved.' } }
   }
   /**
    * Stop setup landed while the add ran. An add past pairing cannot be cancelled and may have saved the host just
@@ -289,6 +304,8 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     return { isError: true, result: { added: false, message: 'The setup was stopped as the host was added, so Sotto forgot it again. Nothing is saved.' } }
   }
   /** What a check or add that stopped says: the step, the reason code, Add host's sentence and its fix. */
+  /** An attempt as the agent reads it, in English (ADR-0123); the dialog shows the same attempt in the interface language. */
+  private forAgent(id: string): HostStatus | undefined { return this.options.hosts.attemptInEnglish?.(id) }
   private failure(status: HostStatus): Record<string, unknown> {
     return { ok: false, step: status.step, ...(status.reason ? { reason: status.reason } : {}), message: status.error ?? 'The connection stopped before the host answered. Nothing was saved.',
       ...(status.fix ? { fix: status.fix } : {}), ...(status.tailscale ? { tailscaleAsked: true } : {}) }
@@ -298,7 +315,7 @@ export class HostSetup implements HostSetupSource, HostSetupToolHandlers {
     const last = !status ? undefined : status.checked ? { kind: run.purpose, ok: true }
       : status.phase === 'connected' ? { kind: run.purpose, ok: true, connected: true }
         : status.phase === 'connecting' ? { kind: run.purpose, running: true, step: status.step, ...(status.tailscale?.waiting ? { waitingForTailscaleApproval: true } : {}), ...(status.prompt ? { waitingForSshAnswer: true } : {}) }
-          : { kind: run.purpose, ...this.failure(status) }
+          : { kind: run.purpose, ...this.failure(this.forAgent(run.attemptId!) ?? status) }
     return { device: run.name, target: run.connection.target, ...(run.connection.sshPort ? { sshPort: run.connection.sshPort } : {}),
       installationFolder: run.connection.installPath, dataFolder: run.connection.dataDirectory, sottoVersion: this.options.version,
       ...(run.request ? { waitingForUser: 'The user has not answered whether to add this host yet.' } : {}), ...(last ? { last } : { last: 'No check has run yet.' }) }

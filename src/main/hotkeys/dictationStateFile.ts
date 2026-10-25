@@ -1,10 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { closeSync, fchmodSync, lstatSync, openSync, renameSync, unlinkSync, writeFileSync, type Stats } from 'node:fs'
 import { dirname, join } from 'node:path'
-
-import { i18n, type MessageDescriptor } from '@lingui/core'
-import { msg, t } from '@lingui/core/macro'
-
 import { WIDGET_ERROR_CODES, type WidgetErrorCode, type WidgetSnapshot } from '../../shared/dictation'
 import type { WidgetEdge } from '../windows/widgetPlacementMath'
 import { dictationSocketPath } from './dictationCommand'
@@ -26,50 +22,52 @@ export interface ShellDictationState {
 
 // Only reviewed copy can reach the file. Neither a renderer error message nor
 // a provider's response is accepted, even if a caller carries extra fields.
+// The file is written to disk, so its copy stays English (ADR-0123); the shell
+// pill has no interface language of its own yet.
 const nothingRecordedDetail = {
-  MIC_PERMISSION_DENIED: msg`Microphone access was denied. Allow it, then try again.`,
-  MIC_START_FAILED: msg`The microphone could not start. Try again.`,
-  MIC_NOT_SET_UP: msg`Set up your microphone in Settings.`,
-  SPEECH_MODEL_NOT_READY: msg`Speech model not ready. Nothing recorded. See Settings.`,
-  NO_SPEECH: msg`No speech was heard. Dictate again.`,
-  SETTINGS_UNAVAILABLE: msg`Settings could not be read. Open Sotto and try again.`,
-} as const satisfies Partial<Record<WidgetErrorCode, MessageDescriptor>>
+  MIC_PERMISSION_DENIED: 'Microphone access was denied. Allow it, then try again.',
+  MIC_START_FAILED: 'The microphone could not start. Try again.',
+  MIC_NOT_SET_UP: 'Set up your microphone in Settings.',
+  SPEECH_MODEL_NOT_READY: 'Speech model not ready. Nothing recorded. See Settings.',
+  NO_SPEECH: 'No speech was heard. Dictate again.',
+  SETTINGS_UNAVAILABLE: 'Settings could not be read. Open Sotto and try again.',
+} as const satisfies Partial<Record<WidgetErrorCode, string>>
 
 // These failures follow captured audio. Say it was lost, or where the completed
 // text remains. Output recovery in Dictate exists even when history is off.
-const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof nothingRecordedDetail | 'MIC_DEVICE_NOT_FOUND'>, MessageDescriptor>> = {
-  RECORDING_FAILED: msg`Recording stopped and was lost. Dictate again.`,
-  TRANSCRIPTION_MODEL_NOT_READY: msg`Speech model not ready. Recording lost. See Settings.`,
-  TRANSCRIPTION_FAILED: msg`Could not transcribe. Recording lost. Dictate again.`,
-  OUTPUT_UNAVAILABLE: msg`Text kept in Sotto. Open Dictate to copy it.`,
-  OUTPUT_FAILED: msg`Text kept in Sotto. Open Dictate to copy it.`,
-  DESKTOP_CLIPBOARD_UNAVAILABLE: msg`Text kept in Sotto. Open Dictate to copy it.`,
-  HISTORY_FAILED: msg`Text delivered and on the clipboard. History not saved.`,
+const capturedDetail: Readonly<Record<Exclude<WidgetErrorCode, keyof typeof nothingRecordedDetail | 'MIC_DEVICE_NOT_FOUND'>, string>> = {
+  RECORDING_FAILED: 'Recording stopped and was lost. Dictate again.',
+  TRANSCRIPTION_MODEL_NOT_READY: 'Speech model not ready. Recording lost. See Settings.',
+  TRANSCRIPTION_FAILED: 'Could not transcribe. Recording lost. Dictate again.',
+  OUTPUT_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
+  OUTPUT_FAILED: 'Text kept in Sotto. Open Dictate to copy it.',
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Text kept in Sotto. Open Dictate to copy it.',
+  HISTORY_FAILED: 'Text delivered and on the clipboard. History not saved.',
 }
 // The same code also follows a microphone disappearing while listening. The
 // controller carries whether capture started; do not infer it from file order.
-const failureDetail: Readonly<Record<WidgetErrorCode, MessageDescriptor>> = {
+const failureDetail: Readonly<Record<WidgetErrorCode, string>> = {
   ...nothingRecordedDetail, ...capturedDetail,
-  MIC_DEVICE_NOT_FOUND: msg`No microphone was found. Connect one, then try again.`,
+  MIC_DEVICE_NOT_FOUND: 'No microphone was found. Connect one, then try again.',
 }
 
 // The shell pill displays detail directly; its buttons supply Try again and
 // Discard. Keep the reason and recording outcome in every kept failure.
-const keptFailureDetail: Readonly<Record<WidgetErrorCode, MessageDescriptor>> = {
-  MIC_PERMISSION_DENIED: msg`Microphone access denied. Recording kept.`,
-  MIC_DEVICE_NOT_FOUND: msg`No microphone found. Recording kept.`,
-  MIC_START_FAILED: msg`Microphone could not start. Recording kept.`,
-  MIC_NOT_SET_UP: msg`No microphone set up. Recording kept. Check Settings.`,
-  RECORDING_FAILED: msg`Recording stopped unexpectedly. Recording kept.`,
-  NO_SPEECH: msg`No speech was heard. Recording kept.`,
-  SPEECH_MODEL_NOT_READY: msg`Speech model not ready. Recording kept. See Settings.`,
-  TRANSCRIPTION_MODEL_NOT_READY: msg`Speech model not ready. Recording kept. See Settings.`,
-  TRANSCRIPTION_FAILED: msg`Could not transcribe. Recording kept.`,
-  OUTPUT_UNAVAILABLE: msg`Text could not be delivered. Recording kept. Open Sotto.`,
-  OUTPUT_FAILED: msg`Text could not be delivered. Recording kept. Open Sotto.`,
-  DESKTOP_CLIPBOARD_UNAVAILABLE: msg`Clipboard unavailable. Recording kept. Open Dictate.`,
-  HISTORY_FAILED: msg`Text delivered; history failed. Recording kept.`,
-  SETTINGS_UNAVAILABLE: msg`Settings could not be read. Recording kept. Open Sotto.`,
+const keptFailureDetail: Readonly<Record<WidgetErrorCode, string>> = {
+  MIC_PERMISSION_DENIED: 'Microphone access denied. Recording kept.',
+  MIC_DEVICE_NOT_FOUND: 'No microphone found. Recording kept.',
+  MIC_START_FAILED: 'Microphone could not start. Recording kept.',
+  MIC_NOT_SET_UP: 'No microphone set up. Recording kept. Check Settings.',
+  RECORDING_FAILED: 'Recording stopped unexpectedly. Recording kept.',
+  NO_SPEECH: 'No speech was heard. Recording kept.',
+  SPEECH_MODEL_NOT_READY: 'Speech model not ready. Recording kept. See Settings.',
+  TRANSCRIPTION_MODEL_NOT_READY: 'Speech model not ready. Recording kept. See Settings.',
+  TRANSCRIPTION_FAILED: 'Could not transcribe. Recording kept.',
+  OUTPUT_UNAVAILABLE: 'Text could not be delivered. Recording kept. Open Sotto.',
+  OUTPUT_FAILED: 'Text could not be delivered. Recording kept. Open Sotto.',
+  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Clipboard unavailable. Recording kept. Open Dictate.',
+  HISTORY_FAILED: 'Text delivered; history failed. Recording kept.',
+  SETTINGS_UNAVAILABLE: 'Settings could not be read. Recording kept. Open Sotto.',
 }
 
 export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictationState, 'dictation' | 'state' | 'detail' | 'kept'> {
@@ -83,16 +81,16 @@ export function shellDictationFields(snapshot: WidgetSnapshot): Pick<ShellDictat
     case 'requesting-permission': return { dictation, state: 'starting', detail: null, kept: false }
     case 'listening': return { dictation, state: 'listening', detail: null, kept: false }
     case 'processing': return { dictation, state: 'transcribing', detail: null, kept: false }
-    case 'success': return { dictation, state: snapshot.output === 'pasted' ? 'delivered' : 'copied', detail: snapshot.output === 'pasted' ? null : t`Copied — paste with Super+V`, kept: false }
+    case 'success': return { dictation, state: snapshot.output === 'pasted' ? 'delivered' : 'copied', detail: snapshot.output === 'pasted' ? null : 'Copied — paste with Super+V', kept: false }
     case 'error': return {
       dictation,
       state: 'failed',
       detail: (WIDGET_ERROR_CODES as readonly string[]).includes(snapshot.code)
-        ? snapshot.kept === true ? i18n._(keptFailureDetail[snapshot.code])
+        ? snapshot.kept === true ? keptFailureDetail[snapshot.code]
           : snapshot.code === 'MIC_DEVICE_NOT_FOUND' && snapshot.captureStarted === true
-            ? t`Microphone lost. Recording lost. Connect it again.`
-            : i18n._(failureDetail[snapshot.code])
-        : snapshot.kept === true ? t`Dictation failed. Recording kept.` : t`Dictation failed. Recording lost. Dictate again.`,
+            ? 'Microphone lost. Recording lost. Connect it again.'
+            : failureDetail[snapshot.code]
+        : snapshot.kept === true ? 'Dictation failed. Recording kept.' : 'Dictation failed. Recording lost. Dictate again.',
       kept: snapshot.kept === true,
     }
   }

@@ -3,9 +3,9 @@ import { plural, t } from '@lingui/core/macro'
 import { HOST_CANNOT_STAGE_SCREENSHOTS, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, SCREENSHOTS_TOO_LARGE_IN_TOTAL, type ProviderId } from './agents'
 import type { BootUnsupportedReason } from './bootStart'
 import type { TranscriptionErrorCode } from './dictation'
-import type { OwnServerRefusal } from './ownModelServers'
-import { HOST_BUSY, hostIsNewer, hostIsOlder, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from './hostProtocol'
+import { HOST_BUSY, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from './hostProtocol'
 import type { HostProviderJobCase } from './hostProviders'
+import { SIGN_IN_WORDS } from './opencodeSignIn'
 import type { EffortColor, GitMergeMethod } from './settings'
 import { THREAD_STARTS_UNSUPPORTED } from './threadStarts'
 import type { WorkerRoleId } from './workerRoles'
@@ -122,22 +122,6 @@ export const HOST_ANSWER_LOST_WORDS = {
   page: (host: string): string => t`${host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again.`,
 } as const
 
-/**
- * A host of another Sotto version, and which side to bring up to date (`hostVersionMismatch`): one whole sentence for
- * each case, so each language can word it.
- */
-export function hostVersionMismatchWords(clientVersion: string, hostVersion: string | undefined, owned: boolean, newer = hostIsNewer(hostVersion, clientVersion)): string {
-  if (newer) return t`This host is running a newer version of Sotto than this computer. Nothing on the host was lost. Update Sotto on this computer, then connect again.`
-  const version = clientVersion
-  // A host that said which older Sotto it runs is offered an update on the Threads page (ADR-0040).
-  if (hostIsOlder(hostVersion, clientVersion)) return owned
-    ? t`This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, press Stop host, then connect again.`
-    : t`This host is running a different version of Sotto. Nothing on the host was lost. Update it from the Threads page, or put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.`
-  return owned
-    ? t`This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, press Stop host, then connect again.`
-    : t`This host is running a different version of Sotto. Nothing on the host was lost. Put the Sotto ${version} host in its installation folder, stop the host on that machine, then connect again.`
-}
-
 /** The host answered that it is busy (`HOST_BUSY`). */
 export function hostBusyWords(): string {
   return t`The host is busy. Nothing was lost. Try again in a moment.`
@@ -190,38 +174,40 @@ export const SIGN_IN_INTERFACE_WORDS = {
 } as const
 
 /**
- * A refusal about one of the user's own model servers (`ownServerRefusalWords`), by its reason, in the interface
- * language. Main and the host answer with the reason and the English; a window says it with these.
+ * A sentence an OpenCode sign-in answered with, in the interface language: one of `SIGN_IN_WORDS`, which this computer's
+ * OpenCode and a host's say in English, as its twin above; anything else, such as OpenCode's own words, as it came.
  */
-export function ownServerRefusalInterfaceWords(reason: OwnServerRefusal, host: string, serverName = host): string {
-  const name = serverName
-  switch (reason) {
-    case 'bad-address': return t`That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888.`
-    case 'public-http': return t`${host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet.`
-    case 'unreachable': return t`Nothing answered at ${host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again.`
-    case 'key-needed': return t`${host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again.`
-    case 'key-refused': return t`${host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again.`
-    case 'no-models': return t`${host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again.`
-    case 'not-openai': return t`Something answered at ${host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again.`
-    case 'opencode-not-running': return t`Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again.`
-    case 'sign-in-failed': return t`OpenCode did not take the key for ${name}, so nothing was saved. Try adding the server again.`
-    case 'not-found': return t`That server is no longer saved. Nothing was changed.`
-    case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`
-    case 'already-added': return t`${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`
-    case 'failed': return t`Sotto could not finish that, so nothing was changed. Try again.`
-    case 'removed-partly': return t`OpenCode no longer has the key for ${name}, but Sotto could not take ${name} off its list. Remove it again.`
-    case 'added-partly': return t`OpenCode did not take the key for ${name}, and Sotto could not take ${name} back off its list, so it is saved without its key. Remove it, then add it again.`
+export function signInWordsInInterfaceLanguage(sentence: string): string {
+  for (const [pattern, say] of signInPatterns ??= signInSentencePatterns()) {
+    const found = pattern.exec(sentence)
+    if (found) return say(found[1] ?? '')
   }
+  return sentence
 }
-
-/** Cursor's sign-in outcomes (`CURSOR_SIGN_IN_WORDS`), as main and the windows show them. */
-export const CURSOR_SIGN_IN_INTERFACE_WORDS = {
-  waiting: (): string => t`Finish signing in on cursor.com in your browser.`,
-  notRunning: (): string => t`Cursor’s sign-in is not available right now. Nothing was changed.`,
-  pageRefused: (): string => t`Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead.`,
-  signedOut: (): string => t`Cursor is signed out on this computer.`,
-  signOutFailed: (): string => t`Cursor could not sign out. Nothing was changed. Run agent logout in a terminal to try again.`,
-} as const
+/** An OpenCode sign-in answer as a window shows it: its sentences in the interface language, everything else as it was. */
+export function shownSignInAnswer<T>(answer: T): T {
+  if (answer === null || typeof answer !== 'object' || Array.isArray(answer)) return answer
+  const shown: Record<string, unknown> = { ...answer as Record<string, unknown> }
+  for (const key of ['message', 'warning'] as const) if (typeof shown[key] === 'string') shown[key] = signInWordsInInterfaceLanguage(shown[key])
+  if (shown.sources !== undefined) shown.sources = shownSignInAnswer(shown.sources)
+  return shown as T
+}
+const SENTINEL = '\u0000'
+let signInPatterns: readonly (readonly [RegExp, (value: string) => string])[] | undefined
+/** Each sentence of `SIGN_IN_WORDS` with at most one name in it, as a pattern that finds the name, and its twin. */
+function signInSentencePatterns(): readonly (readonly [RegExp, (value: string) => string])[] {
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const pattern = (english: string): RegExp => {
+    const [first = '', ...rest] = english.split(SENTINEL)
+    return new RegExp(`^${escape(first)}${rest.map((part, index) => `${index === 0 ? '(.+?)' : '\\1'}${escape(part)}`).join('')}$`, 'su')
+  }
+  const fixed = ['notRunning', 'unsafePage', 'pageNotOpened', 'catalogUnread', 'unknownSource'] as const
+  const named = ['keyRefused', 'expired', 'failed', 'startFailed', 'codeRefused', 'formRefused', 'keyNotSaved', 'keyUnknown', 'signOutFailed', 'keyUnchecked'] as const
+  return [
+    ...fixed.map(key => [pattern(SIGN_IN_WORDS[key]), () => SIGN_IN_INTERFACE_WORDS[key]()] as const),
+    ...named.map(key => [pattern(SIGN_IN_WORDS[key](SENTINEL)), (value: string) => SIGN_IN_INTERFACE_WORDS[key](value)] as const),
+  ]
+}
 
 /** What an interactive visual is called on its card (`INTERACTIVE_VISUAL_LABEL`, which the tool's reply keeps in English). */
 export function interactiveVisualLabel(): string {

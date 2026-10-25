@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
-import { SIGN_IN_INTERFACE_WORDS } from '../../shared/interfaceWords'
+import { shownSignInAnswer, SIGN_IN_INTERFACE_WORDS } from '../../shared/interfaceWords'
 import {
   modelSourcesSchema, OPENCODE_SIGN_IN_BROWSER, OPENCODE_SIGN_IN_CANCEL, OPENCODE_SIGN_IN_EXTERNAL, OPENCODE_SIGN_IN_FINISH, OPENCODE_SIGN_IN_KEY,
   OPENCODE_SIGN_IN_REOPEN, OPENCODE_SIGN_IN_WAIT, OPENCODE_SIGN_OUT, OPENCODE_SOURCES_READ, signInDoneSchema, signInResultSchema,
@@ -29,7 +29,8 @@ export function registerOpenCodeSignInIpc(ipc: IpcMainAdapter, calls: OpenCodeSi
       const request: unknown = args[0]
       let answer: unknown
       try { answer = await run(request) } catch { answer = notRunning() }
-      return schema.parse(answer)
+      // This computer's OpenCode answers in English, as a host's does; the window reads its sentences in the interface language.
+      return shownSignInAnswer(schema.parse(answer))
     })
   }
   handle(OPENCODE_SOURCES_READ, modelSourcesSchema, () => calls.sources())

@@ -1,4 +1,3 @@
-import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import { join } from 'node:path'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
@@ -17,7 +16,8 @@ import { HostAdminRefused } from './hostAdminRequest'
 import { hostHealthSchema, type HostHello } from '../../shared/hostProtocol'
 import { isTailnetAddress, startedBySotto } from '../../shared/hostConnection'
 import type { BootStatus } from '../../shared/bootStart'
-import { validateSshHost } from './sshConfiguration'
+import { validateSshHost } from './sshHostValidation'
+import { CONNECT_FAILURES, english, failureWords, SaidError, shown, sshFixWords, WordedError, type Said } from './hostFailureWords'
 import { SshFailure, SshHostLauncher, type SshBootResult, type SshCallbacks, type SshFailureCode, type SshHostConnection, type SshHostUpdateOperation, type SshHostUpdateOptions, type SshHostUpdateResult } from './sshLauncher'
 import { failureStep } from './sshFailure'
 import { SignInStopped, type PressConnection } from './adminConnection'
@@ -128,7 +128,7 @@ const FINAL_SSH_FAILURES: ReadonlySet<SshFailureCode> = new Set<SshFailureCode>(
   // A boot unit that would not start the host, or kept failing, needs its journal read on the host; retrying only starts it again (ADR-0054).
   'boot-start-refused', 'boot-unit-failed'])
 /** A failure on this side of the connection that no retry can fix: the host is not the one saved, or pairing was lost for good. */
-class FinalHostError extends Error {}
+class FinalHostError extends WordedError {}
 /** A move to the tailnet that gave way to an update before it took the threads' place: the host stays on SSH, as it was. */
 class MoveWaits extends Error {}
 /**
@@ -143,18 +143,10 @@ type AddStepAnswer = { readonly setting: HostTailnetSetting } | { readonly why: 
 /** T3 Code's reconnect backoff: 3, 4, 8 and then every 16 seconds, until the user stops it. */
 const RECONNECT_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const
 export const reconnectDelayMs = (attempt: number): number => RECONNECT_DELAYS_MS[Math.min(Math.max(attempt, 0), RECONNECT_DELAYS_MS.length - 1)]!
-const NOTHING_SAVED = msg`Nothing was saved.`
-/**
- * A failure sentence for Add host: what happened, then that nothing was saved, then what to do. A saved host's
- * sentence ends in "reconnect", which its row's Connect again does; in the dialog, what to do is add it again.
- */
-function unsavedMessage(message: string): string {
-  const next = message.replace(/,? then reconnect\.$/u, ', then add the host again.').replace(/ and reconnect\.$/u, ' and add the host again.')
-    .replace(/ before reconnecting\.$/u, ' before adding the host again.').replace(/Connect again (to|when)/u, 'Add the host again $1')
-  const end = next.search(/[.!?]\s/u)
-  const nothingSaved = i18n._(NOTHING_SAVED)
-  return end < 0 ? `${next} ${nothingSaved}` : `${next.slice(0, end + 1)} ${nothingSaved} ${next.slice(end + 2)}`
-}
+/** A failure's fix as kept: the sentence's words and the command. */
+interface FailureFix { readonly text: Said; readonly command: string }
+/** A connect failure as its row shows it now, and the words it was said in. */
+interface ShownFailure { readonly words: Said; readonly error: string; readonly fix?: FailureFix }
 /** The host part of an SSH target, which names a new host until the user renames it. */
 const targetHost = (target: string): string => target.split('@').at(-1) ?? target
 /** Whether a saved host already has these SSH settings and name, so saving them would change nothing. */
@@ -174,6 +166,8 @@ export class DesktopHosts {
   private readonly store: AtomicJsonStore<SavedHost[]>
   private saved: SavedHost[] = []
   private readonly status = new Map<string, HostStatus>()
+  /** The connect failure each row shows, kept as words (see `said`). */
+  private readonly failures = new Map<string, ShownFailure>()
   private readonly live = new Map<string, LiveHost>()
   private readonly retries = new Map<string, Retry>()
   private readonly listeners = new Set<(state: HostsState) => void>()
@@ -270,7 +264,7 @@ export class DesktopHosts {
     this.store = new AtomicJsonStore(join(options.directory, 'remote-hosts.json'), z.array(savedHostSchema).max(20).parse, () => [])
     this.tailnet = new TailnetStore(options.directory)
     this.admins = new AdminConnections({ ...(options.launcher ? { launcher: options.launcher } : {}), report: (id, report) => this.adminSignIn(id, report),
-      node: (id, node) => this.nodePaths.set(id, node), system: (id, system) => void this.rememberSystem(id, system), identityChanged: () => new FinalHostError(t`The host identity changed. Check its data folder before connecting again.`) })
+      node: (id, node) => this.nodePaths.set(id, node), system: (id, system) => void this.rememberSystem(id, system), identityChanged: () => new FinalHostError(CONNECT_FAILURES.identityChanged()) })
   }
   /**
    * Reads the saved hosts and starts connecting every host that is switched on, in the background, the way a
@@ -725,10 +719,10 @@ export class DesktopHosts {
   private async add(input: Connection, slot: 'dialog' | 'setup' = 'dialog'): Promise<HostsState> {
     if (this.closed) return this.get()
     this.refuseBusySlot(input, slot)
-    if (this.saved.some(item => item.id === input.id)) throw new Error(t`This host is already saved.`)
+    if (this.saved.some(item => item.id === input.id)) throw new SaidError(msg`This host is already saved.`)
     validateConnection(input)
     const duplicate = this.saved.find(item => item.target === input.target && (item.sshPort ?? 22) === (input.sshPort ?? 22))
-    if (duplicate) throw new Error(t`${{ target: input.target }} is already saved as ${{ name: duplicate.name }}. Nothing was saved. Switch it on in the list instead.`)
+    if (duplicate) throw new SaidError(msg`${{ target: input.target }} is already saved as ${{ name: duplicate.name }}. Nothing was saved. Switch it on in the list instead.`)
     const previous = slot === 'dialog' ? this.adding : this.setupAttempt
     if (previous) await this.cancelAdd(previous.id)
     const host: SavedHost = { ...input }
@@ -747,11 +741,11 @@ export class DesktopHosts {
   private refuseBusySlot(input: Connection, slot: 'dialog' | 'setup'): void {
     const own = slot === 'dialog' ? this.adding : this.setupAttempt, other = slot === 'dialog' ? this.setupAttempt : this.adding
     const connecting = (host: SavedHost | undefined): host is SavedHost => host !== undefined && this.status.get(host.id)?.phase === 'connecting'
-    if (connecting(own)) throw new Error(t`Sotto is still connecting to ${{ host: targetHost(own.target) }}. Wait for it, or cancel it first.`)
+    if (connecting(own)) throw new SaidError(msg`Sotto is still connecting to ${{ host: targetHost(own.target) }}. Wait for it, or cancel it first.`)
     if (connecting(other) && other.target === input.target && (other.sshPort ?? 22) === (input.sshPort ?? 22)) {
-      throw new Error(slot === 'dialog'
-        ? t`An agent is connecting to ${{ host: targetHost(input.target) }} for its host setup right now. Nothing was saved. Wait for it, or stop the setup first.`
-        : t`Add host is connecting to ${{ host: targetHost(input.target) }} right now. Nothing was saved. Wait for it to finish, then try again.`)
+      throw new SaidError(slot === 'dialog'
+        ? msg`An agent is connecting to ${{ host: targetHost(input.target) }} for its host setup right now. Nothing was saved. Wait for it, or stop the setup first.`
+        : msg`Add host is connecting to ${{ host: targetHost(input.target) }} right now. Nothing was saved. Wait for it to finish, then try again.`)
     }
   }
   private async cancelAdd(id: string): Promise<void> {
@@ -1064,9 +1058,9 @@ export class DesktopHosts {
       if (ssh.node) this.nodePaths.set(host.id, ssh.node)
       if (ssh.system) void this.rememberSystem(host.id, ssh.system)
       this.update(host.id, { step: 'pair' })
-      if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError(t`The host identity changed. Check its data folder before connecting again.`)
+      if (host.hostId && host.hostId !== ssh.hostId) throw new FinalHostError(CONNECT_FAILURES.identityChanged())
       const same = adding ? this.saved.find(item => item.hostId === ssh.hostId) : undefined
-      if (same) throw new FinalHostError(t`This is the same host as ${{ host: same.name }}, which is already saved. Switch ${{ host: same.name }} on in the list instead.`)
+      if (same) throw new FinalHostError(CONNECT_FAILURES.sameHost(same.name))
       this.update(host.id, { hostId: ssh.hostId })
       if (!this.options.credentials.has(`remote-host:${host.id}`)) await this.pairOverSsh(host, active)
       await this.openSocket(host, active, { url: ssh.url, expectedHostId: ssh.hostId })
@@ -1082,7 +1076,7 @@ export class DesktopHosts {
       const following = this.connectedOverSsh(host, active, miss, fromDialog ? () => this.tailnetAtAdd(host) : undefined)
       if (fromDialog) await following
     } catch (error) {
-      let failure = error instanceof Error ? error : new Error(t`The host could not connect. Check its SSH settings and try again.`)
+      let failure = error instanceof Error ? error : new WordedError(CONNECT_FAILURES.couldNotConnect())
       const otherVersion = error instanceof HostConnectionError && error.code === 'version_mismatch' && this.live.get(host.id) === active
       // A host that answers with another version is the right host, so Add host keeps it (see add()).
       if (otherVersion && this.isAttempt(host)) await this.commitAdd(host)
@@ -1100,7 +1094,7 @@ export class DesktopHosts {
           this.clearRetry(host.id)
           this.releaseHeld(host.id)
           // Its version, when it said one, is what lets the Threads page offer to update it (ADR-0040).
-          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: failure.message, version, bootStart: active.ssh.bootStart })
+          this.update(host.id, { phase: 'error', reconnecting: false, owned: true, error: this.said(host.id, failureWords(failure).saved), version, bootStart: active.ssh.bootStart })
           return
         }
       }
@@ -1116,7 +1110,7 @@ export class DesktopHosts {
           return
         } catch (repair) {
           // A busy host refused the pairing for a minute; that passes by itself, so it is not a final failure.
-          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new FinalHostError(t`This device is no longer paired and could not pair again. Check the host, then connect again.`)
+          failure = repair instanceof HostConnectionError && repair.code === 'busy' ? repair : new FinalHostError(CONNECT_FAILURES.noLongerPaired())
         }
       }
       const { step, fix, reason, waited } = this.failureFields(host, active, failure)
@@ -1137,7 +1131,7 @@ export class DesktopHosts {
         this.nodePaths.delete(host.id); this.systems.delete(host.id)
         await this.forgetCredential(host.id)
         // A cancelled add has no dialog left to tell.
-        if (this.isAttempt(host)) this.update(host.id, { phase: 'error', reconnecting: false, error: unsavedMessage(failure.message), step, fix, reason, tailscale: waited })
+        if (this.isAttempt(host)) this.update(host.id, { phase: 'error', reconnecting: false, error: this.said(host.id, failureWords(failure).unsaved, fix), step, fix: this.shownFix(fix), reason, tailscale: waited })
         return
       }
       // A host forgotten or edited while it connected has no row left for this attempt to report to.
@@ -1148,7 +1142,7 @@ export class DesktopHosts {
       } else {
         this.clearRetry(host.id)
         this.releaseHeld(host.id)
-        this.update(host.id, { phase: 'error', reconnecting: false, error: failure.message, step, fix, reason, tailscale: waited })
+        this.update(host.id, { phase: 'error', reconnecting: false, error: this.said(host.id, failureWords(failure).saved, fix), step, fix: this.shownFix(fix), reason, tailscale: waited })
       }
     }
   }
@@ -1167,10 +1161,48 @@ export class DesktopHosts {
     }
   }
   /** The checklist step a failure belongs to, the command that fixes it where there is one, and its code. */
-  private failureFields(host: SavedHost, active: LiveHost, failure: Error): { step: HostSetupStep; fix: HostStatus['fix']; reason: string | undefined; waited: HostStatus['tailscale'] } {
+  /**
+   * A connect failure's sentence for a host's row or Add host, in the interface language shown now. Its words are kept
+   * with it, so the row says it again when the language changes and an agent setting the host up reads it in English.
+   */
+  private said(id: string, words: Said, fix?: FailureFix): string {
+    const error = shown(words)
+    this.failures.set(id, { words, error, ...(fix ? { fix } : {}) })
+    return error
+  }
+  private shownFix(fix: FailureFix | undefined): HostStatus['fix'] {
+    return fix ? { text: shown(fix.text), command: fix.command } : undefined
+  }
+  /** A connect failure still on its row, by whether the row still shows the sentence that was recorded for it. */
+  private recordedFailure(id: string, status: HostStatus | undefined): ShownFailure | undefined {
+    const recorded = this.failures.get(id)
+    if (!recorded || status?.error !== recorded.error) { this.failures.delete(id); return undefined }
+    return recorded
+  }
+  /** The interface language changed: each connect failure on a row or in Add host says it again in the new language. */
+  languageChanged(): void {
+    let changed = false
+    for (const [id, status] of this.status) {
+      const recorded = this.recordedFailure(id, status)
+      if (!recorded) continue
+      const error = shown(recorded.words)
+      this.failures.set(id, { ...recorded, error })
+      this.status.set(id, { ...status, error, ...(recorded.fix && status.fix ? { fix: this.shownFix(recorded.fix) } : {}) })
+      changed = true
+    }
+    if (changed) this.emit()
+  }
+  /** An attempt as an agent setting the host up reads it: its failure and fix in English, whatever the interface language. */
+  attemptInEnglish(id: string): HostStatus | undefined {
+    const status = this.attempt(id)
+    const recorded = this.recordedFailure(id, this.status.get(id))
+    if (!status || !recorded) return status
+    return { ...status, error: english(recorded.words), ...(recorded.fix && status.fix ? { fix: { text: english(recorded.fix.text), command: recorded.fix.command } } : {}) }
+  }
+  private failureFields(host: SavedHost, active: LiveHost, failure: Error): { step: HostSetupStep; fix: FailureFix | undefined; reason: string | undefined; waited: HostStatus['tailscale'] } {
     const reached = this.status.get(host.id)?.step
     const step: HostSetupStep = failure instanceof SshFailure ? failureStep(failure.code) ?? reached ?? 'reach' : active.ssh ? 'pair' : reached ?? 'reach'
-    const fix = failure instanceof SshFailure && failure.fix ? { text: failure.fix.text, command: failure.fix.command } : undefined
+    const fix = failure instanceof SshFailure && failure.fix ? { text: sshFixWords(failure.code, failure.fix), command: failure.fix.command } : undefined
     const reason = failure instanceof SshFailure ? failure.code : failure instanceof HostConnectionError ? failure.code : undefined
     return { step, fix, reason, waited: this.status.get(host.id)?.tailscale ? { waiting: false } : undefined }
   }
@@ -1181,7 +1213,7 @@ export class DesktopHosts {
    * Tailscale's approval are answered there.
    */
   async check(input: Connection): Promise<HostStatus | undefined> {
-    if (this.closed) throw new Error(t`Sotto is closing. Nothing was checked.`)
+    if (this.closed) throw new SaidError(msg`Sotto is closing. Nothing was checked.`)
     this.refuseBusySlot(input, 'setup')
     validateConnection(input)
     if (this.setupAttempt) await this.cancelAdd(this.setupAttempt.id)
@@ -1207,24 +1239,24 @@ export class DesktopHosts {
       this.live.delete(host.id)
       if (this.setupAttempt === host) this.update(host.id, { phase: 'disconnected', step: 'pair', checked: true, owned: active.ssh.owned })
     } catch (error) {
-      const failure = error instanceof Error ? error : new Error(t`The host could not connect. Check its SSH settings and try again.`)
+      const failure = error instanceof Error ? error : new WordedError(CONNECT_FAILURES.couldNotConnect())
       await launcher.disconnect().catch(() => undefined)
       if (this.live.get(host.id) !== active) return
       this.live.delete(host.id)
       const { step, fix, reason, waited } = this.failureFields(host, active, failure)
       // A cancelled check has no dialog left to tell.
-      if (this.setupAttempt === host) this.update(host.id, { phase: 'error', reconnecting: false, error: unsavedMessage(failure.message), step, fix, reason, tailscale: waited })
+      if (this.setupAttempt === host) this.update(host.id, { phase: 'error', reconnecting: false, error: this.said(host.id, failureWords(failure).unsaved, fix), step, fix: this.shownFix(fix), reason, tailscale: waited })
     }
   }
   /** Pairs this computer over the SSH connection's forward, the only place a desktop pairs (ADR-0053). */
   private async pairOverSsh(host: SavedHost, active: LiveHost): Promise<void> {
-    if (!this.options.credentials.available()) throw new FinalHostError(t`Secure credential storage is unavailable. Unlock it before connecting again.`)
+    if (!this.options.credentials.available()) throw new FinalHostError(CONNECT_FAILURES.credentialsUnavailable())
     const ssh = active.ssh!
     const code = await ssh.showHostPairingCode()
     const pairing = await SocketHostService.pair(ssh.url, code.code, 'Sotto desktop')
     // Cancelled or quit while pairing: keep no credential. The record the host made stays revocable there.
-    if (this.live.get(host.id) !== active) throw new Error(t`The connection was closed while this computer paired.`)
-    if (pairing.hostId !== ssh.hostId || host.hostId && pairing.hostId !== host.hostId) throw new Error(t`This is a different host. Check the address before pairing.`)
+    if (this.live.get(host.id) !== active) throw new WordedError(CONNECT_FAILURES.closedWhilePairing())
+    if (pairing.hostId !== ssh.hostId || host.hostId && pairing.hostId !== host.hostId) throw new WordedError(CONNECT_FAILURES.differentHost())
     try { await this.options.credentials.set(`remote-host:${host.id}`, pairing.token) }
     catch (error) {
       await ssh.revokeClient(pairing.clientId).catch(() => false)
@@ -1319,7 +1351,7 @@ export class DesktopHosts {
     if (this.saved.includes(host)) { await this.save(); this.retainedDrafts.allowHost(host.hostId, host.id) }
     await this.learnAddress(host, hello)
     if (this.live.get(host.id) !== active) { await socket.close(); return }
-    if (!connected) throw new Error(t`The host disconnected while connecting. Try connecting again.`)
+    if (!connected) throw new WordedError(CONNECT_FAILURES.disconnectedWhileConnecting())
     // A move to the tailnet gives way to an update that began while it ran, before it takes the threads' place on the page.
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
