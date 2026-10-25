@@ -1,6 +1,6 @@
 # Each layer passes on only the threads that changed (#925)
 
-The plan behind ADR-0016's proposed amendment of October 24, 2026. Nothing here is built yet.
+The plan behind ADR-0016's amendment of October 24, 2026, accepted October 25. Step 1 landed in #1502.
 
 ## Zach's picks, October 24, 2026
 

@@ -244,9 +244,9 @@ What reaches the disk is unchanged, and so is how: saves stay at NORMAL, and a c
 
 In a benchmark of streamed saves against a 555 MB store, the time main spent held by saves fell from 6.2 to 10.0 s to 2.2 to 3.7 s, and the worst save from 1.2 to 2.2 s to 0.65 to 0.85 s. Main still writes its saves to the log on its own thread, and on Windows a write waits while another thread flushes a large file on the same disk, so the worker's flushes still reach main now and then, in smaller and fewer pieces. Taking those waits off main means taking the saves off main, which this amendment does not do; neither does it stop a publish writing or read a stored thread's records off main. Those parts of #1451 stay open.
 
-## Proposed amendment: each layer passes on only the threads that changed (draft, October 24, 2026, #925)
+## Amendment: each layer passes on only the threads that changed (October 24, 2026, #925)
 
-**Status: proposed, not accepted.** Zach picked option 2 below on October 24, 2026, and asked for #925 to go before #1457. Nothing is built yet. The plan is in `docs/plans/shared-thread-records.md`.
+**Accepted October 25, 2026.** Zach picked option 2 below on October 24, 2026, and asked for #925 to go before #1457. Step 1, the thread changes type, the thread map, the shim and the gates, landed in #1502; the later steps move each layer onto it. The plan is in `docs/plans/shared-thread-records.md`.
 
 **What it costs today.** After #1326, #1334 and #1450, the workspace's publication, the coordinator's shell and Watcher's room share what did not change. The layers between an adapter and the workspace still build a new record for every thread on every update:
 - the adapter's activity view and its `cloneActivitySnapshot`;
@@ -276,7 +276,7 @@ All of it is paid once per streamed chunk, and it grows with the threads, not wi
 3. **Fewer layers.** Fold the wrapper's ID binding and the switch's provider IDs into the adapter or the workspace. This removes two passes but keeps a new record per thread in the others. It moves Sotto's thread IDs inside the adapter boundary, against ADR-0002.
 4. **Publish less often**, with a wider publish window. This is cheap, but it changes how streamed text feels, and a publish still costs what it does today.
 
-**What the decision would be.** The activity subscription carries **thread changes** instead of a whole snapshot each time:
+**The decision.** The activity subscription carries **thread changes** instead of a whole snapshot each time:
 - **A first publication is whole.** It starts the subscriber's map, as does any publication after a gap.
 - **Every later one is a change.** It carries the threads upserted (whole frozen records), the thread IDs removed, and the rest of the snapshot (providers, catalog, projects, connection) only when it changed.
 - **Changes are numbered.** Each publication carries a sequence number. A subscriber that sees a gap asks its publisher for a whole one rather than guessing.
