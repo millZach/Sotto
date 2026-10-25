@@ -46,3 +46,8 @@ which is sooner than a checkpoint can flush a large file. So the passive checkpo
 started over: it reached 18,000 pages (74 MB) in 2,000 commits. Catching up would take a FULL or RESTART checkpoint,
 which blocks main's next commit for the same flush, or a fallback to inline checkpoints while streaming, when the
 stalls happen. ADR-0016's October 19 amendment records the decision and what a power cut can now lose.
+
+October 23, 2026: the worker came back, with a RESTART checkpoint once the log passes 16 MB, after a profile of the
+owner's build caught a 1.19 s commit running SQLite's checkpoint on main (#1451). The RESTART holds main's next save
+only while it copies and flushes what the passive checkpoint just before it left, not the whole log. `2026-10-23-checkpoints-off-main.md`
+has the figures.

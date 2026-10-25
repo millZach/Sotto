@@ -11,14 +11,14 @@ import type { UsageHistorySink } from './usageHistory/sink'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { unavailableProviderQuota } from './providerQuota'
 import { ClaudeLimits, type ClaudeControl } from './claudeLimits'
-import { compactionPending, compactionSchema } from '../../shared/compaction'
+import { compactionPending, compactionSchema, idleMark } from '../../shared/compaction'
 import { randomUUID } from 'node:crypto'
 import { readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -40,7 +40,8 @@ import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
-import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText } from './claudeSessionLog'
+import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
+import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -929,15 +930,18 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
+        // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
+        // can take long enough for the user to type, send or turn the setting off.
+        watcherGuard?.()
         const inputId = randomUUID()
-        alias.compaction = { commandId: command.commandId, status: 'running' }
+        alias.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
         alias.compactStartedAt = new Date().toISOString()
         alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
         try { await this.persist() } catch (error) { delete alias.compaction; throw error }
         thread.compaction = alias.compaction; thread.status = 'running'; this.compacting.set(id, runtime); this.emit()
         try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
         catch {
-          alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.' }
+          alias.compaction = { commandId: command.commandId, status: 'uncertain', error: 'Native compaction is unconfirmed. Reconnect to observe its result; it will not be retried.', ...idleMark(alias.compaction) }
           thread.compaction = alias.compaction; await this.persist(); this.emit(); return { accepted: false, uncertain: true }
         }
         return { accepted: true }
@@ -945,7 +949,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'configure-thread') return this.configure(id, command, watcherGuard)
     if (command.type === 'send') {
-      validatePromptAttachments(this.state, alias.modelId, command.attachments)
+      validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
       const checkLatestUserMessage = (): void => {
         if (command.expectedLastUserMessageId !== undefined && (this.messageLog.lastUserMessageId(id) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
       }
@@ -1696,7 +1700,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'result') {
       this.compacting.delete(id)
       if (compactionPending(alias.compaction)) {
-        alias.compaction = { commandId: alias.compaction!.commandId, status: frame.is_error === true ? 'failed' : 'uncertain',
+        alias.compaction = { commandId: alias.compaction!.commandId, ...idleMark(alias.compaction), status: frame.is_error === true ? 'failed' : 'uncertain',
           error: frame.is_error === true ? 'Claude native compaction failed.' : 'Claude finished without confirming a compaction boundary. The operation will not be retried.' }
         thread.compaction = alias.compaction
         void this.persist().catch(() => { this.state.error = 'The native compaction result could not be saved.'; this.emit() })
@@ -1774,8 +1778,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if ((!text && frame.type !== 'user') || !['user', 'assistant'].includes(String(frame.type))) return
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
-    const digest = claudeDigest(text)
     let origin = alias.origins.find(value => value.uuid === uuid)
+    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0131).
+    const words = frame.type === 'user' ? claudeUserText(message?.content) : text
+    if (words !== text) {
+      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(words)) : undefined)
+      if (owner && carriesAttachedFiles(owner.attachments)) { text = words; origin = owner }
+    }
+    const digest = claudeDigest(text)
     if (fromLog && frame.type === 'user') {
       const consumed = this.logOrigins.get(id) ?? new Set<string>(); this.logOrigins.set(id, consumed)
       origin ??= this.unreadOrigin(id, digest)
@@ -1897,7 +1907,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       // when Sotto has read no turn of the thread, always). A /compact whose write went unconfirmed but arrived late is
       // answered the same way. Only a compaction no CLI will answer settles here, and so does a failed one, as it did.
       const answering = this.compacting.has(id) && this.compacting.get(id) === this.runtimes.get(id)
-      alias.compaction = { commandId: alias.compaction!.commandId, status: frame.compact_result === 'failed' ? 'failed' : 'completed',
+      alias.compaction = { commandId: alias.compaction!.commandId, ...idleMark(alias.compaction), status: frame.compact_result === 'failed' ? 'failed' : 'completed',
         ...(frame.compact_result === 'failed' ? { error: typeof frame.compact_error === 'string' ? frame.compact_error : 'Claude native compaction failed.' } : {}) }
       thread.compaction = alias.compaction
       if (!answering || frame.compact_result === 'failed') thread.status = frame.compact_result === 'failed' ? 'error' : 'idle'
@@ -1955,18 +1965,26 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private dropSteers(id: string): void {
     for (const [uuid, steer] of this.steers) if (steer.threadId === id) { this.steers.delete(uuid); this.acknowledgements.get(uuid)?.(false) }
   }
-  /** A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol boundary (ADR-0031). */
+  /**
+   * A prompt's native content and the origin that names it. Each staged image is read from the store here, at the protocol
+   * boundary (ADR-0031). Any other attached file is saved into the thread's folder and named in a text block of its own,
+   * after the user's words, and a PDF that passes the native rule goes as a `document` block too (ADR-0131). The origin's
+   * digest is the user's words alone, which is what `claudeUserText` reads back.
+   */
   private async nativePrompt(id: string, command: Extract<AgentHostCommand, { type: 'send' | 'steer' }>): Promise<{ content: unknown; nativeText: string; origin: Alias['origins'][number] }> {
     verifyFileMentions(command.text, command.files)
-    const images = await Promise.all((command.attachments ?? []).map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
+    const delivered = await deliverAttachments(this.aliases[id]?.cwd, command.attachments, { nativePdf: true })
+    const images: unknown[] = await Promise.all(delivered.images.map(async image => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType,
       data: Buffer.from(await image.read()).toString('base64') } })))
+    for (const pdf of delivered.nativePdfs) images.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: Buffer.from(pdf.bytes).toString('base64') }, title: pdf.name })
     const nativePrompt = command.skills?.length ? claudeSkillPrompt(command.text, command.skills, await this.listThreadSkills(id, true)) : command.text
     const nativeText = typeof nativePrompt === 'string' ? nativePrompt : claudeText(nativePrompt)
     const origin = { messageId: command.messageId, commandId: command.commandId, uuid: randomUUID(), digest: claudeDigest(nativeText), createdAt: new Date().toISOString(),
-      ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }
-    const content: unknown = images.length ? [
+      ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
+    const content: unknown = images.length || delivered.note ? [
       ...images,
       ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
+      ...(delivered.note ? [{ type: 'text', text: delivered.note }] : []),
     ] : nativePrompt
     return { content, nativeText, origin }
   }
@@ -1980,7 +1998,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * a stop included, starts the next turn (see `steers`).
    */
   private async steerTurn(id: string, alias: Alias, thread: AgentThread, command: Extract<AgentHostCommand, { type: 'steer' }>, readForSend: () => boolean, watcherGuard?: () => void): Promise<AgentHostResult> {
-    validatePromptAttachments(this.state, alias.modelId, command.attachments)
+    validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     if (alias.origins.some(origin => origin.messageId === command.messageId)) return this.messageLog.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
     const runtime = this.runtimes.get(id)
     const validate = (): void => {

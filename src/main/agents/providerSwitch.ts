@@ -70,7 +70,7 @@ export class ConfiguredProviderHost implements AgentHost {
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   constructor(private readonly options: {
     hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
@@ -107,11 +107,11 @@ export class ConfiguredProviderHost implements AgentHost {
         catch { /* One provider's unreadable records leave the others' to read. */ }
       }
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
+    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh, background) => {
       if (!reportsUsageLimits(providerId)) throw new Error('Usage reads no limits for this provider.')
       const slot = this.slots.get(providerId), epoch = slot?.epoch
       if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
-      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh)
+      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh, background)
         ?? unavailableProviderQuota(providerId, 'unsupported')
       if (slot.epoch !== epoch || slot.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
       return { ...quota, windows: quota.windows.map(window => ({ ...window,
@@ -185,7 +185,8 @@ export class ConfiguredProviderHost implements AgentHost {
     this.markDisconnected(slot)
   }
   private aggregate(): AgentHostSnapshot {
-    const providers = [...this.slots.values()].map(slot => clonePlainData(slot.status))
+    // One copy of every provider's status, not one per provider, so a new provider adds no copy to each publish.
+    const providers = clonePlainData([...this.slots.values()].map(slot => slot.status))
     const capabilities = { ...EMPTY_AGENT_HOST.capabilities }
     for (const provider of providers.filter(provider => provider.connection === 'connected')) {
       for (const key of Object.keys(provider.capabilities) as (keyof AgentCapabilities)[]) if (provider.capabilities[key]) capabilities[key] = true

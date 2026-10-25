@@ -118,9 +118,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
-  // Work across machines (ADR-0082) is Owl: only an Owl host names its projects' GitHub origins to a desktop placing work
-  // (#1032), lists `branch-moves` or takes `branch-move` (ADR-0105 decision 8).
+  // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
+  // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
+  // (#1311), and lists `branch-moves` and takes `branch-move` (ADR-0105 decision 8);
+  // otherwise its facts are what they were and it moves no branch.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
+  // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
+  const attachAnyFile = owlFeatures['attach-any-file']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
@@ -141,7 +145,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -162,7 +166,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     })
     const pairing = new PairedClients(directory)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
-    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}),
+    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
         const client = { clientId, user: pairing.list().find(item => item.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' as const }
         const state = await runtime.hostService.command({ type: 'connect', provider }, client)

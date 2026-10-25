@@ -59,6 +59,23 @@ describe('provider model picker', () => {
     expect(trigger).toHaveFocus()
   })
 
+  it('stays open when a press on a provider tile ends beyond the menu, and closes on a press and release outside it', async () => {
+    const user = userEvent.setup()
+    render(<ModelPicker models={models} modelId="astra" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    const dialog = screen.getByRole('dialog', { name: 'Choose model' })
+    // The tile's press shrinks the menu from the top, so the release lands outside it and the click goes to the dialog.
+    const tile = screen.getByRole('tab', { name: 'Claude' })
+    fireEvent.pointerDown(tile)
+    fireEvent.focus(tile)
+    fireEvent.click(dialog)
+    expect(screen.getByRole('dialog', { name: 'Choose model' })).toBeInTheDocument()
+    expect(tile).toHaveAttribute('aria-selected', 'true')
+    fireEvent.pointerDown(dialog)
+    fireEvent.click(dialog)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   describe('the wheel over the provider rail', () => {
     // The rail tells one turn of the wheel from the next by the time between its events, so the tests set that time.
     let clock = 0

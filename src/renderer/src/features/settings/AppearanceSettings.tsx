@@ -14,6 +14,7 @@ import { appearancePreview, resolveAppearance, useAppearancePreviewVersion, useS
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
 import { LanguagePicker } from './LanguagePicker'
+import { shownWords, type LaterWords } from './laterWords'
 import { MenuBarOwlSettings } from './MenuBarOwlSettings'
 import { CreatureChoice } from './themes/CreatureChoice'
 import { EffortColorChoice } from './themes/EffortColor'
@@ -26,7 +27,7 @@ import './themes/themes.css'
 export interface AppearanceSettingsProps {
   readonly settings: AppSettings
   readonly platform: SottoPlatform
-  readonly onSave: (patch: SettingsPatch, successText?: string) => Promise<boolean>
+  readonly onSave: (patch: SettingsPatch, successText?: LaterWords) => Promise<boolean>
   readonly getSettings: () => AppSettings
   /** Rows that follow Contrast: Reduced motion, which Settings keeps the save of. */
   readonly children?: ReactNode
@@ -53,15 +54,14 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
   const shown = appearancePreview.effective(settings)
   const resolved = resolveAppearance(shown.appearance, systemDark, shown)
   const [importing, setImporting] = useState(false)
-  const [status, setStatus] = useState<{ text: string; error: boolean } | null>(null)
+  const [status, setStatus] = useState<{ text: LaterWords; error: boolean } | null>(null)
   const getSettingsRef = useRef(getSettings)
   getSettingsRef.current = getSettings
   const onSaveRef = useRef(onSave)
   onSaveRef.current = onSave
-  // The writer outlives a change of language, so its message is read as it saves.
-  const writer = useMemo(() => new ThemeLibraryWriter(patch => onSaveRef.current(patch, i18n._(msg`Theme saved.`)), () => getSettingsRef.current()), [])
+  const writer = useMemo(() => new ThemeLibraryWriter(patch => onSaveRef.current(patch, msg`Theme saved.`), () => getSettingsRef.current()), [])
 
-  const choose = async (patch: Partial<AppearanceChoice> & SettingsPatch, successText: string): Promise<boolean> => {
+  const choose = async (patch: Partial<AppearanceChoice> & SettingsPatch, successText: LaterWords): Promise<boolean> => {
     const sequence = appearancePreview.choose(patch)
     const saved = await onSave(patch, successText).catch(() => false)
     appearancePreview.settle(sequence, saved, getSettings())
@@ -70,14 +70,14 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
 
   const select = (patch: LibraryPatch): void => {
     void writer.run(() => ({ patch })).then(result => {
-      if (!result.saved) setStatus({ text: t`That theme could not be saved. Your previous theme is still active.`, error: true })
+      if (!result.saved) setStatus({ text: msg`That theme could not be saved. Your previous theme is still active.`, error: true })
     })
   }
 
   const remove = async (ids: readonly string[]): Promise<boolean> => {
     const result = await writer.run(state => ({ patch: removeThemesPatch(state, ids) })).catch(() => null)
     const count = ids.length
-    if (result?.saved) setStatus({ text: plural(count, { one: 'Theme removed.', other: '# themes removed.' }), error: false })
+    if (result?.saved) setStatus({ text: msg`${plural(count, { one: 'Theme removed.', other: '# themes removed.' })}`, error: false })
     return result?.saved ?? false
   }
 
@@ -91,13 +91,13 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
   const exportTheme = async (theme: ThemeDefinition): Promise<void> => {
     const bridge = window.sotto?.themes
     if (!bridge) {
-      setStatus({ text: t`Exporting is not available in this window.`, error: true })
+      setStatus({ text: msg`Exporting is not available in this window.`, error: true })
       return
     }
     const result = await bridge.exportTheme(themeExportFile(theme)).catch(() => null)
     const name = theme.label
-    if (result === null || !result.ok) setStatus({ text: result?.error.message ?? t`${name} could not be exported.`, error: true })
-    else if (result.value.saved) setStatus({ text: t`${name} exported.`, error: false })
+    if (result === null || !result.ok) setStatus({ text: result?.error.message ?? msg`${name} could not be exported.`, error: true })
+    else if (result.value.saved) setStatus({ text: msg`${name} exported.`, error: false })
   }
 
   return (
@@ -116,16 +116,16 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
             shown={shown}
             resolved={resolved}
             system={system}
-            onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, t`Color scheme saved.`)}
+            onChooseMode={(mode: ThemeMode) => void choose({ appearance: mode }, msg`Color scheme saved.`)}
             onSelect={select}
             onRemove={remove}
             onExport={theme => void exportTheme(theme)}
             onAddTheme={() => setImporting(true)}
           />
-          <p className={`theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{status?.text ?? ''}</p>
+          <p className={`tt-paragraph theme-settings__status${status?.error ? ' theme-settings__status--error' : ''}`} role="status">{shownWords(status?.text) ?? ''}</p>
 
-          <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, t`Effort color saved.`)} />
-          <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? t`Creature shown.` : t`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, t`Creature saved.`).catch(() => false)} />
+          <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
+          <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
           {menuBarOwl ? <MenuBarOwlSettings body={settings.menuBarOwlBody} eyes={settings.menuBarOwlEyes} onChoose={(patch, text) => void onSave(patch, text).catch(() => false)} /> : null}
 
           <div className="settings-rows">
@@ -136,7 +136,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, ch
               bounds={APPEARANCE_CONTRAST}
               value={shown.appearanceContrast}
               onPreview={value => appearancePreview.choose({ appearanceContrast: value })}
-              onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, t`Contrast saved.`).catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
+              onCommit={(value, sequence) => void onSave({ appearanceContrast: value }, msg`Contrast saved.`).catch(() => false).then(saved => appearancePreview.settle(sequence, saved, getSettings()))}
             />
             {children}
           </div>
@@ -215,6 +215,7 @@ function AppearanceSlider({ label, resetLabel, description, bounds, value, onPre
       <p className="tt-field__description tt-paragraph" id={`${id}-description`}>{description}</p>
       <input
         id={id}
+        data-setting="contrast"
         className="theme-slider__input tt-focusable"
         type="range"
         min={bounds.min}

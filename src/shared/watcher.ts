@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
-import { hostFactsSchema, hostOsSchema } from './hostFacts'
+import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
@@ -25,7 +25,7 @@ const shortText = z.string().max(2_000)
 const cursor = z.string().min(1).max(2_048)
 const utf8 = (max: number) => z.string().max(max).refine(value => new TextEncoder().encode(value).byteLength <= max, 'Text exceeds the byte limit.')
 const prompt = utf8(WATCHER_PROMPT_BYTES_MAX).refine(value => value.trim().length > 0, 'A prompt is required.')
-export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse'])
+export const watcherProviderSchema = z.enum(['codex', 'claude', 'grok', 'muse', 'cursor'])
 export const watcherThreadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
 export const watcherPhoneOriginSchema = z.object({ kind: z.literal('phone'), hostId: z.uuid(), clientId: id }).strict()
 export const watcherProjectTargetSchema = z.object({ hostId: z.uuid(), projectId: entityId }).strict()
@@ -180,7 +180,9 @@ export function watcherResultFromHostV1(value: unknown): unknown {
 /**
  * One machine as list_machines shows it (#1031): This computer or a connected host, its host facts when it reported them,
  * and how many of its threads are running a turn. `factsState` says why there are none: `unknown` for a host that does not
- * report them or could not be read, `not-connected` for one that is not connected now. Never guessed.
+ * report them or could not be read, `not-connected` for one that is not connected now. Never guessed. Its live load and work
+ * placed but not started (#1311) are null where the host does not report them, and `memoryState` and `cpuState` are what
+ * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old.
  */
 export const WATCHER_MACHINES_MAX = 100
 
@@ -220,9 +222,14 @@ export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
-const machine = z.object({ hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
+const machineShape = { hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
-  runningThreads: counter.nullable() }).strict()
+  runningThreads: counter.nullable() }
+// Live load (#1311) is part of the Owl feature Work across machines: present on every machine while it is on, on none while off.
+const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullable().optional(), placedNotStarted: counter.nullable().optional(),
+  memoryState: z.enum(['short', 'enough', 'unknown']).optional(), cpuState: z.enum(['busy', 'not-busy', 'unknown']).optional() }).strict()
+/** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
+export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time })
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -284,11 +291,13 @@ export const watcherToolSchemas = {
   send_to_thread: {
     // `mergeTurn` is the desktop's alone (#1339): it marks the send that gives a thread its merge turn, for Watcher's
     // picture. Main takes it off before the send is admitted, so it changes nothing about the send, its digest or its
-    // retry, and a paired host is never sent it.
-    input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode,
+    // retry, and a paired host is never sent it. A send that names no `delivery` steers (ADR-0130): main picks the mode
+    // from the thread before admission, and a paired host is sent the one it picked.
+    input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
       expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(),
       mergeTurn: z.object({ pullRequest: z.number().int().positive() }).strict().optional() }).strict(),
-    output: result({ ...receiptResult, delivery: deliveryMode }),
+    // `note` is the desktop's alone: what a send that asked to steer did instead, when it went now or queued (ADR-0130).
+    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional() }),
   },
   stop_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
@@ -297,6 +306,11 @@ export const watcherToolSchemas = {
   settle_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
     output: result({ ...receiptResult, state: operationState }),
+  },
+  // Restoring changes nothing a second time, so it keeps no operation and its result needs no receipt (October 23, 2026).
+  unsettle_thread: {
+    input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),
+    output: result({ target: watcherThreadTargetSchema, settled: z.literal(false) }),
   },
   list_projects: {
     // `projectId`, `query` and `includeModels` are the desktop's alone (#1191): a paired host is never sent them.

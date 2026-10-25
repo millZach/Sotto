@@ -112,7 +112,8 @@ export const branchMoveWords = {
   cutOff: 'The connection dropped while the branch was moving, so what arrived was discarded. Nothing was changed. Try the move again.',
   busy: 'This machine is already moving as many branches as it can. Wait for one to finish, then try again. Nothing was moved.',
   failed: 'Git could not move the branch. Nothing was changed. Try the move again.',
-  submoduleChanges: 'A submodule in this thread has uncommitted changes, and a test run cannot carry them. Commit them inside the submodule first, then start again. Nothing was started.',
+  outgoingRefChanged: 'Something other than Sotto changed this project\'s refs/sotto folder, so the branch can\'t move safely. Nothing was moved.',
+  submoduleChanges: 'A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.',
   olderHost: (name: string): string => `${name} needs a newer Sotto to move branches. Update it from the Threads page, then try again. Nothing was moved.`,
   notConnected: (name: string): string => `${name} isn't connected, so nothing can move there now. Connect it, then try again. Nothing was moved.`,
 } as const
