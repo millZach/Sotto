@@ -7152,8 +7152,8 @@ msgid "This thread"
 msgstr "This thread"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. {nothing}"
-msgstr "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads on this computer can, outside Watcher, host setup and provider jobs. {nothing}"
+msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
+msgstr "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
 
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
