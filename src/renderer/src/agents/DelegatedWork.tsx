@@ -176,6 +176,15 @@ export function StillWorking({ views, work }: { readonly views: readonly Delegat
 }
 
 /**
+ * A turn's work under a reply with nothing to fold: its delegations as rows, or, while the provider's agents still run after
+ * it, the settled ones as rows and everything still open under one "Still working after this reply".
+ */
+export function UnfoldedWork({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work: readonly AgentBackgroundWork[] | undefined }): ReactNode {
+  const settled = useMemo(() => work?.length ? views?.filter(settledDelegation) : views, [views, work])
+  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={views} work={work} /> : null}</>
+}
+
+/**
  * Which turn each delegation belongs to: the one the call was made in, opened by the user's message or a wake-up. A delegation
  * whose message is not among the messages shown goes last, unless it was made before the first of them, when it belongs
  * to history the reader has not opened yet.

@@ -417,6 +417,7 @@ describe('delegated work in the delegating thread', () => {
   })
 
   it('stands the provider\'s own agents still running under the last finished reply, beside its open delegations, until each ends', () => {
+    owl(true)
     const turns: AgentMessage[] = [
       { id: 'first', role: 'user', text: 'Look into the flake.', createdAt: at(20) },
       { id: 'first-reply', role: 'assistant', text: 'Looked.', createdAt: at(19) },
@@ -457,14 +458,33 @@ describe('delegated work in the delegating thread', () => {
     // While the newest turn runs, its reply is not finished, and the composer's ornament says what still works.
     rerender(list(work, true))
     expect(screen.queryByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).toBeNull()
+    // While the Owl list keeps delegation off, the agents stand nowhere under the reply; the composer's creature still says so.
+    owl(false)
+    rerender(list(work))
+    expect(screen.queryByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).toBeNull()
   })
 
   it('stands background agents under a reply with nothing to fold, and only where the composer\'s ornament may show them', () => {
+    owl(true)
     const turns: AgentMessage[] = [{ id: 'ask', role: 'user', text: 'Start the review agents.', createdAt: at(10) }, { id: 'reply', role: 'assistant', text: 'Started.', createdAt: at(9) }]
     const agents = [{ id: crypto.randomUUID(), type: 'teammate' as const, label: 'Check the docs' }, { id: crypto.randomUUID(), type: 'remote-agent' as const, label: 'Run on forge' }]
-    render(<MessageList messages={turns} provider="Claude Code" running={false} placement={placeActivities(turns, turns, [])} context={context} backgroundWork={stillWorkingAgents(agents, true)} />)
+    const threads = [thread('found', 'Find the scene code', { providerId: 'claude' }), thread('spec', 'Spec review', { providerId: 'codex', status: 'running' })]
+    const made = [view({ anchorMessageId: 'ask', thread: 'found', work: 'research', outcome: 'answered', outcomeAt: at(8) }),
+      view({ anchorMessageId: 'ask', thread: 'spec', work: 'code-review', outcome: 'working', wait: { seconds: 0, startedAt: at(8) } })]
+    const list = (work: readonly AgentBackgroundWork[] | undefined): React.ReactElement => <DelegationWorldProvider world={world(vi.fn(), threads)}>
+      <MessageList messages={turns} provider="Claude Code" running={false} placement={placeActivities(turns, turns, [])} context={context}
+        delegations={delegationsByTurn(made, turns)} backgroundWork={stillWorkingAgents(work, true)} /></DelegationWorldProvider>
+    const labels = (root: ParentNode): (string | null)[] => [...root.querySelectorAll('.delegated-work__row')].map(row => row.getAttribute('aria-label'))
+    const { rerender } = render(list(agents))
+    // Everything still open sits under the one heading, the open delegation first; the settled one stays a row of its own above it.
     const still = screen.getByRole('region', { name: 'Still working after this reply' })
-    expect(within(still).getAllByRole('listitem').map(row => row.getAttribute('aria-label'))).toEqual(['Teammate: Check the docs, Working', 'Remote agent: Run on forge, Working'])
+    expect(labels(still)).toEqual(['Review: Spec review, Working', 'Teammate: Check the docs, Working', 'Remote agent: Run on forge, Working'])
+    expect(labels(document)).toEqual(['Research: Find the scene code, Answered', ...labels(still)])
+    expect(screen.getAllByRole('region', { name: 'Still working after this reply' })).toHaveLength(1)
+    // With no agents running, the turn's rows are as they were: all of them under the reply, with no heading.
+    rerender(list(undefined))
+    expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
+    expect(labels(document)).toEqual(['Research: Find the scene code, Answered', 'Review: Spec review, Working'])
     // Commands alone, or a thread whose ornament is held back, give no rows at all.
     expect(stillWorkingAgents([{ id: crypto.randomUUID(), type: 'command', label: 'npm run watch' }], true)).toBeUndefined()
     expect(stillWorkingAgents(agents, false)).toBeUndefined()
