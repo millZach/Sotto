@@ -41,7 +41,7 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
   }
 }
 /**
- * What each of DeepSeek Harness's three modes does, said as the harness doing it (ADR-0136), in the interface
+ * What each of DeepSeek Harness's three modes does, said as the harness doing it (ADR-0138), in the interface
  * language. Its permissions are a sandbox boundary: Ask for approval denies a first attempt and the model asks to
  * retry it, and Allow edits also lets commands and network run inside the sandbox, so both say so.
  */

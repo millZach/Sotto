@@ -31,3 +31,7 @@ A chosen model sends the text to whichever host serves that model, under that ho
 Sotto has not measured any model but the two ADR-0069 benchmarked. A model that rewrites too much still meets the shrink guard in `cleanupOutput.ts` and falls back.
 
 Changing Default is still a change to `CLEANUP_MODELS`, a benchmark run and an amendment to ADR-0069.
+
+## Amended October 25, 2026: your own servers in the list
+
+[ADR-0136](0136-ai-cleanup-can-run-on-your-own-model-server.md) adds a Your own servers section to the Cleanup model list, as its own Owl feature: the models of the user's own model servers added without a key, which main asks directly with the setting Measure found fastest. Mode does not apply to them, and Mercury 2 stays the backup, as decision 5 says.

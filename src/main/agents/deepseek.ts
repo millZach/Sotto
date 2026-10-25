@@ -39,7 +39,7 @@ import { WatcherProfileRefusal } from './watcherProfile'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 
 /**
- * DeepSeek Harness as a thread provider (ADR-0136): one `dsh --profile acp` process per thread, started in the
+ * DeepSeek Harness as a thread provider (ADR-0138): one `dsh --profile acp` process per thread, started in the
  * thread's folder with Sotto's own harness folder as `DSH_HOME` and a `--patch` overlay generated from the user's
  * own model servers, speaking ACP on stdio. The harness keeps the sessions and the tools, and runs only the user's
  * keyless servers in this version; Sotto keeps each thread's session ID, its settings and what it sent, by digest,
@@ -107,9 +107,9 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 const sessionNewSchema = z.object({ sessionId: z.string().min(1).max(512) }).passthrough()
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const PROCESS_LOST = 'DeepSeek Harness stopped before this reply finished, so it may be cut short. Send a message to carry on.'
-/** What Sotto says once to a thread that comes with Auto-accept edits, whose asking stops at the sandbox boundary (ADR-0136). */
+/** What Sotto says once to a thread that comes with Auto-accept edits, whose asking stops at the sandbox boundary (ADR-0138). */
 export const DEEPSEEK_ALLOW_EDITS_NOTICE = 'On DeepSeek Harness, Auto-accept edits runs commands and network inside the workspace sandbox without asking. It asks before anything crosses that boundary.'
-/** What Sotto says once to a thread that comes with Ask for approval on DeepSeek Harness (ADR-0136). */
+/** What Sotto says once to a thread that comes with Ask for approval on DeepSeek Harness (ADR-0138). */
 export const DEEPSEEK_ASK_NOTICE = 'On DeepSeek Harness, Ask for approval denies a first attempt and the model then asks to retry it. A model that does not ask simply fails the write.'
 
 /**
@@ -167,7 +167,7 @@ export interface DeepSeekAcpOptions {
   /** Extra arguments ahead of `--profile`: a test's fake client process. */
   executableArgs?: readonly string[]
   environment?: NodeJS.ProcessEnv
-  /** Sotto's DeepSeek Harness folder (ADR-0136): `<userData>/deepseek` by default. */
+  /** Sotto's DeepSeek Harness folder (ADR-0138): `<userData>/deepseek` by default. */
   homeDirectory?: string
   /** The user's own model servers, read at connect and again when the record changes. */
   servers?: () => Promise<readonly OwnServer[]>
@@ -266,7 +266,7 @@ export class DeepSeekAcpHost implements AgentHost {
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
-  /** Sotto's DeepSeek Harness folder, which every process runs as `DSH_HOME` (ADR-0136). */
+  /** Sotto's DeepSeek Harness folder, which every process runs as `DSH_HOME` (ADR-0138). */
   get folder(): string { return this.homeDirectory }
   isConnected(): boolean { return this.state.connected }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -307,7 +307,7 @@ export class DeepSeekAcpHost implements AgentHost {
 
   /**
    * DeepSeek Harness cannot host Watcher in this version: its ACP surface carries no instructions channel and its
-   * sandbox asks only at its boundary, so a Watcher thread is refused before its process starts (ADR-0136).
+   * sandbox asks only at its boundary, so a Watcher thread is refused before its process starts (ADR-0138).
    */
   private async refuseWatcher(id: string): Promise<void> {
     const generation = this.generation
@@ -528,7 +528,7 @@ export class DeepSeekAcpHost implements AgentHost {
     try {
       const mcpServers = await this.toolServers(id)
       this.assertGeneration(generation)
-      // A resumed session replays nothing (ADR-0136): the thread's history stays Sotto's, and the session continues.
+      // A resumed session replays nothing (ADR-0138): the thread's history stays Sotto's, and the session continues.
       await connection.rpc.request('session/resume', { sessionId: alias.deepseekSessionId, cwd: alias.cwd, mcpServers }, value => { this.readSettings(connection, value) })
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new DeepSeekUncertain('DeepSeek Harness’s connection changed while the thread was opening.')
       await this.applySettings(alias, connection)

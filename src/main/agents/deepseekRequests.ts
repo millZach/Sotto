@@ -3,7 +3,7 @@ import type { AgentRequest } from '../../shared/agents'
 import { permissionValue } from './nativeRequests'
 
 /**
- * What DeepSeek Harness asks the user (ADR-0136, ADR-0004). Its one request is a sandbox escalation: a tool call
+ * What DeepSeek Harness asks the user (ADR-0138, ADR-0004). Its one request is a sandbox escalation: a tool call
  * the sandbox denied, retried with `sandbox_permissions` and a `justification`, arrives as
  * `session/request_permission` carrying only the tool call's ID and two one-shot choices. The detail a card needs
  * is in the `tool_call` update the harness sends first, so the adapter buffers it and hands it here: the card

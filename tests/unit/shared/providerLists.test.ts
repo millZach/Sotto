@@ -94,7 +94,7 @@ describe('provider lists', () => {
     expect(threadTakesSottoTools({ providerId: 'cursor' })).toBe(true)
   })
 
-  it('gives DeepSeek Harness Sotto’s tools but no side writing or Watcher (ADR-0136)', () => {
+  it('gives DeepSeek Harness Sotto’s tools but no side writing or Watcher (ADR-0138)', () => {
     expect(providerWritesShortText('deepseek')).toBe(false)
     expect(providerTakesSottoTools('deepseek')).toBe(true)
     expect(providerProfile('deepseek')?.runsWatcher).toBe(false)

@@ -3,11 +3,11 @@ import { OWN_SERVER_PLACEHOLDER_KEY, ownModelOutput } from './providerBlock'
 
 /**
  * The `dsh --patch` overlay main generates for DeepSeek Harness from the user's own model servers (ADR-0124,
- * ADR-0136), the way `providerBlock.ts` generates OpenCode's provider block: at every harness start, handed over as
+ * ADR-0138), the way `providerBlock.ts` generates OpenCode's provider block: at every harness start, handed over as
  * a file path, never printed, and a record change makes running processes outdated. One `dsh-llm-pi-ai` route per
  * **keyless** server under the server's own ID, and the ACP entry's provider and model on the first of them, so a
  * session can be made before the thread's own model is set. A keyed server has no route: its key is kept by
- * OpenCode and Sotto has no copy to hand a second provider, so it is not offered here (ADR-0136).
+ * OpenCode and Sotto has no copy to hand a second provider, so it is not offered here (ADR-0138).
  *
  * The route an overlay declares is `openai-completions` at the server's saved address, with each model's context
  * and output, its thinking as the effort levels the harness offers, and text as its only input — DeepSeek Harness
@@ -30,7 +30,7 @@ export function deepseekRouteKeys(servers: readonly OwnServer[]): Record<string,
   return Object.fromEntries(keylessServers(servers).map(server => [deepseekRouteKeyVariable(server.id), OWN_SERVER_PLACEHOLDER_KEY]))
 }
 
-/** The servers DeepSeek Harness can run in this version: the keyless ones (ADR-0136). */
+/** The servers DeepSeek Harness can run in this version: the keyless ones (ADR-0138). */
 export function keylessServers(servers: readonly OwnServer[]): OwnServer[] {
   return servers.filter(server => !server.keyed)
 }

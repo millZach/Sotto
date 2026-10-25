@@ -35,7 +35,7 @@ export interface OwnServersOpenCode {
 }
 
 /**
- * DeepSeek Harness as the record reaches it (ADR-0136): a nudge on every save. While its adapter runs, a keyless Add may
+ * DeepSeek Harness as the record reaches it (ADR-0138): a nudge on every save. While its adapter runs, a keyless Add may
  * land on it alone, connected or not, since it reads the record when it connects and connects only once one is saved.
  */
 export interface OwnServersDeepSeek {
@@ -47,7 +47,7 @@ export interface OwnServersOptions {
   readonly directory: string
   /** Sotto's OpenCode, or undefined while it is held off this run. */
   readonly openCode: () => OwnServersOpenCode | undefined
-  /** Sotto's DeepSeek Harness (ADR-0136), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
+  /** Sotto's DeepSeek Harness (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
   readonly deepSeek?: () => OwnServersDeepSeek | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
@@ -159,7 +159,7 @@ export class OwnServers {
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
-    // A keyless server needs no key kept anywhere, so DeepSeek Harness's adapter can take it on its own (ADR-0136).
+    // A keyless server needs no key kept anywhere, so DeepSeek Harness's adapter can take it on its own (ADR-0138).
     const keyless = !(request.key?.trim())
     if (!openCode?.running() && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
     const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())

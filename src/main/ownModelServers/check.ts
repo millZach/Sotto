@@ -67,8 +67,6 @@ function asker(key: string | undefined, options: OwnServerCheckOptions, overall:
         await response.body?.cancel().catch(() => undefined)
         throw new Answered(response.status)
       }
-      const length = Number(response.headers.get('content-length') ?? '0')
-      if (length > ANSWER_BYTES_MAX) { await response.body?.cancel().catch(() => undefined); throw new Answered(response.status) }
       const raw = await boundedText(response)
       try { return JSON.parse(raw) as unknown } catch { throw new Answered(response.status) }
     },
@@ -77,29 +75,36 @@ function asker(key: string | undefined, options: OwnServerCheckOptions, overall:
 
 /**
  * An answer's text, read only up to `ANSWER_BYTES_MAX`: a server that sends more, such as a chunked answer with no
- * length, is cut off there rather than held whole in main's memory.
+ * length, is cut off there rather than held whole in main's memory, and the answer is null. Rejects when the answer
+ * stops arriving. The cleanup on the user's own server (ADR-0136) reads its answers through this too.
  */
-async function boundedText(response: Response): Promise<string> {
+export async function readBoundedText(response: Response): Promise<string | null> {
+  if (Number(response.headers.get('content-length') ?? '0') > ANSWER_BYTES_MAX) {
+    await response.body?.cancel().catch(() => undefined)
+    return null
+  }
   const reader = response.body?.getReader()
   if (!reader) return ''
   const chunks: Uint8Array[] = []
   let size = 0
-  try {
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      size += value.byteLength
-      if (size > ANSWER_BYTES_MAX) { await reader.cancel().catch(() => undefined); throw new Answered(response.status) }
-      chunks.push(value)
-    }
-  } catch (error) {
-    if (error instanceof Answered) throw error
-    throw new Unanswered('The answer did not arrive.')
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > ANSWER_BYTES_MAX) { await reader.cancel().catch(() => undefined); return null }
+    chunks.push(value)
   }
   const whole = new Uint8Array(size)
   let at = 0
   for (const chunk of chunks) { whole.set(chunk, at); at += chunk.byteLength }
   return new TextDecoder().decode(whole)
+}
+
+async function boundedText(response: Response): Promise<string> {
+  let raw: string | null
+  try { raw = await readBoundedText(response) } catch { throw new Unanswered('The answer did not arrive.') }
+  if (raw === null) throw new Answered(response.status)
+  return raw
 }
 
 /** Runs `work` on each item with at most `limit` at once. */

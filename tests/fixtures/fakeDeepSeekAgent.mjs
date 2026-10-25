@@ -1,4 +1,4 @@
-// A stand-in for DeepSeek Harness's CLI (`dsh`), shaped on the frames `dsh` 0.2.1-rc.2 sent live (ADR-0136,
+// A stand-in for DeepSeek Harness's CLI (`dsh`), shaped on the frames `dsh` 0.2.1-rc.2 sent live (ADR-0138,
 // docs/research/2026-10-24-deepseek-harness-acp-probe.md). `node fakeDeepSeekAgent.mjs <root> --version` answers as
 // the client does; `node fakeDeepSeekAgent.mjs <root> --profile acp --patch <file>` speaks ACP on stdio as one
 // thread's process. Sessions are kept one file each under <root>/sessions, so `session/resume` in a later process

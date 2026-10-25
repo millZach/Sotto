@@ -55,7 +55,7 @@ describe('adding a server', () => {
     expect(events).toEqual(['own-server-added'])
   })
 
-  it('tells DeepSeek Harness on every save, and takes a keyless server with only its adapter, before it can connect (ADR-0136)', async () => {
+  it('tells DeepSeek Harness on every save, and takes a keyless server with only its adapter, before it can connect (ADR-0138)', async () => {
     const { service, deepSeekCalls } = servers({ deepSeek: true })
     const result = await service.add({ name: 'Spark', address: 'spark-head:8888', models: [model] })
     expect(result.status).toBe('ok')

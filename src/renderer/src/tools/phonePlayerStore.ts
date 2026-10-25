@@ -1,9 +1,14 @@
 import { useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import { TEST_IPHONE } from '../../../shared/browser'
 import { BROWSER_PLAYER_STRIP_HEIGHT, type WindowSize } from './browserPlayerStore'
 
 /** The phone player's three sizes, as Virtual iPhone had them: the width of the phone's screen in pixels. */
-export const PHONE_SIZES = [{ id: 'small', label: 'Small', screen: 200 }, { id: 'medium', label: 'Medium', screen: 240 }, { id: 'large', label: 'Large', screen: 290 }] as const
+export const PHONE_SIZES = [
+  { id: 'small', get label(): string { return t({ message: 'Small', comment: 'A size of the phone player.' }) }, screen: 200 },
+  { id: 'medium', get label(): string { return t({ message: 'Medium', comment: 'A size of the phone player.' }) }, screen: 240 },
+  { id: 'large', get label(): string { return t({ message: 'Large', comment: 'A size of the phone player.' }) }, screen: 290 },
+] as const
 export type PhoneSize = typeof PHONE_SIZES[number]['id']
 
 /** The bezel around the screen, as a share of the screen's width. */

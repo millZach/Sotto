@@ -10,9 +10,9 @@ import { parseProviderRecords, writeProviderAction } from './providerRecords'
 
 export const deepseekFixtureSkips: AdapterContractSkips = {
   backgroundWork: 'DeepSeek Harness reports no work a turn leaves running.',
-  questions: 'DeepSeek Harness has no question route over ACP; the model asks in its reply (ADR-0136).',
-  restart: 'A resumed DeepSeek Harness session replays nothing; Sotto’s event store holds the history (ADR-0136).',
-  liveSettings: 'A permission mode is its process’s sandbox, so a mode change starts a new process by design (ADR-0136).',
+  questions: 'DeepSeek Harness has no question route over ACP; the model asks in its reply (ADR-0138).',
+  restart: 'A resumed DeepSeek Harness session replays nothing; Sotto’s event store holds the history (ADR-0138).',
+  liveSettings: 'A permission mode is its process’s sandbox, so a mode change starts a new process by design (ADR-0138).',
   settingsConfirmation: 'DeepSeek Harness confirms a settings change in Sotto’s own record; there is no confirmation to lose.',
 }
 /** The one keyless server the fixture's record holds, as a test may replace it whole. */

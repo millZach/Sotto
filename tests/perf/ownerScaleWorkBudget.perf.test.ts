@@ -465,7 +465,7 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * room, or exactly for #1248's. Cursor, the seventh provider (ADR-0128), adds its status and capabilities, two objects,
  * to each whole-state copy a command makes, so Owl's exactly held copied-object counts rise by that and nothing more:
  * 10,702 per debounced save (four copies), 21,619 per open (ten) and 46,665 per send (thirteen copies and their parts).
- * DeepSeek Harness, the eighth provider (ADR-0136, October 24, 2026), adds the same two objects to each of those copies,
+ * DeepSeek Harness, the eighth provider (ADR-0138, October 24, 2026), adds the same two objects to each of those copies,
  * on Owl only, where it is held off stable and off paired hosts: 10,710, 21,639 and, with fewer copies per send since, 34,334.
  *
  * October 24, 2026 (#925, step 1): one count is added, the thread records the layers between the adapter and the

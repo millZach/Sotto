@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * DeepSeek Harness's own CLI (ADR-0136). Never in CI: it needs `dsh` installed and one of the user's own model
+ * DeepSeek Harness's own CLI (ADR-0138). Never in CI: it needs `dsh` installed and one of the user's own model
  * servers answering. Run with
  *
  *   SOTTO_DEEPSEEK_LIVE=1 SOTTO_DEEPSEEK_SERVER=<http://host:port/v1> SOTTO_DEEPSEEK_MODEL=<model id on it> \

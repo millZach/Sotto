@@ -193,7 +193,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
     // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
-    // headless host holds it back as OpenCode was held before its hosts slice (ADR-0136).
+    // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
       : new DeepSeekAcpHost(directory, { heldProviders: held, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
@@ -471,7 +471,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
-  // And the same record reaches DeepSeek Harness (ADR-0136), only where its adapter runs.
+  // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   const ownServersDeepSeek = options.ownServers && deepseekHost ? { changed: () => deepseekHost.ownServersChanged() } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
 /**
- * DeepSeek Harness's floor: the oldest client Sotto connects (ADR-0042, ADR-0136). 0.2.1-rc.2 is the version whose
+ * DeepSeek Harness's floor: the oldest client Sotto connects (ADR-0042, ADR-0138). 0.2.1-rc.2 is the version whose
  * ACP profile was checked live (docs/research/2026-10-24-deepseek-harness-acp-probe.md): `dsh --profile acp` with
  * `session/new`, `session/resume`, `session/close`, grouped model and `reasoning_effort` config options, sandbox
  * escalation through `session/request_permission` offering one-shot choices only, HTTP MCP mounts, committed
@@ -46,12 +46,12 @@ export function compareDeepSeekVersions(a: string, b: string): number {
 
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'comspec', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 
-/** The harness's sandbox modes, as its base profile reads them from the process environment (ADR-0136). */
+/** The harness's sandbox modes, as its base profile reads them from the process environment (ADR-0138). */
 export type DeepSeekSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
 /**
  * The environment every DeepSeek Harness process gets: the shared allow-list, so no provider's key reaches it
- * (`DEEPSEEK_API_KEY` included), Sotto's own harness folder as `DSH_HOME` (ADR-0136), the thread's sandbox mode,
+ * (`DEEPSEEK_API_KEY` included), Sotto's own harness folder as `DSH_HOME` (ADR-0138), the thread's sandbox mode,
  * and one placeholder key variable per model server route, which the adapter names in `keys`. A keyless server
  * ignores the value; the harness's OpenAI-compatible transport still requires one to be present.
  */

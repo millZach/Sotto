@@ -15,7 +15,7 @@ const SERVER: OwnServer = {
 const KEYED: OwnServer = { id: 'own-keyed1', name: 'Keyed box', address: 'http://keyed.example/v1', keyed: true,
   models: [{ id: 'm', name: 'M', context: 32768, thinking: false, images: false }] }
 
-describe('the DeepSeek Harness overlay (ADR-0136)', () => {
+describe('the DeepSeek Harness overlay (ADR-0138)', () => {
   it('declares one route per keyless server, disables the cloud adapters, and holds no key', () => {
     const patch = deepseekPatch([SERVER, KEYED])!
     expect(patch).toContain('"own-abc123"')
@@ -54,7 +54,7 @@ describe('the DeepSeek Harness overlay (ADR-0136)', () => {
   })
 })
 
-describe('the DeepSeek Harness catalog and settings (ADR-0136)', () => {
+describe('the DeepSeek Harness catalog and settings (ADR-0138)', () => {
   it('builds models from keyless servers only, grouped by server, with the three modes', () => {
     const catalog = deepseekCatalog([SERVER, KEYED])
     expect(catalog.map(model => model.id)).toEqual(['own-abc123/deepseek-v4-flash', 'own-abc123/qwen-plain'])
