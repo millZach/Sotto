@@ -115,14 +115,17 @@ interface HeaderParts {
 /**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Conversation and Watched, and at its end More
- * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). The night sky
- * spreads behind the corner. The row is the window's drag strip.
+ * Watcher actions. Once Watcher runs the tile is also a button for Watcher's context and state (#1189). On macOS no
+ * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
+ * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
 function WatcherHeader({ room, count, tab, tabIds, listOpen, listButton, onToggleList, stopAll }: HeaderParts): ReactNode {
   const started = room?.state?.current != null
   const track = useReleaseTrack()
+  const mac = useOptionalApp()?.platform === 'darwin'
   return <header className="thread-workspace__head watcher-head">
     {started && room !== null ? <WatcherContextTile room={room} />
+      : mac ? null
       : <span className="watcher-head__tile" role="img" aria-label={releaseTrackName(track)}><SottoMark className="thread-nav__tile" /></span>}
     <div className="thread-workspace__title">
       <h1>Watcher</h1>
