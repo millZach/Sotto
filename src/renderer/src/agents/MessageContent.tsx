@@ -1,5 +1,8 @@
 import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { Check, Copy, FileText, Image as ImageIcon, Play } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -176,11 +179,16 @@ function useRunState(run: RunCommand | undefined, command: string | null): [RunS
 }
 
 /** What each Run control says in each state: the inline button's words (its name adds the command), and a block's. */
-const RUN_LABEL: Readonly<Record<RunState, string>> = { idle: 'Run in terminal', starting: 'Starting…', ran: 'Run again' }
-const BLOCK_RUN: Readonly<Record<RunState, { readonly text: string; readonly name: string; readonly icon: ReactNode }>> = {
-  idle: { text: 'Run', name: 'Run in terminal', icon: <Play size={13} aria-hidden="true" /> },
-  starting: { text: 'Starting…', name: 'Starting in terminal…', icon: <span className="run-command__spinner" aria-hidden="true" /> },
-  ran: { text: 'Run again', name: 'Run again in terminal', icon: <Check size={14} aria-hidden="true" /> },
+const COMMAND_NOTE = '{command} is a shell command from the reply, shown as written.'
+const RUN_LABEL: Readonly<Record<RunState, { readonly text: MessageDescriptor; readonly name: MessageDescriptor }>> = {
+  idle: { text: msg`Run in terminal`, name: msg({ message: 'Run in terminal: {command}', comment: COMMAND_NOTE }) },
+  starting: { text: msg`Starting…`, name: msg({ message: 'Starting…: {command}', comment: COMMAND_NOTE }) },
+  ran: { text: msg`Run again`, name: msg({ message: 'Run again: {command}', comment: COMMAND_NOTE }) },
+}
+const BLOCK_RUN: Readonly<Record<RunState, { readonly text: MessageDescriptor; readonly name: MessageDescriptor; readonly icon: ReactNode }>> = {
+  idle: { text: msg({ message: 'Run', comment: 'Runs a code block\'s shell command in a new terminal.' }), name: msg`Run in terminal`, icon: <Play size={13} aria-hidden="true" /> },
+  starting: { text: msg`Starting…`, name: msg`Starting in terminal…`, icon: <span className="run-command__spinner" aria-hidden="true" /> },
+  ran: { text: msg`Run again`, name: msg`Run again in terminal`, icon: <Check size={14} aria-hidden="true" /> },
 }
 
 /** The element whose edges cut off what overflows it: the transcript's scroller, or a table that scrolls sideways. */
@@ -201,6 +209,7 @@ const RUN_GAP_PX = 7
  */
 function RunnableInline({ command, run, children }: { readonly command: string; readonly run: RunCommand; readonly children?: ReactNode }): ReactNode {
   const [state, press] = useRunState(run, command)
+  const { i18n } = useLingui()
   const [below, setBelow] = useState(false)
   const root = useRef<HTMLSpanElement>(null)
   const place = (): void => {
@@ -210,9 +219,9 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
     setBelow(flipsBelow(chip.getBoundingClientRect().top, button.offsetHeight, frame ? frame.getBoundingClientRect().top : 0, RUN_GAP_PX))
   }
   return <span ref={root} className="run-command" data-state={state} data-place={below ? 'below' : undefined} onPointerEnter={place} onFocus={place}>
-    <span className="run-command__anchor"><button type="button" className="run-command__button tt-focusable" aria-label={`${RUN_LABEL[state]}: ${command}`}
+    <span className="run-command__anchor"><button type="button" className="run-command__button tt-focusable" aria-label={i18n._({ ...RUN_LABEL[state].name, values: { command } })}
       aria-disabled={state === 'starting' || undefined} onClick={press}>
-      {state === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : <Play size={11} aria-hidden="true" />}<span>{RUN_LABEL[state]}</span>
+      {state === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : <Play size={11} aria-hidden="true" />}<span>{i18n._(RUN_LABEL[state].text)}</span>
     </button></span>
     <code>{children}</code>
     {state === 'ran' ? <span className="run-command__ran" aria-hidden="true"><Check size={12} /></span> : null}
@@ -253,6 +262,7 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
   const command = run && !cut ? runnableBlock(code, language) : null
   const [runState, pressRun] = useRunState(run, command)
+  const { i18n, t } = useLingui()
   const label = language ? language.slice(0, 24) : 'Code'
   const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
@@ -261,8 +271,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
       {command !== null ? <button type="button" className="rich-code__run tt-focusable" data-state={runState} aria-disabled={runState === 'starting' || undefined}
-        aria-label={BLOCK_RUN[runState].name} title="Run in a new terminal drawer shell" onClick={pressRun}>
-        {BLOCK_RUN[runState].icon}<span>{BLOCK_RUN[runState].text}</span>
+        aria-label={i18n._(BLOCK_RUN[runState].name)} title={t`Run in a new terminal drawer shell`} onClick={pressRun}>
+        {BLOCK_RUN[runState].icon}<span>{i18n._(BLOCK_RUN[runState].text)}</span>
       </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-disabled={cut ? true : undefined}
         aria-label={cut ? `Copy ${language ? `${label} ` : ''}code, once the rest arrives` : `Copy ${language ? `${label} ` : ''}code`}

@@ -115,8 +115,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
   const delegation = owlFeatures['thread-delegation']
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
-  // A host reads its live load and counts its work placed but not started (#1311) only where its Owl answer turns on Work
-  // across machines; otherwise its facts are what they were.
+  // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
+  // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
+  // (#1311); otherwise its facts are what they were.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
   const attachAnyFile = owlFeatures['attach-any-file']
@@ -140,7 +141,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, attachAnyFile, crossMachineEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),

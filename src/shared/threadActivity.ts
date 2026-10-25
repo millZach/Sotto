@@ -26,6 +26,14 @@ export function isThreadClosed(thread: ThreadLifecycle): boolean {
   return hasTimestamp(thread.archivedAt) || isThreadSettled(thread)
 }
 
+/**
+ * Whether the pane may show what a thread's provider still runs: its watches and background work, above the composer and
+ * under the last reply. Only from a connected thread that is open, not in error and asking nothing of the user.
+ */
+export function threadOrnamentAllowed(thread: ThreadLifecycle & Pick<AgentThread, 'status' | 'requests'>, connected: boolean): boolean {
+  return connected && !isThreadClosed(thread) && thread.status !== 'error' && thread.requests.length === 0
+}
+
 /** A turn under way. Native idle can come before the turn's completion, so a last turn still reported running counts. */
 export function isThreadTurnRunning(thread: Pick<AgentThread, 'status' | 'lastTurn'>): boolean {
   return thread.status === 'running' || thread.lastTurn?.status === 'running'

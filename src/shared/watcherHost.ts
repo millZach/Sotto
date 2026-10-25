@@ -3,6 +3,7 @@ import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode }
 import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
+import type { ProjectOrigins } from './workerMachine'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
 export const watcherHostScopeSchema = watcherIdentitySchema
@@ -45,11 +46,12 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 
 export interface WatcherRemoteHosts {
   /**
-   * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031).
+   * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and
+   * `origins` whether it lists `project-origins` (#1032).
    * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
    * computer may answer on it, Ask for approval where it may not.
    */
-  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined
@@ -64,6 +66,8 @@ export interface WatcherRemoteHosts {
   answering?(listener: (hostId: string, threadId: string, requestId: string) => () => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
+  /** A connected host's projects' GitHub origins, or undefined when it does not report them (#1032). */
+  projectOrigins?(hostId: string): Promise<ProjectOrigins | undefined>
   /**
    * Settles a thread on a connected host the way the user's Settle does from this computer, for Settle finished threads
    * once Watcher has stopped watching it. Rejects when the host is out of reach or refuses.

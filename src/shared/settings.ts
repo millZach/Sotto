@@ -5,7 +5,9 @@ import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
+import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -182,6 +184,12 @@ export interface AppSettings {
    */
   watcherSettlesFinishedThreads: boolean
   /**
+   * Where new workers start (#1032), under Settings, Watcher, part of the Owl feature `cross-machine-work`: This computer
+   * by default, Watcher's own choice, or a connected machine by its saved host ID. A start that names a machine or a
+   * system overrides it for that start. Read when a start or a delegation is placed.
+   */
+  newWorkerMachine: WorkerMachineSetting
+  /**
    * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
    * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
    */
@@ -311,6 +319,11 @@ export interface AppSettings {
   /** How OpenRouter picks a host for the cleanup model: its own way, the fastest host (`:nitro`) or the cheapest (`:floor`). */
   llmMode: LlmMode
   /**
+   * A model on one of the user's own model servers that cleans up dictation instead of `llmModel`, by the server's and the
+   * model's saved IDs, or null. An Owl feature (ADR-0136): with it off the choice is kept and ignored.
+   */
+  llmOwnModel: OwnCleanupChoice | null
+  /**
    * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
    * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
@@ -401,6 +414,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
@@ -445,6 +459,7 @@ const fieldSchemas = {
   llmMinWords: z.number().int().min(0).max(50),
   llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
   llmMode: z.enum(LLM_MODES),
+  llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
   nextPromptSuggestions: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
@@ -504,6 +519,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
@@ -543,6 +559,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmMinWords: 5,
   llmModel: null,
   llmMode: 'default',
+  llmOwnModel: null,
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
@@ -669,6 +686,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
@@ -712,6 +730,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
     llmModel: parseField(persisted, 'llmModel', defaults),
     llmMode: parseField(persisted, 'llmMode', defaults),
+    llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
     nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),

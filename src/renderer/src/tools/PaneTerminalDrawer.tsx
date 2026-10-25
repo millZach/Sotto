@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { GitBranch, PanelBottomClose } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentProject } from '../../../shared/agents'
 import type { TerminalBridge } from '../../../shared/terminal'
 import { folderKey } from '../agents/projectFolders'
@@ -84,7 +85,9 @@ export interface PaneTerminalDrawerProps {
 export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFactory, store = paneTerminalStore, chromeStore = paneTerminalChromeStore }: PaneTerminalDrawerProps): ReactNode {
   const chrome = usePaneTerminalChrome(threadId, chromeStore)
   const { factory: baseFactory, failed } = useTerminalViewFactory(viewFactory, chrome.open)
+  const { t } = useLingui()
   const shortcut = usePaneTerminalShortcut()
+  const keys = shortcut?.label
   const [searchOpen, setSearchOpen] = useState(false)
   useLayoutEffect(() => { setDrawerShortcut(shortcut) }, [shortcut])
   // A drawer's terminal leaves the drawer's chord to the page.
@@ -185,18 +188,18 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
   const branch = facts.mode === 'shared' && facts.directory && project && nested(facts.directory, project.path) ? facts.branch : undefined
 
   return <div className="pane-terminal" ref={root} style={{ '--pane-terminal-height': `${Math.round(height)}px` } as React.CSSProperties}>
-    <div role="separator" aria-orientation="horizontal" aria-label="Resize terminal" tabIndex={0}
+    <div role="separator" aria-orientation="horizontal" aria-label={t`Resize terminal`} tabIndex={0}
       aria-valuemin={min} aria-valuemax={Math.round(max)} aria-valuenow={Math.round(height)}
-      className="pane-terminal__divider tt-focusable" data-dragging={dragging || undefined} title="Drag to resize · Double-click to reset to a third"
+      className="pane-terminal__divider tt-focusable" data-dragging={dragging || undefined} title={t`Drag to resize · Double-click to reset to a third`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd}
       onDoubleClick={() => chromeStore.resetHeight(threadId)} onKeyDown={onKeyDown} />
     <div className="pane-terminal__body">
       <TerminalSurface threadId={threadId} store={store} bridge={terminalBridge} viewFactory={factory} viewFailed={failed}
-        idSuffix={`-drawer-${threadId}`} chromeTitle={null} newLabel="New shell" autoStart startSize={startSize} focusNextRef={focusNext}
+        idSuffix={`-drawer-${threadId}`} chromeTitle={null} newLabel={t`New shell`} autoStart startSize={startSize} focusNextRef={focusNext}
         barEnd={interrupt => <div className="terminal-bar__end">
-          {branch ? <span className="pane-terminal__branch" title={`Branch ${branch}`}><GitBranch size={13} aria-hidden="true" /><bdi>{branch}</bdi></span> : null}
+          {branch ? <span className="pane-terminal__branch" title={t({ message: `Branch ${branch}`, comment: '{branch} is a Git branch name.' })}><GitBranch size={13} aria-hidden="true" /><bdi>{branch}</bdi></span> : null}
           {interrupt}
-          <button type="button" className="files-icon tt-focusable" aria-label="Hide terminal drawer" title={shortcut ? `Hide terminal drawer (${shortcut.label})` : 'Hide terminal drawer'}
+          <button type="button" className="files-icon tt-focusable" aria-label={t`Hide terminal drawer`} title={keys ? t`Hide terminal drawer (${keys})` : t`Hide terminal drawer`}
             aria-keyshortcuts={shortcut?.keys} onClick={() => hideDrawerFromInside(threadId, chromeStore)}><PanelBottomClose size={16} aria-hidden="true" /></button>
         </div>} />
     </div>
