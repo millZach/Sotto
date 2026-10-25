@@ -44,9 +44,9 @@ describe('a start that names no machine or system', () => {
   it('stays on This computer, away from the default and saying why, when it reuses a worktree or a base branch read here (Zach, October 25)', async () => {
     const read = sources([laptop(), forge()])
     expect(await placeWorker({ pinnedBy: 'existing-worktree' }, FORGE, onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',
-      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
         note: 'It reuses a worktree on This computer, so it started here rather than on forge, where new workers start.' } })
-    expect((await placeWorker({ pinnedBy: 'base-branch' }, FORGE, onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+    expect((await placeWorker({ pinnedBy: 'base-branch' }, FORGE, onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true, defaultName: 'forge',
       note: 'Its base branch was read on This computer, so it started here rather than on forge, where new workers start.' })
     expect(read.originReads).toEqual([])
     // A start that names the machine still goes there; where it is placed refuses the choices that do not travel.
