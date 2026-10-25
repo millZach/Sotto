@@ -42,6 +42,7 @@ export const OWL_FEATURES = [
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
+  { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
