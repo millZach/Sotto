@@ -4,7 +4,7 @@ import { watcherIdentitySchema, watcherMergeQueueItemSchema, watcherOperationSch
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
-import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, type WatcherThreadTarget } from './watcher'
+import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
 export const WATCHER_GET = 'sotto:watcher:get'
@@ -83,9 +83,13 @@ export const watcherRoomStateSchema = z.object({
    */
   context: z.object({ tokens: z.number().int().nonnegative().nullable(), compactAt: z.number().int().positive(),
     canCompact: z.boolean(), compacting: z.boolean() }).strict().nullable().optional(),
-  /** Watcher's state, kept through compaction (#1189): what each watched thread waits on, and what Watcher kept. */
+  /**
+   * Watcher's state (#1189): what each watched thread waits on, what waits on the user among them, worked out live
+   * (October 24, 2026), and what Watcher kept.
+   */
   // `unread` while a saved state could not be read: the lists are not what is kept, and the panel says so.
-  state: z.object({ watching: z.array(watcherStateThreadSchema), kept: watcherKeptStateSchema, unread: z.literal(true).optional() }).strict().optional(),
+  state: z.object({ watching: z.array(watcherStateThreadSchema), waitingOnUser: z.array(watcherWaitingOnUserSchema), kept: watcherKeptStateSchema,
+    unread: z.literal(true).optional() }).strict().optional(),
   /**
    * The requests the current Watcher's wake-ups said waited on the user, oldest first, each with the message of its
    * conversation the request's card goes under (ADR-0073, answering in Watcher's conversation): the reply of the turn

@@ -4437,40 +4437,44 @@ export class AgentControl {
         const answerDraft = sentDraft ?? (!command.questionAnswers ? this.state.threadDrafts?.find(draft => draft.threadId === command.threadId && draft.requestId === command.requestId
           && draft.text.trim() === command.answer.trim() && !draft.attachments.length) : undefined)
         if (request.delivery === 'uncertain') throw new Error('This answer may already have arrived. Refresh the original request; it will not be resent.')
-        if (this.prototypeQuestions.isCopy(command.threadId, request.id)) {
-          // Sotto's copy of a question it sent back (ADR-0108): the user's answer goes to the thread as the user's own
-          // message, quoting the question, and waits in the queue while the thread is busy.
-          await this.answerPrototypeQuestionCopy(command, answerDraft?.draftId)
-          this.recordAnswerAttribution({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer,
-            ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}) }, client)
+        // Watcher hears that the user answered a card it was told of, never what they answered (October 24, 2026).
+        const unmark = this.watcherHooks?.requestAnswering?.(command.threadId, request.id, 'user')
+        try {
+          if (this.prototypeQuestions.isCopy(command.threadId, request.id)) {
+            // Sotto's copy of a question it sent back (ADR-0108): the user's answer goes to the thread as the user's own
+            // message, quoting the question, and waits in the queue while the thread is busy.
+            await this.answerPrototypeQuestionCopy(command, answerDraft?.draftId)
+            this.recordAnswerAttribution({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer,
+              ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}) }, client)
+            if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
+              && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
+            this.say(`Answered ${thread.title}.`)
+            return
+          }
+          if (isSottoRequest(request.id)) {
+            // Sotto's own request: the answer is Sotto's to act on, and no provider hears it. Only a client that may
+            // grant reaches here (guardClientGrant above), as for every other request (ADR-0004).
+            if (!this.sottoRequests) throw new Error('This request is no longer pending. Refresh the thread.')
+            this.sottoRequests.answer(command.threadId, command.requestId, command.approved === true)
+            this.recordAnswerAttribution({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer,
+              ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, client)
+            this.say(`Answered ${thread.title}.`)
+            return
+          }
+          await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest, origin)
+          if (answerDraft) {
+            this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== command.threadId || item.draftId !== answerDraft.draftId),
+              { threadId: command.threadId, draftId: answerDraft.draftId }])
+            this.clearEmptyDraftBinding(command.threadId, answerDraft.draftId)
+            this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== command.threadId || draft.draftId !== answerDraft.draftId)
+          }
           if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
             && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
+          // The user answering a question replies to the prototype waiting before it (ADR-0108); its leaving alone does not.
+          if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) void this.persist().catch(() => undefined)
           this.say(`Answered ${thread.title}.`)
           return
-        }
-        if (isSottoRequest(request.id)) {
-          // Sotto's own request: the answer is Sotto's to act on, and no provider hears it. Only a client that may
-          // grant reaches here (guardClientGrant above), as for every other request (ADR-0004).
-          if (!this.sottoRequests) throw new Error('This request is no longer pending. Refresh the thread.')
-          this.sottoRequests.answer(command.threadId, command.requestId, command.approved === true)
-          this.recordAnswerAttribution({ type: 'answer', commandId: randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer,
-            ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, client)
-          this.say(`Answered ${thread.title}.`)
-          return
-        }
-        await this.dispatch({ type: 'answer', commandId: answerDecisionId ?? randomUUID(), threadId: command.threadId, requestId: command.requestId, answer: command.answer, ...(command.approved === undefined ? {} : { approved: command.approved }), ...(command.questionAnswers ? { questionAnswers: command.questionAnswers } : {}), ...(command.permissionChoice ? { permissionChoice: command.permissionChoice } : {}) }, turn, composer ? () => this.validateComposerQuestion(composer) : undefined, composer?.atomicDigest ? answerDraft?.draftId : undefined, client, composer?.atomicDigest, origin)
-        if (answerDraft) {
-          this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== command.threadId || item.draftId !== answerDraft.draftId),
-            { threadId: command.threadId, draftId: answerDraft.draftId }])
-          this.clearEmptyDraftBinding(command.threadId, answerDraft.draftId)
-          this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== command.threadId || draft.draftId !== answerDraft.draftId)
-        }
-        if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
-          && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
-        // The user answering a question replies to the prototype waiting before it (ADR-0108); its leaving alone does not.
-        if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) void this.persist().catch(() => undefined)
-        this.say(`Answered ${thread.title}.`)
-        return
+        } catch (error) { unmark?.(); throw error }
       }
     }
   }
@@ -4516,9 +4520,14 @@ export class AgentControl {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!thread || !this.state.host.connected || !isThreadProviderConnected(this.state.host, thread) || !capabilitiesForThread(this.state.host, thread).questions) return false
     const command = { type: 'answer' as const, commandId: randomUUID(), threadId, requestId: request.id, ...reply }
-    const result = await this.dependencies.host.execute(command)
-    const taken = result.accepted && !result.uncertain ? true
-      : result.uncertain && result.answerCompletion ? await result.answerCompletion.catch(() => false) : false
+    // Sotto's own answer: Watcher hears nothing of the card closing, since its copy now waits on the user instead.
+    const unmark = this.watcherHooks?.requestAnswering?.(threadId, request.id, 'sotto')
+    let taken = false
+    try {
+      const result = await this.dependencies.host.execute(command)
+      taken = result.accepted && !result.uncertain ? true
+        : result.uncertain && result.answerCompletion ? await result.answerCompletion.catch(() => false) : false
+    } finally { if (!taken) unmark?.() }
     if (taken) this.recordAnswerAttribution(command, PROTOTYPE_SEND_BACK_CLIENT)
     return taken
   }
