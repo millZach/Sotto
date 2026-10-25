@@ -298,6 +298,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     onDragStart={() => { draggingRef.current = true; clearTimers() }}
     onDragEnd={() => { draggingRef.current = false; scheduleHide('hover') }}
     onKeyDown={event => {
+      // Keys typed in a row's rename field belong to the field: caret arrows must never navigate the preview.
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) return
       if (event.key === 'Escape' && peeking) { event.preventDefault(); event.stopPropagation(); hidePreview(true); toggleRef.current?.focus(); return }
       const inPreview = previewRef.current?.contains(event.target as Node) === true
       if (inPreview && event.key === 'ArrowLeft') { event.preventDefault(); hidePreview(true); toggleRef.current?.focus(); return }

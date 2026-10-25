@@ -69,6 +69,19 @@ it('steps from the toggle into the preview, and Escape stays shut until focus le
   expect(preview()).not.toBeInTheDocument()
 })
 
+it('leaves caret keys in a preview row rename field to the field', () => {
+  const { folder } = mount()
+  fireEvent.pointerOver(folder, { pointerType: 'mouse' })
+  advance(350)
+  fireEvent.click(screen.getByRole('button', { name: 'Rename Visual gate flake' }))
+  const field = screen.getByRole('textbox')
+  expect(field).toHaveFocus()
+  expect(fireEvent.keyDown(field, { key: 'Home' })).toBe(true)
+  expect(fireEvent.keyDown(field, { key: 'ArrowDown' })).toBe(true)
+  expect(field).toHaveFocus()
+  expect(field).toBeInTheDocument()
+})
+
 it('shows no preview from a touch pointer or with the Owl feature off', () => {
   const first = mount()
   fireEvent.pointerOver(first.folder, { pointerType: 'touch' })
