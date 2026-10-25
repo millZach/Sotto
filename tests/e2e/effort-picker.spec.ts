@@ -13,9 +13,13 @@ async function savedEffort(page: Page): Promise<string | undefined> {
   return page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === id)?.reasoningEffort, workshop)
 }
 
-/** The composer's outline is its ::after ring; its opacity says whether the thread wears the colourway. */
-async function outlineOpacity(composer: Locator): Promise<string> {
-  return composer.evaluate(node => getComputedStyle(node, '::after').opacity)
+/** The composer's edge: its border's colour and whatever its ::after draws. It wears none at any level (ADR-0110). */
+const NO_EDGE = { border: 'rgba(0, 0, 0, 0)', ring: 'none' }
+async function composerEdge(composer: Locator): Promise<typeof NO_EDGE> {
+  return composer.evaluate(node => {
+    const after = getComputedStyle(node, '::after')
+    return { border: getComputedStyle(node).borderTopColor, ring: after.content === 'none' || after.content === 'normal' ? 'none' : after.backgroundImage }
+  })
 }
 
 /**
@@ -34,11 +38,11 @@ async function inkCoverage(capture: Buffer): Promise<number> {
 }
 
 async function runningAnimations(page: Page): Promise<number> {
-  // Document.getAnimations() covers every element and pseudo-element in the page, the composer's outline included.
+  // Document.getAnimations() covers every element and pseudo-element in the page.
   return page.evaluate(() => document.getAnimations().filter(animation => animation.playState === 'running').length)
 }
 
-/** Of those, the ones that never end: the ring's travelling run is one, and reduced motion may not have any. */
+/** Of those, the ones that never end, which reduced motion may not have. */
 async function endlessAnimations(page: Page): Promise<number> {
   return page.evaluate(() => document.getAnimations()
     .filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations === Infinity).length)
@@ -68,7 +72,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     const range = card.getByRole('slider', { name: 'Thread reasoning effort', exact: true })
     const composer = page.locator('.thread-prompt').filter({ has: chip })
     await expect(chip).toHaveAttribute('data-effort-top', 'false')
-    expect(await outlineOpacity(composer)).toBe('0')
+    expect(await composerEdge(composer)).toEqual(NO_EDGE)
     await chip.click()
     await expect(range).toBeFocused()
     await expect(range).toHaveAttribute('aria-valuetext', 'Low')
@@ -98,7 +102,8 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card).toBeVisible()
     await expect(card.getByRole('button', { name: 'Default', exact: true })).toBeEnabled()
 
-    // Reaching the top: the arrival plays once, the chip and the composer wear the colourway, and the line names the cost.
+    // Reaching the top: the arrival plays once, the chip wears the colourway, the composer still has no edge, and the line
+    // names the cost.
     await range.focus()
     await range.press('End')
     await expect.poll(() => savedEffort(page)).toBe('max')
@@ -109,15 +114,15 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(card.getByText('Everything the model has. Slowest, costliest.')).toBeVisible()
     await page.screenshot({ path: `${ARTIFACTS}/max-arrival.png` })
     await expect(card).toHaveAttribute('data-arriving', 'false', { timeout: 6_000 })
-    await expect.poll(() => outlineOpacity(composer)).toBe('1')
+    await expect.poll(() => composerEdge(composer)).toEqual(NO_EDGE)
     await page.screenshot({ path: `${ARTIFACTS}/max-settled.png` })
-    // Lowering the level takes the colourway off again.
+    // Lowering the level takes the colourway off the chip again.
     await range.press('Home')
     await expect.poll(() => savedEffort(page)).toBe('low')
     await expect(chip).toBeEnabled()
     await expect(card).toHaveAttribute('data-top', 'false')
     await expect(chip).toHaveAttribute('data-effort-top', 'false')
-    await expect.poll(() => outlineOpacity(composer)).toBe('0')
+    await expect.poll(() => composerEdge(composer)).toEqual(NO_EDGE)
     // The Default button returns to the model's default, and the wheel steps a level.
     await range.press('End')
     await expect.poll(() => savedEffort(page)).toBe('max')
@@ -172,7 +177,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await chip.click()
     await expect(card.getByRole('button', { name: 'Ultrathink is in this prompt', exact: true })).toBeDisabled()
 
-    // Reduced motion, by the app's setting: the settled state, nothing running, the outline a still ring.
+    // Reduced motion, by the app's setting: the settled state and nothing running.
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(card).toHaveAttribute('data-still', 'true')
     await range.press('End')
@@ -180,12 +185,10 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect(chip).toBeEnabled()
     await expect(card).toHaveAttribute('data-top', 'true')
     await expect(card).toHaveAttribute('data-arriving', 'false')
-    await expect.poll(() => outlineOpacity(composer)).toBe('1')
-    // Nothing keeps running, which is what reduced motion promises: the ring's travelling run is gone rather
-    // than slowed. An endless animation is running from the moment it starts, so that is read straight away;
+    await expect.poll(() => composerEdge(composer)).toEqual(NO_EDGE)
+    // Nothing keeps running, which is what reduced motion promises. An endless animation is running from the moment it starts, so that is read straight away;
     // the count of everything running cannot be, because turning the setting on repaints the window and the
-    // one-shot transitions that carries (the root's colour and scrollbar, the composer's border taking the
-    // colourway) are running for their own moment, in or out of a single sample depending on when it is taken.
+    // one-shot transitions that carries (the root's colour and scrollbar) are running for their own moment, in or out of a single sample depending on when it is taken.
     expect(await endlessAnimations(page)).toBe(0)
     await expect.poll(() => runningAnimations(page), { timeout: 8_000 }).toBe(0)
     for (const appearance of ['dark', 'light'] as const) {
@@ -217,7 +220,7 @@ test('the effort card previews a drag, saves on release, plays the arrival at th
     await expect.poll(() => savedEffort(page)).toBe('max')
     await expect(chip).toBeEnabled()
     await expect(card).toHaveAttribute('data-arriving', 'false')
-    // The system's preference reaches the card and the outline the same way; other surfaces keep their own 1ms transitions.
+    // The system's preference reaches the card and the composer the same way; other surfaces keep their own 1ms transitions.
     expect(await card.evaluate(node => node.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running')
       .map(animation => `${(animation.effect as KeyframeEffect | null)?.target?.tagName ?? '?'}${(animation.effect as KeyframeEffect | null)?.pseudoElement ?? ''}:${'animationName' in animation ? String(animation.animationName) : 'transitionProperty' in animation ? String(animation.transitionProperty) : animation.id}`))).toEqual([])
     expect(await composer.evaluate(node => getComputedStyle(node, '::after').animationName)).toBe('none')
@@ -360,7 +363,7 @@ test('Settings → Appearance offers the effort colourways, paints the pick at o
     const chip = page.getByRole('combobox', { name: 'Thread reasoning', exact: true })
     await expect(chip).toHaveAttribute('data-effort-top', 'true')
     const composer = page.locator('.thread-prompt').filter({ has: chip })
-    await expect.poll(() => outlineOpacity(composer)).toBe('1')
+    await expect.poll(() => composerEdge(composer)).toEqual(NO_EDGE)
     await page.screenshot({ path: `${ARTIFACTS}/composer-cyberpunk.png` })
     expect(errors).toEqual([])
   } finally { await closeSotto(launched) }

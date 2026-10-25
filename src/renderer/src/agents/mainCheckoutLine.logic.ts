@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { MainCheckoutBridge, ProjectMainCheckout } from '../../../shared/mainCheckout'
 
-/** Every project's line, by local project ID, as main last said; empty without the bridge (ADR-0123). */
+/** Every project's line, by local project ID, as main last said; empty without the bridge (ADR-0140). */
 export function useMainCheckoutLines(bridge: MainCheckoutBridge | undefined = window.sotto?.mainCheckout): ReadonlyMap<string, ProjectMainCheckout> {
   const [lines, setLines] = useState<ReadonlyMap<string, ProjectMainCheckout>>(() => new Map())
   useEffect(() => {

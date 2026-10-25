@@ -1,5 +1,7 @@
 import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Marked } from '../components/marks'
 import { ArrowUpRight } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
 import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/BranchToolbar'
@@ -110,6 +112,7 @@ const clamp = (share: number, [min, max]: readonly [number, number]): number => 
  * width even at the smallest window, so the two always stand side by side.
  */
 export function BesideDivider({ width, share, controls }: { readonly width: number; readonly share: number; readonly controls: string }): ReactNode {
+  const { t } = useLingui()
   const range = shareRange(width)
   const shown = clamp(share, range)
   const drag = useRef<{ readonly pointerId: number; readonly left: number } | null>(null)
@@ -139,9 +142,9 @@ export function BesideDivider({ width, share, controls }: { readonly width: numb
     event.preventDefault()
     roomView.set({ share: clamp(next, range) })
   }
-  return <div role="separator" aria-orientation="vertical" aria-label="Resize panes" aria-controls={controls} tabIndex={0}
+  return <div role="separator" aria-orientation="vertical" aria-label={t`Resize panes`} aria-controls={controls} tabIndex={0}
     aria-valuemin={Math.round(range[0] * 100)} aria-valuemax={Math.round(range[1] * 100)} aria-valuenow={Math.round(shown * 100)}
-    className="thread-panes__divider watcher-split__divider tt-focusable" data-axis="columns" data-dragging={dragging || undefined} title="Drag to resize · Double-click to even"
+    className="thread-panes__divider watcher-split__divider tt-focusable" data-axis="columns" data-dragging={dragging || undefined} title={t`Drag to resize · Double-click to even`}
     onPointerDown={onPointerDown} onPointerMove={event => { if (drag.current?.pointerId === event.pointerId) move(event.clientX) }}
     onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onLostPointerCapture={onPointerEnd}
     onDoubleClick={() => roomView.set({ share: 0.5 })} onKeyDown={onKeyDown} />
@@ -173,14 +176,16 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   readonly onClose: () => void
   readonly onOpenInThreads: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const threadId = row.thread.id
+  const title = row.thread.title
   useKeptReadingPosition(row.thread, BESIDE_PANE_ID)
   const pullRequests = useMemo<PullRequestOpener>(() => ({
     open: id => { toolsPanelStore.showPullRequest(id); onOpenInThreads() },
-    where: 'in Tools on the Threads page',
-  }), [onOpenInThreads])
+    where: t({ message: 'in Tools on the Threads page', comment: 'Follows “Open” and a pull request’s title: where it opens' }),
+  }), [onOpenInThreads, t])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
@@ -192,10 +197,10 @@ export function BesidePane({ row, state, command, store, focused, underControls,
       onClose()
     }}>
     <ThreadPane row={row} state={state} command={command} store={store} focused={focused} promptId={BESIDE_PROMPT_ID} error={error} now={now} onClose={onClose}
-      actions={<button type="button" className="pane-action tt-focusable" aria-label={`Open ${row.thread.title} in Threads`} title="Open in Threads" onClick={onOpenInThreads}>
+      actions={<button type="button" className="pane-action tt-focusable" aria-label={t`Open ${title} in Threads`} title={t`Open in Threads`} onClick={onOpenInThreads}>
         <ArrowUpRight size={16} aria-hidden="true" />
       </button>}
       notice={<ThreadWorkingCopyNotice key={`working-copy-${threadId}`} thread={row.thread} project={row.project} command={command}
         onRecovered={() => document.getElementById(BESIDE_PROMPT_ID)?.focus()} />} />
-  </section></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
+  </section>}</Marked></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
 }

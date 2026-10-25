@@ -52,7 +52,7 @@ async function keeperFor(repository: Repository, options: { host?: Partial<MainC
 const head = (repository: Repository): string => repository.git('rev-parse', 'HEAD').trim()
 const remoteHead = (repository: Repository): string => runFixtureGit(repository.other, 'rev-parse', 'HEAD').trim()
 
-describe('Keep main up to date (ADR-0123)', () => {
+describe('Keep main up to date (ADR-0140)', () => {
   it('fast-forwards a clean default branch to the remote and says nothing afterwards', async () => {
     const repository = await behind([{ 'one.txt': '1' }, { 'two.txt': '2' }])
     const { keeper } = await keeperFor(repository)

@@ -25,3 +25,12 @@ export function createRoomCompletion<State>(readCpu: () => number) {
     },
   }
 }
+
+/**
+ * Whether two rooms show the same: equal apart from when each was read and which build it was. A build that changed
+ * nothing else sends nothing (#1450), so the page may hold the build before the latest one main made.
+ */
+export function sameShownRoom(held: { readonly observedAt: string; readonly sequence?: number | undefined }, latest: { readonly observedAt: string; readonly sequence?: number | undefined }): boolean {
+  const shown = (room: object) => JSON.stringify({ ...room, observedAt: undefined, sequence: undefined })
+  return shown(held) === shown(latest)
+}

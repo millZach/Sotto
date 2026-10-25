@@ -80,6 +80,25 @@ describe('the sign-in on the host', () => {
     } finally { service.close() }
   })
 
+  it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0128)', async () => {
+    const service = signIns()
+    try {
+      const started = await service.start('cursor', 'desktop')
+      expect(started).toMatchObject({ provider: 'cursor', shape: 'page', stage: 'waiting', url: 'https://cursor.com/loginDeepControl?challenge=fixture&uuid=fixture&mode=login', page: 'cursor.com' })
+      expect(started.code).toBeUndefined()
+      expect(JSON.parse(await readFile(join(root, 'cursor.args.json'), 'utf8'))).toEqual(['login'])
+      // Nothing is pasted back: the page finishes the sign-in on Cursor's side.
+      expect(() => service.code(started.id, 'desktop', 'anything#at-all')).toThrow()
+      await writeFile(join(root, 'cursor.approved'), '')
+      await expect.poll(() => service.read(started.id, 'desktop')?.stage).toBe('connected')
+      expect(connected).toEqual([['cursor', 'desktop']])
+    } finally { service.close() }
+    const elsewhere = signIns({ page: 'https://cursor.example.com/login' })
+    try {
+      expect(await elsewhere.start('cursor', 'desktop')).toMatchObject({ stage: 'failed' })
+    } finally { elsewhere.close() }
+  })
+
   it('opens only the provider\'s own page, and stops a sign-in that is cancelled or runs out of time', async () => {
     const elsewhere = signIns({ page: 'https://login.example.com/device' })
     try {

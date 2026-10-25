@@ -17,7 +17,7 @@ function bridge(changes: MainCheckoutChanges = { items: [{ kind: 'modified', tex
   return { bridge: read, command }
 }
 
-describe('Keep main up to date on the project row (ADR-0123)', () => {
+describe('Keep main up to date on the project row (ADR-0140)', () => {
   it('says how far behind main is and why, and lists what is in the way on Show changes', async () => {
     const user = userEvent.setup()
     const { bridge: main, command } = bridge()

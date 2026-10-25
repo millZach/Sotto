@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { fixture, local } from '../fixtures/workspaceTestFixture'
 
-describe('Keep main up to date asks the checkout guard first (ADR-0123)', () => {
+describe('Keep main up to date asks the checkout guard first (ADR-0140)', () => {
   it('runs nothing in a project checkout another mutation holds, and runs once it is free', async () => {
     const f = await fixture()
     const { project } = await local(f)

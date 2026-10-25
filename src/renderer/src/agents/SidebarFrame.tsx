@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, roomsLayout, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -13,7 +13,6 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
-import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -45,16 +44,21 @@ export function SidebarChromeProvider({ updateControl, children }: { readonly up
 
 /**
  * The sidebar's top row: the mark with the wordmark beside it, then whatever controls the column adds. It is the
- * frameless window's drag region, so every control in it is marked no-drag. On macOS the traffic lights take the
- * row's left end and the wordmark gives way to them. A Sotto Owl build shows the mark alone, as a larger tile in
- * the wordmark's place, and names itself.
+ * frameless window's drag region, so every control in it is marked no-drag. On macOS no mark sits beside the
+ * traffic lights at the row's left end; a spacer keeps the controls at its right end. A Sotto Owl build shows
+ * the mark alone, as a larger tile in the wordmark's place, and names itself.
  */
-export function SidebarTop({ children }: { readonly children?: ReactNode }): ReactNode {
+export function SidebarTop({ children, platform }: { readonly children?: ReactNode; readonly platform?: SottoPlatform | undefined }): ReactNode {
+  const app = useOptionalApp()
+  const mac = (platform ?? app?.platform) === 'darwin'
   const owl = useReleaseTrack() === 'owl'
-  return <div className="thread-nav__top">
-    {owl
+  const brand = mac
+    ? <span className="thread-nav__spacer" />
+    : owl
       ? <span className="thread-nav__brand" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
-      : <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>}
+      : <span className="thread-nav__brand" aria-label="Sotto application"><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>
+  return <div className="thread-nav__top">
+    {brand}
     {children}
   </div>
 }
@@ -64,17 +68,23 @@ export function SidebarTop({ children }: { readonly children?: ReactNode }): Rea
  * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
- * page draws. The sidebar foot and Watcher's floating switch both draw this one.
+ * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
+ * lit tile showing no name, so every tile there carries its name as a tooltip.
  */
-export function RoomSwitch({ className }: { readonly className: string }): ReactNode {
+export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
   const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   if (rooms.length < 2) return null
-  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={roomsLayout(rooms)}>
-    {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
-      {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page">
+    {rooms.map((target, index) => {
+      const tab = roomSwitch.tab(target, index)
+      // Where the lit tile shows no name (the sidebar foot), every tile names itself on hover, the lit one too.
+      return <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...tab}
+        title={iconOnly ? target.label : tab.title}>
+        <RoomTabFace room={target} named={!iconOnly} /></button>
+    })}
   </div>
 }
 
@@ -93,13 +103,15 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 }
 
 /**
- * The sidebar's foot: the room switch, the other pages as icon links, and the update control. A page that carries
- * the sidebar, or a column that wears its frame, has no app footer under it, so this is the only way off the page.
+ * The sidebar's foot, one row of icons: the room switch, a hairline, the other pages as icon links, and the update
+ * control at the far end. A page that carries the sidebar, or a column that wears its frame, has no app footer
+ * under it, so this is the only way off the page.
  */
 export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
   return <div className="thread-nav__foot">
-    <RoomSwitch className="thread-nav__seg" />
+    <RoomSwitch className="thread-nav__seg" iconOnly />
+    <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
     {updateControl}
   </div>
@@ -190,7 +202,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
     {sky ? <OwlSky /> : null}
-    <SidebarTop>
+    <SidebarTop platform={platform ?? app?.platform}>
       {title === null ? null : <h1 className="tt-visually-hidden">{title}</h1>}
       <Button variant="ghost" iconOnly aria-label="Add project" title="Add project" disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" iconOnly aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} /></Button>
@@ -210,7 +222,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
     {size.collapsed ? <div className="thread-nav__rail">
-      <SottoMark className="thread-nav__glyph" />
+      {mac ? null : <SottoMark className="thread-nav__glyph" />}
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label="Expand sidebar" title="Expand sidebar" onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
       {foot ?? <SidebarFoot />}

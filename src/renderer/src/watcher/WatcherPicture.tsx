@@ -1,5 +1,8 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { clockLabel } from '../agents/threadFacts'
@@ -8,7 +11,8 @@ import { sceneInk } from './nightScene'
 import { layoutGrove, type GroveCluster, type GroveLayout, type GroveOwl } from './pictureGrove'
 import { GrovePainter, type GroveOwlFrame } from './pictureGrovePainter'
 import { threadAddressIndex, type WatcherRoom } from './watcherRoom'
-import { surfaceOf, toRgb } from './WatcherNightScene'
+import { toRgb } from './canvasColor'
+import { surfaceOf } from './WatcherNightScene'
 import type { OpenThread, OverviewEntry } from './WatcherOverview'
 import { WatcherOwl } from './WatcherOwl'
 import { watchedLead } from './WatcherWatched'
@@ -111,14 +115,22 @@ function useSize(element: React.RefObject<HTMLElement | null>): { readonly width
   return size
 }
 
-const STEP_WORDS: Readonly<Record<MergeStep, string>> = { ready: 'READY TO MERGE', go: 'GO MERGE', merged: 'MERGED' }
-const STEP_SHORT: Readonly<Record<MergeStep, string>> = { ready: 'READY', go: 'GO', merged: 'merged' }
-const CHECKS_WORDS = { passed: 'checks passed', failed: 'checks failed', pending: 'checks running', unknown: 'checks unknown' } as const
+const STEP_WORDS: Readonly<Record<MergeStep, MessageDescriptor>> = {
+  ready: msg({ message: 'READY TO MERGE', comment: 'A pull request’s place in Watcher’s merge turns, in capitals as a tag' }),
+  go: msg({ message: 'GO MERGE', comment: 'A pull request’s place in Watcher’s merge turns, in capitals as a tag: its turn to merge' }),
+  merged: msg({ message: 'MERGED', comment: 'A pull request’s place in Watcher’s merge turns, in capitals as a tag' }),
+}
+const STEP_SHORT: Readonly<Record<MergeStep, MessageDescriptor>> = {
+  ready: msg({ message: 'READY', comment: 'Short tag on a pull request chip: in the merge queue' }),
+  go: msg({ message: 'GO', comment: 'Short tag on a pull request chip: its turn to merge' }),
+  merged: msg({ message: 'merged', comment: 'Short tag on a pull request chip' }),
+}
+const CHECKS_WORDS = { passed: msg`checks passed`, failed: msg`checks failed`, pending: msg`checks running`, unknown: msg`checks unknown` } as const
 
 /** A pull request as a chip: its number, its checks as a dot, and its merge turn unless `compact`. */
 function PullRequestChip({ pr, compact = false }: { readonly pr: PicturePullRequest; readonly compact?: boolean }): ReactNode {
   return <span className="watcher-picture__pr" data-checks={pr.checks} data-step={pr.step ?? undefined} data-state={pr.state} aria-hidden="true">
-    <i />#{pr.number}{pr.step === null || compact ? null : <b>{STEP_SHORT[pr.step]}</b>}
+    <i />#{pr.number}{pr.step === null || compact ? null : <b>{i18n._(STEP_SHORT[pr.step])}</b>}
   </span>
 }
 /** A label narrower than this leaves a pull request's merge turn to the merge turns along the top and its card. */
@@ -126,16 +138,23 @@ const CHIP_STEP_MIN = 128
 
 /** A pull request in a card's words. */
 function pullRequestWords(pr: PicturePullRequest): string {
-  const state = pr.state === 'merged' ? ', merged' : pr.state === 'closed' ? ', closed' : pr.checks === undefined ? '' : `, ${CHECKS_WORDS[pr.checks]}`
-  const turn = pr.step === 'go' ? '. Its turn to merge.' : pr.step === 'ready' ? '. Ready to merge, waiting for its turn.' : ''
-  return `Pull request #${pr.number}${state}${turn}`
+  const number = pr.number
+  const checks = pr.checks === undefined ? undefined : i18n._(CHECKS_WORDS[pr.checks])
+  const said = pr.state === 'merged' ? i18n._(msg`Pull request #${number}, merged`) : pr.state === 'closed' ? i18n._(msg`Pull request #${number}, closed`)
+    : checks === undefined ? i18n._(msg`Pull request #${number}`) : i18n._(msg`Pull request #${number}, ${checks}`)
+  return pr.step === 'go' ? i18n._(msg`${said}. Its turn to merge.`) : pr.step === 'ready' ? i18n._(msg`${said}. Ready to merge, waiting for its turn.`) : said
 }
 
 /** What a node's button says: the thread, where it stands, its pull request, then what a press does. */
 function nodeLabel(node: PictureNode): string {
   const pr = node.pullRequest
-  const prWords = pr === null ? '' : `, pull request #${pr.number}${pr.step === null ? pr.checks === undefined ? '' : `, ${CHECKS_WORDS[pr.checks]}` : `, ${STEP_WORDS[pr.step]}`}`
-  return `${node.title}: ${node.word}${prWords}${node.settled ? ', settled' : ''}. Show details`
+  const number = pr?.number ?? 0
+  const state = pr === null ? undefined : pr.step !== null ? i18n._(STEP_WORDS[pr.step]) : pr.checks === undefined ? undefined : i18n._(CHECKS_WORDS[pr.checks])
+  const prWords = pr === null ? null : state === undefined ? i18n._(msg`pull request #${number}`) : i18n._(msg`pull request #${number}, ${state}`)
+  const title = node.title
+  // What it says of the thread, a comma between each.
+  const about = [node.word, prWords, node.settled ? i18n._(msg({ message: 'settled', comment: 'A thread Watcher settled, in a list of what is true of it' })) : null].filter(Boolean).join(', ')
+  return i18n._(msg`${title}: ${about}. Show details`)
 }
 
 /** A thread's owl, as its button: the owl on its limb, its name and where it stands under it, and its pull request. */
@@ -168,11 +187,13 @@ function moodOfNode(node: PictureNode): OwlMood {
  */
 function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: { readonly node: PictureNode; readonly room: WatcherRoomState; readonly state: AgentState
   readonly goes: ReadonlyMap<string, number>; readonly layout: GroveLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
+  const { t, i18n: { locale } } = useLingui()
   const card = useRef<HTMLDivElement>(null)
   useEffect(() => { card.current?.querySelector<HTMLElement>('button')?.focus() }, [node.key])
   const at = layout.at.get(node.key)
   const thread = node.threadId === null ? undefined : state.host.threads.find(item => item.id === node.threadId)
-  const activity = useMemo(() => nodeActivity(room, node.key, goes), [room, node.key, goes])
+  // The activity lines are words, so a new interface language writes them again.
+  const activity = useMemo(() => nodeActivity(room, node.key, goes), [room, node.key, goes, locale])
   const words = (id: string | undefined): string | null => {
     const text = id === undefined ? undefined : thread?.messages.find(message => message.id === id)?.text
     const line = text?.split('\n').find(part => part.trim() !== '')?.trim()
@@ -180,40 +201,41 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
   }
   const asks = node.waits === 'question' || node.waits === 'permission' ? thread?.requests[0]?.text.split('\n').find(line => line.trim() !== '')?.trim() : undefined
   if (at === undefined) return null
+  const title = node.title
   // Beside the thread's owl, on the side with more room; under it when neither side has room for the card.
   const right = at.box.x + at.box.w + 8, left0 = at.box.x - 8 - CARD_WIDTH
   const beside = right + CARD_WIDTH <= layout.width - 8 ? right : left0 >= 8 ? left0 : null
   const left = beside ?? Math.min(Math.max(8, at.x - CARD_WIDTH / 2), layout.width - CARD_WIDTH - 8)
   // A card that runs past the picture's foot makes the picture scroll, so its actions are always within reach.
   const top = beside === null ? at.box.y + at.box.h + 6 : Math.max(8, Math.min(at.box.y - 8, layout.height - CARD_TALLEST - 8))
-  return <div ref={card} className="watcher-picture__card" role="dialog" aria-label={`${node.title}, details`} style={{ left, top, width: CARD_WIDTH }}
+  return <div ref={card} className="watcher-picture__card" role="dialog" aria-label={t`${title}, details`} style={{ left, top, width: CARD_WIDTH }}
     onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose(true) } }}>
     <div className="watcher-picture__card-head">
       <span className="watcher-row__ring" data-tone={node.ring} aria-hidden="true" />
       <h3>{node.title}</h3>
-      <button type="button" className="watcher-picture__close tt-focusable" aria-label="Close details" onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
+      <button type="button" className="watcher-picture__close tt-focusable" aria-label={t`Close details`} onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
     </div>
     <p className="watcher-picture__card-where">{[node.provider, node.project, node.computer].filter(Boolean).join(' · ')}
       {' · '}<span className="watcher-row__status" data-tone={node.tone}>{node.word}</span></p>
-    {node.pullRequests.length ? <ul className="watcher-picture__card-prs" aria-label="Its pull requests">
+    {node.pullRequests.length ? <ul className="watcher-picture__card-prs" aria-label={t`Its pull requests`}>
       {node.pullRequests.map(pr => <li key={pr.id}><PullRequestChip pr={pr} /><span>{pullRequestWords(pr)}</span></li>)}
     </ul> : null}
-    {asks ? <p className="watcher-picture__card-asks">{node.waits === 'permission' ? 'Asks permission: ' : 'Asks: '}{asks}</p> : null}
-    {activity.length ? <ol className="watcher-picture__card-did" aria-label="What Watcher last did with it">
+    {asks ? <p className="watcher-picture__card-asks tt-paragraph">{node.waits === 'permission' ? t`Asks permission: ${asks}` : t`Asks: ${asks}`}</p> : null}
+    {activity.length ? <ol className="watcher-picture__card-did" aria-label={t`What Watcher last did with it`}>
       {activity.map(item => {
         const sent = words(item.messageId), reply = words(item.replyMessageId)
         return <li key={item.id}>
-          <span><b>{item.did}</b>, {item.went.toLowerCase()}{sent ? <span className="watcher-picture__words">“{sent}”</span> : null}
-            {reply ? <span className="watcher-picture__words">Reply: “{reply}”</span> : null}</span>
+          <span><b>{item.did}</b>, {item.wentPhrase}{sent ? <span className="watcher-picture__words">“{sent}”</span> : null}
+            {reply ? <span className="watcher-picture__words"><Trans>Reply: “{reply}”</Trans></span> : null}</span>
           <time>{clockLabel(item.at)}</time>
         </li>
       })}
-    </ol> : <p className="watcher-picture__card-none">Watcher has sent it nothing yet.</p>}
-    {node.threadId === null ? <p className="watcher-picture__card-none">This window does not list this thread.</p>
+    </ol> : <p className="watcher-picture__card-none tt-paragraph"><Trans>Watcher has sent it nothing yet.</Trans></p>}
+    {node.threadId === null ? <p className="watcher-picture__card-none tt-paragraph"><Trans>This window does not list this thread.</Trans></p>
       : <div className="watcher-picture__card-actions">
         {node.waits !== null ? <button type="button" className="watcher-answer tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { atRequest: true, from }) }}>
-          {node.waits === 'failed' || node.waits === 'prototype' ? 'Open' : 'Open to answer'}</button> : null}
-        <button type="button" className="watched-card__stop tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { from }) }}>Open beside Watcher</button>
+          {node.waits === 'failed' || node.waits === 'prototype' ? t({ message: 'Open', context: 'Open a thread' }) : t`Open to answer`}</button> : null}
+        <button type="button" className="watched-card__stop tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { from }) }}><Trans>Open beside Watcher</Trans></button>
       </div>}
   </div>
 }
@@ -331,10 +353,12 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   readonly labelledBy: string
   readonly onOpen: OpenThread
 }): ReactNode {
+  const { t, i18n: { locale } } = useLingui()
   const [showSettled, setShowSettled] = useState(false)
   const idOf = useMemo(() => threadAddressIndex(agents), [agents])
   const model = useMemo<PictureModel>(() => buildPicture({ room: roomState, state: agents, entries: known, idOf, merge: merge?.turns ?? null, showSettled }),
-    [roomState, agents, known, idOf, merge, showSettled])
+    // The picture names its projects and computers in words, so a new interface language draws it again.
+    [roomState, agents, known, idOf, merge, showSettled, locale])
   // Each send Watcher marked as a merge turn, with the pull request it gave its turn to.
   const goes = useMemo<ReadonlyMap<string, number>>(() => new Map(merge?.turns.turns.map(turn => [turn.operationId, turn.pullRequest] as const) ?? []), [merge])
   const scroller = useRef<HTMLDivElement>(null)
@@ -458,30 +482,40 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   }
 
   const total = model.nodes.size
+  const settledCount = model.settled
+  const { working, waiting } = model
   return <div id={id} className="thread-workspace__transcript watcher-picture" role="tabpanel" aria-labelledby={labelledBy}>
     <div className="watcher-picture__bar">
-      <span className="watcher-picture__bar-label" id={`${id}-turns`}>Merge turns</span>
+      <span className="watcher-picture__bar-label" id={`${id}-turns`}><Trans>Merge turns</Trans></span>
       {model.turns.length ? <ol className="watcher-picture__turns" aria-labelledby={`${id}-turns`}>
-        {model.turns.map((turn, index) => <li key={`${turn.key}#${turn.number}:${turn.step}`}>
-          {index > 0 ? <span className="watcher-picture__then" aria-hidden="true">›</span> : null}
-          <button type="button" className="watcher-picture__turn tt-focusable" data-step={turn.step} aria-label={`#${turn.number} ${STEP_WORDS[turn.step]}, ${turn.title}. Show details`}
-            title={turn.title} onClick={event => pressTurn(turn.key, event.currentTarget)}
-            onFocus={event => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}>
-            #{turn.number} <b>{STEP_WORDS[turn.step]}</b>
-          </button>
-        </li>)}
-      </ol> : <span className="watcher-picture__bar-none">No pull request is ready to merge.</span>}
+        {model.turns.map((turn, index) => {
+          const { number, title } = turn
+          const step = i18n._(STEP_WORDS[turn.step])
+          return <li key={`${turn.key}#${turn.number}:${turn.step}`}>
+            {index > 0 ? <span className="watcher-picture__then" aria-hidden="true">›</span> : null}
+            <button type="button" className="watcher-picture__turn tt-focusable" data-step={turn.step} aria-label={t`#${number} ${step}, ${title}. Show details`}
+              title={turn.title} onClick={event => pressTurn(turn.key, event.currentTarget)}
+              onFocus={event => event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}>
+              #{turn.number} <b>{step}</b>
+            </button>
+          </li>
+        })}
+      </ol> : <span className="watcher-picture__bar-none"><Trans>No pull request is ready to merge.</Trans></span>}
       {model.settled > 0 ? <button type="button" className="watcher-picture__settled tt-focusable" aria-pressed={showSettled} onClick={() => setShowSettled(value => !value)}>
-        {showSettled ? 'Hide settled' : `Show ${model.settled} settled`}</button> : null}
+        {showSettled ? t`Hide settled` : t`Show ${settledCount} settled`}</button> : null}
     </div>
     <div ref={scroller} className="watcher-picture__canvas" onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('watcher-picture__space')) setOpen(null) }}>
-      {total === 0 ? <p className="watcher-picture__empty">{watchedLead(0, 0)}</p> : layout === null ? null : <div className="watcher-picture__space" style={{ height: layout.height }}>
+      {total === 0 ? <p className="watcher-picture__empty tt-paragraph">{watchedLead(0, 0)}</p> : layout === null ? null : <div className="watcher-picture__space" style={{ height: layout.height }}>
         <GroveScene layout={layout} model={model} />
         {layout.trees.map(tree => <p key={`${tree.computer}:${tree.x}:${tree.y}`} className="watcher-picture__computer" aria-hidden="true"
-          style={{ left: tree.pill.x, top: tree.pill.y, width: tree.pill.w }}><span>{tree.computer || 'Not in this window'}</span></p>)}
+          style={{ left: tree.pill.x, top: tree.pill.y, width: tree.pill.w }}><span>{tree.computer || t`Not in this window`}</span></p>)}
         {model.clusters.map(cluster => {
           const sign = layout.signs.find(item => item.key === cluster.key)
-          return <section key={cluster.key} className="watcher-picture__cluster" aria-label={`${cluster.project}${cluster.computer ? ` on ${cluster.computer}` : ''}, ${cluster.nodes.length} ${cluster.nodes.length === 1 ? 'thread' : 'threads'}`}>
+          const { project, computer } = cluster
+          const count = cluster.nodes.length
+          return <section key={cluster.key} className="watcher-picture__cluster" aria-label={computer
+            ? plural(count, { one: `${project} on ${computer}, # thread`, other: `${project} on ${computer}, # threads` })
+            : plural(count, { one: `${project}, # thread`, other: `${project}, # threads` })}>
             {sign !== undefined ? <h3 className="watcher-picture__cluster-name" data-align={sign.align} aria-hidden="true" title={`${cluster.project}${cluster.computer ? ` · ${cluster.computer}` : ''}`}
               style={{ left: sign.box.x, top: sign.box.y, width: sign.box.w, maxWidth: sign.box.w }}>
               <span>{cluster.project}</span>
@@ -495,10 +529,10 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
           </section>
         })}
         <p ref={nameRef} className="watcher-picture__owl-name" data-wide={layout.wide || undefined} style={{ left: layout.watcherName.x, top: layout.watcherName.y }}>
-          {layout.wide ? null : <WatcherOwl size={14} />}Watcher{model.working ? <span> · {model.working} working</span> : null}
+          {layout.wide ? null : <WatcherOwl size={14} />}Watcher{model.working ? <span> · {t`${working} working`}</span> : null}
         </p>
         <p ref={youRef} className="watcher-picture__you" style={{ left: layout.you.x, top: layout.you.y }}>
-          You{model.waiting ? <b> · {model.waiting} waiting</b> : <span> · nothing waiting</span>}
+          {t({ message: 'You', comment: 'The user, at the foot of Watcher’s picture' })}{model.waiting ? <b> · {t`${waiting} waiting`}</b> : <span> · {t`nothing waiting`}</span>}
         </p>
         <div ref={blobs} className="watcher-picture__blobs" aria-hidden="true" />
         {shownOpen !== undefined ? <DetailCard node={shownOpen} room={roomState} state={agents} goes={goes} layout={layout} onClose={closeCard} onOpen={onOpen} from={open?.from ?? null} /> : null}

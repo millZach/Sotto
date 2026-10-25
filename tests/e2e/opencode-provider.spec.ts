@@ -15,7 +15,7 @@ type Frame = { method?: string; params?: Record<string, unknown> }
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('region', { name: 'Provider configuration', exact: true })
+  return page.getByRole('region', { name: 'OpenCode details', exact: true })
 }
 
 /** Connects OpenCode unless it already is, once the startup connect has had its say. */
@@ -71,11 +71,11 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     await page.getByRole('button', { name: 'OpenCode', exact: true }).focus()
     await page.keyboard.press('Enter')
     await expect(panel).toContainText('Sotto runs its own OpenCode, with its own folder and its own sign-ins.')
-    await expect(panel.locator('svg[data-provider="opencode"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'OpenCode', exact: true }).locator('.provider-badge svg[data-provider="opencode"]')).toBeVisible()
     await activate(page, panel.getByRole('button', { name: 'Connect OpenCode' }))
     await expect(panel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
     await expect(panel.getByRole('group', { name: 'Model sources' })).toContainText('Sign in to a model source, such as Anthropic, OpenAI or OpenRouter')
-    await expect(panel).toContainText('2.0.31')
+    await expect(page.getByRole('button', { name: 'OpenCode', exact: true })).toContainText('2.0.31')
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
     if (await deferUpdates.count()) await deferUpdates.click()
     for (const [width, height] of sizes) {
@@ -93,10 +93,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     }
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await panel.getByRole('tab', { name: 'Configuration' }).focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(panel.getByRole('tab', { name: 'Models' })).toBeFocused()
-    await expect(panel.getByRole('tabpanel')).toContainText('Fixture Model')
+    await expect(panel.getByRole('list', { name: 'OpenCode available models' })).toContainText('Fixture Model')
 
     // A new OpenCode thread on an OpenCode Zen model.
     const prepared = await page.evaluate(async path => {

@@ -1,3 +1,4 @@
+import { noteThreadsReplaced, threadsReplacedSince } from './threadListPatches'
 import type { AgentState, AgentThread } from './agents'
 
 /** Client-only keys. The host continues to address its entities by their original Sotto IDs. */
@@ -106,10 +107,36 @@ export function projectClientAgentState(state: AgentState, previous?: ClientAgen
     : mappedHost.projects.map(project => ({ ...project, id: hostEntityKey(project.hostId ?? hostId, project.id) }))
   // A host whose list is the one it had keeps every record of it: nothing in a published list is written into.
   const kept = last && state.host.threads === last.input.host.threads
-  const threads: AgentThread[] = kept ? [] : [...state.host.threads]
-  const projected = kept ? last.output.host.threads : projectThreads(threads, hostId, last)
-  return { hostId, input: state, fields, hostFields, threads: kept ? last.threads : threads,
-    output: { ...mapped, hostId, host: { ...mappedHost, models: state.host.models, projects, threads: projected } } }
+  // One whose list was made from the last one's in place is projected again only where it was (#925).
+  const replaced = !kept && last ? threadsReplacedSince(state.host, last.input.host) : undefined
+  let threads: AgentThread[], projected: AgentThread[], moved: number[] | undefined
+  if (kept) { threads = last.threads as AgentThread[]; projected = last.output.host.threads }
+  else if (replaced && last) ({ threads, projected, moved } = projectReplaced(state.host.threads, replaced, hostId, last))
+  else { threads = [...state.host.threads]; projected = projectThreads(threads, hostId, last) }
+  const output = { ...mapped, hostId, host: { ...mappedHost, models: state.host.models, projects, threads: projected } }
+  if (kept && last) noteThreadsReplaced(output.host, last.output.host, [])
+  else if (moved && last) noteThreadsReplaced(output.host, last.output.host, moved)
+  return { hostId, input: state, fields, hostFields, threads, output }
+}
+
+/**
+ * The host's threads as clients name them, from a list that is the last projection's input with the records at `replaced`
+ * replaced in place: only those are read and projected again, each as `projectThreads` would, and every other is the last
+ * projection's record. `moved` names the positions whose projected record changed.
+ */
+function projectReplaced(input: readonly AgentThread[], replaced: ReadonlySet<number>, hostId: string, last: ClientAgentStateProjection): { threads: AgentThread[]; projected: AgentThread[]; moved: number[] } {
+  const made = last.output.host.threads, before = last.threads
+  const threads = before.slice(), moved: number[] = []
+  let projected: AgentThread[] | undefined
+  for (const position of replaced) {
+    const thread = input[position]!
+    threads[position] = thread
+    const prior = before[position]!
+    if (prior.id === thread.id && sameThreadRecord(prior, thread)) continue
+    ;(projected ??= made.slice())[position] = clientThread(thread, hostId)
+    moved.push(position)
+  }
+  return { threads, projected: projected ?? made, moved }
 }
 
 /** The host's threads as clients name them, each reused from `last` while its record holds the same values. */

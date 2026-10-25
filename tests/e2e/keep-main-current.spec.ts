@@ -1,5 +1,5 @@
 /**
- * Keep main up to date (ADR-0123) in the built app with the `keep-main-current` Owl feature on, over a real project
+ * Keep main up to date (ADR-0140) in the built app with the `keep-main-current` Owl feature on, over a real project
  * repository and a real local remote: a local change holds main back and the project row says so, Show changes lists
  * the file, and once the change is gone the folder is fast-forwarded and the row says dependencies changed until
  * dismissed. Saving the switch asks for a check at once, so nothing waits for the 15-minute timer.

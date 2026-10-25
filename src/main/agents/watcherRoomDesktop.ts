@@ -1,18 +1,99 @@
-import type { WatcherBridge, WatcherRoomState } from '../../shared/watcherRoom'
+import { watcherMachinesReadSchema, type WatcherBridge, type WatcherRoomListChange, type WatcherRoomPatch, type WatcherRoomState, type WatcherRoomUpdate } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
-import { clonePlainData } from './cloneHostSnapshot'
+import { samePlainData } from './agentStateBroadcast'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
-type RoomService = Pick<WatcherService, 'subscribe' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'>
-type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
+type RoomService = Pick<WatcherService, 'subscribe' | 'state' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'> & Partial<Pick<WatcherService, 'machines'>>
+/** Every room call, and the machines read only while Work across machines is on (#1032). */
+export type RoomBridge = Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
+
+/**
+ * The window's room updates (#1450): each carries what changed since the last one the window was sent, a list's
+ * entries by place and a changed record as what changed in it, so a request, receipt or participation rides only when
+ * it changes, and a watched thread whose status changed does not carry every participation it has had. A room in which nothing changed but the time
+ * it was read at is not sent at all. The rooms held are the ones last sent, read and never written into, as everything
+ * the room hands out is (#1327). Only an update `deliver()` reports as sent becomes the base the next is measured
+ * from. `reset()` drops the base, so the next update is whole: main calls it when the window reads the whole room, as
+ * it does whenever it loads or cannot apply an update. A read while a send is being delivered voids that send as a base.
+ */
+export class WatcherRoomBroadcast {
+  private revision = 0
+  private base: { readonly revision: number; readonly room: WatcherRoomState } | null = null
+  private resets = 0
+
+  /** Sends `room` measured from the last room sent, or nothing when only its read time changed. */
+  send(room: WatcherRoomState, deliver: (update: WatcherRoomUpdate) => boolean): void {
+    const base = this.base
+    let update: WatcherRoomUpdate
+    if (base === null) update = { revision: this.revision + 1, base: null, room }
+    else {
+      // Every build has its own read time and number: neither is a change, and both go with any update that does go.
+      const patch = recordPatch(base.room, room, BUILD_FIELDS)
+      if (!patch) return
+      update = { revision: this.revision + 1, base: base.revision, room: { ...patch.set, observedAt: room.observedAt, ...room.sequence === undefined ? {} : { sequence: room.sequence } },
+        ...patch.lists ? { lists: patch.lists } : {}, ...patch.removed ? { removed: patch.removed as (keyof WatcherRoomState)[] } : {} }
+    }
+    this.revision = update.revision
+    const resets = this.resets
+    if (deliver(update) && resets === this.resets) this.base = { revision: update.revision, room }
+  }
+
+  /** The next update is the whole room: the window holds none it can measure from. */
+  reset(): void { this.base = null; this.resets++ }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)
+
+/** The fields every build of the room sets afresh, which say when and which build it is, not what it shows. */
+const BUILD_FIELDS: ReadonlySet<string> = new Set(['observedAt', 'sequence'])
+
+/**
+ * What changed from `before` to `after`, two records, or undefined when nothing did: each field set anew, each list as
+ * its change, and the fields that went. `ignored` fields are never compared.
+ */
+function recordPatch(before: object, after: object, ignored?: ReadonlySet<string>): WatcherRoomPatch | undefined {
+  const held = before as Record<string, unknown>, next = after as Record<string, unknown>
+  const set: Record<string, unknown> = {}, lists: Record<string, WatcherRoomListChange> = {}, removed: string[] = []
+  let any = false
+  for (const key in next) {
+    if (ignored?.has(key)) continue
+    const was = held[key], now = next[key]
+    if (was === now && (was !== undefined || Object.hasOwn(held, key))) continue
+    if (Array.isArray(was) && Array.isArray(now)) {
+      const change = listChange(was, now)
+      if (change) { lists[key] = change; any = true }
+    } else if (!Object.hasOwn(held, key) || !samePlainData(was, now)) { set[key] = now; any = true }
+  }
+  for (const key in held) if (!ignored?.has(key) && !Object.hasOwn(next, key)) { removed.push(key); any = true }
+  if (!any) return undefined
+  return { ...Object.keys(set).length ? { set } : {}, ...Object.keys(lists).length ? { lists } : {}, ...removed.length ? { removed } : {} }
+}
+
+/**
+ * The entries of `after` that differ from the entry at the same place in `before`, or undefined when none does: a
+ * record that was a record there as what changed in it, anything else whole.
+ */
+function listChange(before: readonly unknown[], after: readonly unknown[]): WatcherRoomListChange | undefined {
+  const at: [number, unknown][] = [], patch: [number, WatcherRoomPatch][] = []
+  for (let index = 0; index < after.length; index++) {
+    const entry = after[index], was = before[index]
+    if (index < before.length && (entry === was || samePlainData(was, entry))) continue
+    const changed = index < before.length && isRecord(was) && isRecord(entry) ? recordPatch(was, entry) : undefined
+    if (changed) patch.push([index, changed]); else at.push([index, entry])
+  }
+  return at.length || patch.length || before.length !== after.length ? { length: after.length, at, ...patch.length ? { patch } : {} } : undefined
+}
 
 /** Owns only the desktop room delivery. Observation, authority and other subscribers stay with Watcher. */
 export function createWatcherRoomDesktop(options: {
   watcherEnabled: boolean
   streamingPublishCost: boolean
+  /** Work across machines (#1032, Owl `cross-machine-work`), read once at start: offers the machines read. */
+  machinesEnabled?: boolean
   watcher?: RoomService | undefined
-  send(state: WatcherRoomState): boolean
+  send(state: WatcherRoomState | WatcherRoomUpdate): boolean
   schedule?: PublishScheduler
 }): { bridge: RoomBridge; dispose(): void } | undefined {
   if (!options.watcherEnabled) return undefined
@@ -32,23 +113,27 @@ export function createWatcherRoomDesktop(options: {
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
     startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
     readMergeTurns: async () => watcher?.readMergeTurns() ?? unavailable(),
+    ...options.machinesEnabled === true ? { readMachines: async () => watcher?.machines ? watcherMachinesReadSchema.parse(await watcher.machines()) : unavailable() } : {},
   }
-  // Keep the legacy callback/replies, without captures or a publisher, when either owner is absent.
+  // Keep the legacy callback/replies, without a publisher or updates, when either owner is absent: the room, whole, on every change.
   if (!options.streamingPublishCost || !watcher) {
-    const unsubscribe = watcher?.subscribe(state => options.send(state))
+    const unsubscribe = watcher?.subscribe(() => options.send(watcher.state()))
     return { bridge, dispose: () => unsubscribe?.() }
   }
-  const publisher = coalesceAgentStatePublishes<WatcherRoomState>(state => { options.send(state) }, options.schedule ? { schedule: options.schedule } : {})
-  // The one copy of a publish (#1327): the room hands out the Watcher record's own records, so the room this keeps for
-  // its window is captured here. It is plain schema data, so it is copied as such: containers copied and strings kept.
-  const unsubscribe = watcher.subscribe(state => publisher.publish(clonePlainData(state)))
+  // A Watcher change only marks the room changed (#1450). The room is built when an update goes, at most once a publish
+  // window however many changes it saw, from what is true then, and handed to the window at once, so it is never copied.
+  const broadcast = new WatcherRoomBroadcast(), changed = {}
+  const publisher = coalesceAgentStatePublishes<object>(() => { broadcast.send(watcher.state(), update => options.send(update)) },
+    options.schedule ? { schedule: options.schedule } : {})
+  const unsubscribe = watcher.subscribe(() => publisher.publish(changed))
   const reply = async <Result>(operation: () => Promise<Result>): Promise<Result> => {
     try { return await operation() }
     finally { publisher.flush() }
   }
   return {
     bridge: {
-      get: () => reply(() => bridge.get()),
+      // The window reads the whole room when it loads and when it cannot apply an update, so the next update is whole.
+      get: () => reply(() => { broadcast.reset(); return bridge.get() }),
       open: request => reply(() => bridge.open(request)),
       prepareStopAll: () => reply(() => bridge.prepareStopAll()),
       stopAll: request => reply(() => bridge.stopAll(request)),
@@ -61,6 +146,7 @@ export function createWatcherRoomDesktop(options: {
       startNew: () => reply(() => bridge.startNew()),
       // A read changes nothing, so it waits for no publish.
       readMergeTurns: () => bridge.readMergeTurns(),
+      ...bridge.readMachines ? { readMachines: bridge.readMachines } : {},
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

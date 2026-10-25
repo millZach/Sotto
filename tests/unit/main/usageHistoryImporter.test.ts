@@ -172,7 +172,7 @@ describe('Sotto thread host history translation', () => {
 
 describe('provider switch history scan', () => {
   it('reads each usage provider in turn under its provider and model names, and goes on past one that fails', async () => {
-    const hosts = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }
+    const hosts = { codex: new FakeProviderHost(), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() }
     const codex: AgentHost = hosts.codex, claude: AgentHost = hosts.claude, muse: AgentHost = hosts.muse
     codex.scanUsageHistory = async () => { throw new Error('unreadable') }
     claude.scanUsageHistory = async sink => { sink.tokens([history({ providerId: 'codex' })]) }

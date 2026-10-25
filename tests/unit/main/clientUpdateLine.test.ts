@@ -313,6 +313,34 @@ describe('the client update line', () => {
     } finally { control.dispose() }
   })
 
+  it('asks for the published version by name, and says so when mise does not list it yet', async () => {
+    const host = new ThreeClients()
+    const asked: (string | undefined)[] = []
+    const clients = new (class extends ProviderClients {
+      override async check(provider: ProviderId, installed: string): Promise<ProviderClientUpdate> {
+        return { id: provider, installed, published: PUBLISHED[provider]!, behind: true, channel: 'mise', command: `mise install ${provider}@${PUBLISHED[provider]!}`,
+          steps: 1, canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }
+      }
+      override async install(_provider: ProviderId, _executable: string | undefined, _environment: NodeJS.ProcessEnv, onStep?: (step: number) => void, version?: string) {
+        onStep?.(1)
+        asked.push(version)
+        return { ok: false, step: 1, failure: 'not-listed' as const, detail: 'mise does not list Claude Code yet.' }
+      }
+    })()
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-client-not-listed-')); roots.push(directory)
+    const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined, reasoner: {} })
+    await control.start()
+    try {
+      await control.command({ type: 'connect' })
+      await control.command({ type: 'check-client-updates' })
+      const update = await control.command({ type: 'update-client', provider: 'claude' })
+      expect(asked).toEqual([PUBLISHED.claude])
+      expect(update.error).toBe(`mise does not list Claude Code ${PUBLISHED.claude} yet, so Sotto did not install it. ${host.installed.claude} is still installed, and your threads kept working. Try again later.`)
+      expect(control.get().clientUpdates?.find(item => item.id === 'claude')).toMatchObject({ state: 'failed', failure: 'not-listed' })
+    } finally { control.dispose() }
+  })
+
   it('refuses a line with nothing it can update, with the first reason', async () => {
     const host = new ThreeClients()
     host.installed.codex = '0.158.0'; host.onDisk.codex = '0.158.0'

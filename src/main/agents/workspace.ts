@@ -1,5 +1,6 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { withKeptMessageMetadata } from '../../shared/agents'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
@@ -7,7 +8,8 @@ import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
 import { CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
-import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot } from './hostIdentity'
+import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot, stampHostThread } from './hostIdentity'
+import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, threadChangesBetween, verifyingThreadChanges, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges, type ThreadChangeSet, type ThreadPlacement } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
@@ -25,7 +27,7 @@ import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRe
 import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { confirmedSettingsSnapshot, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual } from './threadStore'
@@ -387,8 +389,72 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return (this.watcherEnabled || !this.retainedWatcherIds.has(thread.id) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
       && heldProviderOfThreadRecord(thread, this.held) === undefined
   }
+  /**
+   * Marks a thread the workspace changed (#925): its record, or something its merge or its publication reads, such as its
+   * stored activity, its subagent summary or its creation. The next accept merges it again over its provider's record, as
+   * every accept used to merge every thread, and the next publication, save and release look at it. Every path that
+   * changes a thread marks it, after the change and by its ID, so a change made after an await is marked too.
+   */
+  private touch(id: string): void { this.remerge.add(id); this.markChanged(id) }
+  /** `touch`, answering the thread, for a write made on the spot: `this.touched(thread).title = title`. */
+  private touched(thread: AgentThread): AgentThread { this.touch(thread.id); return thread }
+  /** The next publication, save and release look at this thread again. An accept marks what it merged this way. */
+  private markChanged(id: string): void { this.unpublished.add(id); this.unsaved.add(id); this.releasable.add(id) }
+  /** Anything about any thread may have changed: the next accept takes the inner host's publication in whole. */
+  private touchAll(): void { this.remergeAll = true; this.markAllChanged() }
+  /** The next publication, save and release look at every thread. */
+  private markAllChanged(): void { this.unpublishedAll = true; this.unsavedAll = true; this.releasableAll = true }
+  /**
+   * Where the state lists a thread, without walking the list. The index is read again whenever the list is another or a
+   * different length, and when what it names is not there; a thread taken in place keeps its place.
+   */
+  private positionOf(id: string): number | undefined {
+    const threads = this.state.snapshot.threads
+    let index = this.threadIndex
+    if (!index || index.array !== threads || index.length !== threads.length) index = this.indexThreads()
+    let at = index.positions.get(id)
+    if (at !== undefined && threads[at]?.id !== id) { index = this.indexThreads(); at = index.positions.get(id) }
+    return at
+  }
+  private indexThreads(): NonNullable<WorkspaceHost['threadIndex']> {
+    const threads = this.state.snapshot.threads
+    const positions = new Map<string, number>()
+    for (let at = 0; at < threads.length; at++) positions.set(threads[at]!.id, at)
+    this.threadIndex = { array: threads, length: threads.length, positions }
+    return this.threadIndex
+  }
+  /**
+   * A thread's creation, without walking the list: started creations stay in it for as long as their threads do, and an
+   * accept looks one up for every thread it merges. Read again whenever the list is another or a different length, and
+   * when what it names is not there; a phase changes in place and keeps its entry.
+   */
+  private creationOf(threadId: string): Workspace['creations'][number] | undefined {
+    const creations = this.state.creations
+    let index = this.creationIndex
+    if (!index || index.array !== creations || index.length !== creations.length) index = this.indexCreations()
+    let at = index.positions.get(threadId)
+    if (at !== undefined && creations[at]?.threadId !== threadId) { index = this.indexCreations(); at = index.positions.get(threadId) }
+    return at === undefined ? undefined : creations[at]
+  }
+  private indexCreations(): NonNullable<WorkspaceHost['creationIndex']> {
+    const creations = this.state.creations
+    const positions = new Map<string, number>()
+    for (let at = 0; at < creations.length; at++) if (!positions.has(creations[at]!.threadId)) positions.set(creations[at]!.threadId, at)
+    this.creationIndex = { array: creations, length: creations.length, positions }
+    return this.creationIndex
+  }
+  /** The state's record of a thread, visible or not. */
+  private threadById(id: string): AgentThread | undefined {
+    const at = this.positionOf(id)
+    return at === undefined ? undefined : this.state.snapshot.threads[at]
+  }
+  /** Takes a thread out of the state. One its provider still publishes comes back at the next accept, as it always did. */
+  private removeThread(id: string): void {
+    this.state.snapshot.threads = this.state.snapshot.threads.filter(item => item.id !== id)
+    this.touch(id)
+  }
   private threadVisible(id: string): boolean {
-    const thread = this.state.snapshot.threads.find(item => item.id === id)
+    const thread = this.threadById(id)
     return (this.watcherEnabled || !this.retainedWatcherIds.has(id)) && (!thread || this.visible(thread))
   }
   private visibleSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
@@ -396,7 +462,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
       ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
-  watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.state.creations.find(item => item.threadId === threadId)?.phase }
+  watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.creationOf(threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
     await this.refreshThread(threadId)
@@ -423,12 +489,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * began with. Undefined when the record cannot be read; with Keep local history off it says what it holds.
    */
   threadHandover(threadId: string): Handover | undefined {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || !this.threadVisible(threadId) || thread.kind === 'watcher' || thread.kind === 'watcher-history') return undefined
     return this.handoverOf(threadId, message => continuedWordsOnly(thread, message))
   }
   private handoverOf(threadId: string, shown: (message: AgentMessage) => AgentMessage | null): Handover | undefined {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread?.providerId || this.storeUnavailable) return undefined
     this.applyEvents()
     // Each message is shown once it is marked as a wake-up or not, so a hidden wake-up is known by its provenance.
@@ -436,7 +502,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   async setWatcherKind(threadId: string, kind: 'watcher' | 'watcher-history'): Promise<void> {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
-    await this.initialize(); const thread = this.thread(threadId); thread.kind = kind
+    await this.initialize(); const thread = this.thread(threadId); this.touched(thread).kind = kind
     this.dirty = true; await this.flush(); this.publish()
   }
   /**
@@ -447,7 +513,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize(); const thread = this.thread(threadId)
     if (thread.delegatedBy === delegatingThreadId) return
     if (thread.delegatedBy !== undefined) throw new Error('This thread was delegated by another thread.')
-    thread.delegatedBy = delegatingThreadId
+    this.touched(thread).delegatedBy = delegatingThreadId
     this.dirty = true; await this.flush(); this.publish()
   }
   /** Continuing agents as threads and forking at a reply (#1028): the Owl list's answer, given once at start. */
@@ -548,16 +614,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}), ...(request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}),
       ...(request.providerMode ? { providerMode: request.providerMode } : {}), ...workingCopy })
     return this.onLane(request.threadId, async () => {
-      this.thread(request.threadId).startedFrom = request.startedFrom
+      this.touched(this.thread(request.threadId)).startedFrom = request.startedFrom
       if (!request.fork) { this.dirty = true; await this.flush(); this.publish(); return { accepted: true } }
       try {
-        const creation = this.state.creations.find(item => item.threadId === request.threadId)
+        const creation = this.creationOf(request.threadId)
         if (!creation || !this.inner.forkThread) throw new Error(`${PROVIDER_LABELS[source.providerId!]} has no fork of its own, so nothing was made.`)
         if (this.thread(request.threadId).worktree?.status !== 'ready') await this.startWorkingCopy(this.thread(request.threadId))
         const thread = this.thread(request.threadId)
         if (thread.worktree?.status === 'error') throw new Error(thread.worktree.error ?? 'The new worktree could not be made, so nothing was made.')
         const workingDirectory = await this.threadWorkingDirectory(thread.id)
-        creation.phase = 'starting'; thread.nativeSessionStarted = true; this.dirty = true
+        creation.phase = 'starting'; this.touched(thread).nativeSessionStarted = true; this.dirty = true
         await this.flush(); this.publish()
         const result = await this.inner.forkThread({ commandId: creation.commandId, threadId: thread.id, title: thread.title, modelId: thread.modelId, workingDirectory,
           ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}), ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
@@ -578,14 +644,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * the worktree sweep and the user's own Remove folder reach only a thread's (ADR-0041). Answers whether the record went.
    */
   private async discardStart(threadId: string): Promise<boolean> {
-    const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
+    const worktree = this.threadById(threadId)?.worktree
     if (worktree?.mode === 'independent' && worktree.path && !worktree.reused) {
       // A fresh worktree holds nothing of the user's. No status read is left working in it when it goes.
       const releaseStatus = this.gitStatus?.hold?.(worktree.path)
       try { await this.gitStatus?.idle?.(worktree.path); await this.worktrees.reclaim(worktree, { automatic: true }) }
       catch {
-        const thread = this.thread(threadId), creation = this.state.creations.find(item => item.threadId === threadId)
-        delete thread.startedFrom; thread.nativeSessionStarted = false
+        const thread = this.thread(threadId), creation = this.creationOf(threadId)
+        delete this.touched(thread).startedFrom; thread.nativeSessionStarted = false
         if (creation) creation.phase = 'unstarted'
         this.dirty = true
         try { await this.flush() } catch { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.' }
@@ -593,7 +659,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         return false
       } finally { releaseStatus?.() }
     }
-    this.state.snapshot.threads = this.state.snapshot.threads.filter(item => item.id !== threadId)
+    this.removeThread(threadId)
     this.state.creations = this.state.creations.filter(item => item.threadId !== threadId)
     this.privateLegacyMessages.delete(threadId)
     this.dirty = true
@@ -613,10 +679,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   startHandover(threadId: string): AgentHandover | undefined {
     if (!this.threadStarts) return undefined
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     const start = thread?.startedFrom
     if (!start || start.route !== 'handover' || !start.handover || start.handover.sent) return undefined
-    const source = this.state.snapshot.threads.find(item => item.id === start.threadId)
+    const source = this.threadById(start.threadId)
     if (source && start.from === 'turn' && start.messageId) return this.replyHandover(source, start.messageId)
     if (!source || start.from !== 'agent' || !start.agentId || !start.assignmentId || this.subagentUnavailable) return undefined
     const row = this.subagentStore.row(source.id, start.agentId)
@@ -627,6 +693,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize()
     const thread = this.thread(threadId), start = thread.startedFrom
     if (!start?.handover) return
+    this.touch(threadId)
     if (sent === 'drop') { const { handover, ...rest } = start; void handover; thread.startedFrom = rest }
     else if (sent === null) { const { sent: _sent, ...handover } = start.handover; void _sent; thread.startedFrom = { ...start, handover } }
     else thread.startedFrom = { ...start, handover: { ...start.handover, sent } }
@@ -642,10 +709,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize(); const thread = this.thread(threadId)
     if (thread.continuedFrom !== undefined && thread.continuedFrom.threadId !== from.threadId) throw new Error('This thread continues another thread.')
     const previous = { continuedFrom: thread.continuedFrom, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
-    thread.continuedFrom = from
+    this.touched(thread).continuedFrom = from
     if (thread.titleSource !== 'user') { thread.titleSource = 'generated'; delete thread.titledFromFirstMessage }
     this.dirty = true
-    try { await this.flush() } catch (error) { Object.assign(thread, previous); if (previous.titledFromFirstMessage === undefined) delete thread.titledFromFirstMessage; throw error }
+    try { await this.flush() } catch (error) { Object.assign(this.touched(thread), previous); if (previous.titledFromFirstMessage === undefined) delete thread.titledFromFirstMessage; throw error }
     this.publish()
   }
   /** Records which message carried a continued thread's handover, once its send named it (ADR-0089). */
@@ -654,18 +721,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const handover = thread.continuedFrom?.handover
     if (!thread.continuedFrom || !handover || handover.messageId === messageId) return
     const previous = thread.continuedFrom
-    thread.continuedFrom = { ...previous, handover: { ...handover, messageId } }
+    this.touched(thread).continuedFrom = { ...previous, handover: { ...handover, messageId } }
     this.dirty = true
-    try { await this.flush() } catch (error) { thread.continuedFrom = previous; throw error }
+    try { await this.flush() } catch (error) { this.touched(thread).continuedFrom = previous; throw error }
     this.publish()
   }
   /** Records a thread that continues this one (ADR-0089), newest last, on this thread's own record. */
   async addContinuedIn(threadId: string, link: ThreadContinuedIn): Promise<void> {
     await this.initialize(); const thread = this.thread(threadId)
     const previous = thread.continuedIn
-    thread.continuedIn = [...(previous ?? []).filter(item => item.threadId !== link.threadId), link].slice(-THREAD_CONTINUED_IN_MAX)
+    this.touched(thread).continuedIn = [...(previous ?? []).filter(item => item.threadId !== link.threadId), link].slice(-THREAD_CONTINUED_IN_MAX)
     this.dirty = true
-    try { await this.flush() } catch (error) { if (previous === undefined) delete thread.continuedIn; else thread.continuedIn = previous; throw error }
+    try { await this.flush() } catch (error) { if (previous === undefined) delete this.touched(thread).continuedIn; else this.touched(thread).continuedIn = previous; throw error }
     this.publish()
   }
   /** One message of a thread as Sotto's record holds it, read by its ID alone: a delegation's reply (ADR-0081). */
@@ -681,7 +748,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
@@ -735,10 +802,62 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly settledThreadListeners = new Set<(ids: readonly string[]) => void>()
   private readonly activityListeners = new Set<(snapshot: AgentHostSnapshot) => void>()
-  /** The thread records the last activity publication carried, frozen and owned, by thread ID (#1326). */
-  private publishedThreads = new Map<string, AgentThread>()
-  /** Everything else that publication carried, frozen and owned the same way, with no threads. */
-  private publishedRest: AgentHostSnapshot | undefined
+  /**
+   * The activity publication's thread records, frozen and owned, in the state's order, and everything else it carries, the
+   * same way, with an empty thread list in its place (#1326). Each publication reads again only the threads marked since
+   * the last (`unpublished`) and builds its snapshot from this map, a reference per thread (#925). Verifying
+   * (`SOTTO_VERIFY_THREAD_CHANGES=1`), it is checked against a publication worked out from every thread after each change.
+   */
+  private published: ThreadMap
+  /** The threads whose record may differ from the publication's, since it was last brought up to the state; all of them when set. */
+  private readonly unpublished = new Set<string>()
+  private unpublishedAll = true
+  /** What changed in the publication since the workspace's thread changes were last built: threads, threads moved, or all. */
+  private readonly changesSince = { whole: true, ids: new Set<string>(), placed: new Set<string>() }
+  /** The workspace's own thread changes (#925), built from the publication's records. */
+  private readonly changes = new ThreadChangesPublisher()
+  /**
+   * The inner host's threads and the rest of its snapshot, as its thread changes left them, or as the shim works them out
+   * from a host that publishes only snapshots (#925). An upserted thread is merged over its record here; a publication
+   * taken in whole reads them all.
+   */
+  private readonly incoming = new ThreadMap({ verify: false })
+  /**
+   * Whether the next publication of the inner host is taken in whole: until one has been, and after a read, which may have
+   * left the state saying what the inner host's publications have not.
+   */
+  private remergeAll = true
+  /**
+   * Threads whose record, or something their merge reads, the workspace changed since the last accept, so the next accept
+   * merges them again over their provider's record, as it used to merge every thread. A thread its provider no longer
+   * publishes loses its live state then, as every such thread did on every accept.
+   */
+  private readonly remerge = new Set<string>()
+  /** The workspace changed the providers, the catalog or the connection itself, so the next accept takes the inner host's in again. */
+  private restTouched = false
+  /**
+   * The threads the accept that last took each of them in found disconnected, and when the last accept ran. An accept used
+   * to date every such thread's agents afresh (`trackSubagents`); now the date is put on one when it is next taken in.
+   */
+  private readonly disconnectedThreads = new Set<string>()
+  private acceptedAt: number | undefined
+  /** The threads whose activity may not be in the store as it is held now; all of them when set. */
+  private readonly unsaved = new Set<string>()
+  private unsavedAll = true
+  /** Whether the last save kept subagent task words in the records, so the next one without them saves every thread. */
+  private savedWithWords = false
+  /** The threads that may have gone idle or out of view since the last release; all of them when set. */
+  private readonly releasable = new Set<string>()
+  private releasableAll = true
+  /** The state's threads by ID, with the list and its length they were read from, so a look-up costs no walk. */
+  private threadIndex: { readonly array: AgentThread[]; readonly length: number; readonly positions: Map<string, number> } | undefined
+  /** The creations by thread ID, with the list and its length they were read from. */
+  private creationIndex: { readonly array: Workspace['creations']; readonly length: number; readonly positions: Map<string, number> } | undefined
+  /**
+   * Every publication of the inner host taken in whole and every activity publication worked out from every thread, as
+   * before #925. Only the test that holds the two paths to one another sets it.
+   */
+  private acceptsWhole = false
   /** Only certified immutable inputs can be a revision. Legacy hosts may edit their arrays in place. */
   private readonly activityInputs = new Map<string, { input: AgentActivity[]; output: AgentActivity[]; epoch: string | undefined; records: Map<string, AgentActivity> }>()
   /** The catalog a snapshot last brought and the one accepting it made. */
@@ -970,12 +1089,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return release
     } catch (error) { release(); throw error }
   }
-  /** Keep main up to date's projects (ADR-0123): each with its folder and whether the user settled it. */
+  /** Keep main up to date's projects (ADR-0140): each with its folder and whether the user settled it. */
   mainCheckoutProjects(): readonly { readonly id: string; readonly path: string; readonly settled: boolean }[] {
     return this.state.snapshot.projects.filter(project => project.path).map(project => ({ id: project.id, path: project.path, settled: Boolean(project.workspaceSettledAt) }))
   }
   /**
-   * Keep main up to date's reservation (ADR-0123): `work` runs under the mutation reservation of the checkout at `folder`
+   * Keep main up to date's reservation (ADR-0140): `work` runs under the mutation reservation of the checkout at `folder`
    * that sends, Git actions and automatic pulls share, once no thread whose working copy is that checkout is running, waiting
    * on an answer, loading its history, being set up, running a Git action or holding queued work. Null, having run nothing,
    * when anything holds it; Keep main up to date tries again later rather than wait here.
@@ -997,7 +1116,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     } finally { release() }
   }
   /**
-   * Keep main up to date moved the checkout at `folder` (ADR-0123): each thread working in it, or in a folder inside it,
+   * Keep main up to date moved the checkout at `folder` (ADR-0140): each thread working in it, or in a folder inside it,
    * reads its Git status again, so its branch stops saying it is behind. Matched by path alone, so it costs no Git.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
@@ -1013,7 +1132,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await Promise.all(reads)
   }
   private pullRequestMergedListener: ((url: string) => void) | undefined
-  /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0123); one listener, set by the runtime. */
+  /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0140); one listener, set by the runtime. */
   onPullRequestMerged(listener: (url: string) => void): void { this.pullRequestMergedListener = listener }
   private pullRequestMerged(url: string): void { try { this.pullRequestMergedListener?.(url) } catch { /* The listener's failure is its own. */ } }
   private onGitLane<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
@@ -1036,9 +1155,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return destinationFolder ?? this.threadWorkingDirectory(threadId)
   }
   private setGitActionProgress(threadId: string, progress: GitActionProgress): void {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread) return
-    thread.gitAction = progress
+    this.touched(thread).gitAction = progress
     this.dirty = true
     this.publishSoon()
   }
@@ -1103,17 +1222,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private async followGitChange(threadId: string, options: { readonly followSentBranch?: boolean } = {}): Promise<void> {
     this.invalidateGitStatus(threadId)
-    const worktree = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
+    const worktree = this.threadById(threadId)?.worktree
     if (worktree?.status === 'ready' && worktree.path) {
       try {
         const inspected = await this.worktrees.inspect(worktree)
-        const current = this.state.snapshot.threads.find(item => item.id === threadId)
+        const current = this.threadById(threadId)
         if (current?.worktree === worktree) {
           // A switch made here is the user's own: the sent branch moves with it in the same publish, so the
           // branch notice never shows for it and stays for a checkout someone else moved (ADR-0014).
           const sentBranch = worktree.sentBranch === undefined ? undefined : options.followSentBranch && inspected.branch ? inspected.branch : worktree.sentBranch
           // The status it had stays on the record until the read below replaces it, so the controls never blank between the two.
-          current.worktree = { ...inspected, ...(worktree.git ? { git: worktree.git } : {}), ...(sentBranch !== undefined ? { sentBranch } : {}) }
+          this.touched(current).worktree = { ...inspected, ...(worktree.git ? { git: worktree.git } : {}), ...(sentBranch !== undefined ? { sentBranch } : {}) }
           this.dirty = true
           if (sentBranch !== worktree.sentBranch) await this.flush().catch(() => undefined)
         }
@@ -1145,7 +1264,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
       const directory = thread.workingDirectory ?? project?.path
       if (thread.worktree?.mode === 'shared' && directory) {
-        try { thread.worktree = { ...thread.worktree, ...await this.worktrees.discover(directory, project?.path ?? directory) }; this.dirty = true } catch { /* The refresh below reads what it can. */ }
+        try { thread.worktree = { ...thread.worktree, ...await this.worktrees.discover(directory, project?.path ?? directory) }; this.touch(threadId); this.dirty = true } catch { /* The refresh below reads what it can. */ }
       } else if (!thread.worktree) await this.discoverWorkingCopy(threadId).catch(() => undefined)
       await this.followGitChange(threadId)
     }), () => this.workspaceSnapshot())
@@ -1174,7 +1293,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * where nothing else changes the record; the caller saves.
    */
   private linkPullRequestRecord(threadId: string, pullRequest: Pick<GitPullRequestLink, 'number' | 'url' | 'title' | 'state' | 'draft'>, source: GitPullRequestLinkSource): GitPullRequestLink | null {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     const key = pullRequestKey(pullRequest.url)
     if (!thread || !key || !pullRequestAddress(pullRequest.url)) return null
     const links = [...(thread.pullRequests ?? [])]
@@ -1191,7 +1310,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       links.push(link)
       while (links.length > GIT_PULL_REQUEST_LINKS_MAX) links.shift()
     }
-    thread.pullRequests = links
+    this.touched(thread).pullRequests = links
     this.dirty = true
     this.publishSoon()
     return link
@@ -1264,7 +1383,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const key = pullRequestKey(url)
       const links = (thread.pullRequests ?? []).filter(link => pullRequestKey(link.url) !== key)
       if (links.length !== (thread.pullRequests ?? []).length) {
-        if (links.length) thread.pullRequests = links; else delete thread.pullRequests
+        if (links.length) this.touched(thread).pullRequests = links; else delete this.touched(thread).pullRequests
         this.dirty = true
         await this.saveLinks()
         this.publish()
@@ -1287,7 +1406,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const service = this.pullRequestsOrRefuse()
       if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
       const thread = this.thread(threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       const draft = thread.nativeSessionStarted === false && creation?.phase === 'unstarted' && !(thread.worktree?.mode === 'independent' && thread.worktree.path)
       if (mode === 'worktree' && !draft) throw new GitPullRequestRefusal('This thread already has a working folder. Use Local, or start a new thread to check the pull request out in a worktree of its own.')
       const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), reference)
@@ -1301,10 +1420,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           if (shared) {
             const current = this.thread(threadId)
             const previous = { worktree: current.worktree, workingDirectory: current.workingDirectory }
-            current.worktree = shared; current.workingDirectory = shared.path
+            this.touched(current).worktree = shared; current.workingDirectory = shared.path
             this.dirty = true
             try { await this.flush() } catch (error) {
-              Object.assign(this.thread(threadId), previous)
+              Object.assign(this.touched(this.thread(threadId)), previous)
               this.dirty = true
               try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
               throw error
@@ -1323,6 +1442,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         ? await this.selectedWorkingCopy(current.projectId, { workingCopy: 'independent', existingWorktreePath: prepared.worktreePath })
         : { mode: 'independent', status: 'pending', branch: prepared.branch, checkoutBranch: true }
       current.workingDirectory = undefined
+      this.touch(threadId)
       this.linkPullRequestRecord(threadId, view, 'checkout')
       this.dirty = true
       await this.flush()
@@ -1334,7 +1454,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if ('notice' in outcome) return { snapshot: this.workspaceSnapshot(), notice: outcome.notice }
     // As after any Git action, the remote half of the status follows once the thread's lane is free; the notice names the branch it found.
     return this.thenReadRemoteStatus(threadId, Promise.resolve(outcome.checkedOut), number => {
-      const after = this.state.snapshot.threads.find(item => item.id === threadId)?.worktree
+      const after = this.threadById(threadId)?.worktree
       const branch = after?.git?.branch ?? after?.branch
       return { snapshot: this.workspaceSnapshot(), notice: `Checked out PR #${number}${branch ? ` on ${branch}` : ''}.` }
     })
@@ -1410,18 +1530,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const share = afterRemote ? { fresh: true } : options.startedAfter !== undefined ? { startedAfter: options.startedAfter } : {}
     try { status = await this.gitStatus.read(folder, { remote: false, ...share }) } catch { return }
     if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
-    const current = this.state.snapshot.threads.find(item => item.id === threadId)
+    const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
     if (status.pullRequest?.state === 'merged' && current.worktree.git?.pullRequest?.state !== 'merged') this.pullRequestMerged(status.pullRequest.url)
-    current.worktree = { ...current.worktree, git: status }
+    this.touched(current).worktree = { ...current.worktree, git: status }
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
   }
   /** The folder whose Git status the thread shows: a ready record's, not reclaimed, or none. */
   private statusFolder(threadId: string): string | undefined {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread?.worktree || thread.worktree.status !== 'ready' || thread.worktree.reclaimedAt) return undefined
     try { return this.threadFolder(thread) } catch { return undefined }
   }
@@ -1496,7 +1616,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           throw new Error('This branch changed after its merged pull request was checked. Its folder stays.')
         }
         const reclaimed = await this.worktrees.reclaim(worktree, options)
-        this.thread(threadId).worktree = reclaimed
+        this.touched(this.thread(threadId)).worktree = reclaimed
         this.dirty = true
         try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
         this.publish()
@@ -1532,7 +1652,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       if (await this.launchProfiles.profileFor(threadId)) throw new Error('Watcher’s working folder cannot be changed.')
       const thread = this.thread(threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       if (thread.nativeSessionStarted !== false || creation?.phase !== 'unstarted' || thread.worktree?.mode === 'independent' && thread.worktree.path) {
         throw new Error('This thread already has a working folder. Start a new thread to choose another one.')
       }
@@ -1541,10 +1661,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       try {
         const worktree = await this.selectedWorkingCopy(thread.projectId, selection)
         const current = this.thread(threadId)
-        current.worktree = worktree
+        this.touched(current).worktree = worktree
         current.workingDirectory = worktree.mode === 'shared' ? worktree.path : undefined
         this.dirty = true
-        try { await this.flush() } catch (error) { Object.assign(this.thread(threadId), previous); throw error }
+        try { await this.flush() } catch (error) { Object.assign(this.touched(this.thread(threadId)), previous); throw error }
         // A folder chosen now is read now, locally, so the toolbar knows it is a repository without waiting for the timer.
         await this.readGitStatus(threadId, false)
         this.publish()
@@ -1611,7 +1731,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.stopping || !await this.exclusivelyOwnsCheckout(threadId) || this.stopping) return
       const metadata = this.thread(threadId).worktree!
       const renamed = await this.worktrees.renameTemporaryBranch(metadata, name)
-      this.thread(threadId).worktree = renamed
+      this.touched(this.thread(threadId)).worktree = renamed
       this.dirty = true
       await this.flush()
       this.publish()
@@ -1635,7 +1755,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const metadata = await this.worktrees.discover(directory, project?.path ?? directory)
     const current = this.thread(threadId)
     if (current.worktree) return
-    current.worktree = metadata
+    this.touched(current).worktree = metadata
     this.dirty = true
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
@@ -1672,7 +1792,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
     if (!this.threadVisible(threadId)) return { added: false, reason: 'unknown-thread' }
     await this.initialize()
-    if (!this.ready || this.stopping || !this.state.snapshot.threads.some(thread => thread.id === threadId)) return { added: false, reason: 'unknown-thread' }
+    if (!this.ready || this.stopping || this.threadById(threadId) === undefined) return { added: false, reason: 'unknown-thread' }
     this.writeEvents(false, true)
     if (!this.historyWritable() || this.failedEventThreads.has(threadId) || this.pendingEvents.has(threadId)) return { added: false, reason: 'history-unavailable' }
     let stored: StoredVisual
@@ -1691,7 +1811,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Whether a thread may draw a visual: one this host holds, on a provider that can receive Sotto's tool servers. */
   admitsVisuals(threadId: string): boolean {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /**
@@ -1700,13 +1820,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * 3000.11.92 (ADR-0056). A thread whose client withheld them is babysat only from the Pull request surface (decision 11).
    */
   admitsBabysitting(threadId: string): boolean {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   /** The thread's branch's own pull request as the host last read it, and its linked ones, by URL (ADR-0061 decision 5). */
   threadPullRequests(threadId: string): { branch: string | undefined; linked: string[] } {
     if (!this.threadVisible(threadId)) return { branch: undefined, linked: [] }
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return { branch: thread ? branchPullRequestUrl(thread) : undefined, linked: (thread?.pullRequests ?? []).map(link => link.url) }
   }
   /** One visual this thread holds, as the store keeps it: what an interactive visual's page is served from (ADR-0060). */
@@ -1780,7 +1900,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (hidden && !hiddenRecord.includes(messageId)) {
       const next = [...hiddenRecord, messageId].slice(-WAKE_UP_IDS_KEPT)
       this.hiddenWakeUpRecords.set(threadId, next)
-      thread.hiddenWakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
+      this.touched(thread).hiddenWakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
       this.dirty = true
     }
     // Only a Watcher wake-up whose news said threads waited on the user has asks, and only their identities are kept.
@@ -1793,7 +1913,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!recorded.includes(messageId)) {
       const next = [...recorded, messageId].slice(-WAKE_UP_IDS_KEPT)
       this.wakeUpRecords.set(threadId, next)
-      thread.wakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
+      this.touched(thread).wakeUpMessageIds = next.slice(-WAKE_UP_MESSAGE_IDS_MAX)
     }
     if (kept !== undefined) {
       const next = askRecord ?? new Map<string, readonly WatcherAsk[]>()
@@ -1819,7 +1939,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.initialize()
       // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.
@@ -1828,7 +1948,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await inner.scanUsageHistory!(mappedSink(sink, { token: visible, prompt: visible }), signal)
     }
     this.launchProfiles = new WatcherLaunchProfiles(directory, () => this.hostId,
-      id => this.state.snapshot.threads.find(thread => thread.id === id), watcherEnabled)
+      id => this.threadById(id), watcherEnabled)
     inner.useLaunchProfiles?.({ profileFor: async id => { await this.initialize(); return this.launchProfiles.profileFor(id) } })
     this.worktrees = new ThreadWorktrees(directory)
     const preserveThread = watcherEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
@@ -1851,13 +1971,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // comparison below is left for a host that publishes whole histories and nothing else. Such a host
     // is asked to leave the messages out of its snapshots, since none would be read (#322).
     this.eventSourced = typeof inner.subscribeEvents === 'function'
-    this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
-      if (!this.ready || this.deliveryStopped) return
-      const records = this.watchedRecordCount()
-      this.accept(snapshot)
+    this.published = new ThreadMap({ wholeOf: () => this.wholePublication(), verify: verifyingThreadChanges() })
+    // The inner host's thread changes (#925), in the form asked of it before, so the provider switch subscribes to its
+    // providers as it did. A host that publishes only snapshots has them worked out by the shim.
+    const incoming = this.incoming
+    const taken = (changes: AgentHostChanges, original?: AgentHostSnapshot): void => {
+      const opening = this.acceptChanges(changes, original)
       this.writeSoon()
-      this.publishSoon(this.watchedRecordCount() > records)
-    }, { historyFromEvents: this.eventSourced }))
+      this.publishSoon(opening)
+    }
+    if (inner.subscribeActivityChanges) {
+      const subscription = inner.subscribeActivityChanges(changes => {
+        if (this.deliveryStopped) return
+        // Applied whatever the workspace is doing, so no publication is missed; taken in once it is ready, whole the first time.
+        const applied = incoming.apply(changes)
+        if (applied === 'resync') subscription.resync()
+        if (applied === 'applied' && this.ready) taken(changes)
+      }, { historyFromEvents: this.eventSourced })
+      this.providerSubscriptions.push(subscription)
+    } else {
+      this.providerSubscriptions.push(subscribeActivitySnapshots(inner, snapshot => {
+        if (!this.ready || this.deliveryStopped) return
+        const changes: AgentHostChanges = { ...threadChangesBetween(incoming.sequence === undefined ? undefined : incoming, snapshot), sequence: (incoming.sequence ?? 0) + 1 }
+        incoming.apply(changes)
+        taken(changes, snapshot)
+      }, { historyFromEvents: this.eventSourced }))
+    }
     const unsubscribeEvents = inner.subscribeEvents?.(({ threadId, event }) => {
       if (!this.deliveryStopped) this.recordEvent(threadId, event)
     })
@@ -1944,6 +2083,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const activities = this.storedActivity.has(thread.id) ? this.storedActivities(thread.id) : thread.activities?.slice(-MAX_AGENT_ACTIVITIES)
         return [{ threadId: thread.id, messages, ...(activities ? { activities } : {}), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}) }]
       }))
+      // Every thread was just read: the first publication is taken in whole, and everything is published and saved.
+      this.touchAll()
       this.ready = true
       await this.applyHistoryPrivacy(false)
     })().catch(error => { this.loading = undefined; throw error })
@@ -2038,12 +2179,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return !this.storeUnavailable && (this.threadStore.ephemeral
       || (this.historyEnabled() && !this.pendingEventsPrivate && !this.historyRedactionPending))
   }
-  /** `keepTaskWords` saves the records as this run holds them, task words included, for when the roster may lack them. */
-  private saveActivities(keepTaskWords = false): void {
+  /**
+   * `keepTaskWords` saves the records as this run holds them, task words included, for when the roster may lack them.
+   * Only the threads marked since the last save that succeeded are saved (#925), unless `all` asks for every one, as does
+   * a save with the words or the first without them after one. A list that is not certified may be edited where it is,
+   * so its thread stays marked and is saved every time, as every thread was.
+   */
+  private saveActivities(keepTaskWords = false, all = false): void {
     if (!this.historyWritable() || this.activityStoreUnavailable) return
+    const whole = all || keepTaskWords || this.unsavedAll || this.savedWithWords
+    const threads = whole ? this.state.snapshot.threads : [...this.unsaved].flatMap(id => { const thread = this.threadById(id); return thread ? [thread] : [] })
+    const saved = threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
     // Every thread's records in one transaction: a save with several busy threads pays one disk flush, not one each.
-    this.threadStore.syncActivitiesMany(this.state.snapshot.threads.filter(thread => this.visible(thread) && thread.activities !== undefined)
-      .map(thread => ({ threadId: thread.id, activities: keepTaskWords ? thread.activities! : retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
+    this.threadStore.syncActivitiesMany(saved.map(thread => ({ threadId: thread.id, activities: keepTaskWords ? thread.activities! : retainedActivities(thread.activities!), epoch: thread.historyEpoch })))
+    this.unsaved.clear()
+    this.unsavedAll = false
+    // Records let go with their words kept are let go again once a save has stripped them.
+    if (this.savedWithWords && !keepTaskWords) this.releasableAll = true
+    this.savedWithWords = keepTaskWords
+    for (const thread of saved) if (!isImmutableActivities(thread.activities)) this.unsaved.add(thread.id)
   }
   /**
    * Whether a save may strip moved task words from their records now: none are being moved, or the roster, their only
@@ -2072,10 +2226,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private holdActivities(thread: AgentThread): AgentActivity[] | undefined {
     if (!this.storedActivity.has(thread.id)) return thread.activities
     this.storedActivity.delete(thread.id)
+    this.touch(thread.id)
     this.storedInputs.delete(thread.id)
     try {
       // The store's own frozen records, shared: this list is replaced, never edited, like every list the workspace holds.
-      thread.activities = this.threadStore.readActivities(thread.id, { shared: true }).map(savedRecord)
+      this.touched(thread).activities = this.threadStore.readActivities(thread.id, { shared: true }).map(savedRecord)
     } catch {
       this.activityStoreUnavailable = true
       this.saveError = ACTIVITY_READ_ERROR
@@ -2114,7 +2269,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private releaseIdleActivities(): boolean {
     if (!this.historyWritable() || this.activityStoreUnavailable || this.storeUnavailable || !this.declared) return false
     let released = false
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
+    // Only threads marked since the last release can have become idle, out of view or whole in the store (#925).
+    const candidates = this.releasableAll ? this.state.snapshot.threads : [...this.releasable].flatMap(id => { const thread = this.threadById(id); return thread ? [thread] : [] })
+    this.releasable.clear()
+    this.releasableAll = false
+    for (const thread of candidates.filter(thread => this.visible(thread))) {
       if (!thread.activities || this.inView(thread.id) || thread.status === 'running' || thread.activities.some(activity => activity.status === 'running')) continue
       if (!this.storesWhole(thread.id, thread.activities)) continue
       const input = this.activityInputs.get(thread.id)?.input
@@ -2124,7 +2283,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const tracked = this.subagentInputs.get(thread.id)
       if (tracked?.activities === thread.activities) tracked.activities = undefined
       this.threadStore.releaseActivities(thread.id)
-      delete thread.activities
+      delete this.touched(thread).activities
       this.storedActivity.add(thread.id)
       released = true
     }
@@ -2245,7 +2404,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * at the next publish rather than per event, which keeps a streamed reply at one publish per window.
    */
   private recordEvent(threadId: string, event: ThreadEvent): void {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (thread && !this.visible(thread)) return
     if (!this.historyEnabled()) this.pendingEventsPrivate = true
     const waiting = this.pendingEvents.get(threadId)
@@ -2285,6 +2444,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (parsed.every(part => part.success)) events.push(...parsed.map(part => part.data!))
         else {
           this.invalidEventThreads.add(threadId)
+          this.touch(threadId)
           console.warn('thread-history-event-invalid')
         }
       }
@@ -2327,6 +2487,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         else this.pendingEvents.delete(threadId)
         this.failedEventThreads.delete(threadId)
         this.noteWritten(threadId, events)
+        this.markChanged(threadId)
         this.eventChanged.add(threadId)
         this.known.delete(threadId)
         if (events.some(event => event.kind === 'messages-reset')) this.hidden.delete(threadId)
@@ -2357,10 +2518,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const changed = [...this.eventChanged]
     this.eventChanged.clear()
     for (const id of changed) {
-      const thread = this.state.snapshot.threads.find(item => item.id === id)
+      const thread = this.threadById(id)
       if (!thread) continue
       if (this.watched.has(id) || !this.declared) this.loadWindow(id)
-      else { thread.messages = []; delete thread.earlierAvailable; thread.summary = this.threadSummary(thread) }
+      else { this.touched(thread).messages = []; delete thread.earlierAvailable; thread.summary = this.threadSummary(thread) }
     }
     this.markWatcherReplies()
   }
@@ -2374,11 +2535,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
       if (!messages?.length) continue
       const annotated = annotateWatcherOwnChanges({ ...thread, messages })
+      let replaced = false
       for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
         this.recordEvent(thread.id, { kind: 'message-replaced', at: new Date().toISOString(), message })
-        changed = true
+        changed = true; replaced = true
       }
-      if (thread.messages.length) thread.messages = annotated
+      if (thread.messages.length) {
+        // The same messages again are no change to the record; a message annotated afresh is.
+        if (replaced || annotated.length !== thread.messages.length) this.touch(thread.id)
+        thread.messages = annotated
+      }
     }
     if (changed) this.writeEvents()
   }
@@ -2421,7 +2587,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Historical classification only; live monitoring is never handed back to an adapter. */
   activities(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined {
     if (!this.threadVisible(threadId)) return undefined
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || thread.historyEpoch !== historyEpoch) return undefined
     if (this.storedActivity.has(threadId)) return this.storedActivities(threadId)
     if (!thread.activities) return undefined
@@ -2430,14 +2596,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether `activities` would answer for this epoch, asked without reading a record (#918). */
   hasActivities(threadId: string, historyEpoch?: string): boolean {
     if (!this.threadVisible(threadId) || this.storeUnavailable || this.activityStoreUnavailable) return false
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return thread !== undefined && thread.historyEpoch === historyEpoch && (this.storedActivity.has(threadId) || thread.activities !== undefined)
   }
   /** A stored thread's records as an adapter is handed them: read for it and not kept, mapped as the startup read was (#918). */
   private storedActivities(threadId: string): AgentActivity[] | undefined {
     try {
       const activities = this.threadStore.readActivities(threadId, { keep: false }).slice(-MAX_AGENT_ACTIVITIES).map(savedRecord)
-      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      const thread = this.threadById(threadId)
       if (thread) this.moveSubagentWords(thread, activities)
       return activities
     } catch {
@@ -2459,6 +2625,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       catch {
         // The whole history goes to the pane as it is, so nothing is above a window any more.
         this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
+        // The next accept compares this history again whatever it names, as every accept did before #925.
+        this.remerge.add(thread.id)
         return [...messages]
       }
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
@@ -2483,32 +2651,54 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Puts this thread's current window into memory: what the pane draws, and how much sits before it. */
   private loadWindow(threadId: string): void {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || !this.visible(thread)) return
     const window = this.readWindow(threadId, this.watched.get(threadId) ?? FIRST_WINDOW_TURNS)
     if (!window) return
     this.hidden.set(threadId, Math.max(0, window.firstPosition))
-    thread.messages = this.withVisuals(threadId, window.messages, !window.earlierAvailable)
+    this.touched(thread).messages = this.withVisuals(threadId, window.messages, !window.earlierAvailable)
     if (window.earlierAvailable) thread.earlierAvailable = true
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
   }
+  /**
+   * Every message the user sent before `beforeMessageId`, read from the store for the message scrubber (ADR-0109): the
+   * prompts above the window a pane holds. Wake-ups are Sotto's, so they are left out, as the window leaves them unmarked.
+   * Read only when a pane asks, and never published. Null when the store cannot answer.
+   */
+  threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null {
+    const thread = this.threadById(threadId)
+    if (!thread || !this.visible(thread) || this.storeUnavailable) return null
+    this.writeEvents()
+    try {
+      const skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
+        ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
+      return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
+    } catch { return null }
+  }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread) return
-    thread.summary = this.threadSummary(thread, thread.earlierAvailable ? undefined : thread.messages)
+    this.touched(thread).summary = this.threadSummary(thread, thread.earlierAvailable ? undefined : thread.messages)
     thread.messages = []
     delete thread.earlierAvailable
   }
   /**
-   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages.
-   * The store holds the whole history; only how much of it is in memory changes here.
+   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages, or back to a message
+   * the user sent, because they pressed its tick in the message scrubber (ADR-0109). The store holds the whole history;
+   * only how much of it is in memory changes here.
    */
-  async loadEarlierMessages(threadId: string): Promise<AgentHostSnapshot> {
+  async loadEarlierMessages(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot> {
     await this.initialize()
     this.thread(threadId)
-    this.watched.set(threadId, (this.watched.get(threadId) ?? FIRST_WINDOW_TURNS) + LATER_WINDOW_TURNS)
+    const turns = this.watched.get(threadId) ?? FIRST_WINDOW_TURNS
+    let through: number | undefined
+    if (throughMessageId !== undefined && !this.storeUnavailable) {
+      this.writeEvents()
+      try { through = this.threadStore.turnsFrom(threadId, throughMessageId) } catch { this.saveError = HISTORY_SAVE_ERROR }
+    }
+    this.watched.set(threadId, throughMessageId === undefined ? turns + LATER_WINDOW_TURNS : Math.max(turns, through ?? turns))
     this.loadWindow(threadId)
     this.publish()
     return this.workspaceSnapshot()
@@ -2526,7 +2716,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   paneActivities(threadId: string, activities: readonly AgentActivity[]): readonly AgentActivity[] {
     if (!this.threadVisible(threadId)) return []
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (this.storeUnavailable || !thread || !activities.length) return activities
     const watched = !this.declared || this.watched.has(threadId)
     const hidden = watched ? this.hidden.get(threadId) ?? 0 : 0
@@ -2595,7 +2785,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const pending = this.pendingEvents.get(threadId)
     if (pending?.some(event => (event.kind === 'message-added' || event.kind === 'message-replaced')
       && event.message.id === messageId && event.message.role === 'user')) return true
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (thread?.messages.some(message => message.id === messageId && message.role === 'user')) return true
     return !this.storeUnavailable && this.threadStore.hasRecordedUserMessage(threadId, messageId)
   }
@@ -2639,7 +2829,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if ((event.kind === 'message-added' || event.kind === 'message-replaced')
           && event.message.role === 'user' && ids.has(event.message.id)) found.add(event.message.id)
       }
-      for (const message of this.state.snapshot.threads.find(thread => thread.id === threadId)?.messages ?? []) {
+      for (const message of this.threadById(threadId)?.messages ?? []) {
         if (message.role === 'user' && ids.has(message.id)) found.add(message.id)
       }
       accepted.set(threadId, found)
@@ -2658,7 +2848,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   threadMessages(threadId: string): readonly AgentMessage[] {
     if (!this.threadVisible(threadId)) return []
     this.writeEvents(false, true)
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (this.storeUnavailable) return thread?.messages ?? []
     if (thread && thread.messages.length > 0 && !thread.earlierAvailable) return thread.messages
     return this.readWindow(threadId)?.messages ?? thread?.messages ?? []
@@ -2705,12 +2895,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.worktreeRefreshes.clear()
     if (this.gitStatusTimer) { clearInterval(this.gitStatusTimer); this.gitStatusTimer = undefined }
     // A roster that cannot reach the disk leaves the records unstripped, as the flush does.
-    try { if (this.ready) { this.writeEvents(true); this.saveActivities(!this.rosterOnDisk()) } }
+    try { if (this.ready) { this.writeEvents(true); this.saveActivities(!this.rosterOnDisk(), true) } }
     catch { this.saveError = 'Thread activity could not be saved. Restore local storage and restart Sotto.' }
     finally { this.threadStore.close(); this.subagentStore.close() }
     if (this.subagentTimer) clearTimeout(this.subagentTimer)
     this.subagentChanges.clear(); this.subagentListeners.clear()
-    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear(); this.publishedThreads.clear(); this.publishedRest = undefined
+    this.activityInputs.clear(); this.activityListeners.clear(); this.listeners.clear(); this.settledThreadListeners.clear()
+    this.published = new ThreadMap({ verify: false }); this.unpublishedAll = true
     this.subagentInputs.clear()
     this.ready = false
   }
@@ -2732,6 +2923,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private subagentsChanged(change: SubagentChange | undefined): void {
     if (!change) return
     this.subagentSummaries.set(change.threadId, change.summary)
+    this.touch(change.threadId)
     const pending = this.subagentChanges.get(change.threadId)
     const rows = new Map((change.reset ? [] : pending?.rows ?? []).map(row => [row.id, row]))
     for (const row of change.rows) rows.set(row.id, row)
@@ -2782,8 +2974,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       if (!this.subagentSummaries.has(thread.id)) this.subagentSummaries.set(thread.id, this.subagentStore.state(thread.id).summary)
     } catch {
-      // An unchanged provider snapshot still needs retrying when its store transaction failed.
+      // An unchanged provider snapshot still needs retrying when its store transaction failed: the next accept merges this
+      // thread again whatever it names, as every accept merged every thread before #925.
       this.subagentInputs.delete(thread.id)
+      this.remerge.add(thread.id)
       // Words still being moved stay in their records: nothing strips them while the roster lacks them.
       if (this.subagentWordsPending || this.rosterFlushPending) this.rosterLacksWords = true
       this.saveError = this.rosterLacksWords ? ROSTER_LACKS_WORDS_ERROR : 'Agent history could not be saved. Restore access to local storage and refresh.'
@@ -2794,12 +2988,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
 
   async listThreadSkills(threadId: string, forceReload = false) {
     await this.initialize()
-    const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || !this.visible(thread) || !this.inner.listThreadSkills) throw new Error('Skills are unavailable for this thread.')
     const workingDirectory = thread.nativeSessionStarted === false && thread.worktree?.status === 'pending' && !thread.worktree.path
       ? await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
       : await this.threadWorkingDirectory(threadId)
-    const creation = this.state.creations.find(item => item.threadId === threadId)
+    const creation = this.creationOf(threadId)
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
@@ -2846,29 +3040,135 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.activityListeners.size) {
       const snapshot = this.activityPublication()
       for (const listener of this.activityListeners) listener(snapshot)
-    }
+    } else if (this.changes.size) { this.applyEvents(); this.refreshPublished() }
+    // Built when its publisher builds it, which for a publish made from inside a listener is once every listener has the last.
+    if (this.changes.size) this.changes.publishChanges((_, published) => this.workspaceChanges(published))
   }
   /**
    * One publication for every activity subscriber: the coordinator takes it as its own and changes only what it builds
    * over it, and usage reads it as it arrives and keeps none of it. It was a copy each, and each copied every thread.
    * Its thread records are frozen and owned, and a thread that has not changed since the last publication is the very
-   * record that one carried, so a publish copies only the threads that changed (#1326). The rest of the snapshot is a
-   * copy of its own, as before.
+   * record that one carried, so a publish copies only the threads that changed (#1326). It is built from the
+   * publication's map (`published`), which reads again only the threads marked since the last, so a publish costs a
+   * reference per thread (#925). The snapshot around the threads and its thread list are each publication's own.
    */
   private activityPublication(): AgentHostSnapshot {
     this.applyEvents()
-    const visible = this.visibleSnapshot(this.state.snapshot)
-    // The notice is the publication's, never the workspace's record: a thread that carries one is a new record over it.
-    const sources = visible.threads.map(thread => this.invalidEventThreads.has(thread.id) ? { ...thread, historySaveNotice: HISTORY_SAVE_NOTICE } : thread)
-    const threads = immutableUpdates(sources, sources.map(thread => this.publishedThreads.get(thread.id)))
-    this.publishedThreads = new Map(threads.map(thread => [thread.id, thread]))
-    // The catalog, the projects and the providers are shared the same way; the snapshot around them is this publication's.
-    const [rest] = immutableUpdates([{ ...visible, threads: NO_THREADS }], [this.publishedRest])
-    this.publishedRest = rest
-    const snapshot: AgentHostSnapshot = { ...rest!, threads }
-    if (this.failedEventThreads.size) snapshot.error = HISTORY_SAVE_ERROR
-    else if (this.saveError) snapshot.error = this.saveError
-    return snapshot
+    this.refreshPublished()
+    return { ...this.published.rest!, threads: this.published.threads() } as AgentHostSnapshot
+  }
+  /**
+   * Everything an activity publication carries but its threads, as the state holds it now, with an empty thread list where
+   * the threads go: the providers, catalog and projects this run shows, and the error a save left.
+   */
+  private publicationRest(): AgentHostSnapshot {
+    const snapshot = this.state.snapshot
+    const rest: AgentHostSnapshot = { ...snapshot, threads: NO_THREADS, ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
+    if (this.failedEventThreads.size) rest.error = HISTORY_SAVE_ERROR
+    else if (this.saveError) rest.error = this.saveError
+    return rest
+  }
+  /** A thread as the publication carries it. The notice is the publication's, never the workspace's record: a thread that carries one is a new record over it. */
+  private publicationSource(thread: AgentThread): AgentThread {
+    return this.invalidEventThreads.has(thread.id) ? { ...thread, historySaveNotice: HISTORY_SAVE_NOTICE } : thread
+  }
+  /** The publication worked out from every visible thread, as it was before #925: what verifying checks the map against. */
+  private wholePublication(): AgentHostSnapshot {
+    return { ...this.publicationRest(), threads: this.state.snapshot.threads.filter(thread => this.visible(thread)).map(thread => this.publicationSource(thread)) }
+  }
+  /**
+   * Brings the publication's map up to the state (#925). Only the threads marked since the last (`unpublished`) are read,
+   * each against the record the map holds for it, which comes back as itself when it has not changed. A thread that is
+   * gone or out of view is removed, and one new to the publication goes last, as the state's own list grows. One that
+   * comes anywhere else, and everything after a whole accept or a change to every thread, is worked out from every
+   * thread, as each publication was. Answers how many thread records it read.
+   */
+  private refreshPublished(): number {
+    const published = this.published
+    const [rest] = immutableUpdates([this.publicationRest()], [published.rest as AgentHostSnapshot | undefined])
+    const sequence = (published.sequence ?? 0) + 1
+    if (this.unpublishedAll || published.sequence === undefined || this.acceptsWhole) return this.republishAll(rest!, sequence)
+    const threads = this.state.snapshot.threads
+    const upserts: AgentThread[] = [], removals: string[] = [], added: { readonly index: number; readonly record: AgentThread }[] = []
+    const sources: AgentThread[] = [], positions: number[] = []
+    for (const id of this.unpublished) {
+      const at = this.positionOf(id)
+      const thread = at === undefined ? undefined : threads[at]
+      if (thread && this.visible(thread)) { sources.push(this.publicationSource(thread)); positions.push(at!) }
+      else if (published.has(id)) removals.push(id)
+    }
+    // One call for every thread read, as one publication's records were always copied over the last one's.
+    const previous = sources.map(thread => published.get(thread.id))
+    const records = immutableUpdates(sources, previous)
+    for (let index = 0; index < records.length; index++) {
+      if (!previous[index]) added.push({ index: positions[index]!, record: records[index]! })
+      else if (records[index] !== previous[index]) upserts.push(records[index]!)
+    }
+    const read = sources.length
+    if (added.length) {
+      const last = published.lastId === undefined ? -1 : this.positionOf(published.lastId)
+      if (last === undefined || added.some(item => item.index <= last)) return this.republishAll(rest!, sequence)
+      upserts.push(...added.sort((left, right) => left.index - right.index).map(item => item.record))
+    }
+    this.unpublished.clear()
+    published.apply({ sequence, upserts, removals, ...(rest !== published.rest ? { rest } : {}) })
+    if (this.changes.size) {
+      for (const record of upserts) this.changesSince.ids.add(record.id)
+      for (const id of removals) this.changesSince.ids.add(id)
+    }
+    return read
+  }
+  /** Every visible thread read against the publication's record, and the map brought to them, removals and order and all. */
+  private republishAll(rest: AgentHostSnapshot, sequence: number): number {
+    this.unpublishedAll = false
+    this.unpublished.clear()
+    const published = this.published
+    const sources = this.state.snapshot.threads.filter(thread => this.visible(thread)).map(thread => this.publicationSource(thread))
+    const threads = immutableUpdates(sources, sources.map(thread => published.get(thread.id)))
+    const order = published.sequence === undefined || this.acceptsWhole ? undefined : orderBetween(published, threads)
+    if (!order) {
+      published.apply({ sequence, whole: true, upserts: threads, removals: [], rest })
+      this.changesSince.whole = true
+      return threads.length
+    }
+    const upserts = threads.filter(record => published.get(record.id) !== record)
+    published.apply({ sequence, upserts, removals: order.removals, ...(order.placements.length ? { placements: order.placements } : {}), ...(rest !== published.rest ? { rest } : {}) })
+    if (this.changes.size) {
+      for (const record of upserts) this.changesSince.ids.add(record.id)
+      for (const id of order.removals) this.changesSince.ids.add(id)
+      for (const { id } of order.placements) { this.changesSince.ids.add(id); this.changesSince.placed.add(id) }
+    }
+    return threads.length
+  }
+  /**
+   * The workspace's thread changes since `published`, what its subscribers were last sent, read off the publication's map
+   * when the publisher builds them, and the marks taken then: each thread that changed is upserted as the publication
+   * carries it, or removed, and a thread that came or moved is placed just before the thread that follows it. A first
+   * publication, one after the publication was worked out whole, and one whose placements the subscribers could not apply
+   * are whole.
+   */
+  private workspaceChanges(published: ThreadMap | undefined): ThreadChangeSet {
+    const since = this.changesSince, map = this.published
+    const whole = since.whole, ids = [...since.ids], placed = new Set(since.placed)
+    since.whole = false; since.ids.clear(); since.placed.clear()
+    const everything = (): ThreadChangeSet => ({ whole: true, upserts: map.threads(), removals: [], rest: map.rest! })
+    if (!published || whole) return everything()
+    const upserts: AgentThread[] = [], removals: string[] = [], placing: string[] = []
+    const upserted = new Set<string>()
+    for (const id of ids) {
+      const record = map.get(id)
+      if (record) {
+        upserts.push(record); upserted.add(id)
+        if (!published.has(id) || placed.has(id)) placing.push(id)
+      } else if (published.has(id)) removals.push(id)
+    }
+    const placements: ThreadPlacement[] = []
+    for (const id of placing) {
+      const beforeId = map.nextId(id) ?? null
+      if (beforeId !== null && !upserted.has(beforeId) && !published.has(beforeId)) return everything()
+      placements.push({ id, beforeId })
+    }
+    return { upserts, removals, ...(placements.length ? { placements: inPlacingOrder(placements) } : {}), ...(map.rest !== published.rest ? { rest: map.rest! } : {}) }
   }
 
   /** Native snapshots upsert records. Reused input records have already been merged, so only changed
@@ -2983,7 +3283,125 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.modelInputs = { incoming, output }
     return output
   }
-  private accept(snapshot: AgentHostSnapshot): void {
+  /**
+   * One publication of the inner host's activity, as thread changes already applied to `incoming` (#925). The threads it
+   * changed are merged over their provider's records, and so is every thread the workspace changed since the last accept
+   * (`remerge`); every other thread is left as it is, which is what merging it again would give, since neither its
+   * provider's record nor anything the workspace lays over it moved. A whole publication, one carrying the rest of the
+   * snapshot, the first after a read or after the workspace changed the rest itself, and one bringing more than one thread
+   * new to the workspace are taken in whole, as every publication used to be. Answers whether a thread a window may be
+   * looking at gained an activity record, which a publish window lets through at once.
+   */
+  private acceptChanges(changes: AgentHostChanges, original?: AgentHostSnapshot): boolean {
+    if (this.acceptsWhole || changes.whole || changes.rest || this.remergeAll || this.restTouched || this.bringsThreads(changes) > 1) {
+      const records = this.watchedRecordCount()
+      this.accept(original ?? this.incomingSnapshot(), true)
+      return this.watchedRecordCount() > records
+    }
+    return this.acceptThreads(changes).opening
+  }
+  /** How many threads new to the workspace this change, with the threads waiting to be merged again, would add. */
+  private bringsThreads(changes: AgentHostChanges): number {
+    let added = 0
+    const count = (id: string): void => {
+      const record = this.incoming.get(id)
+      if (record && this.visible(record) && this.positionOf(id) === undefined) added++
+    }
+    const upserted = new Set(changes.upserts.map(record => record.id))
+    for (const id of upserted) count(id)
+    for (const id of this.remerge) if (!upserted.has(id)) count(id)
+    return added
+  }
+  /**
+   * What `incoming` holds as one snapshot, for a publication taken in whole: laid out as the provider switch lays out its
+   * own, the threads after the projects and an error after the threads.
+   */
+  private incomingSnapshot(): AgentHostSnapshot {
+    const rest = this.incoming.rest! as AgentHostSnapshot
+    const { error, ...head } = rest
+    return { ...head, threads: this.incoming.threads(), ...('error' in rest ? { error } : {}) } as AgentHostSnapshot
+  }
+  /**
+   * `trackSubagents` dates a thread's live agents against the last accept that found the thread disconnected, which used
+   * to date every disconnected thread afresh on every accept. A thread found connected, or gone from its provider's
+   * snapshot, after accepts that left it disconnected and untouched takes the last of those accepts' date now.
+   * `connected` is undefined for a thread its provider no longer publishes.
+   */
+  private noteConnection(id: string, connected: boolean | undefined, previousAcceptAt: number | undefined): void {
+    if (this.disconnectedThreads.delete(id) && previousAcceptAt !== undefined) {
+      this.subagentLiveSince.set(id, Math.max(this.subagentLiveSince.get(id) ?? Number.NEGATIVE_INFINITY, previousAcceptAt))
+    }
+    if (connected === false) this.disconnectedThreads.add(id)
+  }
+  /**
+   * One thread of the inner host's merged with what the workspace lays over it: its project and kind, its title when the
+   * user or Sotto named it, its worktree, Git action, pull requests, links and wake-ups, its activity, and the messages and
+   * summary its history gives. `thread` is the provider's record, frozen and shared, so it is spread, never written into.
+   */
+  private mergeThread(thread: AgentThread, old: AgentThread | undefined, connected: boolean, previousAcceptAt: number | undefined): AgentThread {
+    this.noteConnection(thread.id, connected, previousAcceptAt)
+    this.trackSubagents(thread, connected)
+    const creation = this.creationOf(thread.id)
+    if (creation) creation.phase = 'started'
+    const activities = old?.activities || thread.activities || this.storedActivity.has(thread.id) ? this.mergeActivities(thread, old) : undefined
+    // A new provider registration may have a different project ID. The original Sotto
+    // project remains the workspace/memory scope for a thread created beneath it.
+    const merged: AgentThread = { ...thread,
+      kind: old?.kind ?? 'project',
+      subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
+      // A name the user set by hand, or one Sotto gave this thread, outranks whatever the provider still calls it.
+      ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource }
+        : old?.titledFromFirstMessage ? { title: old.title, titleSource: 'default' as const, titledFromFirstMessage: true } : {}),
+      ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
+      // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
+      ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
+      ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
+      // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
+      ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
+      ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
+      ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
+      ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
+      ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
+      ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
+      ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
+      ...(old?.hiddenWakeUpMessageIds ? { hiddenWakeUpMessageIds: old.hiddenWakeUpMessageIds } : {}),
+      messages: [],
+      ...(activities ? { activities } : {}),
+      projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
+      workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
+    // A stored thread keeps no list, not the provider's: an empty one saved over the store would remove every record.
+    if (!activities) delete merged.activities
+    // A provider that is still loading a thread's history has published no history yet, so the
+    // store keeps what it already holds and the pane keeps the window it was given.
+    if (this.eventSourced) {
+      // The events already said what this thread's history is. What the snapshot carries beside them
+      // is the window this host loaded, which only an event or an observation changes.
+      merged.messages = old?.messages ?? []
+      if (old?.earlierAvailable) merged.earlierAvailable = true
+      merged.summary = old?.summary ?? this.threadSummary(merged)
+      if (!old) this.eventChanged.add(thread.id)
+    } else if ((thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length) {
+      merged.messages = old?.messages ?? []
+      merged.summary = old?.summary ?? this.threadSummary(merged)
+    } else {
+      const nativeMessages = this.legacyMessages(merged, thread.messages)
+      const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
+      const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
+        withKeptMessageMetadata(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
+      merged.messages = this.record(merged, messages, old?.historyEpoch)
+      merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
+    }
+    return merged
+  }
+  /**
+   * A whole snapshot taken in: a read's, or a publication of the inner host's taken in whole (`fromPublication`). Every
+   * thread it carries is merged over and every other thread loses its live state, so every thread may have changed. After
+   * a read the state may say what the inner host's publications have not, so the next publication is taken in whole too.
+   */
+  private accept(snapshot: AgentHostSnapshot, fromPublication = false): void {
+    const previousAcceptAt = this.acceptedAt
+    this.acceptedAt = Date.now()
+    this.remerge.clear()
     const previous = this.state.snapshot
     const previousThreads = new Map(previous.threads.map(thread => [thread.id, thread]))
     const connectedInputs = new Set<string>()
@@ -3000,64 +3418,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!this.state.projectAliases.some(alias => alias.providerProjectId === project.id)) projects.set(project.id, { ...project, workspaceSettledAt: projects.get(project.id)?.workspaceSettledAt ?? null })
     }
     const threads = new Map(previous.threads.map(thread => [thread.id, this.visible(thread) ? { ...thread, ...NO_LIVE_THREAD_STATE } as AgentThread : thread]))
+    const merged = new Set<string>()
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
       const old = threads.get(thread.id)
       if (old && !this.visible(old)) continue
       const connected = isThreadProviderConnected(snapshot, thread)
       if (connected && !thread.archivedAt) connectedInputs.add(thread.id)
-      this.trackSubagents(thread, connected)
-      const creation = this.state.creations.find(item => item.threadId === thread.id)
-      if (creation) creation.phase = 'started'
-      const activities = old?.activities || thread.activities || this.storedActivity.has(thread.id) ? this.mergeActivities(thread, old) : undefined
-      // A new provider registration may have a different project ID. The original Sotto
-      // project remains the workspace/memory scope for a thread created beneath it.
-      const merged: AgentThread = { ...thread,
-        kind: old?.kind ?? 'project',
-        subagentSummary: this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY,
-        // A name the user set by hand, or one Sotto gave this thread, outranks whatever the provider still calls it.
-        ...(old?.titleSource === 'user' || old?.titleSource === 'generated' ? { title: old.title, titleSource: old.titleSource }
-          : old?.titledFromFirstMessage ? { title: old.title, titleSource: 'default' as const, titledFromFirstMessage: true } : {}),
-        ...(old?.worktree ? { worktree: old.worktree, workingDirectory: old.workingDirectory } : {}),
-        // The Git action and the linked pull requests are Sotto's record, not the provider's: a provider update keeps them.
-        ...(old?.gitAction ? { gitAction: old.gitAction } : {}),
-        ...(old?.pullRequests ? { pullRequests: old.pullRequests } : {}),
-        // The thread that delegated to this one is Sotto's record too (ADR-0081), and so are a continuation's links (ADR-0089) and where it began (#1028).
-        ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
-        ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
-        ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
-        ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
-        ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
-        ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
-        ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
-        ...(old?.hiddenWakeUpMessageIds ? { hiddenWakeUpMessageIds: old.hiddenWakeUpMessageIds } : {}),
-        messages: [],
-        ...(activities ? { activities } : {}),
-        projectId: creation?.projectId ?? old?.projectId ?? this.state.projectAliases.find(alias => alias.providerProjectId === thread.projectId)?.projectId ?? thread.projectId,
-        workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
-      // A stored thread keeps no list, not the provider's: an empty one saved over the store would remove every record.
-      if (!activities) delete merged.activities
-      // A provider that is still loading a thread's history has published no history yet, so the
-      // store keeps what it already holds and the pane keeps the window it was given.
-      if (this.eventSourced) {
-        // The events already said what this thread's history is. What the snapshot carries beside them
-        // is the window this host loaded, which only an event or an observation changes.
-        merged.messages = old?.messages ?? []
-        if (old?.earlierAvailable) merged.earlierAvailable = true
-        merged.summary = old?.summary ?? this.threadSummary(merged)
-        if (!old) this.eventChanged.add(thread.id)
-      } else if ((thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length) {
-        merged.messages = old?.messages ?? []
-        merged.summary = old?.summary ?? this.threadSummary(merged)
-      } else {
-        const nativeMessages = this.legacyMessages(merged, thread.messages)
-        const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
-        const messages = merged.kind === 'watcher' ? annotateWatcherOwnChanges({ ...merged, messages: nativeMessages.map(message =>
-          withKeptMessageMetadata(message, retained.get(message.id) ?? this.message(merged.id, message.id))) }) : nativeMessages
-        merged.messages = this.record(merged, messages, old?.historyEpoch)
-        merged.summary = this.threadSummary(merged, this.storeUnavailable ? merged.messages : messages)
-      }
-      threads.set(thread.id, merged)
+      threads.set(thread.id, this.mergeThread(thread, old, connected, previousAcceptAt))
+      merged.add(thread.id)
     }
+    for (const id of [...this.disconnectedThreads]) if (!merged.has(id)) this.noteConnection(id, undefined, previousAcceptAt)
     // Retained workspace history is not a live provider input. Reconnect reconciles it afresh.
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
     for (const id of this.storedInputs.keys()) if (!connectedInputs.has(id)) this.storedInputs.delete(id)
@@ -3066,26 +3436,88 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
-      if (!old) continue
-      let moved = old.status === 'running' && thread.status !== 'running'
-      // A stored list read back in this accept is what the thread held before it, not nothing (#918).
-      const base = this.heldForInput.has(thread.id) ? this.heldForInput.get(thread.id) : old.activities
-      if (!moved && base !== thread.activities) {
-        const before = settledHeadMovers(base)
-        moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
-      }
-      if (moved) this.scheduleWorktreeRefresh(thread.id)
+      if (old) this.refreshIfHeadMoved(thread, old)
     }
     this.heldForInput.clear()
     this.dirty = true
+    this.restTouched = false
+    this.remergeAll = !fromPublication
+    this.markAllChanged()
     // Capture each Watcher observation before another source update can evict an early edit, or a save
     // can release idle activity. Native events supply its turn anchor even when no pane is observing it.
-    if (this.eventSourced && this.watcherEnabled && this.state.snapshot.threads.some(thread => {
-      if (thread.kind !== 'watcher') return false
-      const old = previousThreads.get(thread.id)
-      return this.pendingEvents.has(thread.id) || thread.activities !== old?.activities || thread.status !== old?.status
-        || thread.lastTurn?.id !== old?.lastTurn?.id || thread.lastTurn?.status !== old?.lastTurn?.status
-    })) this.applyEvents()
+    if (this.eventSourced && this.watcherEnabled && this.state.snapshot.threads.some(thread => thread.kind === 'watcher' && this.watcherMoved(thread, previousThreads.get(thread.id)))) this.applyEvents()
+  }
+  /**
+   * One publication of the inner host's thread changes taken in at a cost that follows the change (#925): each thread it
+   * upserted or removed, and each the workspace changed since the last accept, is merged again or loses its live state,
+   * exactly as taking in the whole snapshot would treat it, and goes back in its place in the state, or last when it is
+   * new. The provider's order is not followed, as it never was: the workspace keeps its own. Answers how many threads it
+   * took in, and whether a thread a window may be looking at gained an activity record.
+   */
+  private acceptThreads(changes: AgentHostChanges): { readonly handled: number; readonly opening: boolean } {
+    const incoming = this.incoming
+    // The providers and the connection, which say whether a thread is connected; the rest did not change since the last accept.
+    const host = incoming.rest! as AgentHostSnapshot
+    const previousAcceptAt = this.acceptedAt
+    this.acceptedAt = Date.now()
+    const ids = new Set<string>()
+    for (const record of changes.upserts) ids.add(record.id)
+    for (const id of changes.removals) ids.add(id)
+    for (const id of this.remerge) ids.add(id)
+    this.remerge.clear()
+    const threads = this.state.snapshot.threads
+    let recordsBefore = 0, recordsAfter = 0, watcher = false, handled = 0
+    for (const id of ids) {
+      const at = this.positionOf(id)
+      const old = at === undefined ? undefined : threads[at]
+      const record = incoming.get(id)
+      let next: AgentThread
+      if (record && this.visible(record) && !(old && !this.visible(old))) {
+        const connected = isThreadProviderConnected(host, record)
+        next = this.mergeThread(record, old, connected, previousAcceptAt)
+        if (!connected || record.archivedAt) { this.activityInputs.delete(id); this.storedInputs.delete(id) }
+      } else if (old) {
+        // Not published by its provider now, or a thread the workspace keeps out of view: its live state goes.
+        this.noteConnection(id, undefined, previousAcceptAt)
+        this.activityInputs.delete(id); this.storedInputs.delete(id)
+        next = this.visible(old) ? { ...old, ...NO_LIVE_THREAD_STATE } as AgentThread : old
+      } else continue
+      handled++
+      const stamped = stampHostThread(next, this.hostId!)
+      const visible = this.visible(stamped)
+      if (visible && !isThreadProviderConnected(host, stamped)) dropLiveThreadState(stamped)
+      if (at === undefined) threads.push(stamped)
+      else threads[at] = stamped
+      this.markChanged(id)
+      if (this.inView(id)) {
+        if (old && this.visible(old)) recordsBefore += old.activities?.length ?? 0
+        if (visible) recordsAfter += stamped.activities?.length ?? 0
+      }
+      if (visible && old) this.refreshIfHeadMoved(stamped, old)
+      if (stamped.kind === 'watcher' && this.watcherMoved(stamped, old)) watcher = true
+    }
+    this.heldForInput.clear()
+    this.dirty = true
+    // A Watcher thread with events waiting is captured whether or not this change named it, as `accept` captures it.
+    if (!watcher && this.eventSourced && this.watcherEnabled) for (const id of this.pendingEvents.keys()) if (this.threadById(id)?.kind === 'watcher') { watcher = true; break }
+    if (this.eventSourced && this.watcherEnabled && watcher) this.applyEvents()
+    return { handled, opening: recordsAfter > recordsBefore }
+  }
+  /** An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read. */
+  private refreshIfHeadMoved(thread: AgentThread, old: AgentThread): void {
+    let moved = old.status === 'running' && thread.status !== 'running'
+    // A stored list read back in this accept is what the thread held before it, not nothing (#918).
+    const base = this.heldForInput.has(thread.id) ? this.heldForInput.get(thread.id) : old.activities
+    if (!moved && base !== thread.activities) {
+      const before = settledHeadMovers(base)
+      moved = [...settledHeadMovers(thread.activities)].some(id => !before.has(id))
+    }
+    if (moved) this.scheduleWorktreeRefresh(thread.id)
+  }
+  /** Whether a Watcher thread has something an accept must capture before it can be lost (`accept`). */
+  private watcherMoved(thread: AgentThread, old: AgentThread | undefined): boolean {
+    return this.pendingEvents.has(thread.id) || thread.activities !== old?.activities || thread.status !== old?.status
+      || thread.lastTurn?.id !== old?.lastTurn?.id || thread.lastTurn?.status !== old?.lastTurn?.status
   }
   /**
    * Queues one trailing re-read of this thread's worktree; a burst of records still reads the folder once. A thread
@@ -3093,7 +3525,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * rather than once each: every record the round answers settled before its timer fired, and so before its read began.
    */
   private scheduleWorktreeRefresh(threadId: string): void {
-    const thread = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || thread.nativeSessionStarted === false || thread.worktree && thread.worktree.status !== 'ready') return
     if ([...this.worktreeRefreshes.values()].some(pending => pending.threads.has(threadId))) return
     const key = this.refreshKey(threadId)
@@ -3159,16 +3591,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * files. False when there was nothing to inspect or Git would not confirm it.
    */
   private async reinspect(threadId: string, round?: RefreshRound): Promise<boolean> {
-    const worktree = this.state.snapshot.threads.find(thread => thread.id === threadId)?.worktree
+    const worktree = this.threadById(threadId)?.worktree
     if (!worktree || worktree.status !== 'ready' || this.stopping) return false
     let inspected: AgentWorktree
     try { inspected = await this.inspectInRound(worktree, round) }
     catch { this.fullCheckDue.add(threadId); return false }
     this.fullCheckDue.delete(threadId)
-    const current = this.state.snapshot.threads.find(thread => thread.id === threadId)
+    const current = this.threadById(threadId)
     if (current?.worktree?.status !== 'ready') return true
     if (inspected.branch !== current.worktree.branch || inspected.dirty !== current.worktree.dirty) {
-      current.worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
+      this.touched(current).worktree = { ...inspected, ...(current.worktree.sentBranch !== undefined ? { sentBranch: current.worktree.sentBranch } : {}) }
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
@@ -3278,6 +3710,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   private async changeHistoryPrivacy(retryUnavailable: boolean): Promise<void> {
     this.activityInputs.clear()
+    this.touchAll()
     /** Whether stored threads lost their records with the file, which the coordinator must be told. */
     let dropped = false
     if (!this.historyEnabled()) {
@@ -3346,7 +3779,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             this.activityStoreUnavailable = false
           }
           if (wanted) {
-            this.saveActivities(!this.rosterOnDisk())
+            this.saveActivities(!this.rosterOnDisk(), true)
             this.threadStore.becomeDurable()
             this.seedWakeUps()
           }
@@ -3378,6 +3811,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         }
       }
     }
+    // Records, summaries and windows changed under every thread, and the activity inputs were let go.
+    this.touchAll()
     this.dirty = true
     await this.flush()
     if (dropped) this.publish()
@@ -3400,18 +3835,23 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // may be waiting for the end of a publish window. What is held here answers it; the caller reads whole when the
     // echo is not in it (#765).
     if (purpose?.afterSend) return this.workspaceSnapshot()
-    const creation = this.state.creations.find(item => item.threadId === threadId)
+    const creation = this.creationOf(threadId)
     const read = await this.withProfileRefusal(threadId, () => creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
       : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
     // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
     // kept. `accept` replaces the snapshot but edits the project aliases and creations in place, so those are copied.
-    const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty }
+    const before = { snapshot: this.state.snapshot, organization: structuredClone([this.state.projectAliases, this.state.creations]), dirty: this.dirty,
+      marks: { remerge: [...this.remerge], remergeAll: this.remergeAll, unpublishedAll: this.unpublishedAll, unsavedAll: this.unsavedAll, releasableAll: this.releasableAll } }
     this.accept(read)
     // A read before a send that changed nothing writes and publishes nothing (#765): every send makes one.
     if (purpose?.beforeSend && sameSnapshot(before.snapshot, this.state.snapshot) && sameSnapshot(before.organization, [this.state.projectAliases, this.state.creations])) {
       // `accept` marks the workspace for writing whatever it was handed; nothing changed, so that mark is taken back.
       // A mark something else left is written in the usual window rather than on the way to the send.
       this.dirty = before.dirty
+      // The state is what it was, so what the next accept, publication, save and release must look at is what it was too (#925).
+      const { marks } = before
+      for (const id of marks.remerge) this.remerge.add(id)
+      this.remergeAll = marks.remergeAll; this.unpublishedAll = marks.unpublishedAll; this.unsavedAll = marks.unsavedAll; this.releasableAll = marks.releasableAll
       if (this.dirty) this.writeSoon()
       return this.workspaceSnapshot()
     }
@@ -3448,7 +3888,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     })
     await this.initialize()
     if (kind === 'thread' && !this.threadVisible(id)) throw new WatcherProfileRefusal(WATCHER_DISABLED)
-    const projectId = kind === 'project' ? id : this.state.snapshot.threads.find(thread => thread.id === id)?.projectId
+    const projectId = kind === 'project' ? id : this.threadById(id)?.projectId
     if (!projectId) throw new Error('That thread is unavailable.')
     return this.onLane(projectId, async () => {
       watcherGuard?.()
@@ -3456,6 +3896,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!entity) throw new Error(`That ${kind} is unavailable.`)
       const previous = entity.workspaceSettledAt ?? null
       entity.workspaceSettledAt = settled ? previous ?? new Date().toISOString() : null
+      if (kind === 'thread') this.touch(id)
       // A thread's delegated threads (ADR-0081) settle with it, under its timestamp, so none is left open on its own;
       // restoring it brings back those that timestamp still marks. One settled or restored by itself keeps its own, so
       // settling a thread that is already settled moves none of them. Stable leaves every thread to itself.
@@ -3466,7 +3907,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           if (!below.has(thread.id) || thread.projectId !== projectId) continue
           const own = thread.workspaceSettledAt ?? null
           if (settled ? own !== null : own !== previous) continue
-          delegated.set(thread.id, own); thread.workspaceSettledAt = entity.workspaceSettledAt
+          delegated.set(thread.id, own); this.touched(thread).workspaceSettledAt = entity.workspaceSettledAt
         }
       }
       this.dirty = true
@@ -3474,11 +3915,47 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       catch (error) {
         const current = (kind === 'project' ? this.state.snapshot.projects : this.state.snapshot.threads).find(item => item.id === id)
         if (current) current.workspaceSettledAt = previous
-        for (const thread of this.state.snapshot.threads) if (delegated.has(thread.id)) thread.workspaceSettledAt = delegated.get(thread.id)!
+        if (kind === 'thread') this.touch(id)
+        for (const [threadId, own] of delegated) { const thread = this.threadById(threadId); if (thread) this.touched(thread).workspaceSettledAt = own }
         throw error
       }
       this.publish(); return this.workspaceSnapshot()
     }, this.organizationLanes)
+  }
+  /**
+   * New work reopens a settled thread before it goes (October 23, 2026), so no thread works while settled, where Settle
+   * finished threads, a request's end and the cleanup's on-settle rule would take it for put aside. Its own settlement is
+   * restored as Restore does, with the delegated threads settled with it. A settled project returns with this thread
+   * alone, as a new thread there returns it: the project's other threads keep its timestamp as their own.
+   */
+  async reopenThreadForWork(threadId: string, guard?: () => void): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const projectId = this.thread(threadId).projectId
+    let projectRestored = false
+    await this.onLane(projectId, async () => {
+      guard?.()
+      const project = this.state.snapshot.projects.find(item => item.id === projectId)
+      const projectSettledAt = project?.workspaceSettledAt ?? null
+      if (!project || projectSettledAt === null) return
+      const inherited = this.state.snapshot.threads.filter(thread => thread.projectId === projectId && thread.id !== threadId && thread.workspaceSettledAt == null)
+      for (const thread of inherited) this.touched(thread).workspaceSettledAt = projectSettledAt
+      project.workspaceSettledAt = null
+      this.dirty = true
+      try { await this.flush() }
+      catch (error) {
+        // A snapshot taken while the write waited replaced these records: the rollback finds them again by ID.
+        const current = this.state.snapshot.projects.find(item => item.id === projectId)
+        if (current) current.workspaceSettledAt = projectSettledAt
+        const ids = new Set(inherited.map(thread => thread.id))
+        for (const id of ids) { const thread = this.threadById(id); if (thread) this.touched(thread).workspaceSettledAt = null }
+        throw error
+      }
+      projectRestored = true
+      this.publish()
+    }, this.organizationLanes)
+    // The guard decides once: having let the project return, it does not stop the thread's own restore halfway.
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, projectRestored ? undefined : guard)
+    return this.workspaceSnapshot()
   }
   /**
    * The thread's new name, kept in Sotto's own workspace: the provider is never told, and its own
@@ -3488,7 +3965,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await this.initialize()
     const thread = this.thread(threadId)
     const previous = { title: thread.title, titleSource: thread.titleSource, titledFromFirstMessage: thread.titledFromFirstMessage }
-    thread.title = title
+    this.touched(thread).title = title
     // A first-message title is still a `default` name to everything that reads one; only its flag tells it apart.
     thread.titleSource = source === 'first-message' ? 'default' : source
     if (source === 'first-message') thread.titledFromFirstMessage = true
@@ -3496,7 +3973,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.dirty = true
     try { await this.flush() }
     catch (error) {
-      const restored = this.thread(threadId)
+      const restored = this.touched(this.thread(threadId))
       Object.assign(restored, { title: previous.title, titleSource: previous.titleSource })
       if (previous.titledFromFirstMessage) restored.titledFromFirstMessage = true
       else delete restored.titledFromFirstMessage
@@ -3505,7 +3982,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.publish(); return this.workspaceSnapshot()
   }
   private thread(id: string): AgentThread {
-    const thread = this.state.snapshot.threads.find(thread => thread.id === id)
+    const thread = this.threadById(id)
     if (!thread) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
     if (!this.visible(thread)) this.refuseDormantThread(thread)
     return thread
@@ -3534,7 +4011,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private async prepareWorkingCopy(thread: AgentThread): Promise<void> {
     if (!thread.worktree) return // Existing threads keep their native directory.
     // Native events can replace the thread object while Git is pending; always write the current one.
-    const current = (): AgentThread => this.state.snapshot.threads.find(item => item.id === thread.id) ?? thread
+    const current = (): AgentThread => this.threadById(thread.id) ?? thread
     try {
       let metadata = current().worktree ?? thread.worktree
       if (!metadata.path) {
@@ -3542,17 +4019,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (!project) throw new Error('The original project is unavailable.')
         metadata = await this.worktrees.allocate(project.path, metadata.mode, { baseBranch: metadata.baseBranch, startFromOrigin: metadata.startFromOrigin, existingWorktreePath: metadata.existingWorktreePath,
           ...(metadata.checkoutBranch && metadata.branch ? { checkoutBranch: metadata.branch } : {}) })
-        current().worktree = metadata
+        this.touched(current()).worktree = metadata
         this.dirty = true
         await this.flush() // Allocation owns its exact path/branch before Git mutates anything.
       }
       metadata = await this.worktrees.ensure(metadata)
       const workingDirectory = await this.worktrees.workingDirectory(metadata)
-      const target = current()
+      const target = this.touched(current())
       target.worktree = metadata
       target.workingDirectory = workingDirectory
     } catch (error) {
-      const target = current()
+      const target = this.touched(current())
       target.worktree = { ...(target.worktree ?? thread.worktree), status: 'error', error: error instanceof Error ? error.message : 'Working-copy setup failed. Retry after restoring the folder and Git.' }
     }
     this.dirty = true; await this.flush(); this.publish()
@@ -3579,7 +4056,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         }
         catch (error) { metadata = { ...metadata, status: 'error', error: error instanceof Error ? error.message : 'The working folder is unavailable.' } }
       }
-      this.thread(threadId).worktree = metadata
+      this.touched(this.thread(threadId)).worktree = metadata
       // Git has just confirmed the folder, so the next send may check it from its files again.
       if (metadata.status === 'ready' && !metadata.reclaimedAt) this.fullCheckDue.delete(threadId)
       this.dirty = true; await this.flush(); this.publish()
@@ -3606,14 +4083,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!target) throw new Error('Sotto has not sent to this thread yet, so there is no earlier branch to restore.')
       const inspected = await this.worktrees.inspect(worktree)
       if (inspected.dirty && !withUncommittedChanges && inspected.branch !== target) {
-        this.thread(threadId).worktree = { ...inspected, sentBranch: target }
+        this.touched(this.thread(threadId)).worktree = { ...inspected, sentBranch: target }
         this.dirty = true; await this.flush().catch(() => undefined); this.publish()
         throw new Error(RESTORE_BRANCH_NEEDS_CONFIRMATION)
       }
       const switched = await this.worktrees.switchBranch(inspected, target)
       // The branch moved under any status read of the folder begun before now, so the read below is one of its own.
       this.invalidateGitStatus(threadId)
-      this.thread(threadId).worktree = { ...switched, sentBranch: target }
+      this.touched(this.thread(threadId)).worktree = { ...switched, sentBranch: target }
       this.dirty = true
       try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
       this.publish()
@@ -3626,6 +4103,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const worktree = this.thread(threadId).worktree
     if (!worktree || worktree.status !== 'ready' || worktree.sentBranch === worktree.branch) return
     worktree.sentBranch = worktree.branch
+    this.touch(threadId)
     this.dirty = true
     // The prompt is about to go out; a cache write that fails must not refuse the send.
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
@@ -3651,7 +4129,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const workingDirectory = this.thread(threadId).workingDirectory ?? await this.worktrees.workingDirectory(inspected)
         const current = this.thread(threadId)
         if (current.worktree === worktree && (inspected.branch !== worktree.branch || worktree.status !== 'ready' || worktree.reclaimedAt || current.workingDirectory === undefined)) {
-          current.worktree = inspected; current.workingDirectory ??= workingDirectory; this.dirty = true
+          this.touched(current).worktree = inspected; current.workingDirectory ??= workingDirectory; this.dirty = true
           // The folder was just verified; a cache write that fails must not refuse the send.
           try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
           this.publish()
@@ -3683,7 +4161,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (seen.kind === 'ready' && this.thread(threadId).worktree === worktree) {
         // The folder's own branch is the one this send goes to, recorded as `inspect` would record it.
         if (seen.worktree.branch !== worktree.branch) {
-          this.thread(threadId).worktree = seen.worktree
+          this.touched(this.thread(threadId)).worktree = seen.worktree
           this.dirty = true
           try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
           this.publish()
@@ -3789,7 +4267,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return result
     }
     if (command.type === 'create-thread') {
-      if (this.state.snapshot.threads.some(thread => thread.id === command.threadId)) throw new Error('This thread already exists. Select it instead of creating it again.')
+      if (this.threadById(command.threadId) !== undefined) throw new Error('This thread already exists. Select it instead of creating it again.')
       if (!this.state.snapshot.projects.some(project => project.id === command.projectId)) throw new Error('Choose an available project.')
       validateThreadOptions(this.state.snapshot, command)
       const model = resolveModel(this.state.snapshot.models, command.modelId)!
@@ -3816,22 +4294,23 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const existing of this.state.snapshot.threads) {
           if (existing.projectId !== project.id || existing.workspaceSettledAt != null) continue
           previousSettlement.set(existing.id, existing.workspaceSettledAt)
-          existing.workspaceSettledAt = projectSettledAt
+          this.touched(existing).workspaceSettledAt = projectSettledAt
         }
         project.workspaceSettledAt = null
       }
       this.state.snapshot.threads.push(thread)
+      this.touch(thread.id)
       this.state.creations.push({ threadId: thread.id, projectId: thread.projectId, commandId: randomUUID(), phase: 'unstarted' })
       this.dirty = true
       try { await this.flush() }
       catch (error) {
-        this.state.snapshot.threads = this.state.snapshot.threads.filter(item => item.id !== thread.id)
+        this.removeThread(thread.id)
         this.privateLegacyMessages.delete(thread.id)
         this.state.creations = this.state.creations.filter(item => item.threadId !== thread.id)
         const currentProject = this.state.snapshot.projects.find(item => item.id === command.projectId)
         if (currentProject && projectSettledAt !== null) currentProject.workspaceSettledAt = projectSettledAt
         for (const existing of this.state.snapshot.threads) {
-          if (previousSettlement.has(existing.id)) existing.workspaceSettledAt = previousSettlement.get(existing.id)
+          if (previousSettlement.has(existing.id)) this.touched(existing).workspaceSettledAt = previousSettlement.get(existing.id)
         }
         throw error
       }
@@ -3840,12 +4319,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return { accepted: true }
     }
     let thread = this.thread(command.threadId)
-    const creation = this.state.creations.find(item => item.threadId === thread.id)
+    const creation = this.creationOf(thread.id)
     if (command.type === 'configure-thread' && creation?.phase === 'unstarted') {
       validateThreadOptions(this.state.snapshot, command, thread.modelId)
       const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)!
       this.requireCreation(model.providerId)
       const previous = structuredClone(thread)
+      this.touch(thread.id)
       if (command.modelId !== undefined) {
         thread.modelId = model.id
         if (model.providerId) thread.providerId = model.providerId
@@ -3859,7 +4339,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.providerMode !== undefined) thread.providerMode = command.providerMode
       this.dirty = true
       try { await this.flush() }
-      catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(thread, previous); throw error }
+      catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(this.touched(thread), previous); throw error }
       // No provider holds these settings yet; the workspace is where they took effect.
       this.publish(); return { accepted: true, snapshot: this.workspaceSnapshot() }
     }
@@ -3867,7 +4347,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       firstSend = true
       if (creation.phase === 'starting') {
         await this.refreshThread(thread.id)
-        if (this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
+        if (this.creationOf(thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
       } else {
         // Waits for setup already running from creation; only an unstarted or failed one starts here.
         if (thread.worktree?.status !== 'ready') await this.startWorkingCopy(thread)
@@ -3885,9 +4365,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         validateThreadOptions(this.state.snapshot, thread)
         this.requireCreation(thread.providerId)
         const priorPhase = creation.phase
-        creation.phase = 'starting'; thread.nativeSessionStarted = true; this.dirty = true
+        creation.phase = 'starting'; this.touched(thread).nativeSessionStarted = true; this.dirty = true
         try { await this.flush() }
-        catch (error) { creation.phase = priorPhase; thread.nativeSessionStarted = priorPhase !== 'unstarted'; throw error }
+        catch (error) { creation.phase = priorPhase; this.touched(thread).nativeSessionStarted = priorPhase !== 'unstarted'; throw error }
         this.publish()
         const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)!
         // This creation intent is durable separately from AgentControl's prompt outbox.
@@ -3896,9 +4376,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           // A definitive rejection permits another attempt. Preserve any identity
           // already reserved by the registry; only an entirely unbound thread unlocks.
           const current = this.thread(thread.id)
-          if (this.state.creations.find(item => item.threadId === thread.id)?.phase === 'started') return
+          if (this.creationOf(thread.id)?.phase === 'started') return
           creation.phase = this.inner.providerForThread?.(thread.id) ? 'retryable' : 'unstarted'
-          current.nativeSessionStarted = creation.phase !== 'unstarted'
+          this.touched(current).nativeSessionStarted = creation.phase !== 'unstarted'
           this.dirty = true; await this.flush(); this.publish()
         }
         let result: AgentHostResult
@@ -3914,7 +4394,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
         this.accept(await this.inner.snapshot(thread.providerId)); await this.flush()
-        if (!result.accepted || this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Refresh its original provider; your prompt has not been sent.')
+        if (!result.accepted || this.creationOf(thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Refresh its original provider; your prompt has not been sent.')
       }
       thread = this.thread(command.threadId)
     }
@@ -3969,13 +4449,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   createProjectId(provider: ProviderId): string { return this.inner.createProjectId?.(provider) ?? randomUUID() }
   resolveProjectId(id: string): string { return this.inner.resolveProjectId?.(id) ?? id }
   resolveModelId(id: string): string { return this.inner.resolveModelId?.(id) ?? id }
-  providerForThread(id: string): ProviderId | undefined { return this.state.snapshot.threads.find(thread => thread.id === id)?.providerId ?? this.inner.providerForThread?.(id) }
+  providerForThread(id: string): ProviderId | undefined { return this.threadById(id)?.providerId ?? this.inner.providerForThread?.(id) }
   /**
    * A side call on the thread's own client (ADR-0026). A thread whose native session has not started has
    * no client, model or folder to ask yet, so it gets nothing rather than a session started for it.
    */
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || !this.visible(thread) || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
     return this.withProfileRefusal(threadId, () => this.inner.writeShortText!(threadId, prompt, signal))
   }
@@ -3986,14 +4466,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   observeThreads(ids: readonly string[]): void {
     if (this.stopping) return
     if ((!this.watcherEnabled || this.held.size) && !this.ready) { void this.initialize().then(() => this.observeThreads(ids)).catch(() => undefined); return }
-    ids = ids.filter(id => { const thread = this.state.snapshot.threads.find(thread => thread.id === id); return !thread || this.visible(thread) })
+    ids = ids.filter(id => { const thread = this.threadById(id); return !thread || this.visible(thread) })
     // A thread coming into view reads its stored records back before its provider hears of it, so the pane's first
     // publish has them and a provider reading the thread's history merges onto them (#918).
     for (const id of ids) {
-      const thread = this.storedActivity.has(id) ? this.state.snapshot.threads.find(thread => thread.id === id) : undefined
+      const thread = this.storedActivity.has(id) ? this.threadById(id) : undefined
       if (thread) this.holdActivities(thread)
     }
-    this.inner.observeThreads?.(ids.filter(id => this.state.snapshot.threads.find(thread => thread.id === id)?.nativeSessionStarted !== false))
+    this.inner.observeThreads?.(ids.filter(id => this.threadById(id)?.nativeSessionStarted !== false))
     if (!this.ready) return
     const wanted = new Set(ids)
     let changed = !this.declared
@@ -4002,6 +4482,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     let left = !this.declared
     if (!this.declared) {
       this.declared = true
+      // Nothing was let go while every thread counted as in view; now any thread out of view may be.
+      this.releasableAll = true
       // Everything held only because nobody had said otherwise goes back to its summary now.
       for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!wanted.has(thread.id)) {
         this.storedAnchors.delete(thread.id)
@@ -4017,12 +4499,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       left = true
     }
     if (left) { this.dirty = true; this.writeSoon() }
-    for (const id of wanted) if (!this.watched.has(id) && this.state.snapshot.threads.some(thread => thread.id === id)) {
+    for (const id of wanted) if (!this.watched.has(id) && this.threadById(id) !== undefined) {
       this.watched.set(id, FIRST_WINDOW_TURNS)
       this.loadWindow(id)
       // A thread just come into view reads its folder at once, locally, so its toolbar has a branch to show
       // before the timer's next remote round; the timer keeps it fresh from there.
-      if (this.gitStatus && !this.state.snapshot.threads.find(thread => thread.id === id)?.worktree?.git) void this.onLane(id, () => this.readGitStatus(id, false)).catch(() => undefined)
+      if (this.gitStatus && !this.threadById(id)?.worktree?.git) void this.onLane(id, () => this.readGitStatus(id, false)).catch(() => undefined)
       changed = true
     }
     if (changed) this.publish()
@@ -4039,11 +4521,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const start = this.inner.startThreadSession
     return this.onLane(threadId, () => this.withProfileRefusal(threadId, async () => {
       await this.initialize()
-      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      const thread = this.threadById(threadId)
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
       if (!this.visible(thread)) this.refuseDormantThread(thread)
       if (thread.nativeSessionStarted !== false) return start?.call(this.inner, threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       if (creation?.phase !== 'unstarted') return
       const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
       this.prefetchOriginBase(thread, project)
@@ -4082,6 +4564,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }
+    // The providers, the catalog and the connection are the workspace's own now, until the next accept takes them in whole.
+    this.touchAll()
+    this.restTouched = true
     this.dirty = true
     void this.flush().catch(() => { this.saveError = 'Workspace history could not be saved. Restore access to local storage and refresh.'; this.publish() })
     this.publish()
@@ -4108,7 +4593,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** One thread as babysitting sees it (`BabysitStore`), or null when it is not known here. */
   babysitThread(threadId: string): BabysitThread | null {
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return thread && this.visible(thread) ? this.babysitView(thread) : null
   }
   /** Calls `listener` after the user unlinks a pull request from a thread (`BabysitStore`). */
@@ -4124,7 +4609,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Whether a thread that babysits is settled or archived now: a handful of threads at most, so cheap at every publish. */
   private babysatThreadClosed(): boolean {
     for (const threadId of this.babysitRecords.keys()) {
-      const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+      const thread = this.threadById(threadId)
       if (thread && this.visible(thread) && this.babysitView(thread).closed) return true
     }
     return false
@@ -4139,11 +4624,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async changeBabysitting(threadId: string, change: (records: readonly BabysitRecord[]) => readonly BabysitRecord[]): Promise<void> {
     await this.initialize()
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     if (!thread || !this.visible(thread)) return
     const current = this.babysitRecords.get(threadId) ?? []
     const next = change(current)
     if (next === current) return
+    this.touch(threadId)
     if (next.length) { this.babysitRecords.set(threadId, [...next]); thread.babysitting = babysittingSummary(next) }
     else { this.babysitRecords.delete(threadId); delete thread.babysitting }
     // A pull request babysat again is no longer one whose babysitting ended.
@@ -4159,12 +4645,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async recordBabysitEnded(threadId: string, url: string, reason: BabysitEndedReason): Promise<void> {
     await this.initialize()
-    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     const number = pullRequestAddress(url)?.number
     if (!thread || !this.visible(thread) || number === undefined) return
     const key = pullRequestKey(url)
     const kept = (thread.babysitEnded ?? []).filter(item => pullRequestKey(item.url) !== key)
-    thread.babysitEnded = [...kept, { url, number, reason, endedAt: new Date().toISOString() }].slice(-BABYSITTING_PER_THREAD_MAX)
+    this.touched(thread).babysitEnded = [...kept, { url, number, reason, endedAt: new Date().toISOString() }].slice(-BABYSITTING_PER_THREAD_MAX)
     this.dirty = true
     try { await this.flush() } finally { this.publish() }
   }
@@ -4180,4 +4666,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.activityListeners.add(listener); return () => this.activityListeners.delete(listener) }
+  /**
+   * The activity publications as thread changes (ADR-0016, #925): the threads whose record changed, the provider's changes
+   * and the workspace's own alike, and the threads that went, from the same publish as the activity snapshots. The records
+   * are those the snapshots carry. One form for every subscriber, as the snapshots are.
+   */
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    void options
+    return this.changes.subscribe(listener)
+  }
 }

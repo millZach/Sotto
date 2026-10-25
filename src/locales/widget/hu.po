@@ -1,0 +1,215 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: hu\n"
+
+#. {problem} is a short title such as "Couldn’t transcribe"; {kept} says the recording was kept.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "{problem}. {kept}"
+msgstr ""
+
+#. {progressOf} is what the widget is doing, as in "Transcribing".
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "{progressOf} progress"
+msgstr ""
+
+#. {shortcut} is the dictation keyboard shortcut, as in "Ctrl+Shift+Space".
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "{shortcut} to finish"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Cancel dictation"
+msgstr ""
+
+#. Dictation was cancelled.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Cancelled"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Check the selected microphone and try again."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Check your microphone and try again."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Click to dictate"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Click to try again"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Clipboard is ready"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Connect a microphone and try again."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Copied — paste manually"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Couldn’t copy text"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Couldn’t transcribe"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Delivering text"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Discard recording"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Dismiss"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "F9 to talk"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Failed again · retry"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Listening"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Local history was not updated."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Microphone blocked"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Microphone unavailable"
+msgstr ""
+
+#. The speech model that turns dictation into text has not finished loading.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Model not ready"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "No microphone found"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "No microphone set up"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "No speech detected"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Nothing was copied"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Open Sotto and try again."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Open Sotto to restore settings."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Output unavailable"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Pasted"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Preparing audio"
+msgstr ""
+
+#. The floating widget is waiting for dictation to start.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Ready"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Recording stopped"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Release F9 or press Super+Ctrl+X to finish"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Saved to clipboard"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Settings unavailable"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Sotto dictation status"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Speak closer to the microphone and try again."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Starting the speech model"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Stop dictation"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Super+V to paste in apps and terminals"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Text delivered"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Text kept in Sotto"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "The desktop clipboard could not be updated. Open Sotto, then Dictate. Use Copy text or select the text there."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Transcribing"
+msgstr ""
+
+#. {problem} is a short title such as "Couldn’t transcribe"; {kept} says the recording was kept.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Try again failed too. {problem}. {kept}"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Try again from the Sotto app."
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Waiting for microphone"
+msgstr ""

@@ -101,19 +101,43 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-activity__agents li:is([data-status='errored'], [data-status='failed']) .thread-activity__agent-status { color: var(--tt-error); }
 .thread-activity__agent-message { flex-basis: 100%; color: var(--tt-text-muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* The live line at the end of a running turn. */
-.thread-activity-live { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 32px; margin: 0 0 24px; color: var(--tt-text-2); font-size: 14px; }
+/* The working line at the end of a running turn: the working words, with the turn's steps folded under them. */
+.thread-activity-live { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; min-height: 32px; margin: 0 0 24px; color: var(--tt-text-2); font-size: 14px; }
+.thread-activity-live__line {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; margin-left: -6px; padding: 0 10px 0 6px;
+  border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left;
+}
+button.thread-activity-live__line { cursor: pointer; }
+button.thread-activity-live__line:hover { background: var(--tt-hover); }
 .thread-activity-live__state { flex: none; font-variant-numeric: tabular-nums; }
 /* Words change in place, so the line's own width must not shift with them. */
-.thread-activity-live__word { display: inline-block; }
-.thread-activity-live__action { min-width: 0; overflow: hidden; color: var(--tt-text-muted); text-overflow: ellipsis; white-space: nowrap; }
-.thread-activity-live__action::before { content: '·'; margin-right: 8px; }
+.thread-activity-live__word { position: relative; display: inline-block; }
+/* How long the turn has run, quieter than the words it sits beside. */
+.thread-activity-live__clock { flex: none; color: var(--tt-text-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.thread-activity-live__steps { flex-basis: 100%; min-width: 0; }
+.thread-activity-live__steps > .thread-activity { margin: 0; }
 
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-activity__pulse[data-connected] { animation: thread-activity-pulse 1.6s ease-in-out infinite; }
   :root:not([data-reduced-motion='on']) .thread-message[tabindex='-1'] { transition: background-color .5s ease, box-shadow .5s ease; }
 }
 @keyframes thread-activity-pulse { 50% { opacity: .35; } }
+/* While the agent works, a slow band of light crosses the words, then rests, and the dot steps aside for it. The words
+   keep their muted ink; a lit copy of them in the accent at its most vivid shows only inside the moving band, so the
+   letters themselves light up at full strength on every theme rather than taking a tint, with no halo (Zach's pick,
+   variant A of docs/prototypes/working-words-glow-strength-prototype.html). Under reduced motion the words hold still
+   and the dot stays, still. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word { color: var(--tt-text-muted); }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] .thread-activity-live__word::after {
+    content: attr(data-word); position: absolute; inset: 0; color: var(--tt-working-light); pointer-events: none; white-space: nowrap;
+    -webkit-mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+    mask: linear-gradient(100deg, transparent 38%, black 45%, black 55%, transparent 62%) 100% 0 / 300% 100% no-repeat;
+    animation: thread-activity-glow 4.2s cubic-bezier(.45, 0, .55, 1) infinite;
+  }
+  :root:not([data-reduced-motion='on']) .thread-activity-live[data-connected] > .thread-activity-live__line:has(.thread-activity-live__word) > .thread-activity__pulse { display: none; }
+}
+@keyframes thread-activity-glow { 0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; } 72%, 100% { -webkit-mask-position: 0% 0; mask-position: 0% 0; } }
 @media (prefers-reduced-motion: reduce) { .thread-activity__chevron { transition: none; } }
 :root[data-reduced-motion='on'] .thread-activity__chevron { transition: none; }
 
@@ -138,3 +162,24 @@ button.thread-activity__toggle:hover { background: var(--tt-hover); }
 .thread-boundary__label { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .thread-boundary__icon { flex-shrink: 0; }
 .thread-boundary__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
+
+/* A turn waiting on one of the user's own model servers (ADR-0124): its words and Stop, and under them what the wait means. */
+.thread-activity-live--own-server { flex-wrap: wrap; row-gap: 2px; }
+.thread-activity-live--own-server .thread-activity-live__state { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.thread-activity-live--own-server .thread-activity__clock { color: var(--tt-text-muted); }
+.thread-activity__pulse[data-connected][data-tone='attention'] { background: var(--tt-attention); }
+.thread-activity-live__stop {
+  display: inline-flex; flex: none; align-items: center; gap: 6px; height: 28px; margin-left: -2px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.thread-activity-live__stop:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-activity-live__stop:disabled { color: var(--tt-text-muted); cursor: default; }
+.thread-activity-live__note { flex-basis: 100%; margin: 0 0 0 14px; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; }
+/* A turn the user's own server let down: what happened in the error colour, the rest in ordinary text, then what to press. */
+.thread-own-failure { margin: 2px 0 4px; }
+.thread-own-failure__reason { max-width: 64ch; margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.thread-own-failure__reason strong { color: var(--tt-error); font-weight: 500; }
+.thread-own-failure__actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+/* Said once, after Try again put a message whose images could not go again back in the composer. Empty, it takes no room. */
+.thread-own-failure__note { max-width: 64ch; margin: 8px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.thread-own-failure__note:empty { margin: 0; }

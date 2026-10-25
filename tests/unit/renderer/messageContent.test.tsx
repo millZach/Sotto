@@ -596,6 +596,33 @@ describe('file links in a thread', () => {
     assertInert(container)
   })
 
+  it('shows a file named by an inline-code path, and leaves other inline code alone', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn(async () => ({ ok: true as const, value: {} }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="Double-click `~/Developer/santa.mobileconfig`, then run `npm test` in `src`." /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Show ~/Developer/santa.mobileconfig in Finder' })
+    expect(link.tagName).toBe('CODE')
+    await user.click(link)
+    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '~/Developer/santa.mobileconfig' })
+    link.focus(); await user.keyboard('{Enter}')
+    expect(revealLink).toHaveBeenCalledTimes(2)
+    expect(screen.getAllByRole('link')).toHaveLength(1)
+  })
+
+  it('leaves slash commands and inline code inside a link as they are', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn()
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="Run `/review`, or read [`/etc/hosts`](https://example.com/x)." /></ThreadWebLinks>)
+    expect(screen.getByText('/review').closest('[role=link], a')).toBeNull()
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute('href', 'https://example.com/x')
+    await user.click(screen.getByText('/etc/hosts'))
+    expect(revealLink).not.toHaveBeenCalled()
+  })
+
   it('names File Explorer on Windows and the file manager on Linux', () => {
     ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn() } }
     render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.pdf>)" /></ThreadWebLinks>)

@@ -1,12 +1,17 @@
 import React, { createContext, useContext, useId, useMemo, type ReactNode } from 'react'
 import { CheckCheck, Laptop, Play, Send, Server, Square, type LucideIcon } from 'lucide-react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
+import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
+import { t } from '@lingui/core/macro'
 
 /** A thread as a receipt card or a takeover line names it: what the window knows of it now. */
 export interface ConversationThread {
@@ -39,6 +44,8 @@ export interface WatcherConversation {
    * conversation). What the cards answer with comes from `WatcherAskAnsweringContext`, which changes with every update.
    */
   readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
+  /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
+  readonly placements?: ReadonlyMap<string, WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -75,17 +82,31 @@ export function placeTakeovers(messages: readonly AgentMessage[], takeovers: rea
   return placed
 }
 
-const LEADS: Record<WatcherOperation['action'], { readonly done: string; readonly going: string; readonly failed: string; readonly icon: LucideIcon }> = {
-  start: { done: 'Started', going: 'Starting', failed: 'Could not start', icon: Play },
-  send: { done: 'Sent to', going: 'Sending to', failed: 'Could not send to', icon: Send },
-  stop: { done: 'Stopped', going: 'Stopping', failed: 'Could not stop', icon: Square },
-  settle: { done: 'Settled', going: 'Settling', failed: 'Could not settle', icon: CheckCheck },
+// Each lead comes before the thread's name on a receipt card, in its own place: "Sent to", then the name.
+const LEADS: Record<WatcherOperation['action'], { readonly done: MessageDescriptor; readonly going: MessageDescriptor; readonly failed: MessageDescriptor; readonly icon: LucideIcon }> = {
+  start: { done: msg({ message: 'Started', comment: 'Before a thread’s name on a receipt card' }), going: msg({ message: 'Starting', comment: 'Before a thread’s name on a receipt card' }), failed: msg({ message: 'Could not start', comment: 'Before a thread’s name on a receipt card' }), icon: Play },
+  send: { done: msg({ message: 'Sent to', comment: 'Before a thread’s name on a receipt card' }), going: msg({ message: 'Sending to', comment: 'Before a thread’s name on a receipt card' }), failed: msg({ message: 'Could not send to', comment: 'Before a thread’s name on a receipt card' }), icon: Send },
+  stop: { done: msg({ message: 'Stopped', comment: 'Before a thread’s name on a receipt card' }), going: msg({ message: 'Stopping', comment: 'Before a thread’s name on a receipt card' }), failed: msg({ message: 'Could not stop', comment: 'Before a thread’s name on a receipt card' }), icon: Square },
+  settle: { done: msg({ message: 'Settled', comment: 'Before a thread’s name on a receipt card' }), going: msg({ message: 'Settling', comment: 'Before a thread’s name on a receipt card' }), failed: msg({ message: 'Could not settle', comment: 'Before a thread’s name on a receipt card' }), icon: CheckCheck },
 }
 
 /** The card's first words: what Watcher did, or is doing, or could not do, from its receipt alone. */
 export function receiptLead(operation: Pick<WatcherOperation, 'action' | 'deliveryState'>): string {
   const lead = LEADS[operation.action]
-  return operation.deliveryState === 'failed' ? lead.failed : operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' ? lead.going : lead.done
+  return i18n._(operation.deliveryState === 'failed' ? lead.failed : operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' ? lead.going : lead.done)
+}
+
+/**
+ * Why a start went where it did, under its card (#1032): Sotto's own sentence when it placed the start itself, or that it
+ * is not on the machine new workers start on, named (Zach, October 23, 2026); Watcher says why in its reply. Nothing when it went where it was meant to.
+ */
+export function placementLine(placement: WorkerPlacementReceipt | undefined): string | null {
+  if (placement === undefined) return null
+  // Sotto's own note is written where the start is placed and goes to Watcher as well, so it stays in English (ADR-0123).
+  if (placement.note !== undefined) return placement.note
+  if (!placement.awayFromDefault) return null
+  const name = placement.defaultName
+  return name ? t`Not your default, ${name}. Watcher says why in its reply.` : t`Not your default machine. Watcher says why in its reply.`
 }
 
 /**
@@ -94,19 +115,21 @@ export function receiptLead(operation: Pick<WatcherOperation, 'action' | 'delive
  * here, from the receipt's own target, never found in anyone's words.
  */
 function ReceiptCard({ operation, conversation }: { readonly operation: WatcherOperation; readonly conversation: WatcherConversation }): ReactNode {
+  const { t } = useLingui()
   const facts = conversation.describe(operation.target)
   const metaId = useId()
   const statusId = useId()
   const Icon = LEADS[operation.action].icon
   const lead = receiptLead(operation)
-  const title = facts.title ?? (operation.action === 'start' ? 'a new thread' : 'a thread no longer here')
+  const title = facts.title ?? (operation.action === 'start' ? t`a new thread` : t`a thread no longer here`)
   const unconfirmed = operation.deliveryState === 'uncertain'
+  const placed = operation.action === 'start' ? placementLine(conversation.placements?.get(operation.id)) : null
   return <li className="receipt-card" data-receipt-id={operation.id} data-delivery={operation.deliveryState}>
     <div className="receipt-card__top">
       <Icon size={15} aria-hidden="true" className="receipt-card__glyph" />
       <span className="receipt-card__lead">{lead}</span>
       {facts.threadId === null ? <span className="receipt-card__name">{title}</span>
-        : <button type="button" className="receipt-link tt-focusable" aria-label={`Open ${title} beside Watcher`} aria-describedby={facts.status === null ? metaId : `${statusId} ${metaId}`} title={title}
+        : <button type="button" className="receipt-link tt-focusable" aria-label={t`Open ${title} beside Watcher`} aria-describedby={facts.status === null ? metaId : `${statusId} ${metaId}`} title={title}
           {...conversation.press(facts.threadId)}>{title}</button>}
       {facts.status === null ? null : <span className="receipt-outcome" id={statusId} data-tone={facts.tone}>
         <span className="watcher-row__ring" data-tone={facts.ring} aria-hidden="true" /><span className="receipt-outcome__word">{facts.status}</span>
@@ -119,14 +142,16 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
       {facts.computer === undefined ? null : <span className="receipt-card__machine" data-kind={facts.remote ? 'remote' : 'local'}>
         {facts.remote ? <Server size={12} aria-hidden="true" /> : <Laptop size={12} aria-hidden="true" />}{facts.computer}</span>}
       {facts.project === undefined ? null : <span className="receipt-card__project">{facts.project}</span>}
-      {unconfirmed ? <span className="receipt-card__unconfirmed">Not confirmed yet</span> : null}
+      {unconfirmed ? <span className="receipt-card__unconfirmed"><Trans>Not confirmed yet</Trans></span> : null}
     </p>
+    {placed !== null ? <p className="receipt-card__placement tt-paragraph">{placed}</p> : null}
   </li>
 }
 
 /** The receipt cards under one message of Watcher's conversation, one per action, in the order Watcher took them. */
 function WatcherReceipts({ operations, conversation }: { readonly operations: readonly WatcherOperation[]; readonly conversation: WatcherConversation }): ReactNode {
-  return <ul className="watcher-receipts" aria-label="What Watcher did">
+  const { t } = useLingui()
+  return <ul className="watcher-receipts" aria-label={t`What Watcher did`}>
     {operations.map(operation => <ReceiptCard key={operation.id} operation={operation} conversation={conversation} />)}
   </ul>
 }
@@ -136,13 +161,15 @@ function WatcherReceipts({ operations, conversation }: { readonly operations: re
  * sent in a thread Watcher was driving, with the thread's name opening it beside Watcher, and when.
  */
 function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; readonly conversation: WatcherConversation }): ReactNode {
+  const { t } = useLingui()
   const facts = conversation.describe(line.target)
-  const title = facts.title ?? 'a thread no longer here'
+  const title = facts.title ?? t`a thread no longer here`
+  const thread = facts.threadId === null ? <span className="receipt-card__name">{title}</span>
+    : <button type="button" className="receipt-link tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={title}
+      {...conversation.press(facts.threadId)}>{title}</button>
   return <div className="sotto-line" data-takeover={`${line.target.hostId}:${line.target.threadId}`}>
     <span className="sotto-line__mark" role="img" aria-label="Sotto"><SottoMark className="sotto-line__glyph" /></span>
-    <p>You took over {facts.threadId === null ? <span className="receipt-card__name">{title}</span>
-      : <button type="button" className="receipt-link tt-focusable" aria-label={`Open ${title} beside Watcher`} title={title}
-        {...conversation.press(facts.threadId)}>{title}</button>}. Watcher stopped sending to it.</p>
+    <p className="tt-paragraph"><Trans>You took over {thread}. Watcher stopped sending to it.</Trans></p>
     <time dateTime={line.at}>{clockLabel(Date.parse(line.at))}</time>
   </div>
 }

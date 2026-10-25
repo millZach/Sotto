@@ -1,6 +1,6 @@
 # Keep main up to date, October 23, 2026
 
-On Owl, each project's checkout is now fetched every 15 minutes and after a pull request merges. Its default branch is fast-forwarded when nothing of the user's is in the way, and the project row says why when something is. This is the Owl feature `keep-main-current` ([ADR-0123](../adr/0123-sotto-keeps-each-projects-main-up-to-date.md)). Checked on Windows 11 in the built app, over real repositories, and in tests.
+On Owl, each project's checkout is now fetched every 15 minutes and after a pull request merges. Its default branch is fast-forwarded when nothing of the user's is in the way, and the project row says why when something is. This is the Owl feature `keep-main-current` ([ADR-0140](../adr/0140-sotto-keeps-each-projects-main-up-to-date.md)). Checked on Windows 11 in the built app, over real repositories, and in tests.
 
 ## What was checked
 

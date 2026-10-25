@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Keep main up to date (ADR-0123): every 15 minutes and after a pull request merges, the desktop fetches each of its
+ * Keep main up to date (ADR-0140): every 15 minutes and after a pull request merges, the desktop fetches each of its
  * projects' checkouts and fast-forwards the default branch there when nothing of the user's is in the way. What it could
  * not do, and an update that changed a lockfile, reach the window through this bridge for the project row to say. An Owl
  * feature: the window has the bridge only while the startup answers turn `keep-main-current` on.
