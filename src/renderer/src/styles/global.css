@@ -1206,9 +1206,10 @@ textarea.tt-input {
 }
 
 /* Every room switch (the strip's, the sidebar foot's, Watcher's dock): separate icon tiles with no tray behind them.
-   The open room's tile takes the accent and widens to show its name (the pick in
-   docs/prototypes/room-switch-in-place-prototype.html). Each place sets only the tile height. */
+   The open room's tile takes the accent and widens to show its name (Drake's pick, G in
+   docs/prototypes/room-switch-dock-prototype.html). Each place sets only the tile height. */
 .app-switch {
+  --room-tile: 34px;
   -webkit-app-region: no-drag;
   display: inline-flex;
   gap: 6px;
@@ -1231,7 +1232,7 @@ textarea.tt-input {
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 200ms ease, color 200ms ease, gap 250ms ease;
+  transition: background-color 200ms ease, color 200ms ease, gap 250ms ease, padding 250ms ease;
 }
 
 :is(.app-switch, .thread-nav__seg) [role='tab']:hover:not([aria-selected='true']) {
@@ -1255,10 +1256,6 @@ textarea.tt-input {
 [aria-selected='true'] > .room-tab__name {
   max-width: 96px;
   opacity: 1;
-}
-
-.app-switch {
-  --room-tile: 34px;
 }
 
 

@@ -32,6 +32,8 @@ interface Frame {
   readonly switch: Pick<Box, 'y' | 'height'>
   /** Each tile's height. */
   readonly tabs: readonly number[]
+  /** The open room's tile shows its whole name inside the foot; true where no room is open. */
+  readonly litFits: boolean
   readonly tabFonts: readonly string[]
   readonly links: readonly Box[]
   readonly linkIcons: readonly number[]
@@ -62,6 +64,11 @@ async function frame(page: Page): Promise<Frame> {
       switch: { y: box(room)!.y, height: box(room)!.height },
       tabs: [...room.querySelectorAll('button')].map(tab => box(tab)!.height),
       tabFonts: [...room.querySelectorAll('button')].map(tab => getComputedStyle(tab).fontSize),
+      litFits: (() => {
+        const lit = room.querySelector('[aria-selected="true"]'), name = lit?.querySelector('.room-tab__name')
+        if (!lit || !name) return true
+        return name.scrollWidth <= name.clientWidth + 0.5 && lit.getBoundingClientRect().right <= foot.getBoundingClientRect().right
+      })(),
       links: links.map(link => box(link)!),
       linkIcons: links.map(link => box(link.querySelector('svg'))?.width ?? 0),
       update: box(foot.querySelector('.update-control')),
@@ -114,6 +121,7 @@ async function checkCrossing(launched: LaunchedSotto, track: 'stable' | 'owl'): 
       expect(threads.foot.x, label).toBe(10)
       expect(threads.foot.x + threads.foot.width, label).toBe(threads.column.width - 1 - 10)
       expect(threads.tabs, label).toHaveLength(track === 'owl' ? 3 : 2)
+      expect(threads.litFits, label).toBe(true)
     }
   }
 }

@@ -62,11 +62,6 @@ export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: 
   return [...(dictation ? [dictate] : []), ...(watcherOn ? [watcher] : []), threads]
 }
 
-/** The switch's layout hook for its CSS: '3' for Dictate | owl | Threads, 'owl' for owl | Threads. */
-export function roomsLayout(rooms: ReadonlyArray<Room>): '3' | 'owl' | undefined {
-  if (rooms.length === 3) return '3'
-  return rooms.length === 2 && rooms[0]?.id === 'watcher' ? 'owl' : undefined
-}
 
 /**
  * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
@@ -105,7 +100,7 @@ export interface RoomTabProps {
 /**
  * What a room's tab shows in every switch: its icon, and its name beside it while it is the open room. The name is
  * the tab's accessible name and, on a closed room, its tooltip (`useRoomSwitch`), so the icon alone never has to be
- * guessed. Zach's pick, the no-tray icon dock in docs/prototypes/room-switch-in-place-prototype.html.
+ * guessed. Drake's pick on October 24, 2026: G, the no-tray dock, in docs/prototypes/room-switch-dock-prototype.html.
  */
 export function RoomTabFace({ room }: { readonly room: Room }): ReactNode {
   return <>
