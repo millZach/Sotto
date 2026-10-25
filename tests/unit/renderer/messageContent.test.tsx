@@ -610,6 +610,19 @@ describe('file links in a thread', () => {
     expect(screen.getAllByRole('link')).toHaveLength(1)
   })
 
+  it('leaves slash commands and inline code inside a link as they are', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn()
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="Run `/review`, or read [`/etc/hosts`](https://example.com/x)." /></ThreadWebLinks>)
+    expect(screen.getByText('/review').closest('[role=link], a')).toBeNull()
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute('href', 'https://example.com/x')
+    await user.click(screen.getByText('/etc/hosts'))
+    expect(revealLink).not.toHaveBeenCalled()
+  })
+
   it('names File Explorer on Windows and the file manager on Linux', () => {
     ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn() } }
     render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.pdf>)" /></ThreadWebLinks>)
