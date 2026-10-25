@@ -101,11 +101,12 @@ export interface RoomTabProps {
  * What a room's tab shows in every switch: its icon, and its name beside it while it is the open room. The name is
  * the tab's accessible name and, on a closed room, its tooltip (`useRoomSwitch`), so the icon alone never has to be
  * guessed. Drake's pick on October 24, 2026: G, the no-tray dock, in docs/prototypes/room-switch-dock-prototype.html.
+ * The sidebar foot draws it without the name (`named` false), the lit tile an icon like the rest.
  */
-export function RoomTabFace({ room }: { readonly room: Room }): ReactNode {
+export function RoomTabFace({ room, named = true }: { readonly room: Room; readonly named?: boolean }): ReactNode {
   return <>
     {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
-    <span className="room-tab__name" aria-hidden="true">{room.label}</span>
+    {named ? <span className="room-tab__name" aria-hidden="true">{room.label}</span> : null}
   </>
 }
 
