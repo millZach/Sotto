@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import sharp from 'sharp'
 
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -8,6 +9,7 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { laneBackgrounds, tickContrast } from './support/scrubberLane'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -113,8 +115,15 @@ for (const appearance of ['dark', 'light'] as const) {
         const column = (await log.locator('.thread-transcript__content').boundingBox())!
         expect(lane.x + lane.width).toBeLessThanOrEqual(column.x + 0.5)
         expect(lane.x).toBeGreaterThanOrEqual((await log.boundingBox())!.x - 0.5)
+        // The lane paints nothing of its own: its ticks float over the transcript (the user's ask on October 24, 2026).
+        expect(await laneBackgrounds(page, 'section.thread-pane'), `what the lane paints at ${width}x${height}`).toEqual([])
         await capture(launched, `rest-${appearance}-${width}x${height}`)
         await pointAt(page, ticks.nth(5))
+        // Reached by the pointer, every tick keeps 3:1 against what lies beside it, the far ones too.
+        await expect(nav).toHaveCSS('opacity', '1')
+        await page.waitForTimeout(300)
+        const reached = await tickContrast(page, 'section.thread-pane', await page.screenshot(), async png => { const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, width: info.width, height: info.height, channels: info.channels } })
+        expect(reached.worst, `the ticks pointed at, at ${width}x${height}`).toBeGreaterThanOrEqual(3)
         await expect(card(page)).toBeVisible()
         await expect(card(page)).toContainText(`Message 6 of ${TURNS}`)
         await expect(card(page)).toContainText(`${ASKS[5]} (6)`)

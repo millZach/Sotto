@@ -1,5 +1,5 @@
 import {
-  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
+  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
   RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
@@ -351,8 +351,10 @@ export class NightScenePainter {
     this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
-      this.marginCells[i] = inMargin(layout, x) ? 1 : 0
-      this.owlCells[i] = owlRoom(layout, x) && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
+      // The scrubber's lane takes the column's ink ceiling, and no owl, ripple or glow is drawn in it.
+      const lane = inLane(layout, x, y)
+      this.marginCells[i] = inMargin(layout, x) && !lane ? 1 : 0
+      this.owlCells[i] = owlRoom(layout, x) && !lane && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
     }
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land) : []
     this.starAt = new Int32Array(cells).fill(-1)
@@ -385,12 +387,14 @@ export class NightScenePainter {
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
-  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  /**
+   * Forgets the layout, so nothing is drawn until the room can be measured again. The canvases keep the last frame drawn:
+   * the scene never blinks, and the next layout draws over it in the frame it is made.
+   */
   invalidate(): void {
     this.layout = null
     this.owlBox = null
     this.painted = ''
-    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   /** The perched thread owls' boxes in the pane, for their buttons. */

@@ -4,6 +4,8 @@
 
 Accepted October 22, 2026. Zach asked for it through Watcher after using the Codex desktop app's version, and picked from `prototype/message-scrubber`: tick column A (evenly spaced, as Codex does it) set further out into the left margin and rising on a normal curve under the pointer, card B (square, with a clear border), the lane beside the column for Watcher's owls, and an Owl feature (`message-scrubber`).
 
+Amended October 24, 2026, at the user's ask ("right now the lane is a long rectangular black box"): decision 7's lane is no longer kept clear of the scene, and a tick reached by the pointer or the keyboard keeps 3:1 (below).
+
 ## Context
 
 A long thread is hard to move around in. The transcript draws its last 80 messages and keeps the rest behind Show earlier messages, and the thread store can hold more than the window has loaded (`earlierAvailable`). Messages off screen are laid out at an estimated height until the reader nears them (`content-visibility: auto`), so a position worked out from the page alone is wrong for anything not yet drawn.
@@ -26,7 +28,7 @@ The transcript's left margin is empty on the Threads page. On Watcher's Conversa
 
 **6. The keyboard is designed, not inherited.** The column is one Tab stop, before the transcript, landing on the last message on screen. Up and Down move between ticks and show each card, Page Up and Page Down move five, Home and End go to the ends, Enter or Space goes there and puts focus on the message, and Escape closes the card, then returns to the transcript. No chord is claimed.
 
-**7. Watcher's owls keep the lane clear.** The scrubber shows in Watcher's Conversation tab, through the same transcript. While it shows, Watcher's night scene reads its lane (`measureRoom` finds `.message-scrubber`), keeps it clear like the room's words, and lays the left margin's tree, Watcher's owl, its owls and its rail out from the lane's outer edge, so the owls and the ticks never meet. When the left margin is then too narrow for the tree, the rail of eyes shows on the right only. Watcher's owl does not fly to the composer's left branch meanwhile, whose perch would put its head in the lane.
+**7. Watcher's owls keep the lane clear.** The scrubber shows in Watcher's Conversation tab, through the same transcript. While it shows, Watcher's night scene reads its lane (`measureRoom` finds `.message-scrubber`) and lays the left margin's tree, Watcher's owl, its owls and its rail out from the lane's outer edge, and draws no owl in it, so the owls and the ticks never meet. The sky and the hills run on under the lane at the column's share, as under the conversation, so the ticks float over the scene with no box round them (amended October 24, 2026; until then the scene kept the lane empty like the room's words, which left a dark strip down the margin). In Watcher the ticks take the secondary tier where they would be muted, as the conversation's names and times do (ADR-0126, pick D2), so the column's ink ceiling keeps them clear of the glyphs. Everywhere, a tick reached by the pointer or the keyboard is drawn at 80% or more of its colour, so the far ones too keep 3:1 against what lies beside them; at rest the lane stays faint. When the left margin is then too narrow for the tree, the rail of eyes shows on the right only. Watcher's owl does not fly to the composer's left branch meanwhile, whose perch would put its head in the lane.
 
 **8. Not on the iPhone, for now.** Nothing changes in host protocol version 1.
 

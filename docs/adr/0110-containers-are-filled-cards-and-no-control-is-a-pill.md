@@ -10,6 +10,8 @@ Amended October 23, 2026 by [ADR-0113](0113-the-composer-controls-are-text-butto
 
 Amended October 23, 2026 again: the composer card's edge no longer comes back for focus (below, "The composer's edge").
 
+Amended October 24, 2026: the composer card has no edge in any state, running and at the highest effort included (below, "The composer's edge").
+
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
 ## Context
@@ -48,6 +50,8 @@ Almost every container in the main window was a 1px line in the faintest border 
 ## The composer's edge
 
 Amended October 23, 2026, at the user's ask. The Threads composer card, like every card, has no outline at rest. Its edge came back for three things: focus, a running turn, and a model's highest effort (ADR-0019). It now comes back for the last two only. Focus is already shown by the caret, and the card is the only text field in its pane, so a press anywhere in it and Tab both land where the caret shows. The edge that lit on every click read as a box drawn round the card, which this decision exists to avoid.
+
+Amended October 24, 2026, at the user's ask: "the thin border around the composer, it is still there I want it gone." The card has no edge in any state: at rest, pointed at, with focus, slim, while a turn runs and at a model's highest effort, in a thread and in Watcher (whose glass card had a faint hairline, ADR-0126). The user chose this over keeping the two edges that said something. A running turn still shows in the stop disc, the status line and the thread's row, and the highest effort in the effort chip's coloured word and the arrival's tide through the card (ADR-0019). The card keeps a transparent border so it keeps its size. Focus is still shown by the caret alone, the user's pick over a brighter fill. `tests/e2e/composer-no-edge.spec.ts` reads every state in every built-in theme, dark and light.
 
 Keyboard users keep a visible path: the composer's buttons, chips and the branch toolbar keep their focus rings, and the transcript keeps its own. Watcher's composer follows the same rule.
 

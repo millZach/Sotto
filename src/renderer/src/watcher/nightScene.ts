@@ -38,8 +38,10 @@ export interface SceneMeasure {
    */
   readonly words: readonly Box[]
   /**
-   * The message scrubber's lane beside the column's left edge, while a long conversation shows it (ADR-0109). The scene
-   * keeps it clear: it is among the words, and the left margin's trees, owls and rail are laid out from its outer edge.
+   * The message scrubber's lane beside the column's left edge, while a long conversation shows it (ADR-0109). The left
+   * margin's trees, owls and rail are laid out from its outer edge and no owl is drawn in it; the sky and the hills run on
+   * under it at the column's share, so its ticks float over the scene with no box round them (the user's ask on
+   * October 24, 2026).
    */
   readonly lane?: Box | undefined
 }
@@ -103,7 +105,7 @@ export interface SceneLayout {
   readonly header: number
   /** The column's two edges: the composer's sides. Between them the scene shows quieter, and only the sky and the hills. */
   readonly column: { readonly left: number; readonly right: number }
-  /** The message scrubber's lane, which the scene keeps clear, or null while it does not show. */
+  /** The message scrubber's lane, where the scene shows as in the column and no owl is drawn, or null while it does not show. */
   readonly lane: Box | null
   /** The narrower margin's width. */
   readonly margin: number
@@ -153,6 +155,19 @@ function limbSpots(along: Limb, kind: SpotKind, clear: readonly { readonly x: nu
     out.push({ x, y: limbY(along, x), kind })
   }
   return out
+}
+
+/**
+ * What the scene lays out by while the composer is slim (ADR-0125): the room as it was with the full card, while the
+ * pane, its header and the scrubber's lane stand as they did, so the scene holds still as the composer slims and widens
+ * and as the row under the card steps away and back. A room that changed while the composer was slim is taken as it is.
+ */
+export function heldRoom(slim: SceneMeasure | null, full: SceneMeasure | null): SceneMeasure | null {
+  if (slim === null || full === null) return slim
+  const near = (a: number, b: number): boolean => Math.abs(a - b) < 1
+  const lane = slim.lane === undefined || full.lane === undefined ? slim.lane === full.lane
+    : near(slim.lane.x, full.lane.x) && near(slim.lane.y, full.lane.y) && near(slim.lane.w, full.lane.w) && near(slim.lane.h, full.lane.h)
+  return near(slim.width, full.width) && near(slim.height, full.height) && near(slim.header, full.header) && lane ? full : slim
 }
 
 /** Lays the scene out in the margins beside the composer's column: two trees, the moon on the right, the ground behind the composer. */
@@ -214,7 +229,7 @@ export function layoutScene(measure: SceneMeasure): SceneLayout {
     const rails = [...rightRoom >= RAIL_MIN_MARGIN ? [(colR + OWL_GAP + W) / 2] : [], ...leftRoom >= RAIL_MIN_MARGIN ? [(inL - OWL_GAP) / 2] : []]
     for (const x of rails) for (let y = header + RAIL_STEP; y < H - 14; y += RAIL_STEP) spots.push({ x, y, kind: 'rail' })
   }
-  return { width: W, height: H, composer: comp, words: lane === null ? measure.words : [...measure.words, lane], header, column: { left: colL, right: colR }, lane, margin, mode, s,
+  return { width: W, height: H, composer: comp, words: measure.words, header, column: { left: colL, right: colR }, lane, margin, mode, s,
     groundY, sky, horizon: groundY - sky * 0.3, left, right, moon, home, visit, branches, composerPerch, spots }
 }
 
@@ -245,6 +260,14 @@ export function columnFactor(layout: Pick<SceneLayout, 'column'>, x: number, str
   return lerp(strength, 1, smooth(-COLUMN_BLEND, COLUMN_BLEND, out))
 }
 
+/** Whether a point is in the message scrubber's lane, with a little room either side for its ticks' glow. */
+export function inLane(layout: Pick<SceneLayout, 'lane'>, x: number, y: number): boolean {
+  const lane = layout.lane
+  return lane !== null && x >= lane.x - LANE_PAD && x <= lane.x + lane.w + LANE_PAD && y >= lane.y && y <= lane.y + lane.h
+}
+/** Room either side of the scrubber's lane that takes the lane's share. */
+const LANE_PAD = 4
+
 /**
  * How much of the scene shows at a point, 0 to 1: nothing under the words that stand still, nor in the column's part of
  * the header band, a band falling to a tenth under the header, and `strength` in the column, blending to the whole in
@@ -257,7 +280,9 @@ export function quietAt(layout: SceneLayout, x: number, y: number, strength: num
   for (const box of layout.words) if (boxDistance(box, x, y) <= WORD_PAD) return 0
   const toColumn = Math.min(Math.abs(x - layout.column.left), Math.abs(x - layout.column.right))
   const onBranch = !inside && Math.abs(y - layout.branches.left.y0) < 16 + 12 * layout.s && toColumn < 64 * layout.s + 52
-  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * (onBranch ? 1 : columnFactor(layout, x, strength))
+  // Under the scrubber's lane the scene shows as in the column, so its ticks float over it.
+  const share = inLane(layout, x, y) ? strength : onBranch ? 1 : columnFactor(layout, x, strength)
+  return lerp(0.1, 1, smooth(layout.header - 2, layout.header + 14, y)) * share
 }
 
 // ---------- Flights ----------
