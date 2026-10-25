@@ -10,7 +10,7 @@ import { overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { useClock } from './paneGrid'
 import { SidebarFoot, SidebarTop } from './SidebarFrame'
 import { useShared } from './stateSharing'
-import { describeThreads, organizeWorkspace } from './threadFacts'
+import { describeThreads, EMPTY_NEEDS_YOU, organizeWorkspace } from './threadFacts'
 import { useContinueEnabled } from './continuations'
 import { setNewThreadIntent } from './threadIntent'
 import { ThreadSidebar } from './ThreadSidebar'
@@ -45,7 +45,7 @@ export function PageSidebar({ now: fixedNow }: {
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation), [state, sidebarRows, query, delegation]))
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {
@@ -59,7 +59,7 @@ export function PageSidebar({ now: fixedNow }: {
 
   if (state === null) {
     return <aside className={app?.platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label="Thread sidebar">
-      <SidebarTop />
+      <SidebarTop platform={app?.platform} />
       <div className="thread-nav__scroll"><p className="thread-nav__empty">{agents.error ?? 'Preparing agent controls…'}</p></div>
       <SidebarFoot />
     </aside>

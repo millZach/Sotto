@@ -39,6 +39,11 @@ msgstr "“{target}” already has a light palette. Pick another name."
 msgid "“{target}” already has light and dark palettes. Pick another name."
 msgstr "“{target}” already has light and dark palettes. Pick another name."
 
+#. placeholder {0}: choice.working
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{0, plural, one {# working} other {# working}}"
+msgstr "{0, plural, one {# working} other {# working}}"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{added, plural, other {# themes added: {names}}}"
 msgstr "{added, plural, other {# themes added: {names}}}"
@@ -72,8 +77,8 @@ msgid "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandN
 msgstr "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandNames} are behind on {host}.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
-msgstr "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
+msgid "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
+msgstr "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{chosen, plural, one {Reset all roles to their defaults. # role is your choice} other {Reset all roles to their defaults. # roles are your choice}}"
@@ -83,14 +88,6 @@ msgstr "{chosen, plural, one {Reset all roles to their defaults. # role is your 
 msgid "{chosen, plural, one {The role you chose is back on its default.} other {The # roles you chose are back on their defaults.}}"
 msgstr "{chosen, plural, one {The role you chose is back on its default.} other {The # roles you chose are back on their defaults.}}"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}}"
-msgstr "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}}"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
-msgstr "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
-
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr "{count, plural, one {# provider} other {# providers}}"
@@ -98,14 +95,6 @@ msgstr "{count, plural, one {# provider} other {# providers}}"
 #: src/renderer/src/features/settings/SettingsFind.tsx
 msgid "{count, plural, one {# setting found} other {# settings found}}"
 msgstr "{count, plural, one {# setting found} other {# settings found}}"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "{count, plural, one {# thread goes} other {# threads go}}"
-msgstr "{count, plural, one {# thread goes} other {# threads go}}"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "{count, plural, one {Clear # thread} other {Clear # threads}}"
-msgstr "{count, plural, one {Clear # thread} other {Clear # threads}}"
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "{count, plural, one {Connected as {user} · # device on your tailnet} other {Connected as {user} · # devices on your tailnet}}"
@@ -132,14 +121,17 @@ msgid "{count, plural, other {# themes updated.}}"
 msgstr "{count, plural, other {# themes updated.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "{count, plural, other {Remove selected (#)}}"
-msgstr "{count, plural, other {Remove selected (#)}}"
+msgid "{count, plural, other {Remove selected ({selected})}}"
+msgstr "{count, plural, other {Remove selected ({selected})}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
+msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
-msgid "{days, plural, one {# day ago} other {# days ago}}"
-msgstr "{days, plural, one {# day ago} other {# days ago}}"
+msgid "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
+msgstr "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{days, plural, one {# day} other {# days}}"
 msgstr "{days, plural, one {# day} other {# days}}"
@@ -177,20 +169,24 @@ msgid "{failedNames} did not update."
 msgstr "{failedNames} did not update."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
-msgid "{fileCount, plural, other {Only the first 40 of # files were read.}}"
-msgstr "{fileCount, plural, other {Only the first 40 of # files were read.}}"
+msgid "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
+msgstr "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{fileName}: too large"
 msgstr "{fileName}: too large"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "{folders, plural, one {Removes the one worktree folder these threads made. Branches and their commits stay.} other {Removes the # worktree folders these threads made. Branches and their commits stay.}}"
-msgstr "{folders, plural, one {Removes the one worktree folder these threads made. Branches and their commits stay.} other {Removes the # worktree folders these threads made. Branches and their commits stay.}}"
-
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{found, plural, one {# supported theme found.} other {# supported themes found.}}"
 msgstr "{found, plural, one {# supported theme found.} other {# supported themes found.}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free"
+msgstr "{free} free"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free, short on memory"
+msgstr "{free} free, short on memory"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, plural, one {up to # character} other {up to # characters}}"
@@ -241,6 +237,11 @@ msgstr "{label} saturation and brightness"
 msgid "{list} and {last}"
 msgstr "{list} and {last}"
 
+#. The ends of the Compact Watcher at slider, such as 200k to 1M
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "{low} to {high}"
+msgstr "{low} to {high}"
+
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
 msgstr "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
@@ -258,8 +259,8 @@ msgid "{minutes, plural, one {Checks origin every minute for ahead and behind, w
 msgstr "{minutes, plural, one {Checks origin every minute for ahead and behind, while this window is in front.} other {Checks origin every # minutes for ahead and behind, while this window is in front.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{minutes, plural, other {# min}}"
-msgstr "{minutes, plural, other {# min}}"
+msgid "{minutes, plural, other {{sessionMinutes} min}}"
+msgstr "{minutes, plural, other {{sessionMinutes} min}}"
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
@@ -297,6 +298,10 @@ msgstr "{name} added. It’s now your dark theme."
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{name} added. It’s now your light theme."
 msgstr "{name} added. It’s now your light theme."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "{name} already uses {keys}. Pick other keys."
+msgstr "{name} already uses {keys}. Pick other keys."
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "{name} could not be added"
@@ -388,6 +393,10 @@ msgstr "{name} is signed in and connected on {hostName}."
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "{name} runs it, so it can start the host for {who}."
 msgstr "{name} runs it, so it can start the host for {who}."
+
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
+msgstr "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
@@ -551,6 +560,10 @@ msgstr "{seconds, plural, one {# second} other {# seconds}}"
 msgid "{seconds, plural, one {Checks origin every # second for ahead and behind, while this window is in front.} other {Checks origin every # seconds for ahead and behind, while this window is in front.}}"
 msgstr "{seconds, plural, one {Checks origin every # second for ahead and behind, while this window is in front.} other {Checks origin every # seconds for ahead and behind, while this window is in front.}}"
 
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "{shown} tokens"
+msgstr "{shown} tokens"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{startProvider} has no “{wantedMode}”, so its workers start on “{startModeName}”."
 msgstr "{startProvider} has no “{wantedMode}”, so its workers start on “{startModeName}”."
@@ -558,6 +571,10 @@ msgstr "{startProvider} has no “{wantedMode}”, so its workers start on “{s
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "{stoppingName}’s host stops now and starts again when {stoppingName} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder."
 msgstr "{stoppingName}’s host stops now and starts again when {stoppingName} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
+msgstr "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
 
 #. {to} is a version number a client can update to.
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -686,8 +703,8 @@ msgid "500 entries"
 msgstr "500 entries"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgid "A band of text characters sweeps across the window."
+msgstr "A band of text characters sweeps across the window."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
@@ -704,6 +721,14 @@ msgstr "A Git service, not a computer"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr "A host name, an alias from your SSH configuration or user@server."
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "A line of stars sweeps across, with a faint trail behind it."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "A machine no longer saved"
+msgstr "A machine no longer saved"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -728,6 +753,14 @@ msgstr "A short sound when recording starts and stops."
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "A theme with the id \"{id}\" is already installed."
 msgstr "A theme with the id \"{id}\" is already installed."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "A thread shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off."
+msgstr "A thread shortcut needs ⌘ Command or ⌃ Control, so plain typing can never set it off."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "A thread shortcut needs Ctrl, so plain typing can never set it off."
+msgstr "A thread shortcut needs Ctrl, so plain typing can never set it off."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread working when Sotto closes waits for your next message."
@@ -769,6 +802,10 @@ msgstr "Accounts & connections"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Action"
 msgstr "Action"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Actual size"
+msgstr "Actual size"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
@@ -814,6 +851,14 @@ msgstr "Add it"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Add light palette"
 msgstr "Add light palette"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Add selection to prompt"
+msgstr "Add selection to prompt"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Add selection to prompt shortcut"
+msgstr "Add selection to prompt shortcut"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -870,6 +915,10 @@ msgstr "AI cleanup through OpenRouter"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "AI formatting"
 msgstr "AI formatting"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "All shortcuts are back to their defaults."
+msgstr "All shortcuts are back to their defaults."
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Already added as {name}"
@@ -936,6 +985,10 @@ msgstr "An example. Each repository's recent commits and AGENTS.md set the real 
 msgid "An example. The thread's own model picks the type and scope from the change."
 msgstr "An example. The thread's own model picks the type and scope from the change."
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "An older Sotto host: load unknown. Update it in Hosts & phones."
+msgstr "An older Sotto host: load unknown. Update it in Hosts & phones."
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
 msgstr "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
@@ -961,14 +1014,6 @@ msgstr "Answer {name}"
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Answer SSH's question for {name}"
 msgstr "Answer SSH's question for {name}"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "any age"
-msgstr "any age"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Any age"
-msgstr "Any age"
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
@@ -1074,6 +1119,11 @@ msgstr "Automatically pull"
 msgid "Back"
 msgstr "Back"
 
+#. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row])
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Back to the default, {0}."
+msgstr "Back to the default, {0}."
+
 #. A family of theme colors in the theme editor
 #. A theme color: the window background
 #. A theme color: the window background
@@ -1081,6 +1131,11 @@ msgstr "Back"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr "Background"
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "Band"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -1096,10 +1151,22 @@ msgstr "Body"
 msgid "Border"
 msgstr "Border"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Branch shortcut"
+msgstr "Branch shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Branch…"
+msgstr "Branch…"
+
 #. A group of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Brand & content"
 msgstr "Brand & content"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Bring the focused settled thread back to the sidebar."
+msgstr "Bring the focused settled thread back to the sidebar."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Brings {name}’s threads back after it restarts. Sotto adds a systemd user unit for {who} and turns on linger; the host restarts once now, stopping turns in progress."
@@ -1147,7 +1214,6 @@ msgstr "Can't be started"
 msgid "Can't use now"
 msgstr "Can't use now"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
@@ -1173,6 +1239,7 @@ msgid "Cancel inspecting app colors"
 msgstr "Cancel inspecting app colors"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Cancel recording"
 msgstr "Cancel recording"
 
@@ -1198,6 +1265,7 @@ msgid "Change"
 msgstr "Change"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Change shortcut, {words}"
 msgstr "Change shortcut, {words}"
 
@@ -1209,9 +1277,25 @@ msgstr "Change the host to add"
 msgid "Change the host to add, and stop connecting"
 msgstr "Change the host to add, and stop connecting"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Changed from the default"
+msgstr "Changed from the default"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "changed from their defaults."
+msgstr "changed from their defaults."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Changes"
+msgstr "Changes"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Changes opens only when you open it."
 msgstr "Changes opens only when you open it."
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Changes shortcut"
+msgstr "Changes shortcut"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Check {hostName} for {name} again"
@@ -1262,10 +1346,6 @@ msgstr "Checked when you turn this on."
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Checked with run.cloud before it is saved."
 msgstr "Checked with run.cloud before it is saved."
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Checking settled threads…"
-msgstr "Checking settled threads…"
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Checking Tailscale on this computer…"
@@ -1376,40 +1456,14 @@ msgstr "Clear history"
 msgid "Clear history?"
 msgstr "Clear history?"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Clear now"
-msgstr "Clear now"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Clear now…"
-msgstr "Clear now…"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Clear settled threads"
-msgstr "Clear settled threads"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Clear settled threads after"
-msgstr "Clear settled threads after"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Clear threads"
-msgstr "Clear threads"
-
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Clear transcript history"
 msgstr "Clear transcript history"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Clearing threads"
-msgstr "Clearing threads"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Clearing…"
-msgstr "Clearing…"
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie."
+msgstr "Click a shortcut and press the new keys; let go to save. These keys work while Sotto is in front, and stand down in terminals and dialogs. Dictation’s keys always win a tie."
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Client updates on {host}"
@@ -1430,9 +1484,25 @@ msgstr "Close"
 msgid "Close Add a theme"
 msgstr "Close Add a theme"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Close pane"
+msgstr "Close pane"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Close pane shortcut"
+msgstr "Close pane shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Close the focused pane in a split. The thread keeps running."
+msgstr "Close the focused pane in a split. The thread keeps running."
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Close the theme editor"
 msgstr "Close the theme editor"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Close the window"
+msgstr "Close the window"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Close. Sotto still waits for {name}’s threads"
@@ -1520,6 +1590,23 @@ msgstr "Commit and pull request style"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Commit subject"
 msgstr "Commit subject"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Commit, use folder"
+msgstr "Commit, use folder"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
+msgstr "Compact idle threads"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Compact Watcher at"
+msgstr "Compact Watcher at"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Compaction"
+msgstr "Compaction"
 
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -1702,6 +1789,18 @@ msgstr "Could not save the theme."
 msgid "Could not sign in"
 msgstr "Could not sign in"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}"
+msgstr "CPU {cpu}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}, busy"
+msgstr "CPU {cpu}, busy"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU unknown"
+msgstr "CPU unknown"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Create theme"
@@ -1760,6 +1859,10 @@ msgstr "Default"
 msgid "Default diff file state"
 msgstr "Default diff file state"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Default is"
+msgstr "Default is"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Default merge method"
@@ -1776,10 +1879,6 @@ msgstr "Defaults will be restored and first-run setup will reopen. Your saved Op
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Defaults, in order"
 msgstr "Defaults, in order"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
-msgstr "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Details<0> of why {name} did not update</0>"
@@ -1809,6 +1908,10 @@ msgstr "Dictate with Sotto"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Dictation"
 msgstr "Dictation"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Dictation (press & hold)"
+msgstr "Dictation (press & hold)"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Dictation and paste always happen on this computer, never on a remote host."
@@ -2035,6 +2138,14 @@ msgstr "Every connection signs in over SSH, and Tailscale may ask you to approve
 msgid "Every edit shows, spacing included."
 msgstr "Every edit shows, spacing included."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Every shortcut in Sotto, in one place"
+msgstr "Every shortcut in Sotto, in one place"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Every shortcut is at its default."
+msgstr "Every shortcut is at its default."
+
 #: src/renderer/src/features/settings/themes/EffortColor.tsx
 msgid "Everything the model has. Slowest, costliest."
 msgstr "Everything the model has. Slowest, costliest."
@@ -2089,9 +2200,17 @@ msgstr "Files start as headers; press one to read it."
 msgid "Files start open."
 msgstr "Files start open."
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Filter by action or keys"
+msgstr "Filter by action or keys"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Filter colors"
 msgstr "Filter colors"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Filter shortcuts"
+msgstr "Filter shortcuts"
 
 #: src/renderer/src/features/settings/SettingsFind.tsx
 msgid "Find a setting"
@@ -2113,6 +2232,10 @@ msgstr "Finish the steps above first."
 msgid "Finishing sign-in on {hostName}, then connecting {name}…"
 msgstr "Finishing sign-in on {hostName}, then connecting {name}…"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Fixed & elsewhere"
+msgstr "Fixed & elsewhere"
+
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "Floating widget"
 msgstr "Floating widget"
@@ -2124,6 +2247,14 @@ msgstr "Fn is already in use"
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Fn on its own"
 msgstr "Fn on its own"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Focus the prompt"
+msgstr "Focus the prompt"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Focus the prompt shortcut"
+msgstr "Focus the prompt shortcut"
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Folders on the host"
@@ -2154,9 +2285,9 @@ msgstr "For a machine that already has the host. Sotto connects now and says wha
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 msgstr "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "For settled threads on this computer. A cleared thread can’t be brought back."
-msgstr "For settled threads on this computer. A cleared thread can’t be brought back."
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Force reload the window"
+msgstr "Force reload the window"
 
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -2218,6 +2349,14 @@ msgstr "Git & worktrees"
 msgid "Git fetch interval"
 msgstr "Git fetch interval"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Global — the one set that works outside Sotto."
+msgstr "Global — the one set that works outside Sotto."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
+msgstr "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Have my agent fix this"
 msgstr "Have my agent fix this"
@@ -2275,6 +2414,7 @@ msgid "Hold any of these, speak, then let go."
 msgstr "Hold any of these, speak, then let go."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Hold the keys you want, then let go. Esc cancels."
 msgstr "Hold the keys you want, then let go. Esc cancels."
 
@@ -2368,6 +2508,14 @@ msgstr "How Watcher looks after threads"
 msgid "How Watcher looks after threads, and what each kind of work runs on"
 msgstr "How Watcher looks after threads, and what each kind of work runs on"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "How Watcher looks after threads, and where new workers start"
+msgstr "How Watcher looks after threads, and where new workers start"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "How Watcher looks after threads, where new workers start, and what each kind of work runs on"
+msgstr "How Watcher looks after threads, where new workers start, and what each kind of work runs on"
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Idle sessions end after"
@@ -2397,6 +2545,14 @@ msgstr "In progress"
 msgid "In the background"
 msgstr "In the background"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "In the composer"
+msgstr "In the composer"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "In the focused thread’s project, or the chooser when none is focused."
+msgstr "In the focused thread’s project, or the chooser when none is focused."
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "In the thread <0>{workingThread}</0> on this computer."
 msgstr "In the thread <0>{workingThread}</0> on this computer."
@@ -2409,6 +2565,10 @@ msgstr "In use"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Input"
 msgstr "Input"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Inside its dialog only."
+msgstr "Inside its dialog only."
 
 #. Picks a color from the app to edit
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -2489,13 +2649,13 @@ msgstr "It restarted once under its systemd unit and Sotto is connecting to it a
 msgid "its account"
 msgstr "its account"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Its messages and activity leave Sotto and can’t be brought back."
-msgstr "Its messages and activity leave Sotto and can’t be brought back."
-
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Its turn has ended and nothing it started is still going."
 msgstr "Its turn has ended and nothing it started is still going."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Jump to the next question or permission, settled threads included."
+msgstr "Jump to the next question or permission, settled threads included."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Keep {name} connected, now and when Sotto starts"
@@ -2539,10 +2699,6 @@ msgstr "Keep starting at boot"
 msgid "Keep the small dictation sliver on screen between sessions. Click it to dictate."
 msgstr "Keep the small dictation sliver on screen between sessions. Click it to dictate."
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Kept"
-msgstr "Kept"
-
 #. The run.cloud key, a secret that lets Sotto use the service.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Key"
@@ -2564,6 +2720,12 @@ msgstr "Key saved"
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Key saved."
 msgstr "Key saved."
+
+#. A Settings page, named in its rail and its heading: the keyboard shortcuts for working in threads. Other messages name it as "Settings > Keyboard".
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Keyboard"
+msgstr "Keyboard"
 
 #. Where Sotto learned of a device: SSH's known hosts file.
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -2603,6 +2765,7 @@ msgid "Let agents use the browser without asking"
 msgstr "Let agents use the browser without asking"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Let go to save. Esc cancels."
 msgstr "Let go to save. Esc cancels."
 
@@ -2614,6 +2777,10 @@ msgstr "Let phones connect"
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Let phones reach {name}"
 msgstr "Let phones reach {name}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Let Watcher choose"
+msgstr "Let Watcher choose"
 
 #. The light color scheme, or the themes that paint it
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -2655,6 +2822,10 @@ msgstr "Listening. Say something."
 msgid "Live appearance"
 msgstr "Live appearance"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "load unknown"
+msgstr "load unknown"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Looking for models…"
 msgstr "Looking for models…"
@@ -2666,6 +2837,10 @@ msgstr "Looking for your devices…"
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "macOS did not show it. Allow Sotto in System Settings → Notifications, then try again."
 msgstr "macOS did not show it. Allow Sotto in System Settings → Notifications, then try again."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "macOS’s own Settings chord, from the app menu."
+msgstr "macOS’s own Settings chord, from the app menu."
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -2684,6 +2859,14 @@ msgstr "Max"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Maximum recording time"
 msgstr "Maximum recording time"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "may slow down"
+msgstr "may slow down"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "memory unknown"
+msgstr "memory unknown"
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -2746,8 +2929,16 @@ msgid "mise did not finish updating {name} on {host}. Nothing was changed: {inst
 msgstr "mise did not finish updating {name} on {host}. Nothing was changed: {installed} is still installed, and your threads kept working."
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise does not list {to} yet. {installed} is still installed."
+msgstr "mise does not list {to} yet. {installed} is still installed."
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise installed {to}, but {name}'s install step did not finish, so {host} still starts {installed}. Nothing was lost, and your threads kept working."
 msgstr "mise installed {to}, but {name}'s install step did not finish, so {host} still starts {installed}. Nothing was lost, and your threads kept working."
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise on {host} does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: {installed} is still installed, and your threads kept working. Try again later."
+msgstr "mise on {host} does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: {installed} is still installed, and your threads kept working. Try again later."
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise stopped with an error. {installed} is still installed."
@@ -2786,6 +2977,14 @@ msgstr "Most downloaded"
 msgid "Most relevant"
 msgstr "Most relevant"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move to the next thread in the sidebar’s order."
+msgstr "Move to the next thread in the sidebar’s order."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move to the previous thread in the sidebar’s order."
+msgstr "Move to the previous thread in the sidebar’s order."
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Muted text"
@@ -2814,10 +3013,17 @@ msgid "Needs you"
 msgstr "Needs you"
 
 #. Remove idle worktrees after: never
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Never"
 msgstr "Never"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "New thread"
+msgstr "New thread"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "New thread shortcut"
+msgstr "New thread shortcut"
 
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "New threads in this project work in"
@@ -2836,6 +3042,10 @@ msgstr "New threads work in"
 msgid "New threads, replies, the browser & visuals"
 msgstr "New threads, replies, the browser & visuals"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "New workers start here"
+msgstr "New workers start here"
+
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "New worktree"
@@ -2849,10 +3059,31 @@ msgstr "Newest"
 msgid "Next default"
 msgstr "Next default"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Next thread"
+msgstr "Next thread"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Next thread shortcut"
+msgstr "Next thread shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Next thread waiting on you"
+msgstr "Next thread waiting on you"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Next thread waiting on you shortcut"
+msgstr "Next thread waiting on you shortcut"
+
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-msgid "Night falls between Threads and Watcher"
-msgstr "Night falls between Threads and Watcher"
+msgid "Night falls between Dictate or Threads and Watcher"
+msgstr "Night falls between Dictate or Threads and Watcher"
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Night falls look"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -2903,17 +3134,13 @@ msgstr "No sessions yet."
 msgid "No setting matches “{search}”."
 msgstr "No setting matches “{search}”."
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "No settled thread on this computer has been quiet that long."
-msgstr "No settled thread on this computer has been quiet that long."
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "No shortcut"
+msgstr "No shortcut"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "No supported open-source themes found. Try a broader search."
 msgstr "No supported open-source themes found. Try a broader search."
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "None of them can go yet."
-msgstr "None of them can go yet."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "None offered"
@@ -2942,6 +3169,7 @@ msgstr "Not checked yet."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
 msgstr "Not connected"
@@ -3005,6 +3233,10 @@ msgstr "Nothing changed on {name}, and its host is still running as before. {mes
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Nothing changed on {name}. Its host is still running as before, and this computer is still connected."
 msgstr "Nothing changed on {name}. Its host is still running as before, and this computer is still connected."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Nothing matches. Clear the filter to see every shortcut."
+msgstr "Nothing matches. Clear the filter to see every shortcut."
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -3102,6 +3334,10 @@ msgstr "One word or name per line, so AI cleanup spells them your way."
 msgid "One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum."
 msgstr "One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum."
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -3110,6 +3346,14 @@ msgstr "One word or name per line, so AI cleanup spells them your way. 4,000 cha
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Open approval page"
 msgstr "Open approval page"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open beside"
+msgstr "Open beside"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Open beside shortcut"
+msgstr "Open beside shortcut"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Open phone access for {name}"
@@ -3132,6 +3376,14 @@ msgstr "Open sign-in page again"
 msgid "Open System Settings"
 msgstr "Open System Settings"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the branch bar’s branch chooser, in the focused pane."
+msgstr "Open the branch bar’s branch chooser, in the focused pane."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the branch bar’s working-copy chooser, in the focused pane."
+msgstr "Open the branch bar’s working-copy chooser, in the focused pane."
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Open the Tailscale approval page for {editedName}"
 msgstr "Open the Tailscale approval page for {editedName}"
@@ -3142,9 +3394,17 @@ msgstr "Open the Tailscale approval page for {editedName}"
 msgid "Open the Tailscale approval page for {name}"
 msgstr "Open the Tailscale approval page for {name}"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open the thread whose sidebar row holds the keys in a pane beside the current one. At its default either primary modifier with Enter answers."
+msgstr "Open the thread whose sidebar row holds the keys in a pane beside the current one. At its default either primary modifier with Enter answers."
+
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Open thread"
 msgstr "Open thread"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open Tools on Changes, or close it when Changes is showing. At its default, the shifted chord answers while dictation holds the plain one."
+msgstr "Open Tools on Changes, or close it when Changes is showing. At its default, the shifted chord answers while dictation holds the plain one."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Open VSX search is not available in this window."
@@ -3165,6 +3425,10 @@ msgstr "OpenRouter key"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools."
 msgstr "Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Opens the Dictate room on its search, from any page."
+msgstr "Opens the Dictate room on its search, from any page."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "or import a file"
@@ -3251,6 +3515,10 @@ msgstr "Pairing code from {name}"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Pairing this computer…"
 msgstr "Pairing this computer…"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Panes"
+msgstr "Panes"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3411,6 +3679,7 @@ msgid "Press Esc in any app to cancel a recording. Nothing is transcribed."
 msgstr "Press Esc in any app to cancel a recording. Nothing is transcribed."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Press the new keys…"
 msgstr "Press the new keys…"
 
@@ -3425,6 +3694,22 @@ msgstr "Preview"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Previous microphone (unavailable)"
 msgstr "Previous microphone (unavailable)"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Previous thread"
+msgstr "Previous thread"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Previous thread shortcut"
+msgstr "Previous thread shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Previous working copy"
+msgstr "Previous working copy"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Previous working copy shortcut"
+msgstr "Previous working copy shortcut"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3464,9 +3749,17 @@ msgstr "Providers on {hostName}"
 msgid "Pull request title"
 msgstr "Pull request title"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Quiet longer than"
-msgstr "Quiet longer than"
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Put the cursor in the focused pane’s composer."
+msgstr "Put the cursor in the focused pane’s composer."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Put the focused thread on the Settled shelf. Its delegated threads go with it, and Settle asks about its worktree first, as the button does."
+msgstr "Put the focused thread on the Settled shelf. Its delegated threads go with it, and Settle asks about its worktree first, as the button does."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Quote the words selected in a reply into the composer."
+msgstr "Quote the words selected in a reply into the composer."
 
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -3552,6 +3845,10 @@ msgstr "Reduce motion"
 msgid "Reduced motion"
 msgstr "Reduced motion"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reload the window"
+msgstr "Reload the window"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remote hosts"
@@ -3620,7 +3917,12 @@ msgstr "Remove saved text without changing settings or models."
 msgid "Remove selected"
 msgstr "Remove selected"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Remove shortcut"
+msgstr "Remove shortcut"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
 msgstr "Remove shortcut, {words}"
 
@@ -3639,10 +3941,6 @@ msgstr "Removed lines above added ones."
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."
 msgstr "Removes a thread's worktree folder once it has been idle this long. The branch stays, sending brings the folder back, and uncommitted work is never removed."
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Removes the worktree folder it made. Its branch and commits stay."
-msgstr "Removes the worktree folder it made. Its branch and commits stay."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Removing the unit from {name}."
@@ -3672,6 +3970,10 @@ msgstr "Replies in threads"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Repository conventions"
 msgstr "Repository conventions"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reset {label} to its default"
+msgstr "Reset {label} to its default"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Reset {roleName} to its default, {defaultModelName}"
@@ -3730,6 +4032,11 @@ msgstr "Reset settings"
 msgid "Reset settings?"
 msgstr "Reset settings?"
 
+#. placeholder {0}: inline(DEFAULT_THREAD_SHORTCUTS[row.id])
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reset to {0}"
+msgstr "Reset to {0}"
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Reset to default"
 msgstr "Reset to default"
@@ -3751,9 +4058,25 @@ msgstr "Restart Sotto"
 msgid "Restart Sotto to apply the local host setting."
 msgstr "Restart Sotto to apply the local host setting."
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Restore defaults"
+msgstr "Restore defaults"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay."
 msgstr "Restore defaults and reopen setup. Your OpenRouter key, speech model and history stay."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Restore settled thread"
+msgstr "Restore settled thread"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Restore settled thread shortcut"
+msgstr "Restore settled thread shortcut"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Restore shortcut defaults"
+msgstr "Restore shortcut defaults"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3833,6 +4156,14 @@ msgstr "Search Open VSX themes"
 msgid "Search themes…"
 msgstr "Search themes…"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Search transcripts"
+msgstr "Search transcripts"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Search transcripts already uses {keys}. Pick other keys."
+msgstr "Search transcripts already uses {keys}. Pick other keys."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Searching themes…"
 msgstr "Searching themes…"
@@ -3849,6 +4180,10 @@ msgstr "Select the variants you want to remove. You can restore them by installi
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Send a test notification"
 msgstr "Send a test notification"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Send the prompt"
+msgstr "Send the prompt"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript."
@@ -3877,8 +4212,13 @@ msgstr "Setting up {name}"
 
 #. The Settings page's heading, at the top of its rail.
 #: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Settings"
 msgstr "Settings"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Settings › Dictation"
+msgstr "Settings › Dictation"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Settings could not be reset."
@@ -3905,9 +4245,13 @@ msgstr "Settings sections"
 msgid "Settle finished threads"
 msgstr "Settle finished threads"
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Settled threads on this computer quiet longer than"
-msgstr "Settled threads on this computer quiet longer than"
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Settle thread"
+msgstr "Settle thread"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Settle thread shortcut"
+msgstr "Settle thread shortcut"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application."
@@ -3935,6 +4279,7 @@ msgid "Shell sandbox"
 msgstr "Shell sandbox"
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Shortcut saved."
 msgstr "Shortcut saved."
 
@@ -3951,6 +4296,10 @@ msgstr "Show a pairing code"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Show floating widget when idle"
 msgstr "Show floating widget when idle"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Show or hide the focused pane’s terminal drawer."
+msgstr "Show or hide the focused pane’s terminal drawer."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show providers"
@@ -4072,8 +4421,8 @@ msgid "Signing in…"
 msgstr "Signing in…"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4127,17 +4476,9 @@ msgstr "Sotto could not check for updates: {problem}"
 msgid "Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again."
 msgstr "Sotto could not check Tailscale on this computer. Nothing was changed. Come back to this window to check again."
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Sotto could not confirm the clear. Threads still listed under Settled were not deleted."
-msgstr "Sotto could not confirm the clear. Threads still listed under Settled were not deleted."
-
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
 msgstr "Sotto could not find mise on {host}, so it will not run the update itself."
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Sotto could not list the settled threads. Nothing was deleted. Close this and try again."
-msgstr "Sotto could not list the settled threads. Nothing was deleted. Close this and try again."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto could not reach GitHub. It will try again in a few minutes."
@@ -4271,9 +4612,29 @@ msgstr "Sotto turns on Tailscale Serve on {hostName} for this, on your tailnet o
 msgid "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
 msgstr "Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH."
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s hold-to-talk dictation shortcut already uses {keys}. Pick other keys."
+msgstr "Sotto’s hold-to-talk dictation shortcut already uses {keys}. Pick other keys."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick other keys."
+msgstr "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick other keys."
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys."
 msgstr "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s menu"
+msgstr "Sotto’s menu"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
+msgstr "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s start-and-stop dictation shortcut already uses those keys. Pick other keys."
+msgstr "Sotto’s start-and-stop dictation shortcut already uses those keys. Pick other keys."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Sotto’s start-and-stop shortcut already uses those keys. Pick other keys."
@@ -4384,6 +4745,11 @@ msgstr "SSH password"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr "Stacked"
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "Stars"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"
@@ -4526,9 +4892,21 @@ msgstr "Stop test"
 msgid "Stop the agent working on {name} on {hostName}"
 msgstr "Stop the agent working on {name} on {hostName}"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Stop the focused thread’s turn, like its Stop button."
+msgstr "Stop the focused thread’s turn, like its Stop button."
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Stop the host on {stoppingName}?"
 msgstr "Stop the host on {stoppingName}?"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Stop the running turn"
+msgstr "Stop the running turn"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Stop the running turn shortcut"
+msgstr "Stop the running turn shortcut"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Stopped. Anything the agent installed on {host} stays there, and the thread {thread} stays in your Threads list."
@@ -4572,6 +4950,11 @@ msgstr "Success duration saved."
 msgid "Success message duration"
 msgstr "Success message duration"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Suggest a next prompt after each turn"
+msgstr "Suggest a next prompt after each turn"
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Surface"
@@ -4580,6 +4963,10 @@ msgstr "Surface"
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Switch it off"
 msgstr "Switch it off"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Switch the focused thread back to its previous working copy."
+msgstr "Switch the focused thread back to its previous working copy."
 
 #. A saved host whose switch is off.
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -4694,6 +5081,18 @@ msgstr "Tell me when main freezes"
 msgid "Terminal background"
 msgstr "Terminal background"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Terminal drawer"
+msgstr "Terminal drawer"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Terminal drawer shortcut"
+msgstr "Terminal drawer shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Terminal search & text size"
+msgstr "Terminal search & text size"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Test again"
 msgstr "Test again"
@@ -4718,6 +5117,10 @@ msgstr "That is not valid JSON. Check for a missing comma or quote."
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
 msgstr "That key can’t be part of a shortcut. Try a letter, a number, an F key, Space or an arrow key."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "That key can’t be part of a thread shortcut. Try a letter, a number, an F key, Space, Enter or an arrow key."
+msgstr "That key can’t be part of a thread shortcut. Try a letter, a number, an F key, Space, Enter or an arrow key."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "That setting could not be saved. Your previous setting is still active."
@@ -4789,6 +5192,10 @@ msgstr "The command could not be copied. It is selected above: copy it with your
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "The command could not be copied. Select it and copy it yourself."
 msgstr "The command could not be copied. Select it and copy it yourself."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The composer’s own key. Shift+Enter adds a line."
+msgstr "The composer’s own key. Shift+Enter adds a line."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The connection could not be saved. Nothing was changed. Try again."
@@ -4919,8 +5326,8 @@ msgid "The one on {host} is too old."
 msgstr "The one on {host} is too old."
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
-msgid "The owl perched on a branch in your menu bar."
-msgstr "The owl perched on a branch in your menu bar."
+msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
+msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The pasted text was cut to fit the 4,000-character limit."
@@ -4967,9 +5374,22 @@ msgstr "The setup of {name} could not carry on. Nothing was saved as a host."
 msgid "The setup of {name} stopped."
 msgstr "The setup of {name} stopped."
 
+#. placeholder {0}: inline(previous)
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The shortcut could not be changed. {0} still works."
+msgstr "The shortcut could not be changed. {0} still works."
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "The shortcut could not be changed. {kept} still works."
 msgstr "The shortcut could not be changed. {kept} still works."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The shortcut could not be changed. It still has no shortcut."
+msgstr "The shortcut could not be changed. It still has no shortcut."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The shortcuts could not be reset. Your keys are unchanged."
+msgstr "The shortcuts could not be reset. Your keys are unchanged."
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "The sign-in on {hostName} ended before it was finished. Nothing was signed in."
@@ -4983,6 +5403,10 @@ msgstr "the sign-in page"
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr "The sign-in page could not open. Nothing was changed. Try again."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The terminal’s own keys, while a terminal holds them."
+msgstr "The terminal’s own keys, while a terminal holds them."
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "The theme could not be removed. Your themes are unchanged."
@@ -5046,9 +5470,9 @@ msgstr "The widget follows {system} light or dark mode."
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr "The widget follows the Omarchy theme’s mode."
 
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Their messages and activity leave Sotto and can’t be brought back."
-msgstr "Their messages and activity leave Sotto and can’t be brought back."
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
@@ -5085,6 +5509,7 @@ msgid "this computer"
 msgstr "this computer"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
 msgstr "This computer"
 
@@ -5103,6 +5528,10 @@ msgstr "This computer, other computers, and your iPhone"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr "This computer's client ID on {editingName}: <0>{clientId}</0>"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "This machine is no longer saved, so new workers start on this computer. Choose another."
+msgstr "This machine is no longer saved, so new workers start on this computer. Choose another."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged."
@@ -5155,16 +5584,9 @@ msgstr "Thread providers"
 #. A Settings page, named in its rail and its heading: settings for threads. Other messages name it as "Settings > Threads".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Threads"
 msgstr "Threads"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Threads kept"
-msgstr "Threads kept"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Threads that go"
-msgstr "Threads that go"
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
@@ -5174,6 +5596,10 @@ msgstr "Threads, pairing and settings for this host live here."
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
 msgstr "to"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Toggle developer tools"
+msgstr "Toggle developer tools"
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "Too many copies of \"{name}\"."
@@ -5206,6 +5632,10 @@ msgstr "Toolbar control text"
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Toolbar text"
 msgstr "Toolbar text"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Tools & branch bar"
+msgstr "Tools & branch bar"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Transcript history cleared."
@@ -5312,10 +5742,6 @@ msgstr "Unlimited"
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Unlock the SSH connection to {name}"
 msgstr "Unlock the SSH connection to {name}"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Untitled thread"
-msgstr "Untitled thread"
 
 #. A button that updates one agent client on a host.
 #. Updates an installed theme extension
@@ -5429,14 +5855,6 @@ msgstr "Updating to {to}…"
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Updating…"
 msgstr "Updating…"
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Usage keeps its numbers. Its provider keeps its own copy of the session."
-msgstr "Usage keeps its numbers. Its provider keeps its own copy of the session."
-
-#: src/renderer/src/features/settings/ClearThreadsSettings.tsx
-msgid "Usage keeps its numbers. Providers keep their own copies of the sessions."
-msgstr "Usage keeps its numbers. Providers keep their own copies of the sessions."
 
 #: src/renderer/src/features/settings/themes/EffortColor.tsx
 msgid "Use {color} as the effort color"
@@ -5640,6 +6058,22 @@ msgstr "Watched threads"
 msgid "Watcher can’t run on {provider} yet."
 msgstr "Watcher can’t run on {provider} yet."
 
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
+msgstr "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher is at {size}: it compacts at its next rest."
+msgstr "Watcher is at {size}: it compacts at its next rest."
+
+#: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
+msgid "Watcher is at {size}."
+msgstr "Watcher is at {size}."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+msgstr "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher runs on {watcherProviders}. Connect one to choose its model."
 msgstr "Watcher runs on {watcherProviders}. Connect one to choose its model."
@@ -5709,6 +6143,10 @@ msgid "When a thread needs you"
 msgstr "When a thread needs you"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
+msgstr "When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When finished"
 msgstr "When finished"
 
@@ -5723,6 +6161,11 @@ msgstr "When your computer starts"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Where links in threads open. To choose for one link, right-click it or press Shift+F10."
 msgstr "Where links in threads open. To choose for one link, right-click it or press Shift+F10."
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Where new workers start"
+msgstr "Where new workers start"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."
@@ -5747,6 +6190,10 @@ msgstr "Why Tailscale asks"
 msgid "Worker roles"
 msgstr "Worker roles"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
+msgstr "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Workers never start wider than your new-thread default, so these start on “{heldName}”. <0>Change it in Threads</0>"
 msgstr "Workers never start wider than your new-thread default, so these start on “{heldName}”. <0>Change it in Threads</0>"
@@ -5754,6 +6201,14 @@ msgstr "Workers never start wider than your new-thread default, so these start o
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working copy"
 msgstr "Working copy"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Working copy shortcut"
+msgstr "Working copy shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Working copy…"
+msgstr "Working copy…"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
@@ -5844,3 +6299,15 @@ msgstr "Your themes"
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Your threads on {host} keep working."
 msgstr "Your threads on {host} keep working."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Zoom pane"
+msgstr "Zoom pane"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Zoom pane shortcut"
+msgstr "Zoom pane shortcut"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Zoom the focused pane in a split, or show all panes again. This was Ctrl+Shift+M on every platform; record that here to keep the old keys on a Mac."
+msgstr "Zoom the focused pane in a split, or show all panes again. This was Ctrl+Shift+M on every platform; record that here to keep the old keys on a Mac."

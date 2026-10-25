@@ -1,5 +1,5 @@
-export const OWL_WIDTH: 27
-export const OWL_HEIGHT: 22
+export const OWL_WIDTH: 18
+export const OWL_HEIGHT: 18
 export const OWL_FRAME_MS: 80
 
 export interface OwlPose {

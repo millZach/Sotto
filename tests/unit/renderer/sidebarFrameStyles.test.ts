@@ -34,7 +34,7 @@ const global = rules('styles/global.css')
 // (tests/e2e/sidebar-crossing.spec.ts); these keep the one frame the stylesheets draw it from from drifting back into
 // two: a padded Settings column beside an unpadded Threads sidebar, each with its own widths and foot.
 describe('the sidebar frame in the stylesheets', () => {
-  it('is unpadded, and the foot carries its own inset, hairline and all', () => {
+  it('is unpadded, and the foot carries its own inset and lays its controls in one row', () => {
     const frame = styleOf(sidebar, '.thread-nav')
     expect(frame.get('padding')).toBe('0')
     expect(frame.get('--thread-nav-inset')).toBe('10px')
@@ -42,15 +42,37 @@ describe('the sidebar frame in the stylesheets', () => {
     expect(selectorsOf(sidebar).filter(selector => selector.includes(':not([data-mode])'))).toEqual([])
     const foot = styleOf(chrome, '.thread-nav__foot')
     expect(foot.get('margin')).toBe('auto var(--thread-nav-inset) 0')
-    expect(foot.get('border-top')).toMatch(/^1px solid /u)
-    // The collapsed rail is as wide as the foot, so it takes no inset.
+    // No hairline tops the foot.
+    expect(foot.get('border-top')).toBeUndefined()
+    expect(foot.get('padding')).toBe('12px 2px 10px')
+    expect(foot.get('gap')).toBe('2px')
+    // The hairline stands upright between the room tiles and the page links, in the same row.
+    const rule = styleOf(chrome, '.thread-nav__foot-rule')
+    expect(rule.get('width')).toBe('1px')
+    expect(rule.get('height')).toBe('18px')
+    expect(rule.get('background')).toBe('var(--tt-hairline)')
+    expect(rule.get('flex')).toBe('none')
+    // The collapsed rail is as wide as the foot, so it takes no inset; its hidden switch leaves the hairline lying flat on top, 8px over the links.
     expect(styleOf(sidebar, '.thread-nav__rail .thread-nav__foot').get('margin-inline')).toBe('0')
+    expect(styleOf(sidebar, '.thread-nav__rail .thread-nav__foot').get('padding')).toBe('0 0 8px')
+    const railRule = styleOf(sidebar, '.thread-nav__rail .thread-nav__foot-rule')
+    expect(railRule.get('height')).toBe('1px')
+    expect(railRule.get('flex')).toBe('1 0 100%')
+    expect(railRule.get('margin')).toBe('0 0 6px')
   })
 
-  it('draws the foot switch once, for every column that wears the foot', () => {
+  it('draws the foot switch once, as 30px icons whose lit tile is a neutral tint and not the accent', () => {
     const room = styleOf(chrome, '.thread-nav__foot .thread-nav__seg')
-    expect(room.get('display')).toBe('grid')
-    expect(room.get('grid-auto-columns')).toBe('minmax(0, 1fr)')
+    expect(room.get('--room-tile')).toBe('30px')
+    expect(room.get('flex')).toBeUndefined()
+    const tile = styleOf(chrome, ".thread-nav__foot .thread-nav__seg [role='tab']")
+    expect(tile.get('width')).toBe('30px')
+    expect(tile.get('border-radius')).toBe('8px')
+    const lit = styleOf(chrome, ".thread-nav__foot .thread-nav__seg [role='tab'][aria-selected='true']")
+    expect(lit.get('background')).toBe('var(--foot-lit)')
+    expect(lit.get('color')).toBe('var(--tt-text)')
+    expect(styleOf(chrome, '.thread-nav__foot').get('--foot-lit')).toMatch(/^color-mix\(in srgb, var\(--tt-text\) /u)
+    expect(styleOf(chrome, '.thread-nav__foot .thread-nav__page').get('border-radius')).toBe('8px')
     expect(selectorsOf(settings).filter(selector => selector.includes('thread-nav__foot'))).toEqual([])
   })
 

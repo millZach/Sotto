@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import sharp from 'sharp'
 
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -8,6 +9,7 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { laneBackgrounds, tickContrast } from './support/scrubberLane'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
@@ -36,22 +38,37 @@ function options(appearance: 'dark' | 'light', motion: 'normal' | 'reduced' = 'n
   return { onboardingComplete: true, appearance, motion, scenario: 'design-threads', agents: 'design-threads', ...(appearance === 'dark' ? { darkTheme: 't3-code' } : { lightTheme: 't3-code' }) } as const
 }
 
+/** Opens a thread of the fixture by its title. Release notes 1.4 and Thread routing are settled, so a search opens their group. */
+async function openThread(page: Page, title: string): Promise<void> {
+  const search = page.getByRole('searchbox', { name: 'Search threads' })
+  await search.fill(title)
+  await page.getByRole('button', { name: title, exact: true }).click()
+  await search.fill('')
+}
+
 /** Replaces Release notes 1.4's history with a long conversation and opens it. */
-async function longThread(page: Page): Promise<Locator> {
+async function longThread(page: Page, turns = TURNS): Promise<Locator> {
   await openThreads(page)
-  // It is settled, so a search opens its group.
-  await page.getByRole('searchbox', { name: 'Search threads' }).fill('Release notes')
-  await page.getByRole('button', { name: 'Release notes 1.4', exact: true }).click()
-  await page.getByRole('searchbox', { name: 'Search threads' }).fill('')
+  await openThread(page, 'Release notes 1.4')
   await page.evaluate(async ({ thread, turns, asks, reply }) => {
     await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: turns * 2 }, (_, index) => ({
       id: `scrub-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
       text: index % 2 ? `${reply} (${(index - 1) / 2 + 1})` : `${asks[(index / 2) % asks.length]} (${index / 2 + 1})`,
       createdAt: new Date(Date.UTC(2026, 9, 22, 9, index * 3)).toISOString() })) })
-  }, { thread: THREAD, turns: TURNS, asks: ASKS, reply: REPLY })
+  }, { thread: THREAD, turns, asks: ASKS, reply: REPLY })
   const log = page.getByRole('log', { name: 'Thread transcript' })
-  await expect(log.locator('[data-message-id="scrub-47"]')).toBeVisible()
+  await expect(log.locator(`[data-message-id="scrub-${turns * 2 - 1}"]`)).toBeVisible()
   return log
+}
+
+/** Counts every moment the scrubber is not on the page from now on. */
+async function watchForGaps(page: Page): Promise<() => Promise<number>> {
+  await page.evaluate(() => {
+    const seen = window as unknown as { scrubberGaps: number }
+    seen.scrubberGaps = 0
+    new MutationObserver(() => { if (!document.querySelector('.message-scrubber')) seen.scrubberGaps += 1 }).observe(document.body, { childList: true, subtree: true })
+  })
+  return () => page.evaluate(() => (window as unknown as { scrubberGaps: number }).scrubberGaps)
 }
 
 const scrubber = (page: Page) => page.getByRole('navigation', { name: 'Messages you sent' })
@@ -98,8 +115,15 @@ for (const appearance of ['dark', 'light'] as const) {
         const column = (await log.locator('.thread-transcript__content').boundingBox())!
         expect(lane.x + lane.width).toBeLessThanOrEqual(column.x + 0.5)
         expect(lane.x).toBeGreaterThanOrEqual((await log.boundingBox())!.x - 0.5)
+        // The lane paints nothing of its own: its ticks float over the transcript (the user's ask on October 24, 2026).
+        expect(await laneBackgrounds(page, 'section.thread-pane'), `what the lane paints at ${width}x${height}`).toEqual([])
         await capture(launched, `rest-${appearance}-${width}x${height}`)
         await pointAt(page, ticks.nth(5))
+        // Reached by the pointer, every tick keeps 3:1 against what lies beside it, the far ones too.
+        await expect(nav).toHaveCSS('opacity', '1')
+        await page.waitForTimeout(300)
+        const reached = await tickContrast(page, 'section.thread-pane', await page.screenshot(), async png => { const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, width: info.width, height: info.height, channels: info.channels } })
+        expect(reached.worst, `the ticks pointed at, at ${width}x${height}`).toBeGreaterThanOrEqual(3)
         await expect(card(page)).toBeVisible()
         await expect(card(page)).toContainText(`Message 6 of ${TURNS}`)
         await expect(card(page)).toContainText(`${ASKS[5]} (6)`)
@@ -156,9 +180,56 @@ test('with motion reduced the ticks rise without moving and the card appears in 
   }))
 })
 
-test('stable shows no scrubber', async () => {
+test('a thread longer than its window marks every prompt it holds, stays while earlier messages load, and reaches the first', async () => {
+  const turns = 60
+  await onReleaseTrack('owl', () => withSotto(options('dark'), async launched => {
+    const { page } = launched
+    const log = await longThread(page, turns)
+    // The pane comes back to the thread, and opens on the newest ten turns the thread's store holds.
+    await openThread(page, 'Thread routing')
+    await expect(log.locator(`[data-message-id="scrub-${turns * 2 - 1}"]`)).toHaveCount(0)
+    await openThread(page, 'Release notes 1.4')
+    await expect(log.locator(`[data-message-id="scrub-${turns * 2 - 1}"]`)).toBeVisible()
+    const earlier = log.getByRole('button', { name: 'Show earlier messages', exact: true })
+    await expect(earlier).toBeVisible()
+    await expect(log.locator('.thread-message[data-role="user"]')).toHaveCount(10)
+    const ticks = scrubber(page).getByRole('button')
+    await expect(ticks).toHaveCount(turns)
+    // A tick for a message only the store holds shows its card from what the store carries.
+    await resizeContentWindow(launched, 1280, 800)
+    await pointAt(page, ticks.nth(0))
+    await expect(card(page)).toContainText(`Message 1 of ${turns}`)
+    await expect(card(page)).toContainText(`${ASKS[0]} (1)`)
+    await expect(card(page)).toContainText(`${REPLY.slice(0, 60)}`)
+    await capture(launched, 'stored-dark-1280x800')
+    await page.mouse.move(0, 0)
+    // Showing earlier messages, and a press on the first message sent, never take the scrubber off the page.
+    const gaps = await watchForGaps(page)
+    await earlier.click()
+    await expect(log.locator('.thread-message[data-role="user"]')).toHaveCount(30)
+    await expect(ticks).toHaveCount(turns)
+    await pointAt(page, ticks.nth(0))
+    await ticks.nth(0).click()
+    const first = log.locator('[data-message-id="scrub-0"]')
+    await expect(first).toHaveAttribute('data-sought', '')
+    await expect.poll(async () => Math.round((await first.boundingBox())!.y - (await log.boundingBox())!.y)).toBeLessThan(60)
+    await expect(ticks).toHaveCount(turns)
+    expect(await gaps(), 'moments the scrubber left the page').toBe(0)
+    // The keyboard reaches the store's prompts too: back to the newest window, then Home and Enter.
+    await openThread(page, 'Thread routing')
+    await openThread(page, 'Release notes 1.4')
+    await expect(log.locator('.thread-message[data-role="user"]')).toHaveCount(10)
+    await ticks.nth(turns - 1).focus()
+    await page.keyboard.press('Home')
+    await expect(card(page)).toContainText(`Message 1 of ${turns}`)
+    await page.keyboard.press('Enter')
+    await expect(first).toBeFocused()
+  }))
+})
+
+test('stable shows the scrubber too, since it was sent to stable', async () => {
   await onReleaseTrack('stable', () => withSotto(options('dark'), async ({ page }) => {
     await longThread(page)
-    await expect(scrubber(page)).toHaveCount(0)
+    await expect(scrubber(page).getByRole('button')).toHaveCount(TURNS)
   }))
 })

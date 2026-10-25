@@ -365,10 +365,16 @@ export interface SottoBridge {
   readonly delegations?: import('./delegation').DelegationsBridge
   /** Continuing a thread on another provider (ADR-0089), present only while the Owl list turns it on. */
   readonly continueThread?: import('./continueThread').ContinueBridge
+  /** Next prompts after a finished turn (ADR-0132), present only while the `next-prompt` Owl feature is on and this computer runs threads. */
+  readonly nextPrompt?: import('./nextPrompt').NextPromptBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
+  /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
+  readonly cursor?: import('./cursorSignIn').CursorSignInBridge
   /** The user's own model servers (ADR-0124), present only while the `own-model-servers` Owl feature is on and OpenCode runs on this computer. */
   readonly ownServers?: import('./ownModelServers').OwnServersBridge
+  /** Measuring the user's own server for AI cleanup (ADR-0136), present only while its Owl feature runs. */
+  readonly ownServerCleanup?: import('./ownServerCleanup').OwnServerCleanupBridge
   /** Main's watch on itself and Record a minute (ADR-0098), present only while the `main-freeze` Owl feature is on. */
   readonly mainActivity?: import('./mainActivity').MainActivityBridge
   /** Notifications when a thread has finished or needs the user (ADR-0117), present only while the Owl feature is on, on a Mac that can show them. */

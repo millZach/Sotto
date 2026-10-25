@@ -277,7 +277,7 @@ describe('New Watcher', () => {
     const entered = deferred(), released = deferred()
     let attempt = 0
     const published: boolean[] = []
-    const unsubscribe = f.service.subscribe(state => { published.push(state.creationStopped === true) })
+    const unsubscribe = f.service.subscribe(() => { published.push(f.service.state().creationStopped === true) })
     const spy = vi.spyOn(f.control, 'commandForWatcherRoom').mockImplementation(async (command, guard) => {
       if (command.type === 'create-thread' && ++attempt === 1) return { ...f.control.get(), error: 'Codex did not start.' }
       if (command.type === 'create-thread' && attempt === 2) { entered.resolve(); await released.promise }

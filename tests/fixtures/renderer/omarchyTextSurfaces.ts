@@ -10,6 +10,7 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['accent-text', [...room, 'accent-wash']],
   ['accent-surface-text', ['hover-strong']],
   ['activity', ['canvas', 'surface', 'surface-elevated', 'sidebar', 'sidebar-row-selected']],
+  ['working-light', ['canvas', 'surface']],
   ['link', ['surface', 'sidebar', 'selected']],
   ['primary-hover', ['surface', 'sidebar', 'selected']],
   ['warning', ['canvas', 'surface', 'surface-elevated', 'sidebar']],
@@ -27,7 +28,7 @@ export const OMARCHY_CSS_TEXT_PAIRS: ReadonlyArray<readonly [string, readonly st
   ['update-text', ['update-surface']],
   ['terminal-foreground', ['terminal-background', 'terminal-selection']],
   ['effort-text-fill', ['surface-elevated', 'field', 'sidebar', 'sidebar-control']],
-  ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin']],
+  ['provider-ink', ['provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-muse', 'provider-opencode-badge', 'provider-cursor-badge']],
 ]
 /** These color: declarations paint SVG/provider marks only; their children override inherited text. */
-export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-opencode'] as const
+export const OMARCHY_GRAPHIC_COLOR_TOKENS = ['surface', 'primary', 'provider-codex', 'provider-claude', 'provider-grok', 'provider-devin', 'provider-opencode', 'provider-cursor'] as const

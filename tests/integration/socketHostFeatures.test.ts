@@ -12,7 +12,7 @@ import { HOST_FEATURES, hostVersionMismatch, type HostFeature, type HostOperatio
 import { owlFeaturesForTrack, type OwlFeatureId } from '../../src/shared/owlFeatures'
 import { getReleaseTrack } from '../../src/shared/releaseTrack'
 import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
-import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { HostFactsSource, hostMachineReport, type MachineWork } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
@@ -67,21 +67,29 @@ describe('host facts over the socket (#1031)', () => {
     expect((await client.hostFacts()).facts.observedAt).toBe(first.facts.observedAt)
   })
 
-  it('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it', async () => {
+  it.each([true, false])('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it, with Work across machines %s', async live => {
     let free = 9 * 1024 ** 3, at = Date.parse('2026-10-15T12:00:00.000Z')
-    const source = new HostFactsSource({ now: () => new Date(at), readFile: async () => 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
+    const source = new HostFactsSource({ now: () => new Date(at), sleep: async () => undefined,
+      readFile: async path => path === '/proc/meminfo' ? `MemAvailable: ${free / 1024} kB\n` : 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
       os: { platform: () => 'linux', release: () => '6.17.1', version: () => '#1 SMP', machine: () => 'x86_64', totalmem: () => 16 * 1024 ** 3, freemem: () => free, cpus: () => Array.from({ length: 16 }, () => ({})) } })
     const service: HostService = {
       shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
       command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
-      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, [{ status: 'running' }]),
+      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, () => ({ threads: [{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }],
+        deliveries: [{ threadId: 'b', status: 'queued' }] }) as unknown as MachineWork, live),
     }
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     try {
       const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
       const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
       await client.connect()
-      expect(await client.hostFacts()).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      const answer = await client.hostFacts()
+      expect(answer).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      // Its live load and work placed but not started cross the socket with the facts only with Work across machines on
+      // (#1311); with it off the answer is the facts and running threads, as before.
+      if (live) expect(answer).toMatchObject({ placedNotStarted: 1,
+        load: { availableMemoryBytes: 9 * 1024 ** 3, windowStartAvailableMemoryBytes: 9 * 1024 ** 3, cpuBusyPercent: null, memoryPressurePercent: null } })
+      else expect(Object.keys(answer).sort()).toEqual(['facts', 'runningThreads'])
       free = 2 * 1024 ** 3; at += HOST_FACTS_REFRESH_MS - 1
       expect((await client.hostFacts()).facts.freeMemoryBytes).toBe(9 * 1024 ** 3)
       at += 1
@@ -167,14 +175,14 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
 
 describe('host version and features', () => {
   /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
-  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes']
-  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes']
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts']
   /**
    * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
    */
   const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
-    'usage-muse-opencode': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view', 'thread-delete': 'clear-threads' }
+    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view', 'thread-delete': 'clear-threads' }
   const offered = (always: readonly HostFeature[]): HostFeature[] => {
     const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
     return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
@@ -218,6 +226,31 @@ describe('host version and features', () => {
       await expect(other.command({ type: 'queue-client-updates', providers: ['codex'] })).rejects.toMatchObject({ code: 'forbidden' })
       await expect(other.command({ type: 'cancel-client-updates', providers: ['codex'] })).rejects.toMatchObject({ code: 'forbidden' })
     } finally { await phone.close() }
+  })
+
+  it('sends mise’s not-listed failure only to a desktop that accepts it, and the installer’s failure to every other', async () => {
+    const reading = { id: 'claude' as const, installed: '2.1.309', published: '2.1.310', behind: true, channel: 'mise' as const, command: 'mise install claude@2.1.310',
+      canInstall: true, checkedAt: '2026-10-23T23:50:00.000Z', state: 'failed' as const, step: 1, failure: 'not-listed' as const }
+    const service: HostService = {
+      shell: () => ({ ...fixture.host.service.shell(), clientUpdates: [reading] }), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, clientUpdates: true })
+    expect(server.descriptor.features).toContain('client-update-not-listed')
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    const desktop = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(desktop)
+    const session = fixture.host.pairing.signSession(paired.clientId)
+    const older = await rawPeer(server.descriptor.port, session), oldest = await rawPeer(server.descriptor.port, session)
+    try {
+      await desktop.connect()
+      expect(desktop.shell().clientUpdates).toEqual([expect.objectContaining({ channel: 'mise', failure: 'not-listed' })])
+      // A desktop from before this failure knows client updates but would refuse a shell naming a failure it does not know.
+      type Hello = { result: { shell: { clientUpdates: unknown[] } } }
+      const before = await older.call('hello', { op: 'hello', accepts: ['client-updates'] }) as Hello
+      expect(before.result.shell.clientUpdates).toEqual([expect.objectContaining({ channel: 'mise', state: 'failed', failure: 'installer' })])
+      const pre480 = await oldest.call('hello', { op: 'hello', accepts: [] }) as Hello
+      expect(pre480.result.shell.clientUpdates).toEqual([expect.objectContaining({ channel: 'unknown', failure: 'installer' })])
+    } finally { older.frames.close(); oldest.frames.close(); await server.close() }
   })
 
   it('sends the mise channel and the waiting state only to a client that accepts client-updates, and the rest as it knew them (#480)', async () => {

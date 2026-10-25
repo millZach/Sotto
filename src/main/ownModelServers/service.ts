@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
   addRequestSchema, checkRequestSchema, checkSavedRequestSchema, OWN_SERVER_ID_PREFIX, OWN_SERVER_WORDS, ownServerAddress, ownServerListSchema, ownServerSchema,
@@ -34,24 +34,38 @@ export interface OwnServersOpenCode {
   signOut(sourceId: string): Promise<boolean>
 }
 
+/**
+ * DeepSeek Harness as the record reaches it (ADR-0138): a nudge on every save. While its adapter runs, a keyless Add may
+ * land on it alone, connected or not, since it reads the record when it connects and connects only once one is saved.
+ */
+export interface OwnServersDeepSeek {
+  changed(): void
+}
+
 export interface OwnServersOptions {
   /** Sotto's user data folder. */
   readonly directory: string
   /** Sotto's OpenCode, or undefined while it is held off this run. */
   readonly openCode: () => OwnServersOpenCode | undefined
+  /** Sotto's DeepSeek Harness (ADR-0138), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
+  readonly deepSeek?: () => OwnServersDeepSeek | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
   readonly log?: (event: OwnServerEvent) => void
-  /** A new server's ID suffix, which a test fixes. */
-  readonly newId?: () => string
+  /** A new server's ID suffix for its address, which a test fixes. */
+  readonly newId?: (address: string) => string
   /** The clock Check again times a server by, which a test fixes. */
   readonly now?: () => number
 }
 
-const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
-function randomSuffix(): string {
-  return [...randomBytes(10)].map(byte => ID_ALPHABET[byte % ID_ALPHABET.length]).join('')
+/**
+ * A server's ID suffix, from its address as Sotto saves it: the same address always gives the same ID, so a server removed
+ * and added again, such as to give it the right key, is the same model source, and a thread on one of its models carries
+ * on (ADR-0124). Servers saved before keep the random IDs they were given.
+ */
+export function addressSuffix(address: string): string {
+  return createHash('sha256').update(address.toLowerCase()).digest('hex').slice(0, 12)
 }
 /** Why a check, an add or a remove went no further, in the shape every one of their answers shares. */
 interface Refusal { readonly status: 'refused'; readonly reason: OwnServerRefusal; readonly message: string }
@@ -82,6 +96,8 @@ export class OwnServers {
   private async save(servers: OwnServer[]): Promise<void> {
     await this.store.write(servers)
     this.loaded = Promise.resolve(servers)
+    // Every write is an add, a remove, or one of their rollbacks: DeepSeek Harness rebuilds from the new record.
+    try { this.options.deepSeek?.()?.changed() } catch { /* A consumer's trouble never fails the save. */ }
   }
   /** Runs `work` once every add or remove before it has finished. */
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
@@ -143,32 +159,40 @@ export class OwnServers {
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
-    if (!openCode?.running()) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    // A keyless server needs no key kept anywhere, so DeepSeek Harness's adapter can take it on its own (ADR-0138).
+    const keyless = !(request.key?.trim())
+    if (!openCode?.running() && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
+    if (saved) return refusal('already-added', ownServerRefusalWords('already-added', place.host))
     const key = request.key?.trim() || undefined
     const taken = new Set(servers.map(server => server.id))
-    let id: string
-    do id = `${OWN_SERVER_ID_PREFIX}${(this.options.newId ?? randomSuffix)()}`; while (taken.has(id))
+    const base = `${OWN_SERVER_ID_PREFIX}${(this.options.newId ?? addressSuffix)(place.address)}`
+    // Another address that came to the same ID, which twelve hex digits make all but impossible, gets the next free one.
+    let id = base
+    for (let next = 2; taken.has(id); next++) id = `${base}-${next}`
     // A model listed twice is declared once, as OpenCode keys them by ID.
     const models = [...new Map(request.models.map(model => [model.id, model])).values()]
     // Checked whole before it is written, so the record never holds what it could not read back.
     const server: OwnServer = ownServerSchema.parse({ id, name: request.name, address: place.address, keyed: key !== undefined, models })
     await this.save([...servers, server])
-    openCode.outdated()
+    openCode?.outdated()
     if (key !== undefined) {
-      const signedIn = await openCode.signInWithKey(id, key).catch(() => false)
+      // A keyed add passed the gate above only with OpenCode running: it is the one that keeps the key.
+      const keeper = openCode!
+      const signedIn = await keeper.signInWithKey(id, key).catch(() => false)
       if (!signedIn) {
         this.log('own-server-sign-in-failed')
         // OpenCode may have kept the key all the same, such as when its answer was lost; it is asked to forget it while
         // the record still declares the source, so no key is left behind for a source nothing lists.
-        if (!await openCode.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
+        if (!await keeper.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
         // Nothing is kept: the record goes, and the processes started with it are outdated again. A record that cannot be
         // written now still lists the server, without its key, and the answer says so rather than that nothing changed.
         try { await this.save((await this.servers()).filter(item => item.id !== id)) } catch { return refusal('added-partly', OWN_SERVER_WORDS.addPartly(server.name)) }
-        openCode.outdated()
-        void openCode.catalogAgain().catch(() => false)
+        keeper.outdated()
+        void keeper.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
       }
-    } else if (!await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
+    } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
   }

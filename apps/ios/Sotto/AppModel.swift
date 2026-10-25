@@ -16,6 +16,9 @@ extension AppModel {
     /// Whether this computer takes a message while Watcher works (#1229): Send steers into Watcher's turn, or the words go
     /// next as their own turn, and a follow-up waiting for Watcher can be removed. An older one refuses it while Watcher works.
     func offersWatcherSteer(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherSteerFeature) == true }
+    /// Whether this computer's Watcher page names its machines (#1032): the line under Watcher's name and each machine's
+    /// panel. Only a computer with Work across machines on offers it.
+    func offersWatcherMachines(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(WatcherWire.machinesFeature) == true }
     /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
     /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
@@ -72,7 +75,8 @@ extension AppModel {
     }
     /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
     func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
-    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol", with OpenCode's model source when it has one.
+    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol", with OpenCode's model source or Cursor's model maker
+    /// when it has one.
     func watcherModel(_ hostID: String) -> String? {
         guard let current = watcherPage(hostID)?.current else { return nil }
         let model = live[hostID]?.shell?.host.models?.first { $0.id == current.modelId }
@@ -115,6 +119,34 @@ extension AppModel {
                 continue
             }
         } while watcherRereads.contains(hostID)
+    }
+    /// Reads Watcher's page with each machine's facts read afresh (#1032): when the user opens a machine's numbers, or
+    /// Watcher has placed work the line has not been read for. Never on a timer. One at a time on each computer; a request
+    /// during one asks for one more after it, so a placement made meanwhile is still read for. A read that fails leaves the
+    /// last page, whose machines say when they were read.
+    func readWatcherMachines(_ hostID: String) async {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return }
+        #endif
+        guard offersWatcherMachines(hostID), online(hostID) else { return }
+        guard watcherMachineReads.insert(hostID).inserted else { watcherMachineRereads.insert(hostID); return }
+        defer { watcherMachineReads.remove(hostID) }
+        repeat {
+            watcherMachineRereads.remove(hostID)
+            guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+            guard case .ok(let page)? = try? await connection.call(WatcherWire.readMachines, as: WatcherPhoneResult.self),
+                  generations[hostID] == epoch else { continue }
+            applyWatcher(page, from: hostID)
+        } while watcherMachineRereads.contains(hostID)
+    }
+    /// Reads the machines once for each set of Watcher's starts the line has not been read for (#1032), so the line's words
+    /// follow a start. Starts are the page's start receipts; the same set is not read for twice while the app runs.
+    func readWatcherMachinesAfterStarts(_ hostID: String) {
+        guard offersWatcherMachines(hostID), let page = watcherPage(hostID) else { return }
+        let starts = page.receiptGroups.flatMap { $0.rows }.filter { $0.action == "start" }.map(\.operationId).joined(separator: ",")
+        guard !starts.isEmpty, watcherStore.machinesReadFor[hostID] != starts else { return }
+        watcherStore.machinesReadFor[hostID] = starts
+        Task { await readWatcherMachines(hostID) }
     }
     static func watcherUnreadable(_ computer: String) -> String {
         "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again."
@@ -164,7 +196,7 @@ extension AppModel {
     // MARK: Asking Watcher
 
     /// The Watcher box's words live with the other reply boxes, under this key.
-    func watcherDraftKey(_ hostID: String) -> String { hostID + "/watcher" }
+    func watcherDraftKey(_ hostID: String) -> String { PhotoBox.watcher(hostID: hostID).id }
     /// Why the Watcher box can't send now, in a sentence, or nil when it can. A computer that can't be reached says so in
     /// its own banner.
     func watcherSendHeld(_ hostID: String) -> String? {
@@ -175,13 +207,17 @@ extension AppModel {
         if page.needsYou.contains(where: { page.isOwn($0) }) { return "Answer Watcher’s request first." }
         return nil
     }
-    /// Whether the Watcher box holds words it can send now.
+    /// Whether the Watcher box holds something it can send now: words, photos or both, every photo prepared, and photos
+    /// only to a Watcher whose model takes them.
     func canSendToWatcher(_ hostID: String) -> Bool {
-        let text = drafts[watcherDraftKey(hostID)] ?? ""
-        return online(hostID) && watcherSendHeld(hostID) == nil && watcherSending[hostID] == nil
-            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf16.count <= 20_000
+        let box = PhotoBox.watcher(hostID: hostID), photos = self.photos(box)
+        let text = drafts[box.id] ?? ""
+        let written = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return online(hostID) && watcherSendHeld(hostID) == nil && watcherSending[hostID] == nil && !preparingSends.contains(box.id)
+            && (written || !photos.isEmpty) && text.utf16.count <= 20_000
+            && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(box) == .available)
     }
-    /// Sends the box's words to Watcher as the user's own instruction, from this iPhone. While Watcher works, a computer
+    /// Sends the box's words and photos to Watcher as the user's own instruction, from this iPhone. While Watcher works, a computer
     /// that takes it steers them into Watcher's turn, or queues them to go next when it can't (#1229, Zach's pick B); an
     /// older one refuses them, and the box says to update Sotto there. Refused or unconfirmed, the words
     /// go back in the box, or are kept under the conversation when newer words are there, and nothing is sent again on
@@ -189,13 +225,37 @@ extension AppModel {
     /// computer says it took them, through any other words sent in between, so sending them again after an unconfirmed
     /// send can't deliver them twice, and a later page that says Watcher took them clears them.
     func sendToWatcher(_ hostID: String) async {
-        guard canSendToWatcher(hostID), let computer = computer(hostID), let current = watcherPage(hostID)?.current else { return }
-        let key = watcherDraftKey(hostID)
+        guard canSendToWatcher(hostID), computer(hostID) != nil, var current = watcherPage(hostID)?.current else { return }
+        let box = PhotoBox.watcher(hostID: hostID), key = box.id
+        // The words as pressed. A message with photos locks the box from the press until Watcher answers, so nothing typed
+        // or chosen meanwhile joins it, and a message that comes back finds the box as it left it.
         let text = drafts[key] ?? ""
-        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text)
+        var photos = self.photos(box)
+        var images: [StagedImage] = []
+        if !photos.isEmpty {
+            preparingSends.insert(box.id)
+            guard let ready = await readyPhotos(box) else { preparingSends.remove(box.id); return }
+            images = ready
+            // Watcher may have changed or been held while the photos were staged: the message stays in the box.
+            guard online(hostID), watcherSendHeld(hostID) == nil, watcherSending[hostID] == nil, photoSupport(box) == .available,
+                  let now = watcherPage(hostID)?.current, now.target == current.target else {
+                preparingSends.remove(box.id)
+                photoNotices[box.id] = "Your message wasn’t sent. It’s still in the box."
+                return
+            }
+            current = now
+            // As staged: their handles are what their message's photos carry, and what the box gets back.
+            photos = self.photos(box)
+        }
+        guard let computer = computer(hostID) else { preparingSends.remove(box.id); return }
+        // The host holds a draft ID to one packet, its photos' handles included: photos staged again go as another message.
+        let draftID = watcherDrafts[hostID, default: WatcherDrafts()].id(for: text, photos: images.map(\.id))
         watcherSending[hostID] = text; drafts[key] = ""
+        if !photos.isEmpty { watcherSendingPhotos[hostID] = photos; draftPhotos[key] = nil; photoNotices[key] = nil }
         defer {
             watcherSending[hostID] = nil
+            watcherSendingPhotos[hostID] = nil
+            preparingSends.remove(box.id)
             watcherDrafts[hostID]?.end(draftID)
             // The page read after a lost acknowledgement came while the words were still on their way, and may say
             // Watcher took them: settled now, they leave the box.
@@ -204,22 +264,24 @@ extension AppModel {
         #if DEBUG && os(iOS)
         if isUIFixture { await sendToFixtureWatcher(text, on: hostID); watcherDrafts[hostID]?.resolve(draftID); return }
         #endif
-        guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, on: hostID, unconfirmed: false); return }
+        guard let connection = connections[hostID], let epoch = generations[hostID] else { restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false); return }
         let steer = offersWatcherSteer(hostID)
         // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
         // page saying Watcher finished arrives before it.
         let workingAtSend = current.status == "running"
-        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer)
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer, images: images)
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
             // A reply over a connection that has since changed doesn't say what happened to the words.
             guard generations[hostID] == epoch else {
-                feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 return
             }
             switch reply {
             case .ok(_, let state):
                 watcherDrafts[hostID]?.resolve(draftID)
+                // Watcher's conversation draws them from here, under the IDs its message's photos carry, without asking for them.
+                if !photos.isEmpty { photosSent?(photos, ThreadRef(hostID: hostID, threadID: current.target.threadId)) }
                 applyWatcher(state, from: hostID)
             case .refused(let refusal):
                 // A page pushed while the words were on their way may already say Watcher took them or that they wait in
@@ -228,13 +290,15 @@ extension AppModel {
                     watcherDrafts[hostID]?.resolve(draftID)
                     return
                 }
-                restoreWatcherDraft(text, on: hostID, unconfirmed: false)
+                // A refused message's photos are staged again before they go, as a refused reply's are (ADR-0031), unless
+                // the computer can't say whether Watcher took it: sent again, it is then the same message.
+                restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: refusal.code != "DELIVERY_UNCERTAIN")
                 // An older computer refuses a message while Watcher works, in words that don't say why.
                 let busy = !steer && refusal.code == "PROVIDER_UNAVAILABLE" && workingAtSend
                 feedback = busy ? WatcherWords.updateToSteer(name(hostID)) : refusal.message
             }
         } catch let refusal as HostRefusal {
-            restoreWatcherDraft(text, on: hostID, unconfirmed: false)
+            restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: false, restage: true)
             feedback = refusal.localizedDescription
         } catch {
             // Lost on its way, perhaps after Watcher took it. Its part on the wire has ended either way, so the page read
@@ -246,7 +310,7 @@ extension AppModel {
             if watcherPage(hostID)?.delivery(of: draftID) == "accepted" || watcherPage(hostID)?.followup(of: draftID) != nil {
                 watcherDrafts[hostID]?.resolve(draftID)
             } else {
-                feedback = restoreWatcherDraft(text, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
+                feedback = restoreWatcherDraft(text, photos: photos, on: hostID, unconfirmed: true) ? Self.watcherUnconfirmed : Self.watcherUnconfirmedSetAside
                 await readWatcher(hostID)
             }
         }
@@ -255,9 +319,13 @@ extension AppModel {
     static let watcherUnconfirmedSetAside = "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again."
     /// Puts words that didn't reach Watcher, or that it didn't confirm, back in its box. When the user has written
     /// something new there since, they are kept under the conversation instead, to be put back once the box is empty.
-    /// Says whether they went back in the box.
-    @discardableResult private func restoreWatcherDraft(_ text: String, on hostID: String, unconfirmed: Bool) -> Bool {
+    /// Says whether they went back in the box. Photos always go back in the box: it stayed locked while they were away. With
+    /// `restage`, they are staged again before they next go.
+    @discardableResult private func restoreWatcherDraft(_ text: String, photos: [DraftPhoto] = [], on hostID: String, unconfirmed: Bool,
+                                                        restage: Bool = false) -> Bool {
         let key = watcherDraftKey(hostID)
+        let returned = restage ? photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo } : photos
+        if !returned.isEmpty { draftPhotos[key] = (draftPhotos[key] ?? []) + returned }
         let box = drafts[key] ?? ""
         if box.isEmpty || box == text { drafts[key] = text; return true }
         var kept = watcherSetAside[hostID] ?? []
@@ -266,10 +334,16 @@ extension AppModel {
         watcherSetAside[hostID] = kept
         return false
     }
+    /// Whether words kept under the conversation can go back in Watcher's box: once it is empty, and not while a message
+    /// with photos is on its way, whose words and photos come back to the box together if it doesn't go.
+    func canRestoreWatcherWords(on hostID: String) -> Bool {
+        let box = PhotoBox.watcher(hostID: hostID)
+        return (drafts[box.id] ?? "").isEmpty && !preparingSends.contains(box.id)
+    }
     /// Puts words kept under the conversation back in Watcher's box, once it is empty.
     func restoreWatcherWords(_ words: WatcherSetAside, on hostID: String) {
         let key = watcherDraftKey(hostID)
-        guard (drafts[key] ?? "").isEmpty, var kept = watcherSetAside[hostID], let index = kept.firstIndex(of: words) else { return }
+        guard canRestoreWatcherWords(on: hostID), var kept = watcherSetAside[hostID], let index = kept.firstIndex(of: words) else { return }
         drafts[key] = words.text
         kept.remove(at: index)
         watcherSetAside[hostID] = kept.isEmpty ? nil : kept
@@ -284,7 +358,10 @@ extension AppModel {
         guard !taken.isEmpty else { return }
         let key = watcherDraftKey(hostID)
         for sent in taken {
-            if drafts[key] == sent.text { drafts[key] = "" }
+            // Only the whole message leaves the box, its words and photos together: one the user has changed since stays.
+            if drafts[key] == sent.text && (draftPhotos[key] ?? []).map(\.staged?.id) == sent.photos.map(Optional.some) {
+                drafts[key] = ""; draftPhotos[key] = nil
+            }
             if let kept = watcherSetAside[hostID] {
                 let left = kept.filter { $0.text != sent.text }
                 if left != kept { watcherSetAside[hostID] = left.isEmpty ? nil : left }
@@ -830,8 +907,31 @@ struct PhotoSource: Sendable {
     let load: @Sendable () async throws -> Data
 }
 
-/// A photo in a thread's reply box. It is prepared on this iPhone, then staged on the thread's computer,
-/// and stays in memory until the reply is sent or the photo is removed. Nothing is written to disk.
+/// A reply box that takes photos: a thread's, or Watcher's on one computer. Each keeps its own photos, under its own key,
+/// so Watcher's box and its thread's never share them.
+enum PhotoBox: Hashable {
+    case thread(ThreadRef)
+    case watcher(hostID: String)
+    var hostID: String {
+        switch self {
+        case .thread(let ref): return ref.hostID
+        case .watcher(let hostID): return hostID
+        }
+    }
+    /// The box's key in the model's maps: a thread's `ThreadRef.id`, or the key Watcher's words live under.
+    var id: String {
+        switch self {
+        case .thread(let ref): return ref.id
+        case .watcher(let hostID): return hostID + "/watcher"
+        }
+    }
+    /// What the box sends, in the words its notices use.
+    var carrier: String { if case .watcher = self { return "A message to Watcher" }; return "A reply" }
+    var carried: String { if case .watcher = self { return "the message" }; return "the reply" }
+}
+
+/// A photo in a reply box. It is prepared on this iPhone, then staged on the box's computer,
+/// and stays in memory until its message is sent or the photo is removed. Nothing is written to disk.
 struct DraftPhoto: Identifiable {
     let id = UUID()
     var prepared: PreparedPhoto?
@@ -846,6 +946,43 @@ struct DraftPhoto: Identifiable {
     func needsStaging(generation: UUID?) -> Bool {
         staged == nil || stagedGeneration != generation || stagedAt.map { Photos.needsRestaging(stagedAt: $0) } != false
     }
+}
+
+/// Where a file comes from (ADR-0131): its name, the size the Files app gives for it, when it gives one, and its bytes,
+/// read when its turn comes.
+struct FileSource: Sendable {
+    let name: String
+    let sizeBytes: Int?
+    let load: @Sendable () async throws -> Data
+}
+
+/// A file in a thread's reply box. It is read into memory on this iPhone, then staged on the thread's computer in parts,
+/// and stays in memory until its reply is sent or the file is removed. Nothing is written to disk.
+struct DraftFile: Identifiable {
+    let id = UUID()
+    let name: String
+    let mimeType: String
+    /// The size the Files app gave until it is read, then its own.
+    var sizeBytes: Int
+    var bytes: Data?
+    var digest: String?
+    var staged: StagedFile?
+    var stagedAt: Date?
+    var stagedGeneration: UUID?
+    /// The share of it its computer has, from 0 to 1, while it is being sent there.
+    var progress: Double?
+    var reading: Bool { bytes == nil }
+    func needsStaging(generation: UUID?) -> Bool {
+        staged == nil || stagedGeneration != generation || stagedAt.map { Photos.needsRestaging(stagedAt: $0) } != false
+    }
+}
+
+/// What came of asking a thread's computer for a sent file to open.
+enum SentFileOutcome: Equatable {
+    case file(name: String, data: Data)
+    /// The computer no longer keeps it.
+    case notKept
+    case failed
 }
 
 /// A photo's original on its way: whichever of its arrival, its time limit or its removal comes first decides,
@@ -892,6 +1029,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// threads read a summary on the model, which changes far less often.
 @MainActor final class WatcherStore: ObservableObject {
     @Published var pages: [String: WatcherPage] = [:]
+    /// The starts each computer's machines were last read for, so a placement is read for once however often the tab opens.
+    var machinesReadFor: [String: String] = [:]
 }
 
 /// A thread's history as it was last read, and the thread it belongs to.
@@ -973,14 +1112,20 @@ struct HeldDetail {
     }
     @Published private(set) var submitted: [String: String] = [:]
     @Published private(set) var failedReplies: [String: String] = [:]
-    /// Photos in each thread's reply box, by `ThreadRef.id`, in the order they were chosen.
+    /// Photos in each reply box, by `PhotoBox.id`, in the order they were chosen.
     @Published private(set) var draftPhotos: [String: [DraftPhoto]] = [:]
-    /// Why the last photo chosen for a reply box wasn't added, by `ThreadRef.id`.
+    /// Why the last photo chosen for a reply box wasn't added, by `PhotoBox.id`.
     @Published var photoNotices: [String: String] = [:]
     /// The photos of a reply on its way, by operation ID, and of a refused reply, by `ThreadRef.id`.
     @Published private(set) var submittedPhotos: [String: [DraftPhoto]] = [:]
     @Published private(set) var failedPhotos: [String: [DraftPhoto]] = [:]
-    /// Threads whose reply is having its photos staged again before it is sent. A second press finds it here.
+    /// Files in each thread's reply box, by `ThreadRef.id`, in the order they were chosen (ADR-0131); and those of a reply
+    /// on its way, by operation ID, and of a refused reply, by `ThreadRef.id`. Their notices are the photos'.
+    @Published private(set) var draftFiles: [String: [DraftFile]] = [:]
+    @Published private(set) var submittedFiles: [String: [DraftFile]] = [:]
+    @Published private(set) var failedFiles: [String: [DraftFile]] = [:]
+    /// Reply boxes, by `PhotoBox.id`, whose message is having its photos staged again before it is sent, and Watcher's
+    /// until its computer answers. A second press finds it here.
     @Published private(set) var preparingSends: Set<String> = []
     /// Replies, answers and stops on their way: the computer hasn't answered yet, or says it is still
     /// carrying the command out. They read as sending, not as unconfirmed.
@@ -998,6 +1143,9 @@ struct HeldDetail {
     private static let receiptInterval: UInt64 = 2_000_000_000
     private static let receiptReads = 300
     private var stagingTasks: [UUID: Task<Bool, Never>] = [:]
+    private var fileStagingTasks: [UUID: Task<Bool, Never>] = [:]
+    /// Files are read one at a time, so several large files are never read at once.
+    private var fileWork: Task<Void, Never>?
     /// The last large request queued for each computer, which refuses a second while one is on its way.
     private var largeRequests: [String: Task<Void, Never>] = [:]
     /// Photos are prepared one at a time, so several large photos are never decoded at once.
@@ -1026,6 +1174,9 @@ struct HeldDetail {
     @Published private var chosenWatcherHost: String?
     /// Words on their way to Watcher, by computer, shown under the conversation until Watcher takes them.
     @Published private(set) var watcherSending: [String: String] = [:]
+    /// The photos of the message on its way to Watcher, by computer. Watcher's box stays locked meanwhile, so they go back
+    /// in it, with the words, when Watcher refuses them or doesn't confirm them.
+    @Published private(set) var watcherSendingPhotos: [String: [DraftPhoto]] = [:]
     /// Words that didn't reach Watcher, or that it didn't confirm, while newer words were in its box, by computer, oldest
     /// first. Each is offered back under the conversation, to go back in the box once it is empty. Nothing here is sent.
     @Published private(set) var watcherSetAside: [String: [WatcherSetAside]] = [:]
@@ -1046,6 +1197,9 @@ struct HeldDetail {
     /// Computers whose page is being read, and ones asked to read again once that read is done.
     private var watcherReads: Set<String> = []
     private var watcherRereads: Set<String> = []
+    /// Computers whose machines are being read afresh, and ones asked to read them again once that read is done (#1032).
+    private var watcherMachineReads: Set<String> = []
+    private var watcherMachineRereads: Set<String> = []
     /// What each computer's Watcher page held when this iPhone last read it, for Watcher's own alerts.
     private var watcherWatches: [String: WatcherWatch] = [:]
     /// Watcher's permissions, by computer, and threads' watches, by thread, being changed until their computer answers
@@ -1748,14 +1902,30 @@ struct HeldDetail {
     /// Whether the reply box holds something to send and nothing still being made ready: words or photos,
     /// every photo prepared, and none of them on a thread whose model can't take them.
     func canSendReply(_ ref: ThreadRef) -> Bool {
-        let photos = self.photos(ref)
+        let photos = self.photos(ref), files = self.files(ref)
         let written = !(drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty)
+        return canSend(ref) && !preparingSends.contains(ref.id) && (written || !photos.isEmpty || !files.isEmpty)
             && !photos.contains(where: \.preparing) && (photos.isEmpty || photoSupport(ref) == .available)
+            && !files.contains(where: \.reading) && (files.isEmpty || fileSupport(ref) == .available)
     }
-    func photos(_ ref: ThreadRef) -> [DraftPhoto] { draftPhotos[ref.id] ?? [] }
-    func photoSupport(_ ref: ThreadRef) -> PhotoSupport {
-        PhotoSupport(online: online(ref.hostID), thread: thread(ref), host: live[ref.hostID]?.shell?.host, features: live[ref.hostID]?.features ?? [])
+    func photos(_ ref: ThreadRef) -> [DraftPhoto] { photos(.thread(ref)) }
+    func photos(_ box: PhotoBox) -> [DraftPhoto] { draftPhotos[box.id] ?? [] }
+    /// A thread's reply box's files. Watcher's box takes none yet (ADR-0131, October 25 amendment).
+    func files(_ ref: ThreadRef) -> [DraftFile] { draftFiles[ref.id] ?? [] }
+    func files(_ box: PhotoBox) -> [DraftFile] { if case .thread(let ref) = box { return files(ref) }; return [] }
+    /// Whether a thread's reply box can take files: its computer keeps them only where its own `attach-any-file` answer is on.
+    func fileSupport(_ ref: ThreadRef) -> FileSupport {
+        FileSupport(online: online(ref.hostID), features: live[ref.hostID]?.features ?? [])
+    }
+    /// Whether a thread's computer hands its sent files back to open here (`attachment-files`).
+    func opensSentFiles(_ hostID: String) -> Bool { live[hostID]?.features.contains(FileLimits.openingFeature) == true }
+    func photoSupport(_ ref: ThreadRef) -> PhotoSupport { photoSupport(.thread(ref)) }
+    func photoSupport(_ box: PhotoBox) -> PhotoSupport {
+        let hostID = box.hostID, host = live[hostID]?.shell?.host, features = live[hostID]?.features ?? []
+        switch box {
+        case .thread(let ref): return PhotoSupport(online: online(hostID), thread: thread(ref), host: host, features: features)
+        case .watcher: return PhotoSupport(online: online(hostID), watcher: watcherPage(hostID)?.current, host: host, features: features)
+        }
     }
     /// A reply, answer or stop still on its way, as opposed to one its computer couldn't confirm.
     func isSending(_ item: PendingOperation) -> Bool { dispatchingOperations.keys.contains(item.id) || receiptFollowers[item.id] != nil }
@@ -1940,6 +2110,8 @@ struct HeldDetail {
     func waitForPhotos() async {
         await photoWork?.value
         for task in Array(stagingTasks.values) { _ = await task.value }
+        await fileWork?.value
+        for task in Array(fileStagingTasks.values) { _ = await task.value }
     }
     /// Connects every computer that hasn't given up. One that gave up waits for its Try again or Reconnect.
     func reconnectAll() async {
@@ -2206,9 +2378,12 @@ struct HeldDetail {
         failedReplies = failedReplies.filter { !$0.key.hasPrefix(prefix) }
         draftPhotos = draftPhotos.filter { !$0.key.hasPrefix(prefix) }
         failedPhotos = failedPhotos.filter { !$0.key.hasPrefix(prefix) }
+        draftFiles = draftFiles.filter { !$0.key.hasPrefix(prefix) }
+        failedFiles = failedFiles.filter { !$0.key.hasPrefix(prefix) }
         photoNotices = photoNotices.filter { !$0.key.hasPrefix(prefix) }
         submitted = submitted.filter { !gone.contains($0.key) }
         submittedPhotos = submittedPhotos.filter { !gone.contains($0.key) }
+        submittedFiles = submittedFiles.filter { !gone.contains($0.key) }
         gone.forEach { dispatchingOperations[$0] = nil; receiptFollowers[$0] = nil }
         largeRequests[hostID] = nil
         let words = outcome.words(name: saved.name, clientID: saved.pairing.clientId)
@@ -2344,29 +2519,34 @@ struct HeldDetail {
         // The words as pressed. The reply box is locked while its photos are staged, so nothing typed
         // after the press joins a reply already on its way.
         let text = drafts[ref.id] ?? ""
-        var images: [StagedImage] = []
-        if !photos(ref).isEmpty {
+        var images: [StagedImage] = [], stagedFiles: [StagedFile] = []
+        if !photos(ref).isEmpty || !files(ref).isEmpty {
             preparingSends.insert(ref.id)
-            let ready = await readyPhotos(ref)
+            var ready: [StagedImage]? = []
+            if !photos(ref).isEmpty { ready = await readyPhotos(.thread(ref)) }
+            var readyFiles: [StagedFile]? = []
+            if ready != nil, !files(ref).isEmpty { readyFiles = await self.readyFiles(ref) }
             preparingSends.remove(ref.id)
-            guard let ready else { return }
-            images = ready
+            guard let ready, let readyFiles else { return }
+            images = ready; stagedFiles = readyFiles
         }
         // Nothing below waits until the marker is kept, so the checks hold when it is.
-        guard canSend(ref), images.isEmpty || photoSupport(ref) == .available, let computer = self.computer(ref.hostID) else {
-            if !images.isEmpty { photoNotices[ref.id] = "Your reply wasn’t sent. It’s still in the reply box." }
+        guard canSend(ref), images.isEmpty || photoSupport(ref) == .available, stagedFiles.isEmpty || fileSupport(ref) == .available,
+              let computer = self.computer(ref.hostID) else {
+            if !images.isEmpty || !stagedFiles.isEmpty { photoNotices[ref.id] = "Your reply wasn’t sent. It’s still in the reply box." }
             return
         }
         let draft = UUID().uuidString
         // Read at the last moment: a turn that ended while the photos were staged takes the reply now, unqueued.
         let queuing = queuesReply(ref)
         do {
-            let command = try queuing ? Commands.queue(threadID: ref.threadID, text: text, draftID: draft, images: images)
-                : Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images)
+            let command = try queuing ? Commands.queue(threadID: ref.threadID, text: text, draftID: draft, images: images, files: stagedFiles)
+                : Commands.prompt(threadID: ref.threadID, text: text, draftID: draft, images: images, files: stagedFiles)
             let operation = PendingOperation(hostID: ref.hostID, clientID: computer.pairing.clientId, threadID: ref.threadID,
                                              draftID: draft, kind: queuing ? "queue" : "reply")
             try remember(operation); submitted[operation.id] = text; drafts[ref.id] = ""
             if !images.isEmpty { submittedPhotos[operation.id] = photos(ref); photosSent?(photos(ref), ref); draftPhotos[ref.id] = nil }
+            if !stagedFiles.isEmpty { submittedFiles[operation.id] = files(ref); draftFiles[ref.id] = nil }
             photoNotices[ref.id] = nil
             await dispatch(command, operation: operation)
         } catch { feedback = error.localizedDescription }
@@ -2374,126 +2554,134 @@ struct HeldDetail {
 
     // MARK: Photos in the reply box
 
-    /// Adds photos to a thread's reply box. Each is prepared off the main actor and staged on the thread's
-    /// computer in the order chosen, one at a time, so several large photos are never held decoded at once.
-    func attachPhotos(_ ref: ThreadRef, from sources: [PhotoSource]) {
-        guard !sources.isEmpty, photoSupport(ref) == .available, !preparingSends.contains(ref.id) else { return }
-        let room = PhotoLimits.count - photos(ref).count
-        guard room > 0 else { photoNotices[ref.id] = "A reply can carry \(PhotoLimits.count) photos."; return }
+    func attachPhotos(_ ref: ThreadRef, from sources: [PhotoSource]) { attachPhotos(.thread(ref), from: sources) }
+    func removePhoto(_ id: UUID, from ref: ThreadRef) { removePhoto(id, from: .thread(ref)) }
+    /// Adds photos to a reply box. Each is prepared off the main actor and staged on the box's computer in the
+    /// order chosen, one at a time, so several large photos are never held decoded at once.
+    func attachPhotos(_ box: PhotoBox, from sources: [PhotoSource]) {
+        guard !sources.isEmpty, photoSupport(box) == .available, !preparingSends.contains(box.id) else { return }
+        // Files count toward the eight (ADR-0131).
+        let room = PhotoLimits.count - photos(box).count - files(box).count
+        guard room > 0 else { photoNotices[box.id] = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full; return }
         let added = sources.prefix(room).map { (photo: DraftPhoto(), source: $0) }
-        draftPhotos[ref.id, default: []] += added.map { $0.photo }
-        photoNotices[ref.id] = sources.count > room ? "A reply can carry \(PhotoLimits.count) photos. The others weren’t added." : nil
+        draftPhotos[box.id, default: []] += added.map { $0.photo }
+        let others = files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos. The others weren’t added."
+            : "A reply can carry \(PhotoLimits.count) attachments, so the others weren’t added."
+        photoNotices[box.id] = sources.count > room ? others : nil
         let previous = photoWork
         photoWork = Task { [weak self] in
             await previous?.value
-            for item in added { await self?.prepare(item.photo.id, in: ref, from: item.source) }
+            for item in added { await self?.prepare(item.photo.id, in: box, from: item.source) }
         }
     }
-    func removePhoto(_ id: UUID, from ref: ThreadRef) {
-        guard !preparingSends.contains(ref.id) else { return }
-        dropPhoto(id, in: ref, reason: nil)
+    func removePhoto(_ id: UUID, from box: PhotoBox) {
+        guard !preparingSends.contains(box.id) else { return }
+        dropPhoto(id, in: box, reason: nil)
     }
-    private func prepare(_ id: UUID, in ref: ThreadRef, from source: PhotoSource) async {
+    private func prepare(_ id: UUID, in box: PhotoBox, from source: PhotoSource) async {
         // Removed while it waited its turn: nothing is read.
-        guard photo(id, in: ref) != nil else { return }
+        guard photo(id, in: box) != nil else { return }
         do {
-            let prepared = try await preparePhoto(try await loaded(source, for: id), source.name)
-            guard photo(id, in: ref) != nil else { return }
-            let others = photos(ref).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
+            let prepared = try await preparePhoto(try await loaded(source.load, for: id), source.name)
+            guard photo(id, in: box) != nil else { return }
+            let others = photos(box).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
             guard Photos.fits(prepared.byteCount, with: others) else {
-                throw ClientError.rejected("These photos would take the reply over 20 MB, so this one wasn’t added. Send these first, or remove one.")
+                throw ClientError.rejected("These photos would take \(box.carried) over 20 MB, so this one wasn’t added. Send these first, or remove one.")
             }
-            change(id, in: ref) { $0.prepared = prepared }
+            guard others.reduce(prepared.byteCount, +) + files(box).map(\.sizeBytes).reduce(0, +) <= FileLimits.bytesTogether else {
+                throw ClientError.rejected(FileWords.tooLargeInTotal)
+            }
+            change(id, in: box) { $0.prepared = prepared }
             // Staged on its own, so a slow computer never holds up preparing photos for any other reply.
-            _ = staging(id, in: ref)
+            _ = staging(id, in: box)
         } catch {
             // A photo the library couldn't hand over reads as one that couldn't be read.
             let reason = (error as? PhotoPipelineError)?.errorDescription ?? (error as? ClientError)?.errorDescription
-            dropPhoto(id, in: ref, reason: reason ?? PhotoPipelineError.unreadable.errorDescription!)
+            dropPhoto(id, in: box, reason: reason ?? PhotoPipelineError.unreadable.errorDescription!)
         }
     }
     /// A photo's original bytes, or `tooSlow` once the limit passes, so one that never arrives can't hold up the
     /// photos chosen after it, and removing the photo ends the wait at once. A load that ignores cancellation is
     /// left to finish on its own.
-    private func loaded(_ source: PhotoSource, for id: UUID) async throws -> Data {
-        let load = PhotoLoad()
-        photoLoads[id] = load
+    private func loaded(_ load: @escaping @Sendable () async throws -> Data, for id: UUID) async throws -> Data {
+        let waiting = PhotoLoad()
+        photoLoads[id] = waiting
         defer { photoLoads[id] = nil }
         let limit = photoLoadLimit
         return try await withCheckedThrowingContinuation { continuation in
-            load.continuation = continuation
-            load.tasks = [
-                Task { do { load.finish(.success(try await source.load())) } catch { load.finish(.failure(error)) } },
-                Task { do { try await limit(); load.finish(.failure(PhotoPipelineError.tooSlow)) } catch {} },
+            waiting.continuation = continuation
+            waiting.tasks = [
+                Task { do { waiting.finish(.success(try await load())) } catch { waiting.finish(.failure(error)) } },
+                Task { do { try await limit(); waiting.finish(.failure(PhotoPipelineError.tooSlow)) } catch {} },
             ]
         }
     }
     /// A photo's staging, started now unless it is already under way: a photo is never staged twice at once.
-    private func staging(_ id: UUID, in ref: ThreadRef) -> Task<Bool, Never>? {
+    private func staging(_ id: UUID, in box: PhotoBox) -> Task<Bool, Never>? {
         if let running = stagingTasks[id] { return running }
-        guard let prepared = photo(id, in: ref)?.prepared else { return nil }
-        change(id, in: ref) { $0.staging = true }
+        guard let prepared = photo(id, in: box)?.prepared else { return nil }
+        change(id, in: box) { $0.staging = true }
         let task = Task { [weak self] () -> Bool in
-            let staged = await self?.requestStaging(prepared, as: id, in: ref) ?? false
+            let staged = await self?.requestStaging(prepared, as: id, in: box) ?? false
             self?.stagingTasks[id] = nil
-            self?.change(id, in: ref) { $0.staging = false }
+            self?.change(id, in: box) { $0.staging = false }
             return staged
         }
         stagingTasks[id] = task
         return task
     }
-    private func stage(_ id: UUID, in ref: ThreadRef) async -> Bool { await staging(id, in: ref)?.value ?? false }
+    private func stage(_ id: UUID, in box: PhotoBox) async -> Bool { await staging(id, in: box)?.value ?? false }
     /// Stages one prepared photo on its thread's computer. A photo that couldn't reach it stays in the box and
     /// is staged when the reply is sent; one the computer refused for what it is leaves the box, with its reason.
-    private func requestStaging(_ prepared: PreparedPhoto, as id: UUID, in ref: ThreadRef) async -> Bool {
-        let over = generations[ref.hostID]
+    private func requestStaging(_ prepared: PreparedPhoto, as id: UUID, in box: PhotoBox) async -> Bool {
+        let over = generations[box.hostID]
         do {
             let operation = try Photos.stage(name: prepared.name, mimeType: prepared.mimeType, base64: prepared.base64, dimensions: prepared.dimensions)
-            let handle = try await largeRequest(on: ref.hostID) { connection -> StagedImage in
+            let handle = try await largeRequest(on: box.hostID) { connection -> StagedImage in
                 let handle = try await connection.call(operation, as: StagedImage.self)
                 guard handle.valid else { throw ClientError.invalidProtocol }
                 return handle
             }
-            change(id, in: ref) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
+            change(id, in: box) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
             return true
         } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" {
-            dropPhoto(id, in: ref, reason: refusal.failure.message)
+            dropPhoto(id, in: box, reason: refusal.failure.message)
         } catch {}
         return false
     }
     /// Every photo in the reply box with a handle its computer still keeps: staged now if it never got there,
     /// or again if it has been there long enough to be let go. Nil, with the reason, when one can't be.
-    private func readyPhotos(_ ref: ThreadRef) async -> [StagedImage]? {
+    private func readyPhotos(_ box: PhotoBox) async -> [StagedImage]? {
         // Only this reply's own photos are waited for: one still on its way is joined, not sent again.
         // Each photo is read as it is now, not as it was when the loop began: one staged meanwhile is not staged again.
-        for id in photos(ref).map(\.id) {
+        for id in photos(box).map(\.id) {
             // One that left the box while the reply waited, refused by the computer, makes it a reply the user
             // didn't press: nothing is sent, and the box says why.
-            guard let photo = photo(id, in: ref) else { return nil }
-            guard stagingTasks[id] != nil || photo.needsStaging(generation: generations[ref.hostID]) else { continue }
-            guard await stage(id, in: ref) else {
-                if photoNotices[ref.id] == nil {
-                    photoNotices[ref.id] = "A photo couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected."
+            guard let photo = photo(id, in: box) else { return nil }
+            guard stagingTasks[id] != nil || photo.needsStaging(generation: generations[box.hostID]) else { continue }
+            guard await stage(id, in: box) else {
+                if photoNotices[box.id] == nil {
+                    photoNotices[box.id] = "A photo couldn’t reach \(name(box.hostID)), so nothing was sent. Try again when it’s connected."
                 }
                 return nil
             }
         }
-        let current = photos(ref)
+        let current = photos(box)
         let staged = current.compactMap(\.staged)
         return !staged.isEmpty && staged.count == current.count ? staged : nil
     }
-    private func photo(_ id: UUID, in ref: ThreadRef) -> DraftPhoto? { draftPhotos[ref.id]?.first { $0.id == id } }
-    private func change(_ id: UUID, in ref: ThreadRef, _ edit: (inout DraftPhoto) -> Void) {
-        guard let index = draftPhotos[ref.id]?.firstIndex(where: { $0.id == id }) else { return }
-        edit(&draftPhotos[ref.id]![index])
+    private func photo(_ id: UUID, in box: PhotoBox) -> DraftPhoto? { draftPhotos[box.id]?.first { $0.id == id } }
+    private func change(_ id: UUID, in box: PhotoBox, _ edit: (inout DraftPhoto) -> Void) {
+        guard let index = draftPhotos[box.id]?.firstIndex(where: { $0.id == id }) else { return }
+        edit(&draftPhotos[box.id]![index])
     }
     /// Takes a photo out of its reply box, saying why when it wasn't the user's choice.
-    private func dropPhoto(_ id: UUID, in ref: ThreadRef, reason: String?) {
-        guard photo(id, in: ref) != nil else { return }
+    private func dropPhoto(_ id: UUID, in box: PhotoBox, reason: String?) {
+        guard photo(id, in: box) != nil else { return }
         photoLoads[id]?.finish(.failure(CancellationError()))
-        draftPhotos[ref.id]?.removeAll { $0.id == id }
-        if draftPhotos[ref.id]?.isEmpty == true { draftPhotos[ref.id] = nil }
-        photoNotices[ref.id] = reason
+        draftPhotos[box.id]?.removeAll { $0.id == id }
+        if draftPhotos[box.id]?.isEmpty == true { draftPhotos[box.id] = nil }
+        photoNotices[box.id] = reason
     }
     /// One large request at a time on each computer: it refuses a second image, either way, while one is on
     /// its way. Each waits for the one before it, whether that one worked or not.
@@ -2507,10 +2695,161 @@ struct HeldDetail {
         largeRequests[hostID] = Task { _ = try? await task.value }
         return try await task.value
     }
+    // MARK: Files in the reply box (ADR-0131)
+
+    /// Adds files to a thread's reply box. As on the desktop, nothing is attached when one is past the host's limits, and
+    /// that is decided by the sizes the Files app gives, before any is read. Each is then read into memory and staged on the
+    /// thread's computer in the order chosen, one at a time.
+    func attachFiles(_ ref: ThreadRef, from sources: [FileSource]) {
+        guard !sources.isEmpty, fileSupport(ref) == .available, !preparingSends.contains(ref.id) else { return }
+        let others = photos(ref).map { $0.prepared?.byteCount ?? 0 } + files(ref).map(\.sizeBytes)
+        if let refusal = Files.refusal(adding: sources.map { $0.sizeBytes ?? 0 }, to: others) { photoNotices[ref.id] = refusal; return }
+        let added = sources.map { (file: DraftFile(name: $0.name, mimeType: Files.mimeType(forName: $0.name), sizeBytes: $0.sizeBytes ?? 0), source: $0) }
+        draftFiles[ref.id, default: []] += added.map { $0.file }
+        photoNotices[ref.id] = nil
+        let previous = fileWork
+        fileWork = Task { [weak self] in
+            await previous?.value
+            for item in added { await self?.readFile(item.file.id, in: ref, from: item.source) }
+        }
+    }
+    func removeFile(_ id: UUID, from ref: ThreadRef) {
+        guard !preparingSends.contains(ref.id) else { return }
+        dropFile(id, in: ref, reason: nil)
+    }
+    private func readFile(_ id: UUID, in ref: ThreadRef, from source: FileSource) async {
+        // Removed while it waited its turn: nothing is read.
+        guard file(id, in: ref) != nil else { return }
+        do {
+            let bytes = try await loaded(source.load, for: id)
+            guard file(id, in: ref) != nil else { return }
+            guard !bytes.isEmpty else { throw ClientError.rejected(FileWords.empty) }
+            let others = photos(ref).compactMap { $0.prepared?.byteCount } + files(ref).filter { $0.id != id }.map(\.sizeBytes)
+            // The size the Files app gave may not have been the file's own.
+            if let refusal = Files.refusal(adding: [bytes.count], to: others) { throw ClientError.rejected(refusal) }
+            let digest = await Task.detached { Files.digest(bytes) }.value
+            changeFile(id, in: ref) { $0.bytes = bytes; $0.sizeBytes = bytes.count; $0.digest = digest }
+            // Staged on its own, so a slow computer never holds up reading the files chosen after it.
+            _ = fileStaging(id, in: ref)
+        } catch {
+            let reason = (error as? PhotoPipelineError) == .tooSlow ? FileWords.tooSlow : (error as? ClientError)?.errorDescription
+            dropFile(id, in: ref, reason: reason ?? FileWords.unreadable)
+        }
+    }
+    /// A file's staging, started now unless it is already under way: a file is never staged twice at once.
+    private func fileStaging(_ id: UUID, in ref: ThreadRef) -> Task<Bool, Never>? {
+        if let running = fileStagingTasks[id] { return running }
+        guard let file = file(id, in: ref), let bytes = file.bytes, let digest = file.digest else { return nil }
+        changeFile(id, in: ref) { $0.progress = 0 }
+        let task = Task { [weak self] () -> Bool in
+            let staged = await self?.requestFileStaging(file.name, mimeType: file.mimeType, bytes: bytes, digest: digest, as: id, in: ref) ?? false
+            self?.fileStagingTasks[id] = nil
+            self?.changeFile(id, in: ref) { $0.progress = nil }
+            return staged
+        }
+        fileStagingTasks[id] = task
+        return task
+    }
+    /// Stages one file on its thread's computer with `stage-file-part`, its parts in order as one large request, so no other
+    /// upload on this iPhone comes between them: the computer keeps one upload a client. The last part's answer is the
+    /// handle. A file that couldn't reach the computer stays in the box and is staged when the reply is sent; one the
+    /// computer refused for what it is leaves the box, with its reason.
+    private func requestFileStaging(_ name: String, mimeType: String, bytes: Data, digest: String, as id: UUID, in ref: ThreadRef) async -> Bool {
+        let over = generations[ref.hostID]
+        let ranges = Files.partRanges(bytes.count), upload = UUID()
+        do {
+            let handle = try await largeRequest(on: ref.hostID) { [weak self] connection -> StagedFile in
+                for (index, range) in ranges.enumerated() {
+                    // A file removed while it goes stops going; the computer lets the parts it has go.
+                    guard self?.file(id, in: ref) != nil else { throw CancellationError() }
+                    let operation = try await Task.detached {
+                        try Files.stagePart(uploadID: upload, index: index, count: ranges.count, name: name, mimeType: mimeType,
+                                            sizeBytes: bytes.count, digest: digest, data: bytes.subdata(in: range))
+                    }.value
+                    let answer = try await connection.call(operation, as: Optional<StagedFile>.self)
+                    self?.changeFile(id, in: ref) { $0.progress = Double(index + 1) / Double(ranges.count) }
+                    guard index == ranges.count - 1 else { if answer != nil { throw ClientError.invalidProtocol }; continue }
+                    guard let answer, answer.valid, answer.digest == digest, answer.sizeBytes == bytes.count else { throw ClientError.invalidProtocol }
+                    return answer
+                }
+                throw ClientError.invalidProtocol
+            }
+            changeFile(id, in: ref) { $0.staged = handle; $0.stagedAt = Date(); $0.stagedGeneration = over }
+            return true
+        } catch let refusal as HostRefusal where refusal.failure.code == "invalid_request" {
+            dropFile(id, in: ref, reason: refusal.failure.message)
+        } catch {}
+        return false
+    }
+    /// Every file in the reply box with a handle its computer still keeps, as `readyPhotos` does for photos.
+    private func readyFiles(_ ref: ThreadRef) async -> [StagedFile]? {
+        for id in files(ref).map(\.id) {
+            guard let file = file(id, in: ref) else { return nil }
+            guard fileStagingTasks[id] != nil || file.needsStaging(generation: generations[ref.hostID]) else { continue }
+            guard await fileStaging(id, in: ref)?.value ?? false else {
+                if photoNotices[ref.id] == nil {
+                    photoNotices[ref.id] = "A file couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected."
+                }
+                return nil
+            }
+        }
+        let current = files(ref)
+        let staged = current.compactMap(\.staged)
+        return !staged.isEmpty && staged.count == current.count ? staged : nil
+    }
+    private func file(_ id: UUID, in ref: ThreadRef) -> DraftFile? { draftFiles[ref.id]?.first { $0.id == id } }
+    private func changeFile(_ id: UUID, in ref: ThreadRef, _ edit: (inout DraftFile) -> Void) {
+        guard let index = draftFiles[ref.id]?.firstIndex(where: { $0.id == id }) else { return }
+        edit(&draftFiles[ref.id]![index])
+    }
+    /// Takes a file out of its reply box, saying why when it wasn't the user's choice.
+    private func dropFile(_ id: UUID, in ref: ThreadRef, reason: String?) {
+        guard file(id, in: ref) != nil else { return }
+        photoLoads[id]?.finish(.failure(CancellationError()))
+        draftFiles[ref.id]?.removeAll { $0.id == id }
+        if draftFiles[ref.id]?.isEmpty == true { draftFiles[ref.id] = nil }
+        photoNotices[ref.id] = reason
+    }
+    /// A sent file's bytes from the computer that keeps it, for Quick Look (`attachment-file`): part by part, each waiting
+    /// its turn behind other large requests to that computer, and none asked for once nothing `wanted` it. The parts must
+    /// make the file their first one named, its size and digest, or none of it is kept.
+    func sentFile(_ ref: ThreadRef, messageID: String, attachmentID: String, progress: @escaping @MainActor (Double) -> Void,
+                  wanted: @escaping @MainActor () -> Bool) async -> SentFileOutcome {
+        guard opensSentFiles(ref.hostID) else { return .failed }
+        var assembly: SentFileAssembly?
+        repeat {
+            let operation = Files.open(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID, part: assembly?.received ?? 0)
+            let part: SentFilePart?
+            do {
+                part = try await largeRequest(on: ref.hostID) { connection -> SentFilePart? in
+                    guard wanted() else { throw CancellationError() }
+                    return try await connection.call(operation, as: Optional<SentFilePart>.self)
+                }
+            } catch { return .failed }
+            guard let part else { return assembly == nil ? .notKept : .failed }
+            let before = assembly
+            let next = await Task.detached { () -> SentFileAssembly? in
+                guard var whole = before else { return SentFileAssembly(first: part) }
+                return whole.add(part) ? whole : nil
+            }.value
+            guard let next else { return .failed }
+            assembly = next
+            progress(next.progress)
+        } while assembly?.complete == false
+        guard let assembly, let data = await Task.detached(operation: { assembly.finish() }).value else { return .failed }
+        return .file(name: assembly.name, data: data)
+    }
     /// A sent photo's bytes from the computer that keeps it. It waits its turn behind other large requests to
     /// that computer, and is never made if nothing on screen still `wanted` it by then.
     func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, wanted: @escaping @MainActor () -> Bool) async -> Data? {
-        let operation = Photos.preview(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID)
+        // Watcher's thread is never one of this iPhone's own to read: its photos come through Watcher's page.
+        let operation: [String: JSONValue]
+        if let watcher = watcherPage(ref.hostID)?.current?.target, watcher.threadId == ref.threadID,
+           live[ref.hostID]?.features.contains(WatcherWire.photosFeature) == true {
+            operation = WatcherWire.preview(target: watcher, messageID: messageID, attachmentID: attachmentID)
+        } else {
+            operation = Photos.preview(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID)
+        }
         guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
             guard wanted() else { return nil }
             return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
@@ -2570,7 +2909,7 @@ struct HeldDetail {
     }
     private func forgetMarker(_ id: String) throws {
         let next = pending.filter { $0.id != id }; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
-        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id)
+        submitted.removeValue(forKey: id); submittedPhotos.removeValue(forKey: id); submittedFiles.removeValue(forKey: id)
     }
     @discardableResult private func dispatch(_ command: JSONValue, operation: PendingOperation) async -> Shell? {
         let hostID = operation.hostID, current = generations[hostID]
@@ -2727,16 +3066,20 @@ struct HeldDetail {
             let ref = ThreadRef(hostID: operation.hostID, threadID: operation.threadID)
             failedReplies[ref.id] = text
             failedPhotos[ref.id] = submittedPhotos[operation.id]
+            failedFiles[ref.id] = submittedFiles[operation.id]
         }
         try forgetMarker(operation.id)
     }
     func restoreReply(_ ref: ThreadRef) {
-        guard (drafts[ref.id] ?? "").isEmpty, photos(ref).isEmpty, let text = failedReplies[ref.id] else { return }
+        guard (drafts[ref.id] ?? "").isEmpty, photos(ref).isEmpty, files(ref).isEmpty, let text = failedReplies[ref.id] else { return }
         drafts[ref.id] = text; failedReplies.removeValue(forKey: ref.id)
         // Its photos come back too; any the computer may have let go are staged again when it is sent.
         // Staged again when sent: the computer may have refused it because it no longer kept a photo.
         if let photos = failedPhotos.removeValue(forKey: ref.id), !photos.isEmpty {
             draftPhotos[ref.id] = photos.map { var photo = $0; photo.staged = nil; photo.stagedAt = nil; return photo }
+        }
+        if let files = failedFiles.removeValue(forKey: ref.id), !files.isEmpty {
+            draftFiles[ref.id] = files.map { var file = $0; file.staged = nil; file.stagedAt = nil; return file }
         }
     }
     func acknowledgeUnknown(_ id: String) {

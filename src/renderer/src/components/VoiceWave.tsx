@@ -1,9 +1,11 @@
 import { ListeningBars } from './ListeningBars'
+import { levelText } from './LevelMeter'
 import React, { type CSSProperties, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 
 export type VoiceWaveStage = 'idle' | 'listening' | 'processing'
 
-export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'preview' | 'switch'
+export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'preview'
 
 export interface VoiceWaveProps {
   /** What the dictation surface is doing right now. */
@@ -15,7 +17,7 @@ export interface VoiceWaveProps {
   /**
    * `widget` is the floating widget's exact geometry; `deck` the old strip's
    * larger cut; `hero` the Dictate room's centrepiece; `preview` the same at
-   * half size in Settings, Appearance; `switch` the glyph inside the Dictate tab.
+   * half size in Settings, Appearance.
    */
   readonly size?: VoiceWaveSize
   /** Keep the listening wave moving for the whole open stream (microphone test). */
@@ -41,13 +43,13 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
   deck: { width: 4, gap: 4, rest: 6, peak: 26 },
   hero: { width: 14, gap: 12, rest: 14, peak: 130 },
   preview: { width: 7, gap: 6, rest: 7, peak: 65 },
-  switch: { width: 2, gap: 2, rest: 4, peak: 14 },
 }
 
 /** Listening delegates to the same component and CSS as the floating widget.
  * Idle and processing retain the room's resting silhouette.
  */
 export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking = false }: VoiceWaveProps): ReactNode {
+  const { i18n } = useLingui()
   const geometry = GEOMETRY[size]
   const safeValue = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
   const listening = stage === 'listening'
@@ -61,7 +63,7 @@ export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking =
       'aria-valuemin': 0,
       'aria-valuemax': 1,
       'aria-valuenow': safeValue,
-      'aria-valuetext': `${Math.round(safeValue * 100)} percent`,
+      'aria-valuetext': levelText(safeValue, i18n.locale),
     }
     : { 'aria-hidden': true as const }
   const style = {

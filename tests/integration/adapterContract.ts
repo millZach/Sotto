@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, type TestContext } from 'vitest'
-import type { AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
+import type { AgentHost, AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
+import { ThreadMap, threadMapDifferences, verifyingThreadChanges, type AgentHostChanges } from '../../src/main/agents/threadChanges'
 import { lendSendStages, SendStageClock } from '../../src/main/agents/sendStages'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import type { AgentActivity } from '../../src/shared/agentActivity'
@@ -13,7 +14,25 @@ import { PROVIDER_PROFILES } from '../../src/shared/providerProfile'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
 import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
-import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
+import { handleOf, PIXEL_PNG, promptImageOf } from '../fixtures/stagedImages'
+import { tinyPdf } from '../fixtures/tinyPdfs'
+import { attachedFileRelativePath } from '../../src/main/agents/attachedFiles'
+
+/** The file an adapter keeps its threads' saved records in (a "-threads.json" file), found by the thread it holds. */
+async function savedRecordOf(root: string, threadId: string): Promise<string> {
+  const pending = [root]
+  for (let depth = 0; depth < 4 && pending.length; depth++) {
+    for (const folder of pending.splice(0)) {
+      const entries = await readdir(folder, { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        const path = join(folder, entry.name)
+        if (entry.isDirectory() && entry.name !== 'node_modules') pending.push(path)
+        else if (entry.isFile() && entry.name.endsWith('-threads.json') && threadId in (JSON.parse(await readFile(path, 'utf8').catch(() => '{}')) as object)) return path
+      }
+    }
+  }
+  throw new Error('No saved record of the thread was found under the fixture\'s folder.')
+}
 
 /** Create a settled thread before a contract test acts on its provider session. */
 export async function createContractThread(f: Pick<AdapterFixture, 'host' | 'projectId' | 'modelId'>, title: string): Promise<string> {
@@ -26,6 +45,35 @@ export async function createContractThread(f: Pick<AdapterFixture, 'host' | 'pro
   return id
 }
 
+/**
+ * One form of an adapter's thread changes, held in a thread map as a layer above will hold it (ADR-0016, #925). The
+ * adapter's activity snapshot of the same form is subscribed first, so it arrives before the change from the same emit,
+ * and with `verify` the map is checked against it after every publication. A difference is kept for the test, not thrown
+ * into the adapter's emit.
+ */
+export function watchThreadChanges(host: AgentHost, historyFromEvents: boolean, verify: boolean) {
+  let latest: AgentHostSnapshot | undefined
+  const offSnapshots = host.subscribeActivitySnapshots!(snapshot => { latest = snapshot }, { historyFromEvents })
+  const map = new ThreadMap({ wholeOf: () => latest!, verify })
+  const received: AgentHostChanges[] = []
+  const drift: string[] = []
+  const subscription = host.subscribeActivityChanges!(changes => {
+    received.push(changes)
+    try { if (map.apply(changes) === 'resync') subscription.resync() }
+    catch (error) { drift.push(`${historyFromEvents ? 'with history from events' : 'with messages'}: ${error instanceof Error ? error.message : String(error)}`) }
+  }, { historyFromEvents })
+  return {
+    map, received, drift,
+    latest: () => latest,
+    /** Whether a publication after the first `since` upserted thread `id`. */
+    upserted: (id: string, since: number) => received.slice(since).some(changes => changes.upserts.some(record => record.id === id)),
+    removed: (id: string, since: number) => received.slice(since).some(changes => changes.removals.includes(id)),
+    /** How the map differs from the last activity snapshot. */
+    differences: () => latest ? threadMapDifferences(map, latest) : ['no activity snapshot was published'],
+    stop: () => { subscription(); offSnapshots() },
+  }
+}
+
 /** New provider adapters must pass these behavioural checks with observable fake effects. */
 export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>, skips: AdapterContractSkips): void {
   describe(`${name} thread interface contract`, () => {
@@ -34,6 +82,8 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
     /** Every thread event this adapter published, when it publishes any (issue #120). */
     let events: ThreadHostEvent[]
     let unsubscribeEvents: (() => void) | undefined
+    /** With SOTTO_VERIFY_THREAD_CHANGES=1, both forms of the thread changes, checked through every case (#925). */
+    let verifying: ReturnType<typeof watchThreadChanges>[] = []
     const kinds = (id = sessionId): ThreadEventKind[] => events.filter(event => event.threadId === id).map(event => event.event.kind)
     const added = (id = sessionId) => events.filter(event => event.threadId === id && event.event.kind === 'message-added')
       .map(event => (event.event as Extract<ThreadHostEvent['event'], { kind: 'message-added' }>).message)
@@ -53,8 +103,15 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f.host.observeThreads?.([sessionId])
       events = []
       unsubscribeEvents = f.host.subscribeEvents?.(event => events.push(event))
+      if (verifyingThreadChanges() && f.host.subscribeActivityChanges && f.host.subscribeActivitySnapshots) verifying = [false, true].map(form => watchThreadChanges(f.host, form, true))
     })
-    afterEach(async () => { unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup() })
+    afterEach(async () => {
+      const drift = verifying.flatMap(watch => watch.drift)
+      for (const watch of verifying) watch.stop()
+      verifying = []
+      unsubscribeEvents?.(); unsubscribeEvents = undefined; const previous = f; f = undefined!; await previous?.cleanup()
+      expect(drift, 'A thread map fed this adapter\'s thread changes came to differ from its activity snapshot.').toEqual([])
+    })
     it('can compact exactly when its provider profile says it compacts (ADR-0095)', async context => {
       if (!f.providerId) { context.skip(); return }
       const { capabilities } = await f.host.snapshot()
@@ -136,6 +193,85 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         expect((await thread()).messages.map(message => message.id)).toContain('own-message')
       } finally { offEvents(); offWhole() }
     })
+    it('publishes every change to a thread as an upsert of it, keeping a thread map equal to the activity snapshot after each (#925)', withFixtureSkip(skips.activitySnapshots), async () => {
+      expect(f.host.subscribeActivityChanges, 'Every adapter publishes thread changes beside its activity snapshots.').toBeTypeOf('function')
+      const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
+      const shown = (form = forms[0]!) => form.latest()?.threads.find(t => t.id === sessionId)
+      try {
+        // Each step changes the thread; once the activity snapshot shows it, both forms upserted it since the step began.
+        const step = async (act: () => Promise<unknown>, done: () => boolean): Promise<void> => {
+          const since = forms.map(form => form.received.length)
+          await act()
+          await expect.poll(done).toBe(true)
+          for (const [index, form] of forms.entries()) expect(form.upserted(sessionId, since[index]!)).toBe(true)
+        }
+        await step(() => send(), () => shown()?.status === 'running' && shown()!.messages.some(m => m.id === 'own-message'))
+        // A provider with no question route (DeepSeek Harness) shows its one kind of request, a permission, instead.
+        await step(() => skips.questions ? f.driver.raisePermission(sessionId, 'Run build?') : f.driver.raiseQuestion(sessionId, 'Which color?'), () => shown()?.requests.length === 1)
+        const request = shown()!.requests[0]!
+        await step(() => f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: skips.questions ? '' : 'Blue', ...(skips.questions ? { approved: false } : {}) }), () => shown()?.requests.length === 0)
+        await step(() => f.driver.completeTurn(sessionId, 'Completed reply'), () => shown()?.status === 'idle'
+          && (shown(forms[1])?.summary?.lastAssistant?.text ?? '').includes('Completed reply'))
+        for (const form of forms) {
+          expect(form.drift).toEqual([])
+          expect(form.differences()).toEqual([])
+          expect(form.received[0]).toMatchObject({ whole: true })
+          // Numbered one after another: nothing was missed.
+          expect(form.received.map(changes => changes.sequence)).toEqual(form.received.map((_, index) => form.received[0]!.sequence + index))
+        }
+      } finally { for (const form of forms) form.stop() }
+    })
+    it('keeps a thread map equal to the activity snapshot from before a thread is first created or read (#925)', withFixtureSkip(skips.activitySnapshots), async () => {
+      // Watching starts before the new thread exists, so whatever the adapter builds lazily the first time it creates or
+      // reads the thread (a held message window, a summary) is published through the change as well as the snapshot.
+      const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
+      const shown = (form = forms[0]!, id: string = fresh) => form.latest()?.threads.find(t => t.id === id)
+      const fresh = randomUUID()
+      try {
+        await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: fresh, projectId: f.projectId, modelId: f.modelId, title: 'Fresh thread' })
+        await expect.poll(() => forms.every(form => form.map.has(fresh)), { timeout: 12_000 }).toBe(true)
+        // More publications, so a thread read differently the second time shows it. The question shows before the next
+        // driver action is written: a fake reads one action at a time from one file, and an action written while one of its
+        // hosts is still taking the question can be removed with it, so the turn below would never end.
+        await (skips.questions ? f.driver.raisePermission(sessionId, 'Another thread asks') : f.driver.raiseQuestion(sessionId, 'Another thread asks'))
+        await expect.poll(() => shown(forms[0], sessionId)?.requests.length).toBe(1)
+        f.host.observeThreads?.([sessionId, fresh])
+        await f.host.execute({ type: 'send', threadId: fresh, commandId: randomUUID(), messageId: 'fresh-message', text: 'Synthetic prompt' })
+        await expect.poll(() => shown()?.messages.some(m => m.id === 'fresh-message') === true).toBe(true)
+        await f.driver.completeTurn(fresh, 'Completed reply')
+        await expect.poll(() => shown()?.status === 'idle' && (shown(forms[1])?.summary?.lastAssistant?.text ?? '').includes('Completed reply')).toBe(true)
+        for (const form of forms) {
+          expect(form.drift).toEqual([])
+          expect(form.differences()).toEqual([])
+        }
+      } finally { for (const form of forms) form.stop() }
+    })
+    it('publishes a thread that went as a removal of it (#925)', withFixtureSkip(skips.activitySnapshots), async () => {
+      const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
+      try {
+        // A turn, settled before anything else, so the maps hold the thread before it goes and nothing still saves it.
+        await send()
+        await f.driver.completeTurn(sessionId, 'Completed reply')
+        await expect.poll(() => forms.every(form => form.map.get(sessionId)?.status === 'idle')).toBe(true)
+        // The thread goes the way an adapter loses one: its saved record is gone when it connects again.
+        const record = await savedRecordOf(f.root, sessionId)
+        // A connection waits for what the last one still had to save, so once one has finished nothing is left to put
+        // the record back after it is taken out.
+        await f.host.connect()
+        await f.host.disconnect()
+        const saved = JSON.parse(await readFile(record, 'utf8')) as Record<string, unknown>
+        delete saved[sessionId]
+        await writeFile(record, JSON.stringify(saved), 'utf8')
+        const since = forms.map(form => form.received.length)
+        await f.host.connect()
+        await expect.poll(() => forms.every(form => form.latest()?.threads.every(t => t.id !== sessionId) === true && !form.map.has(sessionId)), { timeout: 12_000 }).toBe(true)
+        for (const [index, form] of forms.entries()) {
+          expect(form.removed(sessionId, since[index]!)).toBe(true)
+          expect(form.drift).toEqual([])
+          expect(form.differences()).toEqual([])
+        }
+      } finally { for (const form of forms) form.stop() }
+    })
     it('hands a thread refresh back without messages to a caller that keeps history from events, and with them to any other (#368)', withFixtureSkip(skips.refreshThread ?? skips.threadEvents), async () => {
       await send()
       await f.driver.completeTurn(sessionId, 'Completed reply')
@@ -197,6 +333,51 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         .toEqual([{ id: handle.id, name: handle.name, mimeType: handle.mimeType, sizeBytes: handle.sizeBytes }])
       expect(JSON.stringify(await thread())).not.toContain(base64)
     })
+    it('saves an attached file in the working folder and names it to the provider, with a PDF in the prompt where it reads one, and the thread shows only the user’s words (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
+      const notes = Buffer.from('Contract notes\nsecond line\n'); const pdf = tinyPdf(1)
+      const attachments = [promptImageOf(notes, 'contract-file', 'Contract notes.txt', 'text/plain'), promptImageOf(pdf, 'contract-pdf', 'Contract.pdf', 'application/pdf')]
+      const text = 'Read the attached files'
+      expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'file-message', text, attachments })).toEqual({ accepted: true })
+      // Each file is in the thread's folder with its exact bytes, ignored by Git.
+      const paths = attachments.map(file => attachedFileRelativePath(file.digest, file.name))
+      expect(paths).toEqual([expect.stringMatching(/^\.sotto\/attachments\/[0-9a-f]{12}\/Contract-notes\.txt$/u), expect.stringMatching(/\/Contract\.pdf$/u)])
+      for (const [index, bytes] of [notes, pdf].entries()) expect(await readFile(join(f.root, ...paths[index]!.split('/')))).toEqual(bytes)
+      expect(await readFile(join(f.root, '.sotto', 'attachments', '.gitignore'), 'utf8')).toBe('*\n')
+      // The provider heard the note naming both, and the PDF itself only where its model reads one.
+      await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('<sotto-attached-files>')
+      const heard = JSON.stringify(await f.driver.requests())
+      for (const path of paths) expect(heard).toContain(path)
+      expect(heard.includes(pdf.toString('base64'))).toBe(f.nativePdf === true)
+      expect(heard).not.toContain(notes.toString('base64'))
+      // The thread records the user's words and the handles' references, never the note or the bytes.
+      const shown = async () => (await thread()).messages.find(message => message.id === 'file-message')
+      await expect.poll(async () => (await shown())?.text).toBe(text)
+      expect((await shown())?.attachments).toEqual(attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })))
+      expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
+      if (skips.restart) return
+      // Read back from the provider's own history after a restart, the message is still the user's words alone.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      await expect.poll(async () => (await shown())?.text).toBe(text)
+      expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
+    })
+    it('shows a prompt the user typed in the note’s shape in full when it carries no attached file (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
+      // The plan's example, pasted as a prompt with no attachments: only a note Sotto added comes off.
+      const note = ['<sotto-attached-files>', 'The user attached these files. They are saved in this working folder:',
+        '- .sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf (quarterly-report.pdf, PDF, 2.4 MB)', '</sotto-attached-files>'].join('\n')
+      const shown = async (id: string) => (await thread()).messages.find(message => message.id === id)?.text
+      for (const [messageId, text] of [['typed-note', note], ['typed-words-and-note', `Is this how it looks?\n\n${note}`]] as const) {
+        expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId, text })).toEqual({ accepted: true })
+        await expect.poll(async () => shown(messageId)).toBe(text)
+        await f.driver.completeTurn(sessionId, `Reply to ${messageId}`)
+        await expect.poll(async () => (await thread()).status).toBe('idle')
+      }
+      if (skips.restart) return
+      // Read back from the provider's own history after a restart, it is still all the user wrote.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      await expect.poll(async () => shown('typed-note')).toBe(note)
+      await expect.poll(async () => shown('typed-words-and-note')).toBe(`Is this how it looks?\n\n${note}`)
+      expect((await thread()).messages.filter(message => message.role === 'user' && message.text.includes('sotto-attached-files'))).toHaveLength(2)
+    })
     it('cancels a running turn', async () => {
       await send()
       expect(await f.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: sessionId })).toEqual({ accepted: true })
@@ -219,7 +400,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       expect((await thread()).backgroundWork ?? []).toEqual([])
     })
-    it('routes a question and delivers its answer', async () => {
+    it('routes a question and delivers its answer', withFixtureSkip(skips.questions), async () => {
       await send(); await f.driver.raiseQuestion(sessionId, 'Which color?')
       await expect.poll(async () => (await thread()).requests.length).toBe(1)
       const request = (await thread()).requests[0]!

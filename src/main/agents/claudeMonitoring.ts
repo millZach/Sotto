@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { MAX_AGENT_MONITORS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork, type AgentMonitoringTask,
+import { BACKGROUND_WORK_LABELS, MAX_AGENT_MONITORS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork, type AgentMonitoringTask,
   type BackgroundWorkType } from '../../shared/agentMonitoring'
 import { object, type ClaudeFrame } from './claudeProtocol'
 
@@ -15,7 +15,6 @@ const workTypes = new Map<string, BackgroundWorkType>([
   ['local_workflow', 'workflow'], ['workflow', 'workflow'], ['local_agent', 'subagent'],
   ['in_process_teammate', 'teammate'], ['remote_agent', 'remote-agent'], ['local_bash', 'command'],
 ])
-const workLabels: Record<BackgroundWorkType, string> = { workflow: 'Workflow', subagent: 'Subagent', teammate: 'Teammate', 'remote-agent': 'Remote agent', command: 'Background command' }
 const endedStatuses = new Set(['completed', 'failed', 'killed', 'stopped', 'cancelled', 'interrupted'])
 const label = (value: unknown): string | undefined => typeof value === 'string'
   ? value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, MAX_MONITOR_LABEL) || undefined : undefined
@@ -92,7 +91,7 @@ export class ClaudeMonitoring {
       if (!previous && kept >= (work ? MAX_BACKGROUND_WORK : MAX_AGENT_MONITORS)) return
       this.tasks.set(taskId, {
         id: previous?.id ?? randomUUID(), work,
-        label: label(frame.description) ?? (work ? workLabels[work] : 'Background process'),
+        label: label(frame.description) ?? (work ? BACKGROUND_WORK_LABELS[work] : 'Background process'),
         active: status === undefined || status === 'running',
         foreground: frame.is_backgrounded === false,
         startedAt: previous?.startedAt ?? new Date().toISOString(),

@@ -1,8 +1,12 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import type { FileWorkspace } from '../../../shared/files'
 import type { TerminalBridge, TerminalEvent, TerminalPlace, TerminalSession, TerminalSnapshot } from '../../../shared/terminal'
 import { terminalImageSizeError } from '../../../shared/terminal'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
+import type { LaterWords } from '../features/settings/laterWords'
+import { errorWords, ownError, type ToolsNotice } from './toolsWords'
 
 /** What the store needs from a rendered terminal. The xterm implementation lives in terminalView.ts. */
 export interface TerminalViewLike {
@@ -22,8 +26,8 @@ export interface TerminalViewLike {
 export interface TerminalViewHandlers {
   readonly onInput: (data: string) => void
   readonly onInterrupt: () => void
-  /** Copy feedback, shown by the surface that owns this terminal. */
-  readonly onNotice?: ((message: string | null) => void) | undefined
+  /** Copy feedback, shown by the surface that owns this terminal in the interface language. */
+  readonly onNotice?: ((words: MessageDescriptor | null) => void) | undefined
   /** Reserve a paste's input order immediately, while its PNG conversion may still be pending. */
   readonly onPasteImage?: ((dataUrl: string | Promise<string | null>) => void) | undefined
   /** A key the page acts on: the terminal leaves it to the page instead of sending it to the shell. */
@@ -45,8 +49,8 @@ export interface ThreadTerminals {
   readonly activeSessionId: string | null
   /** A create, reopen or close is on its way. */
   readonly busy: boolean
-  /** The last action that failed, in words. */
-  readonly notice: string | null
+  /** The last action that failed, kept as words to show in the interface language (`shownNotice`). */
+  readonly notice: ToolsNotice | null
 }
 
 type OutputEvent = Extract<TerminalEvent, { type: 'output' }>
@@ -63,14 +67,14 @@ interface SessionRecord {
   /** A snapshot main returned before the session had a view (create, reopen); the view replays it when it first mounts. */
   pending: TerminalSnapshot | null
   size: { cols: number; rows: number } | null
-  loadError: string | null
+  loadError: LaterWords | null
   inputTail: Promise<void>
   inputVersion: number
   inputSequence: number
   closing: boolean
 }
 
-const unavailable: ToolsError = { code: 'unavailable', message: 'Terminal is not available in this window.' }
+const unavailable = ownError('unavailable', msg`Terminal is not available in this window.`)
 const ORPHAN_LIMIT = 256
 
 /**
@@ -103,7 +107,7 @@ export class TerminalStore {
     this.capacity = capacity
     this.emit()
   }
-  loadError(sessionId: string): string | null { return this.records.get(sessionId)?.loadError ?? null }
+  loadError(sessionId: string): LaterWords | null { return this.records.get(sessionId)?.loadError ?? null }
   replaying(sessionId: string): boolean { return this.records.get(sessionId)?.replaying ?? false }
 
   /** Show a thread's sessions: lists them from main, keeping the one that was active. */
@@ -129,20 +133,35 @@ export class TerminalStore {
     this.setThread({ ...latest, workspace, status: 'ready', error: null, sessions, activeSessionId: active })
   }
 
+  /** Drops the last failure's words, such as when its drawer is hidden, so they do not greet the next opening. */
+  clearNotice(threadId: string): void {
+    if (this.threads.get(threadId)?.notice) this.patch(threadId, { notice: null })
+  }
+
   select(threadId: string, sessionId: string): void {
     const current = this.threads.get(threadId)
     if (current?.sessions.some(session => session.id === sessionId)) this.patch(threadId, { activeSessionId: sessionId })
   }
 
-  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }): Promise<void> {
+  /**
+   * Starts a new shell, true once main has. With `run`, a reply's command (ADR-0139), main types it into the new shell
+   * itself, so nothing here writes it and a snapshot replay cannot drop it. The thread must be listed first. `busy` is
+   * set before the first wait, so a drawer opened alongside starts no second shell of its own.
+   */
+  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }, run?: string): Promise<boolean> {
     const target = this.target(threadId)
-    if (!bridge || !target) return
+    if (!bridge || !target) {
+      // A press always gets an answer: a Run that cannot start says so rather than quietly going back to idle.
+      if (run !== undefined) this.patch(threadId, { notice: { words: msg`The command did not run. Sotto could not reach this thread’s terminals. Try again.` } })
+      return false
+    }
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, 'Could not start a terminal.'); return }
+    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}), ...(run === undefined ? {} : { run }) }))
+    if (!result.ok) { this.fail(bridge, threadId, result.error, run === undefined ? msg`Could not start a terminal.` : msg`The command did not run.`); return false }
     this.adopt(threadId, result.value)
     this.patch(threadId, { busy: false, activeSessionId: result.value.session.id })
+    return true
   }
 
   /** A session that exited or ended with the app gets a new shell in the same place. Its old output is not restored. */
@@ -158,7 +177,7 @@ export class TerminalStore {
     const result = await settle(bridge.reopen({ ...target, sessionId }))
     if (!result.ok) {
       record.replaying = false
-      this.fail(bridge, threadId, result.error, 'Could not reopen this terminal.')
+      this.fail(bridge, threadId, result.error, msg`Could not reopen this terminal.`)
       return
     }
     if (result.value.session.id !== sessionId) this.release(sessionId)
@@ -175,7 +194,7 @@ export class TerminalStore {
     const result = await settle(bridge.close({ ...target, sessionId }))
     if (!result.ok && result.error.code !== 'session-unavailable') {
       if (record && this.records.get(sessionId) === record) { record.closing = false; record.view?.setInputEnabled(this.running(threadId, sessionId)) }
-      this.fail(bridge, threadId, result.error, 'Could not end this terminal.'); return
+      this.fail(bridge, threadId, result.error, msg`Could not end this terminal.`); return
     }
     this.removeSession(threadId, sessionId)
     this.patch(threadId, { busy: false })
@@ -197,7 +216,7 @@ export class TerminalStore {
         if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
         if (!result.ok) {
           record.inputVersion++
-          this.fail(bridge, threadId, result.error, 'Terminal input stopped. Check the command before trying again.')
+          this.fail(bridge, threadId, result.error, msg`Terminal input stopped. Check the command before trying again.`)
           return
         }
       }
@@ -226,7 +245,7 @@ export class TerminalStore {
   attach(bridge: TerminalBridge | undefined, threadId: string, sessionId: string, container: HTMLElement, factory: TerminalViewFactory): TerminalViewLike | null {
     const record = this.ensureRecord(threadId, sessionId)
     if (!record.view) {
-      let copyNotice: string | null = null
+      let copyNotice: ToolsNotice | null = null
       record.view = factory({
         onInput: data => this.write(bridge, threadId, sessionId, data),
         onInterrupt: () => this.interrupt(bridge, threadId, sessionId),
@@ -239,17 +258,19 @@ export class TerminalStore {
           record.inputTail = record.inputTail.then(async () => {
             const image = await Promise.resolve(dataUrl).catch(() => null)
             if (this.records.get(sessionId) !== record || record.inputVersion !== version || record.replaying || record.closing || !this.running(threadId, sessionId) || this.target(threadId)?.workspaceId !== target.workspaceId) return
-            const error = image ? terminalImageSizeError(image) : { code: 'invalid-request' as const, message: 'The clipboard image could not be read.' }
+            const error = image ? terminalImageSizeError(image) : ownError('invalid-request', msg`The clipboard image could not be read.`)
             const result = error ? { ok: false as const, error } : await settle(Promise.resolve().then(() => bridge.pasteImage({ ...target, sessionId, dataUrl: image! })))
             if (this.records.get(sessionId) !== record || record.inputVersion !== version) return
             if (!result.ok) {
               record.inputVersion++
-              const discarded = record.inputSequence > sequence ? ' Later queued input was discarded.' : ''
-              this.fail(bridge, threadId, result.error, `The image could not be pasted.${discarded} Check the command before trying again.`)
+              this.fail(bridge, threadId, result.error, record.inputSequence > sequence
+                ? msg`The image could not be pasted. Later queued input was discarded. Check the command before trying again.`
+                : msg`The image could not be pasted. Check the command before trying again.`)
             }
           })
         },
-        onNotice: notice => {
+        onNotice: words => {
+          const notice = words === null ? null : { words }
           if (notice !== null || this.thread(threadId)?.notice === copyNotice) this.patch(threadId, { notice })
           copyNotice = notice
         },
@@ -276,7 +297,7 @@ export class TerminalStore {
     const record = this.records.get(sessionId)
     const target = this.target(threadId)
     if (!record) return
-    if (!bridge || !target) { record.loadError = unavailable.message; this.emit(); return }
+    if (!bridge || !target) { record.loadError = errorWords(unavailable); this.emit(); return }
     this.listen(bridge)
     record.replaying = true
     record.loadError = null
@@ -288,7 +309,7 @@ export class TerminalStore {
     if (this.records.get(sessionId) !== record) return
     if (!result.ok) {
       record.replaying = false
-      record.loadError = result.error.code === 'session-unavailable' ? 'This terminal is no longer available.' : 'The terminal output could not load.'
+      record.loadError = result.error.code === 'session-unavailable' ? msg`This terminal is no longer available.` : msg`The terminal output could not load.`
       if (result.error.code === 'session-unavailable') void this.activate(bridge, threadId)
       this.emit()
       return
@@ -425,8 +446,8 @@ export class TerminalStore {
     return workspace ? { threadId, workspaceId: workspace.workspaceId } : null
   }
 
-  private fail(bridge: TerminalBridge, threadId: string, error: ToolsError, words: string): void {
-    this.patch(threadId, { busy: false, notice: `${words} ${error.message}`.trim() })
+  private fail(bridge: TerminalBridge, threadId: string, error: ToolsError, words: MessageDescriptor): void {
+    this.patch(threadId, { busy: false, notice: { words, detail: errorWords(error) } })
     if (error.code === 'workspace-changed' || error.code === 'session-unavailable') void this.activate(bridge, threadId)
   }
 
@@ -444,7 +465,7 @@ export class TerminalStore {
 }
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
-  try { return await request } catch { return { ok: false, error: { code: 'unavailable', message: 'Sotto did not answer.' } } }
+  try { return await request } catch { return { ok: false, error: ownError('unavailable', msg`Sotto did not answer.`) } }
 }
 
 export function useThreadTerminals(store: TerminalStore, threadId: string | null): ThreadTerminals | undefined {
@@ -455,10 +476,13 @@ export function useThreadTerminals(store: TerminalStore, threadId: string | null
 /** How a session reads in its tab and status line. */
 export function sessionStatusText(session: TerminalSession): string {
   switch (session.status) {
-    case 'running': return 'Running'
-    case 'exited': return session.exitCode === null ? 'Exited' : `Exited with code ${session.exitCode}`
-    case 'interrupted': return 'Ended when Sotto closed'
-    default: return 'Could not start'
+    case 'running': return t({ message: 'Running', context: 'terminal', comment: 'A terminal\'s shell is running.' })
+    case 'exited': {
+      const code = session.exitCode
+      return code === null ? t({ message: 'Exited', comment: 'A terminal\'s shell has exited.' }) : t({ message: `Exited with code ${code}`, comment: '{code} is the shell\'s exit code, a number.' })
+    }
+    case 'interrupted': return t`Ended when Sotto closed`
+    default: return t({ message: 'Could not start', comment: 'A terminal\'s shell could not start.' })
   }
 }
 

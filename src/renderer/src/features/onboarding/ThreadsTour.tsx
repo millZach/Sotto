@@ -1,5 +1,8 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { formatAccelerator } from '../../../../shared/accelerator'
 import type { SottoPlatform } from '../../../../shared/platform'
@@ -16,21 +19,23 @@ export interface ThreadsTourProps {
 interface TourStop {
   /** The part of the Threads page the stop points at. */
   readonly selector: string
-  readonly title: string
-  readonly body: string
+  readonly title: MessageDescriptor
+  readonly body: MessageDescriptor
 }
 
 /** How the New thread note says to speak: the dictation shortcut, or on Linux the Hyprland binding setup describes. */
-function speakIt(shortcut: string, platform: SottoPlatform): string {
-  return platform === 'linux' ? 'hold F9 to speak it with Sotto’s Hyprland bindings' : `press ${shortcut} and speak it`
+function newThreadBody(shortcut: string, platform: SottoPlatform): MessageDescriptor {
+  return platform === 'linux'
+    ? msg`Starts a thread in the selected project. Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings.`
+    : msg`Starts a thread in the selected project. Type your message, or press ${shortcut} and speak it.`
 }
 
 export function threadsTourStops(shortcut: string, platform: SottoPlatform): readonly TourStop[] {
   return [
-    { selector: 'aside.thread-nav', title: 'Projects and threads', body: 'Your projects and their threads are listed here. Add project brings in another folder.' },
-    { selector: 'aside.thread-nav button[aria-label="New thread"]', title: 'New thread', body: `Starts a thread in the selected project. Type your message, or ${speakIt(shortcut, platform)}.` },
-    { selector: 'section.thread-workspace', title: 'Threads', body: "A thread shows the agent's work, and the questions and permissions it asks you to answer." },
-    { selector: 'aside.thread-nav a.thread-nav__page[href="#settings"]', title: 'Settings', body: 'Anything you skipped in setup waits here, with your shortcut, microphone and keys.' },
+    { selector: 'aside.thread-nav', title: msg`Projects and threads`, body: msg`Your projects and their threads are listed here. Add project brings in another folder.` },
+    { selector: 'aside.thread-nav button[aria-label="New thread"]', title: msg`New thread`, body: newThreadBody(shortcut, platform) },
+    { selector: 'section.thread-workspace', title: msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' }), body: msg`A thread shows the agent's work, and the questions and permissions it asks you to answer.` },
+    { selector: 'aside.thread-nav a.thread-nav__page[href="#settings"]', title: msg({ message: 'Settings', comment: 'The page link: the Settings page' }), body: msg`Anything you skipped in setup waits here, with your shortcut, microphone and keys.` },
   ]
 }
 
@@ -81,6 +86,7 @@ function bubblePlace(target: Box | null, height: number): { top: number; left: n
  * passed over, and the count covers only the parts it can show.
  */
 export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): ReactNode {
+  const { i18n } = useLingui()
   const stops = threadsTourStops(formatAccelerator(shortcut, platform, 'editing'), platform)
   const [index, setIndex] = useState(0)
   const [target, setTarget] = useState<Box | null>(null)
@@ -157,20 +163,22 @@ export function ThreadsTour({ shortcut, platform, onDone }: ThreadsTourProps): R
   }
 
   const place = bubblePlace(target, bubbleHeight)
+  const shownStop = Math.max(1, present.indexOf(index) + 1)
+  const shownStops = Math.max(1, present.length)
   return createPortal(
     <div className="threads-tour" onKeyDown={onKeyDown}>
       <div className="threads-tour__scrim" data-hole={target !== null} aria-hidden="true"
         style={target ? { top: target.top - PAD, left: target.left - PAD, width: target.width + PAD * 2, height: target.height + PAD * 2 } : undefined} />
       <div ref={bubble} className="threads-tour__note" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={bodyId}
         style={{ top: place.top, left: place.left, width: BUBBLE_WIDTH }}>
-        <h2 id={titleId} ref={heading} tabIndex={-1}>{stop.title}</h2>
-        <p id={bodyId}>{stop.body}</p>
+        <h2 id={titleId} ref={heading} tabIndex={-1}>{i18n._(stop.title)}</h2>
+        <p className="tt-paragraph" id={bodyId}>{i18n._(stop.body)}</p>
         <footer>
-          <span className="threads-tour__count">{Math.max(1, present.indexOf(index) + 1)} of {Math.max(1, present.length)}</span>
+          <span className="threads-tour__count"><Trans>{shownStop} of {shownStops}</Trans></span>
           <span className="threads-tour__actions">
-            {last ? null : <Button variant="ghost" onClick={finish}>Skip tour</Button>}
-            {earlier !== undefined ? <Button variant="ghost" onClick={() => setIndex(earlier)}>Back</Button> : null}
-            {later === undefined ? <Button onClick={finish}>Done</Button> : <Button onClick={() => setIndex(later)}>Next</Button>}
+            {last ? null : <Button variant="ghost" onClick={finish}><Trans>Skip tour</Trans></Button>}
+            {earlier !== undefined ? <Button variant="ghost" onClick={() => setIndex(earlier)}><Trans>Back</Trans></Button> : null}
+            {later === undefined ? <Button onClick={finish}><Trans>Done</Trans></Button> : <Button onClick={() => setIndex(later)}><Trans>Next</Trans></Button>}
           </span>
         </footer>
       </div>

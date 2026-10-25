@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OWN_SERVERS_UNREAD, registerOwnServersIpc } from '../../../../src/main/ownModelServers/ipc'
-import { OWN_SERVERS_FILE, OwnServers, type OwnServerEvent, type OwnServersOpenCode } from '../../../../src/main/ownModelServers/service'
+import { addressSuffix, OWN_SERVERS_FILE, OwnServers, type OwnServerEvent, type OwnServersOpenCode } from '../../../../src/main/ownModelServers/service'
 import {
   OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, type CheckResult, type OwnServer,
 } from '../../../../src/shared/ownModelServers'
@@ -31,12 +31,15 @@ let directory: string
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-own-servers-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
-function servers(options: { openCode?: OwnServersOpenCode | undefined; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
+function servers(options: { openCode?: OwnServersOpenCode | undefined; deepSeek?: boolean; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
   const events: OwnServerEvent[] = []
+  const deepSeekCalls: string[] = []
   let next = 0
-  const service = new OwnServers({ directory, openCode: () => options.openCode, log: event => events.push(event), newId: () => `test${next++}`,
+  const service = new OwnServers({ directory, openCode: () => options.openCode,
+    deepSeek: () => options.deepSeek ? { changed: () => { deepSeekCalls.push('changed') } } : undefined,
+    log: event => events.push(event), newId: () => `test${next++}`,
     ...(options.check ? { check: options.check } : {}), ...(options.now ? { now: options.now } : {}) })
-  return { service, events }
+  return { service, events, deepSeekCalls }
 }
 const saved = async (): Promise<OwnServer[]> => JSON.parse(await readFile(join(directory, OWN_SERVERS_FILE), 'utf8')) as OwnServer[]
 
@@ -50,6 +53,24 @@ describe('adding a server', () => {
     expect(await service.list()).toEqual(await saved())
     expect(calls).toEqual(['outdated', 'catalog'])
     expect(events).toEqual(['own-server-added'])
+  })
+
+  it('tells DeepSeek Harness on every save, and takes a keyless server with only its adapter, before it can connect (ADR-0138)', async () => {
+    const { service, deepSeekCalls } = servers({ deepSeek: true })
+    const result = await service.add({ name: 'Spark', address: 'spark-head:8888', models: [model] })
+    expect(result.status).toBe('ok')
+    expect(await saved()).toHaveLength(1)
+    expect(deepSeekCalls).toEqual(['changed'])
+    const removed = await service.remove({ id: result.status === 'ok' ? result.server.id : '' })
+    expect(removed.status).toBe('ok')
+    expect(deepSeekCalls).toEqual(['changed', 'changed'])
+  })
+
+  it('still refuses a keyed server while only DeepSeek Harness’s adapter runs: its key is OpenCode’s to keep', async () => {
+    const { service } = servers({ deepSeek: true })
+    expect(await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] }))
+      .toMatchObject({ status: 'refused', reason: 'opencode-not-running' })
+    expect(await service.list()).toEqual([])
   })
 
   it('signs the new source in with its key after the record has it, and keeps no copy of the key', async () => {
@@ -137,11 +158,31 @@ describe('adding a server', () => {
     expect(ids.every(id => /^own-[a-z0-9]+$/u.test(id))).toBe(true)
   })
 
-  it('gives a new server a short random ID in OpenCode’s safe alphabet', async () => {
+  it('gives a server an ID from its address in OpenCode’s safe alphabet, the same one when it is added again', async () => {
     const { openCode } = fakeOpenCode()
     const service = new OwnServers({ directory, openCode: () => openCode })
-    const result = await service.add({ name: 'Spark', address: 'spark-head:8888', models: [model] })
-    expect(result.status === 'ok' && result.server.id).toMatch(/^own-[a-z0-9]{10}$/u)
+    const first = await service.add({ name: 'Spark', address: 'spark-head:8888', models: [model] })
+    const id = first.status === 'ok' ? first.server.id : ''
+    expect(id).toMatch(/^own-[a-f0-9]{12}$/u)
+    expect(id).toBe(`own-${addressSuffix('http://spark-head:8888/v1')}`)
+    // Removed and added again with the right key: the same model source, so a thread on one of its models carries on.
+    expect(await service.remove({ id })).toEqual({ status: 'ok' })
+    const again = await service.add({ name: 'Sparks', address: 'http://SPARK-HEAD:8888/v1', key: KEY, models: [model] })
+    expect(again).toMatchObject({ status: 'ok', server: { id, name: 'Sparks', keyed: true } })
+    const other = await service.add({ name: 'Forge', address: 'forge:11434', models: [model] })
+    expect(other.status === 'ok' && other.server.id).not.toBe(id)
+  })
+
+  it('refuses an address that is already added, and keeps a server saved before with the ID it was given', async () => {
+    const earlier: OwnServer = { id: 'own-k3v9q2m7x1', name: 'Spark', address: 'http://spark-head:8888/v1', keyed: false, models: [model] }
+    await writeFile(join(directory, OWN_SERVERS_FILE), JSON.stringify([earlier]))
+    const { openCode, calls } = fakeOpenCode()
+    const { service, events } = servers({ openCode })
+    expect(await service.add({ name: 'Spark again', address: 'spark-head:8888', key: KEY, models: [model] }))
+      .toEqual({ status: 'refused', reason: 'already-added', message: OWN_SERVER_WORDS.alreadyAdded('spark-head:8888') })
+    expect(await saved()).toEqual([earlier])
+    expect(calls).toEqual([])
+    expect(events).toEqual(['own-server-add-refused'])
   })
 })
 

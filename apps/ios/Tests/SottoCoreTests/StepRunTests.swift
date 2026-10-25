@@ -117,6 +117,39 @@ final class StepRunTests: XCTestCase {
         XCTAssertEqual(StepRun.press(count: 14, open: true), "Hide steps")
     }
 
+    // MARK: The working words
+
+    func testTheWorkingWordsAreTheDesktopsAndStartCombingTheDesert() {
+        XCTAssertEqual(WorkingWords.all.first, "Combing the desert", "A short turn only ever shows the first word")
+        XCTAssertEqual(WorkingWords.all.count, 14)
+        XCTAssertEqual(WorkingWords.all.last, "Prepping for light speed")
+        XCTAssertEqual(Set(WorkingWords.all).count, WorkingWords.all.count, "No word is listed twice")
+        XCTAssertEqual(WorkingWords.seconds, 3.8)
+        XCTAssertEqual(WorkingWords.fade, 0.22)
+    }
+
+    func testTheNextWorkingWordIsNeverTheOneItReplaces() {
+        let count = WorkingWords.all.count
+        for current in 0..<count {
+            var reached = Set<Int>()
+            for roll in 0..<(count - 1) {
+                let next = WorkingWords.next(after: current, roll: roll)
+                XCTAssertNotEqual(next, current, "The word after \(current) with roll \(roll) repeats it")
+                XCTAssertTrue((0..<count).contains(next))
+                reached.insert(next)
+            }
+            XCTAssertEqual(reached.count, count - 1, "Every other word can follow the one at \(current)")
+        }
+        XCTAssertEqual(WorkingWords.next(after: 0, roll: 0), 1, "Rolls as the desktop does: (current + 1 + roll) % count")
+        XCTAssertEqual(WorkingWords.next(after: count - 1, roll: 0), 0)
+        var current = 0
+        for _ in 0..<200 {
+            let next = WorkingWords.next(after: current)
+            XCTAssertNotEqual(next, current)
+            current = next
+        }
+    }
+
     // MARK: Commands without their shell
 
     func testAShellWrapperIsLeftOutOfTheCommand() {

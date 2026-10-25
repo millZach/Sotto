@@ -1,6 +1,7 @@
 // Stands in for a provider client's own sign-in on a host (ADR-0037), printing what the real one prints into a pipe:
-// Codex's and Grok Build's device-code sign-ins, which finish by themselves once the code is entered on the page, and
-// Claude Code's subscription sign-in, which waits for the code the page shows to be pasted back.
+// Codex's and Grok Build's device-code sign-ins, which finish by themselves once the code is entered on the page, Claude
+// Code's subscription sign-in, which waits for the code the page shows to be pasted back, and Cursor's `agent login`, which
+// prints a page and no code and finishes by itself once the user has signed in there (ADR-0128).
 //
 //   node fakeSignInCli.mjs <provider> <the client's own arguments…>
 //
@@ -44,6 +45,14 @@ if (provider === 'claude') {
     if (code === 'good-code' && state === 'fixture-state') { signedIn(); process.stdout.write('Login successful.\n'); process.exit(0) }
     process.stderr.write('Login failed: Invalid authorization code\n'); process.exit(1)
   })
+} else if (provider === 'cursor') {
+  // As Cursor 2026.10.22-27dcf5f prints it into a pipe with NO_OPEN_BROWSER set.
+  say('\nCursor Agent\n\nPress any key to sign in...\n')
+  say(`Open this link to sign in: ${page ?? 'https://cursor.com/loginDeepControl?challenge=fixture&uuid=fixture&mode=login'}\n`)
+  setInterval(() => {
+    if (existsSync(file('approved'))) { signedIn(); process.stdout.write('Login successful!\n'); process.exit(0) }
+    if (existsSync(file('denied'))) { process.stderr.write('Login failed\n'); process.exit(1) }
+  }, 50)
 } else {
   const code = provider === 'codex' ? 'WDJB-MJHTQ' : 'K7PX-2QRM'
   if (provider === 'codex') {

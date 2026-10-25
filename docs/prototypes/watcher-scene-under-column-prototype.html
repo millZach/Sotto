@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE - Watcher's night scene under the column</title>
+<!--
+  PROTOTYPE, throwaway. Question: should a ripple carry on under Watcher's conversation column, and should the owl show
+  behind the conversation's words, and if so how strong may each be there while every word keeps 4.5:1?
+  Today: ripples and owls stop at the column's edge. Proposed: they carry on under it, at variant A, B or C's strength.
+  Colours are Sotto's built-in light and dark themes (src/shared/themes/palettes.ts), the secondary tier mixed as tokens.css
+  mixes it and links in the theme's link colour. The scene is drawn the way Sotto draws it (7 by 12 glyph cells, the same ramp and ripple glyphs, the column's ink
+  ceiling worked out the same way), but none of Sotto's code is used.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body[data-theme='dark'] { --tt-canvas: #040507; --tt-text: #f9fafd; --tt-text-2: #d0d3d9; --tt-accent: #47b8a9; --tt-link: #8ad9cc; --tt-card: #111318; --tt-hairline: rgba(255,255,255,.08); --glass: 88%; }
+  body[data-theme='light'] { --tt-canvas: #f9f8f5; --tt-text: #221d17; --tt-text-2: #403b34; --tt-accent: #007d74; --tt-link: #005e56; --tt-card: #ffffff; --tt-hairline: rgba(0,0,0,.1); --glass: 90%; color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--tt-canvas); color: var(--tt-text); font: 15px/1.55 Figtree, "Segoe UI", system-ui, sans-serif; }
+  #back { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+
+  .room { position: fixed; inset: 0; z-index: 1; display: flex; flex-direction: column; }
+  .strip { flex: 0 0 36px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); font-size: 13px; font-weight: 600; }
+  .strip span { color: var(--tt-text-2); font-weight: 400; }
+  .stage { position: relative; flex: 1; min-height: 0; }
+  .transcript { position: absolute; inset: 0; overflow-y: auto; padding: 18px 0 var(--compose-h, 120px); }
+  .col { max-width: 760px; margin: 0 auto; padding: 0 20px; }
+  .msg { margin: 0 0 22px; }
+  .meta { color: var(--tt-text-2); font-size: 12.5px; margin-bottom: 4px; }
+  .assistant { text-shadow: 0 0 3px var(--tt-canvas), 0 0 7px var(--tt-canvas), 0 0 12px var(--tt-canvas); }
+  .assistant p { margin: 0 0 8px; }
+  .assistant .quiet { color: var(--tt-text-2); }
+  .assistant a { color: var(--tt-link); }
+  .user { display: flex; justify-content: flex-end; }
+  .bubble { max-width: 80%; padding: 9px 13px; border-radius: 14px; background: var(--tt-card); border: 1px solid var(--tt-hairline); text-shadow: none; }
+  .compose { position: absolute; left: 0; right: 0; bottom: 0; }
+  .compose .card { display: flex; gap: 8px; align-items: flex-end; padding: 10px 10px 10px 14px; border-radius: 16px;
+    background: color-mix(in srgb, var(--tt-card) var(--glass), transparent); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); }
+  .compose textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; min-height: 44px; }
+  .compose textarea::placeholder { color: var(--tt-text-2); }
+  .compose button { border: 0; border-radius: 10px; padding: 7px 12px; background: var(--tt-accent); color: var(--tt-canvas); font: inherit; font-weight: 600; }
+  .dock-space { flex: 0 0 var(--dock-h, 0px); }
+  :focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+  /* The prototype's own controls: deliberately not Sotto's look. */
+  .dock { position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 10; width: min(820px, calc(100% - 12px));
+    background: #1d1e25; color: #f2f2f5; border: 1.5px dashed #f2b84b; border-radius: 14px; padding: 8px 10px; font: 13px/1.35 system-ui, sans-serif;
+    box-shadow: 0 10px 30px -10px rgba(0,0,0,.6); }
+  .dock .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .dock .row + .row { margin-top: 6px; }
+  .tag { font-weight: 700; letter-spacing: .06em; font-size: 10.5px; color: #f2b84b; margin-right: 2px; }
+  .dock button { font: inherit; color: #f2f2f5; background: #2c2e38; border: 1px solid #454856; border-radius: 8px; padding: 5px 9px; cursor: pointer; }
+  .dock button:hover { background: #363946; }
+  .dock button[aria-pressed='true'] { background: #f2b84b; color: #17181d; border-color: #f2b84b; font-weight: 600; }
+  .dock :focus-visible { outline: 2px solid #f2b84b; outline-offset: 2px; }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+  .variant { display: inline-flex; align-items: center; gap: 4px; }
+  .variant output { min-width: 13ch; text-align: center; font-weight: 600; }
+  .readout { color: #d6d7de; }
+  .readout b { color: #fff; }
+  .bad { color: #ff9b8a; font-weight: 700; }
+  .good { color: #8fe3b0; font-weight: 700; }
+  .grow { flex: 1; }
+  .compare { margin-top: 6px; overflow-x: auto; }
+  .compare table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .compare th, .compare td { text-align: left; padding: 4px 6px; border-top: 1px solid #3a3c48; vertical-align: top; }
+  .compare th { color: #b9bac4; font-weight: 600; }
+  .compare .rec { color: #f2b84b; font-weight: 700; }
+  .dock[data-collapsed] .full { display: none; }
+  @media (max-width: 560px) {
+    .dock { padding: 6px 7px; font-size: 12.5px; }
+    .dock button { padding: 5px 7px; }
+    .variant output { min-width: 11ch; }
+    .col { padding: 0 14px; }
+    .bubble { max-width: 88%; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+<canvas id="back" aria-hidden="true"></canvas>
+
+<div class="room">
+  <header class="strip">Watcher <span>Watching 3 threads</span></header>
+  <div class="stage">
+    <div class="transcript" id="transcript">
+      <div class="col" id="col">
+        <div class="msg assistant">
+          <div class="meta">Watcher · 9:41</div>
+          <p>Evening. I'm watching three threads. Two are waiting on you and one is still working.</p>
+          <p class="quiet">Release notes draft finished 4 minutes ago. Nothing changed since you last looked.</p>
+        </div>
+        <div class="msg user"><div class="bubble">Which one needs me first?</div></div>
+        <div class="msg assistant">
+          <div class="meta">Watcher · 9:42</div>
+          <p>The settings migration. It wants to run the database step and is asking your permission. The other one only needs a review of <a href="#" onclick="return false">pull request 412</a> when you have a minute.</p>
+          <p>Click anywhere in the night around this column to start a ripple, and watch where it stops.</p>
+          <p class="quiet">Owls sleep in the trees on either side. Fly one across to see it pass behind these words.</p>
+        </div>
+        <div class="msg user"><div class="bubble">Let it run the database step, then tell me how it went.</div></div>
+        <div class="msg assistant">
+          <div class="meta">Watcher · 9:43</div>
+          <p>Done. I sent your answer. It ran the step and the migration's tests passed. I'll tell you when the thread finishes.</p>
+          <p class="quiet">Answered in the settings migration thread.</p>
+        </div>
+      </div>
+    </div>
+    <div class="compose" id="compose">
+      <div class="col"><div class="card"><textarea aria-label="Message Watcher" placeholder="Ask Watcher" rows="2"></textarea><button type="button">Send</button></div></div>
+    </div>
+  </div>
+  <div class="dock-space"></div>
+</div>
+
+<section class="dock" id="dock" aria-label="Prototype controls">
+  <div class="row">
+    <span class="tag">PROTOTYPE</span>
+    <div class="seg" role="group" aria-label="Under the column">
+      <button type="button" id="today" aria-pressed="false">Show today</button>
+      <button type="button" id="proposed" aria-pressed="true">Show proposed</button>
+    </div>
+    <div class="variant" role="group" aria-label="Strength under the column">
+      <button type="button" id="prev" aria-label="Previous variant">&#8249;</button>
+      <output id="vlabel" aria-live="polite">A</output>
+      <button type="button" id="next" aria-label="Next variant">&#8250;</button>
+    </div>
+    <span class="grow"></span>
+    <button type="button" id="collapse" aria-expanded="true" aria-controls="dock">Hide controls</button>
+  </div>
+  <div class="row full">
+    <button type="button" id="fly">Fly the owl</button>
+    <button type="button" id="hold" aria-pressed="false">Hold the owl behind the words</button>
+    <button type="button" id="ripple">Start a ripple</button>
+    <button type="button" id="theme">Switch to light</button>
+    <button type="button" id="motion" aria-pressed="false">Reduce motion</button>
+    <button type="button" id="cmp" aria-expanded="false" aria-controls="compare">Compare variants</button>
+  </div>
+  <div class="row full readout" id="readout" aria-live="polite"></div>
+  <div class="compare full" id="compare" hidden></div>
+</section>
+
+<script>
+'use strict'
+// ---------- Colour and contrast, worked out the way Sotto works them out ----------
+const THEMES = {
+  dark: { canvas: '#040507', text: '#f9fafd', text2: '#d0d3d9', accent: '#47b8a9', link: '#8ad9cc' },
+  light: { canvas: '#f9f8f5', text: '#221d17', text2: '#403b34', accent: '#007d74', link: '#005e56' },
+}
+const rgb = h => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16) })
+const lin = v => (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+const lum = c => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+const contrast = (a, b) => { const A = lum(a), B = lum(b); return (Math.max(A, B) + 0.05) / (Math.min(A, B) + 0.05) }
+const over = (s, i, a) => ({ r: Math.round(s.r + (i.r - s.r) * a), g: Math.round(s.g + (i.g - s.g) * a), b: Math.round(s.b + (i.b - s.b) * a) })
+const WORD_CONTRAST = 4.6
+const step = s => Math.round(Math.max(0, Math.min(1, s)) * 20) / 20
+
+function inks(name) {
+  const t = THEMES[name], light = name === 'light'
+  const canvas = rgb(t.canvas), text = rgb(t.text), accent = rgb(t.accent)
+  const words = [['text', rgb(t.text)], ['secondary', rgb(t.text2)], ['link', rgb(t.link)]]
+  const inkBoost = light ? 1.9 : 1, accBoost = light ? 1.5 : 1
+  const ceiling = (ink, boost) => { let best = 0; for (let k = 1; k <= 20; k++) { const p = over(canvas, ink, Math.min(1, k / 20 * boost)); if (words.some(([, w]) => contrast(w, p) < WORD_CONTRAST)) break; best = k / 20 } return best }
+  return { light, canvas, text, accent, words, inkBoost, accBoost, ceilInk: ceiling(text, inkBoost), ceilAcc: ceiling(accent, accBoost) }
+}
+
+const VARIANTS = {
+  A: { name: 'Same as the hills', long: 'A: the ripple and the owl take the hills\' share (85%) under the column, held under the column\'s ink ceiling.', share: 0.85, capScale: 1 },
+  B: { name: 'Half strength', long: 'B: half the share (50%) and half the ink ceiling, quieter than the hills.', share: 0.5, capScale: 0.5 },
+  C: { name: 'Full, glow only', long: 'C: full strength under the column; the words keep only their canvas glow.', share: 1, capScale: null },
+}
+const ORDER = ['A', 'B', 'C']
+const RECOMMENDED = 'A'
+function capsFor(v, k) {
+  if (v.capScale === null) return { ink: 1, acc: 1 }
+  return { ink: Math.floor(k.ceilInk * v.capScale * 20) / 20, acc: Math.floor(k.ceilAcc * v.capScale * 20) / 20 }
+}
+/** The worst contrast of any word colour against the brightest ripple or owl pixel the variant puts under the column (glow not counted). */
+function worstFor(vKey, theme) {
+  const k = inks(theme), v = VARIANTS[vKey], c = capsFor(v, k)
+  const sInk = step(Math.min(c.ink, v.share)), sAcc = step(Math.min(c.acc, v.share))
+  const pixels = [['owl body', over(k.canvas, k.text, Math.min(1, sInk * k.inkBoost))], ['ripple and owl eyes', over(k.canvas, k.accent, Math.min(1, sAcc * k.accBoost))]]
+  let worst = { ratio: Infinity }
+  for (const [wn, w] of k.words) for (const [pn, p] of pixels) { const r = contrast(w, p); if (r < worst.ratio) worst = { ratio: r, word: wn, pixel: pn } }
+  return worst
+}
+function hillsWorst(theme) {
+  const k = inks(theme)
+  const pixels = [over(k.canvas, k.text, Math.min(1, k.ceilInk * k.inkBoost)), over(k.canvas, k.accent, Math.min(1, k.ceilAcc * k.accBoost))]
+  return Math.min(...k.words.flatMap(([, w]) => pixels.map(p => contrast(w, p))))
+}
+
+// ---------- State ----------
+const q = new URLSearchParams(location.search)
+const reduceQuery = matchMedia('(prefers-reduced-motion: reduce)')
+const state = {
+  mode: q.get('mode') === 'today' ? 'today' : 'proposed',
+  variant: ORDER.includes(q.get('variant')) ? q.get('variant') : RECOMMENDED,
+  theme: q.get('theme') === 'light' ? 'light' : 'dark',
+  still: q.has('motion') ? q.get('motion') === 'reduce' : reduceQuery.matches,
+  hold: q.get('hold') === '1',
+}
+function saveUrl() {
+  const p = new URLSearchParams({ mode: state.mode, variant: state.variant, theme: state.theme, motion: state.still ? 'reduce' : 'full' })
+  if (state.hold) p.set('hold', '1')
+  history.replaceState(null, '', '?' + p)
+}
+
+// ---------- The scene ----------
+const CW = 7, CH = 12, RAMP = ' .·:-=+*#%@', RIPPLE_GLYPHS = '·∘oO', COLUMN_GAP = 8, COLUMN_BLEND = 40, HEADER = 36
+const RIPPLE_SPEED = 430, RIPPLE_LIFE = 2.4, STILL_LIFE = 0.7, STILL_REACH = 70, RINGS = [[1, 20, 1], [0.62, 14, 0.45]]
+const back = document.getElementById('back'), bx = back.getContext('2d')
+const still = document.createElement('canvas'), sx = still.getContext('2d')
+let W = 0, H = 0, dpr = 1, cols = 0, rows = 0, colL = 0, colR = 0, ink = null
+let dens, acc, share, margin, noise, trees = [], perches = []
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t) }
+const lerp = (a, b, t) => a + (b - a) * t
+const rampGlyph = d => RAMP[Math.max(1, Math.round(clamp(d, 0, 1) * (RAMP.length - 1)))]
+function seeded(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+function tone(accent, strength) {
+  const c = accent ? ink.accent : ink.text, a = Math.min(1, step(strength) * (accent ? ink.accBoost : ink.inkBoost))
+  return `rgba(${c.r},${c.g},${c.b},${a.toFixed(2)})`
+}
+
+function landAt(x, y, stars) {
+  const groundY = H * 0.8
+  for (const t of trees) {
+    if (y >= t.top && y <= t.base) {
+      const k = y - t.top, half = k * 0.3 * (0.72 + 0.28 * ((k % 46) / 46))
+      if (Math.abs(x - t.x) < half) return { d: Math.abs(x - t.x) > half - 7 ? 0.88 : 0.6, a: false }
+    }
+    if (y > t.base && y < groundY + 8 && Math.abs(x - t.x) < 6) return { d: 0.75, a: false }
+  }
+  if (y > groundY) {
+    const ry = groundY + (H - groundY) * 0.45 + 9 * Math.sin(x / 80)
+    if (Math.abs(y - ry) < 7) return { d: 0.62, a: true }
+    return { d: 0.46, a: false }
+  }
+  const h2 = groundY - H * 0.07 + 18 * Math.sin(x / 130 + 1.7) + 8 * Math.sin(x / 47)
+  if (y > h2) return { d: y - h2 < 12 ? 0.7 : 0.36, a: false }
+  const h1 = groundY - H * 0.17 + 26 * Math.sin(x / 190 + 0.5) + 14 * Math.sin(x / 71 + 2)
+  if (y > h1) return { d: y - h1 < 12 ? 0.5 : 0.2, a: false }
+  const mx = W - colR > 120 ? colR + (W - colR) * 0.55 : W - 46, my = HEADER + 70, mr = 22, md = Math.hypot(x - mx, (y - my) * 1.15)
+  if (md < mr) return { d: 0.5 + 0.25 * (1 - md / mr) - (Math.hypot(x - mx - 6, y - my + 4) < 7 ? 0.2 : 0), a: false }
+  if (md < mr + 34) return { d: 0.32 * (1 - (md - mr) / 34), a: true }
+  return stars.get(Math.floor(x / CW) + ',' + Math.floor(y / CH)) || { d: 0, a: false }
+}
+
+function build() {
+  dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight
+  for (const c of [back, still]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); c.style.width = W + 'px'; c.style.height = H + 'px' }
+  const r = document.getElementById('col').getBoundingClientRect(); colL = r.left; colR = r.right
+  cols = Math.ceil(W / CW); rows = Math.ceil(H / CH); ink = inks(state.theme)
+  const n = cols * rows; dens = new Float32Array(n); acc = new Uint8Array(n); share = new Float32Array(n); margin = new Uint8Array(n); noise = new Float32Array(n)
+  const side = colL - COLUMN_GAP, groundY = H * 0.8
+  trees = side >= 70 ? [{ x: side * 0.5, top: groundY - Math.min(300, H * 0.42), base: groundY - 6 }, { x: W - side * 0.5, top: groundY - Math.min(250, H * 0.36), base: groundY - 6 }] : []
+  perches = trees.length ? trees.map(t => ({ x: t.x, y: t.top - 40 })) : [{ x: 34, y: HEADER + 150 }, { x: W - 34, y: HEADER + 230 }]
+  const rand = seeded(7), stars = new Map()
+  for (let k = 0; k < W * H / 5200; k++) { const c = Math.floor(rand() * cols), rr = Math.floor(rand() * rows * 0.6); stars.set(c + ',' + rr, { d: [0.3, 0.55, 0.9][Math.floor(rand() * 3)], a: rand() < 0.15 }) }
+  for (let rr = 0; rr < rows; rr++) for (let c = 0; c < cols; c++) {
+    const i = rr * cols + c, x = (c + 0.5) * CW, y = (rr + 0.5) * CH
+    const inM = x < colL - COLUMN_GAP || x > colR + COLUMN_GAP
+    margin[i] = inM ? 1 : 0; noise[i] = rand()
+    const out = x < colL ? colL - x : x > colR ? x - colR : -Math.min(x - colL, colR - x)
+    const colShare = lerp(0.85, 1, smooth(-COLUMN_BLEND, COLUMN_BLEND, out))
+    share[i] = (!inM && y < HEADER) ? 0 : lerp(0.1, 1, smooth(HEADER - 2, HEADER + 14, y)) * colShare
+    const l = landAt(x, y, stars); dens[i] = l.d; acc[i] = l.a ? 1 : 0
+  }
+  sx.setTransform(dpr, 0, 0, dpr, 0, 0); sx.clearRect(0, 0, W, H); setFont(sx)
+  for (let i = 0; i < n; i++) drawLand(sx, i, i, 0)
+  kick(true)
+}
+function setFont(ctx) { ctx.font = '10.5px "Cascadia Mono", Consolas, ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle' }
+/** Draws cell i showing the landscape at cell j, a little brighter where a ripple's ring passes. The hills always take the column's ceiling. */
+function drawLand(ctx, i, j, lift) {
+  const d = dens[j]; if (d < 0.1) return
+  const s = clamp(d + lift, 0, 1) * share[i]; if (s < 0.06) return
+  const cap = margin[i] ? 1 : (acc[j] ? ink.ceilAcc : ink.ceilInk)
+  ctx.fillStyle = tone(acc[j], Math.min(cap, s)); ctx.fillText(rampGlyph(d + (noise[j] - 0.5) * 0.08), ((i % cols) + 0.5) * CW, (Math.floor(i / cols) + 0.5) * CH)
+}
+
+// ---------- Ripples ----------
+let ripples = []
+function addRipple(x, y, fixedAge) { ripples = [...ripples, { x, y, t: now(), fixedAge }].slice(-4); kick() }
+const now = () => performance.now() / 1000
+function ageOf(r, t) { return r.fixedAge ?? (t - r.t) }
+function rippleAt(x, y, t, out) {
+  out.ring = 0; out.dx = 0; out.dy = 0
+  for (const r of ripples) {
+    const age = ageOf(r, t), ddx = x - r.x, ddy = y - r.y, dist = Math.hypot(ddx, ddy) || 1
+    if (state.still) { const f = (1 - age / STILL_LIFE) * (1 - smooth(0, STILL_REACH, dist)); if (f > 0) out.ring += f * 0.8; continue }
+    const amp = Math.max(0, 1 - age / RIPPLE_LIFE) ** 1.6
+    for (const [sh, w, st] of RINGS) {
+      const off = dist - age * RIPPLE_SPEED * sh, band = Math.exp(-(off * off) / (2 * w * w)) * amp * st
+      if (band < 0.01) continue
+      const wave = band * Math.cos(off / w * 1.7)
+      out.ring += band; out.dx += ddx / dist * wave * 1.8; out.dy += ddy / dist * wave * 1.8
+    }
+  }
+  return out
+}
+const live = t => ripples.filter(r => ageOf(r, t) <= (state.still ? STILL_LIFE : RIPPLE_LIFE))
+
+// ---------- The owl ----------
+const owl = { side: 0, fly: null, hidden: false }
+function owlPos(t) {
+  if (state.hold) return { x: (colL + colR) / 2 + Math.min(120, (colR - colL) * 0.18), y: Math.max(HEADER + 130, H * 0.38), fly: false }
+  if (owl.fly) {
+    const f = owl.fly, k = clamp((t - f.t0) / f.dur, 0, 1), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2
+    const a = perches[f.from], b = perches[f.to], peak = Math.max(HEADER + 110, H * 0.3)
+    const x = lerp(a.x, b.x, e), y = (1 - e) ** 2 * a.y + 2 * (1 - e) * e * (peak + 60) + e * e * b.y
+    return { x, y, fly: true, wing: Math.sin(t * 16) }
+  }
+  return { ...perches[owl.side], fly: false }
+}
+function owlAt(dx, dy, p) {
+  const S = 2; dx /= S; dy /= S
+  const inE = (cx, cy, rx, ry) => ((dx - cx) / rx) ** 2 + ((dy - cy) / ry) ** 2
+  if (Math.hypot(Math.abs(dx) - 6, dy + 15) < 4.2) return { d: 1, eye: true }
+  if (p.fly) {
+    const lift = p.wing * 7, w = inE(Math.sign(dx) * 24, -2 - lift * Math.sign(1), 17, 6.5)
+    if (Math.abs(dx) > 10 && w < 1) return { d: w > 0.6 ? 0.9 : 0.62, eye: false }
+  }
+  const head = inE(0, -15, 13, 11), body = inE(0, 6, p.fly ? 12 : 14, p.fly ? 16 : 19)
+  if (dy > -29 && dy < -21 && Math.abs(dx) > 5 && Math.abs(dx) < 12 && dy < -21 - (12 - Math.abs(dx)) * 0.4) return { d: 0.85, eye: false }
+  if (head < 1) return { d: head > 0.65 ? 0.95 : 0.72, eye: false }
+  if (!p.fly && inE(Math.sign(dx) * 11, 6, 6, 16) < 1) return { d: 0.85, eye: false }
+  if (body < 1) return { d: body > 0.7 ? 0.92 : (Math.abs(dx) < 7 && dy > 0 ? 0.42 : 0.62), eye: false }
+  if (!p.fly && dy > 24 && dy < 28 && Math.abs(dx) > 2 && Math.abs(dx) < 9) return { d: 0.8, eye: false }
+  return null
+}
+
+// ---------- Drawing a frame ----------
+const fx = { ring: 0, dx: 0, dy: 0 }
+let raf = 0
+function kick(force) { if (!raf) raf = requestAnimationFrame(frame); if (force) dirty = true }
+let dirty = true
+function frame() {
+  raf = 0; const t = now()
+  ripples = live(t)
+  if (owl.fly && t - owl.fly.t0 >= owl.fly.dur) { owl.side = owl.fly.to; owl.fly = null }
+  draw(t)
+  if (ripples.some(r => r.fixedAge === undefined) || owl.fly || owl.jumpUntil > t) raf = requestAnimationFrame(frame)
+}
+function draw(t) {
+  const proposed = state.mode === 'proposed', v = VARIANTS[state.variant], caps = capsFor(v, ink)
+  bx.setTransform(1, 0, 0, 1, 0, 0); bx.clearRect(0, 0, back.width, back.height); bx.drawImage(still, 0, 0)
+  bx.setTransform(dpr, 0, 0, dpr, 0, 0); setFont(bx)
+  const clearCell = i => bx.clearRect((i % cols) * CW, Math.floor(i / cols) * CH, CW, CH)
+  // Ripples: in the margins at full strength; under the column only when proposed, at the variant's strength.
+  for (const r of ripples) {
+    const age = ageOf(r, t), reach = state.still ? STILL_REACH : age * RIPPLE_SPEED + 62
+    const c0 = clamp(Math.floor((r.x - reach) / CW), 0, cols), c1 = clamp(Math.ceil((r.x + reach) / CW), 0, cols)
+    const r0 = clamp(Math.floor((r.y - reach) / CH), 0, rows), r1 = clamp(Math.ceil((r.y + reach) / CH), 0, rows)
+    for (let rr = r0; rr < r1; rr++) for (let c = c0; c < c1; c++) {
+      const i = rr * cols + c
+      if (share[i] === 0 || (!margin[i] && !proposed)) continue
+      const x = (c + 0.5) * CW, y = (rr + 0.5) * CH, e = rippleAt(x, y, t, fx)
+      if (e.ring < 0.02 && Math.abs(e.dx) < 0.5 && Math.abs(e.dy) < 0.5) continue
+      const sc = clamp(c - Math.round(e.dx), 0, cols - 1), sr = clamp(rr - Math.round(e.dy), 0, rows - 1), j = sr * cols + sc
+      let ring = Math.min(1, e.ring) * (0.5 + 0.5 * share[i])
+      if (!margin[i]) ring *= v.share / 0.85
+      clearCell(i)
+      if (ring > dens[j] + 0.05) {
+        const s = 0.18 + 0.6 * ring
+        bx.fillStyle = tone(true, margin[i] ? s : Math.min(caps.acc, s)); bx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))], x, y)
+      } else drawLand(bx, i, j, ring * 0.3)
+    }
+  }
+  // The owl: in the margins at full strength; under the column only when proposed, at the variant's strength, behind the words.
+  if (!owl.hidden) {
+    const p = owlPos(t), c0 = Math.floor((p.x - 60) / CW), c1 = Math.ceil((p.x + 60) / CW), r0 = Math.floor((p.y - 50) / CH), r1 = Math.ceil((p.y + 50) / CH)
+    for (let rr = Math.max(0, r0); rr < Math.min(rows, r1); rr++) for (let c = Math.max(0, c0); c < Math.min(cols, c1); c++) {
+      const i = rr * cols + c, x = (c + 0.5) * CW, y = (rr + 0.5) * CH
+      if (!margin[i] && (!proposed || y < HEADER + 4)) continue
+      const o = owlAt(x - p.x, y - p.y, p); if (!o) continue
+      clearCell(i)
+      const inCol = !margin[i]
+      if (o.eye) { bx.fillStyle = tone(true, inCol ? Math.min(caps.acc, v.share) : 1); bx.fillText('@', x, y) }
+      else { bx.fillStyle = tone(false, inCol ? Math.min(caps.ink, o.d * v.share) : o.d); bx.fillText(rampGlyph(o.d + (noise[i] - 0.5) * 0.08), x, y) }
+    }
+  }
+}
+
+// ---------- Controls ----------
+const $ = id => document.getElementById(id)
+const fmt = r => r.toFixed(2) + ':1'
+function render() {
+  document.body.dataset.theme = state.theme
+  $('today').setAttribute('aria-pressed', String(state.mode === 'today')); $('proposed').setAttribute('aria-pressed', String(state.mode === 'proposed'))
+  $('vlabel').textContent = state.variant + ' · ' + VARIANTS[state.variant].name + (state.variant === RECOMMENDED ? ' (pick)' : '')
+  $('theme').textContent = state.theme === 'dark' ? 'Switch to light' : 'Switch to dark'
+  $('motion').setAttribute('aria-pressed', String(state.still)); $('motion').textContent = state.still ? 'Allow motion' : 'Reduce motion'
+  $('hold').setAttribute('aria-pressed', String(state.hold)); $('hold').textContent = state.hold ? 'Send the owl back to its tree' : 'Hold the owl behind the words'
+  $('fly').textContent = state.still ? 'Move the owl' : 'Fly the owl'
+  const k = inks(state.theme)
+  let html
+  if (state.mode === 'today') {
+    html = `<span><b>Today:</b> ripples and owls stop at the column's edge. Only the hills show under it, at the ceiling (ink ${k.ceilInk.toFixed(2)}, accent ${k.ceilAcc.toFixed(2)}). Worst word: <span class="good">${fmt(hillsWorst(state.theme))}</span></span>`
+  } else {
+    const w = worstFor(state.variant, state.theme), ok = w.ratio >= 4.5
+    html = `<span><b>${VARIANTS[state.variant].long}</b> Worst word in ${state.theme} (${w.word} over the ${w.pixel}, glow not counted): <span class="${ok ? 'good' : 'bad'}">${fmt(w.ratio)}${ok ? '' : ', under 4.5:1'}</span></span>`
+  }
+  $('readout').innerHTML = html
+  $('compare').innerHTML = `<table><thead><tr><th>Variant</th><th>Dark</th><th>Light</th></tr></thead><tbody>${ORDER.map(key => {
+    const d = worstFor(key, 'dark'), l = worstFor(key, 'light'), cell = w => `<span class="${w.ratio >= 4.5 ? 'good' : 'bad'}">${fmt(w.ratio)}</span> <span>${w.word} on ${w.pixel}${w.ratio >= 4.5 ? '' : ', under 4.5:1'}</span>`
+    return `<tr><td class="${key === RECOMMENDED ? 'rec' : ''}">${key} · ${VARIANTS[key].name}${key === RECOMMENDED ? ' (pick)' : ''}</td><td>${cell(d)}</td><td>${cell(l)}</td></tr>`
+  }).join('')}<tr><td>Today (hills only)</td><td><span class="good">${fmt(hillsWorst('dark'))}</span></td><td><span class="good">${fmt(hillsWorst('light'))}</span></td></tr></tbody></table>
+  <p style="margin:6px 0 2px;color:#b9bac4">Worst of the text, secondary and link colours against the brightest ripple or owl pixel the variant can put under the column. The words' canvas glow is not counted, as in Sotto's rule.</p>`
+  saveUrl()
+}
+function cycle(d) { state.variant = ORDER[(ORDER.indexOf(state.variant) + d + ORDER.length) % ORDER.length]; render(); kick(true) }
+$('today').onclick = () => { state.mode = 'today'; render(); kick(true) }
+$('proposed').onclick = () => { state.mode = 'proposed'; render(); kick(true) }
+$('prev').onclick = () => cycle(-1)
+$('next').onclick = () => cycle(1)
+$('theme').onclick = () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); build() }
+$('motion').onclick = () => { state.still = !state.still; ripples = []; render(); kick(true) }
+$('hold').onclick = () => { state.hold = !state.hold; owl.fly = null; render(); kick(true) }
+$('ripple').onclick = () => addRipple(Math.max(10, colL - (colL > 80 ? 50 : -30)), Math.max(HEADER + 80, H * 0.42))
+$('fly').onclick = () => {
+  if (state.hold) { state.hold = false; render() }
+  if (owl.fly) return
+  const to = 1 - owl.side
+  if (state.still) { owl.hidden = true; kick(); setTimeout(() => { owl.hidden = false; owl.side = to; kick(true) }, 350) }
+  else { owl.fly = { from: owl.side, to, t0: now(), dur: 3.2 }; kick() }
+}
+$('cmp').onclick = () => { const open = $('compare').hidden; $('compare').hidden = !open; $('cmp').setAttribute('aria-expanded', String(open)); $('cmp').textContent = open ? 'Hide comparison' : 'Compare variants'; layoutDock() }
+$('collapse').onclick = () => { const dock = $('dock'), hide = !dock.hasAttribute('data-collapsed'); dock.toggleAttribute('data-collapsed', hide); $('collapse').setAttribute('aria-expanded', String(!hide)); $('collapse').textContent = hide ? 'Show controls' : 'Hide controls'; layoutDock() }
+document.addEventListener('keydown', e => {
+  const typing = e.target.closest('textarea, input, [contenteditable]')
+  if (e.key === 'Escape' && !$('compare').hidden) { $('cmp').click(); $('cmp').focus(); e.preventDefault() }
+  else if (!typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.metaKey && !e.ctrlKey) cycle(e.key === 'ArrowLeft' ? -1 : 1)
+})
+// A press on the room's background (anything but a control, the composer or a word's link) starts a ripple there.
+document.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || e.target.closest('button, a, textarea, input, .dock, .compose .card, .bubble')) return
+  addRipple(e.clientX, e.clientY)
+})
+
+function layoutDock() {
+  document.documentElement.style.setProperty('--dock-h', ($('dock').offsetHeight + 14) + 'px')
+  document.documentElement.style.setProperty('--compose-h', ($('compose').offsetHeight + 16) + 'px')
+}
+let resizeTimer = 0
+new ResizeObserver(() => { layoutDock(); clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 60) }).observe(document.body)
+reduceQuery.addEventListener('change', e => { if (!q.has('motion')) { state.still = e.matches; render() } })
+render(); layoutDock(); build()
+// ?snap=1 freezes a ripple part-way across the column and holds the owl behind the words, for screenshots.
+if (q.get('snap') === '1') { state.hold = true; render(); addRipple(colL > 80 ? colL - 40 : 20, Math.max(HEADER + 90, H * 0.4), state.still ? 0.2 : 0.8) }
+</script>
+</body>
+</html>

@@ -37,3 +37,18 @@ Every word the group, the dialog and the model menu entry say is a message in th
 OpenCode keeps a server's key in its database in Sotto's OpenCode folder, in the clear, as it keeps every model source's key. Remove signs the source out there.
 
 Checking OpenCode for this found that it reads `opencode.json`, `.opencode`, `.claude` and `.agents` from every folder above a thread's project, and lists `~/.opencode` as a config source, so ADR-0087's "the user's own OpenCode folders are never read" holds only for its XDG folders. That is #1425; this decision neither causes nor fixes it.
+
+## Amended October 24, 2026: when the server lets a turn down
+
+Zach chose how a thread on one of his own servers says the server let a turn down, from [the prototype](https://github.com/millZach/Sotto/blob/prototype/own-server-turn-errors/docs/prototypes/own-server-turn-errors-prototype.html) (placement A, the words as drafted). It replaces OpenCode's general "could not finish this turn" and its advice to sign in again, which do not fit a server the user runs. It is part of the same Owl feature.
+
+- **In the transcript.** The lines below sit where the reply would be, under the user's message, and a failure is the turn's own "Failed after …" line with its reason and buttons, so it stays in the thread where it happened. Only the newest failure keeps its buttons.
+- **While OpenCode tries again.** OpenCode tries a server that does not answer ten times over about a minute and a half. Meanwhile the turn's line reads "Sparks isn't answering. Trying again (3 of 10)." with **Stop**, and gives way to the reply if the server comes back.
+- **While it waits.** A server that took the message and has sent nothing for 30 seconds: "Still waiting for Sparks to start answering. A long prompt can take a few minutes. The turn stops waiting at 5 minutes." with **Stop**. OpenCode's own 300-second limit stays, because a long prompt on a large model can take minutes before its first word. OpenCode would try a silent server three more times after it, about twenty minutes in all, so Sotto stops the turn at the first and records it as the server's timeout, which keeps the words true.
+- **Five failures,** each saying what happened, that nothing in the thread was lost, and what to do, with **Try again**, which sends the user's last message again: the server did not answer after its tries, naming its address to check; it did not start answering within five minutes; it turned down its key, with **Open Settings** at Your own model servers first; it no longer has the model; the thread is longer than the model takes, where the next step is a model with more context or a new thread, since OpenCode threads are not compacted in Sotto.
+- **Nothing moves elsewhere on its own,** as decided above: Try again goes to the same server.
+- **Removed and added again, the same server.** A server's ID comes from its address, so one removed and added again with the right key is the same model source and the thread's model is valid again. An address already added is refused, since it would be a second source for the same server.
+
+## Amended October 25, 2026: a server can clean up dictation
+
+[ADR-0136](0136-ai-cleanup-can-run-on-your-own-model-server.md) puts AI cleanup on a user's server in scope, as its own Owl feature (`own-server-cleanup`), replacing the line above that left it out. A model on a server added without a key can be the cleanup model, and it amends decision 5: Sotto itself also contacts such a server when the user chooses one of its models for cleanup or presses **Measure again**, and with each dictation AI cleanup runs on while that model is chosen. During threads only OpenCode still talks to it.

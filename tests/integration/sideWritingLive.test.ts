@@ -94,7 +94,7 @@ describe.skipIf(!live)("side writing against the installed clients (requires SOT
       await mkdir(data); await mkdir(project)
       const registry = new ThreadRegistry(data)
       const native = adapter(provider, data)
-      const hosts = { claude: new FakeProviderHost() as AgentHost, codex: new FakeProviderHost() as AgentHost, grok: new FakeProviderHost() as AgentHost, devin: new FakeProviderHost() as AgentHost, muse: new FakeProviderHost() as AgentHost, opencode: new FakeProviderHost() as AgentHost }
+      const hosts = { claude: new FakeProviderHost() as AgentHost, codex: new FakeProviderHost() as AgentHost, grok: new FakeProviderHost() as AgentHost, devin: new FakeProviderHost() as AgentHost, muse: new FakeProviderHost() as AgentHost, opencode: new FakeProviderHost() as AgentHost, cursor: new FakeProviderHost() as AgentHost, deepseek: new FakeProviderHost() as AgentHost }
       hosts[provider] = new SottoThreadHost(provider, native, registry)
       const host = new WorkspaceHost(new ConfiguredProviderHost({ directory: data, provider: () => provider, enabledProviders: () => [provider],
         threadProvider: id => registry.byThread(id)?.provider, hosts }), data)

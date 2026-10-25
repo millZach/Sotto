@@ -69,7 +69,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // (ADR-0061 decisions 4 and 11), so neither needs a remote-answer policy record.
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
-  'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
+  'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
   // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a
   // permission or a question is never marked, so pairing is enough.
   'dismiss-failures': ['failures'],

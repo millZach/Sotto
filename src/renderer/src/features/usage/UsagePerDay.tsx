@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { i18n as interfaceI18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageActivityAggregate, UsageDailyAggregate, UsageDashboardRead, UsageFieldTotal, UsageModelAggregate, UsageProviderId } from '../../../../shared/usageDashboard'
 import { roomKeyTarget } from '../../components/AppShell'
 import { DailyChart, SeriesValues, dismissDisclosure, type DayValue } from './UsageCharts'
@@ -29,17 +32,17 @@ export function useChartChoice(): [ChartChoice, (patch: Partial<ChartChoice>) =>
   return [choice, change]
 }
 
-const SHOWS: ReadonlyArray<readonly [ChartShow, string]> = [['total', 'Total'], ['provider', 'By provider'], ['model', 'By model']]
-const KINDS: ReadonlyArray<readonly [ChartKind, string]> = [['bars', 'Bars'], ['lines', 'Lines']]
-const NOUN: Record<Exclude<ChartShow, 'total'>, string> = { provider: 'provider', model: 'model' }
+const SHOWS: ReadonlyArray<readonly [ChartShow, MessageDescriptor]> = [['total', msg`Total`], ['provider', msg`By provider`], ['model', msg`By model`]]
+const KINDS: ReadonlyArray<readonly [ChartKind, MessageDescriptor]> = [['bars', msg`Bars`], ['lines', msg`Lines`]]
 
 /** A small radio group in the `usage-seg` style: one Tab stop, the arrows move and choose. */
 function Choice<T extends string>({ label, options, value, onChoose }: {
   readonly label: string
-  readonly options: ReadonlyArray<readonly [T, string]>
+  readonly options: ReadonlyArray<readonly [T, MessageDescriptor]>
   readonly value: T
   readonly onChoose: (value: T) => void
 }): ReactNode {
+  const { i18n } = useLingui()
   const group = useRef<HTMLDivElement>(null)
   const onKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const target = roomKeyTarget(event.key, index, options.length)
@@ -48,7 +51,7 @@ function Choice<T extends string>({ label, options, value, onChoose }: {
     group.current?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[target]?.focus()
   }
   return <div ref={group} className="usage-seg usage-seg--small" role="radiogroup" aria-label={label}>{options.map(([key, name], index) => <button key={key} type="button" role="radio"
-    className="tt-focusable" aria-checked={value === key} tabIndex={value === key ? 0 : -1} onClick={() => onChoose(key)} onKeyDown={event => onKey(event, index)}>{name}</button>)}</div>
+    className="tt-focusable" aria-checked={value === key} tabIndex={value === key ? 0 : -1} onClick={() => onChoose(key)} onKeyDown={event => onKey(event, index)}>{i18n._(name)}</button>)}</div>
 }
 
 /** What one filtered read asks for: a provider, or one model by every spelling its computers stored. */
@@ -104,16 +107,23 @@ function useSeriesDays(page: UsagePage, requests: readonly SeriesRequest[]): { d
 }
 
 /** A figure in words for the keyboard announcement, as the value list shows it. */
-const figureWords = (figure: ChartFigure, format: (value: number) => string): string =>
-  !figure.known ? 'not reported' : `${figure.partial ? 'at least ' : ''}${format(figure.value)}`
+function figureWords(figure: ChartFigure, format: (value: number) => string): string {
+  if (!figure.known) return interfaceI18n._(msg`not reported`)
+  const shown = format(figure.value)
+  return figure.partial ? interfaceI18n._(msg`at least ${shown}`) : shown
+}
 /** A token field as a figure, for the whole range's announcement. */
 const fieldFigure = (field: UsageFieldTotal): ChartFigure => ({ value: field.value ?? 0, known: field.value !== undefined, partial: field.partial })
 
 /** What Other holds, in a sentence: each model and its provider, and any models the ranking left out. */
 function otherHolds(rest: readonly SeriesCandidate[], truncated: boolean): string {
-  const named = rest.map(item => `${item.name} from ${PROVIDER_NAMES[item.providerId]}`)
-  if (truncated) named.push("models Usage doesn't list")
-  return `Other holds ${joinNames(named)}.`
+  const named = rest.map(item => {
+    const model = item.name, provider = PROVIDER_NAMES[item.providerId]
+    return interfaceI18n._(msg`${model} from ${provider}`)
+  })
+  if (truncated) named.push(interfaceI18n._(msg`models Usage doesn't list`))
+  const list = joinNames(named)
+  return interfaceI18n._(msg`Other holds ${list}.`)
 }
 
 /**
@@ -133,6 +143,7 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
   readonly setPin: (day: string | null) => void
   readonly children?: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const { summary } = page
   const { show, kind } = choice
   const tokens = metric === 'tokens'
@@ -164,18 +175,23 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
     ? splitPlan({ kind, choice: series, totals, values, slots, incomplete: show === 'model' && summary.modelsTruncated,
       titleOf: item => show === 'model' ? `${item.name} · ${PROVIDER_NAMES[item.providerId]}` : undefined })
     : { ...totalPlan(metric, kind, rows), ready: true }
-  const noun = split ? NOUN[show] : ''
   // Each computer lists its models by tokens, a few hundred at most. The top five by tokens on one computer are still its
   // top five; by prompts, or joined across computers, a model left off a list may belong among them.
   const rankingIncomplete = show === 'model' && summary.modelsTruncated && (!tokens || readyHosts(page.read).length > 1)
   const other = plan.series.find(item => item.key === 'other')
   // The note above says what failed; the plot stays empty rather than say it twice.
-  const waiting = !plan.ready ? (failed ? '' : `Reading each ${noun}'s days…`) : undefined
+  const byProvider = show === 'provider'
+  const waiting = !plan.ready ? (failed ? '' : byProvider ? t`Reading each provider's days…` : t`Reading each model's days…`) : undefined
   const dayIndex = selected === null ? null : dayList.indexOf(selected)
   const amount = tokens ? fmtTok : fmtInt
-  const unit = tokens ? 'tokens' : 'prompts'
   const names = joinNames(plan.series.map(item => item.name))
-  const what = split && plan.series.length > 0 ? ` ${kind === 'bars' ? 'Stacked' : 'One line'} by ${noun}: ${names}.` : ''
+  const range = page.rangeLabel
+  const perDayWords = tokens ? t`Tokens per day, ${range}.` : t`Prompts per day, ${range}.`
+  const what = !(split && plan.series.length > 0) ? ''
+    : kind === 'bars'
+      ? byProvider ? t`Stacked by provider: ${names}.` : t`Stacked by model: ${names}.`
+      : byProvider ? t`One line by provider: ${names}.` : t`One line by model: ${names}.`
+  const valuesWhen = dayIndex === null ? page.rangeLabel : longDay(selected!, page.today)
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     const last = rows.length - 1
@@ -192,35 +208,44 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
     const whole: ChartFigure = row === undefined ? (tokens ? fieldFigure(summary.totals.tokens.total) : { value: summary.totals.prompts.total, known: true, partial: false })
       : tokens ? { value: row.input + row.output, known: row.tokensKnown, partial: row.tokensPartial } : { value: row.prompts, known: true, partial: false }
     const parts = split && plan.ready && plan.series.length > 0 ? `. ${seriesValues(plan, at).map(item => `${item.name} ${figureWords(item.figure, amount)}`).join(', ')}` : ''
-    page.announce(`${current === null ? 'Whole range' : longDay(current, page.today)}: ${whole.known ? `${figureWords(whole, amount)} ${unit}` : `${unit} not reported`}${parts}`)
+    const figure = figureWords(whole, amount)
+    const counted = whole.known ? tokens ? t`${figure} tokens` : t`${figure} prompts` : tokens ? t`tokens not reported` : t`prompts not reported`
+    page.announce(`${current === null ? t`Whole range` : longDay(current, page.today)}: ${counted}${parts}`)
   }
 
   return <div className={`usage-per${tokens ? ' usage-stage__sub' : ''}`}>
     <div className="usage-chart-head">
-      <h3>Per day</h3>
+      <h3><Trans>Per day</Trans></h3>
       <div className="usage-chart-tools">
-        <span className="usage-chart-tools__label" aria-hidden="true">Show</span>
-        <Choice label="Show on the chart" options={SHOWS} value={show} onChoose={value => onChoose({ show: value })} />
-        <Choice label="Draw the days as" options={KINDS} value={kind} onChoose={value => onChoose({ kind: value })} />
+        <span className="usage-chart-tools__label" aria-hidden="true"><Trans context="Usage chart">Show</Trans></span>
+        <Choice label={t`Show on the chart`} options={SHOWS} value={show} onChoose={value => onChoose({ show: value })} />
+        <Choice label={t`Draw the days as`} options={KINDS} value={kind} onChoose={value => onChoose({ kind: value })} />
       </div>
     </div>
     {children}
-    {rankingIncomplete ? <p className="usage-note">Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most {unit}. Other counts the rest.</p> : null}
-    {failed ? <p className="usage-note">Each {noun}'s days couldn't be read. Nothing was lost, and the totals above still count them. <button type="button" className="usage-link tt-focusable" onClick={retry}>Try again</button></p> : null}
+    {rankingIncomplete ? <p className="usage-note tt-paragraph">{tokens
+      ? t`Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest.`
+      : t`Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most prompts. Other counts the rest.`}</p> : null}
+    {failed ? <p className="usage-note tt-paragraph">{byProvider
+      ? t`Each provider's days couldn't be read. Nothing was lost, and the totals above still count them.`
+      : t`Each model's days couldn't be read. Nothing was lost, and the totals above still count them.`} <button type="button" className="usage-link tt-focusable" onClick={retry}><Trans>Try again</Trans></button></p> : null}
     {split && plan.series.length > 0 ? <SeriesValues plan={plan} dayIndex={dayIndex} metric={metric} kind={kind} ready={plan.ready}
-      label={`Each ${noun}, ${dayIndex === null ? page.rangeLabel : longDay(selected!, page.today)}`} /> : null}
+      label={byProvider ? t`Each provider, ${valuesWhen}` : t`Each model, ${valuesWhen}`} /> : null}
     <DailyChart days={dayList} plan={plan} kind={kind} metric={metric} today={page.today} selected={selected} waiting={waiting}
-      label={`${tokens ? 'Tokens' : 'Prompts'} per day, ${page.rangeLabel}.${what}`}
+      label={what === '' ? perDayWords : `${perDayWords} ${what}`}
       onHover={setHover} onPin={() => { setPin(hover === null || pin === hover ? null : hover); setHover(null) }} onKey={onKey} />
     {show === 'model' && plan.series.length > 0 ? <details className="usage-about usage-values-more" onKeyDown={dismissDisclosure}>
-      <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" />{other === undefined ? "Each model's provider" : "Each model's provider, and what Other holds"}</summary>
+      <summary className="tt-focusable"><ChevronRight size={14} aria-hidden="true" />{other === undefined ? t`Each model's provider` : t`Each model's provider, and what Other holds`}</summary>
       <ul>
-        {series.drawn.map(item => <li key={item.key}>{item.name}, from {PROVIDER_NAMES[item.providerId]}</li>)}
+        {series.drawn.map(item => {
+          const model = item.name, provider = PROVIDER_NAMES[item.providerId]
+          return <li key={item.key}><Trans>{model}, from {provider}</Trans></li>
+        })}
         {other === undefined ? null : <li>{otherHolds(series.rest, summary.modelsTruncated)}</li>}
       </ul>
     </details> : null}
     {!split && tokens ? <p className="usage-legend usage-legend--below">{kind === 'bars'
-      ? <><span><i className="usage-kind--input" />Input</span><span><i className="usage-kind--out" />Output</span></>
-      : <span><i className="usage-kind--both" />Input and output</span>}</p> : null}
+      ? <><span><i className="usage-kind--input" /><Trans>Input</Trans></span><span><i className="usage-kind--out" /><Trans>Output</Trans></span></>
+      : <span><i className="usage-kind--both" /><Trans>Input and output</Trans></span>}</p> : null}
   </div>
 }

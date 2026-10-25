@@ -13,6 +13,8 @@ it('says how long ago a device was seen in whole minutes, hours or days', () => 
   expect(timeAgo(at(23 * 60 + 59), NOW)).toBe('23 hours ago')
   expect(timeAgo(at(24 * 60), NOW)).toBe('1 day ago')
   expect(timeAgo('2026-09-19T04:52:53.100Z', NOW)).toBe('8 days ago')
+  // English writes a count past 999 ungrouped, as it did before its words were translated.
+  expect(timeAgo(at(1234 * 24 * 60), NOW)).toBe('1234 days ago')
 })
 
 it('gives the reason a device cannot be used, a saved host first', () => {
