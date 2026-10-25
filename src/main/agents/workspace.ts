@@ -422,6 +422,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.threadIndex = { array: threads, length: threads.length, positions }
     return this.threadIndex
   }
+  /**
+   * A thread's creation, without walking the list: started creations stay in it for as long as their threads do, and an
+   * accept looks one up for every thread it merges. Read again whenever the list is another or a different length, and
+   * when what it names is not there; a phase changes in place and keeps its entry.
+   */
+  private creationOf(threadId: string): Workspace['creations'][number] | undefined {
+    const creations = this.state.creations
+    let index = this.creationIndex
+    if (!index || index.array !== creations || index.length !== creations.length) index = this.indexCreations()
+    let at = index.positions.get(threadId)
+    if (at !== undefined && creations[at]?.threadId !== threadId) { index = this.indexCreations(); at = index.positions.get(threadId) }
+    return at === undefined ? undefined : creations[at]
+  }
+  private indexCreations(): NonNullable<WorkspaceHost['creationIndex']> {
+    const creations = this.state.creations
+    const positions = new Map<string, number>()
+    for (let at = 0; at < creations.length; at++) if (!positions.has(creations[at]!.threadId)) positions.set(creations[at]!.threadId, at)
+    this.creationIndex = { array: creations, length: creations.length, positions }
+    return this.creationIndex
+  }
   /** The state's record of a thread, visible or not. */
   private threadById(id: string): AgentThread | undefined {
     const at = this.positionOf(id)
@@ -441,7 +461,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     return { ...snapshot, threads: snapshot.threads.filter(thread => this.visible(thread)),
       ...(this.held.size ? catalogWithoutHeld(snapshot, this.held) : {}) }
   }
-  watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.state.creations.find(item => item.threadId === threadId)?.phase }
+  watcherCreationPhase(threadId: string): 'unstarted' | 'starting' | 'retryable' | 'started' | undefined { return this.creationOf(threadId)?.phase }
   async watcherRead(threadId: string, afterPosition?: number, limit = 50) {
     if (!this.watcherEnabled) throw new Error(WATCHER_DISABLED)
     await this.refreshThread(threadId)
@@ -596,7 +616,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.touched(this.thread(request.threadId)).startedFrom = request.startedFrom
       if (!request.fork) { this.dirty = true; await this.flush(); this.publish(); return { accepted: true } }
       try {
-        const creation = this.state.creations.find(item => item.threadId === request.threadId)
+        const creation = this.creationOf(request.threadId)
         if (!creation || !this.inner.forkThread) throw new Error(`${PROVIDER_LABELS[source.providerId!]} has no fork of its own, so nothing was made.`)
         if (this.thread(request.threadId).worktree?.status !== 'ready') await this.startWorkingCopy(this.thread(request.threadId))
         const thread = this.thread(request.threadId)
@@ -629,7 +649,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const releaseStatus = this.gitStatus?.hold?.(worktree.path)
       try { await this.gitStatus?.idle?.(worktree.path); await this.worktrees.reclaim(worktree, { automatic: true }) }
       catch {
-        const thread = this.thread(threadId), creation = this.state.creations.find(item => item.threadId === threadId)
+        const thread = this.thread(threadId), creation = this.creationOf(threadId)
         delete this.touched(thread).startedFrom; thread.nativeSessionStarted = false
         if (creation) creation.phase = 'unstarted'
         this.dirty = true
@@ -830,6 +850,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private releasableAll = true
   /** The state's threads by ID, with the list and its length they were read from, so a look-up costs no walk. */
   private threadIndex: { readonly array: AgentThread[]; readonly length: number; readonly positions: Map<string, number> } | undefined
+  /** The creations by thread ID, with the list and its length they were read from. */
+  private creationIndex: { readonly array: Workspace['creations']; readonly length: number; readonly positions: Map<string, number> } | undefined
   /**
    * Every publication of the inner host taken in whole and every activity publication worked out from every thread, as
    * before #925. Only the test that holds the two paths to one another sets it.
@@ -1337,7 +1359,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const service = this.pullRequestsOrRefuse()
       if (!parsePullRequestReference(reference)) throw new GitPullRequestRefusal('Use a pull request URL, 123, or #123.')
       const thread = this.thread(threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       const draft = thread.nativeSessionStarted === false && creation?.phase === 'unstarted' && !(thread.worktree?.mode === 'independent' && thread.worktree.path)
       if (mode === 'worktree' && !draft) throw new GitPullRequestRefusal('This thread already has a working folder. Use Local, or start a new thread to check the pull request out in a worktree of its own.')
       const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), reference)
@@ -1582,7 +1604,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       if (await this.launchProfiles.profileFor(threadId)) throw new Error('Watcher’s working folder cannot be changed.')
       const thread = this.thread(threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       if (thread.nativeSessionStarted !== false || creation?.phase !== 'unstarted' || thread.worktree?.mode === 'independent' && thread.worktree.path) {
         throw new Error('This thread already has a working folder. Start a new thread to choose another one.')
       }
@@ -2555,6 +2577,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       catch {
         // The whole history goes to the pane as it is, so nothing is above a window any more.
         this.saveError = HISTORY_SAVE_ERROR; this.hidden.delete(thread.id); this.storedAnchors.delete(thread.id)
+        // The next accept compares this history again whatever it names, as every accept did before #925.
+        this.remerge.add(thread.id)
         return [...messages]
       }
       if (events[0]?.kind === 'messages-reset') this.hidden.delete(thread.id)
@@ -2902,8 +2926,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       }
       if (!this.subagentSummaries.has(thread.id)) this.subagentSummaries.set(thread.id, this.subagentStore.state(thread.id).summary)
     } catch {
-      // An unchanged provider snapshot still needs retrying when its store transaction failed.
+      // An unchanged provider snapshot still needs retrying when its store transaction failed: the next accept merges this
+      // thread again whatever it names, as every accept merged every thread before #925.
       this.subagentInputs.delete(thread.id)
+      this.remerge.add(thread.id)
       // Words still being moved stay in their records: nothing strips them while the roster lacks them.
       if (this.subagentWordsPending || this.rosterFlushPending) this.rosterLacksWords = true
       this.saveError = this.rosterLacksWords ? ROSTER_LACKS_WORDS_ERROR : 'Agent history could not be saved. Restore access to local storage and refresh.'
@@ -2919,7 +2945,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const workingDirectory = thread.nativeSessionStarted === false && thread.worktree?.status === 'pending' && !thread.worktree.path
       ? await existingWorkingDirectory(this.state.snapshot.projects.find(item => item.id === thread.projectId)!.path)
       : await this.threadWorkingDirectory(threadId)
-    const creation = this.state.creations.find(item => item.threadId === threadId)
+    const creation = this.creationOf(threadId)
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
@@ -3267,7 +3293,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private mergeThread(thread: AgentThread, old: AgentThread | undefined, connected: boolean, previousAcceptAt: number | undefined): AgentThread {
     this.noteConnection(thread.id, connected, previousAcceptAt)
     this.trackSubagents(thread, connected)
-    const creation = this.state.creations.find(item => item.threadId === thread.id)
+    const creation = this.creationOf(thread.id)
     if (creation) creation.phase = 'started'
     const activities = old?.activities || thread.activities || this.storedActivity.has(thread.id) ? this.mergeActivities(thread, old) : undefined
     // A new provider registration may have a different project ID. The original Sotto
@@ -3761,7 +3787,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // may be waiting for the end of a publish window. What is held here answers it; the caller reads whole when the
     // echo is not in it (#765).
     if (purpose?.afterSend) return this.workspaceSnapshot()
-    const creation = this.state.creations.find(item => item.threadId === threadId)
+    const creation = this.creationOf(threadId)
     const read = await this.withProfileRefusal(threadId, () => creation && creation.phase !== 'started' ? this.inner.snapshot(thread.providerId)
       : this.inner.refreshThread?.(threadId, this.hostRead(purpose)) ?? this.inner.snapshot(thread.providerId))
     // Taken after the read, so whatever changed or marked the workspace while it was awaited is the baseline and is
@@ -4245,7 +4271,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return { accepted: true }
     }
     let thread = this.thread(command.threadId)
-    const creation = this.state.creations.find(item => item.threadId === thread.id)
+    const creation = this.creationOf(thread.id)
     if (command.type === 'configure-thread' && creation?.phase === 'unstarted') {
       validateThreadOptions(this.state.snapshot, command, thread.modelId)
       const model = resolveModel(this.state.snapshot.models, command.modelId ?? thread.modelId)!
@@ -4273,7 +4299,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       firstSend = true
       if (creation.phase === 'starting') {
         await this.refreshThread(thread.id)
-        if (this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
+        if (this.creationOf(thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Reconnect its original provider and refresh; Sotto will not create it twice. Your prompt has not been sent.')
       } else {
         // Waits for setup already running from creation; only an unstarted or failed one starts here.
         if (thread.worktree?.status !== 'ready') await this.startWorkingCopy(thread)
@@ -4302,7 +4328,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           // A definitive rejection permits another attempt. Preserve any identity
           // already reserved by the registry; only an entirely unbound thread unlocks.
           const current = this.thread(thread.id)
-          if (this.state.creations.find(item => item.threadId === thread.id)?.phase === 'started') return
+          if (this.creationOf(thread.id)?.phase === 'started') return
           creation.phase = this.inner.providerForThread?.(thread.id) ? 'retryable' : 'unstarted'
           this.touched(current).nativeSessionStarted = creation.phase !== 'unstarted'
           this.dirty = true; await this.flush(); this.publish()
@@ -4320,7 +4346,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
         this.accept(await this.inner.snapshot(thread.providerId)); await this.flush()
-        if (!result.accepted || this.state.creations.find(item => item.threadId === thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Refresh its original provider; your prompt has not been sent.')
+        if (!result.accepted || this.creationOf(thread.id)?.phase !== 'started') throw new Error('Native thread creation is not confirmed. Refresh its original provider; your prompt has not been sent.')
       }
       thread = this.thread(command.threadId)
     }
@@ -4451,7 +4477,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (!thread || thread.archivedAt || thread.providerSessionOpen) return
       if (!this.visible(thread)) this.refuseDormantThread(thread)
       if (thread.nativeSessionStarted !== false) return start?.call(this.inner, threadId)
-      const creation = this.state.creations.find(item => item.threadId === threadId)
+      const creation = this.creationOf(threadId)
       if (creation?.phase !== 'unstarted') return
       const project = this.state.snapshot.projects.find(item => item.id === thread.projectId)
       this.prefetchOriginBase(thread, project)

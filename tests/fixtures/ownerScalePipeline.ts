@@ -139,6 +139,11 @@ export interface OwnerScalePipelineOptions {
    * (#925).
    */
   touched?: (layer: string, records: number) => void
+  /**
+   * Told each read of a creation's thread ID. Every thread on this computer was made in Sotto, so each has a started
+   * creation the workspace keeps for as long as the thread, newest last, as the owner's do (#925 review).
+   */
+  creationRead?: () => void
 }
 
 export interface ThreadChangesReport {
@@ -385,6 +390,18 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     ...(usage ? { usage } : {}), ...(nextPrompts ? { nextPrompts } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
+  // Every local thread was made here: the workspace keeps each one's started creation, oldest first, so the threads that
+  // stream, the newest, come last. Each read of a creation's thread is told to `creationRead`.
+  {
+    const kept = workspace as unknown as { state: { creations: { threadId: string; projectId: string; commandId: string; phase: string }[]; snapshot: AgentHostSnapshot } }
+    const made = [...kept.state.snapshot.threads].reverse()
+    kept.state.creations = made.map((item, index) => {
+      const creation = { projectId: item.projectId, commandId: `00000000-0000-4000-9000-${index.toString(16).padStart(12, '0')}`, phase: 'started' } as { threadId: string; projectId: string; commandId: string; phase: string }
+      const threadId = item.id
+      Object.defineProperty(creation, 'threadId', { enumerable: true, get: () => { options.creationRead?.(); return threadId } })
+      return creation
+    })
+  }
   const localHostId = control.hostId()!
   const idOf = (session: string): string => registry.bySession('claude', session)!.threadId
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
