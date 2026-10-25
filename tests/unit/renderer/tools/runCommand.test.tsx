@@ -32,7 +32,7 @@ afterEach(() => { cleanup() })
 beforeEach(() => { vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }) })
 afterEach(() => { vi.unstubAllGlobals() })
 
-describe('running a reply\'s command in the drawer (ADR-0136)', () => {
+describe('running a reply\'s command in the drawer (ADR-0137)', () => {
   it('opens a closed drawer on one new shell that main starts with the command, and no second empty shell', async () => {
     const created = terminalSession(ID, workspace, { place: 'drawer', title: 'npm run typecheck' })
     const held = Promise.withResolvers<void>()
@@ -122,7 +122,7 @@ function reply(text: string, run: RunCommand | undefined, commands = true) {
   return render(<RunCommandContext.Provider value={run}><MessageContent text={text} commands={commands} /></RunCommandContext.Provider>)
 }
 
-describe('Run on a reply\'s commands (ADR-0136)', () => {
+describe('Run on a reply\'s commands (ADR-0137)', () => {
   it('offers Run above each inline command, runs exactly its text and then offers Run again', async () => {
     let finish: (started: boolean) => void = () => {}
     const run = vi.fn<RunCommand>(() => new Promise(resolve => { finish = resolve }))

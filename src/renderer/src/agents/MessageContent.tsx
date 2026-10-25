@@ -36,7 +36,7 @@ export interface MessageContentProps {
   readonly streaming?: boolean
   /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the surrounding link router: a thread's browser setting, else the system browser. */
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
-  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0136). */
+  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0137). */
   readonly commands?: boolean
 }
 
@@ -239,7 +239,7 @@ function InlineCode({ node, children }: { node?: Element | undefined; children?:
 export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
-  /** Offers Run beside Copy when the block holds shell input (ADR-0136). */
+  /** Offers Run beside Copy when the block holds shell input (ADR-0137). */
   readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
   readonly anchorEnd?: boolean | undefined

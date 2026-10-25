@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { hasForbiddenControl, runnableBlock, runnableInline, terminalInputFor } from '../../../src/shared/runnableCommand'
 import { terminalCreateSchema } from '../../../src/shared/terminal'
 
-describe('runnable inline code (ADR-0136)', () => {
+describe('runnable inline code (ADR-0137)', () => {
   it.each([
     ['brew install --cask osquery santa', true],
     ['sudo ~/Developer/mac-security-agent/mac/install.sh', true],
@@ -55,7 +55,7 @@ describe('runnable inline code (ADR-0136)', () => {
   })
 })
 
-describe('runnable fenced blocks (ADR-0136)', () => {
+describe('runnable fenced blocks (ADR-0137)', () => {
   it.each(['bash', 'sh', 'zsh', 'shell', 'powershell', 'pwsh', 'ps1', 'cmd', 'Bash', 'PowerShell'])('runs a %s block', language => {
     expect(runnableBlock('git status', language)).toBe('git status')
   })

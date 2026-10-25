@@ -144,7 +144,7 @@ export class TerminalStore {
   }
 
   /**
-   * Starts a new shell, true once main has. With `run`, a reply's command (ADR-0136), main types it into the new shell
+   * Starts a new shell, true once main has. With `run`, a reply's command (ADR-0137), main types it into the new shell
    * itself, so nothing here writes it and a snapshot replay cannot drop it. The thread must be listed first. `busy` is
    * set before the first wait, so a drawer opened alongside starts no second shell of its own.
    */

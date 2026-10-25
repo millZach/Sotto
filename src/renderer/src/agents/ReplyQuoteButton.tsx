@@ -13,7 +13,7 @@ const GAP_PX = 8
 
 /**
  * Whether a button meant to stand `height` above something whose top is at `anchorTop` would be cut off by the top of
- * the scrolling frame it sits in, so it should stand below instead. Shared with Run on a reply's commands (ADR-0136).
+ * the scrolling frame it sits in, so it should stand below instead. Shared with Run on a reply's commands (ADR-0137).
  */
 export function flipsBelow(anchorTop: number, height: number, frameTop: number, gap = GAP_PX): boolean {
   return anchorTop - height - gap < frameTop + gap

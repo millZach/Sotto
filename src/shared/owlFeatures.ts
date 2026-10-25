@@ -45,7 +45,7 @@ export const OWL_FEATURES = [
   { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },
   { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
   { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
-  { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0136-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
+  { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0137-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']
