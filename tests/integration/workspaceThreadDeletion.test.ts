@@ -91,6 +91,50 @@ describe('deleting settled threads (ADR-0140)', () => {
     expect(f.forgotten).toEqual([])
   })
 
+  it('drops a deleted thread from the activity publication, and a provider that still publishes it changes nothing', async () => {
+    const f = await fixture()
+    const host = await f.open()
+    let published: string[] = []
+    host.subscribeActivitySnapshots(snapshot => { published = snapshot.threads.map(thread => thread.id) })
+    await host.deleteThreads(['session-workshop'], automatic)
+    await vi.waitFor(() => { expect(published).toEqual(['session-docs']) })
+    // A change to the cleared thread from its provider, taken in as a change rather than a whole snapshot.
+    // The first publication after a read is taken in whole; the next, as a change.
+    let titles: string[] = []
+    host.subscribeActivitySnapshots(snapshot => { titles = snapshot.threads.map(thread => thread.title) })
+    f.adapter.state.threads.find(thread => thread.id === 'session-docs')!.title = 'Docs, read whole'
+    f.adapter.emit()
+    await vi.waitFor(() => { expect(titles).toEqual(['Docs, read whole']) })
+    // The other thread changes in the same publication, so the workspace publishes again once it has taken it in.
+    f.adapter.state.threads.find(thread => thread.id === 'session-workshop')!.title = 'Back again'
+    f.adapter.state.threads.find(thread => thread.id === 'session-docs')!.title = 'Docs, renamed'
+    f.adapter.emit()
+    await vi.waitFor(() => { expect(titles).toEqual(['Docs, renamed']) })
+    expect(published).toEqual(['session-docs'])
+    expect(host.workspaceSnapshot().threads.map(thread => thread.id)).toEqual(['session-docs'])
+  })
+
+  it('keeps a thread whose checkpoint step has no result yet', async () => {
+    const f = await fixture()
+    const host = await f.open()
+    host.setCheckpointHooks({ beforeTurn: async () => undefined, isBlocked: threadId => threadId === 'session-workshop' })
+    expect(await host.deleteThreads(['session-workshop', 'session-docs'], automatic)).toEqual({ deleted: ['session-docs'], kept: [{ threadId: 'session-workshop', reason: 'queued' }] })
+    expect((await host.previewThreadDeletion('session-workshop')).kept).toBe('queued')
+  })
+
+  it('deletes nothing when a history store did not open, and says what a failed erase left', async () => {
+    const f = await fixture()
+    const host = await f.open()
+    ;(host as unknown as { storeUnavailable: boolean }).storeUnavailable = true
+    await expect(host.deleteThreads(['session-workshop'], automatic)).rejects.toThrow('Sotto could not open its thread history, so it deleted nothing. Restart Sotto and try again.')
+    ;(host as unknown as { storeUnavailable: boolean }).storeUnavailable = false
+    const forgetMany = vi.spyOn(ThreadStore.prototype, 'forgetMany').mockImplementationOnce(() => { throw new Error('disk full') })
+    await expect(host.deleteThreads(['session-workshop'], automatic)).rejects.toThrow(/so it kept them, but their sub-agent lists are gone/u)
+    expect(host.isThreadCleared('session-workshop')).toBe(false)
+    expect(host.workspaceSnapshot().threads.map(thread => thread.id)).toEqual(['session-workshop', 'session-docs'])
+    forgetMany.mockRestore()
+  })
+
   it('clears many threads in one go', async () => {
     const f = await fixture()
     const host = await f.open()

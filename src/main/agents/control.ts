@@ -1258,17 +1258,22 @@ export class AgentControl {
     this.deletedListeners.add(listener)
     return () => { this.deletedListeners.delete(listener) }
   }
-  /** What the clearing check needs of the coordinator, read once for a whole list. */
+  /**
+   * What the clearing check needs of the coordinator, made once for a whole list or clear, so checking each thread costs
+   * nothing per other thread. The threads and projects are read as they are now; who delegated and what Watcher watches
+   * are read once.
+   */
   private clearFacts(): ThreadClearFacts {
+    const state = this.state
     const watched = new Set(this.watcherHooks?.watchedThreadIds?.() ?? [])
-    return { threads: this.state.host.threads, delegators: threadDelegators(this.state.host.threads), projects: this.state.host.projects,
+    return { get threads() { return state.host.threads }, delegators: threadDelegators(state.host.threads), get projects() { return state.host.projects },
       hidden: id => !this.threadAvailable(id),
       pending: id => this.hasPendingThreadWork(id) || this.outbox.some(item => item.threadId === id),
       watched: id => watched.has(id) }
   }
   /** Why the coordinator keeps this thread back from clearing now, or null (ADR-0140 decision 3). */
   private clearHold(threadId: string, facts = this.clearFacts()): ThreadClearKeptReason | null {
-    return threadClearHold(this.state.host.threads.find(thread => thread.id === threadId), facts)
+    return threadClearHold(this.threadById(threadId), facts)
   }
   private clearKept(item: { readonly threadId: string; readonly reason: ThreadClearKeptReason }, titles: ReadonlyMap<string, { title: string; projectTitle: string }>): ThreadClearKept {
     const named = titles.get(item.threadId)
@@ -1361,15 +1366,15 @@ export class AgentControl {
     const titles = this.clearTitles()
     const old = new Set(this.settledThreadsOlderThan(olderThanDays).map(item => item.thread.id))
     // One that changed since the list was made is kept and says why; one already gone is no one's to report.
-    const known = new Set(this.state.host.threads.map(thread => thread.id))
-    const asked = [...new Set(threadIds)].filter(id => known.has(id) && (old.has(id) || this.clearHold(id) !== null))
+    const facts = this.clearFacts()
+    const asked = [...new Set(threadIds)].filter(id => this.threadById(id) !== undefined && (old.has(id) || this.clearHold(id, facts) !== null))
     // Checked again as each goes: a thread active again since the list was made is no longer old, and is kept as working.
     const stillOld = (id: string): boolean => {
-      const thread = this.state.host.threads.find(item => item.id === id)
+      const thread = this.threadById(id)
       const quietSince = thread ? threadQuietSince(thread, this.state.host.projects.find(project => project.id === thread.projectId)) : undefined
       return quietSince !== undefined && quietLongerThan(quietSince, olderThanDays, Date.now())
     }
-    const result = await host.deleteThreads!(asked, { automatic: true, hold: id => this.clearHold(id) ?? (stillOld(id) ? null : 'working') })
+    const result = await host.deleteThreads!(asked, { automatic: true, hold: id => this.clearHold(id, facts) ?? (stillOld(id) ? null : 'working') })
     if (result.deleted.length) await this.forgetDeletedThreads(result.deleted)
     // The hourly rule keeps the same threads back hour after hour, so it logs only a run that cleared something.
     if (!automatic || result.deleted.length) this.logClear('threads-cleared', String(result.deleted.length))
@@ -1381,12 +1386,19 @@ export class AgentControl {
   }
   /**
    * Clear settled threads after (ADR-0140 decision 2): this host's settled threads quiet longer than `days` are cleared on
-   * their own. It runs nothing while the Owl feature is off, and says nothing on screen; the log has the count.
+   * their own. It runs nothing while the Owl feature is off, and says nothing on screen; the log has the count. `keep` is
+   * asked of each thread nothing else keeps back, such as whether GitHub has an open pull request for its branch now.
    */
-  clearSettledThreads(days: number): Promise<void> {
+  clearSettledThreads(days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>): Promise<void> {
     if (this.dependencies.clearThreadsEnabled !== true || this.disposed || !this.dependencies.host.deleteThreads || days <= 0) return Promise.resolve()
     return this.clearSerially(async () => {
-      const ids = this.settledThreadsOlderThan(days).map(item => item.thread.id)
+      const facts = this.clearFacts()
+      const ids: string[] = []
+      for (const { thread } of this.settledThreadsOlderThan(days)) {
+        // One already kept back is asked about again as it goes, and kept; only one that could go is asked about.
+        if (keep && this.clearHold(thread.id, facts) === null && await keep(thread) !== null) continue
+        ids.push(thread.id)
+      }
       if (ids.length) await this.clearThreads(ids, days, true)
     }).catch(() => { this.logClear('threads-cleared', 'failed') })
   }

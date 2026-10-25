@@ -1,21 +1,24 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { Trash2 } from 'lucide-react'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentClientHost, AgentState, AgentThread, ThreadDeletePreview } from '../../../shared/agents'
-import { threadClearKeptWords } from '../../../shared/threadClear'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
+import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import { useOwlFeature } from '../state/owlFeature'
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import type { PaneMenuItem } from './PaneMenu'
 import { focusedComposerField } from './promptSelection'
+import { THREAD_CLEAR_KEPT_MESSAGES } from './threadClearWords'
 import type { ThreadRow } from './threadFacts'
 import { WorktreeFilesToTick, worktreeListedPaths } from './ThreadWorkingCopy'
 import './threadClear.css'
 
 type Command = AgentConnection['command']
 
-const CHECK_FAILED = 'Sotto could not check this thread. Nothing was deleted. Close this and try again.'
-const DELETE_UNCONFIRMED = 'Sotto could not confirm the delete. If the thread is still listed, nothing was deleted.'
+const CHECK_FAILED = msg`Sotto could not check this thread. Nothing was deleted. Close this and try again.`
+const DELETE_UNCONFIRMED = msg`Sotto could not confirm the delete. If the thread is still listed, nothing was deleted.`
 
 /**
  * Whether this thread's host deletes threads when asked (ADR-0140 decision 7): this computer, or a paired host that lists
@@ -33,6 +36,7 @@ export function offersThreadDelete(clientHosts: readonly Pick<AgentClientHost, '
  * to update the host. Returns the menu's group, empty when it is not offered, and the dialog while it is open.
  */
 export function useDeleteThread(row: ThreadRow, state: AgentState, command: Command, options: { readonly ownPane?: boolean } = {}): { readonly items: PaneMenuItem[]; readonly dialog: ReactNode } {
+  const { t } = useLingui()
   const enabled = useOwlFeature('clear-threads')
   const [open, setOpen] = useState(false)
   const thread = row.thread
@@ -40,8 +44,9 @@ export function useDeleteThread(row: ThreadRow, state: AgentState, command: Comm
   const offered = enabled && options.ownPane !== true && (row.settledBy === 'thread' || row.settledBy === 'project')
     && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
   if (!offered) return { items: [], dialog: null }
-  const refusal = offersThreadDelete(state.host.clientHosts, thread) ? null : `Update ${threadHostName(state, thread)} to delete its threads`
-  const items: PaneMenuItem[] = [{ id: 'delete', label: 'Delete thread…', icon: <Trash2 size={15} aria-hidden="true" />, tone: 'danger',
+  const host = threadHostName(state, thread)
+  const refusal = offersThreadDelete(state.host.clientHosts, thread) ? null : t`Update ${host} to delete its threads`
+  const items: PaneMenuItem[] = [{ id: 'delete', label: t`Delete thread…`, icon: <Trash2 size={15} aria-hidden="true" />, tone: 'danger',
     disabled: refusal !== null, ...(refusal !== null ? { hint: refusal } : {}), run: () => setOpen(true) }]
   const dialog = open ? <DeleteThreadDialog threadId={thread.id} title={thread.title} provider={row.provider} command={command} onClose={() => setOpen(false)} /> : null
   return { items, dialog }
@@ -59,16 +64,24 @@ function focusAfterDelete(): void {
   }, 0)
 }
 
-/** Why one thread is kept, in a sentence's middle; the worktree's own trouble named when the folder's facts say it. */
-function keptWords(preview: ThreadDeletePreview): string {
+/**
+ * Why one thread is kept, in a sentence's middle and the interface language; the worktree's own trouble named when the
+ * folder's facts say it. A path is shown as written, left to right in its own element.
+ */
+function KeptWords({ preview }: { readonly preview: ThreadDeletePreview }): ReactNode {
+  const { i18n } = useLingui()
   const worktree = preview.worktree
   if (preview.kept === 'worktree-error') {
-    if (worktree?.outsideLink) return `its worktree folder links to another folder (${worktree.outsideLink}); remove the link first`
-    if (worktree && !worktree.branch) return 'its worktree folder has no branch checked out; switch it to a branch first'
-    return 'its worktree folder could not be checked'
+    const link = worktree?.outsideLink
+    if (link) return <Trans>its worktree folder links to another folder (<bdi dir="ltr">{link}</bdi>); remove the link first</Trans>
+    if (worktree && !worktree.branch) return <Trans>its worktree folder has no branch checked out; switch it to a branch first</Trans>
+    return <Trans>its worktree folder could not be checked</Trans>
   }
-  return threadClearKeptWords(preview.kept!)
+  return i18n._(THREAD_CLEAR_KEPT_MESSAGES[preview.kept!])
 }
+
+/** A paragraph of words kept for later: a message carries `tt-paragraph`, main's own text is shown as written. */
+const paragraphClass = (words: LaterWords): string | undefined => typeof words === 'string' ? undefined : 'tt-paragraph'
 
 /**
  * Delete “title”? (ADR-0140): asks main what deleting this one thread would do, then says why it is kept, or lists what goes
@@ -82,9 +95,10 @@ export function DeleteThreadDialog({ threadId, title, provider, command, onClose
   readonly command: Command
   readonly onClose: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const [preview, setPreview] = useState<ThreadDeletePreview | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [failure, setFailure] = useState<LaterWords | null>(null)
+  const [deleteError, setDeleteError] = useState<LaterWords | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   useEffect(() => {
     let active = true
@@ -109,19 +123,20 @@ export function DeleteThreadDialog({ threadId, title, provider, command, onClose
     setDeleteError(result?.error ?? DELETE_UNCONFIRMED)
     return false
   }
-  return <ConfirmationDialog title={`Delete “${title}”?`} danger withoutConfirm={closeOnly}
-    confirmLabel="Delete" cancelLabel={closeOnly ? 'Close' : 'Cancel'}
+  const reason = preview && kept !== null ? <KeptWords preview={preview} /> : null
+  return <ConfirmationDialog title={t`Delete “${title}”?`} danger withoutConfirm={closeOnly}
+    confirmLabel={t`Delete`} cancelLabel={closeOnly ? t`Close` : t`Cancel`}
     confirmDisabled={!preview || (listed.length > 0 && !acknowledged)}
-    failureMessage={deleteError ?? DELETE_UNCONFIRMED} pendingStatus="Deleting…"
+    failureMessage={shownWords(deleteError ?? DELETE_UNCONFIRMED)} pendingStatus={t`Deleting…`}
     description={<div className="thread-clear">
-      {!preview && !failure ? <p role="status">Checking the thread…</p> : null}
-      {failure ? <p role="alert">{failure}</p> : null}
-      {preview && kept !== null ? <p>This thread can’t be deleted: {keptWords(preview)}. Nothing was deleted.</p> : null}
+      {!preview && !failure ? <p className="tt-paragraph" role="status"><Trans>Checking the thread…</Trans></p> : null}
+      {failure ? <p className={paragraphClass(failure)} role="alert">{shownWords(failure)}</p> : null}
+      {reason ? <p className="tt-paragraph"><Trans>This thread can’t be deleted: {reason}. Nothing was deleted.</Trans></p> : null}
       {preview && kept === null ? <>
-        <ul className="thread-clear__facts">
-          <li>Its messages and activity leave Sotto and can’t be brought back.</li>
-          {worktree ? <li>Removes the worktree folder it made. Its branch and commits stay.</li> : null}
-          <li>Usage keeps its numbers. {provider} keeps its own copy of the session.</li>
+        <ul className="thread-clear__facts tt-paragraph">
+          <li><Trans>Its messages and activity leave Sotto and can’t be brought back.</Trans></li>
+          {worktree ? <li><Trans>Removes the worktree folder it made. Its branch and commits stay.</Trans></li> : null}
+          <li><Trans>Usage keeps its numbers. {provider} keeps its own copy of the session.</Trans></li>
         </ul>
         {worktree ? <WorktreeFilesToTick preview={worktree} tickable acknowledged={acknowledged} onAcknowledge={setAcknowledged} /> : null}
       </> : null}

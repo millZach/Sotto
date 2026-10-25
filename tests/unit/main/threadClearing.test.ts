@@ -49,6 +49,8 @@ describe('what keeps a settled thread back from clearing (ADR-0140 decision 3)',
   it('keeps a thread whose delegated thread is not at rest, two levels down', () => {
     expect(hold(thread('a'), [thread('child', { delegatedBy: 'a', status: 'running', workspaceSettledAt: null })])).toBe('delegated-working')
     expect(hold(thread('a'), [thread('child', { delegatedBy: 'a' }), thread('grandchild', { delegatedBy: 'child' })], { pending: id => id === 'grandchild' })).toBe('delegated-working')
+    // A delegated thread's compaction whose result is unknown is not at rest either.
+    expect(hold(thread('a'), [thread('child', { delegatedBy: 'a', compaction: { commandId: 'c', status: 'uncertain' } })])).toBe('delegated-working')
     expect(hold(thread('a'), [thread('child', { delegatedBy: 'a' })])).toBeNull()
   })
 

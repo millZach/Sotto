@@ -192,23 +192,37 @@ describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', (
     threads.add('ignored-files'); threads.folderHold.set('ignored-files', 'worktree-files')
     threads.add('in-use'); threads.folderHold.set('in-use', 'worktree-in-use')
     threads.add('watcher', { kind: 'watcher' })
+    // What Sotto last read says no pull request is open; GitHub, asked as the run goes, says one is.
+    const worktree = (root: string, branch: string): AgentThread['worktree'] => ({ mode: 'independent', status: 'ready', repositoryRoot: root, branch, sentBranch: branch })
+    threads.add('opened-since', { worktree: worktree('/repo', 'feat/opened-since') })
+    threads.add('closed-on-github', { worktree: worktree('/repo', 'feat/closed') })
+    // A repository GitHub could not be asked about keeps every thread with a branch in it.
+    threads.add('unasked', { worktree: worktree('/offline', 'feat/unasked') })
     await control.command({ type: 'refresh' })
     // Watcher's hooks as far as clearing reads them: the threads it watches.
     control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined, guardOperation: () => undefined,
       preserveUserQueue: () => false, watchedThreadIds: () => ['watched'] })
 
-    const sweep = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, intervalMs: 60_000_000,
-      clearSettledThreads: { afterDays: () => afterDays, clear: days => control.clearSettledThreads(days) } })
+    const asked: string[] = []
+    const openPullRequestBranches = async (root: string): Promise<ReadonlySet<string>> => {
+      asked.push(root)
+      if (root === '/offline') throw new Error('gh is not signed in')
+      return new Set(['feat/opened-since'])
+    }
+    const sweep = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, intervalMs: 60_000_000, openPullRequestBranches,
+      clearSettledThreads: { afterDays: () => afterDays, clear: (days, keep) => control.clearSettledThreads(days, keep) } })
     await sweep.sweep()
-    expect(threads.deleted.flat()).toEqual(['old'])
+    expect(threads.deleted.flat().sort()).toEqual(['closed-on-github', 'old'])
+    // GitHub is asked once for each repository in a run, and only about threads nothing else keeps back.
+    expect(asked.sort()).toEqual(['/offline', '/repo'])
     expect(control.shell().host.threads.map(thread => thread.id)).not.toContain('old')
-    for (const id of ['recent', 'recently-active', 'unsettled', 'working', 'waiting', 'pull-request', 'babysat', 'delegator', 'delegated', 'watched', 'uncommitted', 'ignored-files', 'in-use', 'watcher']) {
+    for (const id of ['recent', 'recently-active', 'unsettled', 'working', 'waiting', 'pull-request', 'babysat', 'delegator', 'delegated', 'watched', 'uncommitted', 'ignored-files', 'in-use', 'watcher', 'opened-since', 'unasked']) {
       expect(control.shell().host.threads.map(thread => thread.id), id).toContain(id)
     }
     // The hour after keeps the same threads back and logs nothing more.
     await sweep.sweep()
-    expect(threads.deleted.flat()).toEqual(['old'])
-    expect(logged).toEqual(['threads-cleared 1'])
+    expect(threads.deleted.flat().sort()).toEqual(['closed-on-github', 'old'])
+    expect(logged).toEqual(['threads-cleared 2'])
   })
   it('clears nothing while the setting is Never, and the chosen age once it is set', async () => {
     let days: number | null = null
@@ -218,7 +232,7 @@ describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', (
     expect(clear).not.toHaveBeenCalled()
     days = 90
     await sweep.sweep()
-    expect(clear).toHaveBeenCalledWith(90)
+    expect(clear).toHaveBeenCalledWith(90, undefined)
   })
   it('looks again when the setting changes, and only then', async () => {
     let days: number | null = null
@@ -230,7 +244,7 @@ describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', (
     days = 30
     sweep.settingsChanged()
     await sweep.request()
-    expect(clear).toHaveBeenCalledWith(30)
+    expect(clear).toHaveBeenCalledWith(30, undefined)
     const calls = clear.mock.calls.length
     sweep.settingsChanged()
     expect(clear.mock.calls.length).toBe(calls)

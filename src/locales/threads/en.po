@@ -111,6 +111,10 @@ msgstr "{who} answered in {ms} ms."
 msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
 msgstr "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "a thread it delegated to is still working"
+msgstr "a thread it delegated to is still working"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Accept Cursor’s plan"
 msgstr "Accept Cursor’s plan"
@@ -188,8 +192,13 @@ msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a fil
 msgid "Back to Cursor’s model makers"
 msgstr "Back to Cursor’s model makers"
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "being babysat"
+msgstr "being babysat"
+
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
+#: src/renderer/src/agents/DeleteThread.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -210,6 +219,10 @@ msgstr "Check again"
 msgid "Check this server"
 msgstr "Check this server"
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Checking the thread…"
+msgstr "Checking the thread…"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -229,6 +242,10 @@ msgstr "Checks each client's published version when it connects and every five m
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Choose an answer, or skip"
 msgstr "Choose an answer, or skip"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Close"
+msgstr "Close"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Close without adding a server"
@@ -334,6 +351,22 @@ msgstr "DeepSeek Harness edits, runs commands and uses the network inside the wo
 msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
 msgstr "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete"
+msgstr "Delete"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete “{title}”?"
+msgstr "Delete “{title}”?"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Delete thread…"
+msgstr "Delete thread…"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Deleting…"
+msgstr "Deleting…"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr "Done"
@@ -371,6 +404,10 @@ msgstr "Finish signing in on cursor.com in your browser."
 msgid "From the address, if left empty"
 msgstr "From the address, if left empty"
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "hidden"
+msgstr "hidden"
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
 msgstr "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
@@ -386,6 +423,34 @@ msgstr "It runs with OpenCode."
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
 msgstr "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Its messages and activity leave Sotto and can’t be brought back."
+msgstr "Its messages and activity leave Sotto and can’t be brought back."
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree could not be removed; delete it on its own to see why"
+msgstr "its worktree could not be removed; delete it on its own to see why"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder could not be checked"
+msgstr "its worktree folder could not be checked"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder has no branch checked out; switch it to a branch first"
+msgstr "its worktree folder has no branch checked out; switch it to a branch first"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "its worktree folder links to another folder (<0>{link}</0>); remove the link first"
+msgstr "its worktree folder links to another folder (<0>{link}</0>); remove the link first"
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree holds files Git ignores; delete it on its own to review them"
+msgstr "its worktree holds files Git ignores; delete it on its own to review them"
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "its worktree is in use"
+msgstr "its worktree is in use"
 
 #. A secret the model server checks before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -433,6 +498,10 @@ msgstr "Name"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "None yet. Add a model server you run to use its models in OpenCode threads."
 msgstr "None yet. Add a model server you run to use its models in OpenCode threads."
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "not settled"
+msgstr "not settled"
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Not signed in"
@@ -513,6 +582,10 @@ msgstr "Plan"
 msgid "Plan from {ownerTitle}"
 msgstr "Plan from {ownerTitle}"
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "pull request still open"
+msgstr "pull request still open"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Read your saved servers again"
 msgstr "Read your saved servers again"
@@ -543,6 +616,10 @@ msgstr "Remove {name}"
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
 msgstr "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Removes the worktree folder it made. Its branch and commits stay."
+msgstr "Removes the worktree folder it made. Its branch and commits stay."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Removing…"
@@ -626,9 +703,21 @@ msgstr "Signing out…"
 msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 msgstr "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "something is queued for it"
+msgstr "something is queued for it"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Sotto could not check this thread. Nothing was deleted. Close this and try again."
+msgstr "Sotto could not check this thread. Nothing was deleted. Close this and try again."
+
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto could not compact this idle thread. Its full history is kept."
 msgstr "Sotto could not compact this idle thread. Its full history is kept."
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
+msgstr "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish that, so nothing was changed. Try again."
@@ -686,6 +775,10 @@ msgstr "Starting…: {command}"
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Still waiting for {name} to start answering."
 msgstr "Still waiting for {name} to start answering."
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "still working"
+msgstr "still working"
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -760,6 +853,10 @@ msgstr "This host is disconnected. Connect again before attaching files. Nothing
 msgid "This model does not read images. Choose a model with image support, or remove {name}."
 msgstr "This model does not read images. Choose a model with image support, or remove {name}."
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "This thread can’t be deleted: {reason}. Nothing was deleted."
+msgstr "This thread can’t be deleted: {reason}. Nothing was deleted."
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 msgstr "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
@@ -803,6 +900,14 @@ msgstr "Turn off idle compaction in Settings"
 msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
 msgstr "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "uncommitted changes in its worktree"
+msgstr "uncommitted changes in its worktree"
+
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Update {host} to delete its threads"
+msgstr "Update {host} to delete its threads"
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Update {label} to {version}"
 msgstr "Update {label} to {version}"
@@ -819,6 +924,10 @@ msgstr "Updating {label} to {version}"
 msgid "Updating…"
 msgstr "Updating…"
 
+#: src/renderer/src/agents/DeleteThread.tsx
+msgid "Usage keeps its numbers. {provider} keeps its own copy of the session."
+msgstr "Usage keeps its numbers. {provider} keeps its own copy of the session."
+
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
 msgstr "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
@@ -831,9 +940,17 @@ msgstr "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a fold
 msgid "Waiting for Cursor. This connects by itself."
 msgstr "Waiting for Cursor. This connects by itself."
 
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "waiting on you"
+msgstr "waiting on you"
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Waiting to update"
 msgstr "Waiting to update"
+
+#: src/renderer/src/agents/threadClearWords.ts
+msgid "Watcher is watching it"
+msgstr "Watcher is watching it"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "What the model menu calls it."

@@ -25,5 +25,5 @@
 .thread-clear__list--kept .thread-clear__note { color: var(--tt-warning-text); }
 .thread-clear__facts { margin: 14px 0 0; padding-left: 18px; color: var(--tt-text-2); line-height: 1.55; }
 .thread-clear__facts li + li { margin-top: 4px; }
-.thread-clear__stale { opacity: .6; }
-@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-clear__stale { transition: opacity .15s ease; } }
+/* The list being checked again keeps its words at full contrast (4.5:1); only the pointer says it is busy. */
+.thread-clear__stale { cursor: progress; }

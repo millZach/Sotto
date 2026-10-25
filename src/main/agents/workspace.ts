@@ -149,6 +149,8 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
+/** What a deletion that failed after its folders went says of them (ADR-0140 decision 5). */
+const DELETION_FOLDERS_WORDS = 'Worktree folders it already removed stay removed; their branches and commits stay.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
 const HISTORY_SAVE_ERROR = 'Thread messages could not be saved. Restore access to local storage and refresh.'
 /** The thread list of the part of an activity publication that is shared from one to the next. */
@@ -1620,6 +1622,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       || this.preparations.has(thread.id) || thread.gitAction?.status === 'running') return 'working'
     return null
   }
+  /** A checkpoint step still running, or an interrupted revert, is an action whose result is unknown (ADR-0140 decision 3). */
+  private async checkpointHold(threadId: string): Promise<ThreadClearKeptReason | null> {
+    return await Promise.resolve(this.checkpointHooks?.isBlocked(threadId)).catch(() => true) ? 'queued' : null
+  }
   /** The thread's own worktree folder, when it has one on the disk to remove: never a shared checkout or a reused folder. */
   private async ownWorktreeToRemove(thread: AgentThread): Promise<AgentWorktree | undefined> {
     const worktree = thread.worktree
@@ -1654,7 +1660,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.initialize()
       const thread = this.threadById(threadId)
       if (!thread || !this.visible(thread)) return { kept: 'hidden' as const, worktree: null }
-      const held = this.deletionHold(thread)
+      const held = this.deletionHold(thread) ?? await this.checkpointHold(threadId)
       const worktree = await this.ownWorktreeToRemove(thread)
       if (!worktree) return { kept: held, worktree: null }
       const folder = await this.worktreeDeletionHold(thread, worktree, automatic)
@@ -1672,6 +1678,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   async deleteThreads(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
     readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }> {
     await this.initialize()
+    // A store that did not open cannot erase a word, so nothing is deleted, not even a folder (ADR-0140 decision 4).
+    if (this.storeUnavailable || this.subagentUnavailable) throw new Error('Sotto could not open its thread history, so it deleted nothing. Restart Sotto and try again.')
     const passed: string[] = []
     const kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] = []
     for (const threadId of [...new Set(threadIds)]) {
@@ -1680,7 +1688,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.onLane(threadId, async () => {
         const thread = this.threadById(threadId)
         if (!thread) return
-        const reason = !this.visible(thread) ? 'hidden' : options.hold(threadId) ?? this.deletionHold(thread)
+        const reason = !this.visible(thread) ? 'hidden' : options.hold(threadId) ?? this.deletionHold(thread) ?? await this.checkpointHold(threadId)
         if (reason) { kept.push({ threadId, reason }); return }
         const worktree = await this.ownWorktreeToRemove(thread)
         if (worktree) {
@@ -1691,7 +1699,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           try {
             await this.gitStatus?.idle?.(worktree.path!)
             // Asked once more with the folder held: a turn or a request that began meanwhile keeps the thread.
-            const late = options.hold(threadId) ?? this.deletionHold(this.thread(threadId))
+            const late = options.hold(threadId) ?? this.deletionHold(this.thread(threadId)) ?? await this.checkpointHold(threadId)
             if (late) { kept.push({ threadId, reason: late }); return }
             const reclaimed = await this.worktrees.reclaim(worktree, options.automatic ? { automatic: true }
               : { ...options.worktree?.confirmedIgnored ? { confirmedIgnored: options.worktree.confirmedIgnored } : {},
@@ -1723,16 +1731,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     const gone = new Set(deleted)
     // From here no snapshot or event can bring them back, even before the list is on the disk.
+    // Each store erases in one transaction, the sub-agent lists first, so a failure loses at most those lists.
+    try { this.subagentStore.forgetMany(deleted) }
+    catch { throw new Error(`Sotto could not erase these threads' history, so it kept them. ${DELETION_FOLDERS_WORDS} Restore access to local storage and try again.`) }
+    try { this.threadStore.forgetMany(deleted) }
+    catch { throw new Error(`Sotto could not erase these threads' history, so it kept them, but their sub-agent lists are gone. ${DELETION_FOLDERS_WORDS} Restore access to local storage and try again.`) }
     for (const threadId of deleted) {
       this.clearedIds.add(threadId)
       this.pendingEvents.delete(threadId); this.failedEventThreads.delete(threadId); this.invalidEventThreads.delete(threadId); this.eventChanged.delete(threadId)
-    }
-    try {
-      if (!this.storeUnavailable) this.threadStore.forgetMany(deleted)
-      if (!this.subagentUnavailable) this.subagentStore.forgetMany(deleted)
-    } catch {
-      for (const threadId of deleted) this.clearedIds.delete(threadId)
-      throw new Error('Sotto could not erase the history of the threads it was deleting, so it kept them. Restore access to local storage and try again.')
     }
     this.state.snapshot.threads = this.state.snapshot.threads.flatMap(thread => {
       if (gone.has(thread.id)) return []

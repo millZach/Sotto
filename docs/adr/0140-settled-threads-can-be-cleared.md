@@ -29,8 +29,8 @@ A thread's age here is the time since the later of its settle and its last activ
 
 **3. What is kept back.** Clearing never takes a thread that:
 - is running, compacting, has background work, or waits on the user;
-- has anything queued for it or an action whose result is unknown;
-- has an open pull request, or a thread it delegated to has one;
+- has anything queued for it or an action whose result is unknown, such as a checkpoint step still running or a revert that was interrupted;
+- has an open pull request, or a thread it delegated to has one. What Sotto last read of a quiet thread's pull request can be weeks old, so the automatic rule also asks GitHub, once a run for each repository, which branches have open pull requests, and keeps a thread whose branch is among them. A repository it cannot ask keeps every thread with a branch in it until a later run can;
 - has a thread it delegated to that is not itself at rest;
 - is being babysat or watched by Watcher;
 - has uncommitted changes in its own worktree;
@@ -39,7 +39,7 @@ A thread's age here is the time since the later of its settle and its last activ
 
 The lists are worked out in main and checked again for each thread as it is deleted, so a thread that changed between the dialog and the press is kept.
 
-**4. What a deletion removes.** The thread's record and its creation record; its rows in `threads.sqlite` (through `ThreadStore.forget`) and `subagents.sqlite`; its provider alias record and the adapter's in-memory state for it, through a new `AgentHost.forgetThread`; its drafts, request drafts and remote drafts; its finished delegation records; its checkpoints; and its own worktree folder, reclaimed under ADR-0041's guards. A worktree folder that was reused from another thread, or a shared project checkout, is not the thread's to remove and is left alone. Clearing many threads forgets them in one store transaction and one scrub.
+**4. What a deletion removes.** The thread's record and its creation record; its rows in `threads.sqlite` (through `ThreadStore.forget`) and `subagents.sqlite`; its provider alias record and the adapter's in-memory state for it, through a new `AgentHost.forgetThread`; its drafts, request drafts and remote drafts; its finished delegation records; its checkpoints; and its own worktree folder, reclaimed under ADR-0041's guards. A worktree folder that was reused from another thread, or a shared project checkout, is not the thread's to remove and is left alone. Clearing many threads forgets them in one store transaction and one scrub. When either store did not open, nothing is deleted, not even a folder.
 
 **5. What a deletion keeps.** Every branch and its commits. Usage's numbers (ADR-0078 already keeps them through deletion). The provider's own transcript of the session, in `~/.codex`, `~/.claude` and the others' folders, which belongs to the provider and the user. Other threads that point at the deleted one (a delegated thread, a continuation) keep their own history and lose only the link.
 

@@ -19,18 +19,21 @@ Zach chose 30 days as the default for **Clear settled threads after**, with Neve
 - not settled;
 - working or waiting on the user;
 - holding an open pull request, or babysat or watched;
+- on a branch GitHub, asked as the run goes, lists an open pull request for, though Sotto's last read said none, or in a repository GitHub could not be asked about;
 - delegating to a thread still at work;
 - holding uncommitted changes, ignored files or a folder in use in their worktree;
 - Watcher's own thread.
 
 The hour after, it keeps the same threads and logs nothing more. Dropping the watch from the test makes it fail, so the test checks the guard.
 
+`tests/integration/workspaceThreadDeletion.test.ts` adds three checks on a real workspace and store. A deleted thread leaves the activity publication, and a provider that still publishes it as a change does not bring it back; without the cleared check on that path, the test fails. A thread whose checkpoint step has no result is kept. When a history store did not open, nothing is deleted, and a failed erase says what it left.
+
 Run for this change:
 
 ```sh
 npm run typecheck
 npm run lint
-npx vitest run tests/unit/main/clearThreadsControl.test.ts tests/unit/main/threadClearing.test.ts tests/unit/shared/threadClear.test.ts tests/unit/shared/settings.test.ts tests/unit/renderer/features/settings/clearThreadsSettings.test.tsx tests/unit/renderer/deleteThread.test.tsx tests/integration/workspaceThreadDeletion.test.ts tests/integration/settingsHistoryIpc.test.ts tests/integration/socketHostFeatures.test.ts tests/unit/shared/interfaceCatalogs.test.ts tests/perf/streamingCopyBudget.perf.test.ts tests/perf/ownerScaleWorkBudget.perf.test.ts tests/unit/main/copySites.test.ts
+npx vitest run tests/unit/main/clearThreadsControl.test.ts tests/unit/main/threadClearing.test.ts tests/unit/shared/threadClear.test.ts tests/unit/shared/settings.test.ts tests/unit/renderer/features/settings/clearThreadsSettings.test.tsx tests/unit/renderer/deleteThread.test.tsx tests/integration/workspaceThreadDeletion.test.ts tests/integration/settingsHistoryIpc.test.ts tests/integration/socketHostFeatures.test.ts tests/unit/shared/interfaceCatalogs.test.ts tests/perf/streamingCopyBudget.perf.test.ts tests/perf/ownerScaleWorkBudget.perf.test.ts tests/unit/main/copySites.test.ts tests/unit/main/adapterForgetThread.test.ts tests/integration/cursorAdapter.test.ts tests/integration/deepseekAdapter.test.ts
 ```
 
 The Playwright spec was updated for the new default but not run again on this computer, and the screenshots were not captured again.

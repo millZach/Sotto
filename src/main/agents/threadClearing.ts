@@ -46,7 +46,7 @@ export function threadClearHold(thread: AgentThread | undefined, facts: ThreadCl
   if (facts.pending(thread.id) || thread.compaction?.status === 'uncertain') return 'queued'
   const below = facts.delegators.has(thread.id) ? delegatedThreadsBelow(facts.threads, thread.id).flatMap(id => facts.threads.find(item => item.id === id) ?? []) : []
   if (openPullRequest(thread) || below.some(openPullRequest)) return 'pull-request'
-  if (below.some(item => working(item) || item.requests.length > 0 || facts.pending(item.id))) return 'delegated-working'
+  if (below.some(item => working(item) || item.requests.length > 0 || facts.pending(item.id) || item.compaction?.status === 'uncertain')) return 'delegated-working'
   if (thread.babysitting?.length) return 'babysitting'
   if (facts.watched(thread.id)) return 'watched'
   return null

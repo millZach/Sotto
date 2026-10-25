@@ -4,8 +4,9 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentCommand, AgentState } from '../../../../shared/agents'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { CLEAR_SETTLED_THREADS_AFTER_DAYS, CLEAR_THREADS_AGES, threadClearKeptWords, type ClearSettledThreadsAfterDays, type ClearThreadsAge, type ThreadClearPreview } from '../../../../shared/threadClear'
+import { CLEAR_SETTLED_THREADS_AFTER_DAYS, CLEAR_THREADS_AGES, type ClearSettledThreadsAfterDays, type ClearThreadsAge, type ThreadClearPreview } from '../../../../shared/threadClear'
 import { useOptionalAgents } from '../../agents/AgentContext'
+import { THREAD_CLEAR_KEPT_MESSAGES } from '../../agents/threadClearWords'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
@@ -94,7 +95,7 @@ export function ClearThreadsSettings({ settings, onSave, onNotice }: {
 /**
  * Clear settled threads (ADR-0140 decision 2): the age to clear past, the threads that go and the ones kept with why, and
  * what clearing keeps. Main makes both lists, and checks each thread again as it goes; one that changed is kept. Thread
- * titles and main's reasons are shown as written.
+ * titles are shown as written; main's reasons for keeping one are shown in the interface language.
  */
 export function ClearThreadsDialog({ command, age, onAge, onCleared, onClose, fallbackFocusRef, now = Date.now() }: {
   readonly command: Command
@@ -159,7 +160,7 @@ export function ClearThreadsDialog({ command, age, onAge, onCleared, onClose, fa
           <h3 className="thread-clear__heading"><Trans>Kept</Trans></h3>
           <ul className="thread-clear__list thread-clear__list--kept" aria-label={t`Threads kept`}>{kept.map(item => <li key={item.threadId}>
             <span className="thread-clear__title" title={item.title}>{item.title || t`Untitled thread`}</span>
-            <span className="thread-clear__note">{threadClearKeptWords(item.reason)}</span>
+            <span className="thread-clear__note">{i18n._(THREAD_CLEAR_KEPT_MESSAGES[item.reason])}</span>
           </li>)}</ul>
         </> : null}
         {go.length ? <ul className="thread-clear__facts tt-paragraph">

@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import type { ProviderId } from '../../shared/agents'
+import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
@@ -47,7 +48,7 @@ import { wakeUpPartDue, type BabysitNews } from './babysitNews'
 import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
-import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import { WorktreeCleanup, type SharedGitHub, type WorktreeCleanupDependencies } from './worktreeCleanup'
 import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
@@ -154,7 +155,10 @@ export interface AgentRuntimeOptions {
     log?: (event: GitHubRateLimitEvent | BabysitEvent) => void }
   /** What the worktree cleanup (ADR-0041) may reach beyond the workspace: GitHub for the merged rule and Auto-settle
    * merged threads, and a log of stable event names. Without `pullRequestMerged` neither fires; the other rules read only the repository. */
-  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'>
+  worktreeCleanup?: Pick<WorktreeCleanupDependencies, 'pullRequestMerged' | 'log'> & {
+    /** GitHub's open pull requests' branches, which Clear settled threads after asks before a thread goes (ADR-0140). */
+    readonly openPullRequestBranches?: (repositoryRoot: string, github?: SharedGitHub) => Promise<ReadonlySet<string>>
+  }
   /**
    * Babysitting (ADR-0061). `agentTool` is the desktop's switch, read live: while it is on, this computer's Claude Code,
    * Codex and Grok Build threads have Sotto's pull request tools, so a wake-up tells the agent to stop with them. A
@@ -337,12 +341,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Auto-settle merged threads rides the same sweep: it asks GitHub the way the merged rule does, on the same hour.
   // The merged check spends the same sign-in's points as the status reader, and asks as its timer does (#820).
   const merged = options.worktreeCleanup?.pullRequestMerged
+  const openPullRequests = options.worktreeCleanup?.openPullRequestBranches
   const github = gitHubRateLimit && gitHubHosts ? { rateLimit: gitHubRateLimit, hosts: gitHubHosts } : undefined
   // Clear settled threads after (ADR-0140) rides the same hour, on the computer whose setting it is, and only on Owl.
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
-    ...options.clearThreadsEnabled === true ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays, clear: (days: number) => agentControl.clearSettledThreads(days) } } : {},
-    ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {} })
+    ...options.clearThreadsEnabled === true ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
+      clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
+    ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
+    ...openPullRequests && github ? { openPullRequestBranches: (repositoryRoot: string) => openPullRequests(repositoryRoot, github) } : {} })
   // A paired client's Files, Changes and Agents for this host's threads (ADR-0025, October 5 amendment): reads only, over
   // the same working copies the desktop's own tools resolve. The headless host and the desktop's phone listener serve them.
   const toolReads = threadToolReads({ resolveBinding: threadId => agentControl.filesBinding(threadId), subagents: agentHost })

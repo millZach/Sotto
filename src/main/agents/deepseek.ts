@@ -183,6 +183,10 @@ export class DeepSeekAcpHost implements AgentHost {
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
+  /** Whether `this.aliases` reflects the store: false until a `connect()` has loaded it once (ADR-0140). */
+  private aliasesLoaded = false
+  /** Threads `forgetThread` removed, kept so a `connect()` racing its disk write cannot bring one back. */
+  private readonly forgottenAliasIds = new Set<string>()
   private readonly indexes = new Map<string, ThreadIndex>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly connections = new Map<string, Connection>()
@@ -282,6 +286,40 @@ export class DeepSeekAcpHost implements AgentHost {
   useBrowserTools(tools: BrowserAgentTools): void { this.browserTools = tools }
   useThreadTools(tools: readonly ScopedThreadTools[]): void { this.threadTools = tools }
   private persist(): Promise<void> { this.writing = this.aliasStore.write(this.aliases); return this.writing }
+  /**
+   * ADR-0140: stop the thread's own DeepSeek Harness process if it has one, remove its alias and every per-thread
+   * record this adapter keeps, and persist. Guarded with `forgottenAliasIds` against a `connect()` that reads the
+   * alias store before this removal reaches disk (see there).
+   */
+  async forgetThread(id: string): Promise<void> {
+    this.forgottenAliasIds.add(id)
+    if (!this.aliasesLoaded) {
+      const current = await this.aliasStore.read()
+      if (!(id in current)) return
+      const next = { ...current }
+      delete next[id]
+      await this.aliasStore.write(next)
+      return
+    }
+    if (!this.aliases[id]) return
+    // A session still opening would set its process after the stop; it settles first, so the stop catches it.
+    await this.loading.get(id)?.catch(() => undefined)
+    await this.stopSession(id)
+    this.reaper.forget(id)
+    this.observed.delete(id)
+    this.outdated.delete(id)
+    this.dispatching.delete(id)
+    this.loaded.delete(id)
+    this.endTurn(id, 'interrupted')
+    this.turns.delete(id)
+    for (const [requestId, pending] of [...this.pending]) if (pending.threadId === id) this.pending.delete(requestId)
+    this.indexes.delete(id)
+    this.log.forget(id)
+    this.threads.delete(id)
+    delete this.aliases[id]
+    await this.persist()
+    if (this.state.connected) this.emit()
+  }
   private indexOf(id: string, alias: Alias): ThreadIndex {
     let index = this.indexes.get(id)
     if (!index || index.alias !== alias) { index = new ThreadIndex(alias); this.indexes.set(id, index) }
@@ -402,7 +440,8 @@ export class DeepSeekAcpHost implements AgentHost {
       await this.writePatch()
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
       this.assertGeneration(generation)
-      this.aliases = aliases; this.indexes.clear(); this.state.projects = projects; this.state.models = models
+      for (const id of this.forgottenAliasIds) delete aliases[id]
+      this.aliases = aliases; this.aliasesLoaded = true; this.indexes.clear(); this.state.projects = projects; this.state.models = models
       this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
       this.state.connected = true; this.state.version = `${version} / ACP ${DEEPSEEK_ACP_VERSION}`

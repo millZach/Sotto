@@ -269,7 +269,7 @@ import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
 import { registerCloudIphoneIpc } from './tools/cloudIphoneIpc'
 import { CLOUD_IPHONE_EVENT } from '../shared/cloudIphone'
 import { TERMINAL_EVENT } from '../shared/terminal'
-import { githubPullRequestMerged } from './agents/worktreeCleanup'
+import { githubOpenPullRequestBranches, githubPullRequestMerged } from './agents/worktreeCleanup'
 import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
@@ -956,7 +956,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
-    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
+    worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
     watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
