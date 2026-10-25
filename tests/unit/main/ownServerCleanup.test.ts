@@ -73,7 +73,7 @@ describe('requestOwnCleanup', () => {
     await expect(requestOwnCleanup({ fetchFn, target: TARGET, thinking: 'off', text: MEASURE_SAMPLE, dictionary: '', signal: AbortSignal.timeout(1_000) }))
       .resolves.toEqual({ text: SAMPLE_CLEANED, reason: 'ok' })
     expect(urlOf(fetchFn, 0)).toBe('http://spark-head:8888/v1/chat/completions')
-    const init = fetchFn.mock.calls[0]![1] as RequestInit
+    const init = (fetchFn.mock.calls[0] as unknown as [string, RequestInit])[1]
     expect(init.headers).not.toHaveProperty('Authorization')
     expect(init.redirect).toBe('manual')
     const body = bodyOf(fetchFn, 0)

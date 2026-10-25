@@ -2,9 +2,28 @@ import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { CleanupModelFields, matchModels } from '../../../../../src/renderer/src/components/CleanupModelFields'
+import { CleanupModelFields, matchModels, matchOwnModels } from '../../../../../src/renderer/src/components/CleanupModelFields'
+import type { OwnServer } from '../../../../../src/shared/ownModelServers'
+import type { OwnCleanupMeasured, OwnServerCleanupBridge } from '../../../../../src/shared/ownServerCleanup'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
+
+const SPARKS: OwnServer = {
+  id: 'own-sparks', name: 'Sparks', address: 'http://spark-head:8888/v1', keyed: false,
+  models: [{ id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', context: 131_072, thinking: true, images: false }],
+}
+const KEYED: OwnServer = { ...SPARKS, id: 'own-office', name: 'Office', address: 'https://office.example.com/v1', keyed: true,
+  models: [{ id: 'qwen3-32b', name: 'Qwen3 32B', context: 32_768, thinking: true, images: false }] }
+const SPARKS_CHOICE = { server: 'own-sparks', model: 'deepseek-v4.1-flash' }
+
+function ownBridges(measured: OwnCleanupMeasured[] = []) {
+  const ownServers = { list: vi.fn(async () => [SPARKS, KEYED]) }
+  const ownCleanup: OwnServerCleanupBridge = {
+    measured: vi.fn(async () => measured),
+    measure: vi.fn(async () => ({ status: 'measured' as const, tuning: { status: 'fastest' as const, thinking: 'off' as const, ms: 412 } })),
+  }
+  return { ownServers, ownCleanup }
+}
 
 const MODELS = [
   { id: 'anthropic/claude-haiku-5.5', name: 'Anthropic: Claude Haiku 5.5' },
@@ -66,6 +85,73 @@ describe('CleanupModelFields', () => {
     await user.click(screen.getByRole('combobox', { name: 'Cleanup model' }))
     await waitFor(() => expect(onListModels).toHaveBeenCalledOnce())
     expect(screen.queryByText(/no longer lists this model/u)).toBeNull()
+  })
+
+  it('lists only the models of servers added without a key, matched by model, ID or server', () => {
+    expect(matchOwnModels([SPARKS, KEYED], '').map(model => model.own)).toEqual([SPARKS_CHOICE])
+    expect(matchOwnModels([SPARKS, KEYED], 'sparks').map(model => model.name)).toEqual(['DeepSeek V4.1 Flash'])
+    expect(matchOwnModels([SPARKS, KEYED], 'qwen')).toEqual([])
+  })
+
+  it('lists the user’s own servers after Default, and picking one saves it and measures it', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    const { ownServers, ownCleanup } = ownBridges()
+    const onListModels = vi.fn(async () => ({ ok: true as const, complete: true, models: MODELS }))
+    render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: null }} onSave={onSave} onListModels={onListModels}
+      ownServers={ownServers} ownCleanup={ownCleanup} />)
+    await user.click(screen.getByRole('combobox', { name: 'Cleanup model' }))
+    const options = await screen.findAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      'DefaultSotto’s choice', 'DeepSeek V4.1 Flashdeepseek-v4.1-flash on Sparks', ...MODELS.map(model => `${model.name}${model.id}`),
+    ])
+    expect(screen.getByText('Your own servers')).toBeVisible()
+    expect(screen.getByText(/Servers added with a key are not listed/u)).toBeVisible()
+    expect(ownCleanup.measure).not.toHaveBeenCalled()
+
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(onSave).toHaveBeenCalledWith({ llmOwnModel: SPARKS_CHOICE })
+    expect(ownCleanup.measure).toHaveBeenCalledWith(SPARKS_CHOICE)
+  })
+
+  it('shows what Measure found, hides Mode, and Measure again asks once more', async () => {
+    const user = userEvent.setup()
+    const { ownServers, ownCleanup } = ownBridges([{ ...SPARKS_CHOICE, tuning: { status: 'fastest', thinking: 'least', ms: 1_260 } }])
+    render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'nitro', llmOwnModel: SPARKS_CHOICE }} onSave={vi.fn()} onListModels={vi.fn()}
+      ownServers={ownServers} ownCleanup={ownCleanup} />)
+    expect(await screen.findByText('Fastest: least thinking, 1.3 s.')).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Cleanup model' })).toHaveValue('DeepSeek V4.1 Flash')
+    expect(screen.queryByRole('radio', { name: 'Nitro' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Measure again' }))
+    expect(await screen.findByText('Fastest: thinking off, 0.4 s.')).toBeVisible()
+    expect(ownCleanup.measure).toHaveBeenCalledOnce()
+  })
+
+  it('says when the chosen server is gone or did not answer, and going back to OpenRouter clears the choice', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    const { ownServers, ownCleanup } = ownBridges()
+    vi.mocked(ownCleanup.measure).mockResolvedValueOnce({ status: 'unreachable' })
+    const { rerender } = render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: SPARKS_CHOICE }} onSave={onSave}
+      onListModels={vi.fn(async () => ({ ok: true as const, complete: true, models: MODELS }))} ownServers={ownServers} ownCleanup={ownCleanup} />)
+    expect(await screen.findByText(/Not measured yet/u)).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Measure again' }))
+    expect(await screen.findByText(/Nothing answered at Sparks\. Nothing was changed\./u)).toBeVisible()
+
+    await user.click(screen.getByRole('combobox', { name: 'Cleanup model' }))
+    await user.click(await screen.findByRole('option', { name: /Gemini 3.1 Flash Lite/u }))
+    expect(onSave).toHaveBeenCalledWith({ llmModel: 'google/gemini-3.1-flash-lite', llmOwnModel: null })
+
+    rerender(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: { ...SPARKS_CHOICE, model: 'removed' } }} onSave={onSave}
+      onListModels={vi.fn()} ownServers={ownServers} ownCleanup={ownCleanup} />)
+    expect(await screen.findByText(/no longer in Your own model servers, so Mercury 2 cleans up instead/u)).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Measure again' })).toBeNull()
+  })
+
+  it('ignores a saved own model while the feature is off', () => {
+    render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: SPARKS_CHOICE }} onSave={vi.fn()} onListModels={vi.fn()} />)
+    expect(screen.getByRole('combobox', { name: 'Cleanup model' })).toHaveValue('Default')
+    expect(screen.getByRole('radio', { name: 'Default' })).toBeVisible()
   })
 
   it('stays out of Settings while the Owl feature is off', async () => {
