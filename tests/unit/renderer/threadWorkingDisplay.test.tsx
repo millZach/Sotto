@@ -71,6 +71,19 @@ describe('a turn that has reported nothing yet', () => {
     expect(within(unsure).getByTestId('thread-activity-live')).not.toHaveTextContent('Compacting context')
   })
 
+  it('keeps a turn’s steps one press away while its context compacts part-way', () => {
+    const { transcript } = mount(stateWith({ status: 'running', compaction: { commandId: 'compact-1', status: 'running' }, activities: [
+      ...waiting(), activity({ id: 'test', command: 'npm test', durationMs: 3_000 }),
+    ] }))
+    const liveRow = within(transcript).getByTestId('thread-activity-live')
+    expect(liveRow).toHaveTextContent('Compacting context')
+    const steps = within(liveRow).getByRole('button', { name: '1 step' })
+    fireEvent.click(steps)
+    expect(within(transcript).getByRole('button', { name: 'npm test, completed in 3.0s' })).toBeVisible()
+    fireEvent.keyDown(steps, { key: 'Escape' })
+    expect(steps).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('keeps its words once the provider reports a step, and folds the step under them', () => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [
       ...waiting(), activity({ id: 'test', command: 'npm test', status: 'running', startedAt: iso(-3_000) }),

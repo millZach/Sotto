@@ -35,6 +35,7 @@ The settled turn's line reads "Worked for 2m 04s · 7 steps". Opened, its groups
 - A turn with no step yet: the line is only its words, not a button, and gains the button with its first step (`threadActivity.test.tsx`).
 - The next turn starts folded even when the last turn's steps were left open, because the line stays mounted between turns.
 - A turn on one of the user's own model servers that OpenCode is trying again (ADR-0124): the retry line keeps its words and Stop, and adds a "1 step" button that opens the steps taken before the retry and folds on Escape (`ownServerTurn.test.tsx`).
+- A turn that compacts its context part-way: the Compacting context line keeps a "1 step" button that opens the turn's steps and folds on Escape (`threadWorkingDisplay.test.tsx`).
 - Watcher's conversation: a news turn's work folds under the working line rather than above the reply being written, and your finished turn's Worked for line counts its steps (`watcherNewsTurns.test.tsx`, `watcherView.test.tsx`).
 - A remote host's cut bodies: the opened steps sit inside the transcript's activity body provider, so a cut command, diff or thinking row reads whole from its host when opened, as it did in the transcript.
 
@@ -44,6 +45,6 @@ The settled turn's line reads "Worked for 2m 04s · 7 steps". Opened, its groups
 
 ## Not verified
 
-- The iPhone. Its Swift cannot be built on Windows; the macOS CI job is its first compile. `iosWorkingWords.test.ts` checks its word list against the desktop's, and `StepRunTests` checks the word order and that a word never follows itself.
+- The iPhone on a device. Its Swift cannot be built on Windows; the macOS CI job on #1523 built it and passed the native protocol tests. `iosWorkingWords.test.ts` checks its word list against the desktop's, and `StepRunTests` checks the word order and that a word never follows itself.
 - Watcher's pane in the running app. Its conversation draws turns with the same components as a thread, and the unit tests above cover its news turns; no capture of a working Watcher was taken.
 - `tests/unit/release/stableHostPromotion.test.mjs` fails on this machine because its Node is older than the 24.22.1 the host archive needs. It is unrelated to this change.

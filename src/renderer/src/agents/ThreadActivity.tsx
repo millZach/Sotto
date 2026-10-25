@@ -371,8 +371,7 @@ function OwnServerLine({ actions, server, startedAt, steps }: {
       onClick={event => { const pressed = event.currentTarget; actions.stop(); focusComposerFrom(pressed) }}>
       <Square size={10} fill="currentColor" aria-hidden="true" />{stopWords(i18n)}
     </button>
-    {steps ? <button type="button" className="thread-activity-live__stop tt-focusable" aria-expanded={steps.open} aria-controls={steps.open ? steps.id : undefined}
-      onClick={steps.onToggle}>{steps.label}<ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /></button> : null}
+    {steps ? <StepsButton steps={steps} /> : null}
     {note ? <p className="thread-activity-live__note tt-paragraph">{note}</p> : null}
     {steps?.opened}
   </div>
@@ -382,6 +381,12 @@ function OwnServerLine({ actions, server, startedAt, steps }: {
 interface StepsDisclosure {
   readonly id: string; readonly label: string; readonly open: boolean; readonly opened: ReactNode
   readonly onToggle: (event: React.MouseEvent<HTMLElement>) => void; readonly onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void
+}
+
+/** The button a line that says something else offers the turn's folded steps with: their count and a chevron. */
+function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode {
+  return <button type="button" className="thread-activity-live__stop tt-focusable" aria-expanded={steps.open} aria-controls={steps.open ? steps.id : undefined}
+    onClick={steps.onToggle}>{steps.label}<ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /></button>
 }
 
 /**
@@ -414,17 +419,6 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const own = useOwnServerTurnActions()
   const server = own !== null && connected && turn?.status === 'running' ? turn.ownServer : undefined
   const waiting = useStillWaiting(turn?.startedAt, server !== undefined && server.attempt === undefined && turnId !== null && !heardFrom(thread, turnId))
-  // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
-  // is working would be the wrong thing to read while the only thing happening is the context being folded up.
-  if (thread.compaction?.status === 'running') {
-    return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
-      <div className="thread-activity-live__line">
-        <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
-        <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
-      </div>
-    </div>
-  }
-  if (turnId === null && sendingSince === undefined) return null
   const open = turnId !== null && openTurn === turnId
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
@@ -434,6 +428,21 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
     onToggle: event => { onDisclosure?.(event.currentTarget); setOpenTurn(open ? null : turnId) },
     onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setOpenTurn(null) }),
   }
+  // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
+  // is working would be the wrong thing to read while the only thing happening is the context being folded up.
+  // A turn that compacts part-way keeps its steps one press away.
+  if (thread.compaction?.status === 'running') {
+    return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
+      onKeyDown={disclosure?.onKeyDown}>
+      <div className="thread-activity-live__line">
+        <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
+        <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
+      </div>
+      {disclosure ? <StepsButton steps={disclosure} /> : null}
+      {disclosure?.opened}
+    </div>
+  }
+  if (turnId === null && sendingSince === undefined) return null
   if (server !== undefined && own !== null && server.attempt !== undefined) {
     return <OwnServerLine actions={own} server={server} steps={disclosure} />
   }
