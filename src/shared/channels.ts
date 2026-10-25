@@ -55,6 +55,8 @@ export const SPEECH_MODEL_LIST = 'sotto:speech-model:list' as const
 export const SPEECH_MODEL_CHOOSE = 'sotto:speech-model:choose' as const
 export const SPEECH_MODEL_STATUS = 'sotto:speech-model:status' as const
 export const OPENROUTER_CHECK_KEY = 'sotto:openrouter:check-key' as const
+/** OpenRouter's text models for the cleanup model picker (ADR-0122). */
+export const OPENROUTER_LIST_MODELS = 'sotto:openrouter:list-models' as const
 export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const

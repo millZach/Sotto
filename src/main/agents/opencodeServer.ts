@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { compareClientVersions } from './clientVersions'
 import { withCliPath } from './cliLookup'
 import { acceptOpenCode, opencodeCandidates, resetOpenCodeLookup, type OpenCodeLookupOptions } from './opencodeLookup'
+import type { OwnServer } from '../../shared/ownModelServers'
+import { openCodeProviders } from '../ownModelServers/providerBlock'
 
 /**
  * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
@@ -41,16 +43,24 @@ export function opencodeDatabase(folders: OpenCodeFolders): string { return join
 
 /** What every Sotto server is told on top of its own config: no share links, and no update of its own (ADR-0087). */
 export const OPENCODE_CONFIG_CONTENT = JSON.stringify({ share: 'disabled', update: 'disable' })
+/**
+ * The same, with the user's own model servers (ADR-0124) as provider blocks beside it. With none it is exactly
+ * `OPENCODE_CONFIG_CONTENT`, so a run with the Owl feature off gives OpenCode what it always did.
+ */
+export function opencodeConfigContent(servers: readonly OwnServer[] = []): string {
+  return servers.length ? JSON.stringify({ share: 'disabled', update: 'disable', providers: openCodeProviders(servers) }) : OPENCODE_CONFIG_CONTENT
+}
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'comspec', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
 /**
  * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
  * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
- * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one.
+ * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one. `servers`
+ * are the user's own model servers (ADR-0124), passed only while their Owl feature is on.
  */
-export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string): NodeJS.ProcessEnv {
+export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
   return { ...env, XDG_DATA_HOME: folders.data, XDG_CONFIG_HOME: folders.config, XDG_STATE_HOME: folders.state, XDG_CACHE_HOME: folders.cache,
-    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT, OPENCODE_DISABLE_AUTOUPDATE: '1' }
+    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT: opencodeConfigContent(servers), OPENCODE_DISABLE_AUTOUPDATE: '1' }
 }
 /** A fresh secret for one server, never written down or logged. */
 export function opencodePassword(): string { return randomBytes(32).toString('base64url') }
@@ -312,12 +322,20 @@ export function orphanedDescendants(rows: readonly ProcessRow[], root: number, s
 }
 
 const PROCESS_QUERY = "Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ForEach-Object { if ($_.CreationDate) { '{0} {1} {2} {3}' -f $_.ProcessId, $_.ParentProcessId, ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds(), ($_.CommandLine -replace '[\\r\\n]', ' ') } }"
-/** The process table, read once through PowerShell's CIM query; empty when it cannot be read. Windows only. */
-function processTable(): Promise<ProcessRow[]> {
+/** How long a read of the process table may take before it is given up as empty: seconds when idle, and more on a loaded machine. */
+const PROCESS_TABLE_MS = 15_000
+/**
+ * How long the read that finds an exited server's tools may take. Nothing else can find them once it has gone, so a read
+ * given up early leaves them running; on a loaded Windows runner it has taken longer than 15 s (#1354). The thread's
+ * turn has already ended by then; only a disconnect, and so a reconnect or quitting, waits for it.
+ */
+const ORPHAN_TABLE_MS = 60_000
+/** The process table, read once through PowerShell's CIM query; empty when it cannot be read within `boundMs`. Windows only. */
+function processTable(boundMs = PROCESS_TABLE_MS): Promise<ProcessRow[]> {
   return new Promise(resolve => {
     let output = ''
     const reader = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PROCESS_QUERY], { windowsHide: true, shell: false, stdio: ['ignore', 'pipe', 'ignore'] })
-    const timer = setTimeout(() => { reader.kill(); resolve([]) }, 15_000); timer.unref()
+    const timer = setTimeout(() => { reader.kill(); resolve([]) }, boundMs); timer.unref()
     reader.stdout.setEncoding('utf8')
     reader.stdout.on('data', (chunk: string) => { output += chunk })
     reader.once('error', () => { clearTimeout(timer); resolve([]) })
@@ -334,7 +352,7 @@ function processTable(): Promise<ProcessRow[]> {
 
 /** End what an exited server left running, on Windows, where nothing else reaches it once its leader is gone. */
 async function endOrphans(root: number, startedAt: number, rows?: readonly ProcessRow[]): Promise<void> {
-  for (const pid of orphanedDescendants(rows ?? await processTable(), root, startedAt)) {
+  for (const pid of orphanedDescendants(rows ?? await processTable(ORPHAN_TABLE_MS), root, startedAt)) {
     try { process.kill(pid) } catch { /* Ended meanwhile. */ }
   }
 }
@@ -504,9 +522,10 @@ async function endRecordedServer(record: OpenCodeServerRecord, rows: readonly Pr
 /**
  * End the servers a Sotto that has gone left running on these folders (ADR-0087), with what they started, and take their
  * records off. A record whose Sotto is still running is left for it, and a process that only has a recorded PID now,
- * started at another time or running something else, is never touched.
+ * started at another time or running something else, is never touched. On Windows the process table is read once, through
+ * `readTable`: PowerShell's CIM query by default, which takes seconds, and on a loaded machine up to its 15 s bound.
  */
-export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void): Promise<void> {
+export async function endServersLeftBehind(ledger: string, log?: (event: OpenCodeServerEvent) => void, readTable: () => Promise<ProcessRow[]> = processTable): Promise<void> {
   let names: string[]
   try { names = await readdir(ledger) } catch { return }
   // A record a Sotto that has gone was still writing when it went; one a running Sotto is writing is its own.
@@ -525,7 +544,7 @@ export async function endServersLeftBehind(ledger: string, log?: (event: OpenCod
   }))).flat()
   const left = records.flatMap(({ file, record }) => record && !isRunning(record.owner) ? [{ file, record }] : [])
   if (!left.length && !unread.length) return
-  const rows = process.platform === 'win32' ? await processTable() : []
+  const rows = process.platform === 'win32' ? await readTable() : []
   for (const { file, record } of left) {
     if (await endRecordedServer(record, rows)) log?.('opencode-server-left-ended')
     await rm(file, { force: true }).catch(() => undefined)

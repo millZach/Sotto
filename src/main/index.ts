@@ -13,6 +13,8 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
+import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { desktopWindowClient } from './agents/hostService'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
@@ -44,6 +46,7 @@ import { detectInstalledProviders } from './agents/installedProviders'
 import { DevinAcpHost } from './agents/devin'
 import { MuseMspHost } from './agents/muse'
 import { OpenCodeHost } from './agents/opencode'
+import { CursorAcpHost } from './agents/cursor'
 import { connectCheckpoints } from './tools/checkpointIntegration'
 import { RequestDraftService } from './agents/requestDrafts'
 import { RetainedDraftStore } from './agents/retainedDraftStore'
@@ -135,6 +138,7 @@ import { createDictationGate } from './hotkeys/dictationGate'
 import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEngine'
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
+import { listOpenRouterModels } from './llm/openRouterModels'
 import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
@@ -224,9 +228,16 @@ import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../shared/mainActivity'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
+import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
+import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
+import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
+import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
+import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
+import { registerOwnServersIpc } from './ownModelServers/ipc'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
@@ -335,6 +346,8 @@ type NativeDiagnostic =
   | 'owl-frames-unavailable'
   | 'owl-failed'
   | 'desktop-notification-failed'
+  | OwnServerEvent
+  | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
   console.error(`[Sotto] ${code}`)
@@ -660,12 +673,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // The providers an Owl feature holds off this run (ADR-0072): every boundary asks this set, not a provider's own answer.
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
+const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
+  // Work across machines (ADR-0082): where new workers start, a start's machine or system, and the machines a delegating
+  // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
+  // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
+  const crossMachineEnabled = owlFeatures['cross-machine-work']
+  // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
+  const nextPromptEnabled = owlFeatures['next-prompt']
   // Main watches its own event loop and can record a minute of itself (#1233, ADR-0098): an Owl feature, so stable
   // builds no service, starts no monitor and registers no bridge.
   const mainActivity = owlFeatures['main-freeze'] ? createMainActivity(userDataPath, appRunningVersion) : null
@@ -694,7 +714,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -707,6 +727,24 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
+  // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
+  // English as the computer's language, so every test and design capture reads English on any machine; the setting still
+  // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
+  const interfaceLanguageEnabled = owlFeatures['interface-language']
+  const interfaceLanguage = new MainInterfaceLanguage({
+    enabled: interfaceLanguageEnabled,
+    systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
+    override: app.isPackaged ? undefined : process.env.SOTTO_INTERFACE_LANGUAGE,
+  })
+  // A catalog that cannot be read leaves Sotto in English, which every window can show.
+  const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
+    interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
+  await applyInterfaceLanguage(startupSettings)
+  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode, so it exists only while the
+  // Owl list turns it on, OpenCode is not held and the local host runs. Otherwise main keeps the record untouched, gives
+  // OpenCode no server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && !heldProviders.has('opencode') && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, log: event => { logOperational(event) } }) : undefined
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -759,12 +797,15 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     title: buildName,
     createWindow: options => {
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
-      const featureArguments = mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
+      const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
+        ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
-        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : [])] : []
+        ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
+        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -810,13 +851,19 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   if (opencodeFixtureRoot && (!isAbsolute(opencodeFixtureRoot) || !opencodeFixtureExecutable || !isAbsolute(opencodeFixtureExecutable))) {
     throw new Error('The OpenCode test fixture requires absolute paths.')
   }
+  // Cursor's real adapter over the fake Cursor client, the same way; Sotto's Cursor folder is under the profile, as it is in use.
+  const cursorFixtureRoot = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_CURSOR_ROOT'] : undefined
+  const cursorFixtureExecutable = process.env['SOTTO_E2E_CURSOR_EXECUTABLE']
+  if (cursorFixtureRoot && (!isAbsolute(cursorFixtureRoot) || !cursorFixtureExecutable || !isAbsolute(cursorFixtureExecutable))) {
+    throw new Error('The Cursor test fixture requires absolute paths.')
+  }
   // The same for Claude and Codex: the real adapters over the fake CLIs, so a benchmark measures what they hold.
-  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
+  const nativeFixtureRoot = e2eConfiguration !== null && !app.isPackaged && !devinFixtureRoot && !museFixtureRoot && !opencodeFixtureRoot && !cursorFixtureRoot ? process.env['SOTTO_E2E_NATIVE_FIXTURE_ROOT'] : undefined
   const nativeFixtureExecutable = process.env['SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE']
   if (nativeFixtureRoot && (!isAbsolute(nativeFixtureRoot) || !nativeFixtureExecutable || !isAbsolute(nativeFixtureExecutable))) {
     throw new Error('The native test fixture requires absolute paths.')
   }
-  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
+  const testAgentHost = e2eConfiguration === null || devinFixtureRoot || museFixtureRoot || opencodeFixtureRoot || cursorFixtureRoot || nativeFixtureRoot ? null : new E2EAgentHost(e2eConfiguration.scenario)
   // A Playwright journey pushes to an owned remote and "creates" its pull request through a scripted gh; development only.
   const ghStandInScript = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_GH_SCRIPT'] : undefined
   const ghStandInExecutable = process.env['SOTTO_E2E_GH_EXECUTABLE']
@@ -836,13 +883,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled,
+    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    attachAnyFile: owlFeatures['attach-any-file'],
+    ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
+    ...(nextPromptEnabled ? { nextPromptEnabled, nextPromptChanged: entry => { windows.sendToMain(NEXT_PROMPT_CHANGED, windowNextPrompt(localRuntime?.agentControl.hostId(), entry)) } } : {}),
     ...(app.isPackaged ? { claudeHistoryModulePath: join(process.resourcesPath, 'claude-sdk', 'sdk.mjs') } : {}),
     settings: () => workingCopySettings, writingSettings: () => settings.get(),
     historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: { agentTool: () => workingCopySettings.babysitPullRequests },
-    openExternal: url => shell.openExternal(url),
+    // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
+    openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
+`, 'utf8') : shell.openExternal(url),
     openThreadFolder: async path => {
       if (e2eConfiguration !== null) { openedThreadFolder = path; return }
       const error = await shell.openPath(path); if (error) throw new Error(error)
@@ -853,14 +905,14 @@ async function createRuntime(): Promise<NativeRuntimeController> {
     ...(e2eConfiguration === null ? { installedProviders: () => detectInstalledProviders({ heldProviders }) } : {}),
     ...(testAgentHost === null ? {} : { host: testAgentHost }),
     ...(devinFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       devin: new DevinAcpHost(userDataPath, {
         executable: devinFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeDevinAgent.mjs'), devinFixtureRoot],
         nativeConfigDirectory: join(devinFixtureRoot, 'native-config'), pollIntervalMs: 50,
       }),
     } } : {}),
     ...(museFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('muse') ? { muse: new MuseMspHost(userDataPath, {
         executable: museFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeMuseAgent.mjs'), museFixtureRoot],
         // Read at connect, as the runtime's own Muse reads it, so a journey proves the switch reaches the host it starts.
@@ -868,11 +920,18 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       }) } : {}),
     } } : {}),
     ...(opencodeFixtureRoot ? { providers: {
-      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(),
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), cursor: new E2EAgentHost(),
       ...(!heldProviders.has('opencode') ? { opencode: new OpenCodeHost(userDataPath, {
         executable: opencodeFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeOpenCodeServer.mjs'), opencodeFixtureRoot], heldProviders,
+        ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
         // A journey's sign-in page is written down for the spec to read, never opened in a browser.
         openExternal: url => appendFile(join(opencodeFixtureRoot, 'opened-pages.txt'), `${url}\n`, 'utf8'),
+      }) } : {}),
+    } } : {}),
+    ...(cursorFixtureRoot ? { providers: {
+      codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      ...(!heldProviders.has('cursor') ? { cursor: new CursorAcpHost(userDataPath, {
+        program: { executable: cursorFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeCursorAgent.mjs'), cursorFixtureRoot] },
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
@@ -880,7 +939,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home') }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home') }),
-      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(),
+      grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged } : {}), log: code => { logOperational(code) } },
@@ -901,6 +960,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
   const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
   })
   quitHandles.hostRouter = hostRouter
@@ -987,7 +1047,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
@@ -1130,22 +1190,26 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       .then(() => { windows.sendToMain(UPDATE_CHECK_REQUESTED, null) })
       .catch(() => logOperational('native-main-show-failed'))
   }
-  const applicationMenuTemplate = buildApplicationMenuTemplate({
-    platform,
-    appName: APP_NAME,
-    includeDeveloperTools: !app.isPackaged,
-    onShowSettings: () => {
-      void windows.showMain().catch(() => logOperational('native-main-show-failed'))
-    },
-    // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
-    ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
-    onShowTurnRecords: showTurnRecords,
-  })
-  if (applicationMenuTemplate !== null) {
-    // Windows and Linux keep Electron's default menu: installing null would also drop the
-    // reload/devtools accelerators the app ships with today.
-    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+  // Built again whenever the interface language changes, so the menu's own words follow it.
+  const installApplicationMenu = (): void => {
+    const applicationMenuTemplate = buildApplicationMenuTemplate({
+      platform,
+      appName: APP_NAME,
+      includeDeveloperTools: !app.isPackaged,
+      onShowSettings: () => {
+        void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+      },
+      // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
+      ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
+      onShowTurnRecords: showTurnRecords,
+    })
+    if (applicationMenuTemplate !== null) {
+      // Windows and Linux keep Electron's default menu: installing null would also drop the
+      // reload/devtools accelerators the app ships with today.
+      Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
+    }
   }
+  installApplicationMenu()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
   const linuxClipboard = e2eState === null && platform === 'linux'
     ? createWaylandClipboard(clipboard, () => recoveryNotices.publish({ code: 'DESKTOP_CLIPBOARD_UNAVAILABLE' }))
@@ -1262,6 +1326,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   // was already short" from "polish truncated it" when users report loss.
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
+    chosenModel: cleanupModelEnabled,
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1554,6 +1619,13 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       workingCopySettings = settings
       menuBarOwl?.applySettings(settings)
+      // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
+      if (await applyInterfaceLanguage(settings)) {
+        trayController.update(currentTrayState)
+        installApplicationMenu()
+        windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+      }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
@@ -1802,12 +1874,17 @@ async function createRuntime(): Promise<NativeRuntimeController> {
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
+      // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
+      const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
+      // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
+      const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -1904,6 +1981,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),
+        ...(interfaceLanguageEnabled ? { interfaceLanguage } : {}),
         settings: {
           get: () => settingsCoordinator.getSettings(),
           update: (patch) => { requireLocalHistoryCleanup(startupSettings.localHostEnabled, agentHistoryEnabled, patch.historyEnabled); return settingsCoordinator.updateSettings(patch) },
@@ -1997,6 +2075,9 @@ async function createRuntime(): Promise<NativeRuntimeController> {
             getSettings: () => settings.forFormatting(),
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
+          ...(cleanupModelEnabled ? {
+            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+          } : {}),
         },
         updates: {
           status: () => updates.status(),
@@ -2032,9 +2113,12 @@ async function createRuntime(): Promise<NativeRuntimeController> {
         cleanupUsage()
         cleanupDelegations()
         cleanupContinue()
+        cleanupNextPrompts()
         cleanupMainActivity()
         cleanupNotifications()
         cleanupOpenCodeSignIn()
+        cleanupCursorSignIn()
+        cleanupOwnServers()
         worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined

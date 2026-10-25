@@ -10,8 +10,10 @@ import { contrast, over, parseTokenBlocks, resolveColor, type Rgba } from './the
  *
  * The list came from following every `color:` that paints text to the backgrounds behind it, states included
  * (hover, the current row, picked Changes lines, open menus). Icons are left out: they need 3:1, which the
- * finished, focus and boundary checks hold. Disabled controls are exempt. themeTokens.test.ts holds every built-in
- * half to it, and omarchyThemes.test.ts every stock Omarchy palette.
+ * finished, focus and boundary checks hold. Disabled controls are exempt. So is the prompt editor's suggestion ink
+ * (its placeholder and the next prompt's ghost, muted ink at 55% in threads.css): words nobody has typed yet, read
+ * as unaccepted, whose meaning speech takes from the field's label and description. themeTokens.test.ts holds every
+ * built-in half to it, and omarchyThemes.test.ts every stock Omarchy palette.
  */
 export interface PaintedTextPair {
   readonly ink: string
@@ -43,7 +45,7 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   // metadata on cards, menus and glass, Changes line numbers, and ghost buttons on the bubble and warning card.
   ...each('text-muted', [...rooms, ['selected'], ['hover-strong'], ['bubble'], ['warning-surface'], [followups], ...hovered, ...glass], 'muted text'),
   ...lines.flatMap(line => each('text-muted', [line, [...line, hover]], 'Changes line number')),
-  // Faint text: ghost buttons and placeholders.
+  // Faint text: ghost buttons and input placeholders. The prompt editor's placeholder is suggestion ink, exempt above.
   ...each('text-faint', [['canvas'], ['surface'], ['surface-elevated'], ['surface-overlay'], ['surface-sunken'], ['field'], ['card'], [followups], ...glass], 'ghost button or placeholder'),
   // Changes lines: the code, and on a picked line the numbers and signs (changes.css).
   ...lines.flatMap(line => each('code-text', [line, [...line, hover], [...line, picked]], 'Changes code')),

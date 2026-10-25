@@ -15,7 +15,7 @@ const create = (id: string) => f.host.execute({ type: 'create-thread', commandId
 const send = (id: string) => f.host.execute({ type: 'send', commandId: randomUUID(), messageId: randomUUID(), threadId: id, text: 'Synthetic telemetry check' })
 const methods = async (method: string) => (await f.driver.requests()).filter(request => request.method === method)
 const project = () => f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
-beforeEach(async () => { f = await devinFixture(undefined, 5000, 60_000) })
+beforeEach(async () => { f = await devinFixture(undefined, undefined, 60_000) })
 afterEach(async () => { await f?.cleanup() })
 
 it.each(['profile', 'default'])('runs a thread on a Devin that reads otel back as %s, with telemetry pinned off in the profile', async otel => {

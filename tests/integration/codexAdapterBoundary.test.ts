@@ -18,8 +18,8 @@ afterEach(async () => {
   for (const control of controls.splice(0)) control.dispose()
   for (const fixture of fixtures.splice(0).reverse()) await fixture.cleanup()
 })
-async function fixture(wrapped = false) {
-  const f = await codexFixture(undefined, wrapped); fixtures.push(f)
+async function fixture(wrapped = false, requestTimeoutMs?: number) {
+  const f = await codexFixture(undefined, wrapped, requestTimeoutMs); fixtures.push(f)
   await f.host.connect()
   await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
   return f
@@ -195,8 +195,9 @@ describe('Codex App Server provider adapter', () => {
     expect(await f.host.execute({ type: 'send', commandId: 'past-old-settings', threadId, messageId: 'past-old-settings', text: 'Sent past it' })).toEqual({ accepted: true })
   })
   it('still holds a send behind a permission change Codex did not confirm', async () => {
-    const f = await fixture(); const { threadId } = await create(f)
-    await f.script({ dropSettingsNotification: true })
+    // Its setup starts two app-servers, so it keeps the adapter's own deadline; the lost confirmation is scripted (#1307).
+    const f = await fixture(false, 15_000); const { threadId } = await create(f)
+    await f.script({ stopBeforeSettingsConfirmation: true })
     expect(await f.host.execute({ type: 'configure-thread', commandId: 'mode-no-event', threadId, runtimeMode: 'full-access' })).toEqual({ accepted: false, uncertain: true })
     await expect(f.host.execute({ type: 'send', commandId: 'held-no-event', threadId, messageId: 'held-no-event', text: 'Do not send' })).rejects.toThrow(/choose.*settings/i)
   })

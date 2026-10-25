@@ -28,6 +28,8 @@ export function agentActivitySignature(record: AgentActivity): string {
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
     // A cut body's kept part can stay the same length as its whole grows, so its whole size is part of what changed.
     ...record.cut ? [`${record.cut.output ?? ''}:${record.cut.text ?? ''}:${(record.cut.diffs ?? []).map(item => `${item.index}=${item.bytes}`).join(',')}`] : [],
+    // A turn on one of the user's own servers (ADR-0124) changes its try and its failure while its status stays the same.
+    ...record.ownServer ? [`${record.ownServer.name.length}:${record.ownServer.model.length}:${record.ownServer.host.length}:${record.ownServer.attempt ?? ''}:${record.ownServer.attempts ?? ''}:${record.ownServer.failure ?? ''}`] : [],
   ].join('|')
 }
 function size(value: string | undefined): number { return value === undefined ? -1 : value.length }

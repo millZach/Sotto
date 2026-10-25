@@ -1,6 +1,198 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ MB" : {
+      "comment" : "A file's size in megabytes under 10, with one decimal, such as 2.4 MB",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ميغابايت"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Mt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Mo"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ МБ"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ MB"
+          }
+        }
+      }
+    },
     "%@ and %@" : {
       "comment" : "The first %@ is a file's name, such as TerminalDrawer.tsx; the second is how many more, such as 1 more",
       "extractionState" : "manual",
@@ -1533,6 +1725,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 已在 %@ 上完成。"
+          }
+        }
+      }
+    },
+    "%@ hasn’t said whether Watcher’s model takes photos. Reconnect and try again." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يحدد %@ ما إذا كان نموذج Watcher يقبل الصور. أعد الاتصال وحاول مرة أخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এর মডেল ছবি নেয় কি না, %@ তা জানায়নি। আবার সংযোগ করে আবার চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ neuvedl, zda model Watchera přijímá fotky. Připojte se znovu a zkuste to ještě jednou."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ har ikke oplyst, om Watchers model kan modtage billeder. Opret forbindelse igen, og prøv igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat nicht mitgeteilt, ob das Modell von Watcher Fotos annimmt. Verbinde dich neu und versuch es erneut."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο υπολογιστής %@ δεν έχει αναφέρει αν το μοντέλο του Watcher δέχεται φωτογραφίες. Συνδεθείτε ξανά και δοκιμάστε ξανά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hasn’t said whether Watcher’s model takes photos. Reconnect and try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha indicado si el modelo de Watcher admite fotos. Vuelve a conectarte e inténtalo de nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha dicho si el modelo de Watcher admite fotos. Vuelve a conectarte e inténtalo de nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no ha dicho si el modelo de Watcher admite fotos. Vuelve a conectarte e inténtalo de nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ei ole kertonut, ottaako Watcherin malli vastaan kuvia. Yhdistä uudelleen ja yritä uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas indiqué si le modèle de Watcher accepte les photos. Reconnectez-vous et réessayez."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ने नहीं बताया कि Watcher का मॉडल फ़ोटो लेता है या नहीं। फिर से कनेक्ट करें और फिर से कोशिश करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ nem jelezte, hogy a Watcher modellje fogad-e fotókat. Csatlakozz újra, és próbáld újra."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non ha indicato se il modello di Watcher accetta foto. Riconnettiti e riprova."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher のモデルが写真を受け付けるかどうか、%@ から返答がありません。再接続してもう一度お試しください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher चे मॉडेल फोटो घेते की नाही हे %@ ने सांगितलेले नाही. पुन्हा कनेक्ट करा आणि पुन्हा प्रयत्न करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ har ikke sagt om Watchers modell tar imot bilder. Koble til igjen og prøv på nytt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ heeft niet gemeld of het model van Watcher foto’s aanneemt. Maak opnieuw verbinding en probeer opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nie podał, czy model Watchera przyjmuje zdjęcia. Połącz ponownie i spróbuj jeszcze raz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não informou se o modelo do Watcher aceita fotos. Reconecte-se e tente novamente."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não indicou se o modelo do Watcher aceita fotografias. Volte a ligar e tente novamente."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nu a spus dacă modelul lui Watcher acceptă fotografii. Reconectează-te și încearcă din nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ har inte sagt om Watchers modell tar emot bilder. Återanslut och försök igen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் மாடல் படங்களை ஏற்குமா என்று %@ சொல்லவில்லை. மீண்டும் இணைத்து மீண்டும் முயலவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher మోడల్ ఫోటోలను తీసుకుంటుందో లేదో %@ చెప్పలేదు. మళ్లీ కనెక్ట్ చేసి మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, Watcher’ın modelinin fotoğraf alıp almadığını bildirmedi. Yeniden bağlanın ve yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ не повідомив, чи приймає модель Watcher фото. Підключіться знову й спробуйте ще раз."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ نے نہیں بتایا کہ Watcher کا ماڈل تصاویر لیتا ہے یا نہیں۔ دوبارہ کنیکٹ کریں اور دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未说明 Watcher 的模型是否接收照片。请重新连接并重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 未說明 Watcher 的模型是否接收照片。請重新連線並再試一次。"
           }
         }
       }
@@ -4029,6 +4413,582 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@。打開以答覆"
+          }
+        }
+      }
+    },
+    "%lld B" : {
+      "comment" : "A file's size in bytes, such as 512 B",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld بايت"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld t"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld o"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Б"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld B"
+          }
+        }
+      }
+    },
+    "%lld KB" : {
+      "comment" : "A file's size in kilobytes, such as 180 KB",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld كيلوبايت"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld kB"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld kt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Ko"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld КБ"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld KB"
+          }
+        }
+      }
+    },
+    "%lld MB" : {
+      "comment" : "A file's size in whole megabytes, such as 25 MB",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ميغابايت"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Mo"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld МБ"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld MB"
           }
         }
       }
@@ -21426,6 +22386,390 @@
         }
       }
     },
+    "A reply can carry 8 attachments, so the others weren’t added." : {
+      "comment" : "Attachments are photos and files together",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحمل الرد 8 مرفقات كحد أقصى، لذا لم تُضَف المرفقات الأخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "একটি রিপ্লাইয়ে ৮টি সংযুক্তি যোগ করা যায়, তাই বাকিগুলো যোগ করা হয়নি।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zpráva může obsahovat 8 příloh, takže ostatní nebyly přidány."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Et svar kan indeholde 8 vedhæftede filer, så de andre blev ikke tilføjet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Antwort kann 8 Anhänge enthalten, daher wurden die anderen nicht hinzugefügt."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μια απάντηση μπορεί να έχει 8 συνημμένα, οπότε τα υπόλοιπα δεν προστέθηκαν."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A reply can carry 8 attachments, so the others weren’t added."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos, así que los demás no se han añadido."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos, así que los demás no se agregaron."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos, así que los demás no se agregaron."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vastaukseen voi liittää 8 liitettä, joten muita ei lisätty."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une réponse peut contenir 8 pièces jointes, les autres n’ont donc pas été ajoutées."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एक रिप्लाई में 8 अटैचमेंट जा सकते हैं, इसलिए बाकी नहीं जोड़े गए।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy válaszban legfeljebb 8 melléklet lehet, ezért a többi nem lett hozzáadva."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una risposta può contenere 8 allegati, quindi gli altri non sono stati aggiunti."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 件の返信に添付できるのは 8 個までのため、ほかのものは追加されていません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एका रिप्लायमध्ये 8 अटॅचमेंट जाऊ शकतात, म्हणून बाकीच्या जोडल्या नाहीत."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Et svar kan ha med 8 vedlegg, så de andre ble ikke lagt til."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een reactie kan 8 bijlagen bevatten, dus de andere zijn niet toegevoegd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiadomość może zawierać 8 załączników, więc pozostałe nie zostały dodane."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma resposta pode levar 8 anexos, então os outros não foram adicionados."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma resposta pode levar 8 anexos, por isso os outros não foram adicionados."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un răspuns poate conține 8 atașamente, așa că celelalte nu au fost adăugate."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ett svar kan innehålla 8 bilagor, så de andra lades inte till."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒரு மறுமொழியில் 8 இணைப்புகளைச் சேர்க்கலாம், எனவே மற்றவை சேர்க்கப்படவில்லை."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఒక ప్రత్యుత్తరంలో 8 అటాచ్‌మెంట్‌లను జోడించవచ్చు, కాబట్టి మిగతావి జోడించబడలేదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir yanıta en fazla 8 ek eklenebilir, bu yüzden diğerleri eklenmedi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "До відповіді можна додати 8 вкладень, тож інші не додано."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ایک ریپلائی میں 8 منسلکات جا سکتی ہیں، اس لیے باقی شامل نہیں کی گئیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一条回复最多可附带 8 个附件，因此其他附件未添加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一則回覆最多可附加 8 個附件，因此其他附件未加入。"
+          }
+        }
+      }
+    },
+    "A reply can carry 8 attachments. Remove one to add another." : {
+      "comment" : "Attachments are photos and files together",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحمل الرد 8 مرفقات كحد أقصى. أزِل واحدًا لإضافة آخر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "একটি রিপ্লাইয়ে ৮টি সংযুক্তি যোগ করা যায়। আরেকটি যোগ করতে একটি সরান।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zpráva může obsahovat 8 příloh. Chcete-li přidat další, jednu odstraňte."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Et svar kan indeholde 8 vedhæftede filer. Fjern en for at tilføje en anden."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Antwort kann 8 Anhänge enthalten. Entferne einen, um einen weiteren hinzuzufügen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μια απάντηση μπορεί να έχει 8 συνημμένα. Αφαιρέστε ένα για να προσθέσετε άλλο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A reply can carry 8 attachments. Remove one to add another."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos. Quita uno para añadir otro."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos. Quita uno para agregar otro."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una respuesta puede llevar 8 adjuntos. Quita uno para agregar otro."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vastaukseen voi liittää 8 liitettä. Poista yksi, jos haluat lisätä toisen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Une réponse peut contenir 8 pièces jointes. Retirez-en une pour en ajouter une autre."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एक रिप्लाई में 8 अटैचमेंट जा सकते हैं। दूसरा जोड़ने के लिए एक हटाएँ।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy válaszban legfeljebb 8 melléklet lehet. Egy másik hozzáadásához távolíts el egyet."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Una risposta può contenere 8 allegati. Rimuovine uno per aggiungerne un altro."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 件の返信に添付できるのは 8 個までです。追加するには 1 つ削除してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एका रिप्लायमध्ये 8 अटॅचमेंट जाऊ शकतात. दुसरी जोडण्यासाठी एक काढा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Et svar kan ha med 8 vedlegg. Fjern ett for å legge til et annet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een reactie kan 8 bijlagen bevatten. Verwijder er een om een andere toe te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wiadomość może zawierać 8 załączników. Usuń jeden, aby dodać inny."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma resposta pode levar 8 anexos. Remova um para adicionar outro."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uma resposta pode levar 8 anexos. Remova um para adicionar outro."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un răspuns poate conține 8 atașamente. Elimină unul ca să adaugi altul."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ett svar kan innehålla 8 bilagor. Ta bort en för att lägga till en annan."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒரு மறுமொழியில் 8 இணைப்புகளைச் சேர்க்கலாம். வேறொன்றைச் சேர்க்க ஒன்றை அகற்றவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఒక ప్రత్యుత్తరంలో 8 అటాచ్‌మెంట్‌లను జోడించవచ్చు. మరొకటి జోడించడానికి ఒకదాన్ని తీసివేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir yanıta en fazla 8 ek eklenebilir. Başka bir tane eklemek için birini kaldırın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "До відповіді можна додати 8 вкладень. Щоб додати інше, вилучіть одне."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ایک ریپلائی میں 8 منسلکات جا سکتی ہیں۔ دوسری شامل کرنے کے لیے ایک ہٹائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一条回复最多可附带 8 个附件。请移除一个后再添加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一則回覆最多可附加 8 個附件。請移除一個後再加入。"
+          }
+        }
+      }
+    },
     "A thread" : {
       "comment" : "An alert's title for a thread with no title",
       "extractionState" : "manual",
@@ -23723,6 +25067,388 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "向你提出了一個問題"
+          }
+        }
+      }
+    },
+    "Attach up to 8 files at a time. Nothing was attached." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أرفق 8 ملفات كحد أقصى في كل مرة. لم يُرفَق شيء."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "একবারে সর্বোচ্চ ৮টি ফাইল যোগ করুন। কিছুই যোগ করা হয়নি।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Najednou přiložte nejvýš 8 souborů. Nic nebylo přiloženo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vedhæft højst 8 filer ad gangen. Intet blev vedhæftet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Häng höchstens 8 Dateien auf einmal an. Es wurde nichts angehängt."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Επισυνάψτε έως 8 αρχεία κάθε φορά. Δεν επισυνάφθηκε τίποτα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attach up to 8 files at a time. Nothing was attached."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjunta hasta 8 archivos a la vez. No se ha adjuntado nada."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjunta hasta 8 archivos a la vez. No se adjuntó nada."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjunta hasta 8 archivos a la vez. No se adjuntó nada."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liitä enintään 8 tiedostoa kerralla. Mitään ei liitetty."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joignez au maximum 8 fichiers à la fois. Rien n’a été joint."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एक बार में ज़्यादा से ज़्यादा 8 फ़ाइलें अटैच करें। कुछ भी अटैच नहीं किया गया।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egyszerre legfeljebb 8 fájlt csatolj. Semmi sem lett csatolva."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allega fino a 8 file alla volta. Non è stato allegato nulla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一度に添付できるファイルは 8 個までです。何も添付されていません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एका वेळी जास्तीत जास्त 8 फाइल्स जोडा. काहीही जोडले नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legg ved høyst 8 filer om gangen. Ingenting ble lagt ved."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voeg maximaal 8 bestanden tegelijk bij. Er is niets bijgevoegd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Załącz najwyżej 8 plików naraz. Nic nie zostało załączone."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anexe até 8 arquivos por vez. Nada foi anexado."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anexe até 8 ficheiros de cada vez. Nada foi anexado."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atașează cel mult 8 fișiere odată. Nu s-a atașat nimic."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bifoga högst 8 filer åt gången. Inget bifogades."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒரே நேரத்தில் அதிகபட்சம் 8 கோப்புகளைச் சேர்க்கவும். எதுவும் சேர்க்கப்படவில்லை."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఒకసారి గరిష్టంగా 8 ఫైల్‌లను జోడించండి. ఏదీ జోడించలేదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir seferde en fazla 8 dosya ekleyin. Hiçbir şey eklenmedi."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Додавайте не більше 8 файлів за раз. Нічого не додано."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ایک بار میں زیادہ سے زیادہ 8 فائلیں منسلک کریں۔ کچھ منسلک نہیں کیا گیا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一次最多附加 8 个文件。未附加任何内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一次最多附加 8 個檔案。未附加任何內容。"
+          }
+        }
+      }
+    },
+    "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجب ألا يتجاوز مجموع المرفقات 50 ميغابايت. لم يُرفَق شيء. أزِل ملفًا أو اختر ملفات أصغر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "সব সংযুক্তি মিলিয়ে ৫০ MB বা তার কম হতে হবে। কিছুই যোগ করা হয়নি। একটি ফাইল সরান অথবা ছোট ফাইল বেছে নিন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Přílohy smí mít dohromady nejvýš 50 MB. Nic nebylo přiloženo. Odstraňte soubor nebo vyberte menší."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vedhæftede filer må højst fylde 50 MB i alt. Intet blev vedhæftet. Fjern en fil, eller vælg mindre filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anhänge dürfen zusammen höchstens 50 MB groß sein. Es wurde nichts angehängt. Entferne eine Datei oder wähle kleinere."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Τα συνημμένα πρέπει να είναι συνολικά έως 50 MB. Δεν επισυνάφθηκε τίποτα. Αφαιρέστε ένα αρχείο ή επιλέξτε μικρότερα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los adjuntos deben sumar 50 MB o menos. No se ha adjuntado nada. Quita un archivo o elige otros más pequeños."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los adjuntos deben sumar 50 MB o menos. No se adjuntó nada. Quita un archivo o elige otros más pequeños."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los adjuntos deben sumar 50 MB o menos. No se adjuntó nada. Quita un archivo o elige otros más pequeños."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Liitteiden yhteiskoko saa olla enintään 50 Mt. Mitään ei liitetty. Poista tiedosto tai valitse pienempiä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les pièces jointes ne doivent pas dépasser 50 Mo au total. Rien n’a été joint. Retirez un fichier ou choisissez-en de plus petits."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "अटैचमेंट कुल मिलाकर 50 MB या उससे कम होने चाहिए। कुछ भी अटैच नहीं किया गया। कोई फ़ाइल हटाएँ या छोटी फ़ाइलें चुनें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mellékletek együtt legfeljebb 50 MB-osak lehetnek. Semmi sem lett csatolva. Távolíts el egy fájlt, vagy válassz kisebbeket."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gli allegati devono essere in tutto di 50 MB o meno. Non è stato allegato nulla. Rimuovi un file o scegline di più piccoli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添付ファイルは合計 50 MB 以下にしてください。何も添付されていません。ファイルを削除するか、小さいファイルを選んでください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सर्व अटॅचमेंट मिळून 50 MB किंवा त्यापेक्षा कमी असावीत. काहीही जोडले नाही. एक फाइल काढा किंवा लहान फाइल्स निवडा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vedleggene kan til sammen være på høyst 50 MB. Ingenting ble lagt ved. Fjern en fil eller velg mindre filer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bijlagen mogen samen maximaal 50 MB zijn. Er is niets bijgevoegd. Verwijder een bestand of kies kleinere."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Załączniki mogą mieć łącznie najwyżej 50 MB. Nic nie zostało załączone. Usuń plik albo wybierz mniejsze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os anexos devem somar 50 MB ou menos. Nada foi anexado. Remova um arquivo ou escolha arquivos menores."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Os anexos devem somar 50 MB ou menos. Nada foi anexado. Remova um ficheiro ou escolha ficheiros mais pequenos."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atașamentele trebuie să aibă în total cel mult 50 MB. Nu s-a atașat nimic. Elimină un fișier sau alege unele mai mici."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bilagorna får vara högst 50 MB tillsammans. Inget bifogades. Ta bort en fil eller välj mindre filer."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இணைப்புகள் மொத்தம் 50 MB அல்லது அதற்குக் குறைவாக இருக்க வேண்டும். எதுவும் சேர்க்கப்படவில்லை. ஒரு கோப்பை அகற்றவும் அல்லது சிறியவற்றைத் தேர்வுசெய்யவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "అటాచ్‌మెంట్‌లు మొత్తం 50 MB లేదా అంతకంటే తక్కువగా ఉండాలి. ఏదీ జోడించలేదు. ఒక ఫైల్‌ను తీసివేయండి లేదా చిన్నవాటిని ఎంచుకోండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eklerin toplamı en fazla 50 MB olmalıdır. Hiçbir şey eklenmedi. Bir dosyayı kaldırın ya da daha küçüklerini seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вкладення разом мають займати не більше 50 МБ. Нічого не додано. Вилучіть файл або виберіть менші."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منسلکات مجموعی طور پر 50 MB یا اس سے کم ہونی چاہئیں۔ کچھ منسلک نہیں کیا گیا۔ کوئی فائل ہٹائیں یا چھوٹی فائلیں منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附件总计不能超过 50 MB。未附加任何内容。请移除一个文件，或选择较小的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附件總計不能超過 50 MB。未附加任何內容。請移除一個檔案，或選擇較小的檔案。"
           }
         }
       }
@@ -29281,6 +31007,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完成"
+          }
+        }
+      }
+    },
+    "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجب ألا يتجاوز حجم كل ملف 25 ميغابايت. لم يُرفَق شيء. اختر ملفًا أصغر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "প্রতিটি ফাইল ২৫ MB বা তার ছোট হতে হবে। কিছুই যোগ করা হয়নি। একটি ছোট ফাইল বেছে নিন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Každý soubor smí mít nejvýš 25 MB. Nic nebylo přiloženo. Vyberte menší soubor."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hver fil må højst være på 25 MB. Intet blev vedhæftet. Vælg en mindre fil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jede Datei darf höchstens 25 MB groß sein. Es wurde nichts angehängt. Wähle eine kleinere Datei."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Κάθε αρχείο πρέπει να είναι έως 25 MB. Δεν επισυνάφθηκε τίποτα. Επιλέξτε μικρότερο αρχείο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada archivo debe ocupar 25 MB o menos. No se ha adjuntado nada. Elige un archivo más pequeño."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada archivo debe pesar 25 MB o menos. No se adjuntó nada. Elige un archivo más pequeño."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada archivo debe pesar 25 MB o menos. No se adjuntó nada. Elige un archivo más pequeño."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunkin tiedoston on oltava enintään 25 Mt. Mitään ei liitetty. Valitse pienempi tiedosto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque fichier doit faire 25 Mo au maximum. Rien n’a été joint. Choisissez un fichier plus petit."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हर फ़ाइल 25 MB या उससे छोटी होनी चाहिए। कुछ भी अटैच नहीं किया गया। कोई छोटी फ़ाइल चुनें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy fájl legfeljebb 25 MB lehet. Semmi sem lett csatolva. Válassz kisebb fájlt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ogni file deve essere di 25 MB o meno. Non è stato allegato nulla. Scegli un file più piccolo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルは 1 つあたり 25 MB 以下にしてください。何も添付されていません。小さいファイルを選んでください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "प्रत्येक फाइल 25 MB किंवा त्यापेक्षा लहान असावी. काहीही जोडले नाही. लहान फाइल निवडा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hver fil kan være på høyst 25 MB. Ingenting ble lagt ved. Velg en mindre fil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elk bestand mag maximaal 25 MB zijn. Er is niets bijgevoegd. Kies een kleiner bestand."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Każdy plik może mieć najwyżej 25 MB. Nic nie zostało załączone. Wybierz mniejszy plik."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada arquivo deve ter 25 MB ou menos. Nada foi anexado. Escolha um arquivo menor."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada ficheiro deve ter 25 MB ou menos. Nada foi anexado. Escolha um ficheiro mais pequeno."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiecare fișier trebuie să aibă cel mult 25 MB. Nu s-a atașat nimic. Alege un fișier mai mic."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varje fil får vara högst 25 MB. Inget bifogades. Välj en mindre fil."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒவ்வொரு கோப்பும் 25 MB அல்லது அதற்குக் குறைவாக இருக்க வேண்டும். எதுவும் சேர்க்கப்படவில்லை. சிறிய கோப்பைத் தேர்வுசெய்யவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ప్రతి ఫైల్ 25 MB లేదా అంతకంటే చిన్నదిగా ఉండాలి. ఏదీ జోడించలేదు. చిన్న ఫైల్‌ను ఎంచుకోండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Her dosya en fazla 25 MB olmalıdır. Hiçbir şey eklenmedi. Daha küçük bir dosya seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Кожен файл має бути не більшим за 25 МБ. Нічого не додано. Виберіть менший файл."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ہر فائل 25 MB یا اس سے چھوٹی ہونی چاہیے۔ کچھ منسلک نہیں کیا گیا۔ کوئی چھوٹی فائل منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个文件不能超过 25 MB。未附加任何内容。请选择较小的文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每個檔案不能超過 25 MB。未附加任何內容。請選擇較小的檔案。"
           }
         }
       }
@@ -41167,6 +43084,198 @@
         }
       }
     },
+    "Reconnect to %@ to attach files." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعد الاتصال بـ %@ لإرفاق الملفات."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ফাইল যোগ করতে %@-এ আবার সংযোগ করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chcete-li přikládat soubory, znovu se připojte k %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opret forbindelse til %@ igen for at vedhæfte filer."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verbinde dich neu mit %@, um Dateien anzuhängen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Συνδεθείτε ξανά στον υπολογιστή %@ για να επισυνάψετε αρχεία."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnect to %@ to attach files."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a conectarte a %@ para adjuntar archivos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a conectarte a %@ para adjuntar archivos."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vuelve a conectarte a %@ para adjuntar archivos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yhdistä uudelleen tietokoneeseen %@, niin voit liittää tiedostoja."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnectez-vous à %@ pour joindre des fichiers."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फ़ाइलें अटैच करने के लिए %@ से फिर से कनेक्ट करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csatlakozz újra a(z) %@ számítógéphez a fájlok csatolásához."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Riconnettiti a %@ per allegare file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルを添付するには %@ に再接続してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "फाइल्स जोडण्यासाठी %@ शी पुन्हा कनेक्ट करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Koble til %@ igjen for å legge ved filer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maak opnieuw verbinding met %@ om bestanden bij te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Połącz ponownie z %@, aby załączać pliki."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconecte-se a %@ para anexar arquivos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volte a ligar a %@ para anexar ficheiros."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconectează-te la %@ pentru a atașa fișiere."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Återanslut till %@ för att bifoga filer."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கோப்புகளைச் சேர்க்க %@ உடன் மீண்டும் இணைக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఫైల్‌లను జోడించడానికి %@కు మళ్లీ కనెక్ట్ చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosya eklemek için %@ bilgisayarına yeniden bağlanın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Підключіться знову до %@, щоб додавати файли."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فائلیں منسلک کرنے کے لیے %@ سے دوبارہ کنیکٹ کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新连接到 %@ 以附加文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新連線到 %@ 以附加檔案。"
+          }
+        }
+      }
+    },
     "Reconnect to %@ to attach photos." : {
       "comment" : "%@ is the computer's name, such as forge",
       "extractionState" : "manual",
@@ -46612,6 +48721,197 @@
         }
       }
     },
+    "This computer cannot keep files yet. Update Sotto there to attach them." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع هذا الكمبيوتر حفظ الملفات بعد. حدّث Sotto عليه لإرفاقها."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই কম্পিউটার এখনও ফাইল রাখতে পারে না। ফাইল যোগ করতে সেখানে Sotto আপডেট করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento počítač zatím nemůže uchovávat soubory. Chcete-li je přikládat, aktualizujte tam Sotto."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne computer kan ikke gemme filer endnu. Opdater Sotto der for at vedhæfte dem."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Computer kann noch keine Dateien aufbewahren. Aktualisiere Sotto dort, um sie anzuhängen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτός ο υπολογιστής δεν μπορεί ακόμα να φυλάσσει αρχεία. Ενημερώστε εκεί το Sotto για να τα επισυνάψετε."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This computer cannot keep files yet. Update Sotto there to attach them."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este ordenador aún no puede guardar archivos. Actualiza Sotto allí para adjuntarlos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta computadora todavía no puede guardar archivos. Actualiza Sotto allá para adjuntarlos."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta computadora todavía no puede guardar archivos. Actualiza Sotto allá para adjuntarlos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämä tietokone ei vielä voi säilyttää tiedostoja. Päivitä Sotto siellä, niin voit liittää niitä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet ordinateur ne peut pas encore conserver de fichiers. Mettez Sotto à jour sur celui-ci pour les joindre."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह कंप्यूटर अभी फ़ाइलें नहीं रख सकता। उन्हें अटैच करने के लिए वहाँ Sotto अपडेट करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a számítógép még nem tud fájlokat őrizni. A csatolásukhoz frissítsd ott a Sottót."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo computer non può ancora conservare file. Aggiorna Sotto lì per allegarli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このコンピュータはまだファイルを保管できません。添付するには、そちらの Sotto をアップデートしてください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हा कॉम्प्युटर अजून फाइल्स ठेवू शकत नाही. त्या जोडण्यासाठी तिथे Sotto अपडेट करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne datamaskinen kan ikke oppbevare filer ennå. Oppdater Sotto der for å legge dem ved."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze computer kan nog geen bestanden bewaren. Werk Sotto daar bij om ze bij te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten komputer nie może jeszcze przechowywać plików. Zaktualizuj tam Sotto, aby je załączać."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este computador ainda não consegue guardar arquivos. Atualize o Sotto nele para anexá-los."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este computador ainda não consegue guardar ficheiros. Atualize o Sotto nesse computador para os anexar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acest computer nu poate păstra încă fișiere. Actualizează Sotto acolo pentru a le atașa."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den här datorn kan inte spara filer än. Uppdatera Sotto där för att bifoga dem."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்தக் கணினியால் இன்னும் கோப்புகளை வைத்திருக்க முடியாது. அவற்றைச் சேர்க்க அங்கே Sotto ஐப் புதுப்பிக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ కంప్యూటర్ ఇంకా ఫైల్‌లను ఉంచుకోలేదు. వాటిని జోడించడానికి అక్కడ Sottoను అప్‌డేట్ చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu bilgisayar henüz dosya tutamıyor. Dosya eklemek için oradaki Sotto’yu güncelleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей комп’ютер поки не може зберігати файли. Оновіть там Sotto, щоб додавати їх."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ کمپیوٹر ابھی فائلیں محفوظ نہیں رکھ سکتا۔ انہیں منسلک کرنے کے لیے وہاں Sotto اپ ڈیٹ کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台电脑还无法保留文件。请在那里更新 Sotto 后再附加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部電腦還無法保留檔案。請在那裡更新 Sotto 後再附加。"
+          }
+        }
+      }
+    },
     "This computer uses a different connection format. Update Sotto before connecting." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46799,6 +49099,579 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "這部電腦使用不同的連線格式。連線前請先更新 Sotto。"
+          }
+        }
+      }
+    },
+    "This file couldn’t be read, so it wasn’t added. If it’s in iCloud, try again once it has downloaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت قراءة هذا الملف، لذا لم يُضَف. إذا كان في iCloud، فحاول مرة أخرى بعد تنزيله."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই ফাইলটি পড়া যায়নি, তাই যোগ করা হয়নি। এটি iCloud-এ থাকলে, ডাউনলোড হওয়ার পর আবার চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento soubor se nepodařilo načíst, takže nebyl přidán. Pokud je na iCloudu, zkuste to znovu, až se stáhne."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen kunne ikke læses, så den blev ikke tilføjet. Hvis den ligger i iCloud, kan du prøve igen, når den er hentet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Datei konnte nicht gelesen werden und wurde nicht hinzugefügt. Wenn sie in iCloud liegt, versuch es erneut, sobald sie geladen ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν ήταν δυνατή η ανάγνωση αυτού του αρχείου, οπότε δεν προστέθηκε. Αν βρίσκεται στο iCloud, δοκιμάστε ξανά μόλις γίνει λήψη του."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file couldn’t be read, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido leer este archivo, así que no se ha añadido. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer este archivo, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer este archivo, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiedostoa ei voitu lukea, joten sitä ei lisätty. Jos se on iCloudissa, yritä uudelleen, kun se on ladattu."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de lire ce fichier, il n’a donc pas été ajouté. S’il est dans iCloud, réessayez une fois qu’il sera téléchargé."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह फ़ाइल पढ़ी नहीं जा सकी, इसलिए नहीं जोड़ी गई। अगर यह iCloud में है, तो डाउनलोड होने के बाद फिर से कोशिश करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a fájl nem olvasható be, ezért nem lett hozzáadva. Ha az iCloudban van, próbáld újra, amint letöltődött."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile leggere questo file, quindi non è stato aggiunto. Se è su iCloud, riprova quando sarà scaricato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルを読み込めなかったため、追加されていません。iCloud にあるファイルの場合は、ダウンロードが終わってからもう一度お試しください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ही फाइल वाचता आली नाही, म्हणून जोडली नाही. ती iCloud मध्ये असेल, तर डाउनलोड झाल्यावर पुन्हा प्रयत्न करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kunne ikke lese filen, så den ble ikke lagt til. Hvis den ligger i iCloud, prøver du igjen når den er lastet ned."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit bestand kan niet worden gelezen, dus het is niet toegevoegd. Staat het in iCloud, probeer het dan opnieuw als het is gedownload."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie udało się odczytać tego pliku, więc nie został dodany. Jeśli jest w iCloud, spróbuj ponownie, gdy się pobierze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler este arquivo, então ele não foi adicionado. Se ele estiver no iCloud, tente novamente depois que o download terminar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não foi possível ler este ficheiro, por isso não foi adicionado. Se estiver em iCloud, tente novamente quando terminar a transferência."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fișierul nu a putut fi citit, așa că nu a fost adăugat. Dacă e în iCloud, încearcă din nou după ce s-a descărcat."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen kunde inte läsas, så den lades inte till. Om den finns i iCloud kan du försöka igen när den har laddats ned."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்தக் கோப்பைப் படிக்க முடியவில்லை, எனவே அது சேர்க்கப்படவில்லை. அது iCloud இல் இருந்தால், பதிவிறக்கப்பட்டதும் மீண்டும் முயலவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ ఫైల్‌ను చదవలేకపోయింది, కాబట్టి దాన్ని జోడించలేదు. ఇది iCloudలో ఉంటే, డౌన్‌లోడ్ అయ్యాక మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu dosya okunamadı, bu yüzden eklenmedi. iCloud’daysa indirildikten sonra yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не вдалося прочитати цей файл, тож його не додано. Якщо він в iCloud, спробуйте ще раз, коли його буде завантажено."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ فائل پڑھی نہیں جا سکی، اس لیے شامل نہیں کی گئی۔ اگر یہ iCloud میں ہے تو ڈاؤن لوڈ ہونے کے بعد دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取这个文件，因此未添加。如果文件在 iCloud 中，请等它下载完成后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取這個檔案，因此未加入。如果檔案在 iCloud 中，請等它下載完成後再試一次。"
+          }
+        }
+      }
+    },
+    "This file didn’t arrive within two minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يصل هذا الملف خلال دقيقتين، لذا لم يُضَف. إذا كان في iCloud، فحاول مرة أخرى بعد تنزيله."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই ফাইলটি দুই মিনিটের মধ্যে আসেনি, তাই যোগ করা হয়নি। এটি iCloud-এ থাকলে, ডাউনলোড হওয়ার পর আবার চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento soubor nedorazil do dvou minut, takže nebyl přidán. Pokud je na iCloudu, zkuste to znovu, až se stáhne."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen kom ikke inden for to minutter, så den blev ikke tilføjet. Hvis den ligger i iCloud, kan du prøve igen, når den er hentet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Datei ist nicht innerhalb von zwei Minuten angekommen und wurde nicht hinzugefügt. Wenn sie in iCloud liegt, versuch es erneut, sobald sie geladen ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό το αρχείο δεν έφτασε μέσα σε δύο λεπτά, οπότε δεν προστέθηκε. Αν βρίσκεται στο iCloud, δοκιμάστε ξανά μόλις γίνει λήψη του."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file didn’t arrive within two minutes, so it wasn’t added. If it’s in iCloud, try again once it has downloaded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo no ha llegado en dos minutos, así que no se ha añadido. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo no llegó en dos minutos, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo no llegó en dos minutos, así que no se agregó. Si está en iCloud, inténtalo de nuevo cuando se haya descargado."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiedosto ei saapunut kahden minuutin kuluessa, joten sitä ei lisätty. Jos se on iCloudissa, yritä uudelleen, kun se on ladattu."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier n’est pas arrivé en deux minutes, il n’a donc pas été ajouté. S’il est dans iCloud, réessayez une fois qu’il sera téléchargé."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह फ़ाइल दो मिनट में नहीं आई, इसलिए नहीं जोड़ी गई। अगर यह iCloud में है, तो डाउनलोड होने के बाद फिर से कोशिश करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a fájl két percen belül nem érkezett meg, ezért nem lett hozzáadva. Ha az iCloudban van, próbáld újra, amint letöltődött."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file non è arrivato entro due minuti, quindi non è stato aggiunto. Se è su iCloud, riprova quando sarà scaricato."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルが 2 分以内に届かなかったため、追加されていません。iCloud にあるファイルの場合は、ダウンロードが終わってからもう一度お試しください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ही फाइल दोन मिनिटांत आली नाही, म्हणून जोडली नाही. ती iCloud मध्ये असेल, तर डाउनलोड झाल्यावर पुन्हा प्रयत्न करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen kom ikke innen to minutter, så den ble ikke lagt til. Hvis den ligger i iCloud, prøver du igjen når den er lastet ned."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit bestand is niet binnen twee minuten aangekomen, dus het is niet toegevoegd. Staat het in iCloud, probeer het dan opnieuw als het is gedownload."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten plik nie dotarł w ciągu dwóch minut, więc nie został dodany. Jeśli jest w iCloud, spróbuj ponownie, gdy się pobierze."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este arquivo não chegou em dois minutos, então não foi adicionado. Se ele estiver no iCloud, tente novamente depois que o download terminar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este ficheiro não chegou em dois minutos, por isso não foi adicionado. Se estiver em iCloud, tente novamente quando terminar a transferência."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fișierul nu a sosit în două minute, așa că nu a fost adăugat. Dacă e în iCloud, încearcă din nou după ce s-a descărcat."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen kom inte fram inom två minuter, så den lades inte till. Om den finns i iCloud kan du försöka igen när den har laddats ned."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்தக் கோப்பு இரண்டு நிமிடங்களுக்குள் வரவில்லை, எனவே அது சேர்க்கப்படவில்லை. அது iCloud இல் இருந்தால், பதிவிறக்கப்பட்டதும் மீண்டும் முயலவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ ఫైల్ రెండు నిమిషాల్లో రాలేదు, కాబట్టి దాన్ని జోడించలేదు. ఇది iCloudలో ఉంటే, డౌన్‌లోడ్ అయ్యాక మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu dosya iki dakika içinde gelmedi, bu yüzden eklenmedi. iCloud’daysa indirildikten sonra yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей файл не надійшов протягом двох хвилин, тож його не додано. Якщо він в iCloud, спробуйте ще раз, коли його буде завантажено."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ فائل دو منٹ میں نہیں پہنچی، اس لیے شامل نہیں کی گئی۔ اگر یہ iCloud میں ہے تو ڈاؤن لوڈ ہونے کے بعد دوبارہ کوشش کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个文件在两分钟内未载入，因此未添加。如果文件在 iCloud 中，请等它下载完成后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個檔案未在兩分鐘內載入，因此未加入。如果檔案在 iCloud 中，請等它下載完成後再試一次。"
+          }
+        }
+      }
+    },
+    "This file is empty, so it wasn’t added. Choose another file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الملف فارغ، لذا لم يُضَف. اختر ملفًا آخر."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই ফাইলটি খালি, তাই যোগ করা হয়নি। অন্য একটি ফাইল বেছে নিন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento soubor je prázdný, takže nebyl přidán. Vyberte jiný soubor."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen er tom, så den blev ikke tilføjet. Vælg en anden fil."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Datei ist leer und wurde nicht hinzugefügt. Wähle eine andere Datei."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό το αρχείο είναι κενό, οπότε δεν προστέθηκε. Επιλέξτε άλλο αρχείο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is empty, so it wasn’t added. Choose another file."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo está vacío, así que no se ha añadido. Elige otro archivo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo está vacío, así que no se agregó. Elige otro archivo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este archivo está vacío, así que no se agregó. Elige otro archivo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiedosto on tyhjä, joten sitä ei lisätty. Valitse toinen tiedosto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce fichier est vide, il n’a donc pas été ajouté. Choisissez un autre fichier."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह फ़ाइल खाली है, इसलिए नहीं जोड़ी गई। कोई दूसरी फ़ाइल चुनें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a fájl üres, ezért nem lett hozzáadva. Válassz másik fájlt."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo file è vuoto, quindi non è stato aggiunto. Scegli un altro file."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このファイルは空のため、追加されていません。別のファイルを選んでください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ही फाइल रिकामी आहे, म्हणून जोडली नाही. दुसरी फाइल निवडा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen er tom, så den ble ikke lagt til. Velg en annen fil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dit bestand is leeg, dus het is niet toegevoegd. Kies een ander bestand."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten plik jest pusty, więc nie został dodany. Wybierz inny plik."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este arquivo está vazio, então não foi adicionado. Escolha outro arquivo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este ficheiro está vazio, por isso não foi adicionado. Escolha outro ficheiro."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fișierul e gol, așa că nu a fost adăugat. Alege alt fișier."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filen är tom, så den lades inte till. Välj en annan fil."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்தக் கோப்பு காலியாக உள்ளது, எனவே அது சேர்க்கப்படவில்லை. வேறொரு கோப்பைத் தேர்வுசெய்யவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ ఫైల్ ఖాళీగా ఉంది, కాబట్టి దాన్ని జోడించలేదు. మరో ఫైల్‌ను ఎంచుకోండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu dosya boş, bu yüzden eklenmedi. Başka bir dosya seçin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей файл порожній, тож його не додано. Виберіть інший файл."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ فائل خالی ہے، اس لیے شامل نہیں کی گئی۔ کوئی اور فائل منتخب کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个文件是空的，因此未添加。请选择其他文件。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個檔案是空的，因此未加入。請選擇其他檔案。"
           }
         }
       }
@@ -48528,6 +51401,198 @@
         }
       }
     },
+    "Update Sotto on %@ to send photos to Watcher from this iPhone." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حدّث Sotto على %@ لإرسال الصور إلى Watcher من هذا الـ iPhone."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই iPhone থেকে Watcher-কে ছবি পাঠাতে %@-এ Sotto আপডেট করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chcete-li z tohoto iPhonu posílat fotky Watcherovi, aktualizujte Sotto na %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opdater Sotto på %@ for at sende billeder til Watcher fra denne iPhone."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktualisiere Sotto auf %@, um Fotos von diesem iPhone an Watcher zu senden."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ενημερώστε το Sotto στον υπολογιστή %@ για να στέλνετε φωτογραφίες στον Watcher από αυτό το iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Sotto on %@ to send photos to Watcher from this iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Sotto en %@ para enviar fotos a Watcher desde este iPhone."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Sotto en %@ para enviar fotos a Watcher desde este iPhone."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualiza Sotto en %@ para enviar fotos a Watcher desde este iPhone."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Päivitä Sotto tietokoneella %@, niin voit lähettää kuvia Watcherille tästä iPhonesta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mettez à jour Sotto sur %@ pour envoyer des photos à Watcher depuis cet iPhone."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस iPhone से Watcher को फ़ोटो भेजने के लिए %@ पर Sotto अपडेट करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítsd a Sottót a(z) %@ számítógépen, hogy erről az iPhone-ról fotókat küldhess a Watchernek."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aggiorna Sotto su %@ per inviare foto a Watcher da questo iPhone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この iPhone から Watcher に写真を送信するには、%@ の Sotto をアップデートしてください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "या iPhone वरून Watcher ला फोटो पाठवण्यासाठी %@ वर Sotto अपडेट करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oppdater Sotto på %@ for å sende bilder til Watcher fra denne iPhonen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Werk Sotto bij op %@ om foto’s vanaf deze iPhone naar Watcher te versturen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zaktualizuj Sotto na %@, aby wysyłać zdjęcia do Watchera z tego iPhone’a."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualize o Sotto em %@ para enviar fotos ao Watcher deste iPhone."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Atualize o Sotto em %@ para enviar fotografias para o Watcher a partir deste iPhone."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actualizează Sotto pe %@ pentru a trimite fotografii la Watcher de pe acest iPhone."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uppdatera Sotto på %@ för att skicka bilder till Watcher från den här iPhone."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த iPhone இலிருந்து Watcher க்குப் படங்களை அனுப்ப %@ இல் Sotto ஐப் புதுப்பிக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ iPhone నుండి Watcherకు ఫోటోలు పంపడానికి %@లో Sottoను అప్‌డేట్ చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone’dan Watcher’a fotoğraf göndermek için %@ üzerindeki Sotto’yu güncelleyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оновіть Sotto на %@, щоб надсилати фото Watcher з цього iPhone."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس iPhone سے Watcher کو تصاویر بھیجنے کے لیے %@ پر Sotto اپ ڈیٹ کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新 %@ 上的 Sotto，即可从此 iPhone 向 Watcher 发送照片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新 %@ 上的 Sotto，即可從此 iPhone 傳送照片給 Watcher。"
+          }
+        }
+      }
+    },
     "Waiting" : {
       "comment" : "A thread's state: only background commands are running",
       "extractionState" : "manual",
@@ -48908,6 +51973,390 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "等待核准"
+          }
+        }
+      }
+    },
+    "Watcher isn’t running on %@. Start it there to attach photos." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher لا يعمل على %@. شغّله هناك لإرفاق الصور."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-এ Watcher চলছে না। ছবি যোগ করতে সেখানে এটি চালু করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher na %@ neběží. Chcete-li přikládat fotky, spusťte ho tam."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kører ikke på %@. Start den der for at vedhæfte billeder."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher läuft nicht auf %@. Starte ihn dort, um Fotos anzuhängen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο Watcher δεν εκτελείται στον υπολογιστή %@. Ξεκινήστε τον εκεί για να επισυνάψετε φωτογραφίες."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher isn’t running on %@. Start it there to attach photos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no se está ejecutando en %@. Inícialo allí para adjuntar fotos."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no se está ejecutando en %@. Inícialo allá para adjuntar fotos."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher no se está ejecutando en %@. Inícialo allá para adjuntar fotos."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ei ole käynnissä tietokoneella %@. Käynnistä se siellä, niin voit liittää kuvia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ne s’exécute pas sur %@. Démarrez-le là-bas pour joindre des photos."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ पर Watcher नहीं चल रहा है। फ़ोटो अटैच करने के लिए उसे वहाँ शुरू करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher nem fut a(z) %@ számítógépen. A fotók csatolásához indítsd el ott."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher non è in esecuzione su %@. Avvialo lì per allegare foto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で Watcher が実行されていません。写真を添付するには、そちらで Watcher を開始してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ वर Watcher चालू नाही. फोटो जोडण्यासाठी तो तिथे सुरू करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher kjører ikke på %@. Start den der for å legge ved bilder."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher draait niet op %@. Start Watcher daar om foto’s toe te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nie działa na %@. Uruchom go tam, aby załączać zdjęcia."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não está em execução em %@. Inicie-o lá para anexar fotos."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher não está em execução em %@. Inicie-o lá para anexar fotografias."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nu rulează pe %@. Pornește-l acolo pentru a atașa fotografii."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher körs inte på %@. Starta den där för att bifoga bilder."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இல் Watcher இயங்கவில்லை. படங்களைச் சேர்க்க அங்கே அதைத் தொடங்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@లో Watcher నడవడం లేదు. ఫోటోలను జోడించడానికి అక్కడ దాన్ని ప్రారంభించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher %@ üzerinde çalışmıyor. Fotoğraf eklemek için orada başlatın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher не запущено на %@. Запустіть його там, щоб додавати фото."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ پر Watcher نہیں چل رہا۔ تصاویر منسلک کرنے کے لیے اسے وہاں شروع کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 未在 %@ 上运行。请在那里启动它后再附加照片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 未在 %@ 上執行。請在那裡啟動它後再附加照片。"
+          }
+        }
+      }
+    },
+    "Watcher’s model can’t take photos. Change Watcher’s model on %@ to attach them." : {
+      "comment" : "%@ is the computer's name, such as forge",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يقبل نموذج Watcher الصور. غيّر نموذج Watcher على %@ لإرفاقها."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এর মডেল ছবি নিতে পারে না। ছবি যোগ করতে %@-এ Watcher-এর মডেল বদলান।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Watchera nepřijímá fotky. Chcete-li je přiložit, změňte model Watchera na %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers model kan ikke modtage billeder. Skift Watchers model på %@ for at vedhæfte dem."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Modell von Watcher kann keine Fotos annehmen. Ändere das Modell von Watcher auf %@, um sie anzuhängen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το μοντέλο του Watcher δεν δέχεται φωτογραφίες. Αλλάξτε το μοντέλο του Watcher στον υπολογιστή %@ για να τις επισυνάψετε."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’s model can’t take photos. Change Watcher’s model on %@ to attach them."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de Watcher no admite fotos. Cambia el modelo de Watcher en %@ para adjuntarlas."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de Watcher no admite fotos. Cambia el modelo de Watcher en %@ para adjuntarlas."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de Watcher no admite fotos. Cambia el modelo de Watcher en %@ para adjuntarlas."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcherin malli ei ota vastaan kuvia. Vaihda Watcherin malli tietokoneella %@, niin voit liittää ne."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle de Watcher n’accepte pas les photos. Changez le modèle de Watcher sur %@ pour les joindre."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher का मॉडल फ़ोटो नहीं ले सकता। उन्हें अटैच करने के लिए %@ पर Watcher का मॉडल बदलें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher modellje nem fogad fotókat. A csatolásukhoz módosítsd a Watcher modelljét a(z) %@ számítógépen."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il modello di Watcher non accetta foto. Cambia il modello di Watcher su %@ per allegarle."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher のモデルは写真を受け付けません。添付するには %@ で Watcher のモデルを変更してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher चे मॉडेल फोटो घेऊ शकत नाही. ते जोडण्यासाठी %@ वर Watcher चे मॉडेल बदला."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers modell kan ikke ta imot bilder. Bytt Watchers modell på %@ for å legge dem ved."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het model van Watcher kan geen foto’s aannemen. Wijzig het model van Watcher op %@ om ze toe te voegen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model Watchera nie przyjmuje zdjęć. Zmień model Watchera na %@, aby je załączyć."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O modelo do Watcher não aceita fotos. Mude o modelo do Watcher em %@ para anexá-las."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O modelo do Watcher não aceita fotografias. Mude o modelo do Watcher em %@ para as anexar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelul lui Watcher nu acceptă fotografii. Schimbă modelul lui Watcher pe %@ pentru a le atașa."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers modell kan inte ta emot bilder. Byt Watchers modell på %@ för att bifoga dem."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் மாடலால் படங்களை ஏற்க முடியாது. அவற்றைச் சேர்க்க %@ இல் Watcher இன் மாடலை மாற்றவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher మోడల్ ఫోటోలను తీసుకోలేదు. వాటిని జోడించడానికి %@లో Watcher మోడల్‌ను మార్చండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’ın modeli fotoğraf alamıyor. Fotoğraf eklemek için %@ üzerinde Watcher’ın modelini değiştirin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Модель Watcher не приймає фото. Змініть модель Watcher на %@, щоб додати їх."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher کا ماڈل تصاویر نہیں لے سکتا۔ انہیں منسلک کرنے کے لیے %@ پر Watcher کا ماڈل بدلیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的模型无法接收照片。请在 %@ 上更改 Watcher 的模型后再附加。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的模型無法接收照片。請在 %@ 上更改 Watcher 的模型後再附加。"
           }
         }
       }

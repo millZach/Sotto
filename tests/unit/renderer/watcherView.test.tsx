@@ -565,7 +565,7 @@ describe("Watcher's room", () => {
     fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }))
     const beside = await screen.findByRole('region', { name: 'Grok voice previews' })
-    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s' })
+    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s · 1 step' })
     work.focus()
     fireEvent.click(work)
     expect(work).toHaveAttribute('aria-expanded', 'true')
@@ -598,7 +598,7 @@ describe("Watcher's room", () => {
     await paneReady()
     fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
-    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s' })
+    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s · 1 step' })
     await waitFor(() => expect(failed).toHaveFocus())
     expect(failed.closest('[data-turn-outcome="failed"]')).toHaveTextContent('The playback test failed again.')
   })
@@ -669,6 +669,39 @@ describe("Watcher's room", () => {
     expect(screen.queryByText('Threads in flight')).toBeNull()
   })
 
+  it('draws the tabs as icons named on hover and to assistive technology, with the watched count as a badge', async () => {
+    const watched = (count: number): WatcherRoomState['watchedThreads'] => Array.from({ length: count }, (_, index) =>
+      ({ ...roomState().watchedThreads[0]!, target: target(`watched-${index}`), title: `Watched ${index}` }))
+    const badge = (pane: HTMLElement): string | null => pane.querySelector('.watcher-tabs__count')?.textContent ?? null
+    for (const [count, name, shown] of [[0, 'Watched, 0 threads', null], [1, 'Watched, 1 thread', '1'], [7, 'Watched, 7 threads', '7'], [120, 'Watched, 120 threads', '99+']] as const) {
+      const { unmount } = renderRoom(stateWithWatcher(), roomState({ watchedThreads: watched(count) }))
+      const pane = await screen.findByRole('region', { name: 'Watcher' })
+      const tab = await within(pane).findByRole('tab', { name })
+      expect(tab).toHaveAttribute('title', name)
+      expect(badge(pane)).toBe(shown)
+      unmount()
+    }
+    renderRoom(stateWithWatcher(), roomState())
+    const pane = await screen.findByRole('region', { name: 'Watcher' })
+    const tabs = within(pane).getAllByRole('tab')
+    expect(tabs.map(tab => [tab.getAttribute('aria-label'), tab.getAttribute('title'), tab.textContent])).toEqual([
+      ['Conversation', 'Conversation', ''], ['Watched, 1 thread', 'Watched, 1 thread', '1'], ['Visualize', 'Visualize', '']])
+    for (const tab of tabs) expect(tab.querySelector('svg.watcher-tabs__icon[aria-hidden="true"]'), tab.getAttribute('aria-label')!).not.toBeNull()
+    expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1])
+    fireEvent.click(tabs[1]!)
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(tabs[1]!, { key: 'ArrowRight' })
+    expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs[2]).toHaveFocus()
+    fireEvent.keyDown(tabs[2]!, { key: 'ArrowRight' })
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(tabs[0]!, { key: 'End' })
+    expect(tabs[2]).toHaveFocus()
+    fireEvent.keyDown(tabs[2]!, { key: 'Home' })
+    expect(tabs[0]).toHaveFocus()
+    expect(tabs.map(tab => tab.tabIndex)).toEqual([0, -1, -1])
+  })
+
   /** A window whose Sotto browser opens `footer-links`' pages, and whose system browser opens anything. */
   function withBrowser(): { readonly browser: ReturnType<typeof browserBridgeFixture>; readonly openExternalLink: ReturnType<typeof vi.fn>; readonly restore: () => void } {
     const workspace = { threadId: 'footer-links', projectId: 'workshop', workingDirectory: 'D:/work/workshop', workspaceId: '0f8fad5b-d9cb-469f-a165-70867728950e' }
@@ -728,11 +761,10 @@ describe('the room switch', () => {
     return { navigate, view, tabs: () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab') }
   }
 
-  it('puts the owl alone between Dictate and Threads, named Watcher, with one tab stop', () => {
+  it('puts the owl between Dictate and Threads, every tile named and the closed ones tipped, with one tab stop', () => {
     const { tabs } = foot('home')
-    expect(tabs().map(tab => tab.getAttribute('aria-label') ?? tab.textContent)).toEqual(['Dictate', 'Watcher', 'Threads'])
-    expect(tabs()[1]).toHaveAttribute('title', 'Watcher')
-    expect(tabs()[1]).toHaveTextContent('')
+    expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Watcher', 'Threads'])
+    expect(tabs().map(tab => tab.getAttribute('title'))).toEqual([null, 'Watcher', 'Threads'])
     expect(tabs().map(tab => tab.tabIndex)).toEqual([0, -1, -1])
   })
 
@@ -789,7 +821,7 @@ describe('a watched thread', () => {
     return bridge
   }
 
-  it('shows the owl after its provider logo in its row and its pane, and says what watching does, with Stop watching', async () => {
+  it('shows the owl after its provider logo in its row and its pane, with Watch pressed and nothing under the composer', async () => {
     renderThreadsPage(true)
     const sidebar = within(screen.getByRole('complementary', { name: 'Thread sidebar' }))
     const row = await sidebar.findByRole('button', { name: 'Footer links' })
@@ -798,8 +830,9 @@ describe('a watched thread', () => {
     const pane = screen.getByRole('region', { name: 'Footer links' })
     expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
     expect(within(pane).queryByRole('button', { name: 'Watched by Watcher' })).toBeNull()
-    expect(within(pane).getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeInTheDocument()
-    expect(within(pane).getByRole('button', { name: 'Stop watching Footer links' })).toBeInTheDocument()
+    // Zach asked for the line under the composer to go: the header's Watch says the thread is watched, and stops it.
+    expect(within(pane).queryByText(/Watched by Watcher\./)).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'Stop watching Footer links' })).toBeNull()
     expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     // Watcher itself lives in its room, not in the Threads list.
     expect(sidebar.queryByRole('button', { name: 'Watcher' })).toBeNull()

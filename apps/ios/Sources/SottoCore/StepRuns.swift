@@ -1,10 +1,39 @@
 import Foundation
 
+/// The words a working run's folded line shows, with a slow light crossing them: the desktop's Spaceballs working words
+/// (`WORKING_WORDS` in `src/renderer/src/agents/ThreadActivity.tsx`), in its order. The line starts on the first and
+/// changes every `seconds`, to any word but the one it replaces. They are decoration over one unchanging fact, so
+/// VoiceOver hears the step running now from `StepRun.spokenWorking` instead.
+public enum WorkingWords {
+    /// A short turn only ever shows the first, so that one still reads as work; the rest are for the longer waits.
+    public static let all = [
+        "Combing the desert", "Winding up the Schwartz", "Going to plaid", "Ludicrous speed", "Consulting Yogurt",
+        "Checking Mr. Radar", "Cracking 1-2-3-4-5", "Getting to now, now", "Raising the air shield", "Canning the Perri-air",
+        "Waking Barf", "Scanning for Druidia", "Merchandising", "Prepping for light speed"
+    ]
+    /// How long each word shows.
+    public static let seconds: TimeInterval = 3.8
+    /// How long the next word takes to fade in. It changes without the fade under Reduce Motion.
+    public static let fade: TimeInterval = 0.22
+
+    /// The word after the one at `current`, any other as `roll` picks: a draw from `0..<all.count - 1`, as
+    /// `(current + 1 + roll) % all.count` on the desktop, so it never repeats the word it replaces.
+    public static func next(after current: Int, roll: Int) -> Int {
+        let others = all.count - 1
+        let step = 1 + ((roll % others) + others) % others
+        return (((current % all.count) + all.count) % all.count + step) % all.count
+    }
+
+    /// The next word's index, picked at random from the others.
+    public static func next(after current: Int) -> Int { next(after: current, roll: Int.random(in: 0..<(all.count - 1))) }
+}
+
 /// A run of steps between two messages as its folded line reads it (ADR-0051, October 5 amendment). While the thread
-/// works through the run, the line names the step running now; once the run has ended, it says how many steps it had
-/// and how long they took. Pure, so the thread page and the tests read one answer.
+/// works through the run, the line shows `WorkingWords` and VoiceOver hears the step running now; once the run has
+/// ended, the line says how many steps it had and how long they took. Pure, so the thread page and the tests read one
+/// answer.
 public enum StepRun {
-    /// What the running step is doing, as the working line says it: a verb, and the command or file it works on.
+    /// What the running step is doing, as VoiceOver hears the working line: a verb, and the command or file it works on.
     public struct Live: Equatable, Sendable {
         public let verb: String
         public let subject: String?
@@ -48,10 +77,10 @@ public enum StepRun {
         steps == 1 ? String(localized: "1 step", bundle: .module) : String(localized: "\(steps) steps", bundle: .module)
     }
 
-    /// The step a working run's line shows: the latest one still running, or nil when none is.
+    /// The step a working run's line speaks of: the latest one still running, or nil when none is.
     public static func running(_ steps: [Activity]) -> Activity? { steps.last(where: { $0.status == "running" }) }
-    /// What the working line says now: the step running, or Thinking between steps (a provider reports its tool calls,
-    /// not the thinking between them, so a working thread often has no step running).
+    /// What VoiceOver hears the working line say now: the step running, or Thinking between steps (a provider reports
+    /// its tool calls, not the thinking between them, so a working thread often has no step running).
     public static func now(_ steps: [Activity]) -> Live { running(steps).map(live) ?? Live(verb: thinkingVerb, subject: nil) }
 
     /// What a press on the line does: "Show 14 steps", or "Hide steps" once they are open.

@@ -1071,10 +1071,10 @@ enum Loops {
 }
 
 /// A view whose loops Core Animation runs. Subclasses draw on `stage`, which fills the view, and say which animations
-/// loop on the stage's layer. They are added while the view is `running` and in a window, added afresh each time it
-/// enters a window, added again if missing when the app returns to the foreground, and rebuilt only when
-/// `loopSignature` changes, so new colours or a new height never restart a breath. It takes no touches and VoiceOver
-/// does not see it.
+/// loop on the stage's layer, or on another layer drawn on the stage that `loopLayer` names. They are added while the
+/// view is `running` and in a window, added afresh each time it enters a window, added again if missing when the app
+/// returns to the foreground, and rebuilt only when `loopSignature` changes, so new colours or a new height never
+/// restart a breath. It takes no touches and VoiceOver does not see it.
 class LoopingView: UIView {
     /// What subclasses draw on and the loops move. SwiftUI owns this view's own frame and transform; the stage is ours.
     let stage = UIView()
@@ -1105,6 +1105,8 @@ class LoopingView: UIView {
     func makeLoops() -> [String: CAAnimation] { [:] }
     /// What the loops are built from beyond their keys, such as a width they travel; a change rebuilds them.
     var loopSignature: [CGFloat] { [] }
+    /// The layer the loops run on: the stage's own, unless a subclass moves something drawn on the stage, such as a mask.
+    var loopLayer: CALayer { stage.layer }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -1132,20 +1134,22 @@ class LoopingView: UIView {
             return
         }
         let signature = loopSignature
-        let missing = builtKeys.isEmpty || builtKeys.contains { stage.layer.animation(forKey: $0) == nil }
+        let layer = loopLayer
+        let missing = builtKeys.isEmpty || builtKeys.contains { layer.animation(forKey: $0) == nil }
         if !force && !missing && builtSignature == signature { return }
         stopLoops()
         let loops = makeLoops()
         for (key, animation) in loops {
-            stage.layer.add(animation, forKey: key)
+            layer.add(animation, forKey: key)
         }
         builtKeys = Array(loops.keys)
         builtSignature = signature
     }
 
     private func stopLoops() {
+        let layer = loopLayer
         for key in builtKeys {
-            stage.layer.removeAnimation(forKey: key)
+            layer.removeAnimation(forKey: key)
         }
         builtKeys = []
         builtSignature = nil

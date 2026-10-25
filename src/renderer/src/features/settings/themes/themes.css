@@ -744,7 +744,8 @@
 .effort-color__pill b { position: absolute; right: -1px; top: -1px; width: 16px; height: 16px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); }
 .effort-color[aria-pressed='true'] .effort-color__pill { outline: 2px solid var(--tt-accent-text); outline-offset: 3px; }
 
-/* The Live appearance sample: the composer at a model's highest level, its card above the chip. */
+/* The Live appearance sample: the composer at a model's highest level, its card above the chip. The composer wears no
+   outline there, as in a thread (ADR-0110); the colourway shows in its tide, the chip and the card. */
 .effort-sample { margin-top: 18px; }
 .effort-sample__head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; color: var(--tt-text-muted); font-size: 12px; }
 .effort-sample__replay { padding: 2px 6px; border: 0; border-radius: 5px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
@@ -765,26 +766,20 @@
 .effort-sample__pill i { position: absolute; top: 50%; left: calc(9px + var(--effort-stop) * (100% - 18px)); width: 3px; height: 3px; border-radius: 50%; background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); transform: translate(-50%, -50%); }
 .effort-sample__thumb { position: absolute; right: 0; top: 0; width: 18px; height: 18px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); }
 .effort-sample__ends { display: flex; justify-content: space-between; margin: 4px 1px 0; color: var(--tt-text-faint); font-size: 8.5px; }
-.effort-sample__composer { position: relative; padding: 10px 12px 8px; border: 1px solid color-mix(in srgb, var(--tt-effort-border) 30%, var(--tt-field-border)); border-radius: 12px; background: var(--tt-surface); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
-.effort-sample[data-arriving='true'] .effort-sample__composer { border-color: color-mix(in srgb, var(--tt-effort-border) 70%, var(--tt-field-border)); transition-duration: 220ms; }
+.effort-sample__composer { position: relative; padding: 10px 12px 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-surface); }
 .effort-sample__text { display: block; width: 55%; height: 3px; margin: 4px 0 18px; border-radius: 2px; background: var(--tt-hairline); }
 .effort-sample__chips { display: flex; gap: 5px; }
 .effort-sample__chips > span { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 5px; color: var(--tt-text-muted); font-size: 11px; }
 .effort-sample__chips > span[data-effort-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; font-weight: 500; }
-.effort-sample__composer::after { content: ''; position: absolute; inset: -1px; border-radius: 12px; padding: 1.5px; pointer-events: none;
-  background: conic-gradient(from var(--effort-ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--tt-effort-a) 70%, transparent) .66turn, var(--tt-effort-b) .76turn, var(--tt-effort-c) .84turn, transparent .94turn, transparent 1turn);
-  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); mask-composite: exclude; }
 .effort-sample__wash { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
 .effort-sample__wash::before { content: ''; position: absolute; left: 0; right: 0; top: 100%; height: 220%; background: var(--tt-effort-wash-image); opacity: .5;
   -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
 @media (prefers-reduced-motion: no-preference) {
-  .effort-sample[data-still='false'] .effort-sample__composer::after { animation: effort-ring 4200ms linear infinite; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__card > .effort-sample__wash::before { animation: effort-wash 1500ms cubic-bezier(.3, .6, .2, 1) both; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__composer > .effort-sample__wash::before { animation: effort-wash 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word { animation: effort-word 520ms cubic-bezier(.2, .8, .2, 1) both; }
   .effort-sample[data-still='false'][data-arriving='true'] .effort-sample__word > span { animation: effort-letter 520ms cubic-bezier(.2, .8, .2, 1) both; animation-delay: calc(140ms + var(--effort-letter) * 55ms); }
 }
-.effort-sample[data-still='true'] .effort-sample__composer::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
 .effort-sample[data-still='true'] * { animation: none !important; transition: none !important; }
 
 /* Creature (Settings → Appearance → Creature) ----
