@@ -1590,7 +1590,7 @@ test.describe("Watcher's room on the built app", () => {
         }
         await page.keyboard.press('Enter')
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
-        await weekly.getByRole('button', { name: 'Stop watching Weekly note', exact: true }).click()
+        await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'false')
         await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
