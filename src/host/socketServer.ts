@@ -238,6 +238,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   const features = HOST_FEATURES.filter(feature => (feature !== 'provider-sign-in' || options.signIns !== undefined)
     && (feature !== 'opencode-sign-in' || options.opencodeSignIn !== undefined)
     && (!feature.startsWith('watcher-phone') || service.watcherPhone !== undefined && options.admin === false && options.watcherDesktops === undefined)
+    // Photos for Watcher need the host to stage them and to answer for them (October 23, 2026).
+    && (feature !== 'watcher-phone-photos' || service.stageAttachment !== undefined && service.attachmentPreview !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || service.supportsWatcherReads === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -868,6 +870,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!peer.watcherPhoneStop || !offers(peer, 'watcher-phone-stop-all')) throw new Refusal('invalid_request')
         return stopPreviewWithoutProviders(phone.prepareStop(peer.client), peer.unknownProviders)
       }
+      // One photo of a message in Watcher's conversation. Watcher's thread is hidden from a phone's `preview`, so this reads the
+      // current Watcher's alone, one image at a time on the same guard.
+      if (request.op === 'watcher-phone-preview') {
+        if (!offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return await phone.preview(request.request) } finally { peer.preview = false }
+      }
       const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
@@ -930,6 +940,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         case 'watcher-phone-send': {
           // Only a phone that negotiated steering may ask for a steer; an older phone's send is unchanged (#1229).
           if (request.request.delivery !== undefined && (!steer || !offers(peer, 'watcher-phone-steer'))) throw new Refusal('invalid_request')
+          if (request.request.images !== undefined && !offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
           if (previous) {

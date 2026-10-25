@@ -479,6 +479,16 @@ A first answer kept the two apart: no Steer now while Watcher answered news, and
 - A request that has recorded a thousand of the user's messages takes no more steers: the steer is refused rather than reach Watcher under a request that does not hold it. A message queued while Watcher reads news joins no request when it is queued, so it goes as its own turn under a request of its own.
 - Steering from the iPhone was #1229: a send from the phone while Watcher worked was refused. The section below lets the phone steer too.
 
+## October 23, 2026: photos for Watcher from the iPhone
+
+On the iPhone a thread's reply box took photos, and Watcher's did not: it had no **+**, and `watcher-phone-send` carried words alone. Zach reported it from TestFlight build 30 as "I am unable to attach photos", and chose the same day that it goes straight to stable, that photos go with the words however the words go, that the box offers the library and the camera, and that a message may be photos alone. He picked variant A of `docs/prototypes/iphone-watcher-photos-prototype.html`, the thread reply box's own layout, over B (the + inside the box, the photos on a tray above it) and C (an **Add photos** chip under Watcher's name, and a count in the box):
+
+- **Watcher's box works as a thread's.** The **+** sits to the left of the box with **Photo library** and **Camera**, the chosen photos wait inside the box above the words, and the menu says why when Watcher can't take them: its model doesn't read images, no Watcher runs, or the computer runs a Sotto from before Watcher took photos. Watcher's box keeps its own photos, apart from any thread's.
+- **Photos go with the words, now or next.** Idle, they go with the message. While Watcher works they steer into its turn with the words, or wait with them in Watcher's queue, as the October 21 amendment below says of words. A message with photos locks the box from the press until the computer answers, so one Watcher refuses or doesn't confirm comes back to the box whole, words and photos, under the same draft ID, and can't be delivered twice.
+- **The conversation shows them.** The user's photos stand above their words, and a press opens one full screen. Watcher's thread stays hidden from the phone's own reads, so the phone reads a photo through Watcher's own `watcher-phone-preview`, for the current Watcher only.
+
+On the wire this is the optional phone feature `watcher-phone-photos` (`docs/host-protocol.md`). Staging is the thread reply's `stage-attachment`, unchanged (ADR-0031). The photos reach Watcher's provider as a thread reply's do, and only a model that reads images takes them.
+
 ## October 21, 2026: the iPhone steers Watcher while it works (#1229)
 
 Until now a message from the phone while Watcher worked was refused with words that did not say why. Zach picked variant B of `docs/prototypes/iphone-watcher-steer-prototype.html` on October 21, 2026, over A (Send queues, and queued cards carry Steer now and Remove, as on a thread page) and C (separate Steer and Queue buttons):

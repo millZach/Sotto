@@ -73,6 +73,24 @@ import SottoCore
     }
 }
 
+/// A user message's photos its computer keeps, each standing on its own above the words, as in Messages: a press opens
+/// them full screen. A thread's and Watcher's conversation draw them the same way.
+struct SentPhotoButtons: View {
+    let ref: ThreadRef
+    let messageID: String
+    let photos: [Attachment]
+    let open: (OpenPhotos) -> Void
+    var body: some View {
+        ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+            Button { open(OpenPhotos(ref: ref, messageID: messageID, photos: photos, index: index)) } label: {
+                SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: photo.id), name: photo.name)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open photo \(photo.name)")
+        }
+    }
+}
+
 /// The photos of one message in a thread: what a press opens full screen.
 struct OpenPhotos: Identifiable {
     let ref: ThreadRef; let messageID: String; let photos: [Attachment]; var index: Int
@@ -182,14 +200,14 @@ private extension Array {
 /// The photos waiting in a reply box, at their own shape, each with its own Remove button.
 struct DraftPhotoStrip: View {
     @EnvironmentObject var model: AppModel
-    let ref: ThreadRef
+    let box: PhotoBox
     var body: some View {
-        let photos = model.photos(ref)
+        let photos = model.photos(box)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                     DraftPhotoView(photo: photo, number: index + 1, count: photos.count,
-                                   locked: model.preparingSends.contains(ref.id)) { model.removePhoto(photo.id, from: ref) }
+                                   locked: model.preparingSends.contains(box.id)) { model.removePhoto(photo.id, from: box) }
                 }
             }.padding(.top, 2)
         }.frame(height: 92)
@@ -233,11 +251,11 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library or Camera. When the thread can't take photos the choices stay
-/// in the menu, unavailable, with the reason beneath them.
+/// The reply box's + button: Photo library or Camera. When the box can't take photos the choices stay
+/// in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
-    let ref: ThreadRef
+    let box: PhotoBox
     @State private var choosing = false
     @State private var shooting = false
     @State private var picked: [PhotosPickerItem] = []
@@ -256,13 +274,13 @@ struct AttachPhotosButton: View {
         }
         .accessibilityLabel("Attach photos")
         .accessibilityHint(reason ?? "Choose photos from the library, or take one with the camera.")
-        .accessibilityIdentifier("thread-attach-photos")
+        .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
-            let start = model.photos(ref).count
-            model.attachPhotos(ref, from: items.enumerated().map { offset, item in
+            let start = model.photos(box).count
+            model.attachPhotos(box, from: items.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
                     return data
@@ -272,24 +290,25 @@ struct AttachPhotosButton: View {
         }
         .fullScreenCover(isPresented: $shooting) {
             CameraPicker(shown: $shooting) { image in
-                model.attachPhotos(ref, from: [PhotoSource(name: "Camera photo") {
+                model.attachPhotos(box, from: [PhotoSource(name: "Camera photo") {
                     guard let data = image.jpegData(compressionQuality: 0.95) else { throw PhotoPipelineError.unreadable }
                     return data
                 }])
             }.ignoresSafeArea()
         }
     }
-    private var room: Int { PhotoLimits.count - model.photos(ref).count }
+    private var watcher: Bool { if case .watcher = box { return true }; return false }
+    private var room: Int { PhotoLimits.count - model.photos(box).count }
     private var reason: String? {
-        if let reason = model.photoSupport(ref).reason(computer: model.name(ref.hostID)) { return reason }
-        if model.preparingSends.contains(ref.id) { return "Your reply is being sent." }
-        return room > 0 ? nil : "A reply can carry \(PhotoLimits.count) photos."
+        if let reason = model.photoSupport(box).reason(computer: model.name(box.hostID), watcher: watcher) { return reason }
+        if model.preparingSends.contains(box.id) { return watcher ? "Your message is being sent." : "Your reply is being sent." }
+        return room > 0 ? nil : "\(box.carrier) can carry \(PhotoLimits.count) photos."
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .denied, .restricted:
-            model.photoNotices[ref.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
+            model.photoNotices[box.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
         default: shooting = true
         }
     }
