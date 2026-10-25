@@ -162,8 +162,12 @@ export class PrototypeReady {
     return changed
   }
 
-  /** The snapshot with each thread's mark on it. Threads with nothing to change keep their own object, and so does the snapshot. */
-  decorate(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  /**
+   * The snapshot with each thread's mark on it. Threads with nothing to change keep their own object, and so does the
+   * snapshot. With `gone`, the snapshot holds only the threads that changed (#925) and `gone` names the threads that went,
+   * whose question is let go; every other thread is as the last snapshot left it.
+   */
+  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>): AgentHostSnapshot {
     const settled = settledIn(snapshot)
     let threads: AgentThread[] | undefined
     for (let index = 0; index < snapshot.threads.length; index++) {
@@ -171,7 +175,8 @@ export class PrototypeReady {
       const next = this.publish(thread, this.markable(thread, settled) ? this.markOf(thread) : this.forget(thread.id))
       if (next !== thread) (threads ??= [...snapshot.threads])[index] = next
     }
-    if (this.asked.size) {
+    if (gone) for (const id of gone) this.asked.delete(id)
+    else if (this.asked.size) {
       // One set of the threads present, so the cleanup grows with the threads rather than with threads times questions.
       const present = new Set<string>()
       for (const thread of snapshot.threads) present.add(thread.id)

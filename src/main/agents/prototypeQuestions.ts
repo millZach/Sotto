@@ -131,8 +131,12 @@ export class PrototypeQuestions {
     return threads ? { ...snapshot, threads } : snapshot
   }
 
-  /** The snapshot as clients see it. Threads with nothing to change keep their own object, and so does the snapshot. */
-  decorate(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  /**
+   * The snapshot as clients see it. Threads with nothing to change keep their own object, and so does the snapshot. With
+   * `gone`, the snapshot holds only the threads that changed (#925) and `gone` names the threads that went, whose record
+   * is let go; every other thread is as the last snapshot left it.
+   */
+  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>): AgentHostSnapshot {
     const settled = settledIn(snapshot)
     let threads: AgentThread[] | undefined
     for (let index = 0; index < snapshot.threads.length; index++) {
@@ -143,7 +147,9 @@ export class PrototypeQuestions {
         ;(threads ??= [...snapshot.threads])[index] = next
       }
     }
-    if (this.records.size) {
+    if (gone) {
+      for (const id of gone) { const record = this.records.get(id); if (record) { record.minute?.cancel?.(); this.records.delete(id) } }
+    } else if (this.records.size) {
       const present = new Set(snapshot.threads.map(thread => thread.id))
       for (const [id, record] of this.records) if (!present.has(id)) { record.minute?.cancel?.(); this.records.delete(id) }
     }
