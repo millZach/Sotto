@@ -367,6 +367,10 @@ msgstr "Images must total 20 MB or less. Nothing was attached. Remove an image o
 msgid "Install guide"
 msgstr "Install guide"
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+msgstr "It asked to start from this thread's branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "It runs with OpenCode."
 msgstr "It runs with OpenCode."

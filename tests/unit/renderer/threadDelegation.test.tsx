@@ -115,6 +115,12 @@ describe('delegation words', () => {
     expect(readFileSync('src/locales/threads/en.po', 'utf8')).toContain(`msgid "${line}"`)
   })
 
+  it('words a delegation whose branch could not go as a message of the threads catalog, calling a test run a check (#1033, ADR-0123)', () => {
+    const line = 'It asked to start from this thread\'s branch, and the branch could not go: this thread had uncommitted changes and it was not a check, it was not on a branch, or Git could not copy it. {nothing} Commit first, then ask again.'
+    expect(delegationRefusalLine({ action: 'start', refusal: 'BRANCH_UNAVAILABLE' })).toBe(line.replace('{nothing}', 'Nothing was started.'))
+    expect(readFileSync('src/locales/threads/en.po', 'utf8')).toContain(`msgid "${line}"`)
+  })
+
   it('says why Sotto refused a delegation, that nothing was started or sent, and what would let it through', () => {
     expect(delegationRefusalLine({ action: 'start', refusal: 'PERMISSION_TOO_WIDE' })).toBe('It asked for more permission than this thread has, or than your new-thread default allows. '
       + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
