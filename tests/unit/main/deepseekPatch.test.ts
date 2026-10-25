@@ -84,6 +84,8 @@ describe('DeepSeek Harness client versions', () => {
     expect(compareDeepSeekVersions('0.2.1-rc.2', '0.2.1-rc.2')).toBe(0)
     expect(compareDeepSeekVersions('0.2.1-rc.2', '0.2.1-rc.3')).toBeLessThan(0)
     expect(compareDeepSeekVersions('0.2.1', '0.2.1-rc.9')).toBeGreaterThan(0)
+    expect(compareDeepSeekVersions('0.2.1-beta.3', '0.2.1-rc.2')).toBeLessThan(0)
+    expect(compareDeepSeekVersions('0.2.1-alpha.9', '0.2.1-beta.1')).toBeLessThan(0)
     expect(compareDeepSeekVersions('0.1.0', '0.2.1-rc.2')).toBeLessThan(0)
     expect(compareDeepSeekVersions('unreadable', '0.2.1-rc.2')).toBeLessThan(0)
   })

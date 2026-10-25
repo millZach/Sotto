@@ -34,9 +34,11 @@ export interface OwnServersOpenCode {
   signOut(sourceId: string): Promise<boolean>
 }
 
-/** DeepSeek Harness as the record reaches it (ADR-0136): whether a keyless Add may land on it alone, and a nudge on every save. */
+/**
+ * DeepSeek Harness as the record reaches it (ADR-0136): a nudge on every save. While its adapter runs, a keyless Add may
+ * land on it alone, connected or not, since it reads the record when it connects and connects only once one is saved.
+ */
 export interface OwnServersDeepSeek {
-  running(): boolean
   changed(): void
 }
 
@@ -157,9 +159,9 @@ export class OwnServers {
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
-    // A keyless server needs no key kept anywhere, so a running DeepSeek Harness can take it on its own (ADR-0136).
+    // A keyless server needs no key kept anywhere, so DeepSeek Harness's adapter can take it on its own (ADR-0136).
     const keyless = !(request.key?.trim())
-    if (!openCode?.running() && !(keyless && this.options.deepSeek?.()?.running())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    if (!openCode?.running() && !(keyless && this.options.deepSeek?.())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
     const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
     if (saved) return refusal('already-added', ownServerRefusalWords('already-added', place.host))
     const key = request.key?.trim() || undefined

@@ -461,7 +461,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // And the same record reaches DeepSeek Harness (ADR-0136), only where its adapter runs.
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
-  const ownServersDeepSeek = options.ownServers && deepseekHost ? { running: () => deepseekHost.isConnected(), changed: () => deepseekHost.ownServersChanged() } : undefined
+  const ownServersDeepSeek = options.ownServers && deepseekHost ? { changed: () => deepseekHost.ownServersChanged() } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined

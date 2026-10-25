@@ -218,6 +218,7 @@ export class DeepSeekAcpHost implements AgentHost {
   private clientRevision = 0
   private patchRevision = 0
   private patchText: string | undefined
+  private patching = Promise.resolve()
   private servers: readonly OwnServer[] = []
   private httpToolServers = false
   private generation = 0
@@ -353,18 +354,26 @@ export class DeepSeekAcpHost implements AgentHost {
     if (protocol !== DEEPSEEK_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${DEEPSEEK_ACP_VERSION}, and this DeepSeek Harness client answered ACP ${protocol}.`)
   }
   /** The overlay from the current record, written whenever it changed: a record change makes processes outdated. */
-  private async writePatch(): Promise<void> {
-    const text = deepseekPatch(this.servers)
-    if (text === this.patchText) return
-    if (text) await writeFile(this.patchPath, text, 'utf8')
-    this.patchText = text
+  /** One write at a time, so an older overlay never lands on disk after a newer one. */
+  private writePatch(): Promise<void> {
+    this.patching = this.patching.catch(() => undefined).then(async () => {
+      const text = deepseekPatch(this.servers)
+      if (text === this.patchText) return
+      // With no keyless server left there is nothing to write, and the last overlay must not start a process again.
+      if (text) await writeFile(this.patchPath, text, 'utf8')
+      this.patchText = text
+    })
+    return this.patching
   }
   /** This thread's own process, started in the thread's permission mode with the current overlay, ready for a session. */
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
     if (!this.executable || !this.state.connected) throw new Error('Connect DeepSeek Harness before using its threads.')
+    // The revision is read before the overlay is written, so a change during the write leaves this process outdated.
+    const patchRevision = this.patchRevision
     await this.writePatch()
+    if (!this.patchText) throw new Error('DeepSeek Harness has no model server it can run. Your thread is kept. Add a server without a key under Your own model servers, then send again.')
     const connection: Connection = { rpc: undefined as unknown as DeepSeekRpc, nonce: randomUUID(), clientRevision: this.clientRevision,
-      patchRevision: this.patchRevision, mode: alias.runtimeMode, closing: false, model: undefined, effort: undefined, tools: new Map() }
+      patchRevision, mode: alias.runtimeMode, closing: false, model: undefined, effort: undefined, tools: new Map() }
     const rpc = this.spawn([...(this.options.executableArgs ?? []), '--profile', 'acp', '--patch', this.patchPath], cwd, alias.runtimeMode, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: DeepSeekRpc }).rpc = rpc
     try { await this.handshake(rpc) }
@@ -429,17 +438,20 @@ export class DeepSeekAcpHost implements AgentHost {
    * leaves the last good catalog.
    */
   ownServersChanged(): void {
-    this.patchRevision++
-    for (const [id, connection] of this.connections) if (connection.patchRevision < this.patchRevision) this.outdated.add(id)
     if (!this.state.connected) return
     const generation = this.generation
     void (async () => {
-      this.servers = await this.options.servers?.() ?? this.servers
-      if (generation !== this.generation) return
-      this.state.models = deepseekCatalog(this.servers)
+      const servers = await this.options.servers?.()
+      if (!servers || generation !== this.generation) return
+      this.servers = servers
+      this.state.models = deepseekCatalog(servers)
+      // Only a new overlay outdates a process: a save that leaves it the same, such as a keyed server's, restarts nothing.
+      if (deepseekPatch(servers) !== this.patchText) {
+        this.patchRevision++
+        for (const [id, connection] of this.connections) if (this.stale(connection)) this.outdated.add(id)
+      }
       this.emit()
     })().catch(() => undefined)
-    this.stopOutdated()
   }
   /**
    * DeepSeek Harness's client on disk was updated while Sotto stayed connected (ADR-0042, ADR-0038): find it again
@@ -466,12 +478,14 @@ export class DeepSeekAcpHost implements AgentHost {
     for (const [id, connection] of this.connections) if (connection.clientRevision < this.clientRevision) this.outdated.add(id)
     this.emit()
   }
+  /** Whether a process started before the newest client or overlay. */
+  private stale(connection: Connection): boolean { return connection.clientRevision < this.clientRevision || connection.patchRevision < this.patchRevision }
   /** Stop each outdated process whose thread is not busy; a watched one opens again at once on the new client or overlay. */
   private stopOutdated(): void {
     if (!this.outdated.size) return
     for (const id of [...this.outdated]) {
       const connection = this.connections.get(id)
-      if (!connection || (connection.clientRevision === this.clientRevision && connection.patchRevision === this.patchRevision)) { this.outdated.delete(id); continue }
+      if (!connection || !this.stale(connection)) { this.outdated.delete(id); continue }
       if (this.busy(id)) continue
       this.outdated.delete(id)
       const generation = this.generation
@@ -510,6 +524,7 @@ export class DeepSeekAcpHost implements AgentHost {
     const connection = await this.startProcess(id, alias, cwd)
     if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek Harness’s connection changed while the thread was opening.') }
     this.connections.set(id, connection)
+    if (this.stale(connection)) this.outdated.add(id)
     try {
       const mcpServers = await this.toolServers(id)
       this.assertGeneration(generation)
@@ -661,13 +676,14 @@ export class DeepSeekAcpHost implements AgentHost {
       if (words === undefined) return
       const turn = this.turns.get(id)
       // The harness does not echo a prompt; one that comes back anyway is the prompt Sotto sent, not new input.
-      if (turn?.origin && !turn.taken && digest(words) === turn.origin.digest) { this.taken(id); return }
+      if (turn?.origin && !turn.ended && digest(words) === turn.origin.digest) { this.taken(id); return }
       // Something typed into this session elsewhere starts a turn of its own.
       const index = alias.turns; alias.turns++
       void this.persist().catch(() => undefined)
       const key = `deepseek-user-${index}-${digest(words).slice(0, 16)}`
       this.log.add(id, { id: key, role: 'user', text: words, createdAt: new Date().toISOString() })
-      this.turns.set(id, { places: new TurnPlaces(key), origin: undefined, taken: true, ended: true, wake: undefined })
+      // A turn still running keeps its place, so its prompt's answer still ends it.
+      if (!turn || turn.ended) this.turns.set(id, { places: new TurnPlaces(key), origin: undefined, taken: true, ended: true, wake: undefined })
       this.emit()
       return
     }
@@ -792,6 +808,7 @@ export class DeepSeekAcpHost implements AgentHost {
     if (generation !== this.generation) { this.close(connection); throw new DeepSeekUncertain('DeepSeek Harness’s connection changed.') }
     // The process is the thread's from here, so what it says while its session is made reaches the thread.
     this.connections.set(command.threadId, connection)
+    if (this.stale(connection)) this.outdated.add(command.threadId)
     try {
       this.aliases[command.threadId] = alias; await this.persist()
       const mcpServers = await this.toolServers(command.threadId)
@@ -895,7 +912,8 @@ export class DeepSeekAcpHost implements AgentHost {
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
       attachments: attachmentReferences(attachments) }
     index.add(origin); alias.turns++
-    await this.persist()
+    // A record that cannot be written takes the origin back out, so the same command can be sent again.
+    try { await this.persist() } catch (error) { index.remove(origin); alias.turns--; throw error }
     current()
     try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)

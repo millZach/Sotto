@@ -28,17 +28,20 @@ export class DeepSeekRejected extends Error {
 
 /** A `dsh` version: `X.Y.Z`, with a `-name.N` prerelease such as `-rc.2` sorting before its own release. */
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?$/u
-export function parseDeepSeekVersion(value: string): { release: number; pre: number } | undefined {
+export function parseDeepSeekVersion(value: string): { release: number; name: string | undefined; pre: number } | undefined {
   const match = VERSION.exec(value.trim())
   if (!match) return undefined
-  const [, major, minor, patch, , pre] = match
-  return { release: Number(major) * 1_000_000 + Number(minor) * 1_000 + Number(patch), pre: pre === undefined ? Number.MAX_SAFE_INTEGER : Number(pre) }
+  const [, major, minor, patch, name, pre] = match
+  return { release: Number(major) * 1_000_000 + Number(minor) * 1_000 + Number(patch), name, pre: pre === undefined ? 0 : Number(pre) }
 }
 /** Negative when `a` is older. A version Sotto cannot read sorts before every one it can, so it never passes the floor. */
 export function compareDeepSeekVersions(a: string, b: string): number {
   const left = parseDeepSeekVersion(a), right = parseDeepSeekVersion(b)
   if (!left || !right) return left ? 1 : right ? -1 : 0
-  return left.release - right.release || left.pre - right.pre
+  if (left.release !== right.release) return left.release - right.release
+  // A release sorts after its prereleases, and prereleases by name first, so alpha and beta come before rc.
+  if (left.name === undefined || right.name === undefined) return left.name === right.name ? 0 : left.name === undefined ? 1 : -1
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : left.pre - right.pre
 }
 
 const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'comspec', 'temp', 'tmp', 'tmpdir', 'home', 'user', 'logname', 'username', 'userprofile', 'homedrive', 'homepath', 'appdata', 'localappdata', 'programdata', 'allusersprofile', 'lang', 'lc_all', 'lc_ctype', 'tz', 'https_proxy', 'http_proxy', 'no_proxy', 'ssl_cert_file', 'ssl_cert_dir'])
