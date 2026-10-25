@@ -63,7 +63,7 @@ export function recentExchanges(messages: readonly AgentMessage[], max = NEXT_PR
 }
 
 /**
- * Next prompts for this computer's threads (ADR-0131). When a turn ends, the thread's own provider is asked on the side
+ * Next prompts for this computer's threads (ADR-0132). When a turn ends, the thread's own provider is asked on the side
  * (ADR-0026) what the user will most likely type next; the answer is held in memory for that thread and told to the
  * window. A start, a send or a newer finish lets go of it, and an answer that lands after one of those is dropped.
  * Nothing is saved, and nothing here sends anything to a thread.

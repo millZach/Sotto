@@ -1,4 +1,4 @@
-/* The next prompt (ADR-0131, Drake's pick 6 "Picker" of docs/prototypes/next-prompt-prototype.html). The ghost sits after the
+/* The next prompt (ADR-0132, Drake's pick 6 "Picker" of docs/prototypes/next-prompt-prototype.html). The ghost sits after the
    typed text in placeholder ink with a small Tab keycap and is never part of the draft. The Next list opens over the
    transcript like the skills list (`.composer-picker` in composer.css), so it never takes height from the composer.
    Colour comes only from theme roles; the intent marks are ink, with no hue of their own. */

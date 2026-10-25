@@ -300,7 +300,7 @@ export interface AppSettings {
    */
   threadTitles: boolean
   /**
-   * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0131): one short side
+   * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
    * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
    */
   nextPromptSuggestions: boolean

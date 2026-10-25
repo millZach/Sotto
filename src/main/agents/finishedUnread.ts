@@ -38,7 +38,7 @@ export class FinishedUnread {
 
   /**
    * `turns` hears each thread start and finish as this reads it, from the same pass over the threads (the next prompt,
-   * ADR-0131), so nothing else walks every thread on every update for it.
+   * ADR-0132), so nothing else walks every thread on every update for it.
    */
   constructor(saved: readonly string[] = [], private readonly dormant?: (threadId: string) => boolean,
     private readonly turns?: { started(threadId: string): void; finished(thread: AgentThread): void }) { this.restore(saved) }

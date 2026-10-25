@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The next prompt (ADR-0131): when a turn ends with an answer, the thread's own provider is asked on the side (ADR-0026)
+ * The next prompt (ADR-0132): when a turn ends with an answer, the thread's own provider is asked on the side (ADR-0026)
  * what the user will type next. The reply is untrusted JSON, read field by field; an answer that lands after the user
  * sent something, or after the thread moved on, is dropped; and nothing is asked while the switch or local history is off.
  */

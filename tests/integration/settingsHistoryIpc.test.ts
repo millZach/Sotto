@@ -322,7 +322,7 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
-  it('persists turning next prompt suggestions off through settings IPC (ADR-0131)', async () => {
+  it('persists turning next prompt suggestions off through settings IPC (ADR-0132)', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { nextPromptSuggestions: false })).resolves.toMatchObject({ nextPromptSuggestions: false })
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ nextPromptSuggestions: false })

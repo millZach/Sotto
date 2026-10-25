@@ -74,7 +74,7 @@ const Skill = Node.create({
 const ghostKey = new PluginKey<string | null>('next-prompt-ghost')
 
 /**
- * The next prompt's ghost (ADR-0131): words drawn after the text in placeholder ink, with a Tab keycap, that are not part
+ * The next prompt's ghost (ADR-0132): words drawn after the text in placeholder ink, with a Tab keycap, that are not part
  * of the draft. The composer sets them; nothing here takes them, and the draft's text never holds them.
  */
 const Ghost = Extension.create({
@@ -119,7 +119,7 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly label?: string
   readonly placeholder?: string
   readonly editable?: boolean
-  /** The rest of the next prompt, drawn after the text and never part of it (ADR-0131); null draws nothing. */
+  /** The rest of the next prompt, drawn after the text and never part of it (ADR-0132); null draws nothing. */
   readonly ghost?: string | null
   readonly onChange: (text: string, pills: readonly AgentSkillReference[]) => void
   readonly onSelection?: (selection: PromptSelection) => void

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { NextPromptBridge, NextPromptEntry } from '../../../shared/nextPrompt'
 
 /**
- * The next prompts main holds for this computer's threads (ADR-0131), as the window last heard them. Main tells each change;
+ * The next prompts main holds for this computer's threads (ADR-0132), as the window last heard them. Main tells each change;
  * a window that has just loaded reads them all once. A send here lets go of its thread's at once, and a late delivery for
  * the turn that send answered is dropped, so a suggestion never comes back after the user moved on.
  */

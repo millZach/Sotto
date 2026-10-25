@@ -90,7 +90,7 @@ export interface AgentRuntimeOptions {
    */
   attachAnyFile?: boolean
   /**
-   * The Owl list's answer for next prompts (ADR-0131), read once by the process owner. Absent fails closed, and a headless
+   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
    * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
    */
   nextPromptEnabled?: boolean
@@ -233,7 +233,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
-  // Next prompts (ADR-0131): when a turn ends, the thread's own provider is asked on the side what the user will type next.
+  // Next prompts (ADR-0132): when a turn ends, the thread's own provider is asked on the side what the user will type next.
   // Built only for this computer's own threads, while the Owl feature is on; the switch is read for every turn.
   const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
     write: nextPromptWriter(shortTextWriter, options.writingSettings),

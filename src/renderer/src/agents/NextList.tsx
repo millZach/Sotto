@@ -32,7 +32,7 @@ export function nextRows(prompt: NextPrompt): NextRow[] {
 export const nextOptionId = (listId: string, index: number): string => `${listId}-option-${index}`
 
 /**
- * The Next list (ADR-0131): over the transcript, above the composer, like the skills list, so it never takes height
+ * The Next list (ADR-0132): over the transcript, above the composer, like the skills list, so it never takes height
  * from the composer. Focus stays in the prompt, which moves through the rows; a press or Enter chooses one.
  */
 export function NextList({ prompt, listId, activeIndex, sends, onHighlight, onChoose }: {

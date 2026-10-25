@@ -1,4 +1,4 @@
-# Next prompt and the Next list (ADR-0131)
+# Next prompt and the Next list (ADR-0132)
 
 Proved in the built app on October 24, 2026, on an Apple silicon Mac, with `tests/e2e/next-prompt.spec.ts` (both tests pass). The thread is a Codex thread on the fake app server (`tests/fixtures/fakeCodexAppServer.mjs`), whose `codex exec` answers the side call from `oneshot.json`. The images named here are in `artifacts/next-prompt/`; a run with `SOTTO_E2E_EVIDENCE=publish` writes every capture there, and only these are committed.
 

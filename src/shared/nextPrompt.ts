@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * The next prompt (ADR-0131): after a thread's turn ends with an answer, the thread's own provider is asked, on the side,
+ * The next prompt (ADR-0132): after a thread's turn ends with an answer, the thread's own provider is asked, on the side,
  * what the user will most likely type next. The window shows the answer as the next prompt in an empty composer and as
  * the Next list. An Owl feature: the window has this bridge only while the startup answers turn `next-prompt` on.
  */

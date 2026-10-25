@@ -831,7 +831,7 @@ export class AgentControl {
     threadStartsEnabled?: boolean
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
-    /** The next prompt (ADR-0131): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
+    /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
     nextPrompts?: NextPromptHooks
   }) {
     this.held = heldProvidersOption(dependencies)
@@ -3234,7 +3234,7 @@ export class AgentControl {
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
     // Whatever was suggested next for a thread is over once main has taken something sent to it; a refused send keeps
-    // it (ADR-0131).
+    // it (ADR-0132).
     const sentTo = command.type === 'manual-send' || command.type === 'steer' || command.type === 'answer' || command.type === 'send'
       ? explicitThreadId ?? implicitThreadId : undefined
     if (sentTo && this.dependencies.nextPrompts) {

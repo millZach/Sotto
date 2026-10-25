@@ -157,7 +157,7 @@ describe('settings', () => {
     expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
     expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
   })
-  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0131)', () => {
+  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0132)', () => {
     expect(parseSettings({}).nextPromptSuggestions).toBe(true)
     expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
     expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)

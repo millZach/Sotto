@@ -701,7 +701,7 @@ export function SettingsView({
                 <SettingsGroup title={t`In a thread`} icon={MessageSquareText}>
                   <Field label={t`Replies in threads`} description={t`Show replies as they are written or once finished. Commands and tool calls always show as they run.`}><SegmentedControl setting="reply-streaming" label={t`Replies in threads`} value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: t`As written` }, { value: 'complete', label: t`When finished` }]} /></Field>
                   <Toggle setting="thread-titles" label={t`Generated thread titles`} checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description={t`The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept.`} />
-                  {/* ADR-0131: an Owl feature; the switch is read for every turn. */}
+                  {/* ADR-0132: an Owl feature; the switch is read for every turn. */}
                   {nextPromptOn ? <Toggle setting="next-prompt" label={t`Suggest a next prompt after each turn`} checked={settings.nextPromptSuggestions} onCheckedChange={checked => void save({ nextPromptSuggestions: checked })}
                     description={t`When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one.`} /> : null}
                   {/* ADR-0076: an Owl feature, read when Sotto next starts. */}

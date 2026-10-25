@@ -365,7 +365,7 @@ export function createSottoBridge(
   interfaceLanguage: InterfaceLanguageState | null = null,
   /** The user's own model servers (ADR-0124): only while the `own-model-servers` Owl feature is on and OpenCode runs here. */
   ownServersEnabled = false,
-  /** Next prompts after a finished turn (ADR-0131): only while the `next-prompt` Owl feature is on and this computer runs threads. */
+  /** Next prompts after a finished turn (ADR-0132): only while the `next-prompt` Owl feature is on and this computer runs threads. */
   nextPromptEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(

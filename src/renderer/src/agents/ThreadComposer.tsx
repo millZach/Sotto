@@ -340,7 +340,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     }
     writeCarried()
     onSend()
-    // What was suggested next is over once main takes this (ADR-0131); a refused send keeps it.
+    // What was suggested next is over once main takes this (ADR-0132); a refused send keeps it.
     const sentAfter = lastUserMessageIdOf(row.thread) ?? ''
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
     const first = row.thread.nativeSessionStarted === false
@@ -374,7 +374,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The branch toolbar says Run on for a thread in a Git repository, so the chip speaks only where the toolbar does not.
   const threadHost = toolbarApplies(row.thread) ? undefined : listedHosts(state).find(item => item.hostId === row.thread.hostId)
 
-  // The next prompt (ADR-0131; Owl only): offered while the thread is at rest and the user's to write to, for the turn
+  // The next prompt (ADR-0132; Owl only): offered while the thread is at rest and the user's to write to, for the turn
   // that just ended, and gone the moment anything is sent, queued or asked.
   const app = useOptionalApp()
   const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false && !watcher
@@ -583,7 +583,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly caretAfterInsert: RefObject<number | null>
   readonly leavePickers: RefObject<() => void>
   readonly onMenuChange: (open: boolean) => void
-  /** The next prompt on offer (ADR-0131), its list's state and its keys; absent, the composer is as it was. */
+  /** The next prompt on offer (ADR-0132), its list's state and its keys; absent, the composer is as it was. */
   readonly next?: NextPrompt | null
   readonly nextOpen?: boolean
   readonly nextListId?: string

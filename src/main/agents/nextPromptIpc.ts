@@ -9,7 +9,7 @@ export function windowNextPrompt(hostId: string | undefined, entry: NextPromptEn
 }
 
 /**
- * The main window's read of the next prompts main holds (ADR-0131), for a window that has just loaded; changes reach it
+ * The main window's read of the next prompts main holds (ADR-0132), for a window that has just loaded; changes reach it
  * on `NEXT_PROMPT_CHANGED`. Where the Owl feature is off main builds no next prompts, so nothing is registered.
  */
 export function registerNextPromptIpc(ipc: IpcMainAdapter, nextPrompts: { list(): readonly NextPromptEntry[] } | undefined,
