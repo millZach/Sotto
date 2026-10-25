@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -108,6 +109,12 @@ describe('delegation words', () => {
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'gone' }), now)).toBe('Its thread is gone from Sotto, so nothing more will come of it.')
   })
 
+  it('words a delegation no machine could take as a message of the threads catalog (#1032, ADR-0123)', () => {
+    const line = 'The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}'
+    expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' })).toBe(line.replace('{nothing}', 'Nothing was started.'))
+    expect(readFileSync('src/locales/threads/en.po', 'utf8')).toContain(`msgid "${line}"`)
+  })
+
   it('says why Sotto refused a delegation, that nothing was started or sent, and what would let it through', () => {
     expect(delegationRefusalLine({ action: 'start', refusal: 'PERMISSION_TOO_WIDE' })).toBe('It asked for more permission than this thread has, or than your new-thread default allows. '
       + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
@@ -118,6 +125,9 @@ describe('delegation words', () => {
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROMPT_LIMIT' })).toBe('That thread already had 4 briefs from this thread in this turn. Your next message to this thread renews the limit. Nothing was sent.')
     expect(delegationRefusalLine({ action: 'send', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^That thread's provider or model was not available/u)
     expect(delegationRefusalLine({ action: 'start', refusal: 'PROVIDER_UNAVAILABLE' })).toMatch(/^The model it asked for was not ready on this computer/u)
+    // #1032: a machine or system a new thread named could not take it.
+    expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' })).toBe('The machine or system it asked for could not take it: none was connected, '
+      + 'it had no copy of this project, or it was not This computer, where delegated threads start for now. Nothing was started.')
     // Every rule main records has its own words, and none is an error code.
     for (const refusal of ['NOT_ADMITTED', 'NO_USER_MESSAGE', 'PERMISSION_NOT_COMPARABLE', 'TARGET_CHANGED', 'PENDING_USER_REQUEST', 'UNKNOWN_THREAD'] as const) {
       const line = delegationRefusalLine({ action: 'send', refusal })

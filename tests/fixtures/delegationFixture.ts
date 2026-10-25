@@ -15,7 +15,7 @@ export type DelegationResult = { status: 'ok'; delegation: { id: string; thread:
 export type DelegationRefused = { status: 'refused'; code: string; message: string }
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule'> } = {}) {
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines'> } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)

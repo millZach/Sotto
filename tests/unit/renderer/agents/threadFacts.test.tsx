@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { describeThreads, groupThreads, listThreads, providerKey } from '../../../../src/renderer/src/agents/threadFacts'
+import { describeNeedsYou, describeThreads, groupThreads, listThreads, providerKey } from '../../../../src/renderer/src/agents/threadFacts'
 import { threadsStateFixture as stateFixture } from '../../../fixtures/agentState'
 import { E2E_THREADS_NOW as NOW } from '../../../../src/shared/e2e'
+import type { AgentRequest, AgentState, AgentThread } from '../../../../src/shared/agents'
 
 describe('thread grouping and states from Sotto state', () => {
   it('groups explicit settled work separately from open idle and running threads', () => {
@@ -64,3 +65,96 @@ it('derives the state of a row from requests and the thread status, never from t
     weekly.messages = weekly.messages.slice(1)
     expect(describeThreads(state, NOW).find(entry => entry.thread.id === 'weekly-note')?.lastMessage).toBeUndefined()
   })
+
+describe('the Needs you queue (ADR-0135)', () => {
+  const edit = (state: AgentState, id: string, change: (thread: AgentThread) => AgentThread): AgentState =>
+    ({ ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === id ? change(thread) : thread) } })
+  const ago = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOString()
+  const structured = (patch: Partial<NonNullable<AgentRequest['questions']>[number]> = {}, request: Partial<AgentRequest> = {}): AgentRequest => ({
+    id: 'q1', kind: 'question', text: 'Ship it?', options: [],
+    questions: [{ id: 'q1', question: 'Friday or Monday?', options: [{ id: 'fri', label: 'Friday' }, { id: 'mon', label: 'Monday' }], multiSelect: false, allowFreeText: false, ...patch }],
+    ...request,
+  })
+  const queueOf = (state: AgentState) => describeNeedsYou(describeThreads(state, NOW), NOW)
+  const actionFor = (request: AgentRequest): string => {
+    const state = edit(stateFixture(), 'visual-gate', thread => ({ ...thread, requests: [request] }))
+    return queueOf(state).entries.find(entry => entry.row.thread.id === 'visual-gate')!.action
+  }
+
+  it('orders blocking first then oldest, shows three and counts the rest by kind', () => {
+    let state = stateFixture()
+    state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, since: ago(12) }] }))
+    state = edit(state, 'weekly-note', thread => ({ ...thread, requests: [{ id: 'w1', kind: 'permission', text: 'Run it?', options: [], since: ago(30) }] }))
+    state = edit(state, 'footer-links', thread => ({ ...thread, requests: [structured({}, { since: ago(47) })] }))
+    state = edit(state, 'grok-previews', thread => ({ ...thread, status: 'error', failureSince: ago(180) }))
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureSince: ago(9) }))
+    const queue = queueOf(state)
+    expect(queue.entries.map(entry => [entry.row.thread.id, entry.kind, entry.action, entry.wait])).toEqual([
+      ['weekly-note', 'approval', 'answer', '30 min'],
+      ['visual-gate', 'approval', 'answer', '12 min'],
+      ['footer-links', 'question', 'answer', '47 min'],
+      ['grok-previews', 'failed', 'dismiss', '3 h'],
+      ['wav-stall', 'failed', 'dismiss', '9 min'],
+    ])
+    expect(queue.shown.map(entry => entry.row.thread.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links'])
+    expect(queue.overflow).toEqual({ approval: 0, question: 0, failed: 2, total: 2 })
+    expect(queue.oldestBlockingWait).toBe('30 min')
+  })
+
+  it('surfaces settled requests and never finished, prototype or seen-failure threads', () => {
+    let state = stateFixture()
+    // Settled in the workspace, not closed by its provider: its agent is still held still on the user.
+    state = edit(state, 'release-notes', thread => ({ ...thread, settledOverride: null, settledAt: null, workspaceSettledAt: ago(60), requests: [{ id: 'r1', kind: 'permission', text: 'Publish?', options: [], since: ago(5) }] }))
+    state = edit(state, 'thread-routing', thread => ({ ...thread, status: 'error', failureSeen: true }))
+    state = edit(state, 'grok-previews', thread => ({ ...thread, finishedUnread: true }))
+    state = edit(state, 'weekly-note', thread => ({ ...thread, prototypeReady: { source: 'reply:m1', pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'x.html', start: 'x.html' }] } }))
+    const queue = queueOf(state)
+    const ids = queue.entries.map(entry => entry.row.thread.id)
+    expect(ids).toContain('release-notes')
+    expect(queue.entries.find(entry => entry.row.thread.id === 'release-notes')!.row.settledBy).toBe('thread')
+    expect(ids).not.toContain('thread-routing')
+    expect(ids).not.toContain('grok-previews')
+    expect(ids).not.toContain('weekly-note')
+  })
+
+  it('offers an inline answer only for asks that fit, and opening for the rest', () => {
+    const permission: AgentRequest = { id: 'p1', kind: 'permission', text: 'Run a command\nnpm test', options: [] }
+    expect(actionFor(permission)).toBe('answer')
+    expect(actionFor(structured())).toBe('answer')
+    expect(actionFor(structured({ required: false }))).toBe('answer')
+    // Permissions that cannot be judged whole from the sidebar.
+    expect(actionFor({ ...permission, permissionChoices: [1, 2, 3, 4].map(n => ({ id: `c${n}`, label: `Choice ${n}`, kind: 'allow-once' as const })) })).toBe('open')
+    expect(actionFor({ ...permission, permissionChoices: [{ id: 'c1', label: 'Allow', kind: 'allow-once', description: 'Because…' }] })).toBe('open')
+    expect(actionFor({ ...permission, permissionChoices: [] })).toBe('open')
+    expect(actionFor({ ...permission, context: { plan: { steps: 'Do things' } } })).toBe('open')
+    expect(actionFor({ ...permission, context: { command: 'x'.repeat(161) } })).toBe('open')
+    expect(actionFor({ ...permission, context: { details: 'Long output' } })).toBe('open')
+    expect(actionFor({ ...permission, delivery: 'uncertain' })).toBe('open')
+    // Questions that need their form, their pages, or the composer.
+    expect(actionFor(structured({ multiSelect: true }))).toBe('open')
+    expect(actionFor(structured({ allowFreeText: true }))).toBe('open')
+    expect(actionFor(structured({ unavailableReason: 'Use the provider app' }))).toBe('open')
+    expect(actionFor(structured({}, { questions: [structured().questions![0]!, { ...structured().questions![0]!, id: 'q2' }] }))).toBe('open')
+    expect(actionFor(structured({}, { pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'x.html', start: 'x.html' }] }))).toBe('open')
+    expect(actionFor(structured({}, { linkMissing: true }))).toBe('open')
+    expect(actionFor({ id: 'l1', kind: 'question', text: 'Which?', options: [{ id: 'a', label: 'A' }] })).toBe('open')
+    expect(actionFor({ id: 'l2', kind: 'question', text: 'Say more', options: [] })).toBe('open')
+  })
+
+  it('says no wait without a stamp and orders unstamped entries by last activity', () => {
+    let state = stateFixture()
+    state = edit(state, 'weekly-note', thread => ({ ...thread, requests: [{ id: 'w1', kind: 'permission', text: 'Run it?', options: [] }] }))
+    const approvals = queueOf(state).entries.filter(entry => entry.kind === 'approval')
+    // Weekly note last moved at 19:33, the visual gate at 19:41: the older activity leads, and neither claims a wait.
+    expect(approvals.map(entry => [entry.row.thread.id, entry.wait])).toEqual([['weekly-note', ''], ['visual-gate', '']])
+    expect(approvals.every(entry => Number.isNaN(entry.waitingSince))).toBe(true)
+    expect(queueOf(state).oldestBlockingWait).toBe('')
+  })
+
+  it('never answers a delegated wait from the thread it is reached from', () => {
+    const row = describeThreads(stateFixture(), NOW).find(entry => entry.thread.id === 'visual-gate')!
+    const queue = describeNeedsYou([{ ...row, waitingIn: 'Child thread' }], NOW)
+    expect(queue.entries).toHaveLength(1)
+    expect(queue.entries[0]).toMatchObject({ action: 'open', request: undefined })
+  })
+})
