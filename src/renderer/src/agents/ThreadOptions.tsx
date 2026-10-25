@@ -40,6 +40,19 @@ export function cursorModeLine(mode: AgentRuntimeMode): string | undefined {
     default: return undefined
   }
 }
+/**
+ * What each of DeepSeek Harness's three modes does, said as the harness doing it (ADR-0138), in the interface
+ * language. Its permissions are a sandbox boundary: Ask for approval denies a first attempt and the model asks to
+ * retry it, and Allow edits also lets commands and network run inside the sandbox, so both say so.
+ */
+export function deepseekModeLine(mode: AgentRuntimeMode): string | undefined {
+  switch (mode) {
+    case 'approval-required': return t`DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write.`
+    case 'auto-accept-edits': return t`DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary.`
+    case 'full-access': return t`DeepSeek Harness runs commands and edits files without asking, in the project and outside it.`
+    default: return undefined
+  }
+}
 /** Permissions' glyph, which stands for the value in a narrow composer. */
 export const PERMISSIONS_ICON = <Shield size={14} aria-hidden="true" />
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1)
@@ -94,7 +107,7 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
   const lead = runtimeMode === undefined ? [{ id: '', label: 'Provider default', disabled: true }]
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
-    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : undefined
+    const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]
 }

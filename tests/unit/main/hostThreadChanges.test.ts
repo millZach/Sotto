@@ -203,7 +203,7 @@ describe('the provider switch\'s thread changes', () => {
     const grok = new FakeProviderHost()
     const host = new ConfiguredProviderHost({ provider: () => 'claude', enabledProviders: () => ['codex', 'claude', 'grok'], threadProvider: id => registry.byThread(id)?.provider,
       hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new SottoThreadHost('claude', claude, registry), grok,
-        devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() } })
+        devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() } })
     cleanup.push(() => host.disconnect())
     await host.connect()
     const sotto = (provider: ProviderId, session: string): string => registry.bySession(provider, session)!.threadId
@@ -353,7 +353,7 @@ describe('the provider switch\'s work for a provider that connects', () => {
     const claude = new StreamingAdapter(state(Array.from({ length: count }, (_, index) => `t${index}`)))
     const host = new ConfiguredProviderHost({ provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
       hosts: { claude: new SottoThreadHost('claude', claude, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-        muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() } })
+        muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() } })
     cleanup.push(() => host.disconnect())
     const map = new ThreadMap({ verify: false })
     const received: AgentHostChanges[] = []

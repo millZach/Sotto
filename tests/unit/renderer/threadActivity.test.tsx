@@ -166,6 +166,11 @@ describe('the running turn', () => {
     const liveRow = within(transcript).getByTestId('thread-activity-live')
     // The line carries the wait in words; assistive tech hears how far the turn has got instead.
     expect(liveRow.querySelector('.thread-activity-live__word')).toHaveTextContent('Combing the desert')
+    // The light draws a lit copy of the word, so the copy follows the word.
+    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveAttribute('data-word', 'Combing the desert')
+    // Beside the words, how long the turn has run, ticking in place.
+    const clock = liveRow.querySelector('.thread-activity-live__clock')!
+    expect(clock).toHaveTextContent('1m 05s')
     const line = within(liveRow).getByRole('button', { name: 'Working, 2 steps so far' })
     expect(line).toHaveAttribute('aria-expanded', 'false')
     expect(within(transcript).queryByRole('button', { name: 'npm test, Running' })).not.toBeInTheDocument()
@@ -180,6 +185,7 @@ describe('the running turn', () => {
     expect(within(steps).getByRole('button', { name: 'npm ci, completed in 9.0s' })).toBeVisible()
     act(() => { vi.advanceTimersByTime(1_000) })
     expect(test).toHaveTextContent('Running 9s')
+    expect(clock).toHaveTextContent('1m 06s')
   })
 
   it('folds the steps back on Escape, inside them or on the line, with focus on the line', async () => {
@@ -212,10 +218,11 @@ describe('the running turn', () => {
     expect(within(transcript).queryByRole('button', { name: /^git status/ })).not.toBeInTheDocument()
   })
 
-  it('says only its words until the turn reports a step, then offers the steps', () => {
+  it('says only its words and its clock until the turn reports a step, then offers the steps', () => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { live, transcript } = mount(stateWith({ status: 'running', activities: [lifecycle({ status: 'running', startedAt: iso(-65_000) })] }))
     const liveRow = (): HTMLElement => within(transcript).getByTestId('thread-activity-live')
-    expect(liveRow()).toHaveTextContent(/^Combing the desertWorking$/)
+    expect(liveRow()).toHaveTextContent(/^Combing the desertWorking1m 05s$/)
     expect(within(liveRow()).queryByRole('button')).not.toBeInTheDocument()
     act(() => {
       live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD
@@ -229,6 +236,7 @@ describe('the running turn', () => {
     const liveRow = within(transcript).getByTestId('thread-activity-live')
     expect(liveRow).toHaveTextContent('Last seen working')
     expect(liveRow.querySelector('.thread-activity-live__word')).toBeNull()
+    expect(liveRow.querySelector('.thread-activity-live__clock')).toBeNull()
     fireEvent.click(within(liveRow).getByRole('button', { name: 'Last seen working, 2 steps so far' }))
     expect(within(transcript).getByRole('button', { name: 'npm test, Last seen running' }).querySelector('[data-elapsed]')).toBeNull()
   })

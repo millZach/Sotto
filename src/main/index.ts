@@ -744,11 +744,11 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode, so it exists only while the
-  // Owl list turns it on, OpenCode is not held and the local host runs. Otherwise main keeps the record untouched, gives
-  // OpenCode no server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && !heldProviders.has('opencode') && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, log: event => { logOperational(event) } }) : undefined
+  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
+  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: () => localRuntime?.ownServersDeepSeek, log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
   // choice and measures are kept. E2E runs never reach a server.
