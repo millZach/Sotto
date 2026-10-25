@@ -40,6 +40,7 @@ export const PROVIDER_PROFILES: Readonly<Record<ProviderId, ProviderProfile>> = 
   devin: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: ['$'], compacts: false, reportsContext: false },
   muse: { writesShortText: false, takesSottoTools: true, runsWatcher: true, skillSigils: ['$'], compacts: true, reportsContext: true },
   opencode: { writesShortText: true, takesSottoTools: true, runsWatcher: false, skillSigils: ['$'], compacts: false, reportsContext: false },
+  cursor: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: false, reportsContext: false },
 }
 
 /**

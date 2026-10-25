@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { Marked } from '../components/marks'
 import { ArrowUpRight } from 'lucide-react'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import type { AgentConnection } from '../agents/AgentContext'
@@ -180,7 +181,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
     where: 'in Tools on the Threads page',
   }), [onOpenInThreads])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-thread-id={threadId} data-focused={focused || undefined}
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {
@@ -197,5 +198,5 @@ export function BesidePane({ row, state, command, store, focused, underControls,
       </button>}
       notice={<ThreadWorkingCopyNotice key={`working-copy-${threadId}`} thread={row.thread} project={row.project} command={command}
         onRecovered={() => document.getElementById(BESIDE_PROMPT_ID)?.focus()} />} />
-  </section></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
+  </section>}</Marked></BrowserPageRouteContext.Provider></PullRequestOpenerContext.Provider>
 }

@@ -650,6 +650,68 @@ describe('history import and served models', () => {
     expect(f.store.query().totals.tokenRecords).toBe(3)
   })
 
+  it('saves a batch counted per record exactly as one observeTokens call per record does', async () => {
+    const a = token({ providerId: 'grok', modelId: 'model-a', recordKey: hash('grok-a'), groupKey: hash('grok-turn'), tokens: { input: 30, output: 10 } })
+    const b = token({ providerId: 'grok', modelId: 'model-b', recordKey: hash('grok-b'), groupKey: hash('grok-turn'), tokens: { input: 15, output: 3 } })
+    const members = (...rows: UsageTokenObservation[]) => hash(JSON.stringify(rows.map(row => row.recordKey).sort()))
+    const prelude = [token({ recordKey: hash('before-clear') }), token({ recordKey: hash('removed-before'), groupKey: hash('removed-turn') })]
+    const later = '2026-10-12T12:00:00.000Z'
+    const sequence: UsageTokenObservation[] = [
+      // Clear suppresses earlier identities, unproved new rows and older history; a proved new group and its members count.
+      token({ recordKey: hash('before-clear'), at: later }),
+      token({ recordKey: hash('unproved'), groupKey: hash('unproved-turn'), at: later }),
+      token({ recordKey: hash('fresh'), groupKey: hash('fresh-turn'), at: later, liveNewGroup: true }),
+      token({ recordKey: hash('fresh-member'), groupKey: hash('fresh-turn'), at: later }),
+      history({ recordKey: hash('old-history'), at: '2026-10-12T10:30:00.000Z' }),
+      history({ recordKey: hash('new-history'), at: later }),
+      // Replacement, repetition and a seed that may not overwrite.
+      token({ recordKey: hash('fresh'), groupKey: hash('fresh-turn'), at: later, liveNewGroup: true, tokens: { input: 500, output: 50 } }),
+      token({ recordKey: hash('fresh'), groupKey: hash('fresh-turn'), at: later, liveNewGroup: true, tokens: { input: 500, output: 50 } }),
+      token({ recordKey: hash('fresh'), groupKey: hash('fresh-turn'), phase: 'seed', at: undefined, tokens: { input: 1, output: 1 } }),
+      // Grok: a downward replay leaves a conflict floor, a full report repairs it, a membership change retires the group.
+      { ...a, at: later, liveNewGroup: true }, { ...b, at: later },
+      { ...a, at: later, phase: 'replay', tokens: { input: 10, output: 10 } },
+      { ...a, at: later, phase: 'replay' },
+      token({ providerId: 'grok', modelId: 'unknown', recordKey: hash('grok-aggregate'), groupKey: hash('grok-turn'), tokens: {}, removed: true,
+        phase: 'replay', partial: true, groupRecordsHash: members(b) }),
+      // Removed rows: one present, one already excluded, one never seen.
+      token({ recordKey: hash('fresh-member'), groupKey: hash('fresh-turn'), removed: true, tokens: {} }),
+      token({ recordKey: hash('removed-before'), groupKey: hash('removed-turn'), removed: true, tokens: {} }),
+      token({ recordKey: hash('never-seen'), removed: true, tokens: {} }),
+    ]
+    const dump = (path: string) => {
+      const db = new DatabaseSync(path)
+      try {
+        return Object.fromEntries(['token_rows', 'token_buckets', 'grok_conflict_floors', 'exclusions', 'usage_meta'].map(table =>
+          [table, db.prepare(`SELECT * FROM ${table}`).all().map(row => JSON.stringify(row)).sort()]))
+      } finally { db.close() }
+    }
+    const prepare = async () => {
+      const f = await fixture()
+      for (const row of prelude) f.store.observeTokens(row)
+      f.setTime('2026-10-12T11:00:00.000Z')
+      f.store.clear(f.store.metadata().revision)
+      return f
+    }
+    const single = await prepare(), batched = await prepare()
+    const statuses = sequence.map(observation => single.store.observeTokens(observation).status)
+    expect(new Set(statuses)).toEqual(new Set(['written', 'unchanged', 'suppressed']))
+    const before = batched.store.metadata().revision
+    expect(batched.store.observeTokenBatch(sequence, { revision: 'per-record' })).toEqual({
+      status: 'written', revision: before + statuses.filter(status => status === 'written').length })
+    expect(dump(batched.path)).toEqual(dump(single.path))
+    expect(batched.store.query()).toEqual(single.store.query())
+    // Nothing written moves nothing, and a refused batch writes nothing.
+    const settled = batched.store.metadata().revision
+    expect(batched.store.observeTokenBatch(sequence.slice(0, 2), { revision: 'per-record' })).toEqual({ status: 'suppressed', revision: settled })
+    expect(batched.store.observeTokenBatch([], { revision: 'per-record' })).toEqual({ status: 'unchanged', revision: settled })
+    vi.spyOn(batched.store as unknown as { bumpRevision: (revision: number) => number }, 'bumpRevision')
+      .mockImplementationOnce(() => { throw new Error('synthetic commit failure') })
+    expect(() => batched.store.observeTokenBatch([token({ recordKey: hash('late'), groupKey: hash('late-turn'), at: later, liveNewGroup: true })],
+      { revision: 'per-record' })).toThrow('synthetic commit failure')
+    expect(dump(batched.path)).toEqual(dump(single.path))
+  })
+
   it('keeps history recorded before Clear out and admits only work recorded after it', async () => {
     const f = await fixture()
     f.store.observeTokens(history({ recordKey: hash('seen'), at: '2026-10-12T09:00:00.000Z' }))

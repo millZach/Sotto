@@ -20,9 +20,8 @@ afterEach(() => {
 })
 
 describe('RoomSwitch with dictation off', () => {
-  it('draws owl and Threads, laid out as the owl pair', () => {
+  it('draws owl and Threads', () => {
     render(<RoomSwitch className="thread-nav__seg" />)
-    expect(screen.getByRole('tablist', { name: 'Page' })).toHaveAttribute('data-rooms', 'owl')
     expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('data-room'))).toEqual(['watcher', 'threads'])
   })
 
@@ -32,9 +31,9 @@ describe('RoomSwitch with dictation off', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('keeps the three-room layout while dictation is on', () => {
+  it('draws all three rooms while dictation is on', () => {
     rooms.dictation = true
     render(<RoomSwitch className="thread-nav__seg" />)
-    expect(screen.getByRole('tablist', { name: 'Page' })).toHaveAttribute('data-rooms', '3')
+    expect(screen.getAllByRole('tab').map(tab => tab.getAttribute('data-room'))).toEqual(['dictate', 'watcher', 'threads'])
   })
 })

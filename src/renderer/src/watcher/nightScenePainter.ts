@@ -1,7 +1,7 @@
 import {
-  clamp, gridFor, groundAt, inkAt, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph, RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded,
-  smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
-  type Grid, type Limb, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
+  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlLayer, placeStars, quietAt, rampGlyph,
+  RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
+  type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
 import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
 
@@ -12,26 +12,27 @@ import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from 
  * is then drawn as the glyph for its density. The landscape's glyphs are drawn once per size and theme and kept. A frame
  * copies them, clears the cells under the owls, and redraws only the stars, the whirlpool and the cells a ripple
  * reaches; the owls are drawn on their own canvas. A frame whose picture would not change is not painted at all.
- * Nothing is ever drawn in the column between the margins.
+ * Between the margins the sky and the hills show at the column's share, still whatever the words over them do, with no
+ * glyph stronger than the words written over it allow (`SceneInk.column`). Trees, owls and ripples stay in the margins.
  */
 
 /** Field pixels per glyph cell, a side. */
-const SS = 2
+export const SS = 2
 /** Only the offscreen fields' coverage is read, never their colour, so they are drawn in any opaque ink. */
-const MASK = 'black'
+export const MASK = 'black'
 /** The glyphs' size, which fills a 7 by 12 cell. */
-const GLYPH_PX = 10.5
+export const GLYPH_PX = 10.5
 
-function context(canvas: HTMLCanvasElement | OffscreenCanvas, read = false): CanvasRenderingContext2D | null {
+export function context(canvas: HTMLCanvasElement | OffscreenCanvas, read = false): CanvasRenderingContext2D | null {
   return (canvas as HTMLCanvasElement).getContext('2d', read ? { willReadFrequently: true } : undefined) as CanvasRenderingContext2D | null
 }
 
-function makeCanvas(): HTMLCanvasElement {
+export function makeCanvas(): HTMLCanvasElement {
   return document.createElement('canvas')
 }
 
 /** Averages a block of field pixels' coverage into each cell of `out`. */
-function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid, c0: number, r0: number, cn: number, rn: number): void {
+export function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid, c0: number, r0: number, cn: number, rn: number): void {
   if (cn <= 0 || rn <= 0) return
   const data = ctx.getImageData(c0 * SS, r0 * SS, cn * SS, rn * SS).data
   const stride = cn * SS
@@ -42,7 +43,7 @@ function readField(ctx: CanvasRenderingContext2D, out: Float32Array, grid: Grid,
   }
 }
 
-function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: SceneLayout): void {
+export function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: { readonly width: number; readonly height: number }): void {
   ctx.setTransform(SS / grid.cw, 0, 0, SS / grid.ch, 0, 0)
   ctx.clearRect(-layout.width, -layout.height, layout.width * 3, layout.height * 3)
   ctx.globalAlpha = 1
@@ -51,7 +52,7 @@ function prepare(ctx: CanvasRenderingContext2D, grid: Grid, layout: SceneLayout)
   ctx.strokeStyle = MASK
 }
 
-function strokeLimb(fx: CanvasRenderingContext2D, l: Limb): void {
+export function strokeLimb(fx: CanvasRenderingContext2D, l: Limb): void {
   fx.beginPath(); fx.moveTo(l.x0, l.y0); fx.quadraticCurveTo((l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2 + l.sag, l.x1, l.y1); fx.stroke()
 }
 
@@ -117,18 +118,7 @@ function drawLandscape(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2
     fx.beginPath(); fx.moveTo(x, y + 2); fx.lineTo(x + (R() - 0.5) * 5, y - h); fx.stroke()
   }
 
-  // The moon with its rim and craters, and the accent's glow around it.
-  const m = g.moon
-  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
-  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
-  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
-  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
-  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]] as const) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
-  fx.globalCompositeOperation = 'source-over'
-  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
-  glow.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
-  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = MASK
-  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
+  drawMoon(fx, ax, g.moon)
 
   // Watcher's broad tree on the left, the bare one on the right, and the composer's two branches.
   const spots = [...g.spots.filter(spot => spot.kind === 'tree'), g.home]
@@ -143,6 +133,20 @@ function drawLandscape(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2
     fx.globalAlpha = 0.18
     for (const [dx, dy, r] of [[6, -18, 9], [-2, -10, 7], [14, -8, 6]] as const) { fx.beginPath(); fx.arc(b.x1 + d * dx * g.s, b.y1 + dy * g.s, r * g.s, 0, 7); fx.fill() }
   }
+}
+
+/** The moon with its rim and craters, and the accent's glow around it. */
+export function drawMoon(fx: CanvasRenderingContext2D, ax: CanvasRenderingContext2D, m: Moon): void {
+  fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
+  fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
+  fx.globalAlpha = 1; fx.lineWidth = 6; fx.beginPath(); fx.arc(m.x, m.y, m.r - 1.5, 0, 7); fx.stroke()
+  fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
+  for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]] as const) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
+  fx.globalCompositeOperation = 'source-over'
+  const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
+  glow.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
+  ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = MASK
+  ax.globalCompositeOperation = 'destination-out'; ax.beginPath(); ax.arc(m.x, m.y, m.r * 0.98, 0, 7); ax.fill(); ax.globalCompositeOperation = 'source-over'
 }
 
 function drawTree(fx: CanvasRenderingContext2D, t: Tree, seed: number, leaves: boolean, clear: readonly { readonly x: number; readonly y: number }[]): void {
@@ -225,7 +229,7 @@ function wing(d: CanvasRenderingContext2D, side: 1 | -1, o: OwlPose): void {
 }
 
 /** The owl as vectors: its body on `d`, its eyes on `a`, the accent's field. */
-function drawOwl(d: CanvasRenderingContext2D, a: CanvasRenderingContext2D, o: OwlPose): void {
+export function drawOwl(d: CanvasRenderingContext2D, a: CanvasRenderingContext2D, o: OwlPose): void {
   for (const ctx of [d, a]) { ctx.save(); ctx.translate(o.x, o.y - 30 * o.s); ctx.rotate(o.bank); ctx.scale(o.s, o.s * o.squash); ctx.translate(0, 30 * (1 - o.squash)) }
   const fly = o.spread > 0.05
   d.globalAlpha = 0.9
@@ -301,9 +305,17 @@ export class NightScenePainter {
   private font = ''
   private land = new Float32Array(0)
   private landAccent = new Float32Array(0)
+  /** Each cell's share of the scene: quietAt, for the theme's column strength. */
   private quiet = new Float32Array(0)
+  /** Cells in a margin, the only ones a ripple or the whirlpool reaches, and the only ones past the column's ink ceiling. */
+  private marginCells = new Uint8Array(0)
+  private light = false
   /** Cells an owl may be drawn in: the margins, below the header, clear of words. */
   private owlCells = new Uint8Array(0)
+  /** Cells where an owl passing over the column or the scrubber's lane is drawn behind the words, on the landscape's canvas. */
+  private behindCells = new Uint8Array(0)
+  /** What the last painted frame drew behind the words over the column and the scrubber's lane: ripple cells and owl glyphs. */
+  behind = { ripple: 0, owl: 0 }
   private noise = new Float32Array(0)
   private stars: Star[] = []
   private starAt = new Int32Array(0)
@@ -340,16 +352,22 @@ export class NightScenePainter {
     this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
-    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells)
+    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.behindCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
-      this.quiet[i] = quietAt(layout, x, y)
-      this.owlCells[i] = owlRoom(layout, x) && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
+      // The scrubber's lane takes the column's ink ceiling, and no glow is drawn in it. An owl crossing the column or the
+      // lane is drawn behind the words there, at the column's share and under its ceiling (the user's pick A on October
+      // 25, 2026); in the margins it is drawn over everything, as before.
+      const owl = owlLayer(layout, x, y)
+      this.marginCells[i] = inMargin(layout, x) && !inLane(layout, x, y) ? 1 : 0
+      this.owlCells[i] = owl === 'over' ? 1 : 0
+      this.behindCells[i] = owl === 'behind' ? 1 : 0
     }
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land) : []
     this.starAt = new Int32Array(cells).fill(-1)
     this.stars.forEach((star, index) => { this.starAt[star.i] = index })
     this.layout = layout; this.grid = grid; this.dpr = dpr
+    this.baseQuiet()
     this.owlBox = null
     this.painted = ''
     for (const canvas of [this.back, this.front, this.glyphs]) { canvas.width = Math.round(measure.width * dpr); canvas.height = Math.round(measure.height * dpr) }
@@ -362,17 +380,28 @@ export class NightScenePainter {
     this.ink = ink
     this.font = `${GLYPH_PX}px ${fontFamily}`
     this.painted = ''
+    if (ink.light !== this.light) { this.light = ink.light; this.baseQuiet() }
     this.paintGlyphs()
+  }
+
+  /** Every cell's share, for the theme's column strength. */
+  private baseQuiet(): void {
+    const layout = this.layout
+    if (layout === null) return
+    const { cols, rows, cw, ch } = this.grid, strength = this.light ? COLUMN_QUIET.light : COLUMN_QUIET.dark
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) this.quiet[r * cols + c] = quietAt(layout, (c + 0.5) * cw, (r + 0.5) * ch, strength)
   }
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
-  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  /**
+   * Forgets the layout, so nothing is drawn until the room can be measured again. The canvases keep the last frame drawn:
+   * the scene never blinks, and the next layout draws over it in the frame it is made.
+   */
   invalidate(): void {
     this.layout = null
     this.owlBox = null
     this.painted = ''
-    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   /** The perched thread owls' boxes in the pane, for their buttons. */
@@ -389,18 +418,27 @@ export class NightScenePainter {
     })
   }
 
-  /** The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet toward the column and under words. */
-  private paintGlyphs(): void {
+  /**
+   * The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet in the column and around still words.
+   * Given rows and columns, only that block is cleared and drawn again, clipped to it so its neighbours keep every pixel.
+   */
+  private paintGlyphs(r0 = 0, r1 = this.grid.rows, c0 = 0, c1 = this.grid.cols): void {
     const ctx = context(this.glyphs)
     if (ctx === null || this.layout === null || this.ink === null) return
-    const { cols, rows, cw, ch } = this.grid
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, this.glyphs.width, this.glyphs.height)
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    const { cols, rows, cw, ch } = this.grid, dpr = this.dpr
+    const x0 = Math.round(c0 * cw * dpr), x1 = Math.round(c1 * cw * dpr), y0 = Math.round(r0 * ch * dpr), y1 = Math.round(r1 * ch * dpr)
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip()
+    ctx.clearRect(x0, y0, x1 - x0, y1 - y0)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     this.textStyle(ctx)
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    // A glyph may reach a pixel past its cell, so the cells around the block are drawn too, clipped to it.
+    for (let r = Math.max(0, r0 - 1); r < Math.min(rows, r1 + 1); r++) for (let c = Math.max(0, c0 - 1); c < Math.min(cols, c1 + 1); c++) {
       const i = r * cols + c
       this.cell(ctx, i, i, 0, -1, (c + 0.5) * cw, (r + 0.5) * ch)
     }
+    ctx.restore()
   }
 
   private textStyle(ctx: CanvasRenderingContext2D): void {
@@ -414,17 +452,20 @@ export class NightScenePainter {
   private cell(ctx: CanvasRenderingContext2D, i: number, j: number, ring: number, star: number, x: number, y: number): boolean {
     const ink = this.ink!
     const q = this.quiet[i]!
-    // In the column and under words nothing is drawn, not even a star or a ripple.
+    // Under still words nothing is drawn, not even a star or a ripple.
     if (q === 0) return false
+    // In the column, where the conversation's words pass over it, no glyph is stronger than they allow.
+    const cap = this.marginCells[i] ? 1 : ink.column.ink, accentCap = this.marginCells[i] ? 1 : ink.column.accent
+    const tone = (accent: boolean, strength: number): string => accent ? inkAt(ink.accent, Math.min(accentCap, strength)) : inkAt(ink.ink, Math.min(cap, strength))
     const d = this.land[j]! * q
     ring = Math.min(1, ring) * (0.5 + 0.5 * q)
     if (d < 0.1 && ring < 0.08 && star <= 0) return false
-    if (ring > d + 0.05) { ctx.fillStyle = inkAt(ink.accent, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
+    if (ring > d + 0.05) { ctx.fillStyle = tone(true, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
     const st = this.starAt[i]! >= 0 ? this.stars[this.starAt[i]!]! : null
     const accent = this.landAccent[j]! > 0.3 || st?.accent === true
-    if (star > d) { ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
+    if (star > d) { ctx.fillStyle = tone(accent, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
     const dd = clamp(d + (this.noise[j]! - 0.5) * 0.1 + ring * 0.3, 0, 1)
-    ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
+    ctx.fillStyle = tone(accent, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
     return true
   }
 
@@ -455,6 +496,7 @@ export class NightScenePainter {
     const summary = this.summary(frame, owlLines)
     if (summary === this.painted) return false
     this.painted = summary
+    this.behind = { ripple: 0, owl: 0 }
     const { cols, rows, cw, ch } = this.grid
     if (frame.watcher !== null) this.readOwl(frame.watcher.pose)
     else this.owlBox = null
@@ -477,7 +519,7 @@ export class NightScenePainter {
       // A sitting owl keeps the row its feet stand on, so its branch still runs under it.
       const feet = frame.watcher.pose.spread < 0.05 ? Math.floor((frame.watcher.pose.y - 1) / ch) : rows
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) {
-        if (this.owlInk[r * cols + c]! < 0.1 || !this.owlCells[r * cols + c]) continue
+        if (this.owlInk[r * cols + c]! < 0.1 || !(this.owlCells[r * cols + c] || this.behindCells[r * cols + c])) continue
         for (let y = r - 1; y <= Math.min(r + 1, feet - 1); y++) for (let x = c - 1; x <= c + 1; x++) clear(x, y)
       }
     }
@@ -495,6 +537,8 @@ export class NightScenePainter {
       const r0 = clamp(Math.floor((ripple.y - reach) / ch), 0, rows), r1 = clamp(Math.ceil((ripple.y + reach) / ch), 0, rows)
       for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
         const i = r * cols + c
+        // A ripple runs on under the column and the scrubber's lane at their share and under their ink ceiling, as the
+        // hills do (the user's pick A on October 25, 2026), so every word over it keeps 4.5:1.
         if (this.touched[i] || this.cleared[i] || this.quiet[i] === 0) continue
         const x = (c + 0.5) * cw, y = (r + 0.5) * ch
         const effect = rippleAt(x, y, ripples, t, still, this.effect)
@@ -504,7 +548,7 @@ export class NightScenePainter {
         const j = sc >= 0 && sc < cols && sr >= 0 && sr < rows ? sr * cols + sc : i
         const star = this.starAt[i]! >= 0 ? starStrength(this.stars[this.starAt[i]!]!, twinkleStep(t, still), still) * this.quiet[i]! : 0
         back.clearRect(c * cw, r * ch, cw, ch)
-        this.cell(back, i, j, effect.ring, star, x, y)
+        if (this.cell(back, i, j, effect.ring, star, x, y) && !this.marginCells[i]) this.behind.ripple++
       }
     }
 
@@ -524,7 +568,7 @@ export class NightScenePainter {
       for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
         const i = r * cols + c
         const dx = (c + 0.5) * cw - m.x, dy = (r + 0.5) * ch - m.y, d = Math.hypot(dx, dy)
-        if (d > R || this.quiet[i] === 0 || this.cleared[i]) continue
+        if (d > R || this.quiet[i] === 0 || this.cleared[i] || !this.marginCells[i]) continue
         const v = 0.5 + 0.5 * Math.sin(3 * Math.atan2(dy, dx) + d * 0.22 - t * 7)
         const a = w * (1 - d / R * 0.7) * (0.4 + 0.6 * v)
         back.clearRect(c * cw, r * ch, cw, ch)
@@ -553,13 +597,21 @@ export class NightScenePainter {
       }
     }
 
-    // The owls, on their own canvas: Watcher's in its own box, the thread owls as glyphs, and the pile's label.
+    // The owls, on their own canvas over everything in the margins: Watcher's in its own box, the thread owls as glyphs,
+    // and the pile's label. Over the column and the scrubber's lane an owl is drawn behind the words instead, on the
+    // landscape's canvas, at the column's share and under its ink ceiling, so every word over it keeps 4.5:1.
     front.setTransform(1, 0, 0, 1, 0, 0); front.clearRect(0, 0, this.front.width, this.front.height)
     front.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     this.textStyle(front)
-    const glyph = (c: number, r: number, text: string, color: string): void => {
-      if (c < 0 || c >= cols || r < 0 || r >= rows || !this.owlCells[r * cols + c]) return
-      front.fillStyle = color; front.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch)
+    const glyph = (c: number, r: number, text: string, accent: boolean, strength: number): void => {
+      if (c < 0 || c >= cols || r < 0 || r >= rows) return
+      const i = r * cols + c
+      if (this.owlCells[i]) { front.fillStyle = inkAt(accent ? ink.accent : ink.ink, strength); front.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch); return }
+      if (!this.behindCells[i]) return
+      const cap = accent ? ink.column.accent : ink.column.ink
+      back.clearRect(c * cw, r * ch, cw, ch)
+      back.fillStyle = inkAt(accent ? ink.accent : ink.ink, Math.min(cap, strength * this.quiet[i]!)); back.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch)
+      this.behind.owl++
     }
     if (box !== null) {
       // The eyes are the cells the accent covers most. A smaller owl covers less of each cell, so the bar is the
@@ -571,7 +623,7 @@ export class NightScenePainter {
         const i = r * cols + c, d = this.owlInk[i]!
         if (d < 0.1) continue
         const eye = this.owlAccent[i]! > eyeBar
-        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye ? inkAt(ink.accent, 1) : inkAt(ink.ink, 0.5 + 0.5 * d))
+        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye, eye ? 1 : 0.5 + 0.5 * d)
       }
     }
     for (const { pose, lines, cells } of sprites) {
@@ -581,12 +633,12 @@ export class NightScenePainter {
         const g = lines[k]![j]!
         if (g === ' ') continue
         const eye = k === 0 && (g === 'o' || g === 'O')
-        glyph(cells.c0 + j, cells.r0 + k, g, waiting ? inkAt(ink.accent, strength) : inkAt(ink.ink, (eye ? base + 0.15 : base) * pose.alpha))
+        glyph(cells.c0 + j, cells.r0 + k, g, waiting, waiting ? strength : (eye ? base + 0.15 : base) * pose.alpha)
       }
     }
     if (frame.pile !== null && pileCells !== null) {
       const label = pileLabel(frame.pile.count, rail)
-      for (let j = 0; j < label.length; j++) glyph(pileCells.c0 + j, pileCells.r0, label[j]!, inkAt(ink.ink, 0.95))
+      for (let j = 0; j < label.length; j++) glyph(pileCells.c0 + j, pileCells.r0, label[j]!, false, 0.95)
     }
     return true
   }

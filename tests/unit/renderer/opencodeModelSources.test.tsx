@@ -213,7 +213,7 @@ describe('Add a model source', () => {
     const dialog = await pick(/^GitLab Duo,/u)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Open the GitLab Duo sign-in page in your browser' }))
     const field = await within(dialog).findByLabelText('Code from the GitLab Duo page')
-    expect(field).toHaveFocus()
+    await waitFor(() => expect(field).toHaveFocus())
     expect(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' })).toBeDisabled()
     fireEvent.change(field, { target: { value: 'abc' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Finish signing in to GitLab Duo with this code' }))

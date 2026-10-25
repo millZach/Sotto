@@ -111,15 +111,15 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(within(orchestrating).getByText(/Watcher’s composer shows these three\. A change in either place changes both\./u)).toBeInTheDocument()
   })
 
-  it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run', () => {
+  it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run, and Cursor while it is not', () => {
     show()
     fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
-    expect(screen.getByText(/Watcher runs on Codex, Claude Code or Grok Build\.$/u)).toBeInTheDocument()
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build or Cursor\.$/u)).toBeInTheDocument()
     cleanup()
     vi.mocked(useHeldProviders).mockReturnValue(new Set())
     show()
     fireEvent.click(within(card('Orchestrating')).getByRole('combobox', { name: /^Choose Watcher’s model/u }))
-    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build or Muse\.$/u)).toBeInTheDocument()
+    expect(screen.getByText(/Watcher runs on Codex, Claude Code, Grok Build, Muse or Cursor\.$/u)).toBeInTheDocument()
   })
 
   it('lets a change to Orchestrating replace the first message’s own pick before Watcher exists', () => {

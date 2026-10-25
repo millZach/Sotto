@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
@@ -33,9 +34,11 @@ import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
-import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
+import { DelegatedBy, DelegationComposerNote } from './DelegatedWork'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
+import { useOwlFeature } from '../state/owlFeature'
+import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 
 type Command = AgentConnection['command']
 
@@ -83,6 +86,63 @@ function useComposerLift(slot: HTMLElement | null, compose: React.RefObject<HTML
 }
 
 /**
+ * From the top of the first thing drawn in the composer to its foot: what of it shows, slim or full. Read from the layout
+ * rather than the screen, so the card's move between the two does not count.
+ */
+function shownHeight(compose: HTMLElement): number {
+  let top = compose.offsetHeight
+  for (const child of compose.children) {
+    if (!(child instanceof HTMLElement) || child.offsetHeight === 0) continue
+    // The card's top margin is the creature's room above it.
+    top = Math.min(top, child.offsetTop - (parseFloat(getComputedStyle(child).marginTop) || 0))
+  }
+  return Math.max(0, compose.offsetHeight - top)
+}
+
+/**
+ * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
+ * keeps room to bring its last line clear of the card. While the composer is slim (ADR-0125) it keeps that room, so the
+ * transcript neither moves nor changes size; the pane learns how much of it shows, for the Jump button, and keeps the
+ * card's full height, which Watcher's night scene lays out by. While the card moves between the two the composer keeps
+ * that room too (slimComposer.ts), and nothing is read until the card has settled.
+ */
+function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim: boolean): () => void {
+  const measure = useRef<() => void>(() => undefined)
+  useLayoutEffect(() => {
+    const element = compose.current
+    const pane = element?.parentElement
+    if (!element || !pane || typeof ResizeObserver === 'undefined') return
+    measure.current = () => {
+      const card = element.querySelector<HTMLElement>(':scope > .thread-prompt')
+      if (card != null && slimMoving(card)) return
+      // The composer's height to the fraction of a pixel, as it is laid out. The transcript fills what the composer's room
+      // leaves, so a room rounded up past the composer, as whole pixels at 150% display scaling can be, runs the transcript
+      // past the pane's foot and gives the pane a scroll bar of its own.
+      pane.style.setProperty('--thread-compose-measured', `${element.getBoundingClientRect().height}px`)
+      pane.style.setProperty('--thread-compose-shown', `${shownHeight(element)}px`)
+      if (card != null && !element.hasAttribute('data-slim')) {
+        // The full card's height and how far its foot stands above the composer's, to the fraction of a pixel, so
+        // Watcher's night scene keeps the card's place exactly while it is slim, whatever the row under it does.
+        const box = card.getBoundingClientRect()
+        pane.style.setProperty('--thread-prompt-full', `${box.height}px`)
+        pane.style.setProperty('--thread-prompt-foot', `${element.getBoundingClientRect().bottom - box.bottom}px`)
+      }
+    }
+    const observer = new ResizeObserver(() => measure.current())
+    // The border box: a short pane changes only the composer's padding, which its content box does not see.
+    observer.observe(element, { box: 'border-box' })
+    return () => {
+      observer.disconnect()
+      measure.current = () => undefined
+      for (const name of ['--thread-compose-measured', '--thread-compose-shown', '--thread-prompt-full', '--thread-prompt-foot']) pane.style.removeProperty(name)
+    }
+  }, [compose])
+  // Slim or full, the composer's own box keeps its height; what shows of it changes.
+  useLayoutEffect(() => { measure.current() }, [slim])
+  return useCallback(() => measure.current(), [])
+}
+
+/**
  * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
  * A plain question points at the composer; everything the provider structured is answered in place.
  */
@@ -93,7 +153,9 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
   const watcherOn = useWatcherEnabled()
   const thread = row.thread
   const requests = thread.requests.filter(request => request.kind === kind)
-  if (isThreadClosed(thread) || requests.length === 0) return null
+  const shown = !isThreadClosed(thread) && requests.length > 0
+  useMark('questions', kind === 'question' && shown)
+  if (!shown) return null
   const blocked = threadRequestBlocked(row, state)
   return <div className={kind === 'question' ? 'thread-questions' : undefined}>{requests.map(request => {
     return <AgentRequestCard placement={kind === 'question' ? 'composer' : undefined} key={request.id} ownerId={thread.id} ownerTitle={thread.title} request={request} blocked={blocked}
@@ -183,6 +245,19 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const thread = row.thread
   // Watcher's own pane carries its own header and composer; it is never itself a watched thread.
   const ownPane = watcherHeader !== undefined
+  // The slim composer (ADR-0125; Owl only, and in Watcher's pane only with Watcher on): one line while the user reads
+  // back, full again at the end, on focus or with a draft. The transcript tells the pane only when the reader crosses.
+  const watcherOn = useWatcherEnabled()
+  const slimOn = useOwlFeature('composer-shrink') && (watcherOn || !ownPane)
+  const [readingBack, setReadingBack] = useState(false)
+  const [composeFocused, setComposeFocused] = useState(false)
+  const slim = composerSlim({ enabled: slimOn, readingBack, focused: composeFocused, draft: paneHasDraft,
+    questionWaits: !isThreadClosed(thread) && thread.requests.some(request => request.kind === 'question') })
+  // The pane wears the slim composer as a mark, for the Jump button above it.
+  useMark('slim', slim)
+  // The pane measures the composer's new shape before the card starts moving to it.
+  const measureCompose = useComposerFloat(compose, slim)
+  useSlimMotion(compose, slim, measureCompose)
   const watched = useWatchedThread(thread.id) && !ownPane
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
@@ -274,6 +349,17 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ...(!rowConnected ? [{ id: 'reconnect', label: 'Reconnect', icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
+  // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
+  const typeAhead = slimOn ? focusAnswerComposer : undefined
+  // Slim, the disc is pressed where it stands: focus would bring the composer back full and move the disc from under the
+  // pointer before the press lands. A press anywhere else on the slim card puts the caret in it.
+  const pressSlim = (event: React.MouseEvent): void => {
+    const target = event.target as Element
+    if (target.closest('.thread-prompt__actions button') !== null) { event.preventDefault(); return }
+    if (target.closest('.thread-prompt') === null || target.closest('button, a, [contenteditable]') !== null) return
+    event.preventDefault()
+    focusAnswerComposer()
+  }
   return <>
     {ownPane ? watcherHeader : <header className="thread-workspace__head">
       <div className="thread-workspace__title">
@@ -307,7 +393,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}>
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
@@ -319,7 +406,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></ThreadWebLinks>}
     <div className="thread-greeting-slot" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" ref={compose}>
+    <div className="thread-workspace__compose" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
+      onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}

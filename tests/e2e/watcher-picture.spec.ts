@@ -17,14 +17,15 @@ import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 
 /**
- * Watcher's picture (#1339, Zach's pick on October 22, 2026: A, the constellation) in the built app, on the Sotto Owl
- * track: the Visualize tab, the threads Watcher watches drawn around it by project, the merge turns along the top, a
- * thread's card, messages moving as they happen and, with reduced motion, standing still beside the thread. Main's
- * Watcher side is stood in for by a seeded projection that then moves on a script (src/renderer/src/e2e/watcherStandIn.ts).
- * Run after `npm run build`. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes
- * artifacts/watcher-picture.
+ * Watcher's picture (#1339; Zach's pick on October 22, 2026, B of `prototype/watcher-visualize-owls`) in the built app,
+ * on the Sotto Owl track: the Visualize tab, a tree for each computer with an owl for each thread Watcher watches on its
+ * project's limb, Watcher on its post with You at its foot, the merge turns along the top, a thread's card, messages
+ * flying as they happen and, with reduced motion, standing still beside the thread. Main's Watcher side is stood in for
+ * by a seeded projection that then moves on a script (src/renderer/src/e2e/watcherStandIn.ts). Run after
+ * `npm run build`. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes
+ * artifacts/watcher-picture-owls.
  */
-const evidence = evidenceDirectory('artifacts/watcher-picture')
+const evidence = evidenceDirectory('artifacts/watcher-picture-owls')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const CURRENT = 'release-notes'
 const at = (minutes: number): string => new Date(E2E_THREADS_NOW - minutes * 60_000).toISOString()
@@ -132,17 +133,32 @@ async function pictureContrast(page: Page): Promise<Array<{ name: string; ratio:
       }
       return layers.reverse().reduce((under, color) => hex(color, under), hex(getComputedStyle(document.body).backgroundColor))
     }
-    const shown = [...document.querySelectorAll('.watcher-picture :is(.watcher-picture__title, .watcher-picture__cluster-name, .watcher-picture__cluster-name b, .watcher-picture__pr, .watcher-picture__turn, .watcher-picture__bar-label, .watcher-picture__owl-name, .watcher-picture__owl-name span, .watcher-picture__you, .watcher-picture__you b, .watcher-picture__you span, .watcher-picture__settled, .watcher-picture__card p, .watcher-picture__card h3, .watcher-picture__card li, .watcher-picture__card time)')]
+    const shown = [...document.querySelectorAll('.watcher-picture :is(.watcher-picture__title, .watcher-picture__cluster-name, .watcher-picture__computer span, .watcher-picture__word, .watcher-picture__pr, .watcher-picture__turn, .watcher-picture__bar-label, .watcher-picture__owl-name, .watcher-picture__owl-name span, .watcher-picture__you, .watcher-picture__you b, .watcher-picture__you span, .watcher-picture__settled, .watcher-picture__card p, .watcher-picture__card h3, .watcher-picture__card li, .watcher-picture__card time)')]
       .filter(element => (element as HTMLElement).offsetParent !== null && element.textContent?.trim())
     return shown.map(element => ({ name: `${element.className || element.tagName}: ${element.textContent!.trim().slice(0, 30)}`, text: hex(getComputedStyle(element).color, surface(element)), under: surface(element) }))
   })
   return pairs.map(pair => ({ name: pair.name, ratio: contrastRatio(parseThemeRgb(pair.text, { r: 0, g: 0, b: 0 }), parseThemeRgb(pair.under, { r: 0, g: 0, b: 0 })) }))
 }
 
+/** Every two words of the picture that meet: You and Watcher's name, the threads, the projects' signs and the computers' names. */
+async function wordsThatMeet(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const words = [...document.querySelectorAll<HTMLElement>('.watcher-picture :is(.watcher-picture__you, .watcher-picture__owl-name, .watcher-picture__node, .watcher-picture__cluster-name, .watcher-picture__computer > span)')]
+      .map(element => ({ name: `${element.className}: ${(element.getAttribute('aria-label') ?? element.textContent ?? '').trim().slice(0, 30)}`, box: element.getBoundingClientRect() }))
+    const met: string[] = []
+    for (let a = 0; a < words.length; a++) for (let b = a + 1; b < words.length; b++) {
+      const one = words[a]!.box, two = words[b]!.box
+      if (one.left < two.right - 1 && two.left < one.right - 1 && one.top < two.bottom - 1 && two.top < one.bottom - 1) met.push(`${words[a]!.name} meets ${words[b]!.name}`)
+    }
+    return met
+  })
+}
+
 async function capture(launched: LaunchedSotto, name: string): Promise<void> {
   const { page } = launched
   await settle(page)
   expect(await pageBoundProblems(page)).toEqual([])
+  expect(await wordsThatMeet(page)).toEqual([])
   expect((await pictureContrast(page)).filter(item => item.ratio < 4.5)).toEqual([])
   await page.screenshot({ path: join(evidence, `${name}.png`), animations: 'disabled' })
 }
@@ -151,7 +167,7 @@ test.describe("Watcher's picture on the built app", () => {
   test.beforeAll(async () => { await mkdir(evidence, { recursive: true }) })
 
   for (const [appearance, theme] of [['dark', 't3-code'], ['light', 't3-code'], ['dark', 'tropic']] as const) {
-    test(`draws the constellation at every window size, ${appearance} ${theme}`, async () => {
+    test(`draws the owls at every window size, ${appearance} ${theme}`, async () => {
       await onReleaseTrack('owl', () => withSotto(launchOptions(appearance, theme, 'reduced'), async launched => {
         const { page } = launched
         await seedPicture(page)

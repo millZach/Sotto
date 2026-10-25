@@ -51,3 +51,25 @@ Confirmed for the build by Watcher, also October 22:
   - Reading a thread's history just to show the card would count it as seen, and a later finish or failure would not raise Needs attention (#1193). So the card never reads it.
   - Open beside Watcher shows the whole thread.
 - **The merge turns are Sotto's facts.** READY TO MERGE is read_state's merge queue, and MERGED is GitHub's state. GO MERGE is a send Watcher marked with `mergeTurn`, which a restart forgets (#1340 keeps it).
+
+## The owls replace the constellation, October 22, 2026
+
+Zach saw two things in the constellation on Owl 0.1.38. "You · nothing waiting" sat under Watcher and ran into the project boxes on both sides, with the lines running through the labels. He also asked for the owls from Conversation and Watched on Visualize. The prototype is kept at the tag `prototype/watcher-visualize-owls` (`docs/prototypes/watcher-visualize-owls-prototype.html` there). It offered A, owls in the margins beside the constellation; B, owls as the picture; and C, a night strip over a list. Zach picked **B**, and then:
+
+- **A press on an owl or its name opens the thread's card**, as before.
+- **Messages fly, owls perch.** Owls stay on their limbs: a working thread's owl blinks, and one waiting on the user glows. Watcher's own owl blinks on its post. There are no flights or moon whirlpool here; those stay in the margins.
+- **A busy project grows another limb** under its first, and the picture scrolls when the trees run out of height.
+
+How it is built:
+
+- **The layout.** `src/renderer/src/watcher/pictureGrove.ts` is pure. It makes a tree for each computer, a limb for each project and an owl for each thread, and gives every word its own box.
+  - Wide, Watcher sits on its post in the middle, and the middle is as wide as Watcher's name or You, whichever is wider, measured in the window. Narrower than 960 pixels, the two share a line at the top.
+  - Whole computers go to the shorter side. A project moves to the other side only when one side would otherwise be taller than the view, so a single computer stands as one tree, with the other side open, while it fits.
+  - A pull request's chip shows when it fits beside where the thread stands. Otherwise it wraps out of sight and the words keep their line; the merge turns along the top and the card still name it.
+  - The layout is kept while only the threads' states change, so the landscape is built again only when a thread, a project or a computer comes or goes, or the pane changes size.
+  - `tests/unit/renderer/watcherPictureGrove.test.ts` checks that no two boxes meet at any size, and that no box leaves the picture.
+- **The painting.** `src/renderer/src/watcher/pictureGrovePainter.ts` draws the landscape, the trees, the moon and every owl as the night scene does. It shares the night scene's owl, moon and glyph helpers (`nightScenePainter.ts`), and nothing is drawn under a word.
+  - It checks eight times a second while anything could blink, twinkle or glow, paints only what changed, and holds still with motion reduced or the window hidden.
+- **The overlap, at its root.** The constellation's middle was a fixed 64 to 96 pixels, set without reading how wide its labels were. Now the layout is given their measured widths.
+  - The picture also takes the pane's whole width: the conversation column's padding had been winning over the picture's own. The merge turns keep to the column.
+- **The built-app checks** add one: no two of You, Watcher's name, a thread, a project's sign or a computer's name meet, at every size and theme.

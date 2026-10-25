@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, CELL, COLUMN_GAP, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
-  LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk,
+  addRipple, along, boxDistance, heldRoom, inLane, owlLayer, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
+import { contrastRatio } from '../../../src/shared/themes/color'
 import { RAIL_OWL, spriteCells } from '../../../src/renderer/src/watcher/owlFamily'
 import { watchResolution } from '../../../src/renderer/src/watcher/watchResolution'
 
@@ -81,17 +82,54 @@ describe('the night scene in the margins', () => {
     expect(none.spots).toEqual([])
   })
 
-  it('draws nothing in the column or under words, quiets the header band, and fades toward the column', () => {
-    const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }] }))
+  it('shows the column at 85% under the glass composer too, nothing under still words, and quiets the header band', () => {
+    const layout = layoutScene(room(1600, 1000, { words: [{ x: 20, y: 300, w: 200, h: 20 }, { x: 500, y: 600, w: 300, h: 20 }] }))
     const { left, right } = layout.column
-    expect(quietAt(layout, (left + right) / 2, 400)).toBe(0)
-    expect(quietAt(layout, left - COLUMN_GAP + 1, 400)).toBe(0)
-    expect(quietAt(layout, 100, 310)).toBe(0)
+    const middle = (left + right) / 2
+    // The user's pick on October 23, 2026 (variant D): 85%, by day and by night.
+    expect(COLUMN_QUIET).toEqual({ dark: 0.85, light: 0.85 })
+    near(quietAt(layout, middle, 400), COLUMN_QUIET.dark)
+    near(quietAt(layout, middle, 400, COLUMN_QUIET.light), COLUMN_QUIET.light)
+    // The column's part of the header band stays empty; the margins' fades to a tenth.
+    expect(quietAt(layout, middle, 20)).toBe(0)
     near(quietAt(layout, 200, 10), 0.1)
+    // Under the still words, and their small pad, nothing.
+    expect(quietAt(layout, 100, 310)).toBe(0)
+    expect(quietAt(layout, 600, 610)).toBe(0)
+    expect(quietAt(layout, 600, 600 - 4)).toBe(0)
+    expect(quietAt(layout, 600, 600 - 6)).toBeGreaterThan(0)
+    // The composer is glass: the scene runs on under it, right to its edge.
+    near(quietAt(layout, middle, layout.composer.y + 5), COLUMN_QUIET.dark)
+    near(quietAt(layout, middle, layout.composer.y - 2), COLUMN_QUIET.dark)
+    // The margins keep only the still words' small pad, as before.
+    expect(quietAt(layout, 100, 300 - 6)).toBeGreaterThan(0)
     expect(quietAt(layout, 200, 400)).toBe(1)
-    expect(quietAt(layout, left - 12, 400)).toBeLessThan(0.5)
+    // The column's edge is halfway between its share and the whole.
+    near(quietAt(layout, left, 400), (COLUMN_QUIET.dark + 1) / 2)
     expect(inMargin(layout, left - COLUMN_GAP - 1)).toBe(true)
     expect(inMargin(layout, right + COLUMN_GAP - 1)).toBe(false)
+  })
+
+  it('blends the column’s share to the whole across its edges', () => {
+    const layout = layoutScene(room(1600, 1000))
+    const { left, right } = layout.column
+    near(columnFactor(layout, (left + right) / 2, 0.35), 0.35)
+    near(columnFactor(layout, left + COLUMN_BLEND, 0.35), 0.35)
+    near(columnFactor(layout, right - COLUMN_BLEND, 0.35), 0.35)
+    near(columnFactor(layout, left - COLUMN_BLEND, 0.35), 1)
+    near(columnFactor(layout, right + COLUMN_BLEND, 0.35), 1)
+    near(columnFactor(layout, right, 0.35), 0.675)
+    expect(columnFactor(layout, left - 10, 0.35)).toBeGreaterThan(columnFactor(layout, left + 10, 0.35))
+  })
+
+  it('never follows the words: a point in the column shows the same share wherever the conversation has scrolled', () => {
+    // The scene is laid out from the room alone; the conversation's words are not part of its measure.
+    const layout = layoutScene(room(1280, 800))
+    const middle = (layout.column.left + layout.column.right) / 2
+    const before = [200, 300, 400, 500].map(y => quietAt(layout, middle, y))
+    expect(Object.keys(room(1280, 800))).not.toContain('lines')
+    expect([200, 300, 400, 500].map(y => quietAt(layoutScene(room(1280, 800)), middle, y))).toEqual(before)
+    expect(boxDistance({ x: 100, y: 100, w: 200, h: 24 }, 90, 110)).toBe(10)
   })
 })
 
@@ -110,9 +148,13 @@ describe('beside the message scrubber', () => {
       expect(layout.mode, `${width}x${height}`).toBe('trees')
       expect(layout.home.x + 20 * layout.s, `${width}x${height}`).toBeLessThan(edge)
       for (const spot of layout.spots.filter(item => item.x < layout.column.left)) expect(spot.x + 18, `${spot.kind} at ${spot.x}`).toBeLessThan(edge)
-      // The lane is kept like words: nothing of the landscape, a star or a ripple shows in it.
-      expect(quietAt(layout, edge + 10, measure.lane!.y + 100)).toBe(0)
-      expect(layout.words).toContainEqual(measure.lane)
+      // The sky and the hills run on under the lane at the column's share, so its ticks float over them with no box round
+      // them; no owl is drawn there (the user's ask on October 24, 2026).
+      const y = measure.lane!.y + 100
+      expect(inLane(layout, edge + 10, y)).toBe(true)
+      expect(quietAt(layout, edge + 10, y)).toBeCloseTo(quietAt(layout, (layout.column.left + layout.column.right) / 2, y), 6)
+      expect(quietAt(layout, edge + 10, y)).toBeGreaterThan(0)
+      expect(layout.words).not.toContainEqual(measure.lane)
     }
   })
 
@@ -209,19 +251,29 @@ describe('the night scene’s pace, stars and ripples', () => {
     expect(new Set([0, 0.7, 3.1].map(t => starStrength(star, twinkleStep(t, false), false))).size).toBe(3)
   })
 
-  it('scatters stars only in the margins’ open sky, below the header and above the far hills', () => {
+  it('scatters stars over the open sky, the column’s too, below the header and above the far hills', () => {
     const layout = layoutScene(room(1600, 1000))
     const grid = gridFor(layout.width, layout.height)
     const ink = new Float32Array(grid.cols * grid.rows)
     for (let c = 0; c < grid.cols; c++) ink[10 * grid.cols + c] = 1
     const stars = placeStars(layout, grid, ink)
     expect(stars.length).toBeGreaterThan(20)
+    expect(stars.some(star => !inMargin(layout, (star.i % grid.cols + 0.5) * grid.cw)), 'a star in the column').toBe(true)
     for (const star of stars) {
-      const row = Math.floor(star.i / grid.cols), col = star.i % grid.cols
+      const row = Math.floor(star.i / grid.cols)
       expect(row).not.toBe(10)
-      expect(inMargin(layout, (col + 0.5) * grid.cw)).toBe(true)
       expect(row * grid.ch).toBeGreaterThanOrEqual(layout.header)
       expect(row * grid.ch).toBeLessThanOrEqual(layout.horizon - layout.sky * 0.08)
+    }
+  })
+
+  it('never puts two stars in one cell, so a capped star is never painted over itself', () => {
+    // Two capped draws in one cell composite to more than the cap: at 25% twice, about 44%.
+    for (const [width, height] of [[1600, 900], [1600, 1000], [1280, 800], [1920, 1080], [2560, 1440]] as const) {
+      const layout = layoutScene(room(width, height))
+      const grid = gridFor(layout.width, layout.height)
+      const stars = placeStars(layout, grid, new Float32Array(grid.cols * grid.rows))
+      expect(new Set(stars.map(star => star.i)).size, `${width}x${height}`).toBe(stars.length)
     }
   })
 
@@ -300,6 +352,67 @@ describe('the night scene’s pace, stars and ripples', () => {
 describe('the night scene’s ink', () => {
   const ink = { r: 20, g: 22, b: 30 }, paper = { r: 250, g: 249, b: 246 }, accent = { r: 20, g: 120, b: 110 }
 
+  it('counts a translucent word as it shows, laid over what is under it', () => {
+    const night = { r: 18, g: 18, b: 17 }, white = { r: 255, g: 255, b: 255 }
+    const faded = { ...white, a: 0.8 }
+    const solid = columnCeiling(night, white, 1, [white]), translucent = columnCeiling(night, white, 1, [faded])
+    // A word at 80% reads weaker than the same word solid, so it allows less ink under it.
+    expect(translucent).toBeLessThan(solid)
+    const pixel = over(night, white, translucent)
+    expect(wordContrast(faded, pixel)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+    expect(wordContrast(faded, pixel)).toBeCloseTo(contrastRatio(over(pixel, white, 0.8), pixel), 6)
+    const past = over(night, white, translucent + 0.05)
+    expect(wordContrast(faded, past)).toBeLessThan(WORD_CONTRAST)
+    expect(sceneInk(night, white, white, [faded]).column.ink).toBe(translucent)
+  })
+
+  it('keeps the glass card thick enough that its words hold 4.5:1 over pure white or pure black', () => {
+    const card = { r: 34, g: 34, b: 33 }, text = { r: 250, g: 247, b: 236 }, muted = { r: 163, g: 161, b: 151 }
+    const alpha = glassOpacity(card, [text, muted])
+    expect(alpha).toBeGreaterThanOrEqual(0.72)
+    expect(alpha).toBeLessThanOrEqual(1)
+    for (const behind of [{ r: 255, g: 255, b: 255 }, { r: 0, g: 0, b: 0 }]) {
+      const surface = over(behind, card, alpha)
+      for (const word of [text, muted]) expect(wordContrast(word, surface)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+    }
+    // A step thinner, the muted word over white falls under it.
+    expect(wordContrast(muted, over({ r: 255, g: 255, b: 255 }, card, alpha - 0.01))).toBeLessThan(WORD_CONTRAST)
+    // A light card over black.
+    const paperCard = { r: 236, g: 234, b: 228 }, quiet = { r: 104, g: 102, b: 94 }
+    const day = glassOpacity(paperCard, [quiet])
+    expect(wordContrast(quiet, over({ r: 0, g: 0, b: 0 }, paperCard, day))).toBeGreaterThanOrEqual(WORD_CONTRAST)
+  })
+
+  it('stops the column’s ink where the weakest word over it would fall under 4.5:1, by day and by night', () => {
+    const night = { r: 12, g: 13, b: 16 }, text = { r: 247, g: 247, b: 250 }, muted = { r: 168, g: 170, b: 176 }, yellow = { r: 242, g: 208, b: 36 }
+    for (const [surface, word, quiet, glow, boost] of [
+      [night, text, muted, yellow, 1], [paper, ink, { r: 92, g: 90, b: 82 }, accent, LIGHT_INK_BOOST],
+    ] as const) {
+      const cap = columnCeiling(surface, word, boost, [word, quiet])
+      expect(cap).toBeGreaterThan(0)
+      // At the ceiling a glyph's core leaves both words at WORD_CONTRAST or more; a step stronger, one falls under it.
+      const at = over(surface, word, Math.min(1, cap * boost))
+      expect(contrastRatio(word, at)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+      expect(contrastRatio(quiet, at)).toBeGreaterThanOrEqual(WORD_CONTRAST)
+      if (cap < 1) {
+        const past = over(surface, word, Math.min(1, (cap + 0.05) * boost))
+        expect(Math.min(contrastRatio(word, past), contrastRatio(quiet, past))).toBeLessThan(WORD_CONTRAST)
+      }
+      expect(WORD_CONTRAST).toBeGreaterThanOrEqual(4.5)
+      // The accent has its own ceiling, by the same words.
+      const scene = sceneInk(surface, word, glow, [word, quiet])
+      expect(scene.column.ink).toBe(cap)
+      expect(scene.column.accent).toBe(columnCeiling(surface, glow, boost === 1 ? 1 : LIGHT_ACCENT_BOOST, [word, quiet]))
+    }
+    // The weaker word brings the ceiling down from where the text alone would put it. The muted tier would bring it far
+    // lower than the secondary one, which is why Watcher's names and times take the secondary tier (pick D2).
+    const secondary = { r: 214, g: 212, b: 204 }
+    expect(columnCeiling(night, text, 1, [text, secondary])).toBeLessThan(columnCeiling(night, text, 1, [text]))
+    expect(columnCeiling(night, text, 1, [text, muted])).toBeLessThan(columnCeiling(night, text, 1, [text, secondary]))
+    // A word that already falls under 4.5:1 on the bare surface leaves no ink at all.
+    expect(columnCeiling(night, text, 1, [{ r: 40, g: 40, b: 44 }])).toBe(0)
+  })
+
   it('judges light and dark by the surface’s luminance, not a theme’s name', () => {
     expect(isLightSurface(paper)).toBe(true)
     expect(isLightSurface({ r: 12, g: 14, b: 20 })).toBe(false)
@@ -343,5 +456,48 @@ describe('the night scene and the display’s scaling', () => {
     expect(queries[1]!.listeners.size).toBe(1)
     stop()
     expect(queries[1]!.listeners.size).toBe(0)
+  })
+})
+
+describe('the night scene while the composer is slim (ADR-0125)', () => {
+  const full = room(1280, 800, { words: [{ x: 260, y: 724, w: 120, h: 17 }], lane: { x: 216, y: 87, w: 44, h: 659 } })
+  // Slim, the card is one line at the composer's foot and the row under it, with its words, has stepped away.
+  const slim = { ...full, composer: { ...full.composer, y: full.composer.y + 117, h: 41 }, words: [] }
+
+  it('keeps the full card’s room, so it holds still as the composer slims and the row under it steps away', () => {
+    expect(heldRoom(slim, full)).toBe(full)
+    // A fraction of a pixel from the layout's own rounding is the same room.
+    expect(heldRoom({ ...slim, height: full.height + 0.4, lane: { ...full.lane!, h: full.lane!.h + 0.4 } }, full)).toBe(full)
+  })
+
+  it('takes the room as it is when the pane, its header or the scrubber’s lane changed while the composer was slim', () => {
+    for (const changed of [{ width: full.width - 100 }, { height: full.height - 60 }, { header: full.header + 30 }, { lane: { ...full.lane!, x: 211 } }, { lane: undefined }]) {
+      const room = { ...slim, ...changed }
+      expect(heldRoom(room, full), JSON.stringify(changed)).toBe(room)
+    }
+  })
+
+  it('takes the room as it is before the composer has been seen full, and has none without a composer', () => {
+    expect(heldRoom(slim, null)).toBe(slim)
+    expect(heldRoom(null, full)).toBeNull()
+  })
+})
+
+describe('an owl over the column (the user’s pick A, October 25, 2026)', () => {
+  const measure = room(1280, 800, { words: [{ x: 300, y: 690, w: 120, h: 17 }] })
+  const lane = { x: measure.composer.x - 44, y: measure.header, w: 44, h: measure.composer.y - 8 - measure.header }
+  const layout = layoutScene({ ...measure, lane })
+  const y = measure.header + 120
+
+  it('is drawn over everything in the margins, and behind the words over the column and the scrubber’s lane', () => {
+    expect(owlLayer(layout, 20, y)).toBe('over')
+    expect(owlLayer(layout, layout.column.right + 40, y)).toBe('over')
+    expect(owlLayer(layout, (layout.column.left + layout.column.right) / 2, y)).toBe('behind')
+    expect(owlLayer(layout, lane.x + 10, y)).toBe('behind')
+  })
+
+  it('is drawn nowhere in the header band or around the words that stand still', () => {
+    expect(owlLayer(layout, 20, measure.header - 2)).toBeNull()
+    expect(owlLayer(layout, 310, 695)).toBeNull()
   })
 })

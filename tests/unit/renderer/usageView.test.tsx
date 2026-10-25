@@ -165,9 +165,9 @@ describe('Usage page', () => {
     const { bridge, user } = await open(dashboard(localHost(), oldForgeHost()), [laptop, forge])
     expect(measure(/^Prompts 230 /u)).toBeVisible()
     expect(measure(/^Where 75% in Sotto of tokens · 70% of prompts$/u)).toBeVisible()
-    expect(screen.getByRole('tabpanel', { name: /Prompts/u })).toHaveTextContent('forge counts only its Sotto threads until its Owl host update.')
+    expect(screen.getByRole('tabpanel', { name: /Prompts/u })).toHaveTextContent('forge counts only its Sotto threads until its host update.')
     await user.click(measure(/^Where /u))
-    expect(screen.getByRole('tabpanel', { name: /Where/u })).toHaveTextContent('forge counts only its Sotto threads until its Owl host update.')
+    expect(screen.getByRole('tabpanel', { name: /Where/u })).toHaveTextContent('forge counts only its Sotto threads until its host update.')
     await user.click(screen.getByRole('button', { name: 'Where: Everywhere' }))
     await user.click(screen.getByRole('option', { name: 'Outside Sotto' }))
     await waitFor(() => expect(bridge.reads.filter(query => query.sources?.[0] === 'outside')).toHaveLength(2))
@@ -183,7 +183,7 @@ describe('Usage page', () => {
     const bridge = fixtureBridge(dashboard({ hostId: 'forge', status: 'unsupported', quotas: [] }))
     render(<UsageView {...props} computers={[forge]} bridge={bridge} />)
     expect(await screen.findByRole('heading', { name: 'No history from forge yet' })).toBeVisible()
-    expect(screen.getByText("forge's history appears after its Owl host update.")).toBeVisible()
+    expect(screen.getByText("forge's history appears after its host update.")).toBeVisible()
   })
 
   it('gives each provider one section with its freshest reading and other computers beside it', async () => {
@@ -275,7 +275,7 @@ describe('Usage page', () => {
     const refresh = vi.spyOn(bridge, 'refresh')
     render(<UsageView {...props} computers={[laptop, forge]} bridge={bridge} />)
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
-    expect(refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['codex'] })
+    expect(refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['codex'], background: true })
   })
 
   it('reads Claude again on open when its fresh reading names no share', async () => {
@@ -287,7 +287,7 @@ describe('Usage page', () => {
     const refresh = vi.spyOn(bridge, 'refresh')
     render(<UsageView {...props} bridge={bridge} />)
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
-    expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'] })
+    expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'], background: true })
   })
 
   it('says nothing is recorded yet once usage was cleared, keeping the room-left gauges', async () => {

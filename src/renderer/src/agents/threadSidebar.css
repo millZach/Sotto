@@ -33,10 +33,7 @@
 .thread-nav__top .tt-button > svg { flex: none; }
 
 /* The room switch in the foot, and Watcher's floating switch, which draws the same one. */
-.thread-nav__seg { display: inline-flex; flex: none; padding: 3px; border-radius: 6px; background: var(--tt-surface-sunken, var(--tt-hover)); -webkit-app-region: no-drag; }
-.thread-nav__seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
-.thread-nav__seg button:hover { color: var(--tt-text); }
-.thread-nav__seg button[aria-selected='true'] { background: var(--tt-segment-on); color: var(--tt-text); box-shadow: var(--tt-shadow-sm); }
+.thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
 
 .thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 6px 10px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
 .threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
@@ -113,8 +110,9 @@
 .thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude, #e3b58e); }
 .thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok, #c9baff); }
 .thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin, #a5d8f5); }
-/* OpenCode's light token is already the darkened mark, so it is drawn as it is in both modes. */
+/* OpenCode's and Cursor's light tokens are already the darkened mark, so they are drawn as they are in both modes. */
 .thread-nav__mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.thread-nav__mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
 :root[data-theme='light'] .thread-nav__mark:is([data-provider='codex'], [data-provider='claude'], [data-provider='grok'], [data-provider='devin']) { color: color-mix(in srgb, var(--threads-provider-fill) 50%, var(--tt-text)); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='codex'] { --threads-provider-fill: var(--tt-provider-codex); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='claude'] { --threads-provider-fill: var(--tt-provider-claude); }

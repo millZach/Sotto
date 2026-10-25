@@ -80,7 +80,7 @@ export function forgeHost(): UsageHostRead {
   ] }
 }
 
-/** forge before its Owl host update: Sotto threads only, no place split, no history status. */
+/** forge before its host update: Sotto threads only, no place split, no history status. */
 export function oldForgeHost(): UsageHostRead {
   const totals = activityRow(30, 0, 0, tokens(5_800_000, 200_000, 5_000_000))
   return { hostId: 'forge', status: 'ready', persistence: 'saved', activity: {
