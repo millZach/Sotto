@@ -11,11 +11,11 @@ afterEach(() => {
   delete (window as { sotto?: unknown }).sotto
 })
 
-function setup(options: { choices?: ThreadShortcutChoices; saved?: boolean } = {}) {
+function setup(options: { choices?: ThreadShortcutChoices; saved?: boolean; hotkey?: string } = {}) {
   ;(window as { sotto?: unknown }).sotto = { suspendDictationShortcuts: vi.fn(async () => ({ ok: true as const })) }
   const onUpdateSettings = vi.fn(async () => options.saved ?? true)
   const settings = {
-    hotkey: 'CommandOrControl+Shift+Space',
+    hotkey: options.hotkey ?? 'CommandOrControl+Shift+Space',
     pressShortcuts: [] as string[],
     holdShortcuts: [] as string[],
     threadShortcuts: options.choices ?? {},
@@ -77,6 +77,15 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     press('ControlLeft', 'ShiftLeft', 'KeyR')
     release('KeyR')
     expect(await within(row('Restore settled thread')).findByRole('alert')).toHaveTextContent('Force reload the window already uses Ctrl + Shift + R. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
+
+  it('names Changes for the fallback keys it answers to while dictation holds its plain ones', async () => {
+    const { onUpdateSettings, user } = setup({ hotkey: 'CommandOrControl+D' })
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift N' }))
+    press('ControlLeft', 'ShiftLeft', 'KeyD')
+    release('KeyD')
+    expect(await within(row('New thread')).findByRole('alert')).toHaveTextContent('Changes already uses Ctrl + Shift + D. Pick other keys.')
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 

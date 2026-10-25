@@ -43,6 +43,9 @@ describe('thread shortcut choices (ADR-0133)', () => {
     // The same accelerator spelled for the other platform's modifier does not collide.
     expect(claimedThreadChord(settings({ hotkey: 'Command+Shift+N' }), 'new-thread', 'win32')).toBe('mod+shift+n')
     expect(claimedThreadChord(settings({ threadShortcuts: { settle: null } }), 'settle', 'win32')).toBeNull()
+    // An extra press or hold shortcut takes the keys just as the hotkey does, defaults included.
+    expect(claimedThreadChord(settings({ holdShortcuts: ['CommandOrControl+Shift+S'] }), 'stop-turn', 'win32')).toBeNull()
+    expect(claimedThreadChord(settings({ pressShortcuts: ['CommandOrControl+Shift+E'] }), 'settle', 'win32')).toBeNull()
   })
 
   it('labels a chord in each platform’s own words, from the chord itself', () => {

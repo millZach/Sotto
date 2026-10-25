@@ -202,8 +202,22 @@ export function chordClaimed(chord: string, hotkey: string | undefined, platform
   return !(own.key === taken.key && own.ctrl === taken.ctrl && own.shift === taken.shift && own.alt === taken.alt && own.meta === taken.meta)
 }
 
+/**
+ * The key a keydown means, for matching a chord. Shift turns a digit into its symbol ('!') and Option turns a
+ * letter into another character ('å'), while `code` names the physical key either way — which is also how a
+ * shortcut was recorded. Letters and digits therefore read from `code` when the event carries it; every
+ * other key (Enter, Space, the arrows, F keys) already spells itself the same in `key`.
+ */
+function eventKey(event: { key: string; code?: string }): string {
+  if (typeof event.code === 'string') {
+    if (/^Key[A-Z]$/u.test(event.code)) return event.code.slice(3).toLowerCase()
+    if (/^Digit[0-9]$/u.test(event.code)) return event.code.slice(5)
+  }
+  return event.key.toLowerCase()
+}
+
 /** Whether a keydown is this chord, read from the event's modifier flags and its key. */
-export function chordMatches(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'>, chord: string, platform: SottoPlatform): boolean {
+export function chordMatches(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'shiftKey' | 'altKey' | 'metaKey'> & { code?: string }, chord: string, platform: SottoPlatform): boolean {
   const own = parseChord(chord, platform)
-  return event.key.toLowerCase() === own.key && event.ctrlKey === own.ctrl && event.shiftKey === own.shift && event.altKey === own.alt && event.metaKey === own.meta
+  return eventKey(event) === own.key && event.ctrlKey === own.ctrl && event.shiftKey === own.shift && event.altKey === own.alt && event.metaKey === own.meta
 }

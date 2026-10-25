@@ -10,6 +10,7 @@ import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { DEFAULT_THREAD_SHORTCUTS, resolveThreadShortcut, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
 import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
+import { changesChord } from '../../tools/changesShortcut'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
@@ -150,7 +151,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     }
     for (const group of GROUPS) for (const row of group.rows) {
       if (row.id === except) continue
-      const other = resolved(row.id)
+      // Changes may be answering to its shifted fallback while dictation holds its plain chord, so the keys
+      // it holds are the ones it answers to, not only the ones it is set to.
+      const other = row.id === 'changes' ? changesChord(resolved(row.id), settings.hotkey, platform) : resolved(row.id)
       if (other !== null && sameThreadKeys(chord, other, platform)) {
         const name = i18n._(row.label)
         return msg`${name} already uses ${keys}. Pick other keys.`

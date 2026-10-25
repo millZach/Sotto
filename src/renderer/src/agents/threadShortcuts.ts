@@ -4,8 +4,8 @@ import { DEFAULT_THREAD_SHORTCUTS, isThreadChord, menuOwnedChords, resolveThread
 import { chordBelongsElsewhere } from '../tools/changesShortcut'
 import { chordClaimed, chordMatches, parseAccelerator, parseChord } from './branchToolbar.logic'
 
-/** The settings a thread chord is read from: its own row, and dictation's hotkey, which always wins a tie. */
-export type ThreadShortcutSettings = Pick<AppSettings, 'threadShortcuts' | 'hotkey'>
+/** The settings a thread chord is read from: its own row, and dictation's shortcuts, which always win a tie. */
+export type ThreadShortcutSettings = Pick<AppSettings, 'threadShortcuts' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
 
 /** The chord a shortcut is set to (ADR-0133): the user's choice, its default, or null where the user removed it. No settings yet reads as defaults. */
 export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'> | null | undefined, id: ThreadShortcutId): string | null {
@@ -13,12 +13,16 @@ export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'>
 }
 
 /**
- * The chord a shortcut answers to: its chosen chord, unless there is none or the dictation hotkey already
- * means the same keys — every thread chord has always stood down for dictation, and still does.
+ * The chord a shortcut answers to: its chosen chord, unless there is none or one of dictation's shortcuts
+ * already means the same keys — the hotkey itself or an extra press or hold one. Every thread chord has
+ * always stood down for dictation, and still does, defaults included: they were never recorded past the
+ * Keyboard page's own refusal.
  */
 export function claimedThreadChord(settings: ThreadShortcutSettings | null | undefined, id: ThreadShortcutId, platform: SottoPlatform): string | null {
   const chosen = chosenThreadChord(settings, id)
-  return chosen !== null && chordClaimed(chosen, settings?.hotkey, platform) ? chosen : null
+  if (chosen === null) return null
+  const dictation = [settings?.hotkey, ...(settings?.pressShortcuts ?? []), ...(settings?.holdShortcuts ?? [])]
+  return dictation.every(accelerator => chordClaimed(chosen, accelerator, platform)) ? chosen : null
 }
 
 /**
