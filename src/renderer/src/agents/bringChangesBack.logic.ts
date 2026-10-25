@@ -2,6 +2,7 @@ import { plural, t } from '@lingui/core/macro'
 import { useSyncExternalStore } from 'react'
 import type { AgentThread } from '../../../shared/agents'
 import { bringBackTarget, type BringBack, type BringBackTarget } from '../../../shared/bringChangesBack'
+import { ltr, own } from '../components/isolated'
 
 /**
  * What the strip above a delegated, continued or forked thread's composer shows (#1030, pick B of the continue prototype,
@@ -84,26 +85,33 @@ export function bringBackRecord(thread: AgentThread, found: BringBackTarget, thr
 export const commitCount = (count: number): string => plural(count, { one: '# commit', other: '# commits' })
 /** "2 files", in the reader's language. */
 export const fileCount = (count: number): string => plural(count, { one: '# file', other: '# files' })
-const short = (sha: string | undefined): string => (sha ?? '').slice(0, 7)
+const short = (sha: string | undefined): string => ltr((sha ?? '').slice(0, 7))
 
 /**
  * Where the target is checked out, as a sentence: the folder the parent works in, and the machine it is on when that is
  * not this thread's own. Each case is its own message, so a translation never stitches a sentence from pieces.
  */
-function whereSentence(target: string, place: 'project' | 'worktree' | 'none' | undefined, parentTitle: string, machine?: string): string {
+function whereSentence(branchName: string, place: 'project' | 'worktree' | 'none' | undefined, title: string, machineName?: string): string {
+  const target = ltr(branchName), parentTitle = own(title), machine = machineName === undefined ? undefined : own(machineName)
   if (place === 'worktree') return machine ? t`${target} is checked out in the worktree on ${machine} where ${parentTitle} works.` : t`${target} is checked out in the worktree where ${parentTitle} works.`
   return machine ? t`${target} is checked out in the project folder on ${machine}, where ${parentTitle} works.` : t`${target} is checked out in the project folder, where ${parentTitle} works.`
 }
 
+/** The press's name, "Bring changes to main", with the branch kept left to right. */
+export function bringWords(targetName: string): string {
+  const target = ltr(targetName)
+  return t`Bring changes to ${target}`
+}
+
 /** The offer's words, before any Git has run: what this branch came from and where that branch is checked out. */
 export function readyWords(found: BringBackTarget, parentTitle: string, machine?: string): { readonly lead: string; readonly rest: string } {
-  const { branch, target } = found
-  return { lead: t`${branch} was made from ${target}.`, rest: whereSentence(target, found.where, parentTitle, machine) }
+  const branch = ltr(found.branch), target = ltr(found.target)
+  return { lead: t`${branch} was made from ${target}.`, rest: whereSentence(found.target, found.where, parentTitle, machine) }
 }
 
 /** The question's words: why Git can't fast-forward, and what the merge commit would do. */
 export function questionWords(record: BringBack): { readonly title: string; readonly body: string } {
-  const { target, branch } = record
+  const target = ltr(record.target), branch = ltr(record.branch)
   const theirs = commitCount(record.targetCommits ?? 0), ours = commitCount(record.commits ?? 0)
   return {
     title: t`Make a merge commit on ${target}?`,
@@ -124,8 +132,8 @@ export interface OutcomeWords {
   readonly commit: boolean
 }
 /** Where the thread it began from sees the commits now, as a sentence of its own. */
-function seenSentence(record: BringBack, parentTitle: string, machine?: string): string {
-  const { target } = record
+function seenSentence(record: BringBack, title: string, machineName?: string): string {
+  const target = ltr(record.target), parentTitle = own(title), machine = machineName === undefined ? undefined : own(machineName)
   if (record.checkedOut === 'none') return t`No folder has ${target} checked out, so only the branch moved.`
   if (record.checkedOut === 'worktree') return machine ? t`${parentTitle} works on ${target} in its worktree on ${machine} and sees them now.` : t`${parentTitle} works on ${target} in its worktree and sees them now.`
   return machine ? t`${parentTitle} works on ${target} in the project folder on ${machine} and sees them now.` : t`${parentTitle} works on ${target} in the project folder and sees them now.`
@@ -135,13 +143,13 @@ function seenSentence(record: BringBack, parentTitle: string, machine?: string):
  * folder, an ignored file or Git refusing) and Git's words (`gitSaid`) stay as the host wrote them, in English, until host
  * protocol carries a code for them (ADR-0123).
  */
-export function outcomeWords(record: BringBack, parentTitle: string, machine?: string): OutcomeWords {
-  const { target, branch } = record
+export function outcomeWords(record: BringBack, title: string, machine?: string): OutcomeWords {
+  const target = ltr(record.target), branch = ltr(record.branch), parentTitle = own(title)
   if (record.status === 'done') {
     if (record.how === 'nothing') return { tone: 'ok', title: t`Nothing to bring back.`, body: t`${target} already has every commit on ${branch}.`, openParent: false, commit: false }
-    const seen = seenSentence(record, parentTitle, machine), commits = commitCount(record.commits ?? 0), head = short(record.head)
+    const seen = seenSentence(record, title, machine), commits = commitCount(record.commits ?? 0), head = short(record.head)
     if (record.how === 'merge-commit') {
-      const subject = record.subject ?? `Merge branch '${branch}' into ${target}`
+      const subject = own(record.subject ?? `Merge branch '${record.branch}' into ${record.target}`)
       return { tone: 'ok', title: t`Brought ${commits} to ${target} with a merge commit.`,
         body: `${t`Merge commit ${head} on ${target}: “${subject}”.`} ${seen}`, openParent: record.checkedOut !== 'none', commit: false }
     }

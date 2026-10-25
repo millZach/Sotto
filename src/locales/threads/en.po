@@ -191,12 +191,12 @@ msgid "{who} answered in {ms} ms."
 msgstr "{who} answered in {ms} ms."
 
 #: src/renderer/src/agents/BringChangesBack.tsx
-msgid "<0>{branch}</0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
-msgstr "<0>{branch}</0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
+msgid "<0><1>{branch}</1></0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
+msgstr "<0><1>{branch}</1></0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
 
 #: src/renderer/src/agents/BringChangesBack.tsx
-msgid "<0>{branch}</0> was made from <1>{target}</1>."
-msgstr "<0>{branch}</0> was made from <1>{target}</1>."
+msgid "<0><1>{branch}</1></0> was made from <2><3>{target}</3></2>."
+msgstr "<0><1>{branch}</1></0> was made from <2><3>{target}</3></2>."
 
 #. {five} is the number 5.
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -284,8 +284,7 @@ msgstr "Back to Cursor’s model makers"
 msgid "Bring changes back"
 msgstr "Bring changes back"
 
-#: src/renderer/src/agents/BringChangesBack.tsx
-#: src/renderer/src/agents/GitActionButton.tsx
+#: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "Bring changes to {target}"
 msgstr "Bring changes to {target}"
 

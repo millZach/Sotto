@@ -7,13 +7,14 @@ import type { GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile, GitChangedFiles } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
 import { Button } from '../components/Button'
+import { Isolated, plainText } from '../components/isolated'
 import { useDialogFocus } from '../components/useDialogFocus'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { bringBackTarget } from '../../../shared/bringChangesBack'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import { BringChangesBack } from './BringChangesBack'
-import { bringBackView, branchSignature, fileCount as changedFileCount, useBringBackDismissals } from './bringChangesBack.logic'
+import { bringWords, bringBackView, branchSignature, fileCount as changedFileCount, useBringBackDismissals } from './bringChangesBack.logic'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { useOptionalAgents, type AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
@@ -152,7 +153,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const changed = changedFileCount(Math.max(1, status?.changedFiles ?? 1))
   const uncommitted = status?.dirty ? t`Commit the ${changed} changed first.` : undefined
   const target = bringTarget?.target ?? ''
-  const bringMenu: PaneMenuItem[] = bringTarget ? [{ id: 'bring-changes-back', label: t`Bring changes to ${target}`, icon: <GitMerge size={15} aria-hidden="true" />,
+  const bringMenu: PaneMenuItem[] = bringTarget ? [{ id: 'bring-changes-back', label: plainText(bringWords(target)), content: <Isolated text={bringWords(target)} />, icon: <GitMerge size={15} aria-hidden="true" />,
     disabled: running || uncommitted !== undefined, ...(uncommitted ? { hint: uncommitted } : {}), run: () => bring() }] : []
   const menuGroups = [bringMenu, menu].filter(group => group.length > 0)
 

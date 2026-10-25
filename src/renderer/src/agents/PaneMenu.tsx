@@ -8,6 +8,8 @@ import { MoreHorizontal } from 'lucide-react'
 export interface PaneMenuItem {
   readonly id: string
   readonly label: string
+  /** What the row shows when it is more than its label's text, such as a branch name kept left to right. */
+  readonly content?: ReactNode
   readonly icon?: ReactNode
   readonly disabled?: boolean
   /** Why the row is disabled, shown as its tooltip and read with its name. */
@@ -79,7 +81,7 @@ export function PaneMenu({ groups, label = 'More actions', icon, text, className
       {shown.map((group, index) => <React.Fragment key={group[0]!.id}>
         {index > 0 ? <hr /> : null}
         {group.map(item => <button key={item.id} type="button" role="menuitem" className="pane-menu__item" data-tone={item.tone} tabIndex={-1} disabled={item.disabled} title={item.hint}
-          onClick={() => { close(true); item.run() }}>{item.icon}{item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
+          onClick={() => { close(true); item.run() }}>{item.icon}{item.content ?? item.label}{item.hint ? <span className="tt-visually-hidden">. {item.hint}</span> : null}</button>)}
       </React.Fragment>)}
     </div> : null}
   </div>

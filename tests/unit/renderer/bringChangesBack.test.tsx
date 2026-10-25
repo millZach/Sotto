@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GitActionButton } from '../../../src/renderer/src/agents/GitActionButton'
 import { BringBackDismissals, bringBackDismissals, bringBackView, outcomeWords, readyWords } from '../../../src/renderer/src/agents/bringChangesBack.logic'
+import { plainText } from '../../../src/renderer/src/components/isolated'
 import type { AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import type { AgentCommand, AgentState, AgentThread, AgentWorktree } from '../../../src/shared/agents'
@@ -42,6 +43,11 @@ function mount(current: AgentThread) {
   return { ...view, command, rerender: (next: AgentThread) => view.rerender(element(next)) }
 }
 const sent = (command: ReturnType<typeof vi.fn>): AgentCommand[] => command.mock.calls.map(([request]) => request as AgentCommand)
+/** An outcome's words as the page shows them, without the marks that keep a branch name left to right. */
+const outcome = (...args: Parameters<typeof outcomeWords>): ReturnType<typeof outcomeWords> => {
+  const words = outcomeWords(...args)
+  return { ...words, title: plainText(words.title), body: plainText(words.body) }
+}
 const strip = (): HTMLElement => screen.getByRole('region', { name: 'Bring changes back' })
 
 beforeEach(() => owl(true))
@@ -149,12 +155,12 @@ describe('the outcome, in the strip’s place', () => {
   })
 
   it('names the folder it left alone when main has uncommitted work there', () => {
-    const words = outcomeWords(record({ status: 'refused', refusal: 'target-uncommitted', files: 1, checkedOut: 'project' }), 'WAV preview stall')
+    const words = outcome(record({ status: 'refused', refusal: 'target-uncommitted', files: 1, checkedOut: 'project' }), 'WAV preview stall')
     expect(words).toMatchObject({ tone: 'error', title: 'Nothing was brought to main.', openParent: true,
       body: 'main is checked out in the project folder, which has uncommitted changes in 1 file, so Sotto didn’t touch it. Commit or set them aside in WAV preview stall, then try again.' })
-    expect(outcomeWords(record({ how: 'merge-commit', commits: 3, targetCommits: 2, head: '7c0e1d4aaa', subject: 'Merge branch \'sotto/wav-mid-chunk\' into main', checkedOut: 'project' }), 'WAV preview stall').title)
+    expect(outcome(record({ how: 'merge-commit', commits: 3, targetCommits: 2, head: '7c0e1d4aaa', subject: 'Merge branch \'sotto/wav-mid-chunk\' into main', checkedOut: 'project' }), 'WAV preview stall').title)
       .toBe('Brought 3 commits to main with a merge commit.')
-    expect(outcomeWords(record({ how: 'nothing', commits: 0 }), 'WAV preview stall')).toMatchObject({ title: 'Nothing to bring back.', body: 'main already has every commit on sotto/wav-mid-chunk.' })
+    expect(outcome(record({ how: 'nothing', commits: 0 }), 'WAV preview stall')).toMatchObject({ title: 'Nothing to bring back.', body: 'main already has every commit on sotto/wav-mid-chunk.' })
   })
 })
 
@@ -211,7 +217,7 @@ describe('a child on another machine than the thread it began from', () => {
 
   it('names the machine the branch is checked out on', () => {
     const found = { parentId: `host:${LAPTOP}:parent`, target: 'feat/x', branch: 'feat/x-2', where: 'project' as const, away: true }
-    expect(readyWords(found, 'WAV preview stall', 'forge').rest).toBe('feat/x is checked out in the project folder on forge, where WAV preview stall works.')
+    expect(plainText(readyWords(found, 'WAV preview stall', 'forge').rest)).toBe('feat/x is checked out in the project folder on forge, where WAV preview stall works.')
   })
 
   it('reads the outcome from the thread its commits went to, only when it names this child', () => {
@@ -220,13 +226,38 @@ describe('a child on another machine than the thread it began from', () => {
     expect(bringBackView(thread, [laptopParent({ broughtBack: done }), thread], new BringBackDismissals())).toMatchObject({ kind: 'outcome', record: done })
     const other = { ...done, from: `host:${FORGE}:another-child` }
     expect(bringBackView(thread, [laptopParent({ broughtBack: other }), thread], new BringBackDismissals())?.kind).toBe('ready')
-    expect(outcomeWords(done, 'WAV preview stall', 'This computer').body).toBe('Git fast-forwarded feat/x to a41c2e9; nothing else changed. WAV preview stall works on feat/x in the project folder on This computer and sees them now.')
+    expect(outcome(done, 'WAV preview stall', 'This computer').body).toBe('Git fast-forwarded feat/x to a41c2e9; nothing else changed. WAV preview stall works on feat/x in the project folder on This computer and sees them now.')
   })
 
   it('says why a check’s snapshot is never brought back, and when the parent left its branch', () => {
-    expect(outcomeWords(record({ status: 'refused', refusal: 'snapshot', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall').body)
+    expect(outcome(record({ status: 'refused', refusal: 'snapshot', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall').body)
       .toBe('feat/x-2 starts from a check’s snapshot of uncommitted changes, and Sotto won’t bring that back as a commit. Ask this thread to put its own commits on a branch made from feat/x, then try again.')
-    expect(outcomeWords(record({ status: 'refused', refusal: 'parent-moved', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall'))
+    expect(outcome(record({ status: 'refused', refusal: 'parent-moved', target: 'feat/x', branch: 'feat/x-2' }), 'WAV preview stall'))
       .toMatchObject({ title: 'Nothing was brought to feat/x.', body: 'WAV preview stall isn’t on feat/x any more, and Sotto doesn’t switch branches. Switch it back to feat/x there, then try again.', openParent: true })
+  })
+})
+
+describe('branch names inside translated sentences (ADR-0123)', () => {
+  const RTL = 'feat/إصلاح'
+  const isolated = (within: HTMLElement): string[] => [...within.querySelectorAll('bdi[dir="ltr"]')].map(item => item.textContent ?? '')
+  it('keeps every branch name left to right in the offer, its button and the menu, with no marks left in the page', () => {
+    mount(child({ worktree: worktree({ branch: RTL, git: status(RTL) }) }))
+    expect(isolated(strip())).toEqual([RTL, 'main', 'main', 'main'])
+    expect(strip().textContent).not.toMatch(/[⁦-⁩]/u)
+    fireEvent.click(screen.getByRole('button', { name: 'More Git actions' }))
+    const item = within(screen.getByRole('menu', { name: 'More Git actions' })).getAllByRole('menuitem')[0]!
+    expect(item).toHaveAccessibleName('Bring changes to main')
+    expect(isolated(item)).toEqual(['main'])
+  })
+
+  it('keeps them left to right in the question and in an outcome', () => {
+    const asks = mount(child({ worktree: worktree({ branch: RTL, git: status(RTL) }), bringBack: record({ status: 'asks', branch: RTL, commits: 1, targetCommits: 2 }) }))
+    const question = screen.getByRole('group', { name: 'Make a merge commit on main?' })
+    expect(isolated(question)).toEqual(['main', 'main', RTL, 'main'])
+    asks.unmount()
+    mount(child({ worktree: worktree({ branch: RTL, git: status(RTL) }), bringBack: record({ status: 'refused', refusal: 'parent-moved', branch: RTL }) }))
+    const alert = screen.getByRole('alert', { name: 'Nothing was brought to main.' })
+    expect(isolated(alert)).toEqual(['main', 'main', 'main'])
+    expect(alert.textContent).not.toMatch(/[⁦-⁩]/u)
   })
 })

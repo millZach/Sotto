@@ -2,7 +2,8 @@ import React, { useEffect, useId, useRef, type ReactNode } from 'react'
 import { AlertCircle, CheckCircle2, GitMerge, X } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
-import { outcomeWords, questionWords, readyWords, fileCount, type BringBackView } from './bringChangesBack.logic'
+import { Isolated, plainText } from '../components/isolated'
+import { bringWords, outcomeWords, questionWords, readyWords, fileCount, type BringBackView } from './bringChangesBack.logic'
 import './bringChangesBack.css'
 
 /**
@@ -48,7 +49,7 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
   const notNow = (): void => { restore.current = true; onNotNow() }
   const dismiss = (): void => { restore.current = true; onDismiss() }
   const { target } = view.found
-  const bring = t`Bring changes to ${target}`
+  const bring = <Isolated text={bringWords(target)} />
   if (view.kind === 'ready' || view.kind === 'uncommitted') {
     const words = readyWords(view.found, parentTitle, machine)
     const { branch } = view.found
@@ -58,8 +59,8 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
       <GitMerge size={16} aria-hidden="true" className="bring-back__icon" />
       <p id={reasonId} className="bring-back__text tt-paragraph">
         {blocked
-          ? <Trans><strong>{branch}</strong> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work.</Trans>
-          : <><Trans><strong>{branch}</strong> was made from <strong>{target}</strong>.</Trans> {words.rest}</>}
+          ? <Trans><strong><bdi dir="ltr">{branch}</bdi></strong> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work.</Trans>
+          : <><Trans><strong><bdi dir="ltr">{branch}</bdi></strong> was made from <strong><bdi dir="ltr">{target}</bdi></strong>.</Trans> <Isolated text={words.rest} /></>}
       </p>
       <div className="bring-back__actions">
         {blocked ? <Button variant="secondary" onClick={onCommit}><Trans>Commit…</Trans></Button> : null}
@@ -79,7 +80,7 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
     return <section ref={region} className="bring-back" data-tone="ask" role="group" aria-labelledby={titleId}
       onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); notNow() } }}>
       <GitMerge size={16} aria-hidden="true" className="bring-back__icon" />
-      <p className="bring-back__text tt-paragraph"><strong id={titleId}>{words.title}</strong> {words.body}</p>
+      <p className="bring-back__text tt-paragraph"><strong id={titleId}><Isolated text={words.title} /></strong> <Isolated text={words.body} /></p>
       <div className="bring-back__actions">
         <Button ref={first} variant="primary" aria-disabled={busy || undefined} aria-busy={busy || undefined} onClick={() => { if (!busy) onMergeCommit() }}><Trans>Make merge commit</Trans></Button>
         <Button variant="secondary" disabled={busy} onClick={notNow}><Trans>Not now</Trans></Button>
@@ -88,12 +89,12 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
   }
   const words = outcomeWords(view.record, parentTitle, machine)
   const Icon = words.tone === 'error' ? AlertCircle : CheckCircle2
-  return <section ref={region} tabIndex={-1} className="bring-back" data-tone={words.tone} role={words.tone === 'error' ? 'alert' : 'status'} aria-label={words.title}
+  return <section ref={region} tabIndex={-1} className="bring-back" data-tone={words.tone} role={words.tone === 'error' ? 'alert' : 'status'} aria-label={plainText(words.title)}
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); dismiss() } }}>
     <Icon size={16} aria-hidden="true" className="bring-back__icon" />
     <div className="bring-back__text tt-paragraph">
-      <p><strong>{words.title}</strong> {words.body}</p>
-      {words.gitSaid ? <pre className="bring-back__git-said">{words.gitSaid}</pre> : null}
+      <p><strong><Isolated text={words.title} /></strong> <Isolated text={words.body} /></p>
+      {words.gitSaid ? <pre className="bring-back__git-said" dir="ltr">{words.gitSaid}</pre> : null}
     </div>
     <div className="bring-back__actions">
       {words.commit ? <Button variant="secondary" onClick={onCommit}><Trans>Commit…</Trans></Button> : null}
