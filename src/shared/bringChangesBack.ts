@@ -144,8 +144,10 @@ export function bringBackTarget(thread: Linked, threads: readonly Linked[]): Bri
   const target = branchOf(parent.worktree)
   if (!target || target !== made) return null
   const branch = branchOf(worktree)
-  if (!branch || branch === target) return null
   const away = (parseHostEntityKey(parentId)?.hostId ?? null) !== (parseHostEntityKey(thread.id)?.hostId ?? null)
+  // One name is one branch only within one repository. A child on another machine is in another clone, where a branch
+  // may well have the parent's name (a laptop's feat/x starting a forge worker on feat/x), and it is offered.
+  if (!branch || !away && branch === target) return null
   return { parentId, target, branch, where: parent.worktree?.mode === 'independent' ? 'worktree' : 'project', away }
 }
 

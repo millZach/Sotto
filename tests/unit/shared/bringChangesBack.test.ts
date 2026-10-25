@@ -93,6 +93,16 @@ describe('a worker started from a thread’s branch (#1033) brings its commits b
     expect(bringBackTarget(own, [thread('parent', shared('feat/x')), own])).toBeNull()
   })
 
+  it('offers a child on another machine whose branch has the parent’s name, and not one in the same repository', () => {
+    const sameName = (madeFrom: { thread: string; host?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x', git: status('feat/x'),
+      incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom })
+    const child = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent', host: LAPTOP }))
+    expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x')), child]))
+      .toEqual({ parentId: hostEntityKey(LAPTOP, 'parent'), target: 'feat/x', branch: 'feat/x', where: 'project', away: true })
+    const here = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent' }))
+    expect(bringBackTarget(here, [thread(hostEntityKey(FORGE, 'parent'), shared('feat/x')), here])).toBeNull()
+  })
+
   it('offers nothing once the thread it began from is on another branch', () => {
     const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP }))
     expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('main')), child])).toBeNull()
