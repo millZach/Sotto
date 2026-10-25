@@ -2131,10 +2131,8 @@ textarea.tt-input {
 .voice-wave--listening[data-size="hero"] .widget-bars { transform: scale(3); transform-origin: center; }
 .voice-wave--listening[data-size="deck"] .widget-bars { transform: scale(1.5); }
 
-/* The effort colourway motion (ADR-0019), shared by the effort card, the composer outline and the Appearance sample, so
-   whichever surface loads first has them. The ring angle is registered so the conic gradient can turn. */
-@property --effort-ring-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-@keyframes effort-ring { to { --effort-ring-angle: 360deg; } }
+/* The effort colourway motion (ADR-0019), shared by the effort card, the composer and the Appearance sample, so
+   whichever surface loads first has them. */
 @keyframes effort-wash { from { top: 100%; } to { top: -220%; } }
 /* The letters take the colour in turn and the word lifts as one. Nothing inside the word may move: a colourway
    that paints the word as a gradient clips it to the glyphs, and a transformed or positioned descendant drops
@@ -2146,5 +2144,5 @@ textarea.tt-input {
 /* High contrast drops fills, so a card that has no transparent border to show keeps an edge in the text colour
    (ADR-0110). The cards with a transparent border already get theirs from it. */
 @media (forced-colors: active) {
-  :is(.usage-index, .usage-stage, .settings-view .settings-rows, .settings-view .provider-detail) { outline: 1px solid; outline-offset: -1px; }
+  :is(.usage-index, .usage-stage, .settings-view .settings-rows, .providers-list) { outline: 1px solid; outline-offset: -1px; }
 }

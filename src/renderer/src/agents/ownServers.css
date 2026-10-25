@@ -65,6 +65,6 @@
 /* The model menu's last row in OpenCode's source list: Your own server…, which opens the dialog. */
 .model-picker__sources > button.model-picker__own > svg:first-child { color: var(--tt-text-muted); }
 .model-picker__sources > button.model-picker__own b { color: var(--tt-text); font-weight: 600; }
-/* The provider tiles follow the group with the room a group takes from the one before it. */
-.providers-settings > .settings-group + .providers-workspace { margin-top: 26px; }
+/* The provider list follows the group with the room a group takes from the one before it. */
+.providers-settings > .settings-group + .providers-list { margin-top: 26px; }
 .providers-settings > .settings-group:first-child { margin-top: 4px; }

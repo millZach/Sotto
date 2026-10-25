@@ -34,7 +34,7 @@ import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
-import { DelegatedBy, DelegationComposerNote } from './DelegationCards'
+import { DelegatedBy, DelegationComposerNote } from './DelegatedWork'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 import { useOwlFeature } from '../state/owlFeature'
@@ -103,7 +103,8 @@ function shownHeight(compose: HTMLElement): number {
  * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
  * keeps room to bring its last line clear of the card. While the composer is slim (ADR-0125) it keeps that room, so the
  * transcript neither moves nor changes size; the pane learns how much of it shows, for the Jump button, and keeps the
- * card's full height, which Watcher's night scene lays out by.
+ * card's full height, which Watcher's night scene lays out by. While the card moves between the two the composer keeps
+ * that room too (slimComposer.ts), and nothing is read until the card has settled.
  */
 function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim: boolean): () => void {
   const measure = useRef<() => void>(() => undefined)
@@ -112,12 +113,20 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
     const pane = element?.parentElement
     if (!element || !pane || typeof ResizeObserver === 'undefined') return
     measure.current = () => {
-      pane.style.setProperty('--thread-compose-measured', `${element.offsetHeight}px`)
-      // While the card moves between slim and full its box is neither; it is read again once it has settled.
       const card = element.querySelector<HTMLElement>(':scope > .thread-prompt')
       if (card != null && slimMoving(card)) return
+      // The composer's height to the fraction of a pixel, as it is laid out. The transcript fills what the composer's room
+      // leaves, so a room rounded up past the composer, as whole pixels at 150% display scaling can be, runs the transcript
+      // past the pane's foot and gives the pane a scroll bar of its own.
+      pane.style.setProperty('--thread-compose-measured', `${element.getBoundingClientRect().height}px`)
       pane.style.setProperty('--thread-compose-shown', `${shownHeight(element)}px`)
-      if (card != null && !element.hasAttribute('data-slim')) pane.style.setProperty('--thread-prompt-full', `${card.offsetHeight}px`)
+      if (card != null && !element.hasAttribute('data-slim')) {
+        // The full card's height and how far its foot stands above the composer's, to the fraction of a pixel, so
+        // Watcher's night scene keeps the card's place exactly while it is slim, whatever the row under it does.
+        const box = card.getBoundingClientRect()
+        pane.style.setProperty('--thread-prompt-full', `${box.height}px`)
+        pane.style.setProperty('--thread-prompt-foot', `${element.getBoundingClientRect().bottom - box.bottom}px`)
+      }
     }
     const observer = new ResizeObserver(() => measure.current())
     // The border box: a short pane changes only the composer's padding, which its content box does not see.
@@ -125,7 +134,7 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
     return () => {
       observer.disconnect()
       measure.current = () => undefined
-      for (const name of ['--thread-compose-measured', '--thread-compose-shown', '--thread-prompt-full']) pane.style.removeProperty(name)
+      for (const name of ['--thread-compose-measured', '--thread-compose-shown', '--thread-prompt-full', '--thread-prompt-foot']) pane.style.removeProperty(name)
     }
   }, [compose])
   // Slim or full, the composer's own box keeps its height; what shows of it changes.
@@ -385,7 +394,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
     </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
-      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead}>
+      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}

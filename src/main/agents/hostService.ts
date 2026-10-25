@@ -1,3 +1,4 @@
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
@@ -86,6 +87,8 @@ export interface HostService {
   readonly supportsWatcherOutcomes?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
+  /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
+  readonly supportsWatcherCursor?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
@@ -110,6 +113,11 @@ export interface HostService {
   readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Null when the host cannot read its store, or keeps none.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -172,6 +180,8 @@ export interface HostService {
   subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
   /** The host offers the iPhone's Agents view (ADR-0103): its Owl answer turns it on. */
   readonly supportsAgentsView?: boolean
+  /** The host keeps attached files that are not images (`file-staging`, ADR-0131): its Owl answer turns it on. */
+  readonly supportsFileStaging?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
@@ -275,8 +285,12 @@ export class LocalHostService implements HostService {
   constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
+    /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
+    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
+    /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
+    fileStaging?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -295,6 +309,7 @@ export class LocalHostService implements HostService {
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
+  get supportsFileStaging(): boolean { return this.options.fileStaging === true }
   /** Reads the threads as the host last published them, without copying them. */
   async threadDelegations(threadId: string): Promise<HostThreadDelegations> {
     if (!this.options.agentsView) throw new Error('The Agents view is unavailable on this host.')
@@ -306,6 +321,9 @@ export class LocalHostService implements HostService {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)
     return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
+  }
+  async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
+    return this.options.prompts?.threadPrompts(threadId, beforeMessageId) ?? null
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))

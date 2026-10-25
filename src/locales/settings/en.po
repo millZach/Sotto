@@ -369,6 +369,10 @@ msgid "{name} runs it, so it can start the host for {who}."
 msgstr "{name} runs it, so it can start the host for {who}."
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
+msgstr "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
+
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 msgstr "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 
@@ -665,8 +669,8 @@ msgid "500 entries"
 msgstr "500 entries"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgid "A band of text characters sweeps across the window."
+msgstr "A band of text characters sweeps across the window."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
@@ -683,6 +687,10 @@ msgstr "A Git service, not a computer"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr "A host name, an alias from your SSH configuration or user@server."
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "A line of stars sweeps across, with a faint trail behind it."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -1052,6 +1060,11 @@ msgstr "Back"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr "Background"
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "Band"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -1456,6 +1469,10 @@ msgstr "Commit and pull request style"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Commit subject"
 msgstr "Commit subject"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
+msgstr "Compact idle threads"
 
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -2783,6 +2800,11 @@ msgstr "Night falls between Threads and Watcher"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Night falls look"
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls speed"
 msgstr "Night falls speed"
 
@@ -3979,8 +4001,8 @@ msgid "Signing in…"
 msgstr "Signing in…"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4283,6 +4305,11 @@ msgstr "SSH password"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr "Stacked"
+
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "Stars"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"
@@ -4944,6 +4971,10 @@ msgstr "The widget follows {system} light or dark mode."
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr "The widget follows the Omarchy theme’s mode."
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

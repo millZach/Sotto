@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { slimMoving } from '../agents/slimComposer'
 import { useReducedMotion } from '../state/reducedMotion'
 import {
-  addRipple, frameDelay, frameDue, frameSleep, glassOpacity, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
+  addRipple, frameDelay, frameDue, frameSleep, glassOpacity, heldRoom, inMargin, liveRipples, nextPlace, owlAt, planFlight, sceneInk, stayAt,
   type Box, type Look, type OwlStage, type Rgb, type Ripple, type SceneLayout, type SceneMeasure, type WatcherOwlState, type Word,
 } from './nightScene'
+import { toRgb } from './canvasColor'
 import { NightScenePainter, type SceneFrame } from './nightScenePainter'
 import { OwlFamily, pileLabel, type FamilyMotion, type OwlMood, type ThreadOwlPose, type WatchedOwl } from './owlFamily'
 import { watchResolution } from './watchResolution'
@@ -33,10 +35,15 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const at = (element: Element): Box => relative(element.getBoundingClientRect(), base, top)
   const card = at(form)
   if (card.w < 1 || card.h < 1) return null
-  // While the composer is slim (ADR-0125) the scene keeps the full card's place, which the pane remembers, so it holds
-  // still as the card changes.
-  const full = compose.hasAttribute('data-slim') ? parseFloat(getComputedStyle(compose).getPropertyValue('--thread-prompt-full')) : Number.NaN
-  const composer = Number.isFinite(full) && full > card.h ? { ...card, y: card.y + card.h - full, h: full } : card
+  // While the composer is slim (ADR-0125) the scene keeps the full card's place, which the pane remembers as the card's
+  // height and how far its foot stood above the composer's, so it holds still as the card and the row under it change.
+  const slim = compose.hasAttribute('data-slim'), style = getComputedStyle(compose)
+  const full = slim ? parseFloat(style.getPropertyValue('--thread-prompt-full')) : Number.NaN
+  const foot = slim ? parseFloat(style.getPropertyValue('--thread-prompt-foot')) : Number.NaN
+  const room = at(compose)
+  const composer = !Number.isFinite(full) ? card
+    : Number.isFinite(foot) ? { ...card, y: room.y + room.h - foot - full, h: full }
+    : full > card.h ? { ...card, y: card.y + card.h - full, h: full } : card
   const words: Box[] = []
   const shown = (box: Box): boolean => box.w > 1 && box.h > 1
   const word = (element: Element): void => { const box = at(element); if (shown(box) && element.textContent?.trim()) words.push(box) }
@@ -56,16 +63,6 @@ export function measureRoom(pane: HTMLElement): SceneMeasure | null {
   const scrubber = pane.querySelector('.message-scrubber')
   const lane = scrubber === null ? undefined : at(scrubber)
   return { width: pane.clientWidth, height: pane.clientHeight, header, composer, words, ...lane !== undefined && shown(lane) ? { lane } : {} }
-}
-
-/** A colour as the canvas paints it, whatever form the style gave it in. */
-export function toRgb(value: string, pixel: CanvasRenderingContext2D): Rgb | null {
-  pixel.clearRect(0, 0, 1, 1)
-  pixel.fillStyle = 'rgba(0, 0, 0, 0)'
-  pixel.fillStyle = value
-  pixel.fillRect(0, 0, 1, 1)
-  const [r = 0, g = 0, b = 0, a = 0] = pixel.getImageData(0, 0, 1, 1).data
-  return a === 0 ? null : { r, g, b }
 }
 
 /** A colour words are written in, with its opacity, so a translucent one is counted as it shows. */
@@ -187,6 +184,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     let request: number | null = null
     let layoutRequest: number | null = null
     let measured = ''
+    // The room as last measured with the composer full, which the scene keeps while the composer is slim.
+    let fullRoom: SceneMeasure | null = null
     let inked = ''
     let layout: SceneLayout | null = null
     let family: OwlFamily | null = kept.current.family
@@ -198,8 +197,10 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     /** When the last frame started, and how long after it the next is due; null while nothing moves. */
     let last = Number.NEGATIVE_INFINITY
     let delay: number | null = 0
-    // An end-to-end run counts the frames painted on the pane, so a test can tell drawing from holding still.
+    // An end-to-end run counts the frames painted on the pane, so a test can tell drawing from holding still, and the
+    // layouts, so a test can tell the scene holding still from laying itself out again.
     let frames = 0
+    let layouts = 0
     const counted = window.sottoE2E !== undefined
     origin.current ??= performance.now()
     const clock = (): number => (performance.now() - origin.current!) / 1000
@@ -325,7 +326,13 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
     const relayout = (): void => {
       layoutRequest = null
       if (disposed) return
-      const measure = measureRoom(pane)
+      // While the composer's card moves between slim and full its box is neither: the scene keeps its layout and looks
+      // again next frame, until the card has settled.
+      const card = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose > .thread-prompt')
+      if (card !== null && slimMoving(card)) { scheduleLayout(); return }
+      const room = measureRoom(pane)
+      if (card?.parentElement?.hasAttribute('data-slim') !== true) fullRoom = room
+      const measure = heldRoom(room, fullRoom)
       const dpr = window.devicePixelRatio || 1
       const key = measure === null ? '' : JSON.stringify([measure, dpr])
       if (key === measured) return
@@ -333,8 +340,9 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       observeParts()
       const next = measure === null ? null : painter.resize(measure, dpr)
       if (next === null) {
-        // No composer to set the column by, such as a first entry whose composer went with the last model: nothing is
-        // drawn, and no frame is asked for, until the room can be measured again.
+        // No composer to set the column by, such as a first entry whose composer went with the last model, or the room
+        // between one Watcher and the next: the scene keeps its last frame, and no frame is asked for, until the room can
+        // be measured again.
         painter.invalidate()
         halt()
         layout = null
@@ -346,6 +354,7 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       }
       const t = clock()
       layout = next
+      if (counted) pane.dataset.nightSceneLayouts = String(++layouts)
       // A new layout ends every flight where it was going.
       if (watcher.flight !== null) watcher = { at: watcher.flight.to, side: watcher.flight.side, flight: null, next: watcher.next }
       if (next.mode !== 'trees') watcher = { at: 'home', side: 'left', flight: null, next: watcher.next }
@@ -359,7 +368,11 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
         takeOwls()
       }
       readInk()
-      wake()
+      // Laying out cleared the canvases: the scene is drawn again in this same frame, so it never shows blank.
+      halt()
+      delay = 0
+      last = Number.NEGATIVE_INFINITY
+      frame(performance.now())
     }
     const scheduleLayout = (): void => { if (layoutRequest === null && !disposed) layoutRequest = requestAnimationFrame(relayout) }
 

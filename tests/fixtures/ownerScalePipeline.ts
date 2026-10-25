@@ -229,7 +229,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     hosts: { claude, codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
-      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode') } })
+      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor') } })
   shadows.tap(native, 'provider switch')
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
   shadows.tapAccept(workspace)

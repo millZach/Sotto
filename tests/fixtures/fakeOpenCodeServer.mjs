@@ -39,7 +39,7 @@ if (args.includes('--version')) {
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify({ ...frame, process: process.pid }) + '\n')
 const violation = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason, process: process.pid }) + '\n')
 const MODELS = startup.models ?? [
-  { id: 'fixture-model', modelID: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
+  { id: 'fixture-model', modelID: 'fixture-model', providerID: 'opencode', name: 'Fixture Model', capabilities: { tools: true, input: ['text', 'image', 'pdf'], output: ['text'] },
     variants: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },
   { id: 'text-only', modelID: 'text-only', providerID: 'opencode', name: 'Text Only', capabilities: { tools: true, input: ['text'], output: ['text'] },
     variants: [], enabled: true, status: 'active', limit: { context: 200000, output: 32000 } },

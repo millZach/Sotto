@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 
+import sharp from 'sharp'
 import { expect, test, type Page } from '@playwright/test'
 
 import { E2E_THREADS_NOW } from '../../src/shared/e2e'
@@ -13,6 +14,7 @@ import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { laneBackgrounds, tickContrast } from './support/scrubberLane'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -181,8 +183,10 @@ async function sceneHolds(page: Page, key: string, landscape = true): Promise<vo
 }
 
 /**
- * The message scrubber's lane, when a long conversation shows it, holds none of the scene: not one painted pixel on
- * either canvas inside it, and no thread owl's button over it (ADR-0109).
+ * The message scrubber's lane, when a long conversation shows it, paints nothing of its own: the sky and the hills run on
+ * under it at the column's share, so its ticks float over them, while no owl is drawn in it and no thread owl's button
+ * lies over it (ADR-0109, amended October 24, 2026). Its ticks keep 3:1 against what lies beside them on screen, the
+ * resting lane's faintness and the scene's glyphs included.
  */
 async function laneHolds(page: Page, key: string): Promise<void> {
   const lane = page.locator('#watcher-pane .message-scrubber')
@@ -200,6 +204,13 @@ async function laneHolds(page: Page, key: string): Promise<void> {
       let painted = 0
       for (let i = 3; i < data.length; i += 4) if (data[i]! > 0) painted++
       out[canvas.className] = painted
+      // The margin just outside the lane, down the same rows: where the scene draws a landscape there, it runs on under the
+      // lane too. A narrow window draws none, only the rail of eyes.
+      const side = Math.max(1, Math.min(x0, x1 - x0))
+      const beside = canvas.getContext('2d')!.getImageData(x0 - side, y0, side, Math.max(1, y1 - y0)).data
+      let outside = 0
+      for (let i = 3; i < beside.length; i += 4) if (beside[i]! > 0) outside++
+      out[`${canvas.className} beside`] = outside
     }
     out.owlButtons = [...pane.querySelectorAll(':scope > .watcher-scene--owls > .watcher-scene__owl')].filter(button => {
       const own = button.getBoundingClientRect()
@@ -207,8 +218,35 @@ async function laneHolds(page: Page, key: string): Promise<void> {
     }).length
     return out
   })
-  for (const [part, painted] of Object.entries(reading)) expect(painted, `${part} in the scrubber's lane, ${key}`).toBe(0)
-  recorded[`lane-${key}`] = reading
+  if (reading['watcher-scene watcher-scene--land beside']! > 0) expect(reading['watcher-scene watcher-scene--land'], `the landscape under the scrubber's lane, ${key}`).toBeGreaterThan(0)
+  expect(reading['watcher-scene watcher-scene--owl'], `owls in the scrubber's lane, ${key}`).toBe(0)
+  expect(reading.owlButtons, `thread owls' buttons over the scrubber's lane, ${key}`).toBe(0)
+  expect(await laneBackgrounds(page, '#watcher-pane'), `what the scrubber's lane paints, ${key}`).toEqual([])
+  const decode = async (png: Buffer) => { const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, width: info.width, height: info.height, channels: info.channels } }
+  // The same ticks with the scene and over the bare room, the scene's canvases hidden for the second capture.
+  const read = async (): Promise<{ scene: number; bare: number; ticks: number }> => {
+    const scene = await tickContrast(page, '#watcher-pane', await page.screenshot(), decode)
+    await page.evaluate(() => { for (const canvas of document.querySelectorAll<HTMLElement>('#watcher-pane > canvas.watcher-scene')) canvas.style.visibility = 'hidden' })
+    const bare = await tickContrast(page, '#watcher-pane', await page.screenshot(), decode)
+    await page.evaluate(() => { for (const canvas of document.querySelectorAll<HTMLElement>('#watcher-pane > canvas.watcher-scene')) canvas.style.removeProperty('visibility') })
+    return { scene: scene.worst, bare: bare.worst, ticks: scene.ticks }
+  }
+  // At rest the lane is faint on purpose (ADR-0109).
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(200)
+  const rest = await read()
+  // Pointed at, as the reader reads it, every tick keeps 3:1 over the scene.
+  const box = (await lane.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + 4)
+  await expect(lane).toHaveCSS('opacity', '1')
+  await page.waitForTimeout(200)
+  const active = await read()
+  await page.mouse.move(0, 0)
+  recorded[`lane-${key}`] = { ...reading, rest, active }
+  expect(rest.ticks, `ticks read, ${key}`).toBeGreaterThan(0)
+  // At rest the lane is faint on purpose, under 3:1 over the bare room too; over the scene it still shows.
+  expect(rest.scene, `the resting ticks over the scene, against ${rest.bare} over the bare room, ${key}`).toBeGreaterThan(1.2)
+  expect(active.scene, `the ticks pointed at over the scene, against ${active.bare} over the bare room, ${key}`).toBeGreaterThanOrEqual(3)
 }
 
 test.describe("Watcher's night scene on the built app", () => {
@@ -287,6 +325,41 @@ test.describe("Watcher's night scene on the built app", () => {
       }))
     })
   }
+
+  test('a conversation longer than its window marks every message sent to Watcher and reaches the first', async () => {
+    const turns = 60
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedRoom(page, true, [['footer-links', 'running']])
+      await openRoom(page)
+      await page.evaluate(async ({ thread, now, turns }) => {
+        await window.sottoE2E!.agentEvent!({ type: 'history', threadId: thread, text: '', messages: Array.from({ length: turns * 2 }, (_, index) => ({
+          id: `long-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
+          text: index % 2 ? `Watching it. Package (Windows) is still running for message ${(index - 1) / 2 + 1}.` : `Is the release thread green yet? (${index / 2 + 1})`,
+          createdAt: new Date(now - (turns * 2 - index) * 60_000).toISOString() })) })
+      }, { thread: CURRENT, now: E2E_THREADS_NOW, turns })
+      const pane = page.locator('#watcher-pane')
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      // Watcher's conversation comes back from another page on its newest ten turns, from the thread's store.
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Dictate', exact: true }).click()
+      await expect(pane).toHaveCount(0)
+      await openRoom(page)
+      await expect(pane.getByText(`Is the release thread green yet? (${turns})`, { exact: true })).toBeVisible()
+      await expect(pane.getByText('Is the release thread green yet? (1)', { exact: true })).toHaveCount(0)
+      // Everything the window holds is drawn, and the rest is only in the store.
+      await expect(pane.getByRole('button', { name: 'Show earlier messages', exact: true })).toBeVisible()
+      const ticks = pane.getByRole('navigation', { name: 'Messages you sent' }).getByRole('button')
+      await expect(ticks).toHaveCount(turns)
+      await ticks.nth(turns - 1).focus()
+      await page.keyboard.press('Home')
+      await expect(page.locator('.message-scrubber__card')).toContainText(`Message 1 of ${turns}`)
+      await expect(page.locator('.message-scrubber__card')).toContainText('Watcher replied')
+      await page.keyboard.press('Enter')
+      await expect(pane.locator('[data-message-id="long-0"]')).toBeFocused()
+      await expect(ticks).toHaveCount(turns)
+    }))
+  })
 
   test('reduced motion: nothing flies, owls sit from the first frame, and the scene holds still', async () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { motion: 'reduced', live: true }), async (launched) => {

@@ -14,9 +14,9 @@ The thread composer floats over the transcript's foot, so the thread runs on und
 
 **2. It comes back full** when the user scrolls back within 160 pixels of the end, clicks it, Tabs into it, types (a printable key pressed in the transcript goes to the composer), or a draft appears by paste, drop or dictation. A draft keeps it full while reading back. A press on the slim disc acts where it stands and does not bring the composer back, so the disc does not move from under the pointer.
 
-**3. The transcript does not move.** The composer keeps the full card's room while slim, so the transcript's size and its padding stay as they were: its last line still comes clear at the end, and slimming never moves the reader back across the 160-pixel line. **Jump to latest** sits just above whichever height shows.
+**3. The transcript does not move.** The composer keeps the full card's room while slim and while the card moves between the two, so the transcript's size and its padding stay as they were: its last line still comes clear at the end, and slimming never moves the reader back across the 160-pixel line. **Jump to latest** sits just above whichever height shows.
 
-**4. Motion.** The card moves between the two heights over 200 milliseconds; with reduced motion it changes at once. Nothing is announced; the textbox and the disc keep their names.
+**4. Motion.** The card moves between the two heights over 200 milliseconds; with reduced motion it changes at once. Only its top moves: the branch toolbar and the row under the card hide but keep their place while slim, so the card's foot stays where it stood (the user's ask on October 24, 2026: "no movement other than the shrink of the composer"). Nothing beside it moves while it does: not the transcript, the pane's scroll or Watcher's night scene (October 24, 2026, after the user's report on Owl 0.1.41; `docs/verification/composer-slim-steady.md`). Nothing is announced; the textbox and the disc keep their names.
 
 **5. Cost.** The transcript tells the pane only when the reader crosses the line, never on each scroll, so a scroll does no React work of its own.
 

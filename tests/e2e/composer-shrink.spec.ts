@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { hostKeysPerTest } from './support/hostKeys'
+import { longHistory } from './support/longHistory'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -46,14 +47,7 @@ async function selectThread(page: Page, title: string): Promise<void> {
 
 /** A thread long enough to read back through. */
 async function history(page: Page, threadId: string): Promise<void> {
-  await page.evaluate(async threadId => {
-    await window.sottoE2E!.agentEvent!({ type: 'history', threadId, text: '', messages: Array.from({ length: 16 }, (_, index) => ({
-      id: `${threadId}-slim-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const,
-      text: index % 2
-        ? `Reply ${(index + 1) / 2}. The preview plays a two-second sample through the selected voice, and the key stays in the system keychain rather than settings.json. Nothing else in the window changed.`
-        : `Question ${index / 2 + 1}: can the preview button sit beside each voice, and can the key move into the keychain?`,
-      createdAt: new Date(Date.UTC(2026, 9, 23, 9, index * 3)).toISOString() })) })
-  }, threadId)
+  await longHistory(page, threadId, `${threadId}-slim`)
 }
 
 const paneOf = (page: Page, threadId: string): Locator => page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
@@ -77,7 +71,7 @@ async function shape(pane: Locator): Promise<Shape> {
     const card = compose.querySelector<HTMLElement>(':scope > .thread-prompt')!
     const editor = card.querySelector<HTMLElement>('.prompt-editor')!
     const disc = card.querySelector<HTMLElement>('.thread-prompt__actions > button:not(.thread-prompt__steer)')!
-    const shown = (node: Element | null): boolean => node !== null && node.getBoundingClientRect().height > 0 && getComputedStyle(node).display !== 'none'
+    const shown = (node: Element | null): boolean => node !== null && node.getBoundingClientRect().height > 0 && getComputedStyle(node).display !== 'none' && getComputedStyle(node).visibility !== 'hidden'
     const editorBox = editor.getBoundingClientRect(), discBox = disc.getBoundingClientRect(), cardBox = card.getBoundingClientRect()
     const jump = element.querySelector('.thread-transcript__jump')
     return {

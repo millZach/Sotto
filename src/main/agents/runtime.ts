@@ -13,6 +13,8 @@ import { GrokAcpHost } from './grok'
 import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
+import { CursorAcpHost } from './cursor'
+import { CursorSignIn } from './cursorSignIn'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { openCodeForOwnServers } from '../ownModelServers/openCode'
 import { HeldProviderHost } from './heldProviderGate'
@@ -42,6 +44,7 @@ import { GitPullRequests } from './gitPullRequests'
 import { commitMessageWriter } from '../llm/commitMessage'
 import { pullRequestTextWriter } from '../llm/pullRequestText'
 import { WorktreeCleanup, type WorktreeCleanupDependencies } from './worktreeCleanup'
+import { IdleCompaction } from './idleCompaction'
 import { RestartResume } from './restartResume'
 import type { AgentHost } from './host'
 import { UsageService } from './usageService'
@@ -78,6 +81,11 @@ export interface AgentRuntimeOptions {
   pullRequestViewEnabled?: boolean
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
+  /**
+   * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
+   * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
+   */
+  attachAnyFile?: boolean
   /**
    * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
@@ -156,6 +164,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // it in over the host connection and opens its pages itself (#1107).
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
+    // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
+    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -166,6 +176,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
+      cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
@@ -224,6 +235,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.bindRequestDraftDecision ? { bindRequestDraftDecision: options.bindRequestDraftDecision } : {}),
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
+    ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
@@ -304,11 +316,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // A note already waiting in a queue goes only while both are still on; without the feature, none goes.
   if (restartResume) agentControl.useRestartResume({ due: () => options.settings().resumeThreadsAfterRestart,
     sending: threadId => restartResume.noteSending(threadId), unsent: threadId => restartResume.noteUnsent(threadId) })
+  // Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted while its prompt cache is warm.
+  // The switch is read at every sweep, so turning it off stops the next one without a restart.
+  const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads })
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
     if (watcherStopped) return
     watcherStopped = true
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -371,6 +387,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
   } catch (error) {
     await restartResume?.freeze()
+    idleCompaction.stop()
     watcher?.close()
     delegation?.close()
     continuation?.close()
@@ -386,8 +403,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts,
+    prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
+    ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which is never on a headless host.
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
     ...(usage ? { usage, mayClearUsage: client => (options.authority?.mayGrant(client) ?? mayGrantLocally(client)).allowed } : {}),
@@ -398,5 +417,18 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, prepareForShutdown, close }
+  // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
+  // Cursor a desktop signs in through the provider sign-in request instead.
+  const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
+  const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
+    configDirectory: cursorHost.folder, program: () => cursorHost.clientProgram(), openExternal: async url => { await options.openExternal(url) },
+    connect: async () => {
+      const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
+      const status = state.host.providers?.find(item => item.id === 'cursor')
+      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+    },
+    signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
+  }) : undefined
+  idleCompaction.start()
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
 }

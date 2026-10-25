@@ -7,7 +7,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
-import { composerSlim, READING_BACK_PX, readsBack, typesIntoComposer, type SlimFacts } from '../../../src/renderer/src/agents/slimComposer'
+import { composerSlim, READING_BACK_PX, readsBack, SLIM_MOTION_ID, SLIM_MOVING_ATTRIBUTE, typesIntoComposer, type SlimFacts } from '../../../src/renderer/src/agents/slimComposer'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
 const owl = vi.hoisted(() => ({ shrink: true }))
@@ -124,6 +124,63 @@ describe('the slim composer in a thread pane', () => {
     } finally {
       delete (HTMLElement.prototype as { getAnimations?: unknown }).getAnimations
       vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the full room while the card moves, and moves the card only by what steps away under it', () => {
+    // The card stands at the composer's foot. Slim it is one line, and the row under it (23 pixels) has stepped away.
+    const box = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains('thread-prompt')) return box(0, 0)
+      return this.closest('[data-slim]') === null ? box(600, 135) : box(758 - 41, 41)
+    })
+    const motions: Array<{ frames: Keyframe[]; options: KeyframeAnimationOptions; finish: () => void; cancel: ReturnType<typeof vi.fn> }> = []
+    const animate = vi.fn(function (frames: Keyframe[], options: KeyframeAnimationOptions) {
+      const motion: (typeof motions)[number] = { frames, options, finish: () => undefined, cancel: vi.fn() }
+      motions.push(motion)
+      return { addEventListener: (_: string, done: () => void) => { motion.finish = done }, removeEventListener: () => undefined, cancel: motion.cancel } as unknown as Animation
+    })
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate })
+    try {
+      const view = mount()
+      view.readBack(400)
+      expect(view.compose).toHaveAttribute('data-slim', 'true')
+      expect(view.compose).toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+      // Its height changes from full to slim; its foot comes down by the row that stepped away, and no further.
+      expect(motions[0]!.options.id).toBe(SLIM_MOTION_ID)
+      expect(motions[0]!.frames.map(frame => [frame.height, frame.transform])).toEqual([['135px', 'translateY(-23px)'], ['41px', 'none']])
+      act(() => { motions[0]!.finish() })
+      expect(view.compose).not.toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+
+      view.readBack(0)
+      expect(view.compose).not.toHaveAttribute('data-slim')
+      expect(view.compose).toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+      expect(motions[1]!.frames.map(frame => [frame.height, frame.transform])).toEqual([['41px', 'translateY(23px)'], ['135px', 'none']])
+      // Read back again before it settles: the move is stopped where it is, and the next keeps the room.
+      view.readBack(400)
+      expect(motions[1]!.cancel).toHaveBeenCalled()
+      expect(view.compose).toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+      act(() => { motions[2]!.finish() })
+      expect(view.compose).not.toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+    } finally {
+      delete (HTMLElement.prototype as { animate?: unknown }).animate
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('changes at once with motion reduced, and never holds the room', () => {
+    const animate = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: animate })
+    document.documentElement.dataset.reducedMotion = 'on'
+    try {
+      const view = mount()
+      view.readBack(400)
+      expect(view.compose).toHaveAttribute('data-slim', 'true')
+      expect(view.compose).not.toHaveAttribute(SLIM_MOVING_ATTRIBUTE)
+      expect(animate).not.toHaveBeenCalled()
+    } finally {
+      delete document.documentElement.dataset.reducedMotion
+      delete (HTMLElement.prototype as { animate?: unknown }).animate
     }
   })
 
