@@ -283,6 +283,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/workerRoles.css',
       'src/renderer/src/features/settings/watcherCompaction.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
+      'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',
       'src/renderer/src/features/settings/languagePicker.css',
       'src/renderer/src/agents/hostBadge.css',
