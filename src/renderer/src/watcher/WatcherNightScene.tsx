@@ -263,6 +263,8 @@ export function WatcherNightScene({ shown, held, owls, onOpen, onShowWatched }: 
       const pile = marker !== null && count > 0 ? { spot: marker, count } : null
       const painted = painter.draw({ t, still: isStill, ripples, watcher: owlNow, owls: poses, whirl: family.whirl(t), pile })
       if (painted && counted) pane.dataset.nightSceneFrames = String(++frames)
+      // And what it drew behind the words over the column, so a test can see a ripple or an owl crossing under them.
+      if (painted && counted) pane.dataset.nightSceneBehind = `${painter.behind.ripple},${painter.behind.owl}`
       const nextStage = owlNow?.stage ?? 'perched'
       if (nextStage !== stage) { stage = nextStage; owl.dataset.owl = stage }
       syncTargets(t, poses, pile)

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
+import { watcherMachinesWithoutLoadOutput, watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
 import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
@@ -15,7 +15,7 @@ const descriptions: Record<WatcherToolName, string> = {
   list_threads: 'List worker threads and their state using Sotto identities: each row gives the thread’s title, status, group, what it waits on, whether you watch it and its open pull requests. prototypeReady: true means a prototype it made waits for the user to review, which only the user can do, so the thread needs the user. watchedOnly: true lists only the threads you watch. detail: "full" adds every evidence fact, model and participation; ask for it only when you need those. Does not mark anything read by the user.',
   read_thread: 'Read a bounded window of a worker thread. News already carries a finished turn’s reply, so read only for what the reply does not say. Its pull requests come as one summary each, beside its own facts such as a failed turn or a takeover; evidence: "full" gives every pull request fact as well. Questions and permissions must be answered by the user on that thread, and a prototype it made (prototypeReady: true) is the user’s to review.',
   start_thread: `Start one worker in a known project and send its first prompt under an active user Watcher request. Retry with the same key to read the original receipt. ${WORKING_WARNING}`,
-  send_to_thread: 'Send a prompt under an active Watcher request. Leave out delivery and it steers: into the turn that is running, or now when the thread’s turn is over; a running thread whose provider cannot steer queues it, and the result’s delivery says which. A Claude steer cuts the step Claude is thinking or writing, and steer is still the default. Ask for queue only for a prompt that must wait for the turn to end, such as the next task after this one. Cannot answer pending questions or permissions: nothing goes to a thread waiting on the user’s card, so tell the user instead of sending again. When this message gives the thread its turn to merge a pull request (GO MERGE), set mergeTurn to that pull request’s number: the user’s picture of your work shows whose turn it is. It changes nothing about the send.',
+  send_to_thread: 'Send a prompt under an active Watcher request. Leave out delivery, or ask for steer, and it steers: into the turn that is running, whether or not Sotto has confirmed it, or now when the thread’s turn is over; a running thread whose provider cannot steer queues it. The result’s delivery says which, and when a steer went now or queued its note says so. A Claude steer cuts the step Claude is thinking or writing, and steer is still the default. Ask for queue only for a prompt that must wait for the turn to end, such as the next task after this one. Cannot answer pending questions or permissions: nothing goes to a thread waiting on the user’s card, so tell the user instead of sending again. When this message gives the thread its turn to merge a pull request (GO MERGE), set mergeTurn to that pull request’s number: the user’s picture of your work shows whose turn it is. It changes nothing about the send.',
   stop_thread: 'Request interrupt of one eligible worker under the active Watcher request. Does not delete or reclaim anything.',
   settle_thread: 'Move an idle worker to Settled, preserving the thread and working copy. Does not stop background work.',
   unsettle_thread: 'Move a settled thread on this computer back to active, as Restore does, under the user’s active Watcher request. Not for a thread the user stopped watching or took over. Its watch stays as it is: this neither watches nor stops watching it, and sends nothing. A thread still working, or with background work, that was settled is one to restore. A prompt you send to a settled thread restores it by itself. Retry with the same key to read the first answer.',
@@ -26,16 +26,22 @@ const descriptions: Record<WatcherToolName, string> = {
   list_working_copies: 'Read host-issued working-copy and base-ref choices for a known project. No arbitrary paths or remote fetch.',
   read_operation: 'Read an admitted operation’s receipt and, for a start or send, its outcome: working, background, answered, failed, stopped, paused or unknown. Accepted means delivered; the outcome says how its turn ended. Once answered it carries that turn’s reply, the worker’s own words. Uncertain or unknown means reconcile, never resend.',
 }
+/** With Work across machines on (ADR-0082), list_machines also says how busy each machine is and what waits to start there (#1311). */
+const LIST_MACHINES_WITH_LOAD = 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, how many threads it is running, how many it has been sent work for that have not started, and how busy its CPU and memory are now. A machine that does not report these reads unknown; one not connected says so.'
 /** With worker roles on (#1041), a start names its role and leaves the rest to the user's Settings. */
 const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
 /** Without worker roles, a start names its model, as it always has, and the offered schema has no role. */
 const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
 
-/** The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional. */
-export function watcherToolDefinitions(roles: boolean): readonly ThreadToolDefinition[] {
+/**
+ * The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional; with Work across
+ * machines on (`machines`), list_machines shows each machine's live load.
+ */
+export function watcherToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
-    description: roles && name === 'start_thread' ? START_BY_ROLE : descriptions[name],
-    inputSchema: z.toJSONSchema(name === 'start_thread' && !roles ? startByModel : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(watcherToolSchemas[name].output),
+    description: roles && name === 'start_thread' ? START_BY_ROLE : machines && name === 'list_machines' ? LIST_MACHINES_WITH_LOAD : descriptions[name],
+    inputSchema: z.toJSONSchema(name === 'start_thread' && !roles ? startByModel : watcherToolSchemas[name].input),
+    outputSchema: z.toJSONSchema(name === 'list_machines' && !machines ? watcherMachinesWithoutLoadOutput : watcherToolSchemas[name].output),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,
       idempotentHint: true, openWorldHint: false } })))
 }
@@ -49,11 +55,12 @@ export class WatcherToolServer implements WatcherProfileTools {
   readonly instructions: string | undefined
   private readonly transport: ThreadToolServer
   private running = 0
-  constructor(private readonly service: WatcherService, options: { roles?: boolean } = {}) {
-    this.definitions = options.roles === true ? watcherToolDefinitions(true) : WATCHER_TOOL_DEFINITIONS
+  /** `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles. */
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean } = {}) {
+    this.definitions = options.roles === true || options.machines === true ? watcherToolDefinitions(options.roles === true, options.machines === true) : WATCHER_TOOL_DEFINITIONS
     this.instructions = options.roles === true ? watcherSystemPrompt(true) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
-      instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name another delivery; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
+      instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },
     this.definitions, (threadId, name, args, context) => this.call(threadId, name, args, context), threadId => this.service.isCurrent(threadId) ? this.definitions : [])
   }

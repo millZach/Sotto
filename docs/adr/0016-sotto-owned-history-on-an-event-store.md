@@ -243,3 +243,55 @@ The thread store's **log checkpoints** now run on a worker thread with a connect
 What reaches the disk is unchanged, and so is how: saves stay at NORMAL, and a checkpoint still flushes the log before it copies and the file after it, on the worker now. A power cut can lose the saves made since the worker's last checkpoint began. That is typically about the last second while threads save, where it was up to the last 4 MB, but it is not a bound: the next checkpoint starts half a second after the last one finished, so while a slow checkpoint runs on a busy disk, newer saves can wait several seconds for their flush, and where the worker cannot run or has gone, SQLite's own checkpoint at 4 MB applies as before. Removals the user asks for keep their promise exactly: they commit at FULL on main, and their scrub runs its TRUNCATE checkpoint on main with the worker held aside, waiting out a checkpoint in flight; a scrub that still finds the log busy fails, and the removal is retried as a failed one, rather than leaving the words in the log. `secure_delete` is unchanged. Closing the store stops the worker and closes its connection first, so main's close is the file's last and checkpoints the log as before.
 
 In a benchmark of streamed saves against a 555 MB store, the time main spent held by saves fell from 6.2 to 10.0 s to 2.2 to 3.7 s, and the worst save from 1.2 to 2.2 s to 0.65 to 0.85 s. Main still writes its saves to the log on its own thread, and on Windows a write waits while another thread flushes a large file on the same disk, so the worker's flushes still reach main now and then, in smaller and fewer pieces. Taking those waits off main means taking the saves off main, which this amendment does not do; neither does it stop a publish writing or read a stored thread's records off main. Those parts of #1451 stay open.
+
+## Amendment: each layer passes on only the threads that changed (October 24, 2026, #925)
+
+**Accepted October 25, 2026.** Zach picked option 2 below on October 24, 2026, and asked for #925 to go before #1457. Step 1, the thread changes type, the thread map, the shim and the gates, landed in #1502; the later steps move each layer onto it. The plan is in `docs/plans/shared-thread-records.md`.
+
+**What it costs today.** After #1326, #1334 and #1450, the workspace's publication, the coordinator's shell and Watcher's room share what did not change. The layers between an adapter and the workspace still build a new record for every thread on every update:
+- the adapter's activity view and its `cloneActivitySnapshot`;
+- the Sotto identity wrapper's `mapSnapshot` (`threads.ts`);
+- the provider switch's `aggregate` (`providerSwitch.ts`);
+- the workspace's `accept`, which also re-spreads every earlier thread;
+- the host stamp (`stampHostSnapshot`).
+
+Because every record arrives new, the workspace's publication cannot stop at identity. Its `immutableUpdates` walks every thread to prove it unchanged.
+
+In the one-minute recording of the owner's Owl build on October 23 (0.1.38-owl.20261023.3, about 529 threads, main busy for 44.7 s of 61 s), these took:
+
+| Step | Time | Share of busy |
+|---|---|---|
+| The workspace's `accept` | 3.9 s | 8.7% |
+| The publication's walk | 4.5 s | 10.1% |
+| The provider switch's publish | 1.7 s | 3.7% |
+| The adapter's copy | 1.2 s | 2.6% |
+| The host stamp | 0.7 s | 1.6% |
+| **Total** | **12 s** | **about 27%** |
+
+All of it is paid once per streamed chunk, and it grows with the threads, not with what changed. Watcher and the coordinator no longer add to it. The 16:54 recording on 0.1.41-owl.20261023.5 still put the whole activity broadcast at 8.4 s of a minute.
+
+**Options weighed.**
+1. **Keep a record's identity through every layer.** Each layer hands out the same frozen record for a thread that did not change, so an update costs one identity check per thread, plus building what changed. Subscribers stay the same. This was the draft's recommendation, because it is the narrower change.
+2. **Each layer passes on only what changed (picked).** A publication names the threads that changed and the threads that went, and every layer and subscriber keeps its own map of thread records. It costs nothing per unchanged thread, not even a check, so the cost follows the change whatever the threads number. It is the wider change: every activity subscriber moves to applying changes. That covers the coordinator, usage, Watcher, delegation, the router, the host socket and the phone path.
+3. **Fewer layers.** Fold the wrapper's ID binding and the switch's provider IDs into the adapter or the workspace. This removes two passes but keeps a new record per thread in the others. It moves Sotto's thread IDs inside the adapter boundary, against ADR-0002.
+4. **Publish less often**, with a wider publish window. This is cheap, but it changes how streamed text feels, and a publish still costs what it does today.
+
+**The decision.** The activity subscription carries **thread changes** instead of a whole snapshot each time:
+- **A first publication is whole.** It starts the subscriber's map, as does any publication after a gap.
+- **Every later one is a change.** It carries the threads upserted (whole frozen records), the thread IDs removed, and the rest of the snapshot (providers, catalog, projects, connection) only when it changed.
+- **Changes are numbered.** Each publication carries a sequence number. A subscriber that sees a gap asks its publisher for a whole one rather than guessing.
+- **Each layer keeps a map** of its own records by Sotto thread ID, applies what it receives, and transforms and passes on only the upserts and removals. The wrapper binds IDs, the switch names providers, the workspace merges, and the host stamp tags hosts.
+- **Records are frozen and only ever replaced.** As the October 22 amendment made the workspace's records, every record is now frozen and shared across layers.
+
+What does not change:
+- `snapshot`, `workspaceSnapshot`, ordinary `subscribe` and command replies are built whole from the maps when asked, and stay independently writable copies.
+- IPC and socket formats, the publish cadence, history and permissions are unchanged.
+- Nothing a user sees changes.
+- The window's broadcast already sends thread records by change (ADR-0028), and this feeds it the changes directly.
+
+An adapter must know which threads changed. Every path that changes a thread's state marks the thread. Until an adapter marks its own, a shim at its boundary works the changes out by comparing each thread's record with the one it published last. That costs one check per thread, as option 1 would, and only that adapter's threads pay it.
+
+**What it means for #1457.** Zach asked for #925 first, and option 2 is close to what #1457 needs:
+- **The workspace already holds the change.** Each publish tells it exactly which threads changed, so its saves and event batch look only at those.
+- **A store worker gets the changes as they are.** #1457 moves the thread store's writes off main, and the workspace can post it the upserts, removals and events unchanged. Moving the store off main then costs in proportion to the change.
+- **A worker's list goes in as an upsert.** Opening a stored thread can read and parse its list on the worker and hand it back as an upsert of frozen records.

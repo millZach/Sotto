@@ -15,7 +15,7 @@ import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_P
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
-import type { HostMachineReport } from '../../shared/hostFacts'
+import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -28,7 +28,7 @@ import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries,
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
-import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
+import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, STEER_TURN_CHANGED, steerFallbackNote } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
@@ -199,6 +199,11 @@ interface CallProgress {
 }
 const MUTATIONS: ReadonlySet<WatcherToolName> = new Set(['start_thread', 'send_to_thread', 'stop_thread', 'settle_thread'])
 const LATE: unique symbol = Symbol('late')
+/**
+ * Whether a paired host's request failed by timing out (`HostRequestTimeoutError`) rather than by its connection closing.
+ * Read by its mark, so Watcher need not take in the socket client to ask.
+ */
+const requestTimedOut = (error: unknown): boolean => error instanceof Error && (error as { readonly timedOut?: unknown }).timedOut === true
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
@@ -242,6 +247,43 @@ interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests
  */
 const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
   participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
+
+/**
+ * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
+ * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
+ */
+interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
+/**
+ * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
+ * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
+ * reservation with one read. Only a reservation not seen before is looked for, walking back from the newest, where a
+ * reservation just made has its operation, so the cost does not grow with Watcher's history. `timedOut` holds the
+ * remote starts whose request timed out rather than had its connection close: the host may still start them, so they
+ * count until their receipt is read (#1311). Both let go of what the record no longer reserves.
+ */
+function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, number>, timedOut: Set<string>): ReservedStart[] {
+  const operations = record.operations, reserved = new Map(record.reservations.map(item => [item.operationId, item.target]))
+  for (const id of positions.keys()) if (!reserved.has(id)) positions.delete(id)
+  for (const id of timedOut) if (!reserved.has(id)) timedOut.delete(id)
+  const found = new Map<string, Readonly<WatcherOperation>>(), unseen = new Set<string>()
+  for (const id of reserved.keys()) {
+    const at = positions.get(id), operation = at === undefined ? undefined : operations[at]
+    if (operation?.id === id) found.set(id, operation); else unseen.add(id)
+  }
+  for (let index = operations.length - 1; index >= 0 && unseen.size > 0; index--) {
+    const operation = operations[index]!
+    if (unseen.delete(operation.id)) { positions.set(operation.id, index); found.set(operation.id, operation) }
+  }
+  const starts: ReservedStart[] = []
+  for (const [operationId, target] of reserved) {
+    const operation = found.get(operationId)
+    if (!operation) { positions.delete(operationId); continue }
+    if (operation.deliveryState === 'accepted' || operation.deliveryState === 'failed') timedOut.delete(operationId)
+    if (operation.action === 'start') starts.push({ target, operationId, notYetSent: operation.deliveryState === 'queued'
+      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId) })
+  }
+  return starts
+}
 
 export class WatcherService implements WatcherControlHooks {
   readonly wakes: WatcherWakeUp
@@ -332,6 +374,7 @@ export class WatcherService implements WatcherControlHooks {
    * record, so the record keeps its shape; a retry after a restart reads its receipt without this block.
    */
   private readonly roleStarts = new Map<string, RoleReceipt>()
+  private readonly steerFallbacks = new Map<string, string>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
    * tried again until it has worked again; the wait before the next look; and whether a look is under way.
@@ -354,6 +397,11 @@ export class WatcherService implements WatcherControlHooks {
     roles?: () => WorkerRoleChoices
     /** This computer's host facts and running threads, read as a host reads its own (#1031). Without it they read unknown. */
     machineFacts?: () => Promise<HostMachineReport>
+    /**
+     * The Owl answer for Work across machines (ADR-0082), read once at start. With it on, list_machines shows each machine's
+     * live load and work placed but not started (#1311); with it off, or absent, it shows neither, whatever a host sends.
+     */
+    crossMachine?: boolean
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
     ordinaryBatch?: WatcherWakeOptions['ordinaryBatch']
     /**
@@ -857,17 +905,50 @@ export class WatcherService implements WatcherControlHooks {
    * version 1 has one. Nothing is held back at any number (#1183).
    */
   startsInFlight(): number { return this.inFlight() }
-  /** One pass over the operations whatever the number of reservations: the phone's page asks on every build. */
-  private inFlight(record: Readonly<WatcherRecord> = this.view()): number {
-    if (record.reservations.length === 0) return 0
-    const reserved = new Map(record.reservations.map(item => [item.operationId, key(item.target)]))
-    const targets = new Set<string>()
-    for (const operation of record.operations) {
-      const target = operation.action === 'start' ? reserved.get(operation.id) : undefined
-      if (target !== undefined) targets.add(target)
-    }
-    return targets.size
+  /**
+   * The threads Watcher has admitted a start for on this machine whose first prompt has not gone yet (#1311). Admission
+   * records the start's reservation before the working copy is resolved and the thread is created, so this machine's
+   * work placed but not started counts the start from then, and a second placement seconds later sees the first. Read
+   * from the record's index of reserved starts, so a machine report costs the same however long Watcher's history is.
+   */
+  startsNotYetSent(): string[] {
+    const hostId = this.options.control.hostId()
+    return hostId ? this.startsNotYetSentOn(hostId) : []
   }
+  /**
+   * The threads of the starts Watcher has admitted on a machine, any machine, whose first prompt has not gone yet, or
+   * whose paired host did not answer in time and may still start them (`timedOutStarts`).
+   */
+  private startsNotYetSentOn(hostId: string): string[] {
+    return this.reservedStarts().flatMap(start => start.notYetSent && start.target.hostId === hostId ? [start.target.threadId] : [])
+  }
+  /** Distinct threads among the reserved starts: the phone's page asks on every build. */
+  private inFlight(): number {
+    const starts = this.reservedStarts()
+    return starts.length === 0 ? 0 : new Set(starts.map(start => key(start.target))).size
+  }
+  /**
+   * Watcher's reserved starts, worked out once per record. The record is replaced on every change and never edited
+   * (`watcherRecordView`), so the index stands until the next change, and every read between changes, such as a machine
+   * report or the phone's page, reads it without walking the operations. A change finds each reservation it already
+   * knows where it was before (`reservedPositions`), so working the index out again costs one read per reservation.
+   */
+  private reservedStarts(): readonly ReservedStart[] {
+    const record = this.view()
+    let starts = this.reservedStartIndex.get(record)
+    if (!starts) { starts = reservedStarts(record, this.reservedPositions, this.timedOutStarts); this.reservedStartIndex.set(record, starts) }
+    return starts
+  }
+  private readonly reservedStartIndex = new WeakMap<Readonly<WatcherRecord>, readonly ReservedStart[]>()
+  /** Where each reservation's operation sits in the record, kept across records (`reservedStarts`). */
+  private readonly reservedPositions = new Map<string, number>()
+  /**
+   * Remote starts made uncertain because their request timed out, not because their connection closed: the host may
+   * still carry them out, so they count as placed until the host's own receipt is read, whatever it says. One the host
+   * holds as uncertain is then the host's to count, and it counts none it holds uncertain (#1311). In memory only, as the
+   * merge turns are.
+   */
+  private readonly timedOutStarts = new Set<string>()
   /** The working threads warning (#1183) after a start on this computer, counting the new thread as working: only above ten. */
   private workingWarning(threadId: string): { warning: string } | Record<string, never> {
     const warning = workingThreadsWarning(countWorkingThreads(this.options.control.watcherSnapshot().threads, threadId))
@@ -2700,15 +2781,23 @@ export class WatcherService implements WatcherControlHooks {
       if (thread && (send || name === 'settle_thread')) this.pending(thread)
       // A paired master decided whether its Watcher turn answers the user; this host cannot read that thread.
       if (thread && name === 'stop_thread') this.checkStopTurn(thread, record, request.id, Boolean(imported) || this.answersUserNow(record, request))
-      // A send that names no delivery steers a running turn and goes now to an idle one (ADR-0130). It is picked here,
-      // after a waiting card refused it, and kept as the operation's own; a retry still matches the call as it was made.
-      const defaulted = Boolean(thread && send && !(input as WatcherToolInput<'send_to_thread'>).delivery)
-      if (thread && defaulted) {
-        const { expectedTurnId, ...sent } = input as WatcherToolInput<'send_to_thread'>
+      // A send that names no delivery, or names steer, steers a running turn and goes now to an idle one (ADR-0130). It is
+      // picked here, after a waiting card refused it, and kept as the operation's own; a retry still matches the call as it
+      // was made. A paired host takes the mode its desktop picked as it is.
+      const asked = send ? (input as WatcherToolInput<'send_to_thread'>).delivery : undefined
+      const picked = Boolean(thread && send && !imported && (!asked || asked === 'steer'))
+      if (thread && picked) {
+        const { expectedTurnId, delivery: _asked, ...sent } = input as WatcherToolInput<'send_to_thread'>; void _asked
         // Parsed again so its keys fall in the schema's order, as a paired host parses it before checking the digest.
         input = watcherToolSchemas.send_to_thread.input.parse({ ...sent, ...defaultDelivery(thread, capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer === true, expectedTurnId) })
       }
+      const steerFallback = asked === 'steer' ? steerFallbackNote((input as WatcherToolInput<'send_to_thread'>).delivery) : undefined
       if (thread && send) {
+        // A steer that names its turn is meant for that turn alone. While any turn is under way, one that is not the named
+        // turn running refuses it before it could go another way; a thread at rest has no turn to mix it into.
+        const fence = (input as WatcherToolInput<'send_to_thread'>).expectedTurnId
+        if (fence && (picked ? isThreadTurnRunning(thread) && !(thread.lastTurn?.id === fence && thread.lastTurn.status === 'running')
+          : (input as WatcherToolInput<'send_to_thread'>).delivery === 'steer' && fence !== thread.lastTurn?.id)) refuse('STEER_UNAVAILABLE', STEER_TURN_CHANGED)
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)
         // A send gives the thread no permission, so neither the new-thread default nor a host's hold-back limits it (#1145).
         const sent = input as WatcherToolInput<'send_to_thread'>
@@ -2721,12 +2810,12 @@ export class WatcherService implements WatcherControlHooks {
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
         if (review) refuse('THREAD_BUSY', queueHold(review, false))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
-        // A named steer needs a confirmed running turn. A default one does not: a turn that resumed after the user answered
-        // its card, or began from a queued prompt, runs before Sotto confirms it, and the default steers it unfenced
-        // (#1490). A paired desktop sends an unfenced steer only as its default.
-        const unfenced = !sent.expectedTurnId && (defaulted || Boolean(imported))
+        // A steer that names no turn goes into the one running, confirmed or not. Watcher's reads name only finished
+        // turns, so a turn it did not start, as one that resumed after the user answered its card, began from a queued
+        // prompt or from Sotto's restart note, has no identity it could name (#1490). A paired desktop picked the mode.
+        const unfenced = !sent.expectedTurnId && (picked || Boolean(imported))
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || thread.status !== 'running'
-          || (sent.expectedTurnId ? sent.expectedTurnId !== thread.lastTurn?.id : !unfenced))) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
+          || !sent.expectedTurnId && !unfenced)) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
         this.checkSettlement(thread)
@@ -2739,7 +2828,7 @@ export class WatcherService implements WatcherControlHooks {
         ?? ((start || send) && !imported && (!remote || this.remote?.hosts().find(host => host.hostId === owner)?.standingWatch) ? this.newWatch(target, thread) : undefined)
       const time = now(), id = randomUUID()
       const operation: WatcherOperation = imported ?? { id, requestId: request.id, retryKey: input.retryKey, digest: digest([name, input]),
-        ...(start || offeredWatch || defaulted ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
+        ...(start || offeredWatch || picked ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
         action: start ? 'start' : send ? 'send' : name === 'stop_thread' ? 'stop' : 'settle', target,
         ...(turn ? { promptTurnId: turn.id } : {}), ...(assignment ? { standingWatchId: assignment.id } : {}),
         generation: previous?.generation ?? assignment?.generation ?? 0, anchorMessageId: request.rootUserMessageId, deliveryState: 'queued', createdAt: time, updatedAt: time, receiptId: randomUUID(), cardId: randomUUID(),
@@ -2775,6 +2864,7 @@ export class WatcherService implements WatcherControlHooks {
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
       })
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)
+      if (steerFallback) this.rememberSteerFallback(operation.id, steerFallback)
       return { operation, retry: false }
     })
     if (progress) { progress.operationId = admitted.operation.id; progress.admitted?.(admitted.operation) }
@@ -2972,6 +3062,15 @@ ${operation.draftId}`)
     this.roleStarts.set(operationId, role)
     for (const kept of this.roleStarts.keys()) { if (this.roleStarts.size <= ROLE_STARTS_KEPT) break; this.roleStarts.delete(kept) }
   }
+  private rememberSteerFallback(operationId: string, note: string): void {
+    this.steerFallbacks.set(operationId, note)
+    for (const kept of this.steerFallbacks.keys()) { if (this.steerFallbacks.size <= ROLE_STARTS_KEPT) break; this.steerFallbacks.delete(kept) }
+  }
+  /** What a send that asked to steer did instead, said in its result. In memory only: a retry after a restart has none. */
+  private fallbackBlock(operationId: string): { note: string } | Record<string, never> {
+    const note = this.steerFallbacks.get(operationId)
+    return note ? { note } : {}
+  }
   private roleBlock(operationId: string): { role: RoleReceipt } | Record<string, never> {
     const role = this.roleStarts.get(operationId)
     return role ? { role } : {}
@@ -3001,7 +3100,7 @@ ${operation.draftId}`)
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
         ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
     }
-    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery }
+    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery, ...this.fallbackBlock(operation.id) }
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
   }
 
@@ -3070,14 +3169,18 @@ ${operation.draftId}`)
         })
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}) } : parsed
+        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
         return { ...error.result, receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
       }
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
-        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') saved.deliveryState = 'uncertain' })
+        if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') {
+          saved.deliveryState = 'uncertain'
+          // A request that timed out is still alive on the host, which may start it later; a closed connection fences it.
+          if (saved.action === 'start' && requestTimedOut(error)) this.timedOutStarts.add(saved.id)
+        } })
       return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
     }
   }
@@ -3093,6 +3196,9 @@ ${operation.draftId}`)
     record.reservations = record.reservations.filter(item => item.operationId !== operationId)
   }
   private copyRemoteReceipt(record: WatcherRecord, own: WatcherOperation, receipt: Pick<WatcherOperation, 'deliveryState' | 'refusalCode' | 'commandId' | 'itemId' | 'messageId' | 'updatedAt' | 'creationUncertain'>): void {
+    // The host's own receipt shows it holds the operation, so a start that timed out is the host's to count from here,
+    // uncertain or not; the index worked out while it was the desktop's goes with the mark.
+    if (this.timedOutStarts.delete(own.id)) this.reservedStartIndex.delete(this.view())
     // A read started before the control reply can arrive afterward. Definitive outcomes cannot become pending again.
     if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'
@@ -3576,20 +3682,38 @@ ${operation.draftId}`)
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
   private async listMachines() {
-    const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null })
-    const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string) => {
+    // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
+    // wherever the facts do, or where a host does not send them.
+    const live = this.options.crossMachine === true
+    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
+    // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
+    // read before the host is asked and again once it has answered, so every start on its way at any moment of the read
+    // is in them: one the answer missed is added, never lost (`placedNotStartedWith`). This computer's own report already
+    // holds this Watcher's starts here (`startsNotYetSent`).
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
+      if (!live) return {}
+      const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
+      const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
+    }
+    const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
+    const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
       try {
+        const before = live && remote !== undefined ? this.startsNotYetSentOn(remote) : undefined
         const report = await facts()
-        return report ? { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads } : unknown(older)
+        if (!report) return unknown(older)
+        // A start admitted while the host was sampling may have reached it after it counted, or not at all yet.
+        const reserved = before === undefined ? undefined : [...before, ...this.startsNotYetSentOn(remote!)]
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
       ...(this.options.machineFacts ? await read(this.options.machineFacts, MACHINE_FACTS_UNREAD) : unknown(MACHINE_FACTS_UNREAD)) }
-    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null }
+    const notConnected = { factsState: 'not-connected' as const, facts: null, note: MACHINE_NOT_CONNECTED, runningThreads: null, ...noLoad }
     const stillConnected = (hostId: string) => this.remote?.hosts().some(item => item.hostId === hostId && item.connected) === true
     const remotes = await Promise.all((this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId()).slice(0, WATCHER_MACHINES_MAX - 1).map(async host => {
       const facts = !host.connected ? notConnected
-        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER) : unknown(MACHINE_FACTS_OLDER)
+        : host.facts && this.remote?.machineFacts ? await read(() => this.remote!.machineFacts!(host.hostId), MACHINE_FACTS_OLDER, host.hostId) : unknown(MACHINE_FACTS_OLDER)
       // A connection that dropped while its facts were read is not connected, whatever the read came back with.
       const connected = host.connected && stillConnected(host.hostId)
       return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,

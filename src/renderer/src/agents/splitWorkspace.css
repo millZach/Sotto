@@ -108,7 +108,7 @@
   /* The header is already one row at its smallest, so a short pane gives its height to the transcript and composer. */
   .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 7px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-prompt { padding: 10px 14px 8px; }
-  .threads-view .thread-pane .thread-workspace__compose .thread-prompt :is(textarea, .prompt-editor) { min-height: 50px; max-height: 120px; }
+  .threads-view .thread-pane .thread-workspace__compose .thread-prompt :is(textarea, .prompt-editor) { min-height: 36px; max-height: 120px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-prompt__footer { margin-top: 4px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .threads-view .thread-pane .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }

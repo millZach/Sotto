@@ -279,6 +279,8 @@ Watcher gains a read-only tool, `list_machines`. It lists This computer and ever
 
 Copy says **machine** (Zach, October 14): the host is the process, and This computer is the local one. Numbers and the system's own operating system name only, on the connection Sotto already keeps; nothing in a log.
 
+Amended October 22, 2026 (#1311): the facts said nothing of how busy a machine is, so Watcher could not tell a busy machine from an idle one with the same CPUs. The `host-facts` answer now also carries the machine's **live load** and its **work placed but not started** (CONTEXT.md), both optional, both read when facts are asked for and never on a timer, and an older host's read unknown. `list_machines` shows them, with whether the machine is short on memory or busy against one tunable set of starting thresholds. The facts were numbers and the operating system's own name only; with the count the answer now also names the opaque Sotto thread IDs it counted (`placedThreadIds`, October 23, 2026), so a desktop counts its own starts there once. Those are IDs and never a title, prompt or any other text, on the same connection and never in a log. Nothing places work by them yet; that comes with choosing where workers start. All of it is part of the Owl feature Work across machines (`cross-machine-work`, owned by [ADR-0082](0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md)), since every earlier Owl gate it could have sat behind is going to stable (Zach, October 23, 2026): a stable desktop or host samples no load, a stable host answers its facts and running threads as before, and a stable desktop's list_machines shows neither, in its results, its output schema or its description.
+
 ## October 16, 2026: Watcher on Muse
 
 Watcher may now run on Muse as well as Codex, Claude Code and Grok Build, wherever the Muse client takes tools for one session (#1039, [ADR-0079](0079-muse-is-a-thread-provider.md)'s **Amendment: Watcher runs on Muse**). Muse is offered in Watcher's model picker, its first-entry composer and a provider change's handover while Muse itself is shown. Devin stays unavailable.
@@ -476,6 +478,16 @@ A first answer kept the two apart: no Steer now while Watcher answered news, and
 - **Main knows whose turn runs from what it last sent Watcher,** so a provider that starts a turn before it echoes the message cannot make the user's turn look like news, or news look like the user's turn. After a restart, before Watcher has been sent anything, the turn's newest message says.
 - A request that has recorded a thousand of the user's messages takes no more steers: the steer is refused rather than reach Watcher under a request that does not hold it. A message queued while Watcher reads news joins no request when it is queued, so it goes as its own turn under a request of its own.
 - Steering from the iPhone was #1229: a send from the phone while Watcher worked was refused. The section below lets the phone steer too.
+
+## October 23, 2026: photos for Watcher from the iPhone
+
+On the iPhone a thread's reply box took photos, and Watcher's did not: it had no **+**, and `watcher-phone-send` carried words alone. Zach reported it from TestFlight build 30 as "I am unable to attach photos", and chose the same day that it goes straight to stable, that photos go with the words however the words go, that the box offers the library and the camera, and that a message may be photos alone. He picked variant A of `docs/prototypes/iphone-watcher-photos-prototype.html`, the thread reply box's own layout, over B (the + inside the box, the photos on a tray above it) and C (an **Add photos** chip under Watcher's name, and a count in the box):
+
+- **Watcher's box works as a thread's.** The **+** sits to the left of the box with **Photo library** and **Camera**, the chosen photos wait inside the box above the words, and the menu says why when Watcher can't take them: its model doesn't read images, no Watcher runs, or the computer runs a Sotto from before Watcher took photos. Watcher's box keeps its own photos, apart from any thread's.
+- **Photos go with the words, now or next.** Idle, they go with the message. While Watcher works they steer into its turn with the words, or wait with them in Watcher's queue, as the October 21 amendment below says of words. A message with photos locks the box from the press until the computer answers, so one Watcher refuses or doesn't confirm comes back to the box whole, words and photos, under the same draft ID, and can't be delivered twice.
+- **The conversation shows them.** The user's photos stand above their words, and a press opens one full screen. Watcher's thread stays hidden from the phone's own reads, so the phone reads a photo through Watcher's own `watcher-phone-preview`, for the current Watcher only.
+
+On the wire this is the optional phone feature `watcher-phone-photos` (`docs/host-protocol.md`). Staging is the thread reply's `stage-attachment`, unchanged (ADR-0031). The photos reach Watcher's provider as a thread reply's do, and only a model that reads images takes them.
 
 ## October 21, 2026: the iPhone steers Watcher while it works (#1229)
 
