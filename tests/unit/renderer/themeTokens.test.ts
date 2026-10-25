@@ -318,6 +318,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/screenshots.css',
       'src/renderer/src/agents/reviewComments.css',
       'src/renderer/src/agents/replyQuotes.css',
+      'src/renderer/src/agents/runCommand.css',
       'src/renderer/src/agents/visualCard.css',
       'src/renderer/src/agents/delegation.css',
       'src/renderer/src/agents/messageScrubber.css',

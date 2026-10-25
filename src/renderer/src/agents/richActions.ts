@@ -17,7 +17,7 @@ export function useTransientFlag(): [string | null, (value: string) => void] {
 }
 
 /** Parts of a rendered message that carry controls or status, never content. */
-const PLAIN_TEXT_SKIP = '.rich-code__bar, .rich-message__feedback, .tt-visually-hidden, [aria-hidden="true"]'
+const PLAIN_TEXT_SKIP = '.rich-code__bar, .rich-message__feedback, .run-command__anchor, .tt-visually-hidden, [aria-hidden="true"]'
 /** Blocks that end a line in the plain-text form. */
 const PLAIN_TEXT_BREAK = 'p, li, h1, h2, h3, h4, h5, h6, tr, pre, blockquote, .rich-code, .rich-table, ul, ol, hr'
 
