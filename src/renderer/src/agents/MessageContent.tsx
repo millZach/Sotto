@@ -17,6 +17,7 @@ import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentK
 import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
 import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
+import { flipsBelow } from './ReplyQuoteButton'
 import './rich-messages.css'
 import './runCommand.css'
 
@@ -182,10 +183,33 @@ const BLOCK_RUN: Readonly<Record<RunState, { readonly text: string; readonly nam
   ran: { text: 'Run again', name: 'Run again in terminal', icon: <Check size={14} aria-hidden="true" /> },
 }
 
-/** Inline code that reads as a command: Run floats above its start on pointing or keyboard focus, covering none of it. */
+/** The element whose edges cut off what overflows it: the transcript's scroller, or a table that scrolls sideways. */
+function clippingAncestor(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node)
+    if (/auto|scroll|hidden|clip/u.test(`${style.overflowX} ${style.overflowY}`)) return node
+  }
+  return null
+}
+
+/** The gap between the command's chip and its Run button, as in the prototype. */
+const RUN_GAP_PX = 7
+
+/**
+ * Inline code that reads as a command: Run floats above its start on pointing or keyboard focus, covering none of it,
+ * or below it when the transcript's top or a table's edge would cut it off, as Add to prompt does.
+ */
 function RunnableInline({ command, run, children }: { readonly command: string; readonly run: RunCommand; readonly children?: ReactNode }): ReactNode {
   const [state, press] = useRunState(run, command)
-  return <span className="run-command" data-state={state}>
+  const [below, setBelow] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+  const place = (): void => {
+    const element = root.current, chip = element?.querySelector('code'), button = element?.querySelector<HTMLElement>('.run-command__button')
+    if (!element || !chip || !button) return
+    const frame = clippingAncestor(element)
+    setBelow(flipsBelow(chip.getBoundingClientRect().top, button.offsetHeight, frame ? frame.getBoundingClientRect().top : 0, RUN_GAP_PX))
+  }
+  return <span ref={root} className="run-command" data-state={state} data-place={below ? 'below' : undefined} onPointerEnter={place} onFocus={place}>
     <span className="run-command__anchor"><button type="button" className="run-command__button tt-focusable" aria-label={`${RUN_LABEL[state]}: ${command}`}
       aria-disabled={state === 'starting' || undefined} onClick={press}>
       {state === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : <Play size={11} aria-hidden="true" />}<span>{RUN_LABEL[state]}</span>

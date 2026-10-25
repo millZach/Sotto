@@ -22,6 +22,10 @@
 .run-command__button::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 9px; }
 .run-command__button svg { flex: none; color: var(--tt-primary); }
 .run-command__button:hover { background: var(--tt-hover-strong); }
+/* No room above inside the transcript or a table: Run stands below the line instead, clear of the chip's lower edge and
+   descenders, its bridge above it. */
+.run-command[data-place='below'] .run-command__button { top: calc(100% + 10px); bottom: auto; transform: translateY(-3px); }
+.run-command[data-place='below'] .run-command__button::after { top: auto; bottom: 100%; }
 .run-command__button[aria-disabled='true'] { cursor: progress; }
 /* :has(:focus-visible), not :focus-within, so a mouse press does not leave the button standing. */
 .run-command:is(:hover, :has(:focus-visible), [data-state='starting']) .run-command__button {

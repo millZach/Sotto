@@ -154,6 +154,25 @@ describe('Run on a reply\'s commands (ADR-0136)', () => {
     expect(await within(blocks[0] as HTMLElement).findByRole('button', { name: 'Run again in terminal' })).toHaveTextContent('Run again')
   })
 
+  it('stands Run below a command the top of its table or transcript would cut it off at, as Add to prompt does', () => {
+    const run = vi.fn<RunCommand>(async () => true)
+    reply('| Step | Command |\n| --- | --- |\n| 1 | `git status` |\n\nThen `git log --oneline`.', run)
+    const table = document.querySelector<HTMLElement>('.rich-table')!
+    // The stylesheet does not load here; this is what rich-messages.css gives a table.
+    table.style.overflowX = 'auto'
+    const rect = (top: number) => ({ top, bottom: top + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    vi.spyOn(table, 'getBoundingClientRect').mockReturnValue(rect(100))
+    const [inTable, inProse] = [...document.querySelectorAll<HTMLElement>('.run-command')]
+    for (const [element, top] of [[inTable!, 110], [inProse!, 400]] as const) {
+      vi.spyOn(element.querySelector('code')!, 'getBoundingClientRect').mockReturnValue(rect(top))
+      Object.defineProperty(element.querySelector('.run-command__button')!, 'offsetHeight', { value: 26 })
+    }
+    act(() => { inTable!.querySelector('button')!.focus() })
+    expect(inTable).toHaveAttribute('data-place', 'below')
+    act(() => { inProse!.querySelector('button')!.focus() })
+    expect(inProse).not.toHaveAttribute('data-place')
+  })
+
   it('offers nothing without a runner, outside a reply, or while a block is still being written', () => {
     const run = vi.fn<RunCommand>(async () => true)
     reply('Run `git status`.\n\n```bash\nls\n```', undefined)
