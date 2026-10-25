@@ -7,6 +7,25 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: uk\n"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "(optional)"
+msgstr ""
+
+#. placeholder {0}: extra.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
+msgstr ""
+
+#. placeholder {0}: gone.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
+msgstr ""
+
+#. placeholder {0}: questions.length
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{0, plural, one {Skip question} other {Skip questions}}"
+msgstr ""
+
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "{branch} has uncommitted changes in {files}, and Sotto won’t bring back uncommitted work. Commit them first, then try again."
 msgstr ""
@@ -25,206 +44,6 @@ msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "{count, plural, one {# file} other {# files}}"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{parentTitle} isn’t on {target} any more, and Sotto doesn’t switch branches. Switch it back to {target} there, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{parentTitle} works on {target} in its worktree and sees them now."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{parentTitle} works on {target} in its worktree on {machine} and sees them now."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{parentTitle} works on {target} in the project folder and sees them now."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{parentTitle} works on {target} in the project folder on {machine} and sees them now."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} already has every commit on {branch}."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} has {theirs} that {branch} doesn’t, so Git can’t fast-forward. Sotto can make a merge commit on {target} that brings in this branch’s {ours}. Nothing is rebased or forced, and this worktree stays as it is."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the project folder on {machine}, where {parentTitle} works."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the project folder, where {parentTitle} works."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the project folder, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the project folder, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the worktree on {machine} where {parentTitle} works."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the worktree where {parentTitle} works, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the worktree where {parentTitle} works, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} is checked out in the worktree where {parentTitle} works."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "{target} or {branch} moved since Sotto looked, so nothing changed. Press Bring changes to {target} again."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "<0>{branch}</0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "<0>{branch}</0> was made from <1>{target}</1>."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Bring changes back"
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "Bring changes to {target}"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Brought {commits} to {target} with a merge commit."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Brought {commits} to {target}."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "Commit the {changed} changed first."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Commit…"
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Dismiss"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Git fast-forwarded {target} to {head}; nothing else changed."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Git found a conflict, and Sotto doesn’t resolve conflicts. Ask this thread to merge {target} into its branch and resolve it, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Git has no branch named {target} any more."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Git refused."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Git said:"
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Hide until this branch changes"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Make a merge commit on {target}?"
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Make merge commit"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Merge commit {head} on {target}: “{subject}”."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "No folder has {target} checked out, so only the branch moved."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Not now"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Nothing to bring back."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Nothing was brought back."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Nothing was brought to {target}, and {target} is unchanged."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Nothing was brought to {target}."
-msgstr ""
-
-#: src/renderer/src/agents/BringChangesBack.tsx
-msgid "Open {parentTitle}"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "Something else is using one of the folders. Try again in a moment."
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "The folder where {target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again."
-msgstr ""
-
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "This computer"
-msgstr ""
-
-#: src/renderer/src/agents/bringChangesBack.logic.ts
-msgid "This worktree isn’t on {branch} any more. Switch it back to its branch, then try again."
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "(optional)"
-msgstr ""
-
-#. placeholder {0}: extra.length
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
-msgstr ""
-
-#. placeholder {0}: gone.length
-#: src/renderer/src/agents/ownServerWords.ts
-msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
-msgstr ""
-
-#. placeholder {0}: questions.length
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "{0, plural, one {Skip question} other {Skip questions}}"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -297,6 +116,70 @@ msgstr ""
 msgid "{name} turned down its key."
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} isn’t on {target} any more, and Sotto doesn’t switch branches. Switch it back to {target} there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in its worktree and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in its worktree on {machine} and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in the project folder and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{parentTitle} works on {target} in the project folder on {machine} and sees them now."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} already has every commit on {branch}."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} has {theirs} that {branch} doesn’t, so Git can’t fast-forward. Sotto can make a merge commit on {target} that brings in this branch’s {ours}. Nothing is rebased or forced, and this worktree stays as it is."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder on {machine}, where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the project folder, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree on {machine} where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works, where a merge or rebase is in progress, so Sotto didn’t touch it. Finish it there, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works, which has uncommitted changes in {files}, so Sotto didn’t touch it. Commit or set them aside in {parentTitle}, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} is checked out in the worktree where {parentTitle} works."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "{target} or {branch} moved since Sotto looked, so nothing changed. Press Bring changes to {target} again."
+msgstr ""
+
 #. {who} is a server program such as Ollama; {count} is a number of models, as in "2 models".
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{who} answered in {ms} ms with {count}."
@@ -305,6 +188,14 @@ msgstr ""
 #. {who} is a server program such as Ollama.
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "{who} answered in {ms} ms."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "<0>{branch}</0> has uncommitted changes in {changed}. Commit them first; Sotto won’t bring back uncommitted work."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "<0>{branch}</0> was made from <1>{target}</1>."
 msgstr ""
 
 #. {five} is the number 5.
@@ -389,6 +280,23 @@ msgstr ""
 msgid "Back to Cursor’s model makers"
 msgstr ""
 
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Bring changes back"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "Bring changes to {target}"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Brought {commits} to {target} with a merge commit."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Brought {commits} to {target}."
+msgstr ""
+
 #. Stops a sign-in that is waiting for the user.
 #: src/renderer/src/agents/CursorConnection.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -433,6 +341,15 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Close without adding a server"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "Commit the {changed} changed first."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Commit…"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -523,6 +440,10 @@ msgstr ""
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Dismiss"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr ""
@@ -560,6 +481,30 @@ msgstr ""
 msgid "From the address, if left empty"
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git fast-forwarded {target} to {head}; nothing else changed."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git found a conflict, and Sotto doesn’t resolve conflicts. Ask this thread to merge {target} into its branch and resolve it, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git has no branch named {target} any more."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git refused."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Git said:"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Hide until this branch changes"
+msgstr ""
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
 msgstr ""
@@ -594,9 +539,21 @@ msgstr ""
 msgid "Local connection"
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Make a merge commit on {target}?"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Make merge commit"
+msgstr ""
+
 #. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Merge commit {head} on {target}: “{subject}”."
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -623,8 +580,16 @@ msgstr ""
 msgid "Name"
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "No folder has {target} checked out, so only the branch moved."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "None yet. Add a model server you run to use its models in OpenCode threads."
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Not now"
 msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -644,12 +609,32 @@ msgstr ""
 msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing to bring back."
+msgstr ""
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Nothing was attached."
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought back."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought to {target}, and {target} is unchanged."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Nothing was brought to {target}."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
+msgstr ""
+
+#: src/renderer/src/agents/BringChangesBack.tsx
+msgid "Open {parentTitle}"
 msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
@@ -790,6 +775,10 @@ msgstr ""
 msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "Something else is using one of the folders. Try again in a moment."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto compacted this idle thread before its cache expired."
 msgstr ""
@@ -864,6 +853,10 @@ msgstr ""
 msgid "That server is no longer saved. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "The folder where {target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "The images in your last message were not kept. Attach them again, then send."
 msgstr ""
@@ -885,6 +878,10 @@ msgstr ""
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr ""
 
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "the thread it began from"
+msgstr ""
+
 #. Whether the model reasons before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking"
@@ -893,6 +890,10 @@ msgstr ""
 #. {model} is a model name.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking for {model}"
+msgstr ""
+
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "This computer"
 msgstr ""
 
 #: src/renderer/src/agents/attachmentWords.ts
@@ -922,6 +923,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "This thread is too long for {model}."
+msgstr ""
+
+#: src/renderer/src/agents/bringChangesBack.logic.ts
+msgid "This worktree isn’t on {branch} any more. Switch it back to its branch, then try again."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts

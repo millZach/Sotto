@@ -160,7 +160,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
     onRun={action => runAction({ action })} /> : null
   const record = bringView?.kind === 'asks' || bringView?.kind === 'outcome' ? bringView.record : undefined
-  const strip = bringView ? <BringChangesBack view={bringView} parentTitle={bringParent?.title ?? 'the thread it began from'} machine={bringMachine} busy={inFlight}
+  const strip = bringView ? <BringChangesBack view={bringView} parentTitle={bringParent?.title ?? t`the thread it began from`} machine={bringMachine} busy={inFlight}
     takeFocus={record !== undefined && record.actionId === bringPressed}
     onBring={() => bring()} onMergeCommit={() => { if (record) bring(record.actionId) }}
     onNotNow={() => { if (record) dismissals.dismiss(record.actionId) }}
