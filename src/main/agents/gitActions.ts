@@ -564,13 +564,31 @@ export class GitActions {
   private async refuseIgnoredCollisions(cwd: string, checkout: string, target: string, from: string, to: string): Promise<void> {
     const added = (await this.git(cwd, ['diff', '--name-only', '--no-renames', '--diff-filter=A', '-z', from, to])).split('\0').filter(Boolean)
     const collisions: string[] = []
-    for (const path of added) if (await occupied(checkout, path)) collisions.push(path)
+    for (const path of added) if (await this.occupied(checkout, path)) collisions.push(path)
     if (collisions.length === 0) return
     const first = collisions[0]!
     const words = collisions.length === 1
       ? `These commits add ${first}, and the folder where ${target} is checked out already has an ignored file there, so Sotto didn’t touch it. Move that file aside, then try again.`
       : `These commits add ${first} and ${collisions.length - 1} more ${collisions.length === 2 ? 'path' : 'paths'} where the folder that has ${target} checked out already has ignored files, so Sotto didn’t touch it. Move those files aside, then try again.`
     throw new BringBackRefusal('ignored', words, { files: collisions.length, checkout })
+  }
+  /**
+   * Whether a path a checkout would gain is taken there by an ignored file: at the path, under it when a folder is there,
+   * or where one of its folders would go. A tracked file or folder in the way is not: the commits remove or replace it, and
+   * Git checks that itself (a tracked `config` becoming `config/index.ts`, or a tracked folder becoming a file).
+   */
+  private async occupied(checkout: string, path: string): Promise<boolean> {
+    const parts = path.split('/')
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const here = parts.slice(0, depth).join('/')
+      const found = await lstat(join(checkout, ...parts.slice(0, depth))).catch(() => null)
+      if (!found) return false
+      if (depth === parts.length || !found.isDirectory()) {
+        const ignored = await this.git(checkout, ['--literal-pathspecs', 'ls-files', '--others', '--ignored', '--exclude-standard', '-z', '--', here])
+        return ignored.split('\0').some(Boolean)
+      }
+    }
+    return false
   }
   /** Whether any commit `targetHead` lacks on the way to `head` is a test run's snapshot, by its author or committer (#1033). */
   private async snapshotIn(cwd: string, targetHead: string, head: string): Promise<boolean> {
@@ -766,19 +784,6 @@ const cut = (text: string): string => text.length > 72 ? `${text.slice(0, 69)}..
 function branchHeadOf(output: string): string {
   const head = output.split('\0').find(record => record.startsWith('# branch.head '))?.slice('# branch.head '.length) ?? ''
   return head === '(detached)' ? '' : head
-}
-/**
- * Whether a path a checkout would gain is taken there already: by a file or folder at the path, or by a file where one of
- * its folders would go. In a folder with nothing uncommitted, anything there is ignored.
- */
-async function occupied(checkout: string, path: string): Promise<boolean> {
-  const parts = path.split('/')
-  for (let depth = 1; depth <= parts.length; depth++) {
-    const found = await lstat(join(checkout, ...parts.slice(0, depth))).catch(() => null)
-    if (!found) return false
-    if (depth === parts.length || !found.isDirectory()) return true
-  }
-  return false
 }
 const files = (count: number): string => `${count} ${count === 1 ? 'file' : 'files'}`
 /** Git's last few lines, as Git said them, with any credentials in a remote's address left out. */

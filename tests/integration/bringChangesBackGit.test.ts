@@ -182,6 +182,26 @@ describe('bringing a worktree’s commits to the branch it was made from', () =>
     expect(await readFile(join(project, 'out'), 'utf8')).toBe('the parent’s build output\n')
   })
 
+  it('brings back commits that turn a tracked file into a folder, or a tracked folder into a file', async () => {
+    const { project, child, actions, main, parentCheckout } = await repository()
+    // main tracks the file config and the folder lib; the child makes config a folder and lib a file.
+    await commitFile(project, 'config', 'one file\n', 'Track config as a file')
+    await mkdir(join(project, 'lib'), { recursive: true })
+    await commitFile(project, 'lib/a.ts', 'export {}\n', 'Track lib as a folder')
+    git(child, 'merge', '-q', '--ff-only', 'main')
+    git(child, 'rm', '-q', 'config', 'lib/a.ts')
+    await mkdir(join(child, 'config'), { recursive: true })
+    await writeFile(join(child, 'config', 'index.ts'), 'export {}\n')
+    await writeFile(join(child, 'lib'), 'now a file\n')
+    git(child, 'add', 'config/index.ts', 'lib'); git(child, 'commit', '-qm', 'Make config a folder and lib a file')
+    const head = git(child, 'rev-parse', 'HEAD')
+    const outcome = await actions.bringBack({ cwd: child, target: 'main', parentCheckout })
+    expect(outcome).toMatchObject({ kind: 'fast-forward' })
+    expect(main()).toBe(head)
+    expect(await readFile(join(project, 'config', 'index.ts'), 'utf8')).toBe('export {}\n')
+    expect(await readFile(join(project, 'lib'), 'utf8')).toBe('now a file\n')
+  })
+
   it('moves only the target, by name, when the parent’s folder switches branch while it is brought back', async () => {
     const { project, child, main } = await repository()
     git(project, 'branch', 'other', 'main')
