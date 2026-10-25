@@ -1,7 +1,8 @@
 // @vitest-environment node
 /**
- * When each request started waiting, stamped by the host (ADR-0135): the first snapshot that shows a request stamps it,
- * the stamp stands while the request stands, and publishing leaves a thread that already carries its stamps untouched.
+ * When each request started waiting, stamped as the coordinator first shows it (ADR-0135): the stamp stands while
+ * the request stands, a thread already carrying its stamps is shown as it stands, and a stamp shown again — this
+ * coordinator's own snapshot, or a remote one's — is kept rather than restamped.
  */
 import { describe, expect, it } from 'vitest'
 import { RequestWaits } from '../../../src/main/agents/requestWaits'
@@ -15,70 +16,64 @@ function thread(id: string, requests: AgentRequest[] = []): AgentThread {
 function snapshot(threads: AgentThread[]): AgentHostSnapshot {
   return { ...structuredClone(EMPTY_AGENT_HOST), connected: true, threads }
 }
+const shown = (waits: RequestWaits, threads: AgentThread[], gone?: ReadonlySet<string>): AgentThread[] =>
+  waits.decorate(snapshot(threads), gone).threads
 
 describe('when a request started waiting', () => {
   it('stamps a request when it is first shown and keeps that stamp while it stands', () => {
     let clock = Date.parse('2026-10-24T10:00:00.000Z')
     const waits = new RequestWaits(() => clock)
-    waits.track(snapshot([thread('a', [permission('p1')])]))
-    expect(waits.publish(thread('a', [permission('p1')])).requests[0]).toMatchObject({ since: '2026-10-24T10:00:00.000Z' })
+    expect(shown(waits, [thread('a', [permission('p1')])])[0]?.requests[0]).toMatchObject({ since: '2026-10-24T10:00:00.000Z' })
     clock += 12 * 60_000
-    waits.track(snapshot([thread('a', [permission('p1')])]))
-    expect(waits.publish(thread('a', [permission('p1')])).requests[0]).toMatchObject({ since: '2026-10-24T10:00:00.000Z' })
+    expect(shown(waits, [thread('a', [permission('p1')])])[0]?.requests[0]).toMatchObject({ since: '2026-10-24T10:00:00.000Z' })
   })
 
   it('stamps each request on its own and forgets it once answered or gone', () => {
     let clock = Date.parse('2026-10-24T10:00:00.000Z')
     const waits = new RequestWaits(() => clock)
-    waits.track(snapshot([thread('a', [permission('p1')])]))
+    shown(waits, [thread('a', [permission('p1')])])
     clock += 60_000
-    waits.track(snapshot([thread('a', [permission('p1'), question('q1')])]))
-    const both = waits.publish(thread('a', [permission('p1'), question('q1')]))
-    expect(both.requests.map(request => request.since)).toEqual(['2026-10-24T10:00:00.000Z', '2026-10-24T10:01:00.000Z'])
+    expect(shown(waits, [thread('a', [permission('p1'), question('q1')])])[0]?.requests.map(request => request.since))
+      .toEqual(['2026-10-24T10:00:00.000Z', '2026-10-24T10:01:00.000Z'])
     clock += 60_000
-    waits.track(snapshot([thread('a', [question('q1')])]))
-    waits.track(snapshot([thread('a', [permission('p1'), question('q1')])]))
+    shown(waits, [thread('a', [question('q1')])])
     // p1 answered and asked again under the same ID is a new wait; q1 kept waiting throughout.
-    expect(waits.publish(thread('a', [permission('p1'), question('q1')])).requests.map(request => request.since))
+    expect(shown(waits, [thread('a', [permission('p1'), question('q1')])])[0]?.requests.map(request => request.since))
       .toEqual(['2026-10-24T10:02:00.000Z', '2026-10-24T10:01:00.000Z'])
-    waits.track(snapshot([]))
-    waits.track(snapshot([thread('a', [question('q1')])]))
-    expect(waits.publish(thread('a', [question('q1')])).requests[0]?.since).toBe('2026-10-24T10:02:00.000Z')
+    shown(waits, [])
+    expect(shown(waits, [thread('a', [question('q1')])])[0]?.requests[0]?.since).toBe('2026-10-24T10:02:00.000Z')
   })
 
-  it('reads only the threads a change named, as a whole read would leave them', () => {
+  it('reads only the threads a change named, as a whole showing would leave them', () => {
     let clock = Date.parse('2026-10-24T10:00:00.000Z')
     const waits = new RequestWaits(() => clock)
-    waits.track(snapshot([thread('a', [permission('p1')]), thread('b', [question('q1')])]))
+    shown(waits, [thread('a', [permission('p1')]), thread('b', [question('q1')])])
     clock += 5 * 60_000
-    const changed = snapshot([thread('a', [permission('p2')]), thread('b', [question('q1')])])
-    waits.trackChanged(changed, [thread('a', [permission('p2')])], [])
-    expect(waits.publish(thread('a', [permission('p2')])).requests[0]?.since).toBe('2026-10-24T10:05:00.000Z')
-    expect(waits.publish(thread('b', [question('q1')])).requests[0]?.since).toBe('2026-10-24T10:00:00.000Z')
-    waits.trackChanged(snapshot([thread('a', [permission('p2')])]), [], ['b'])
+    expect(shown(waits, [thread('a', [permission('p2')])], new Set())[0]?.requests[0]?.since).toBe('2026-10-24T10:05:00.000Z')
+    expect(shown(waits, [thread('b', [question('q1')])], new Set())[0]?.requests[0]?.since).toBe('2026-10-24T10:00:00.000Z')
+    shown(waits, [], new Set(['b']))
     clock += 60_000
-    waits.track(snapshot([thread('a', [permission('p2')]), thread('b', [question('q1')])]))
-    expect(waits.publish(thread('b', [question('q1')])).requests[0]?.since).toBe('2026-10-24T10:06:00.000Z')
-    expect(() => new RequestWaits().trackChanged(snapshot([]), [], [])).toThrow()
+    expect(shown(waits, [thread('b', [question('q1')])], new Set())[0]?.requests[0]?.since).toBe('2026-10-24T10:06:00.000Z')
+    expect(() => new RequestWaits().decorate(snapshot([]), new Set())).toThrow()
   })
 
-  it('publishes the thread as it stands when its stamps already stand, and strips a stamp it never gave', () => {
+  it('shows a thread as it stands when its stamps already stand, and keeps a stamp shown again', () => {
     const waits = new RequestWaits(() => Date.parse('2026-10-24T10:00:00.000Z'))
     const bare = thread('a')
-    expect(waits.publish(bare)).toBe(bare)
-    waits.track(snapshot([thread('a', [permission('p1')])]))
-    const stamped = waits.publish(thread('a', [permission('p1')]))
-    expect(waits.publish(stamped)).toBe(stamped)
-    const foreign = thread('a', [{ ...permission('p9'), since: '2020-01-01T00:00:00.000Z' }])
-    expect(waits.publish(foreign).requests[0]).not.toHaveProperty('since')
+    expect(shown(waits, [bare])[0]).toBe(bare)
+    const stamped = shown(waits, [thread('a', [permission('p1')])])[0]!
+    expect(shown(waits, [stamped])[0]).toBe(stamped)
+    // A stamp from the coordinator that runs the thread, arriving on its snapshot, is the wait's start.
+    const remote = new RequestWaits(() => Date.parse('2026-10-24T11:00:00.000Z'))
+    expect(shown(remote, [stamped])[0]).toBe(stamped)
   })
 
   it('tells which threads moved when a stamp is new', () => {
     const waits = new RequestWaits(() => 1_000)
     const moved: string[] = []
     waits.onMoved = id => { moved.push(id) }
-    waits.track(snapshot([thread('a', [permission('p1')]), thread('b')]))
-    waits.track(snapshot([thread('a', [permission('p1')]), thread('b', [question('q1')])]))
+    shown(waits, [thread('a', [permission('p1')]), thread('b')])
+    shown(waits, [thread('a', [permission('p1')]), thread('b', [question('q1')])])
     expect(moved).toEqual(['a', 'b'])
   })
 })
