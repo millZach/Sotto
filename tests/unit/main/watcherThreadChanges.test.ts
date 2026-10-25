@@ -12,6 +12,12 @@
  * the coordinator, and delegation's records and pauses. Two things are normalized, and nothing else: UUIDs Watcher makes at
  * random (its prompt turns), named in the order they first appear; and the room's build number, which counts builds.
  * Wake-ups are kept by the test rather than queued, so neither coordinator sends anything to the shared provider.
+ *
+ * Each seed runs with the workspace's windows held for every thread, or led by the changes side's coordinator as in
+ * production, where windows go and come back as its observed threads move (`stack`). A family lets a watched thread's window
+ * go and come back; another moves Watcher's record and brings its pass only through the provider's next publication,
+ * asserting the test supplied no call. The clock moves only once both sides hold the same host snapshot and have read their
+ * records, so neither side's pass is dated a window later than the other's.
  */
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -114,7 +120,18 @@ function remoteHost() {
  * The adapter, the identity wrapper, the provider switch and one workspace, as main wires them, with two coordinators
  * over the workspace, each with Watcher open on the same Watcher thread and delegation on.
  */
-async function stack(threads = 7) {
+/**
+ * How the workspace hears which threads a window looks at, which decides the threads whose messages it holds:
+ * - `held`: every thread's, but those the test lets go of, so neither coordinator's looking changes what the other is sent;
+ * - `led`: the coordinator on changes alone tells it, as the only coordinator does in production, and the whole side's
+ *   telling is not heard. Windows go and come back as that coordinator's own threads to observe move: Watcher's watched
+ *   threads, delegation's followed threads, the selected thread and the threads a window shows.
+ * Letting both tell it (`shared`, tried and not kept) makes them disagree, and the cause is the pair, not the changes path:
+ * when the whole side's delegation has seen a delegated thread's reply and stops following the thread, its telling makes
+ * the workspace drop that thread's messages before the changes side, which still follows it, reads the reply. The workspace
+ * hears no such telling in production, and `led` agrees across every family.
+ */
+async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
   vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
   const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-changes-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }))
@@ -134,10 +151,17 @@ async function stack(threads = 7) {
   const workspace = new WorkspaceHost(native, join(root, 'workspace'), () => true, 600_000, true)
   workspace.enableDelegation()
   // Both coordinators tell the one workspace which threads they look at, and the last to tell it would decide which threads
-  // hold their messages for both. It is made to hold every thread's, so what one coordinator looks at never changes what
-  // the other is sent.
+  // hold their messages for both. It is made to hold every thread's but those the test lets go of (`unloaded`), so what one
+  // coordinator looks at never changes what the other is sent, while a thread's window still goes and comes back as a
+  // window's does in production: its messages drop to a summary and come back from the store.
+  const unloaded = new Set<string>()
   const observe = workspace.observeThreads.bind(workspace)
-  workspace.observeThreads = () => observe(workspace.workspaceSnapshot().threads.map(item => item.id))
+  if (observation === 'held') workspace.observeThreads = () => observe(workspace.workspaceSnapshot().threads.map(item => item.id).filter(id => !unloaded.has(id)))
+  /**
+   * Tells the workspace again which threads are looked at, as a window does when it changes what it shows: held, every
+   * thread but those let go of; led, the threads a window shows, all but those, through the changes side's coordinator.
+   */
+  let observeNow = (): void => { workspace.observeThreads([]) }
   cleanup.push(async () => { workspace.disconnect(); await workspace.privacyChanged().catch(() => undefined); workspace.dispose() })
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
@@ -149,11 +173,20 @@ async function stack(threads = 7) {
   for (const name of ['changed', 'whole'] as const) {
     const directory = join(root, name)
     await mkdir(directory, { recursive: true })
-    const control = createAgentControl({ directory, host: workspace, credentials, historyEnabled: () => false })
+    // Led by the changes side: the whole side's coordinator tells the workspace nothing of what it looks at.
+    const host = observation === 'led' && name === 'whole' ? new Proxy(workspace, { get(target, key) {
+      if (key === 'observeThreads') return () => undefined
+      const value = Reflect.get(target, key, target) as unknown
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
+    } }) as WorkspaceHost : workspace
+    const control = createAgentControl({ directory, host, credentials, historyEnabled: () => false })
     if (name === 'whole') (control as unknown as { acceptsWhole: boolean }).acceptsWhole = true
     await control.start()
     cleanup.push(() => control.dispose())
     sides.push({ name, control, watcher: undefined as never, delegation: undefined as never, timers: new Timers(), delivered: [] })
+  }
+  if (observation === 'led') observeNow = () => {
+    void sides[0]!.control.command({ type: 'observe-threads', threadIds: sides[0]!.control.watcherSnapshot().threads.map(item => item.id).filter(id => !unloaded.has(id)) })
   }
   for (const side of sides) await side.control.command({ type: 'connect' })
   publish()
@@ -183,7 +216,9 @@ async function stack(threads = 7) {
     cleanup.push(() => delegation.close())
     Object.assign(side, { watcher, delegation })
   }
-  return { root, adapter, workspace, registry, sessions, sotto, at, publish, remote, hostId, sides: sides as [Side, Side] }
+  return { root, adapter, workspace, registry, sessions, sotto, at, publish, remote, hostId, unloaded, observeNow, sides: sides as [Side, Side],
+    /** How many times a side was given the call a publish makes because none came (`settled`). */
+    supplied: { count: 0 } }
 }
 type Stack = Awaited<ReturnType<typeof stack>>
 
@@ -247,10 +282,10 @@ function differences({ sides: [changed, whole] }: Stack): string[] {
  * Both sides agree once each has taken in what the operation set off and run the wake-up pass it owes: the clock moves on
  * by the observe window, so a pass put off while updates came runs on both, over the same threads.
  */
-async function agree(made: Stack, step: string): Promise<void> {
+async function agree(made: Stack, step: string, supply = true): Promise<void> {
   let found: string[] = []
   for (let attempt = 0; attempt < 60; attempt++) {
-    await settled(made)
+    await settled(made, supply)
     passTime(made, WATCHER_OBSERVE_MS)
     await quiet()
     found = differences(made)
@@ -262,10 +297,10 @@ async function agree(made: Stack, step: string): Promise<void> {
 /**
  * Waits, without moving the fake clock, until neither side has anything left to take in: the workspace has flushed, and
  * each coordinator's host snapshot, Watcher's record and what its last wake-up pass read stay as they are for two looks,
- * and each wake-up pass has read the record as it now stands.
+ * both coordinators hold the same host snapshot, and each wake-up pass has read the record as it now stands.
  * Moving the clock while one side still has an update to take in would date that side's next pass a window later.
  */
-async function settled(made: Stack): Promise<void> {
+async function settled(made: Stack, supply = true): Promise<void> {
   const look = () => made.sides.map(side => {
     const wakes = side.watcher.wakes as unknown as { observedEdges?: { record: unknown; threads: string } }
     return [side.control.watcherSnapshot(), side.control.watcherRecordView(), wakes.observedEdges?.record, wakes.observedEdges?.threads, side.delivered.length]
@@ -276,10 +311,15 @@ async function settled(made: Stack): Promise<void> {
     const now = look(), still = now.length === last.length && now.every((item, at) => item === last[at])
     last = now
     if (!still) continue
+    // Both coordinators have taken in the same publications: one whose publication is still on its way would see it only
+    // after the clock moved, and date what it finds a window later than the other.
+    if (round < 40 && text(made.sides[0].control.watcherSnapshot()) !== text(made.sides[1].control.watcherSnapshot())) continue
     // A record change is read by the wake-up pass the coordinator's next publish runs. A side whose record changed with no
     // publish to follow is given the call that publish would make, at the same time on the clock.
     const behind = made.sides.filter(side => (side.watcher.wakes as unknown as { observedEdges?: { record: unknown } }).observedEdges?.record !== side.control.watcherRecordView())
     if (!behind.length) return
+    if (!supply) continue
+    made.supplied.count += behind.length
     for (const side of behind) side.watcher.wakes.observeSoon(() => undefined)
   }
 }
@@ -300,8 +340,8 @@ async function onBoth(made: Stack, change: (record: WatcherRecord) => void): Pro
 }
 
 /** The seeded run: every operation family once in a fixed order, then a seeded mix of them. */
-async function equivalenceRun(seed: number, rounds: number) {
-  const made = await stack()
+async function equivalenceRun(seed: number, rounds: number, observation: 'held' | 'led' = 'held') {
+  const made = await stack(7, observation)
   const { adapter, workspace, sessions, sotto, at, publish, remote, hostId, sides } = made
   const [changed, whole] = sides
   const next = prng(seed)
@@ -309,7 +349,7 @@ async function equivalenceRun(seed: number, rounds: number) {
   const pending = new Set<string>()
   for (const side of sides) vi.spyOn(side.control, 'hasPendingThreadWork').mockImplementation(threadId => pending.has(threadId))
   let ids = 100, compared = 0, remoteThreads = 0
-  const same = async (step: string): Promise<void> => { compared++; await agree(made, step) }
+  const same = async (step: string, supply = true): Promise<void> => { compared++; await agree(made, step, supply) }
   const target = (session: string): WatcherThreadTarget => ({ hostId, threadId: sotto(session) })
   const say = (session: string, role: 'user' | 'assistant', words: string): string => {
     const id = `m-${ids++}`
@@ -410,6 +450,30 @@ async function equivalenceRun(seed: number, rounds: number) {
       await onBoth(made, record => { const held = record.watches!.find(item => item.id === watch.id); if (held) held.pausedByUserMessageId = 'unobserved-user-turn' })
       publish(pick(sessions.filter(item => item !== into))); await same(`the watch of ${into} held, with work in its queue`)
     },
+    // A watched thread's window going and coming back: the workspace drops its messages to a summary, then reads them back
+    // from the store, as when a window stops and starts showing it.
+    'window': async session => {
+      const into = watched().length && next(2) ? pick(watched()) : session
+      const shown = (side: Side) => text(side.control.watcherSnapshot().threads.find(item => item.id === sotto(into)))
+      const before = shown(changed)
+      if (made.unloaded.has(sotto(into))) made.unloaded.delete(sotto(into)); else made.unloaded.add(sotto(into))
+      made.observeNow()
+      // The window goes or comes back through the workspace's next publication, which reaches the two coordinators a
+      // moment apart; both show it before anything else happens, or the next step would find one side still without it.
+      for (let wait = 0; wait < 60 && !(shown(changed) !== before && shown(changed) === shown(whole)); wait++) await quiet()
+      await same(`${into}'s window ${made.unloaded.has(sotto(into)) ? 'going' : 'coming back'}`)
+    },
+    // A change to Watcher's record whose pass comes only through the real path: the provider's next publication, taken in
+    // by each coordinator and handed to its Watcher, with no call supplied by the test.
+    'record-then-publication': async session => {
+      const watch = changed.control.watcherRecordView().watches?.[0]
+      if (!watch) return
+      await onBoth(made, record => { const held = record.watches!.find(item => item.id === watch.id); if (held) held.lastUserMessageId = null })
+      const before = made.supplied.count
+      say(session, 'assistant', 'Words that publish'); publish()
+      await same(`Watcher's record moving, then the provider publishing ${session}`, false)
+      expect(made.supplied.count, 'the publication brought each side its pass').toBe(before)
+    },
     // The user's own work waiting in a watched thread's queue, or leaving it, with no change to the thread itself.
     'queue': async session => {
       const into = watched().length ? pick(watched()) : session
@@ -485,7 +549,13 @@ async function equivalenceRun(seed: number, rounds: number) {
     },
     // The user settling a thread, and the provider starting and dropping threads.
     'settle': async session => { await workspace.setWorkspaceSettled('thread', sotto(session), next(2) === 0); await same(`settling ${session}`) },
-    'thread-starts': async () => { const id = `n${ids++}`; adapter.state.threads.push(thread(id)); sessions.splice(sessions.length - 1, 0, id); publish(id); await same(`the provider starting ${id}`) },
+    'thread-starts': async () => {
+      const id = `n${ids++}`; adapter.state.threads.push(thread(id)); sessions.splice(sessions.length - 1, 0, id); publish(id)
+      await same(`the provider starting ${id}`)
+      // The workspace holds the new thread's messages from now on, as every thread's: otherwise the first coordinator to
+      // look at it, as by watching it, would bring its window in between the two coordinators' passes.
+      made.observeNow(); await same(`${id} coming into view`)
+    },
     'thread-drops': async session => {
       if (session === sessions.at(-1) || session === 's1' || sessions.length < 4) return
       adapter.state.threads.splice(adapter.state.threads.indexOf(at(session)), 1); sessions.splice(sessions.indexOf(session), 1); publish(session)
@@ -507,8 +577,8 @@ async function equivalenceRun(seed: number, rounds: number) {
 }
 
 describe('Watcher and delegation on thread changes (#925 step 5)', () => {
-  it.each([1, 2])('say what the whole path says across a seeded run of every operation family (seed %i)', async seed => {
-    const { ran, names, compared, changed, whole } = await equivalenceRun(seed, 70)
+  it.each([[1, 'held'], [2, 'held'], [3, 'led'], [4, 'led']] as const)('say what the whole path says across a seeded run of every operation family (seed %i, windows %s)', async (seed, observation) => {
+    const { ran, names, compared, changed, whole } = await equivalenceRun(seed, 70, observation)
     // Every family ran, and the comparisons ran after each.
     expect(names.filter(name => !ran.has(name))).toEqual([])
     expect(compared).toBeGreaterThan(names.length)
