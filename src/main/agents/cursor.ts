@@ -269,7 +269,7 @@ export class CursorAcpHost implements AgentHost {
   /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
   private readonly threadChanges = new AdapterThreadChanges({ view: historyFromEvents => this.activitySnapshot(historyFromEvents) })
   private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))

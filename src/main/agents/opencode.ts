@@ -372,7 +372,7 @@ export class OpenCodeHost implements AgentHost {
   private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   private history: ThreadHistorySource | undefined
   private readonly observed = new Set<string>()
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly loading = new Map<string, Promise<void>>()
   /** Each thread's creation while it runs, so opening the thread meanwhile waits for it rather than making another session. */
   private readonly creating = new Map<string, Promise<void>>()

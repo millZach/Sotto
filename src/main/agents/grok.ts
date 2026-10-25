@@ -379,7 +379,7 @@ export class GrokAcpHost implements AgentHost {
   /** Watched set: the threads the coordinator asked for. Their sessions are loaded eagerly, never reaped. */
   private readonly observed = new Set<string>()
   /** The sessions this connection has loaded; only these are polled for history. */
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly loading = new Map<string, Promise<void>>()
   private readonly reaper: SessionReaper
   private pollTimer: ReturnType<typeof setInterval> | undefined
