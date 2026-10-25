@@ -196,7 +196,7 @@
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
-.thread-prompt .prompt-editor { display: block; width: 100%; min-height: 74px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 /* Placeholder ink is muted ink let through at 55%: words nobody has typed yet read as unaccepted, the way Claude Code's
    desktop draws them (Drake's ask, October 24, 2026). The next prompt's ghost wears the same ink (nextPrompt.css), its
    Tab keycap excepted. Suggestion ink stands outside the 4.5:1 text pairs (paintedTextPairs.ts): the ghost is hidden
@@ -312,7 +312,7 @@
   /* The header is already one row at its smallest; the transcript and composer share what is left. */
   .thread-pane > .thread-transcript { min-height: min(120px, 24%); }
   .thread-prompt { padding: 10px 14px 8px; }
-  .thread-prompt .prompt-editor { min-height: 50px; max-height: 150px; }
+  .thread-prompt .prompt-editor { min-height: 36px; max-height: 150px; }
   .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
   /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
