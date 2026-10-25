@@ -761,10 +761,10 @@ describe('the room switch', () => {
     return { navigate, view, tabs: () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab') }
   }
 
-  it('puts the owl between Dictate and Threads, every tile named and the closed ones tipped, with one tab stop', () => {
+  it('puts the owl between Dictate and Threads, every tile named and tipped, with one tab stop', () => {
     const { tabs } = foot('home')
     expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Watcher', 'Threads'])
-    expect(tabs().map(tab => tab.getAttribute('title'))).toEqual([null, 'Watcher', 'Threads'])
+    expect(tabs().map(tab => tab.getAttribute('title'))).toEqual(['Dictate', 'Watcher', 'Threads'])
     expect(tabs().map(tab => tab.tabIndex)).toEqual([0, -1, -1])
   })
 
@@ -805,7 +805,7 @@ describe('the room switch', () => {
 
   it('is Dictate | Threads alone with the gate off', () => {
     const { tabs } = foot('threads', false)
-    expect(tabs().map(tab => tab.textContent)).toEqual(['Dictate', 'Threads'])
+    expect(tabs().map(tab => tab.getAttribute('aria-label'))).toEqual(['Dictate', 'Threads'])
   })
 })
 
