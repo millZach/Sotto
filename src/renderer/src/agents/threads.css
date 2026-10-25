@@ -21,7 +21,7 @@
 /* Workspace */
 .thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
-.threads-view .thread-workspace > .thread-workspace__body:has(.thread-pane) { min-height: min(560px, calc(100% - 140px)); }
+.threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
 /* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
    The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
@@ -146,6 +146,40 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
+/* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
+   around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
+   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
+.thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
+.thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
+.thread-workspace__compose > * { pointer-events: auto; }
+.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
+.thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
+   user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
+   away, and the branch toolbar and the row under the card hide but keep their place, so the card's foot never moves
+   and only its top comes down (the user's ask on October 24, 2026). The composer keeps the full card's room, so the
+   transcript keeps its size and its last line still comes clear at the end, and the Jump button sits just above what
+   shows. The pane sets data-slim on the composer, and tells it to the pane as a mark (marks.tsx), only
+   while the composer floats. While the card moves between slim and full (data-slim-moving, slimComposer.ts) the
+   composer keeps that room and the card stands at its foot both ways, so its moving height reaches nothing else.
+   The rules carry the pane's classes so they outweigh a short pane's and a split's own sizes for the composer. */
+.threads-view .thread-pane > .thread-workspace__compose:is([data-slim], [data-slim-moving]) { min-height: var(--thread-compose-height, 0px); justify-content: flex-end; }
+/* A widening card already holds its full content, cut at its moving foot. While it moves the pane clips at its own edges
+   rather than scrolling, so it never has that content to scroll to and never shows a scroll bar of its own; a picker
+   opening above the card is not cut. */
+.threads-view .thread-pane.thread-pane:has(> .thread-workspace__compose[data-slim-moving]) { overflow: clip; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > :is(.thread-pane__meta, .branch-toolbar) { visibility: hidden; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] > .thread-prompt { padding-block: 9px; padding-inline: 16px 10px; cursor: text; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(textarea, .prompt-editor) { min-height: 22px; max-height: 22px; padding-right: 40px; overflow: hidden; resize: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt :is(.thread-prompt__meta, .thread-prompt__steer, .screenshot-input__tools > *) { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt > .thread-prompt__footer { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); }
+.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
+/* The composer, its card and the card's field take their size at once, slim or full: the pane lays the transcript out by
+   the composer's measured height, and the 1ms transition reduced motion gives every property (global.css), which a window
+   in the background never finishes, would leave that room a step behind the composer and the pane with room to scroll. */
+.thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
+/* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
+.thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
 /* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
 .thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }
@@ -153,16 +187,15 @@
 .thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
-/* The composer is a card (ADR-0110): filled, with no outline at rest. Its edge comes back to say it is focused, running
-   or at a model's highest effort. */
+/* The composer is a card (ADR-0110): filled, with no edge in any state, at rest, pointed at, with focus, slim, running or
+   at a model's highest effort (the user's asks on October 23 and 24, 2026). The caret says where typing goes, and the
+   card is the pane's only text field; the border stays transparent so the card keeps its size. */
 .thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
-.thread-prompt[data-running] { border-color: color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border)); }
-.thread-prompt:focus-within { border-color: var(--threads-field-focus); }
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 74px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .prompt-editor { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
@@ -194,34 +227,18 @@
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 .thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
-/* At a model's highest level the composer wears a thin outline in the effort colourway, with a brighter run
-   travelling round it, and takes the colourway's tide when the level is reached (ADR-0019). The composer reads
-   the effort chip's own mark, so no prop has to travel; the card's arrival state drives the tide. The ring angle
-   property and the effort-ring keyframes are declared once in global.css. */
-.thread-prompt { position: relative; --effort-tint: 0%; }
-.thread-prompt:has(.thread-chip[data-effort-top='true']) { --effort-tint: 30%; border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-border)); transition: border-color 2400ms cubic-bezier(.2, .8, .2, 1); }
+/* At a model's highest level the composer takes the colourway's tide when the level is reached (ADR-0019, amended); it
+   wears no outline. The composer reads the effort chip's own mark, so no prop has to travel; the card's arrival state
+   drives the tide. */
+.thread-prompt { position: relative; }
 /* The arrival mark sits on the chip's wrapper, which outlives the card: closing the card mid-tide does not cut it. */
-.thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true']) { --effort-tint: 70%; transition-duration: 220ms; }
-/* The tint sits over the focus and running colours rather than replacing them: the border is the textarea's focus cue. */
-.thread-prompt[data-running]:has(.thread-chip[data-effort-top='true']) { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), color-mix(in srgb, var(--tt-activity) 45%, var(--threads-field-border))); }
-.thread-prompt:has(.thread-chip[data-effort-top='true']):focus-within { border-color: color-mix(in srgb, var(--tt-effort-border) var(--effort-tint), var(--threads-field-focus)); }
-.thread-prompt::after { content: ''; position: absolute; inset: -1px; border-radius: 16px; padding: 1.5px; pointer-events: none; opacity: 0; transition: opacity 700ms;
-  background: conic-gradient(from var(--effort-ring-angle), transparent 0turn, transparent .52turn, color-mix(in srgb, var(--tt-effort-a) 70%, transparent) .66turn, var(--tt-effort-b) .76turn, var(--tt-effort-c) .84turn, transparent .94turn, transparent 1turn);
-  -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor; mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); mask-composite: exclude; }
-.thread-prompt:has(.thread-chip[data-effort-top='true'])::after { opacity: 1; }
 .thread-prompt::before { content: ''; position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; z-index: 1;
   background: var(--tt-effort-wash-image); background-size: 100% 220%; background-position: 0 -320%; background-repeat: no-repeat; opacity: 0;
   -webkit-mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); mask-image: linear-gradient(to top, transparent 0%, black 36%, black 58%, transparent 100%); }
 @media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .thread-prompt:has(.thread-chip[data-effort-top='true'])::after { animation: effort-ring 4200ms linear infinite; }
   :root:not([data-reduced-motion='on']) .thread-prompt:has(.effort-picker-anchor[data-effort-arriving='true'])::before { animation: effort-tide 1700ms 120ms cubic-bezier(.3, .6, .2, 1) both; }
 }
 @keyframes effort-tide { from { opacity: .5; background-position: 0 100%; } to { opacity: .5; background-position: 0 -320%; } }
-/* Reduced motion keeps the outline as a still ring at half strength. */
-:root[data-reduced-motion='on'] .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
-@media (prefers-reduced-motion: reduce) {
-  .thread-prompt::after { background: conic-gradient(color-mix(in srgb, var(--tt-effort-a) 55%, transparent), color-mix(in srgb, var(--tt-effort-b) 55%, transparent), color-mix(in srgb, var(--tt-effort-c) 55%, transparent), color-mix(in srgb, var(--tt-effort-a) 55%, transparent)); }
-}
 
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
 .threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
@@ -243,14 +260,19 @@
    narrower, until the first send (Zach, October 14: docs/prototypes/new-thread-greeting-prototype.html, variant a). The
    empty transcript above and the balance below share the room equally. */
 .thread-pane__balance { display: none; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-transcript { flex: 1 1 0; min-height: 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-pane__balance { display: block; flex: 1 1 0; }
-.thread-pane:has(> .thread-greeting-slot > .thread-greeting) > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
+.thread-pane[data-greeting] > .thread-transcript { flex: 1 1 0; min-height: 0; }
+.thread-pane[data-greeting] > .thread-pane__balance { display: block; flex: 1 1 0; }
+.thread-pane[data-greeting] > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
 .thread-greeting { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 24px 18px; text-align: center; }
 .thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
 .thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__where svg { flex: none; }
+.thread-greeting__project { min-width: 0; max-width: 100%; }
+.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
 @container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }
 @container thread-pane (max-height: 600px) {
   .thread-greeting { gap: 4px; padding-bottom: 10px; }

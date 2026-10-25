@@ -15,7 +15,7 @@ describe('release track', () => {
   })
 })
 
-it('enables Watcher only on the Owl release track', () => {
+it('enables Watcher on both release tracks now that it is sent to stable', () => {
   expect(isWatcherEnabled('owl')).toBe(true)
-  expect(isWatcherEnabled('stable')).toBe(false)
+  expect(isWatcherEnabled('stable')).toBe(true)
 })

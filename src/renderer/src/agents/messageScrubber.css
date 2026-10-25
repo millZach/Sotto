@@ -10,6 +10,9 @@
 .message-scrubber[data-narrow] .message-scrubber__tick { --rest: 8px; --peak: 14px; }
 .message-scrubber__tick::before { content: ''; position: absolute; top: 50%; right: var(--scrubber-gap); width: calc(var(--rest) + (var(--peak) - var(--rest)) * var(--rise, 0));
   height: 2px; margin-top: -1px; border-radius: 0; background: var(--tt-text-muted); opacity: calc(.6 + .4 * var(--rise, 0)); }
+/* Reached by the pointer or the keyboard, every tick keeps 3:1 against what is under it, the far ones too; the rise
+   still shows in their width (the user's ask on October 24, 2026). At rest the lane stays faint. */
+.message-scrubber:is(:hover, :focus-within, [data-active]) .message-scrubber__tick::before { opacity: calc(.8 + .2 * var(--rise, 0)); }
 /* The messages on screen are a step brighter, so the column says where the reader is. */
 .message-scrubber__tick[data-in-view]::before { background: var(--tt-text-2); }
 .message-scrubber__tick[data-hot]::before { height: 3px; margin-top: -1.5px; background: var(--tt-text); opacity: 1; }

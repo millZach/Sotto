@@ -100,6 +100,8 @@ describe('remote command allow-list', () => {
     expect([...REMOTE_USAGE_OPERATIONS]).toEqual(['usage-read', 'usage-refresh', 'usage-clear'])
     const decided = ['hello', 'shell', 'detail', 'events', 'observe', 'command', 'preview', 'receipt', 'git-refs', 'git-changed-files', 'git-pull-request',
       'stage-attachment', 'attachment-content', 'host-folders', ...REMOTE_SIGN_IN_OPERATIONS,
+      // An attached file in parts (ADR-0131): staging, the same trust as an image's, which pairing gives.
+      'stage-file-part',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
@@ -128,6 +130,8 @@ describe('remote command allow-list', () => {
       'activity-body',
       // A thread's delegated threads for the iPhone's Agents view: a read on a listener that offers agents-view (ADR-0103).
       'thread-delegations',
+      // The prompts above a pane's window, a read for the message scrubber on a listener that offers thread-prompts (ADR-0109).
+      'thread-prompts',
       // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
       'branch-move']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)

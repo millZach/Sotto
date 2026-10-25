@@ -7,16 +7,6 @@
 
 .watcher-owl { display: block; flex: none; fill: currentColor; }
 
-/* ---------- The room switch: Dictate | owl | Threads ---------- */
-/* Dictate and Threads keep equal shares; the owl takes a fixed part between them. With dictation off (ADR-0107)
-   the owl keeps its fixed part and Threads takes the rest. */
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg[data-rooms='3'] { display: grid; grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); }
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg[data-rooms='owl'] { display: grid; grid-template-columns: 46px minmax(0, 1fr); }
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg:is([data-rooms='3'], [data-rooms='owl']) button { min-width: 0; }
-.thread-nav__seg button[data-room='watcher'] { padding: 0; }
-.thread-nav__seg button[data-room='watcher'][aria-selected='true'],
-.app-switch__tab[data-room='watcher'][aria-selected='true'] { color: var(--tt-accent-text); }
-
 /* ---------- A watched thread ---------- */
 /* The owl right after the provider logo, the logo's own size, in the muted text colour of whatever row holds it. */
 .watched-badge { display: inline-grid; flex: none; place-items: center; color: var(--tt-text-muted); }
@@ -37,7 +27,6 @@
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-.watch-toggle[aria-pressed='true'] > .watcher-owl { color: var(--tt-accent-text); }
 @container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
@@ -123,30 +112,21 @@
 .watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
 @container thread-pane (width < 470px) { .watcher-head__list-text { display: none; } }
 
-/* Conversation and Watched, beside All threads: two segments in a hairline track, the one shown raised. */
-.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 3px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-surface-sunken, var(--tt-hover)); }
-.watcher-tabs__tab { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+/* Conversation, Watched and Visualize, beside All threads: three icons with no track (Drake's pick on October 24, 2026).
+   The one shown takes All threads' hover look; the others stay quieter until hovered. Watched's count is a badge in its
+   corner, in the pill colours so it reads apart from the eye, and the icons need no word's room at any width. */
+.watcher-tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; }
+.watcher-tabs__tab { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; cursor: pointer; }
 .watcher-tabs__tab:hover { color: var(--tt-text); }
-.watcher-tabs__tab[aria-selected='true'] { background: var(--tt-segment-on); box-shadow: var(--tt-shadow-sm); color: var(--tt-text); }
-.watcher-tabs__count { color: var(--tt-text-2); font-variant-numeric: tabular-nums; }
-@container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } .watcher-tabs__tab { padding: 0 7px; } }
-/* Visualize, the third tab (#1339), keeps its word where the row holds it with three-digit counts, from 640 pixels of
-   pane and from 680 while Stop all shows, and its constellation mark below that; its name says Visualize either way.
-   With Stop all showing, the tabs also tighten sooner, to keep the name's room from 500. */
-.watcher-tabs__icon { display: none; flex: none; }
-@container thread-pane (width < 640px) {
-  .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__icon { display: block; }
-  .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__label { display: none; }
-}
-@container thread-pane (width < 680px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__icon { display: block; }
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab[data-tab='visualize'] > .watcher-tabs__label { display: none; }
-}
-@container thread-pane (width < 570px) { .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab { padding: 0 7px; } }
-/* Off macOS a label comes back only where the whole row holds it with three-digit counts on All threads and Watched,
-   the counts being uncapped. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
+.watcher-tabs__tab[aria-selected='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-tabs__icon { display: block; }
+.watcher-tabs__count { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 4px; background: var(--tt-pill);
+  box-shadow: 0 0 0 1.5px var(--tt-canvas); color: var(--tt-pill-ink); font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none; }
+@container thread-pane (width < 470px) { .watcher-tabs { margin-left: 0; } }
+/* Off macOS a label comes back only where the whole row holds it with a three-digit count on All threads, which is
+   uncapped. These widths were set for the tabs' old words and hold the 94-pixel icon tabs with room to spare. All threads' needs 525 pixels of pane, so it returns at 540. While Stop all shows, Stop
    all's needs 611 and returns at 630, All threads' then needs 556 and returns at 570, below 500 the name gives the tabs
-   its room, and below 420 the tabs and All threads tighten again. macOS keeps its own widths, since its header starts
+   its room, and below 420 All threads tightens again. macOS keeps its own widths, since its header starts
    past the traffic lights. */
 @container thread-pane (width < 540px) { .watcher-room:not(.threads-view--mac) .watcher-head__list-text { display: none; } }
 @container thread-pane (width < 630px) {
@@ -158,7 +138,6 @@
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @container thread-pane (width < 420px) {
-  .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-tabs__tab { padding: 0 5px; }
   .watcher-room:not(.threads-view--mac) .watcher-head:has(.watcher-stop-all) .watcher-head__list { gap: 4px; padding: 0 6px 0 7px; }
 }
 /* Beside a thread at the smallest window the tabs need the name's room: the tile still says whose room it is, and the
@@ -169,13 +148,13 @@
 /* macOS: Watcher's pane is always the room's left pane, so its header starts past the traffic lights' room, 88 pixels
    in rather than 14, and gives way 74 pixels sooner (a container query cannot read --mac-lights-room, so these widths
    follow its 88 pixels, with a few to spare for longer counts). Below 664 pixels All threads and Stop all keep their
-   icons and counts, and the tabs tighten. Below 520 pixels one row no longer holds the name, the tabs and the actions
+   icons and counts. Below 520 pixels one row no longer holds the name, the tabs and the actions
    beside the lights, so the tabs and the actions take a second row under them, starting at the pane's edge, and the
    name stays. Focus still runs as the eye reads: the tile's row, then the tabs and the actions. */
 @container thread-pane (width < 664px) {
   .threads-view--mac .watcher-head__list-text, .threads-view--mac .watcher-stop-all__text { display: none; }
   .threads-view--mac .watcher-tabs { margin-left: 0; }
-  .threads-view--mac .watcher-tabs__tab, .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
+  .threads-view--mac .watcher-stop-all__button { padding: 0 7px; }
 }
 @container thread-pane (width < 520px) {
   .threads-view.threads-view--mac .thread-pane .watcher-head:has(.watcher-tabs) {
@@ -252,11 +231,30 @@
 
 /* ---------- The floating switch ---------- */
 /* History, Settings and Help, the switch, and the update control, in a pill centred in the band under the room. */
+/* At rest the pill shrinks to a small tab with an up arrow (Drake's pick on October 23, 2026, variant B of
+   docs/prototypes/watcher-bar-collapse.html). It keeps its place in the band, so open or shut it never covers the room,
+   and it opens while the pointer is anywhere in the band, while focus is inside it, and while an update has news. */
 .watcher-dock { grid-row: 2; display: flex; justify-content: center; align-items: flex-start; min-width: 0; padding: 2px 8px 0; }
-.watcher-dock__pill { display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); -webkit-app-region: no-drag; }
+.watcher-dock__pill { position: relative; z-index: 0; display: flex; align-items: center; gap: 2px; height: 42px; min-width: 0; padding: 0 5px; -webkit-app-region: no-drag; }
+.watcher-dock__pill::before { content: ''; position: absolute; inset: 0; z-index: -1; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 8px 22px -10px var(--tt-shadow-color); clip-path: inset(21px calc(50% - 28px) 0 round 10px); pointer-events: none; }
+/* Open, the pill sets --watcher-dock-open and its controls read it. A :has() test followed by a part with no class, such
+   as `:has(...) > :not(.watcher-dock__tab)`, made Chromium restyle every element in the window after any change to the
+   page, on every page, which slowed each of the terminal's text size steps to seconds (#1423). */
+.watcher-dock__pill > :not(.watcher-dock__tab) { opacity: var(--watcher-dock-open, 0); }
+/* A touch tap has no hover first, so on a touch screen the shut bar's unseen controls take no tap; the first opens it. */
+@media (any-pointer: coarse) { .watcher-dock__pill > :not(.watcher-dock__tab) { pointer-events: var(--watcher-dock-press, none); } }
+.watcher-dock__tab { position: absolute; left: 50%; bottom: 0; width: 56px; height: 21px; display: grid; place-items: center; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text-muted); transform: translateX(-50%); pointer-events: none; }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill::before,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking'])::before { clip-path: inset(0 0 0 0 round 10px); }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__pill,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking']) { --watcher-dock-open: 1; --watcher-dock-press: auto; }
+:is(.watcher-dock:hover, .watcher-dock:focus-within) .watcher-dock__tab,
+.watcher-dock__pill[data-update]:not([data-update='idle'], [data-update='checking']) > .watcher-dock__tab { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .watcher-dock__pill::before { transition: clip-path 220ms cubic-bezier(.2, .8, .2, 1); }
+  :root:not([data-reduced-motion='on']) .watcher-dock__pill > * { transition: opacity 120ms; }
+}
 .watcher-dock__pill .thread-nav__page { border-radius: 6px; }
-.watcher-dock__switch { width: 236px; }
-.watcher-dock__switch.thread-nav__seg button { height: 30px; padding: 0 8px; }
 .watcher-dock__sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
 
 /* ---------- The Overview over the room ---------- */
@@ -555,3 +553,29 @@
 .watcher-stop__result[data-result='uncertain'] > svg { color: var(--watcher-needs-ink); }
 .watcher-stop__said { display: block; color: var(--tt-text-2); }
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
+
+/* ---------- Night falls: the move between Threads and Watcher's room (nightFalls.ts) ---------- */
+/* The pages' own crossfade is off: the page being left stays whole underneath, and the script clips the opened one in
+   behind the band. The band is a canvas of its own above both, and the room switch's owl rides it from the foot to the
+   dock. Only while a run plays (data-room-transition on the root). */
+:root[data-room-transition]::view-transition-old(root),
+:root[data-room-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+/* Presses go through to the page underneath while a run plays, rather than to the transition's own layer. */
+:root[data-room-transition]::view-transition { pointer-events: none; }
+:root[data-room-transition] .night-falls-band { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; view-transition-name: night-falls-band; }
+:root[data-room-transition]::view-transition-group(night-falls-band),
+:root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
+:root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] .watcher-owl { view-transition-name: room-owl; }
+:root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }
+
+/* The owl's eye holes are lit only on a pressed toggle: there they glow in the theme's accent, with pupils in the colour
+   that reads on the accent, and the owl takes the text colour so the eyes stand out. The glow pulses only where motion
+   is allowed, by the system and by Sotto's own Reduce motion. */
+.watcher-owl__eyes { fill: none; }
+[aria-pressed='true'] > .watcher-owl { color: var(--tt-text); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { fill: var(--tt-accent); filter: drop-shadow(0 0 1.5px var(--tt-accent)); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { fill: var(--tt-on-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) [aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { animation: watch-eyes-glow 2.4s ease-in-out infinite; }
+}
+@keyframes watch-eyes-glow { 50% { opacity: .7; } }

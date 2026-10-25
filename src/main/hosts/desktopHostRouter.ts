@@ -1,3 +1,4 @@
+import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
@@ -9,7 +10,7 @@ import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts } from '..
 import { WATCHER_DISABLED } from '../agents/watcherLaunchProfiles'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_CANNOT_STAGE_SCREENSHOTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
 import { desktopWindowClient, type ClientIdentity, type HostService, type RequestAnswerRecovery } from '../agents/hostService'
@@ -34,7 +35,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -184,7 +185,7 @@ export class DesktopHostRouter {
         hostId: host.hostId, name: host.name, facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
         origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
-        muse: host.service.supportsWatcherMuse === true,
+        muse: host.service.supportsWatcherMuse === true, cursor: host.service.supportsWatcherCursor === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
         // is not the user's: Settings keeps that on this computer (ADR-0074). What the host limits is whether this computer
@@ -292,7 +293,9 @@ export class DesktopHostRouter {
 
   constructor(private readonly empty: () => AgentState, private readonly options: { bindRequestDraftDecision?: BindRequestDraftDecision; watcherEnabled?: boolean;
     /** The providers held to Owl on this run; absent holds every one. `museEnabled` is Muse's answer alone, from before the held set. */
-    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean } = {}) {
+    heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean
+    /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
+    attachAnyFile?: boolean } = {}) {
     this.held = heldProvidersOption(options)
   }
 
@@ -341,9 +344,10 @@ export class DesktopHostRouter {
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageRefresh(input: UsageRefreshQuery): Promise<UsageDashboardRead> {
-    const { hostIds, providerIds: named } = usageRefreshQuerySchema.parse(input)
+    const { hostIds, providerIds: named, background } = usageRefreshQuerySchema.parse(input)
     const providerIds = this.usageProviders(named)
-    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => connection.service.usageRefresh!(providerIds)))
+    const refresh = (service: Pick<HostService, 'usageRefresh'>) => background ? service.usageRefresh!(providerIds, true) : service.usageRefresh!(providerIds)
+    const hosts = await this.usageFanout(this.usageHostIds(hostIds), id => this.usageHostRead(id, connection => refresh(connection.service)))
     return usageDashboardReadSchema.parse({ hosts })
   }
   async usageClear(input: UsageClearQuery, client: ClientIdentity = desktopWindowClient()): Promise<UsageClearResult[]> {
@@ -933,9 +937,13 @@ export class DesktopHostRouter {
   }
   /** An image goes to the host that runs the thread it is for, or the selected host for the coordinator's composer. */
   async stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle> {
+    // Refused here as this computer's own store refuses it, before any host hears of it, whatever that host's own answer.
+    if (!isImageAttachment(request.mimeType) && this.options.attachAnyFile !== true) throw new Error(SCREENSHOT_WRONG_TYPE)
     const { connection } = this.target(request.threadId ?? undefined)
     if (!connection.stage) throw new Error(HOST_CANNOT_STAGE_SCREENSHOTS)
-    if (connection.available?.() === false) throw new Error('This host is disconnected. Connect again before attaching images. Nothing was attached.')
+    if (connection.available?.() === false) {
+      throw new Error(isImageAttachment(request.mimeType) ? 'This host is disconnected. Connect again before attaching images. Nothing was attached.' : HOST_DISCONNECTED_BEFORE_FILES)
+    }
     return connection.stage({ name: request.name, mimeType: request.mimeType, bytes: request.bytes, ...(request.dimensions ? { dimensions: request.dimensions } : {}) })
   }
   async attachmentContent(request: AgentAttachmentContentRequest): Promise<AgentAttachmentContent | null> {
@@ -977,6 +985,15 @@ export class DesktopHostRouter {
     if (!connection.activityBody) return null
     if (connection.available?.() === false) throw new Error('This host is disconnected. Nothing is lost. The rest shows when it reconnects.')
     return connection.activityBody(id!, request.activityId)
+  }
+  /**
+   * Every message the user sent above the window a pane holds, read on the thread's own host for the message scrubber
+   * (ADR-0109). Null from a host that cannot say, and while it is disconnected: the scrubber then marks what the window holds.
+   */
+  async threadPrompts(request: AgentThreadPromptsRequest): Promise<AgentThreadPrompts | null> {
+    const { connection, id } = this.target(request.threadId)
+    if (!connection.service.threadPrompts || connection.available?.() === false) return null
+    return connection.service.threadPrompts(id!, request.beforeMessageId)
   }
   /** The folder browser names its host directly: it has no thread yet to carry a client-scoped key. */
   async hostFolders(request: HostFoldersClientRequest): Promise<HostFoldersResult> {

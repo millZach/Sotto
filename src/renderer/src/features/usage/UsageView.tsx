@@ -138,7 +138,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         return !Number.isFinite(observed) || Math.abs(clock - observed) >= QUOTA_FRESH_MS
       }).map(quota => quota.providerId)
       if (providerIds.length === 0) continue
-      void bridge.refresh({ hostIds: [host.hostId], providerIds }).then(result => {
+      // Made on its own, so a provider whose read is costly may answer from a recent reading (#1456); Read again never is.
+      void bridge.refresh({ hostIds: [host.hostId], providerIds, background: true }).then(result => {
         if (!mounted.current) return
         usage.applyQuotas(result, providerIds); reloadRef.current([host.hostId])
       }, () => { if (mounted.current) setNotice('Subscription limits could not be read again. Your saved figures are still here.') })
@@ -211,7 +212,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const ready = read.hosts.filter(host => host.status === 'ready' && host.activity !== undefined && !withoutHistory(host))
   const old = summary.withoutPlaces.map(hostName)
   const withoutPlacesNote = old.length === 0 ? null : old.length === 1
-    ? `${old[0]} counts only its Sotto threads until its Owl host update.` : `${joinNames(old)} count only their Sotto threads until their Owl host updates.`
+    ? `${old[0]} counts only its Sotto threads until its host update.` : `${joinNames(old)} count only their Sotto threads until their hosts update.`
   const page: UsagePage = {
     bridge, read, summary, limits, query: query ?? { timeZone }, hostIds: targets, now: clock, today, timeZone, rangeLabel: label, days,
     provider: activityFilters ? provider : 'all', where: activityFilters ? where : 'all',
@@ -268,7 +269,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       {usage.failed.map(item => <p key={item} className="usage-notice" role="alert">{item === EVERY_HOST ? 'Usage could not be read.' : `Usage could not be read from ${midSentence(hostName(item))}.`} Your saved figures were not changed. <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}>Try again</button></p>)}
       {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice" role="alert">Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</p> : null}
       {read.hosts.filter(host => host.status !== 'ready' || withoutHistory(host)).filter(host => !(noHistory && withoutHistory(host))).map(host => <p key={host.hostId} className="usage-notice usage-notice--quiet">{
-        withoutHistory(host) ? `${hostName(host.hostId)}'s history appears after its Owl host update.`
+        withoutHistory(host) ? `${hostName(host.hostId)}'s history appears after its host update.`
           : host.status === 'offline' ? `${hostName(host.hostId)} is offline. Its figures appear when it reconnects.`
             : `Usage could not be read from ${midSentence(hostName(host.hostId))}. Nothing was changed. Try again in a moment.`}</p>)}
       {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status">Still reading {joinNames(pendingNames.map(midSentence))}…</p> : null}

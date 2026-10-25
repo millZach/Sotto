@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { realpath } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, type TestContext } from 'vitest'
 import type { AgentHostResult, ThreadHostEvent } from '../../src/main/agents/host'
@@ -13,7 +13,9 @@ import { PROVIDER_PROFILES } from '../../src/shared/providerProfile'
 import type { ThreadEventKind } from '../../src/shared/threadEvents'
 import type { AdapterContractSkips, AdapterFixture, AdapterSessionOptions, RecordedRpc } from '../fixtures/adapterFixture'
 import { skipUnsupportedFixture, withFixtureSkip } from '../fixtures/contractSkip'
-import { handleOf, PIXEL_PNG } from '../fixtures/stagedImages'
+import { handleOf, PIXEL_PNG, promptImageOf } from '../fixtures/stagedImages'
+import { tinyPdf } from '../fixtures/tinyPdfs'
+import { attachedFileRelativePath } from '../../src/main/agents/attachedFiles'
 
 /** Create a settled thread before a contract test acts on its provider session. */
 export async function createContractThread(f: Pick<AdapterFixture, 'host' | 'projectId' | 'modelId'>, title: string): Promise<string> {
@@ -196,6 +198,51 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await expect.poll(async () => (await thread()).messages.find(message => message.id === 'image-message')?.attachments)
         .toEqual([{ id: handle.id, name: handle.name, mimeType: handle.mimeType, sizeBytes: handle.sizeBytes }])
       expect(JSON.stringify(await thread())).not.toContain(base64)
+    })
+    it('saves an attached file in the working folder and names it to the provider, with a PDF in the prompt where it reads one, and the thread shows only the user’s words (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
+      const notes = Buffer.from('Contract notes\nsecond line\n'); const pdf = tinyPdf(1)
+      const attachments = [promptImageOf(notes, 'contract-file', 'Contract notes.txt', 'text/plain'), promptImageOf(pdf, 'contract-pdf', 'Contract.pdf', 'application/pdf')]
+      const text = 'Read the attached files'
+      expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId: 'file-message', text, attachments })).toEqual({ accepted: true })
+      // Each file is in the thread's folder with its exact bytes, ignored by Git.
+      const paths = attachments.map(file => attachedFileRelativePath(file.digest, file.name))
+      expect(paths).toEqual([expect.stringMatching(/^\.sotto\/attachments\/[0-9a-f]{12}\/Contract-notes\.txt$/u), expect.stringMatching(/\/Contract\.pdf$/u)])
+      for (const [index, bytes] of [notes, pdf].entries()) expect(await readFile(join(f.root, ...paths[index]!.split('/')))).toEqual(bytes)
+      expect(await readFile(join(f.root, '.sotto', 'attachments', '.gitignore'), 'utf8')).toBe('*\n')
+      // The provider heard the note naming both, and the PDF itself only where its model reads one.
+      await expect.poll(async () => JSON.stringify(await f.driver.requests())).toContain('<sotto-attached-files>')
+      const heard = JSON.stringify(await f.driver.requests())
+      for (const path of paths) expect(heard).toContain(path)
+      expect(heard.includes(pdf.toString('base64'))).toBe(f.nativePdf === true)
+      expect(heard).not.toContain(notes.toString('base64'))
+      // The thread records the user's words and the handles' references, never the note or the bytes.
+      const shown = async () => (await thread()).messages.find(message => message.id === 'file-message')
+      await expect.poll(async () => (await shown())?.text).toBe(text)
+      expect((await shown())?.attachments).toEqual(attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })))
+      expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
+      if (skips.restart) return
+      // Read back from the provider's own history after a restart, the message is still the user's words alone.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      await expect.poll(async () => (await shown())?.text).toBe(text)
+      expect(JSON.stringify(await thread())).not.toContain('sotto-attached-files')
+    })
+    it('shows a prompt the user typed in the note’s shape in full when it carries no attached file (ADR-0131)', withFixtureSkip(skips.attachedFiles), async () => {
+      // The plan's example, pasted as a prompt with no attachments: only a note Sotto added comes off.
+      const note = ['<sotto-attached-files>', 'The user attached these files. They are saved in this working folder:',
+        '- .sotto/attachments/3f2a9c1e0b7d/quarterly-report.pdf (quarterly-report.pdf, PDF, 2.4 MB)', '</sotto-attached-files>'].join('\n')
+      const shown = async (id: string) => (await thread()).messages.find(message => message.id === id)?.text
+      for (const [messageId, text] of [['typed-note', note], ['typed-words-and-note', `Is this how it looks?\n\n${note}`]] as const) {
+        expect(await f.host.execute({ type: 'send', threadId: sessionId, commandId: randomUUID(), messageId, text })).toEqual({ accepted: true })
+        await expect.poll(async () => shown(messageId)).toBe(text)
+        await f.driver.completeTurn(sessionId, `Reply to ${messageId}`)
+        await expect.poll(async () => (await thread()).status).toBe('idle')
+      }
+      if (skips.restart) return
+      // Read back from the provider's own history after a restart, it is still all the user wrote.
+      f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
+      await expect.poll(async () => shown('typed-note')).toBe(note)
+      await expect.poll(async () => shown('typed-words-and-note')).toBe(`Is this how it looks?\n\n${note}`)
+      expect((await thread()).messages.filter(message => message.role === 'user' && message.text.includes('sotto-attached-files'))).toHaveLength(2)
     })
     it('cancels a running turn', async () => {
       await send()
@@ -618,7 +665,9 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       const update = f.clientUpdate!
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
       sessionId = randomUUID()
-      await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Update thread' })
+      // Both sends need a confirmed provider session, and an uncertain create leaves Grok without one (#1021).
+      expect(await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Update thread' }))
+        .toMatchObject({ accepted: true })
       f.host.observeThreads?.([sessionId])
       expect(await send('before-update', 'Synthetic prompt')).toEqual({ accepted: true })
       await expect.poll(async () => (await thread()).status).toBe('running')

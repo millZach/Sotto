@@ -195,6 +195,14 @@ artifacts/queued-steering/
 
 # Question panel verification captures
 artifacts/question-choices/
+# Floating composer verification captures; the cited ones are committed
+artifacts/composer-float/
+# Slim composer and Watcher column verification captures; the cited ones are committed
+artifacts/composer-shrink/
+artifacts/watcher-column/
+artifacts/composer-slim-steady/
+# Reply quote verification captures; the cited ones are committed
+artifacts/reply-quote/
 
 /artifacts/settled-folder-new-thread/
 artifacts/agents-view/
@@ -588,6 +596,16 @@ artifacts/opencode-model-menu/*
 !artifacts/opencode-model-menu/sources-1280-dark-motion.png
 !artifacts/opencode-model-menu/contrast.json
 !artifacts/opencode-model-menu/journey.json
+artifacts/cursor-provider/*
+!artifacts/cursor-provider/signed-out-1600-dark.png
+!artifacts/cursor-provider/signing-in-1280-dark.png
+!artifacts/cursor-provider/connected-820-light.png
+!artifacts/cursor-provider/makers-1280-dark.png
+!artifacts/cursor-provider/anthropic-820-light.png
+!artifacts/cursor-provider/permissions-1280-dark.png
+!artifacts/cursor-provider/stable-providers.png
+!artifacts/cursor-provider/contrast.json
+!artifacts/cursor-provider/journey.json
 artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/overview-dark-1600.png
 !artifacts/usage-dashboard/tokens-dark-1280.png
@@ -758,6 +776,7 @@ artifacts/message-scrubber/*
 !artifacts/message-scrubber/hover-reduced-dark-1280x800.png
 !artifacts/message-scrubber/keys-light-1280x800.png
 !artifacts/message-scrubber/rest-dark-1280x800.png
+!artifacts/message-scrubber/stored-dark-1280x800.png
 !artifacts/message-scrubber/rest-light-820x560.png
 !artifacts/message-scrubber/watcher-hover-dark-1280x800.png
 !artifacts/message-scrubber/watcher-hover-dark-1600x1000.png
@@ -783,3 +802,13 @@ artifacts/sidebar-crossing/*
 !artifacts/sidebar-crossing/owl-settings-foot-dark.png
 !artifacts/sidebar-crossing/threads-820x560-dark.png
 !artifacts/sidebar-crossing/settings-820x560-dark.png
+artifacts/watcher-picture-owls/*
+!artifacts/watcher-picture-owls/sotto-dark-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-dark-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-blob-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-card-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-reduced-motion-1280x800.png
+!artifacts/watcher-picture-owls/sotto-light-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-light-820x560.png
+!artifacts/watcher-picture-owls/tropic-dark-1280x800.png

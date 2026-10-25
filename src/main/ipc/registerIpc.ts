@@ -42,6 +42,7 @@ import {
   SPEECH_MODEL_DOWNLOAD,
   SPEECH_MODEL_LIST,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
@@ -78,6 +79,7 @@ import {
   type OutputDeliveryRequest,
   type OutputResult,
   type OpenRouterKeyCheck,
+  type OpenRouterModelList,
   type TranscriptionRequest,
   type TranscriptionResult,
   type StartupState,
@@ -99,6 +101,8 @@ import {
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
+import { INTERFACE_LANGUAGE_GET } from '../../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../../shared/interfaceLanguages'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -112,8 +116,13 @@ const settingKeys = [
   'menuBarOwlBody',
   'menuBarOwlEyes',
   'creature',
+  'showCreature',
+  'interfaceLanguage',
   'customThemes',
   'reducedMotion',
+  'roomTransition',
+  'roomTransitionSpeed',
+  'roomTransitionLook',
   'terminalFontSize',
   'microphoneId',
   'maxRecordingSeconds',
@@ -138,7 +147,10 @@ const settingKeys = [
   'llmDictionary',
   'llmTimeoutMs',
   'llmMinWords',
+  'llmModel',
+  'llmMode',
   'threadTitles',
+  'nextPromptSuggestions',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',
@@ -171,6 +183,7 @@ const settingKeys = [
   'workerRoles',
   'watcherSettlesFinishedThreads',
   'newWorkerMachine',
+  'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -367,6 +380,8 @@ export interface SpeechModelIpcService {
 
 export interface OpenRouterKeyIpcService {
   check(): Promise<OpenRouterKeyCheck>
+  /** Absent while the cleanup model Owl feature is off (ADR-0122). */
+  models?: () => Promise<OpenRouterModelList>
 }
 
 export interface UpdateIpcService {
@@ -407,6 +422,8 @@ export interface RegisterIpcDependencies {
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
   readonly microphoneAccess?: { ensure(): Promise<boolean> }
+  /** Supplied only while the `interface-language` Owl feature is on (ADR-0123); both windows ask it as they start. */
+  readonly interfaceLanguage?: { current(): InterfaceLanguageState }
 }
 
 export interface WidgetIpcService {
@@ -585,6 +602,10 @@ export function registerIpc(
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
+    if (dependencies.interfaceLanguage) {
+      const interfaceLanguage = dependencies.interfaceLanguage
+      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget'])
+    }
 
     // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
     register(HISTORY_LIST, noPayloadSchema, 0, async () => {
@@ -786,6 +807,10 @@ export function registerIpc(
     register(OPENROUTER_CHECK_KEY, noPayloadSchema, 0, async (): Promise<OpenRouterKeyCheck> => {
       if (dependencies.openRouterKey === undefined) return { ok: false, reason: 'unconfigured' }
       return dependencies.openRouterKey.check()
+    })
+    register(OPENROUTER_LIST_MODELS, noPayloadSchema, 0, async (): Promise<OpenRouterModelList> => {
+      const models = dependencies.openRouterKey?.models
+      return models === undefined ? { ok: false, reason: 'http' } : models()
     })
     register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true

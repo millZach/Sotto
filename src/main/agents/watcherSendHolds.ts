@@ -1,3 +1,5 @@
+import type { AgentThread } from '../../shared/agents'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { CheckoutPendingWork } from './checkoutMutations'
 
 /**
@@ -19,4 +21,28 @@ export function queueHold(reason: CheckoutPendingWork, heldByStop: boolean): str
       ? 'This thread’s queue holds a user prompt from before this thread was stopped, until the user reviews it. Nothing was sent.'
       : 'This thread has a queued prompt that goes first, as soon as its turn is free. Queue this one behind it. Nothing was sent.'
   }
+}
+
+/**
+ * What read_operation says of a Watcher send still in a thread's queue that its queue holds for the user's review: it
+ * stays `working`, since the user's Resume sends it, but not "still working", which a thread at rest would belie.
+ */
+export function queuedSendHeld(reason: 'paused-followups' | 'failed-followups'): string {
+  return reason === 'paused-followups'
+    ? 'It waits in the thread’s queue, which is paused until the user reviews the thread and resumes it. Nothing has been sent. Tell the user rather than send it again.'
+    : 'It waits in the thread’s queue behind a queued prompt that failed, until the user reviews it. Nothing has been sent. Tell the user rather than send it again.'
+}
+
+/**
+ * What a Watcher send that names no delivery does (ADR-0130): it steers a running turn, with the turn it reads as running
+ * when the send names none, or unfenced into a running turn Sotto has not confirmed (#1490), and goes now to a thread whose turn is over, so steering an idle thread never fails. A turn
+ * still under way that cannot be steered, on a provider that does not steer or ending after its thread reads idle, takes
+ * it queued. A thread waiting on the user's card was refused before this.
+ */
+export function defaultDelivery(thread: Pick<AgentThread, 'status' | 'lastTurn'>,
+  canSteer: boolean, expectedTurnId: string | undefined): { readonly delivery: 'now' | 'queue' | 'steer'; readonly expectedTurnId?: string } {
+  if (!isThreadTurnRunning(thread)) return { delivery: 'now', ...(expectedTurnId ? { expectedTurnId } : {}) }
+  if (!canSteer || thread.status !== 'running') return { delivery: 'queue', ...(expectedTurnId ? { expectedTurnId } : {}) }
+  const turnId = expectedTurnId ?? (thread.lastTurn?.status === 'running' ? thread.lastTurn.id : undefined)
+  return { delivery: 'steer', ...(turnId ? { expectedTurnId: turnId } : {}) }
 }

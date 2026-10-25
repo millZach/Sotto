@@ -28,8 +28,12 @@ interface Frame {
   readonly foot: Box
   /** The foot's top border: its width and colour. */
   readonly hairline: string
-  readonly switch: Box
-  readonly tabs: readonly Box[]
+  /** The switch's row; its width follows the open room, which Settings does not light. */
+  readonly switch: Pick<Box, 'y' | 'height'>
+  /** Each tile's height. */
+  readonly tabs: readonly number[]
+  /** The open room's tile shows its whole name inside the foot; true where no room is open. */
+  readonly litFits: boolean
   readonly tabFonts: readonly string[]
   readonly links: readonly Box[]
   readonly linkIcons: readonly number[]
@@ -55,9 +59,16 @@ async function frame(page: Page): Promise<Frame> {
       brand: box(aside.querySelector('.thread-nav__brand'))!,
       foot: box(foot)!,
       hairline: `${border.borderTopWidth} ${border.borderTopColor}`,
-      switch: box(room)!,
-      tabs: [...room.querySelectorAll('button')].map(tab => box(tab)!),
+      // The switch is centred and its open room's tile widens to show its name; Settings opens no room, so only
+      // its row and the tiles' height carry over between the pages.
+      switch: { y: box(room)!.y, height: box(room)!.height },
+      tabs: [...room.querySelectorAll('button')].map(tab => box(tab)!.height),
       tabFonts: [...room.querySelectorAll('button')].map(tab => getComputedStyle(tab).fontSize),
+      litFits: (() => {
+        const lit = room.querySelector('[aria-selected="true"]'), name = lit?.querySelector('.room-tab__name')
+        if (!lit || !name) return true
+        return name.scrollWidth <= name.clientWidth + 0.5 && lit.getBoundingClientRect().right <= foot.getBoundingClientRect().right
+      })(),
       links: links.map(link => box(link)!),
       linkIcons: links.map(link => box(link.querySelector('svg'))?.width ?? 0),
       update: box(foot.querySelector('.update-control')),
@@ -105,12 +116,12 @@ async function checkCrossing(launched: LaunchedSotto, track: 'stable' | 'owl'): 
       expect(settings, label).toEqual(threads)
       expect(again, label).toEqual(threads)
       // The look the Settings column had: the hairline stops 10px short of each edge (the column's own border is the
-      // last pixel), the switch and the links sit 6px inside it, and the switch is one box per room.
+      // last pixel), the links sit 6px inside it, and the switch is one tile per room.
       expect(threads.hairline, label).toMatch(/^1px /u)
       expect(threads.foot.x, label).toBe(10)
       expect(threads.foot.x + threads.foot.width, label).toBe(threads.column.width - 1 - 10)
-      expect(threads.switch.x, label).toBe(16)
-      expect(threads.tabs, label).toHaveLength(track === 'owl' ? 3 : 2)
+      expect(threads.tabs, label).toHaveLength(3)
+      expect(threads.litFits, label).toBe(true)
     }
   }
 }
@@ -134,7 +145,6 @@ test('owl with dictation off: the owl and Threads draw the foot the same on both
     expect(threads.tabs).toHaveLength(2)
     expect(settings).toEqual(threads)
     expect(threads.foot.x).toBe(10)
-    expect(threads.switch.x).toBe(16)
   }))
 })
 

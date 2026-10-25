@@ -34,6 +34,8 @@ const customSettings = {
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
   creature: 'claude',
+  showCreature: false,
+  interfaceLanguage: 'ja',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -45,7 +47,11 @@ const customSettings = {
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
   watcherSettlesFinishedThreads: false,
   newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
+  compactIdleThreads: false,
   reducedMotion: 'on',
+  roomTransition: false,
+  roomTransitionSpeed: 1.5,
+  roomTransitionLook: 'stars',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
@@ -75,7 +81,10 @@ const customSettings = {
   llmDictionary: 'Sotto\nMoonshine',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
+  llmModel: 'google/gemini-3.1-flash-lite',
+  llmMode: 'nitro',
   threadTitles: false,
+  nextPromptSuggestions: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
@@ -150,6 +159,16 @@ describe('settings', () => {
     const forge = '6b8f1c2d-3e4a-4b5c-8d6e-7f8091a2b3c4'
     expect(parseSettings({ newWorkerMachine: forge }).newWorkerMachine).toBe(forge)
     for (const damaged of ['forge', 7, null, '../hosts']) expect(parseSettings({ newWorkerMachine: damaged }).newWorkerMachine).toBe('this-computer')
+  })
+  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0127)', () => {
+    expect(parseSettings({}).compactIdleThreads).toBe(true)
+    expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
+    expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
+  })
+  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0132)', () => {
+    expect(parseSettings({}).nextPromptSuggestions).toBe(true)
+    expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
+    expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
@@ -249,10 +268,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, customThemes: [] })
     }
   })
 
@@ -344,6 +363,7 @@ describe('settings', () => {
       visualsInThreads: true,
       babysitPullRequests: true,
       resumeThreadsAfterRestart: true,
+      compactIdleThreads: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',
@@ -354,8 +374,13 @@ describe('settings', () => {
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
       creature: 'sotto',
+      showCreature: true,
+      interfaceLanguage: 'system',
       customThemes: [],
       reducedMotion: 'system',
+      roomTransition: true,
+      roomTransitionSpeed: 1,
+      roomTransitionLook: 'band',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
       pressShortcuts: [],
@@ -384,7 +409,10 @@ describe('settings', () => {
       llmDictionary: '',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
+      llmModel: null,
+      llmMode: 'default',
       threadTitles: true,
+      nextPromptSuggestions: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
@@ -603,5 +631,35 @@ describe('settings', () => {
     first.theme = 'light'
     expect(second.theme).toBe('dark')
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
+
+describe('night falls settings', () => {
+  it('defaults to on at speed 1 and keeps a saved choice', () => {
+    expect(DEFAULT_SETTINGS.roomTransition).toBe(true)
+    expect(DEFAULT_SETTINGS.roomTransitionSpeed).toBe(1)
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
+    expect(parsed.roomTransition).toBe(false)
+    expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('looks like the band by default and keeps Stars once chosen', () => {
+    expect(DEFAULT_SETTINGS.roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' }).roomTransitionLook).toBe('stars')
+    expect(parseSettings(JSON.parse(JSON.stringify(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' })))).roomTransitionLook).toBe('stars')
+  })
+
+  it('falls back to the band for a look it does not know, or a saved file from before the look', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'wing' }).roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 1 }).roomTransitionLook).toBe('band')
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.roomTransitionLook
+    expect(parseSettings(older).roomTransitionLook).toBe('band')
+  })
+
+  it('falls back to the default for a speed outside the dial', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 3 }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 'fast' }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransition: 'yes' }).roomTransition).toBe(true)
   })
 })

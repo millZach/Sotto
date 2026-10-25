@@ -26,7 +26,7 @@ async function size(launched: LaunchedSotto, width: number, height: number): Pro
 }
 
 async function open(page: Page, title: string): Promise<void> {
-  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click()
+  await page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('button', { name: title, exact: true }).click({ position: { x: 16, y: 12 } })
 }
 
 /**

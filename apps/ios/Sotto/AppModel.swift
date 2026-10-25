@@ -38,8 +38,29 @@ extension AppModel {
     /// The tab's dot and badge. A computer that can't be reached claims neither.
     var watcherTab: WatcherTabState {
         guard let hostID = watcherHostID, online(hostID) else { return WatcherTabState(working: false, needs: 0) }
-        let listed = Set(lists.flatMap { list in list.threads.map { ThreadRef(hostID: list.hostID, threadID: $0.id).id } })
-        return WatcherTabState(summary: watcherSummary(hostID), listed: { listed.contains($0.id) })
+        let refs = listed.refs ?? Set(lists.flatMap { list in list.threads.map { ThreadRef(hostID: list.hostID, threadID: $0.id).id } })
+        listed.refs = refs
+        return WatcherTabState(summary: watcherSummary(hostID), listed: { refs.contains($0.id) })
+    }
+    /// The thread lists grouped as Threads shows them, worked out once until a computer's list changes.
+    func focusThreads(show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil) -> FocusThreads {
+        let key = Listed.GroupKey(show: show, query: query, opened: opened)
+        if let kept = listed.groups[key] { return kept }
+        // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
+        if listed.groups.count >= 8 { listed.groups = [:] }
+        let groups = FocusThreads(lists, show: show, query: query, opened: opened)
+        listed.groups[key] = groups
+        return groups
+    }
+    /// The Threads tab's badge: the requests Needs you shows, and the Recent threads that finished while nothing showed
+    /// them and have not been opened on either device (ADR-0046). A delegated thread counts only through the row that
+    /// stands for it (ADR-0081).
+    var threadsBadge: Int {
+        if let kept = listed.badge, kept.opened == selected { return kept.count }
+        let groups = focusThreads(opened: selected)
+        let count = groups.requestCount + groups.unreadFinishedCount
+        listed.badge = (opened: selected, count: count)
+        return count
     }
     /// Whether Watcher works with this thread now: the owl after its provider's logo, and the line in its reply box.
     func watchedByWatcher(_ ref: ThreadRef) -> Bool {
@@ -51,7 +72,8 @@ extension AppModel {
     }
     /// The name a thread's computer goes by here, or nil for a computer this iPhone isn't paired with.
     func computerName(_ hostID: String) -> String? { computer(hostID)?.name }
-    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol", with OpenCode's model source when it has one.
+    /// Watcher's model, as its computer names it: "Codex · GPT-6.1 Sol", with OpenCode's model source or Cursor's model maker
+    /// when it has one.
     func watcherModel(_ hostID: String) -> String? {
         guard let current = watcherPage(hostID)?.current else { return nil }
         let model = live[hostID]?.shell?.host.models?.first { $0.id == current.modelId }
@@ -560,7 +582,7 @@ extension AppModel {
     /// The threads this iPhone lists that Watcher could be given to watch, in the order Threads shows them: not settled,
     /// not watched, on computers reached now, and never a Watcher's own thread.
     var watchableThreads: [HostedThread] {
-        let groups = FocusThreads(lists)
+        let groups = focusThreads()
         return (groups.questions + groups.working + groups.recent).filter { row in
             row.reachable && !watchedByWatcher(row.ref) && watchHost(for: row.ref) != nil
         }
@@ -888,9 +910,19 @@ struct HeldDetail {
         count == 1 ? "1 saved computer needs pairing again." : "\(count) saved computers need pairing again."
     }
     /// In the order they were added. Credentials live in the Keychain, one item per host ID.
-    @Published private(set) var computers: [SavedComputer] = []
-    @Published private(set) var live: [String: Live] = [:]
+    @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
+    @Published private(set) var live: [String: Live] = [:] { didSet { listed = Listed() } }
     @Published private(set) var selected: ThreadRef?
+    /// What the thread lists work out from `computers` and `live`, kept until either changes. The Threads list, the tab
+    /// bar and a thread's top bar each ask on every redraw, and nearly every redraw comes from something else.
+    private var listed = Listed()
+    private struct Listed {
+        struct GroupKey: Hashable { let show: ComputerFilter; let query: String; let opened: ThreadRef? }
+        var groups: [GroupKey: FocusThreads] = [:]
+        var refs: Set<String>?
+        var badge: (opened: ThreadRef?, count: Int)?
+        var agents: [ThreadRef: AgentsCount?] = [:]
+    }
     @Published private(set) var pending: [PendingOperation] = []
     /// Finding or pairing a computer.
     @Published private(set) var working = false
@@ -3074,8 +3106,14 @@ extension AppModel {
     /// Whether this thread's computer offers the Agents view to this iPhone.
     func offersAgentsView(_ hostID: String) -> Bool { live[hostID]?.features.contains(AgentsRoster.feature) == true }
     /// What the thread's top bar says of its delegated threads and agents, from the thread list alone; nil when there is
-    /// no Agents control.
+    /// no Agents control. Worked out once until a computer's list changes: the top bar asks on every redraw.
     func agentsCount(_ ref: ThreadRef) -> AgentsCount? {
+        if let kept = listed.agents[ref] { return kept }
+        let count = countAgents(ref)
+        listed.agents[ref] = .some(count)
+        return count
+    }
+    private func countAgents(_ ref: ThreadRef) -> AgentsCount? {
         guard offersAgentsView(ref.hostID), let threads = live[ref.hostID]?.shell?.host.threads,
               let owner = threads.first(where: { $0.id == ref.threadID }) else { return nil }
         return AgentsRoster.count(owner, in: threads, failuresSeen: offersFailuresSeen(ref.hostID))

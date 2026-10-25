@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Node } from '@tiptap/core'
+import { Extension, Node } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -7,7 +7,8 @@ import HardBreak from '@tiptap/extension-hard-break'
 import History from '@tiptap/extension-history'
 import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
-import { Plugin } from '@tiptap/pm/state'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import type { SkillSigil } from '../../../shared/providerProfile'
@@ -70,8 +71,43 @@ const Skill = Node.create({
   },
 })
 
+const ghostKey = new PluginKey<string | null>('next-prompt-ghost')
+
+/**
+ * The next prompt's ghost (ADR-0132): words drawn after the text in placeholder ink, with a Tab keycap, that are not part
+ * of the draft. The composer sets them; nothing here takes them, and the draft's text never holds them.
+ */
+const Ghost = Extension.create({
+  name: 'nextPromptGhost',
+  addProseMirrorPlugins() {
+    return [new Plugin<string | null>({
+      key: ghostKey,
+      state: { init: () => null, apply: (transaction, value) => { const next = transaction.getMeta(ghostKey) as string | null | undefined; return next === undefined ? value : next } },
+      props: {
+        decorations(state) {
+          const ghost = ghostKey.getState(state)
+          if (!ghost) return null
+          const widget = (): HTMLElement => {
+            const span = document.createElement('span')
+            span.className = 'prompt-editor__ghost'
+            span.setAttribute('aria-hidden', 'true')
+            span.contentEditable = 'false'
+            span.append(ghost)
+            const key = document.createElement('kbd')
+            key.className = 'prompt-editor__ghost-key'
+            key.textContent = 'Tab'
+            span.append(key)
+            return span
+          }
+          return DecorationSet.create(state.doc, [Decoration.widget(state.doc.content.size - 1, widget, { side: 1, key: `ghost:${ghost}`, ignoreSelection: true })])
+        },
+      },
+    })]
+  },
+})
+
 /** A text draft's view. No formatting, HTML paste, persistence or provider protocol lives here. */
-export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, onChange, onSelection, onKeyDown, ...aria }: {
+export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAfterInsert, id, label, placeholder = '', editable = true, ghost = null, onChange, onSelection, onKeyDown, ...aria }: {
   readonly text: string
   readonly skills: readonly AgentSkillReference[]
   readonly sigils: readonly SkillSigil[]
@@ -83,6 +119,8 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   readonly label?: string
   readonly placeholder?: string
   readonly editable?: boolean
+  /** The rest of the next prompt, drawn after the text and never part of it (ADR-0132); null draws nothing. */
+  readonly ghost?: string | null
   readonly onChange: (text: string, pills: readonly AgentSkillReference[]) => void
   readonly onSelection?: (selection: PromptSelection) => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
@@ -95,7 +133,7 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
   const latest = useRef({ text, skills, onChange, onSelection })
   latest.current = { text, skills, onChange, onSelection }
   const editor = useEditor({
-    extensions: [Document, Paragraph, Text, HardBreak, History, Skill],
+    extensions: [Document, Paragraph, Text, HardBreak, History, Skill, Ghost],
     content: textToPromptDoc(text, skills, sigils), editable,
     shouldRerenderOnTransaction: false,
     editorProps: {
@@ -163,6 +201,9 @@ export function PromptEditor({ text, skills, sigils, catalog, fieldRef, caretAft
     }
     element.dataset.promptText = text
     element.dataset.empty = String(text === '')
+    // The ghost stands in for the placeholder while it shows.
+    if (ghost) element.dataset.ghosted = 'true'; else delete element.dataset.ghosted
+    if ((ghostKey.getState(editor.state) ?? null) !== ghost) editor.view.dispatch(editor.state.tr.setMeta(ghostKey, ghost).setMeta('addToHistory', false).setMeta('preventUpdate', true))
   })
   useLayoutEffect(() => () => { fieldRef.current = null }, [fieldRef])
   return <Catalog.Provider value={catalog}><EditorContent editor={editor} onKeyDownCapture={onKeyDown} /></Catalog.Provider>

@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, roomsLayout, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -13,7 +13,6 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
-import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -72,13 +71,13 @@ export function RoomSwitch({ className }: { readonly className: string }): React
   const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   if (rooms.length < 2) return null
-  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page" data-rooms={roomsLayout(rooms)}>
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label="Page">
     {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
-      {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
+      <RoomTabFace room={target} /></button>)}
   </div>
 }
 
-/** The pages the switch does not reach, as icon links: Usage in Owl, Settings and Help, and Memory while memory is switched on. */
+/** The pages the switch does not reach, as icon links: Usage, Settings and Help, and Memory while memory is switched on. */
 export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
   const app = useOptionalApp()
   const memory = useMemoryEnabled()

@@ -134,7 +134,7 @@ export const delegationNewsSchema = z.object({
 export type DelegationNews = z.infer<typeof delegationNewsSchema>
 
 /**
- * The window's read of a thread's delegations (#1029, design A): what each card in the delegating thread shows. Main
+ * The window's read of a thread's delegations (#1029, design A): what each row of delegated work in the delegating thread shows. Main
  * answers from `DelegationService`'s own record, reading no snapshot, and only when the window asks: a delegating
  * thread's pane opening, or a change main announced for that thread. Identities, outcome and timing only, never a brief
  * or a reply.
@@ -146,7 +146,7 @@ export const DELEGATIONS_CHANGED = 'sotto:delegations:changed'
 export const DELEGATION_RENDERER_ARGUMENT = '--sotto-delegation-enabled'
 /**
  * The newest finished delegations, refused ones among them, a read returns of what one thread delegated, beside every
- * one still open, and the newest briefs it was sent: enough for every card and brief a busy thread's history shows.
+ * one still open, and the newest briefs it was sent: enough for every row and brief a busy thread's history shows.
  */
 export const DELEGATION_VIEWS_MAX = 200
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
@@ -162,7 +162,7 @@ export const delegatedViewSchema = z.object({
   rootUserMessageId: id,
   /**
    * The delegating thread's newest message when it called, the user's or a wake-up's: the turn the call was made in,
-   * where its card goes.
+   * where its row goes.
    */
   anchorMessageId: id,
   /** The brief's own message in the delegated thread, which that thread shows as the delegating thread's, not the user's. */
@@ -184,7 +184,7 @@ export const delegatedViewSchema = z.object({
 export type DelegatedView = z.infer<typeof delegatedViewSchema>
 /**
  * A delegation main refused as it was asked for (decision 7): the rule that turned it down, and nothing started or
- * sent, so no brief and, for a start, no thread. The card words the rule; main's own words were written for the agent.
+ * sent, so no brief and, for a start, no thread. The row words the rule; main's own words were written for the agent.
  */
 export const refusedViewSchema = z.object({
   id: z.uuid(),

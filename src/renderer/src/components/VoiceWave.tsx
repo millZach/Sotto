@@ -3,7 +3,7 @@ import React, { type CSSProperties, type ReactNode } from 'react'
 
 export type VoiceWaveStage = 'idle' | 'listening' | 'processing'
 
-export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'preview' | 'switch'
+export type VoiceWaveSize = 'widget' | 'deck' | 'hero' | 'preview'
 
 export interface VoiceWaveProps {
   /** What the dictation surface is doing right now. */
@@ -15,7 +15,7 @@ export interface VoiceWaveProps {
   /**
    * `widget` is the floating widget's exact geometry; `deck` the old strip's
    * larger cut; `hero` the Dictate room's centrepiece; `preview` the same at
-   * half size in Settings, Appearance; `switch` the glyph inside the Dictate tab.
+   * half size in Settings, Appearance.
    */
   readonly size?: VoiceWaveSize
   /** Keep the listening wave moving for the whole open stream (microphone test). */
@@ -41,7 +41,6 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
   deck: { width: 4, gap: 4, rest: 6, peak: 26 },
   hero: { width: 14, gap: 12, rest: 14, peak: 130 },
   preview: { width: 7, gap: 6, rest: 7, peak: 65 },
-  switch: { width: 2, gap: 2, rest: 4, peak: 14 },
 }
 
 /** Listening delegates to the same component and CSS as the floating widget.

@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { ThreadListStore, useThreadList } from './threadListStore'
 
 /** One quoted line of a review comment, as Changes drew it when the comment was written. */
 export interface ReviewLine {
@@ -89,30 +90,17 @@ export interface ReviewDraft {
   readonly text: string
 }
 
-const NONE: readonly ReviewComment[] = []
-
 /**
  * Each thread's review comments for this session, and the one comment being written. Changes writes and deletes
  * them; the thread's composer shows them as chips and takes them into the message on the press. They live in this
  * window's memory only and are never logged. Once written into a prompt they are part of its text, which is saved
  * and sent as any prompt is.
  */
-export class ReviewCommentStore {
-  private readonly threads = new Map<string, readonly ReviewComment[]>()
+export class ReviewCommentStore extends ThreadListStore<ReviewComment> {
   private readonly drafts = new Map<string, ReviewDraft>()
-  private readonly listeners = new Set<() => void>()
-  constructor(private readonly uuid: () => string = () => crypto.randomUUID()) {}
+  constructor(private readonly uuid: () => string = () => crypto.randomUUID()) { super(MAX_REVIEW_COMMENTS) }
 
-  readonly subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener)
-    return () => { this.listeners.delete(listener) }
-  }
-
-  list(threadId: string): readonly ReviewComment[] { return this.threads.get(threadId) ?? NONE }
   draft(threadId: string): ReviewDraft | null { return this.drafts.get(threadId) ?? null }
-
-  /** Whether the thread's next message can carry another comment. */
-  full(threadId: string): boolean { return this.list(threadId).length >= MAX_REVIEW_COMMENTS }
 
   /**
    * Open a draft on these lines. A draft that already has words in it is kept rather than replaced, so nothing
@@ -158,35 +146,15 @@ export class ReviewCommentStore {
   add(threadId: string, comment: { readonly path: string; readonly lines: readonly ReviewLine[]; readonly text: string }): ReviewComment | null {
     const text = comment.text.trim()
     if (text === '' || comment.lines.length === 0 || this.full(threadId)) return null
-    const added: ReviewComment = { id: this.uuid(), threadId, path: comment.path, lines: comment.lines.map(line => ({ ...line })), text }
-    this.threads.set(threadId, [...this.list(threadId), added])
-    this.emit()
-    return added
+    return this.append(threadId, { id: this.uuid(), threadId, path: comment.path, lines: comment.lines.map(line => ({ ...line })), text })
   }
-
-  remove(threadId: string, id: string): void { this.without(threadId, [id]) }
-
-  /** Take these comments off the composer: their message has gone, and they went with it. */
-  sent(threadId: string, ids: readonly string[]): void { this.without(threadId, ids) }
-
-  private without(threadId: string, ids: readonly string[]): void {
-    const current = this.list(threadId)
-    const next = current.filter(comment => !ids.includes(comment.id))
-    if (next.length === current.length) return
-    if (next.length === 0) this.threads.delete(threadId)
-    else this.threads.set(threadId, next)
-    this.emit()
-  }
-
-  private emit(): void { for (const listener of [...this.listeners]) listener() }
 }
 
 /** The one store the Changes surface and the thread composers share in this window. */
 export const reviewCommentStore = new ReviewCommentStore()
 
 export function useReviewComments(store: ReviewCommentStore, threadId: string | null): readonly ReviewComment[] {
-  const read = useCallback(() => threadId === null ? NONE : store.list(threadId), [store, threadId])
-  return useSyncExternalStore(store.subscribe, read)
+  return useThreadList(store, threadId)
 }
 
 export function useReviewDraft(store: ReviewCommentStore, threadId: string | null): ReviewDraft | null {

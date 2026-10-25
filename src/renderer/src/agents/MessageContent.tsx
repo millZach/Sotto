@@ -3,7 +3,7 @@ import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { AgentAttachmentReference } from '../../../shared/agents'
+import { isImageAttachment, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from '../../../shared/diagramSource'
@@ -12,6 +12,9 @@ import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { useOwlFeature } from '../state/owlFeature'
+import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
+import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import './rich-messages.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
@@ -55,6 +58,39 @@ export function safeLinkUrl(raw: string | undefined): string | null {
   } catch { return null }
 }
 
+/**
+ * The path a link names when it is a file rather than a web page: a `file:` URL, an absolute path, a `~/` path or one
+ * relative to the thread's folder. Never a network share. Null otherwise. Main drops a trailing `:12` or `#L12` if the
+ * path as written is not found.
+ */
+export function localFilePath(raw: string | undefined): string | null {
+  let value = raw?.trim() ?? ''
+  if (!value || value.length > 4096 || value.startsWith('#')) return null
+  if (/^file:/iu.test(value)) {
+    try {
+      const url = new URL(value)
+      if (url.host && url.host !== 'localhost') return null
+      value = url.pathname
+      // file:///C:/Users becomes /C:/Users; Windows wants the drive first.
+      if (/^\/[a-z]:\//iu.test(value)) value = value.slice(1)
+    } catch { return null }
+  }
+  try { value = decodeURIComponent(value) } catch { /* Kept as written: a literal % in a file name. */ }
+  // A network share or device path (\\host, //host, \\?\) would reach the network.
+  if (/^[\\/]{2}/u.test(value)) return null
+  // Any other scheme (http:, javascript:, vscode:) is not a file here; a Windows drive letter is, and so is a file named
+  // `notes.md:12`, which main looks up as written first.
+  if (/^[a-z][a-z0-9+.-]*:(?!\d)/iu.test(value) && !/^[a-z]:[\\/]/iu.test(value)) return null
+  // eslint-disable-next-line no-control-regex -- File paths must reject NUL and control bytes.
+  return value && !/[\x00-\x1f\x7f]/u.test(value) && !/\p{Bidi_Control}/u.test(value) ? value : null
+}
+
+/** The file manager by its own name on each platform: File Explorer first, Finder on a Mac, the file manager on Linux. */
+const fileManager = (): string => {
+  const platform = (window.sotto as { platform?: string } | undefined)?.platform
+  return platform === 'darwin' ? 'Finder' : platform === 'linux' ? 'the file manager' : 'File Explorer'
+}
+
 function linkLabel(url: string): string {
   return url.startsWith('mailto:') ? url.slice('mailto:'.length).split('?')[0]! : new URL(url).host
 }
@@ -64,13 +100,7 @@ async function openWithBridge(url: string): Promise<LinkOpenResult> {
   return open ? open(url) : { ok: false }
 }
 
-export function formatAttachmentSize(bytes: number | undefined): string | null {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return null
-  if (bytes < 1024) return `${Math.round(bytes)} B`
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  const megabytes = bytes / (1024 * 1024)
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
-}
+export { formatAttachmentSize }
 
 export function attachmentTypeLabel(mimeType: string | undefined): string | null {
   if (!mimeType) return null
@@ -82,6 +112,8 @@ export function attachmentTypeLabel(mimeType: string | undefined): string | null
 interface LinkActions {
   readonly open: (url: string, destination?: WebLinkDestination) => void
   readonly menu: (url: string, anchor: HTMLElement, at: { x: number; y: number }) => void
+  /** Shows a linked file in its folder, when this message is in a thread that can. */
+  readonly reveal?: ((path: string) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
@@ -166,8 +198,13 @@ function DiagramBlock({ source, start, end }: { source: string; start: number | 
 }
 
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
-  const { open, menu } = useContext(LinkContext)
+  const { open, menu, reveal } = useContext(LinkContext)
   const url = safeLinkUrl(href)
+  const file = !url && reveal ? localFilePath(href) : null
+  // No href: a file path never becomes something the window could navigate to.
+  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={`Show in ${fileManager()}: ${file}`}
+    aria-label={`Show ${file} in ${fileManager()}`}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</a>
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
   if (!url) return <span className="rich-link rich-link--inert" title={href ? `Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden"> (link not opened: not a web address)</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
@@ -302,6 +339,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
   const [copyFeedback, showCopyFeedback] = useTransientFlag()
   const router = useWebLinkRouter()
+  const revealLinks = useOwlFeature('reveal-linked-files')
   const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
   opener.current = onOpenLink ?? ((url, destination) => router.open(url, destination))
   const context = useMemo<LinkActions>(() => ({
@@ -314,7 +352,13 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
       )
     },
     menu: (url, anchor, at) => setLinkMenu({ url, anchor, at }),
-  }), [])
+    // Showing linked files is an Owl feature (ADR-0120): while it is off a file link stays inert text, as before.
+    reveal: revealLinks && router.revealFile ? path => {
+      setFailedLink(null)
+      setLinkNotice(null)
+      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice('Sotto could not show this file. Nothing was opened.'))
+    } : undefined,
+  }), [router, revealLinks])
   const menuItems = (url: string): LinkMenuItem[] => {
     const web = !url.startsWith('mailto:')
     return [
@@ -345,17 +389,19 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
 const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || 'Attachment'
-const attachmentDetails = (attachment: MessageAttachment): string =>
-  [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
+const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+  [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
  * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
  * ContextMenu key offers Open image and Copy image.
  */
-function AttachmentTile({ attachment, origin, onOpen, onShown }: {
+function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
   /** Whether the tile is showing its image, which is what puts it in the viewer. */
   onShown: (id: string, shown: boolean) => void
+  /** Once any file can be attached (ADR-0131), a file's tile names its type and claims no preview it could never have. */
+  anyFile: boolean
 }): ReactNode {
   const { source, awaiting } = useAttachmentSource(attachment, origin)
   const [failed, setFailed] = useState(false)
@@ -366,8 +412,9 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
-  const isImage = attachment.mimeType?.startsWith('image/') ?? false
-  const details = attachmentDetails(attachment)
+  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0131).
+  const isImage = attachment.mimeType ? anyFile ? isImageAttachment(attachment.mimeType) : attachment.mimeType.startsWith('image/') : false
+  const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
     const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
       const rect = frame.current?.getBoundingClientRect()
@@ -398,9 +445,10 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
       {menuAt ? <LinkMenu at={menuAt} label={`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }
-  const reason = !attachment.mimeType || awaiting ? null : !isImage ? 'No preview for this file type' : failed ? 'Preview could not be shown' : 'Preview unavailable'
+  const reason = !attachment.mimeType || awaiting ? null : !isImage ? (anyFile ? null : 'No preview for this file type') : failed ? 'Preview could not be shown' : 'Preview unavailable'
   return <div className="rich-attachment rich-attachment--file" role="listitem">
-    {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+    {anyFile && attachment.mimeType && !isImage ? <AttachmentKindIcon kind={attachmentKind(name, attachment.mimeType)} size={16} />
+      : isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
     <span className="rich-attachment__text">
       <span className="rich-attachment__name" title={name}>{name}</span>
       {(details || reason) && <span className="rich-attachment__meta">{[details, reason].filter(Boolean).join(' · ')}</span>}
@@ -409,7 +457,11 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
 }
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
-export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
+export function AttachmentPreviews({ attachments: given, notice, origin }: AttachmentPreviewsProps): ReactNode {
+  const anyFile = useOwlFeature('attach-any-file')
+  // Images come first, then every other file (ADR-0131).
+  const attachments = useMemo(() => anyFile ? [...given.filter(item => attachmentKind(item.name, item.mimeType) === 'image' || !item.mimeType),
+    ...given.filter(item => item.mimeType && attachmentKind(item.name, item.mimeType) !== 'image')] : given, [anyFile, given])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
   const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
@@ -421,10 +473,10 @@ export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPr
   if (!attachments.length && !notice) return null
   // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
   const images = attachments.filter(attachment => shown.has(attachment.id))
-    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
+    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment, anyFile) }))
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={attachments.length === 1 ? 'Attachment' : `${attachments.length} attachments`}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} anyFile={anyFile} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
     {open && images.some(image => image.id === open.id)
