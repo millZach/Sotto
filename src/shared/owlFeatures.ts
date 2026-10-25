@@ -36,12 +36,13 @@ export const OWL_FEATURES = [
   { id: 'cursor', name: 'Cursor provider', owlSince: '2026-10-23', owner: 'docs/adr/0128-cursor-is-a-thread-provider.md', sentToStable: false },
   { id: 'cleanup-model', name: 'Choose the AI cleanup model and mode', owlSince: '2026-10-23', owner: 'docs/adr/0122-the-cleanup-model-can-be-chosen-on-owl.md', sentToStable: false },
   { id: 'interface-language', name: 'Interface language', owlSince: '2026-10-23', owner: 'docs/adr/0123-sottos-interface-speaks-the-computers-language.md', sentToStable: false },
-  { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'own-model-servers', name: 'Your own model servers', owlSince: '2026-10-23', owner: 'docs/adr/0124-your-own-model-server-is-a-model-source.md', sentToStable: false },
   { id: 'composer-shrink', name: 'Slim composer while reading back', owlSince: '2026-10-23', owner: 'docs/adr/0125-the-composer-slims-while-the-user-reads-back.md', sentToStable: false },
   { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
+  { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
+  { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

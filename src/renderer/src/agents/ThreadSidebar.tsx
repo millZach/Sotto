@@ -9,6 +9,7 @@ import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
+import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
@@ -17,6 +18,7 @@ import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
+import { useOwlFeature } from '../state/owlFeature'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
@@ -213,8 +215,12 @@ function useFolderToggles(): readonly [(key: string) => boolean, (key: string) =
   return [isOpen, toggle]
 }
 
+/** How long the pointer or focus rests on a closed folder before its preview opens, and how long it lingers after leaving. */
+const PEEK_DELAY_MS = 350
+const PEEK_GRACE_MS = 300
+
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
@@ -227,6 +233,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   /** The threads whose own lane is running; each row reads only its own entry. */
   readonly busyThreadIds: readonly string[] | undefined
   readonly newThreadShortcut?: { readonly suffix: string; readonly keys: string } | undefined
+  /** The folder peek (Owl, docs/plans/collapsed-folder-peek.md): a closed folder previews its rows in place while rested on. */
+  readonly peekEnabled: boolean
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
   const indicatorsId = `${listId}-indicators`
@@ -234,11 +242,87 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   // The chord opens a thread in the focused pane's project, so only this project's pen answers to it while one of its threads is focused.
   const listed = panes.listedThreadId ?? panes.currentThreadId
   const chordAppliesHere = listed !== null && folder.rows.some(row => row.thread.id === listed)
-  return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
-    <div className="thread-folder__head">
+  const key = folderKey(section, folder.id)
+  // The preview: a closed folder rested on by pointer or focus opens in place until you leave (Zach's pick, variant B).
+  // It never touches the toggled folders; Keep open and the toggle itself do the real opening.
+  const [preview, setPreview] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const previewRef = useRef<HTMLUListElement>(null)
+  const enterTimer = useRef(0)
+  const leaveTimer = useRef(0)
+  const hoverRef = useRef(false)
+  const draggingRef = useRef(false)
+  /** Escape latches the preview shut until focus leaves the folder; returned focus alone must not reopen it. */
+  const suppressRef = useRef(false)
+  const focusFirstRow = useRef(false)
+  const canPreview = peekEnabled && !expanded && folder.rows.length > 0
+  const peeking = preview && canPreview
+  useEffect(() => () => { window.clearTimeout(enterTimer.current); window.clearTimeout(leaveTimer.current) }, [])
+  useLayoutEffect(() => {
+    if (!peeking || !focusFirstRow.current) return
+    focusFirstRow.current = false
+    previewRef.current?.querySelector<HTMLElement>('.thread-nav__item')?.focus()
+  }, [peeking])
+  const clearTimers = (): void => { window.clearTimeout(enterTimer.current); window.clearTimeout(leaveTimer.current) }
+  const focusInside = (): boolean => { const active = document.activeElement; return active !== null && active !== document.body && rootRef.current?.contains(active) === true }
+  const schedulePreview = (trigger: 'hover' | 'focus'): void => {
+    if (!canPreview) return
+    if (trigger === 'focus' && suppressRef.current) return
+    if (trigger === 'hover') suppressRef.current = false
+    window.clearTimeout(leaveTimer.current)
+    if (peeking) return
+    window.clearTimeout(enterTimer.current)
+    enterTimer.current = window.setTimeout(() => setPreview(true), PEEK_DELAY_MS)
+  }
+  const scheduleHide = (from: 'hover' | 'focus'): void => {
+    window.clearTimeout(enterTimer.current)
+    if (draggingRef.current) return
+    if (from === 'hover' && focusInside()) return
+    if (from === 'focus' && hoverRef.current) return
+    window.clearTimeout(leaveTimer.current)
+    leaveTimer.current = window.setTimeout(() => setPreview(false), PEEK_GRACE_MS)
+  }
+  const hidePreview = (latch = false): void => { if (latch) suppressRef.current = true; clearTimers(); setPreview(false) }
+  const keepOpen = (): void => { hidePreview(); onToggle(key); toggleRef.current?.focus() }
+  const fineHover = (pointerType: string): boolean => {
+    if (pointerType !== '' && pointerType !== 'mouse' && pointerType !== 'pen') return false
+    return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  }
+  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
+    liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} />)
+  return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}
+    onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
+    onPointerLeave={() => { hoverRef.current = false; scheduleHide('hover') }}
+    onFocus={event => { if (!rootRef.current?.contains(event.relatedTarget as Node | null)) schedulePreview('focus'); else window.clearTimeout(leaveTimer.current) }}
+    onBlur={event => { if (rootRef.current?.contains(event.relatedTarget as Node | null)) return; suppressRef.current = false; scheduleHide('focus') }}
+    onDragStart={() => { draggingRef.current = true; clearTimers() }}
+    onDragEnd={() => { draggingRef.current = false; scheduleHide('hover') }}
+    onKeyDown={event => {
+      // Keys typed in a row's rename field belong to the field: caret arrows must never navigate the preview.
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) return
+      if (event.key === 'Escape' && peeking) { event.preventDefault(); event.stopPropagation(); hidePreview(true); toggleRef.current?.focus(); return }
+      const inPreview = previewRef.current?.contains(event.target as Node) === true
+      if (inPreview && event.key === 'ArrowLeft') { event.preventDefault(); hidePreview(true); toggleRef.current?.focus(); return }
+      if (inPreview && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        const rows = [...(previewRef.current?.querySelectorAll<HTMLElement>('.thread-nav__item') ?? [])]
+        const at = rows.findIndex(row => row === event.target || row.contains(event.target as Node))
+        if (!rows.length || at < 0) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : at + (event.key === 'ArrowDown' ? 1 : -1)
+        rows[Math.max(0, Math.min(next, rows.length - 1))]?.focus()
+        return
+      }
+      if (event.target === toggleRef.current && (event.key === 'ArrowDown' || event.key === 'ArrowRight') && canPreview) {
+        event.preventDefault(); suppressRef.current = false; clearTimers()
+        if (peeking) previewRef.current?.querySelector<HTMLElement>('.thread-nav__item')?.focus()
+        else { focusFirstRow.current = true; setPreview(true) }
+      }
+    }}>
+    <div className="thread-folder__head" data-peeking={peeking || undefined}>
       {/* The toggle includes the visible count in its accessible name, with the project title first. */}
-      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))}
-        aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
+      <button ref={toggleRef} type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => { hidePreview(); onToggle(key) }}
+        aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={peeking ? undefined : project?.path}>
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
         <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
         {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
@@ -252,9 +336,15 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         {folder.settled || section === 'open' ? <ProjectSettleAction projectId={folder.id} title={folder.title} settled={folder.settled} disabled={globalLaneBusy} command={command} /> : null}
       </span> : null}
     </div>
+    {peeking ? <ul ref={previewRef} className="thread-folder__rows thread-folder__preview" id={`${listId}-preview`} role="group" aria-label={`Preview of threads in ${folder.title}`}>
+      {renderRows(threadId => { hidePreview(); onOpen(threadId) }, { ...panes, onOpenBeside: threadId => { hidePreview(); panes.onOpenBeside(threadId) } })}
+      <li className="thread-folder__preview-foot"><span>Preview</span>
+        <button type="button" className="thread-folder__preview-action tt-focusable" onClick={keepOpen}>Keep open</button>
+        {section === 'open' && project !== undefined ? <button type="button" className="thread-folder__preview-action tt-focusable" aria-label={`New thread in ${folder.title}`} onClick={() => { hidePreview(); onNewThread(folder.id) }}>New thread</button> : null}
+      </li>
+    </ul> : null}
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-        liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} settle={settle} />)}
+      {renderRows(onOpen, panes)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
@@ -326,6 +416,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
+  const folderPeek = useOwlFeature('folder-peek')
+  const { collapsed } = useSidebarSize()
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings
@@ -356,7 +448,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
         event.preventDefault()
-        void settle(row.thread, row.project)
+        // The collapsed rail keeps showing the focused thread even once settled, so move on to the top open one.
+        const next = collapsed ? openRows.find(item => item.thread.id !== row.thread.id) : undefined
+        void settle(row.thread, row.project).then(settled => { if (settled && next) onOpen(next.thread.id) })
         return
       }
       if (press(restoreChord)) {
@@ -388,7 +482,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutsLive, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
+  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
@@ -397,7 +491,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     const key = folderKey(section, folder.id)
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
-      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut}
+      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
   }
   const { open, settled } = organization

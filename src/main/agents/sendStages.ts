@@ -251,12 +251,14 @@ export class FirstOutputWatches {
 
   /**
    * Mark the first output of each watched reply these threads show, and stop watching a reply whose turn ended without
-   * one. A turn end its adapter has not reported by the time its thread shows the turn ended is given up then.
+   * one. A turn end its adapter has not reported by the time its thread shows the turn ended is given up then. `threads`
+   * is the snapshot's list, or a look-up of its threads by ID for a caller that holds them by ID (#925).
    */
-  observe(threads: readonly WatchedThread[]): void {
+  observe(threads: readonly WatchedThread[] | ((threadId: string) => WatchedThread | undefined)): void {
     if (!this.watches.size) return
+    const find = typeof threads === 'function' ? threads : (threadId: string) => threads.find(item => item.id === threadId)
     for (const [threadId, watch] of [...this.watches]) {
-      const thread = threads.find(item => item.id === threadId)
+      const thread = find(threadId)
       if (!thread) continue
       if (!watch.clock.has('firstOutput') && showsFirstOutput(thread, watch.baseline)) watch.clock.mark('firstOutput')
       if (watch.clock.has('firstOutput') && !watch.clock.awaitsTurnEnd()) { this.watches.delete(threadId); continue }

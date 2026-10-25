@@ -219,11 +219,11 @@ class ShadowThreadMaps {
   }
 
   /**
-   * The workspace's thread changes, which nothing in main subscribes to until the coordinator moves onto them (#925, step
-   * 5): this subscribes and counts what each publication carries. Building them is counted as main's work, as it will be
-   * once the coordinator reads them; only this subscriber's own work is left out. Verifying, its map is checked against
-   * the workspace's activity publication from the same publish, which reaches its subscribers first. Call it before
-   * anything else subscribes to the workspace's activity snapshots.
+   * The workspace's thread changes, which the coordinator and usage read (#925, step 5): this subscribes beside them and
+   * counts what each publication carries, leaving its own work out. Verifying, its map is checked against the workspace's
+   * activity publication from the same publish, which reaches its subscribers first; nothing in main subscribes to that
+   * publication any more, so `verifyPublication` subscribes for the shadows. Call it before anything else subscribes to
+   * the workspace's activity snapshots.
    */
   tapWorkspaceChanges(workspace: WorkspaceHost): void {
     let latest: AgentHostSnapshot | undefined
@@ -234,6 +234,14 @@ class ShadowThreadMaps {
       this.carried.workspace += changes.upserts.length + changes.removals.length
       follow(changes)
     }))
+  }
+
+  /**
+   * Verifying, subscribes to the workspace's activity publication, which nothing in main reads since #925's step 5, so the
+   * workspace builds it for the shadows of its thread changes and its publication. Call it after `tap`.
+   */
+  verifyPublication(workspace: WorkspaceHost): void {
+    if (this.on) workspace.subscribeActivitySnapshots(() => undefined)
   }
 
   /** Shadows what `host`'s activity subscription publishes, through the shim, from every subscription made after this. */
@@ -378,9 +386,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   shadows.tapAccept(workspace)
   shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')
+  shadows.verifyPublication(workspace)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
+  // Usage is an Owl feature: it reads every one of the workspace's thread changes, beside the coordinator (runtime.ts).
   const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
   usage?.start()
   // Next prompts are an Owl feature (ADR-0132): they hear each thread start and finish from the coordinator's own pass, as
@@ -557,7 +566,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
     resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0; shadows.reset() },
-    threadChanges: () => shadows.report(),
+    threadChanges: () => { const report = shadows.report(); return { ...report, checked: { ...report.checked, 'coordinator changes': control.verifiedChanges } } },
     stop,
   }
 }
