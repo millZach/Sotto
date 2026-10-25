@@ -315,4 +315,20 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     expect(await laptop.snapshotOf(machines.laptop)).toMatchObject({ branch: 'main', snapshot: { untrackedCount: 0 } })
     expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
   })
+
+  it('still sees a changed submodule when the repository tells Git to ignore it', async () => {
+    const library = join(machines.root, 'library')
+    git(machines.root, 'init', '-q', library)
+    await commitFile(library, 'lib.txt', 'one')
+    git(machines.laptop, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'lib')
+    git(machines.laptop, 'commit', '-q', '-m', 'Add the library')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    await writeFile(join(machines.laptop, 'lib', 'lib.txt'), 'edited in the submodule')
+    for (const ignore of ['dirty', 'all']) {
+      git(machines.laptop, 'config', 'submodule.lib.ignore', ignore)
+      expect(await laptop.snapshotOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.submoduleChanges })
+      expect(await laptop.branchOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.uncommitted })
+    }
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
 })

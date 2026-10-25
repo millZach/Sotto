@@ -160,7 +160,7 @@ export class BranchBundles {
   async branchOf(workingCopy: string): Promise<BranchSource | BranchMoveRefusal> {
     if (!await this.isRepository(workingCopy)) return branchMoveRefusal('not-a-repository', branchMoveWords.notARepository)
     try {
-      if ((await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal'], undefined, 60_000)).trim()) return branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
+      if ((await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).trim()) return branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
       let branch: string
       try { branch = (await this.git(workingCopy, ['symbolic-ref', '--quiet', '--short', 'HEAD'], undefined, 30_000)).trim() } catch { return branchMoveRefusal('not-on-branch', branchMoveWords.notOnBranch) }
       if (!branchNameSchema.safeParse(branch).success) return branchMoveRefusal('unsupported', branchMoveWords.branchName)
@@ -191,7 +191,7 @@ export class BranchBundles {
       if (!branchNameSchema.safeParse(branch).success) return branchMoveRefusal('unsupported', branchMoveWords.branchName)
       const head = (await this.git(workingCopy, ['rev-parse', '--verify', 'HEAD^{commit}'], undefined, 30_000)).trim()
       if (!commitIdSchema.safeParse(head).success) return branchMoveRefusal('failed', branchMoveWords.failed)
-      if (!(await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal'], undefined, 60_000)).trim()) return { branch, commit: head }
+      if (!(await this.git(workingCopy, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).trim()) return { branch, commit: head }
       if (await this.dirtySubmodule(workingCopy)) return branchMoveRefusal('uncommitted', branchMoveWords.submoduleChanges)
       // From the top of the working tree, so `add -A` takes all of it and the untracked paths read from its root.
       const top = (await this.git(workingCopy, ['rev-parse', '--show-toplevel'], undefined, 30_000)).trim()
@@ -212,11 +212,13 @@ export class BranchBundles {
 
   /**
    * Whether a submodule of the working copy has changes of its own, tracked or untracked. `git add -A` in the parent takes
-   * only a submodule's commit, so a test run's snapshot would leave that work behind while saying it carried everything.
+   * only a submodule's commit, so a check's snapshot would leave that work behind while saying it carried everything.
    * Porcelain v2 marks a submodule `S<c><m><u>`: `M` for its tracked changes, `U` for its untracked files.
+   * `--ignore-submodules=none` here and in the status calls before it, so a repository's `submodule.<name>.ignore` set to
+   * `dirty` or `all` cannot make a changed submodule read as clean.
    */
   private async dirtySubmodule(workingCopy: string): Promise<boolean> {
-    const lines = (await this.git(workingCopy, ['status', '--porcelain=v2', '--untracked-files=normal'], undefined, 60_000)).split(/\r?\n/u)
+    const lines = (await this.git(workingCopy, ['status', '--porcelain=v2', '--untracked-files=normal', '--ignore-submodules=none'], undefined, 60_000)).split(/\r?\n/u)
     return lines.some(line => {
       const fields = line.split(' ')
       const sub = fields[2] ?? ''
@@ -428,8 +430,8 @@ export class BranchBundles {
   /**
    * Lands a whole bundle: its size and SHA-256 as the sender named them, `git bundle verify` in the receiving repository,
    * and exactly one ref, the sender's outgoing ref for this move, naming the commit. The objects are imported without
-   * writing any ref, the commit is checked to be a commit, the move is recorded, and the incoming ref created only if it does not exist, then read back. The staged
-   * file is removed whatever happens.
+   * writing any ref, the commit is checked to be a commit, the move is recorded, and the incoming ref created only if it
+   * does not exist, then read back. The staged file is removed whatever happens.
    */
   async finish(incoming: IncomingBundle, fence?: MoveFence): Promise<BranchMoved | BranchMoveRefusal> {
     const fences = fence ? [incoming, fence] : [incoming]
