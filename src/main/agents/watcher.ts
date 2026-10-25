@@ -17,7 +17,7 @@ import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
-  type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
+  type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
 import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
@@ -368,6 +368,8 @@ export class WatcherService implements WatcherControlHooks {
   private readonly confirmations = new Map<string, { targets: WatcherThreadTarget[]; signature: string; expires: number; phoneClientId: string | undefined }>()
   private readonly pages = new Map<string, { kind: string; rows: unknown[]; expires: number; workingCopies?: { revision: string; baseRefs: { choiceId: string; name: string }[] } }>()
   private readonly copyChoices = new Map<string, { projectId: string; path?: string; branch?: string; revision: string; snapshotId: string }>()
+  /** The last read_thread result Watcher was given of each thread, by Watcher conversation and target, and when (#1552). In memory only. */
+  private readonly readsGiven = new Map<string, { digest: string; at: string }>()
   private closed = false
   private remote: WatcherRemoteHosts | undefined
   private remoteOff: (() => void) | undefined
@@ -2816,7 +2818,7 @@ export class WatcherService implements WatcherControlHooks {
       if (hostId && hostId !== this.hostId() && ['list_threads', 'list_working_copies', 'read_thread'].includes(name)) {
         this.requireRemote(hostId, false)
         // The host is asked as any host can answer, and what Watcher asked for is taken from its full answer here (#1191).
-        return this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.record().current!, call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead))
+        return this.unchangedSince(name, this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.record().current!, call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead)))
       }
       if (name === 'list_threads' || name === 'list_projects' || name === 'list_working_copies' || name === 'read_thread' || name === 'read_operation') {
         const call = watcherHostReadSchema.shape.call.unwrap().parse({ name, input: parsed.data })
@@ -2850,7 +2852,7 @@ export class WatcherService implements WatcherControlHooks {
           operation = this.record().operations.find(item => item.id === operation!.id)!
           return await this.dispatchRead(call, operation, true, hosted)
         }
-        return this.slim(name, parsed.data, await this.dispatchRead(call, operation))
+        return this.unchangedSince(name, this.slim(name, parsed.data, await this.dispatchRead(call, operation)))
       }
       if (name === 'send_to_thread') {
         // The merge turn marks the send for Watcher's picture alone (#1339): the send is admitted, digested, retried and
@@ -3833,6 +3835,26 @@ ${operation.draftId}`)
     const thread = (target: WatcherThreadTarget) => this.owningSnapshot(target.hostId)?.threads.find(item => item.id === target.threadId)
     return watcherSlimRead(name, input, result, target => watched.has(key(target)), target => thread(target)?.lastTurn?.status === 'failed',
       target => thread(target)?.prototypeReady !== undefined)
+  }
+  /**
+   * Marks a read_thread result that gives Watcher nothing its last read of that thread did not (#1552). A Watcher that
+   * rereads a working thread to see whether it has finished, as one on Muse did 84 times in one turn, adds each read
+   * and each reply to its conversation and slows every later call; the mark says so where it decides to read again. The
+   * read is still given whole, since a compaction may have taken the earlier one from the conversation.
+   */
+  private unchangedSince(name: WatcherToolName, result: unknown): unknown {
+    if (name !== 'read_thread' || typeof result !== 'object' || result === null || (result as { status?: unknown }).status !== 'ok') return result
+    const { observedAt, evidence, ...read } = result as { observedAt: string; target: WatcherThreadTarget; evidence: WatcherEvidence[] }
+    // When a fact was last seen is left out: a refresh that changes only that leaves the fact as it was (watcherEvidence.ts).
+    const facts = evidence.map(({ observedAt: _seen, fetchedAt: _fetched, ...fact }) => { void _seen; void _fetched; return fact })
+    const slot = `${this.view().current?.target.threadId ?? ''} ${key(read.target)}`, given = digest([read, facts]), before = this.readsGiven.get(slot)
+    if (before?.digest === given) {
+      const marked = { ...result, unchangedSince: before.at }
+      return Buffer.byteLength(JSON.stringify(marked)) > WATCHER_READ_BYTES_MAX ? result : marked
+    }
+    this.readsGiven.delete(slot); this.readsGiven.set(slot, { digest: given, at: observedAt })
+    while (this.readsGiven.size > 256) this.readsGiven.delete(this.readsGiven.keys().next().value!)
+    return result
   }
   private prunePages(): void {
     for (const [id, page] of this.pages) if (page.expires < Date.now()) this.pages.delete(id)

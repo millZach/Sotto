@@ -1959,6 +1959,27 @@ it('keeps the newest messages in an oversized initial read and the oldest prefix
 })
 
 
+it('marks a read that gives nothing the last read of that thread did not, and stops once the thread changes (#1552)', async () => {
+  const f = await fixture(), first = await f.call('start_thread', f.start())
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
+  const historyEpoch = randomUUID(), createdAt = new Date().toISOString()
+  const history = (texts: string[]) => ({ historyEpoch, hasMore: false, earlierAvailable: false, activities: [],
+    messages: texts.map((text, position) => ({ position, message: { id: `${historyEpoch}-${position}`, role: 'assistant' as const, text, createdAt } })) })
+  const read = vi.spyOn(f.workspace.host, 'watcherRead').mockResolvedValue(history(['Synthetic progress']))
+  const initial = await f.call('read_thread', { target: first.target })
+  if (initial.status !== 'ok' || !('messages' in initial)) throw new Error('initial read refused')
+  expect(initial).not.toHaveProperty('unchangedSince')
+  // Read again with nothing new, as a Watcher checking whether the thread has finished does: still whole, and marked.
+  const again = await f.call('read_thread', { target: first.target, limit: 10 })
+  expect(again).toMatchObject({ status: 'ok', messages: [{ text: 'Synthetic progress' }], unchangedSince: initial.observedAt })
+  expect(await f.call('read_thread', { target: first.target })).toMatchObject({ unchangedSince: initial.observedAt })
+  read.mockResolvedValue(history(['Synthetic progress', 'Synthetic finish']))
+  const changed = await f.call('read_thread', { target: first.target })
+  if (changed.status !== 'ok' || !('messages' in changed)) throw new Error('changed read refused')
+  expect(changed).not.toHaveProperty('unchangedSince')
+  expect(await f.call('read_thread', { target: first.target })).toMatchObject({ unchangedSince: changed.observedAt })
+})
+
 it.each(['list_threads', 'list_projects', 'list_working_copies'] as const)('restarts an expired %s page using the returned restart cursor', async name => {
   const f = await fixture()
   if (name === 'list_projects') {
