@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { watcherMachinesReadSchema, type WatcherBridge, type WatcherRoomListChange, type WatcherRoomPatch, type WatcherRoomState, type WatcherRoomUpdate } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { samePlainData } from './agentStateBroadcast'
@@ -99,7 +100,7 @@ export function createWatcherRoomDesktop(options: {
   if (!options.watcherEnabled) return undefined
   const watcher = options.watcher
   const unavailable = () => ({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
-    message: 'Turn on Run the local host in Settings and restart Sotto to use Watcher.', retryable: true } as const)
+    message: t`Turn on Run the local host in Settings and restart Sotto to use Watcher.`, retryable: true } as const)
   const bridge: RoomBridge = {
     get: async () => watcher?.get() ?? unavailable(),
     open: request => watcher?.open(request) ?? Promise.resolve(unavailable()),

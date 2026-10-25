@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { CONTINUE_READ, CONTINUE_START, continueReadSchema, continueStartSchema, type ContinueRead, type ContinueStart } from '../../shared/continueThread'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -16,12 +17,12 @@ export interface ContinueCalls {
 export function registerContinueIpc(ipc: IpcMainAdapter, calls: ContinueCalls | undefined, senders: () => readonly TrustedIpcSender[]): () => void {
   if (!calls) return () => undefined
   ipc.handle(CONTINUE_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Continue a thread from the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Continue a thread from the main Sotto window.`)
     const [request] = z.tuple([z.unknown()]).parse(args)
     return continueReadSchema.parse(calls.read(request))
   })
   ipc.handle(CONTINUE_START, async (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Continue a thread from the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Continue a thread from the main Sotto window.`)
     const [request] = z.tuple([z.unknown()]).parse(args)
     return continueStartSchema.parse(await calls.start(request))
   })

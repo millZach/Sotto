@@ -1,6 +1,7 @@
+import { t } from '@lingui/core/macro'
 import { PROVIDER_LABELS, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import type { HostsCommand } from '../../shared/hosts'
-import { HOST_PROVIDER_JOB_WORDS, hostProviderFound, hostProviderJobCase, hostProviderJobTitle, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../shared/hostProviders'
+import { hostProviderFound, hostProviderJobCase, hostProviderJobTitle, type HostProviderId, type HostProviderJobCase, type HostProviderJobState } from '../../shared/hostProviders'
 import { hostProviderBrief, PROVIDER_COMMANDS, PROVIDER_INSTALL_METHODS, providerLookupOrder } from './hostProviderBrief'
 import type { HostSetupThreads } from './hostSetup'
 import { PROVIDER_JOB_TOOL_NAMES, type AgentJobToolName, type HostSetupToolReply } from './hostSetupTools'
@@ -38,8 +39,21 @@ interface Job {
   checking: boolean
 }
 const running = (job: Job | undefined): job is Job => job !== undefined && (job.phase === 'starting' || job.phase === 'running')
-/** "An agent is installing Devin on forge now.", which refuses a second agent job while this one runs. */
-const workingOn = (job: Job): string => `An agent is ${HOST_PROVIDER_JOB_WORDS[job.case].doing} ${PROVIDER_LABELS[job.provider]} on ${job.host} now.`
+/**
+ * "An agent is installing Devin on forge now.", which refuses a second agent job while this one runs, and what to do
+ * about it: stop it on its tile (`tile`), or stop it before starting another (`first`). One whole sentence per case.
+ */
+const workingOn = (job: Job, next: 'tile' | 'first'): string => {
+  const provider = PROVIDER_LABELS[job.provider], host = job.host
+  if (next === 'tile') {
+    return job.case === 'install' ? t`An agent is installing ${provider} on ${host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started.`
+      : job.case === 'update' ? t`An agent is updating ${provider} on ${host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started.`
+        : t`An agent is fixing ${provider} on ${host} now. Stop it on its tile in Settings > Hosts & phones first. Nothing was started.`
+  }
+  return job.case === 'install' ? t`An agent is installing ${provider} on ${host} now. Stop it first. Nothing was started.`
+    : job.case === 'update' ? t`An agent is updating ${provider} on ${host} now. Stop it first. Nothing was started.`
+      : t`An agent is fixing ${provider} on ${host} now. Stop it first. Nothing was started.`
+}
 
 /**
  * Have my agent install it, update it or fix it (ADR-0035, amended for #461): one provider job at a time, for one
@@ -62,7 +76,7 @@ export class HostProviderJobs implements HostProviderJobSource {
   /** Why a host setup may not start now, when a provider job runs: one agent job at a time. */
   busySentence(): string | undefined {
     const job = this.current
-    return running(job) ? `${workingOn(job)} Stop it on its tile in Settings > Hosts & phones first. Nothing was started.` : undefined
+    return running(job) ? workingOn(job, 'tile') : undefined
   }
   /** How a job that ends takes its thread's tool away: the tool server's revoke. */
   useTools(revoke: (threadId: string) => void): void { this.revokeTool = revoke }
@@ -100,18 +114,18 @@ export class HostProviderJobs implements HostProviderJobSource {
 
   private async start(command: Extract<HostsCommand, { type: 'start-provider-job' }>): Promise<void> {
     const name = PROVIDER_LABELS[command.provider]
-    if (running(this.current)) throw new Error(`${workingOn(this.current)} Stop it first. Nothing was started.`)
+    if (running(this.current)) throw new Error(workingOn(this.current, 'first'))
     const busy = this.options.busy?.()
     if (busy) throw new Error(busy)
     const choice = this.options.threads.choice()
     if (choice.unavailable) throw new Error(choice.unavailable)
     const model = choice.models.find(item => item.id === command.modelId)
-    if (!model) throw new Error('That model is not ready on this computer. Choose another one. Nothing was started.')
+    if (!model) throw new Error(t`That model is not ready on this computer. Choose another one. Nothing was started.`)
     const host = this.options.hosts.host(command.hostId)
-    if (!host?.connected) throw new Error(`${host?.name ?? 'This host'} is not connected. Nothing was started. Switch it on, then try again.`)
+    if (!host?.connected) throw new Error(host ? t`${{ host: host.name }} is not connected. Nothing was started. Switch it on, then try again.` : t`This host is not connected. Nothing was started. Switch it on, then try again.`)
     const status = this.options.hosts.provider(command.hostId, command.provider)
     const jobCase = hostProviderJobCase(status)
-    if (!jobCase) throw new Error(`${host.name}'s host can already use ${name}, so there is nothing for an agent to install, update or fix. Nothing was started.`)
+    if (!jobCase) throw new Error(t`${{ host: host.name }}'s host can already use ${name}, so there is nothing for an agent to install, update or fix. Nothing was started.`)
     const job: Job = { id: command.id, hostId: command.hostId, host: host.name, provider: command.provider, case: jobCase, modelName: model.name,
       threadTitle: hostProviderJobTitle(jobCase, command.provider, host.name), phase: 'starting', checking: false }
     this.current = job
@@ -122,11 +136,11 @@ export class HostProviderJobs implements HostProviderJobSource {
       await this.options.threads.start({ title: job.threadTitle, modelId: model.id, brief, created: threadId => { job.threadId = threadId; this.emit() } })
     } catch (error) {
       if (this.current !== job || job.phase !== 'starting') return
-      const message = error instanceof Error ? error.message : 'The thread could not start.'
+      const message = error instanceof Error ? error.message : t`The thread could not start.`
       this.end(job)
       // No thread: nothing was started, and the tile says why. A thread that did not take its brief stays to look at.
-      if (!job.threadId) { this.current = undefined; this.emit(); throw new Error(`${message} Nothing was started.`, { cause: error }) }
-      job.phase = 'failed'; job.error = `The thread ${job.threadTitle} did not start working. ${message} Nothing was changed on ${job.host}.`
+      if (!job.threadId) { this.current = undefined; this.emit(); throw new Error(t`${message} Nothing was started.`, { cause: error }) }
+      job.phase = 'failed'; job.error = t`The thread ${{ title: job.threadTitle }} did not start working. ${message} Nothing was changed on ${{ host: job.host }}.`
       this.emit()
       return
     }

@@ -1,4 +1,6 @@
-import { bootChangeRestarts, bootUnsupportedSentence, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
+import { t } from '@lingui/core/macro'
+import { bootChangeRestarts, type BootStatus, type HostBootAction, type HostBootFailure, type HostBootPhase, type HostBootState } from '../../shared/bootStart'
+import { bootUnsupportedWords } from '../../shared/interfaceWords'
 import { idleNow, stopWorkingThreads, whenIdle, type BusyHostThreads } from './busyHost'
 import { posix } from 'node:path'
 import { shellEscaped } from './revokeCommand'
@@ -44,7 +46,6 @@ interface Entry {
 }
 
 /** What every failure that left the host as it was says about it. */
-const UNCHANGED = 'Nothing was changed, and the host keeps running as before.'
 /** The journal of the unit, which says why it would not start or would not stay up. Sotto never runs it. */
 const JOURNAL = 'journalctl --user -u sotto-host -n 50 --no-pager'
 
@@ -99,7 +100,7 @@ export class HostBootChanges {
   /** Why another command on this saved host must wait, while its start at boot change runs. */
   busy(id: string): string | undefined {
     const entry = this.entries.get(id)
-    return entry?.phase === 'changing' ? `Sotto is changing whether the host on ${entry.name} starts at boot. Nothing was changed. Wait for it to finish, then try again.` : undefined
+    return entry?.phase === 'changing' ? t`Sotto is changing whether the host on ${{ host: entry.name }} starts at boot. Nothing was changed. Wait for it to finish, then try again.` : undefined
   }
   dispose(): void {
     for (const off of this.off) off()
@@ -109,7 +110,7 @@ export class HostBootChanges {
   async command(id: string, action: HostBootAction): Promise<void> {
     const entry = this.entries.get(id)
     if (action === 'install' || action === 'remove') this.press(id, action)
-    else if (!entry) throw new Error('This start at boot change is no longer there. Nothing was changed.')
+    else if (!entry) throw new Error(t`This start at boot change is no longer there. Nothing was changed.`)
     else if (action === 'when-idle') { if (entry.phase === 'confirm') { if (whenIdle(this.workingNow(entry).length) === 'waiting') entry.phase = 'waiting'; else this.begin(entry) } }
     else if (action === 'stop-threads') {
       if (this.asking(entry)) {
@@ -117,7 +118,7 @@ export class HostBootChanges {
         // A Cancel, or another press, that came while the turns stopped wins: only the question still on screen goes ahead.
         if (this.asking(entry)) this.begin(entry)
       }
-    } else if (entry.phase === 'changing') throw new Error(`Sotto is already changing whether the host on ${entry.name} starts at boot. Wait for it to finish.`)
+    } else if (entry.phase === 'changing') throw new Error(t`Sotto is already changing whether the host on ${{ host: entry.name }} starts at boot. Wait for it to finish.`)
     // Cancel before anything was sent, and Dismiss once it is over, both put it away.
     else this.entries.delete(id)
     this.emit()
@@ -126,9 +127,9 @@ export class HostBootChanges {
   /** Start at boot or Stop starting at boot: at once, or the busy-host question first when it would stop working threads. */
   private press(id: string, change: 'install' | 'remove'): void {
     const current = this.entries.get(id)
-    if (current?.phase === 'changing') throw new Error(`Sotto is already changing whether the host on ${current.name} starts at boot. Wait for it to finish.`)
+    if (current?.phase === 'changing') throw new Error(t`Sotto is already changing whether the host on ${{ host: current.name }} starts at boot. Wait for it to finish.`)
     const host = this.options.hosts.candidate(id)
-    if (!host) throw new Error('Connect to this host before changing whether it starts at boot. Nothing was changed.')
+    if (!host) throw new Error(t`Connect to this host before changing whether it starts at boot. Nothing was changed.`)
     const restarts = bootChangeRestarts(change, host)
     const entry: Entry = { id, name: host.name, hostId: host.hostId, installPath: host.installPath, change, phase: 'confirm', restarts }
     this.entries.set(id, entry)
@@ -139,7 +140,7 @@ export class HostBootChanges {
     delete entry.failure; delete entry.restarted
     this.emit()
     void this.options.hosts.setBootStart(entry.id, entry.change).then(result => this.finish(entry, result), (error: unknown) => {
-      this.fail(entry, { kind: 'failed', message: error instanceof Error && error.message ? error.message : `The host on ${entry.name} did not answer. Connect to it again to see whether start at boot changed.` })
+      this.fail(entry, { kind: 'failed', message: error instanceof Error && error.message ? error.message : t`The host on ${{ host: entry.name }} did not answer. Connect to it again to see whether start at boot changed.` })
     })
   }
   private finish(entry: Entry, result: SshBootResult): void {
@@ -163,32 +164,32 @@ export class HostBootChanges {
   /** The install wrote nothing: the host would not turn linger on, or cannot start at boot at all. */
   private notInstalled(name: string, status: BootStatus): HostBootFailure {
     if (status.supported && !status.linger) {
-      return { kind: 'linger', message: `${name} would not turn on linger without an administrator. Without it, a unit would stop ${name}’s host whenever its account signs out, so Sotto installed nothing.`,
-        ...(status.fix ? { fix: { text: `Run this on ${name}, then press Start at boot again. Sotto never runs sudo.`, command: status.fix } } : {}) }
+      return { kind: 'linger', message: t`${name} would not turn on linger without an administrator. Without it, a unit would stop ${name}’s host whenever its account signs out, so Sotto installed nothing.`,
+        ...(status.fix ? { fix: { text: t`Run this on ${name}, then press Start at boot again. Sotto never runs sudo.`, command: status.fix } } : {}) }
     }
-    return { kind: 'unsupported', message: `${bootUnsupportedSentence(status.reason)} Nothing was changed on ${name}.` }
+    return { kind: 'unsupported', message: t`${{ sentence: bootUnsupportedWords(status.reason) }} Nothing was changed on ${name}.` }
   }
   /** What the launch script's refusal means for this host, in plain words. */
   private refused(entry: Entry, reason: string, restarted: boolean): HostBootFailure {
     const { name } = entry
     const failed = (message: string, fix?: HostBootFailure['fix']): HostBootFailure => ({ kind: 'failed', message, ...(fix ? { fix } : {}) })
-    const journal = { text: `To see why the unit failed, run this on ${name}:`, command: JOURNAL }
+    const journal = { text: t`To see why the unit failed, run this on ${name}:`, command: JOURNAL }
     switch (reason) {
-      case 'boot-unit-taken': return failed(`Another Sotto installation on ${name} already has a unit named sotto-host. ${UNCHANGED} Remove that unit on ${name}, then try again.`)
-      case 'boot-install-failed': return failed(`${name}’s systemd would not take the unit, so Sotto took it away again. ${UNCHANGED} Check systemd for ${name}’s account, then try again.`)
-      case 'boot-stop-failed': return failed(`The host Sotto started on ${name} would not stop, so Sotto took the unit away again. The host keeps running, and nothing was lost. Try again in a minute.`)
+      case 'boot-unit-taken': return failed(t`Another Sotto installation on ${name} already has a unit named sotto-host. Nothing was changed, and the host keeps running as before. Remove that unit on ${name}, then try again.`)
+      case 'boot-install-failed': return failed(t`${name}’s systemd would not take the unit, so Sotto took it away again. Nothing was changed, and the host keeps running as before. Check systemd for ${name}’s account, then try again.`)
+      case 'boot-stop-failed': return failed(t`The host Sotto started on ${name} would not stop, so Sotto took the unit away again. The host keeps running, and nothing was lost. Try again in a minute.`)
       case 'boot-start-failed': return failed(restarted
-        ? `The unit did not bring ${name}’s host back, so Sotto took the unit away again and started the host the way it always has. Turns that were running stopped; drafts and history stay.`
-        : `The unit did not bring ${name}’s host back, so Sotto took the unit away again, and the host did not start without it either. Nothing in its data folder was lost. Sotto starts it again when it next connects.`, journal)
-      case 'update-busy': return failed(`Sotto is already updating or changing the host on ${name}. ${UNCHANGED} Wait a minute, then try again.`)
-      case 'archive-missing': return failed(`The host installation on ${name} is missing files the unit would run. ${UNCHANGED} Update the host, then try again.`)
-      case 'boot-remove-failed': return failed(`Sotto turned off start at boot on ${name} but could not remove the unit’s files there. Nothing was lost, and this computer starts the host again when it connects.`,
-        { text: `To remove them, run this on ${name}:`, command: bootRemovalCommand(entry.installPath) })
-      case 'boot-failed': return failed(`The connection to ${name} closed before start at boot changed. Nothing was lost. Its row shows whether start at boot changed once it connects again.`)
+        ? t`The unit did not bring ${name}’s host back, so Sotto took the unit away again and started the host the way it always has. Turns that were running stopped; drafts and history stay.`
+        : t`The unit did not bring ${name}’s host back, so Sotto took the unit away again, and the host did not start without it either. Nothing in its data folder was lost. Sotto starts it again when it next connects.`, journal)
+      case 'update-busy': return failed(t`Sotto is already updating or changing the host on ${name}. Nothing was changed, and the host keeps running as before. Wait a minute, then try again.`)
+      case 'archive-missing': return failed(t`The host installation on ${name} is missing files the unit would run. Nothing was changed, and the host keeps running as before. Update the host, then try again.`)
+      case 'boot-remove-failed': return failed(t`Sotto turned off start at boot on ${name} but could not remove the unit’s files there. Nothing was lost, and this computer starts the host again when it connects.`,
+        { text: t`To remove them, run this on ${name}:`, command: bootRemovalCommand(entry.installPath) })
+      case 'boot-failed': return failed(t`The connection to ${name} closed before start at boot changed. Nothing was lost. Its row shows whether start at boot changed once it connects again.`)
       default:
         // Removing took the unit away, and the host it ran did not start again outside it.
-        if (entry.change === 'remove') return failed(`Start at boot is off on ${name}, but its host did not start again. Nothing in its data folder was lost. Sotto starts it again when it next connects.`)
-        return failed(`Start at boot on ${name} did not change. ${UNCHANGED} Try again, and if it fails again, check the host on ${name}.`)
+        if (entry.change === 'remove') return failed(t`Start at boot is off on ${name}, but its host did not start again. Nothing in its data folder was lost. Sotto starts it again when it next connects.`)
+        return failed(t`Start at boot on ${name} did not change. Nothing was changed, and the host keeps running as before. Try again, and if it fails again, check the host on ${name}.`)
     }
   }
   private working(entry: Entry): readonly string[] { return this.options.threads.working(entry.hostId) }
@@ -206,7 +207,7 @@ export class HostBootChanges {
     for (const entry of [...this.entries.values()]) {
       if (entry.phase !== 'confirm' && entry.phase !== 'waiting') continue
       if (!this.options.hosts.keeps(entry.id)) {
-        this.fail(entry, { kind: 'failed', message: `${entry.name} was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again.` })
+        this.fail(entry, { kind: 'failed', message: t`${{ host: entry.name }} was switched off or removed before start at boot changed. Nothing was changed. Switch it on, then try again.` })
         continue
       }
       if (this.options.hosts.candidate(entry.id) && idleNow(entry.phase, this.working(entry).length) && !this.workingNow(entry).length) this.begin(entry)

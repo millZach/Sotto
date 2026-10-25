@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { BaseWindow, screen, WebContentsView, nativeImage, session, type BrowserWindow, type Session } from 'electron'
 import { browserCreateSchema, browserRequestSchema, browserNavigateSchema, browserMountSchema, browserOpenLinkSchema, safeBrowserUrl, type BrowserPage, type BrowserEvent, type BrowserBounds, browserShareSchema, browserViewportSchema, browserCaptureSchema, browserStartTaskSchema, browserAgentOpenSchema, browserAgentActionSchema, browserControlTaskSchema, browserAnswerActionSchema, browserFinishTaskSchema, browserTaskRequestSchema, BROWSER_WAITING_TO_OPEN, TEST_IPHONE, type BrowserTask, type BrowserAction, type BrowserAgentResult, type BrowserCapture } from '../../shared/browser'
@@ -88,7 +89,7 @@ export class BrowserService extends ToolOperations {
     isolated.on('will-download', (event, _item, contents) => {
       event.preventDefault()
       const record = [...this.pages.values()].find(record => record.view.webContents === contents)
-      if (record) this.issue(record, 'Downloads are blocked here. Open this page externally to download.')
+      if (record) this.issue(record, t`Downloads are blocked here. Open this page externally to download.`)
     })
     // No file://, Sotto custom protocols, application assets or OS protocol handlers.
     isolated.webRequest.onBeforeRequest((details, callback) => {
@@ -198,7 +199,7 @@ export class BrowserService extends ToolOperations {
     const blocked = (event: { preventDefault(): void }, url: string): void => {
       if (safeBrowserUrl(url)) return
       event.preventDefault()
-      this.issue(record, 'This navigation is blocked. Only HTTP and HTTPS pages can open here.')
+      this.issue(record, t`This navigation is blocked. Only HTTP and HTTPS pages can open here.`)
     }
     contents.on('will-navigate', (event, url) => blocked(event, url))
     contents.on('will-frame-navigate', (event) => {
@@ -208,7 +209,7 @@ export class BrowserService extends ToolOperations {
     contents.on('will-redirect', (event, url) => blocked(event, url))
     contents.on('will-attach-webview', event => event.preventDefault())
     contents.setWindowOpenHandler(() => {
-      this.issue(record, 'A new-window request was blocked. Use a link destination action or open this page externally.')
+      this.issue(record, t`A new-window request was blocked. Use a link destination action or open this page externally.`)
       return { action: 'deny' }
     })
     /** The main frame is moving to `url`: what waited on the old page lapses, and its sharing follows or ends. */
@@ -250,9 +251,9 @@ export class BrowserService extends ToolOperations {
     })
     contents.on('did-fail-load', (_event, code, _description, url, mainFrame) => {
       if (!mainFrame || code === -3 || (safeBrowserUrl(url) && url !== record.page.url)) return
-      this.issue(record, 'This page is unavailable. Check the address or start its local server, then reload.', true)
+      this.issue(record, t`This page is unavailable. Check the address or start its local server, then reload.`, true)
     })
-    contents.on('render-process-gone', () => this.issue(record, 'This page stopped unexpectedly. Reload to reopen it.', true))
+    contents.on('render-process-gone', () => this.issue(record, t`This page stopped unexpectedly. Reload to reopen it.`, true))
     if (!initial) { this.load(record, request.url); this.shareByGrant(record) }
     else record.page.error = BROWSER_WAITING_TO_OPEN
     return this.publish(record)
@@ -264,7 +265,7 @@ export class BrowserService extends ToolOperations {
     record.page.url = url; record.page.status = 'loading'; record.page.error = null
     const generation = ++record.generation
     void record.view.webContents.loadURL(url).catch((error: unknown) => {
-      if (record.generation === generation && (error as { code?: string }).code !== 'ERR_ABORTED') this.issue(record, 'This page is unavailable. Check the address or start its local server, then reload.', true)
+      if (record.generation === generation && (error as { code?: string }).code !== 'ERR_ABORTED') this.issue(record, t`This page is unavailable. Check the address or start its local server, then reload.`, true)
     })
   }
   private async owned(request: ReturnType<typeof browserRequestSchema.parse>, validateDirectory = true): Promise<PageRecord> {
@@ -306,7 +307,7 @@ export class BrowserService extends ToolOperations {
       await this.dependencies.openExternal(request.url)
       return { destination }
     }
-    if (!request.target) return fail('workspace-unavailable', 'Select a thread before opening an embedded page.')
+    if (!request.target) return fail('workspace-unavailable', t`Select a thread before opening an embedded page.`)
     return { destination, page: await this.createPage({ ...request.target, url: request.url }) }
   }) }
   mount(payload: unknown) { return this.run(async () => {
@@ -322,7 +323,7 @@ export class BrowserService extends ToolOperations {
     if (request.bounds === null) { if (this.isMounted(record)) this.removeMountedView(slot); return }
     if (version !== this.mountVersion[slot]) return
     const window = this.dependencies.getWindow()
-    if (!window || window.isDestroyed()) return fail('unavailable', 'The main window is unavailable.')
+    if (!window || window.isDestroyed()) return fail('unavailable', t`The main window is unavailable.`)
     this.removeMountedView(slot)
     this.desiredPageId[slot] = request.pageId
     this.setBounds(record, window, request.bounds)
@@ -505,7 +506,7 @@ export class BrowserService extends ToolOperations {
   share(payload: unknown) { return this.run(async () => {
     const request = parse(browserShareSchema, payload)
     const record = await this.owned(request)
-    if (request.enabled && record.initial) return fail('blocked', 'Answer the request to open this page first.')
+    if (request.enabled && record.initial) return fail('blocked', t`Answer the request to open this page first.`)
     record.page.sharedOrigin = request.enabled ? new URL(record.page.url).origin : null
     record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
@@ -522,7 +523,7 @@ export class BrowserService extends ToolOperations {
   viewport(payload: unknown) { return this.run(async () => {
     const request = parse(browserViewportSchema, payload)
     const record = await this.owned(request)
-    if (record.page.device) return fail('blocked', 'The test iPhone keeps its own size.')
+    if (record.page.device) return fail('blocked', t`The test iPhone keeps its own size.`)
     if ('reset' in request) {
       await record.automation.resetViewport()
       record.page.viewport = null
@@ -531,7 +532,7 @@ export class BrowserService extends ToolOperations {
       return this.publish(record)
     }
     await record.automation.input({ type: 'viewport', width: request.width, height: request.height }, () => {
-      if (record.view.webContents.isDestroyed()) fail('page-unavailable', 'This page closed.')
+      if (record.view.webContents.isDestroyed()) fail('page-unavailable', t`This page closed.`)
     })
     record.page.viewport = { width: request.width, height: request.height }
     record.generation++
@@ -544,27 +545,27 @@ export class BrowserService extends ToolOperations {
     const generation = record.generation
     if (request.point || request.region) {
       const selection = record.selection
-      if (!request.captureId || !selection || selection.id !== request.captureId || selection.expiresAt < Date.now()) return fail('blocked', 'Capture the page again before selecting feedback.')
+      if (!request.captureId || !selection || selection.id !== request.captureId || selection.expiresAt < Date.now()) return fail('blocked', t`Capture the page again before selecting feedback.`)
       const original = selection.capture
       const image = nativeImage.createFromDataURL(original.image)
       if (request.region) {
         const region = { x: Math.round(request.region.x), y: Math.round(request.region.y), width: Math.round(request.region.width), height: Math.round(request.region.height) }
-        if (region.width < 1 || region.height < 1 || region.x + region.width > original.width || region.y + region.height > original.height) return fail('blocked', 'Select a region inside the captured page.')
+        if (region.width < 1 || region.height < 1 || region.x + region.width > original.width || region.y + region.height > original.height) return fail('blocked', t`Select a region inside the captured page.`)
         // Feedback annotates the immutable image the user selected, even if the live page animates.
         return { ...original, captureId: selection.id, image: image.crop(region).toDataURL(), width: region.width, height: region.height, element: null }
       }
-      if (selection.generation !== generation) return fail('blocked', 'The page changed. Use Region to comment on the saved screenshot, or capture it again.')
+      if (selection.generation !== generation) return fail('blocked', t`The page changed. Use Region to comment on the saved screenshot, or capture it again.`)
       const selected = await record.automation.elementAt(request.point!)
-      if (!selected) return fail('blocked', 'No element is available there. Use Region to comment on the saved screenshot.')
+      if (!selected) return fail('blocked', t`No element is available there. Use Region to comment on the saved screenshot.`)
       const x = Math.max(0, Math.floor(selected.bounds.x)), y = Math.max(0, Math.floor(selected.bounds.y))
       const region = { x, y, width: Math.min(original.width, Math.ceil(selected.bounds.x + selected.bounds.width)) - x, height: Math.min(original.height, Math.ceil(selected.bounds.y + selected.bounds.height)) - y }
-      if (region.width <= 0 || region.height <= 0) return fail('blocked', 'That element is outside the captured page.')
+      if (region.width <= 0 || region.height <= 0) return fail('blocked', t`That element is outside the captured page.`)
       const after = await record.automation.elementAt(request.point!)
-      if (record.generation !== generation || JSON.stringify(after) !== JSON.stringify(selected)) return fail('blocked', 'That element changed. Use Region to comment on the saved screenshot, or capture it again.')
+      if (record.generation !== generation || JSON.stringify(after) !== JSON.stringify(selected)) return fail('blocked', t`That element changed. Use Region to comment on the saved screenshot, or capture it again.`)
       return { ...original, captureId: selection.id, element: selected.element }
     }
     const full = await record.automation.capture(record.page.url)
-    if (record.generation !== generation) return fail('blocked', 'The page changed. Capture it again.')
+    if (record.generation !== generation) return fail('blocked', t`The page changed. Capture it again.`)
     record.selection = { id: randomUUID(), generation, capture: full, expiresAt: Date.now() + 5 * 60_000 }
     return { ...full, captureId: record.selection.id }
   }) }
@@ -632,7 +633,7 @@ export class BrowserService extends ToolOperations {
     const request = parse(browserControlTaskSchema, payload)
     await this.owned(request)
     const task = this.task(request)
-    if (!['working', 'paused'].includes(task.status)) return fail('blocked', 'This browser task has finished.')
+    if (!['working', 'paused'].includes(task.status)) return fail('blocked', t`This browser task has finished.`)
     task.status = request.control === 'pause' ? 'paused' : 'working'
     if (request.control === 'pause') { task.pendingAction = null; this.pending.delete(task.id) }
     return this.publishTask(task)
@@ -642,9 +643,9 @@ export class BrowserService extends ToolOperations {
     const record = await this.owned(request)
     const task = this.task(request), pending = task.pendingAction, scope = this.pending.get(task.id)
     this.working(task)
-    if (!pending || pending.id !== request.actionId || !scope || pending.expiresAt < Date.now() || scope.generation !== record.generation || scope.url !== record.page.url) return fail('blocked', 'This browser request changed or expired. Ask the agent to try again.')
-    if (request.forThread && !request.allow) return fail('blocked', 'Only an allowed action can be granted for the whole thread. Answer this one once.')
-    if (this.executing.has(record.page.id)) return fail('busy', 'A browser action is still running.')
+    if (!pending || pending.id !== request.actionId || !scope || pending.expiresAt < Date.now() || scope.generation !== record.generation || scope.url !== record.page.url) return fail('blocked', t`This browser request changed or expired. Ask the agent to try again.`)
+    if (request.forThread && !request.allow) return fail('blocked', t`Only an allowed action can be granted for the whole thread. Answer this one once.`)
+    if (this.executing.has(record.page.id)) return fail('busy', t`A browser action is still running.`)
     task.pendingAction = null; this.pending.delete(task.id)
     if (!request.allow) { task.output = 'The user declined this action.'; return this.publishTask(task) }
     const threadId = record.page.workspace.threadId
