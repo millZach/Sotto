@@ -82,7 +82,9 @@ test('Settings > Providers shows and acts on this computer’s clients while for
     // Settings > Providers shows this computer's Codex, connected, and none of forge's error.
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
     const list = page.getByRole('list', { name: 'Thread providers' })
-    // Codex's row is the one open to begin with.
+    // Every row starts closed; open Codex's.
+    await expect(list.getByRole('button', { name: 'Codex', exact: true })).toHaveAttribute('aria-expanded', 'false')
+    await list.getByRole('button', { name: 'Codex', exact: true }).click()
     await expect(list.getByRole('button', { name: 'Codex', exact: true })).toHaveAttribute('aria-expanded', 'true')
     await expect(list.getByRole('button', { name: 'Codex', exact: true })).toContainText('Connected')
     const detail = page.getByRole('region', { name: 'Codex details' })
