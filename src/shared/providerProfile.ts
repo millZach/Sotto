@@ -41,6 +41,7 @@ export const PROVIDER_PROFILES: Readonly<Record<ProviderId, ProviderProfile>> = 
   muse: { writesShortText: false, takesSottoTools: true, runsWatcher: true, skillSigils: ['$'], compacts: true, reportsContext: true },
   opencode: { writesShortText: true, takesSottoTools: true, runsWatcher: false, skillSigils: ['$'], compacts: false, reportsContext: false },
   cursor: { writesShortText: true, takesSottoTools: true, runsWatcher: true, skillSigils: ['$', '/'], compacts: false, reportsContext: false },
+  deepseek: { writesShortText: false, takesSottoTools: true, runsWatcher: false, skillSigils: [], compacts: false, reportsContext: true },
 }
 
 /**

@@ -34,11 +34,19 @@ export interface OwnServersOpenCode {
   signOut(sourceId: string): Promise<boolean>
 }
 
+/** DeepSeek Harness as the record reaches it (ADR-0136): whether a keyless Add may land on it alone, and a nudge on every save. */
+export interface OwnServersDeepSeek {
+  running(): boolean
+  changed(): void
+}
+
 export interface OwnServersOptions {
   /** Sotto's user data folder. */
   readonly directory: string
   /** Sotto's OpenCode, or undefined while it is held off this run. */
   readonly openCode: () => OwnServersOpenCode | undefined
+  /** Sotto's DeepSeek Harness (ADR-0136), or undefined while its adapter does not run. Read afresh, as OpenCode's is. */
+  readonly deepSeek?: () => OwnServersDeepSeek | undefined
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly checkOptions?: OwnServerCheckOptions
@@ -86,6 +94,8 @@ export class OwnServers {
   private async save(servers: OwnServer[]): Promise<void> {
     await this.store.write(servers)
     this.loaded = Promise.resolve(servers)
+    // Every write is an add, a remove, or one of their rollbacks: DeepSeek Harness rebuilds from the new record.
+    try { this.options.deepSeek?.()?.changed() } catch { /* A consumer's trouble never fails the save. */ }
   }
   /** Runs `work` once every add or remove before it has finished. */
   private inTurn<T>(work: () => Promise<T>): Promise<T> {
@@ -147,7 +157,9 @@ export class OwnServers {
     const servers = await this.servers()
     if (servers.length >= OWN_SERVERS_MAX) return refusal('full', OWN_SERVER_WORDS.full)
     const openCode = this.options.openCode()
-    if (!openCode?.running()) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+    // A keyless server needs no key kept anywhere, so a running DeepSeek Harness can take it on its own (ADR-0136).
+    const keyless = !(request.key?.trim())
+    if (!openCode?.running() && !(keyless && this.options.deepSeek?.()?.running())) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
     const saved = servers.find(server => server.address.toLowerCase() === place.address.toLowerCase())
     if (saved) return refusal('already-added', ownServerRefusalWords('already-added', place.host))
     const key = request.key?.trim() || undefined
@@ -161,22 +173,24 @@ export class OwnServers {
     // Checked whole before it is written, so the record never holds what it could not read back.
     const server: OwnServer = ownServerSchema.parse({ id, name: request.name, address: place.address, keyed: key !== undefined, models })
     await this.save([...servers, server])
-    openCode.outdated()
+    openCode?.outdated()
     if (key !== undefined) {
-      const signedIn = await openCode.signInWithKey(id, key).catch(() => false)
+      // A keyed add passed the gate above only with OpenCode running: it is the one that keeps the key.
+      const keeper = openCode!
+      const signedIn = await keeper.signInWithKey(id, key).catch(() => false)
       if (!signedIn) {
         this.log('own-server-sign-in-failed')
         // OpenCode may have kept the key all the same, such as when its answer was lost; it is asked to forget it while
         // the record still declares the source, so no key is left behind for a source nothing lists.
-        if (!await openCode.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
+        if (!await keeper.signOut(id).catch(() => false)) this.log('own-server-sign-out-failed')
         // Nothing is kept: the record goes, and the processes started with it are outdated again. A record that cannot be
         // written now still lists the server, without its key, and the answer says so rather than that nothing changed.
         try { await this.save((await this.servers()).filter(item => item.id !== id)) } catch { return refusal('added-partly', OWN_SERVER_WORDS.addPartly(server.name)) }
-        openCode.outdated()
-        void openCode.catalogAgain().catch(() => false)
+        keeper.outdated()
+        void keeper.catalogAgain().catch(() => false)
         return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
       }
-    } else if (!await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
+    } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
   }

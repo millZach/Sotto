@@ -322,6 +322,18 @@ msgstr ""
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr ""

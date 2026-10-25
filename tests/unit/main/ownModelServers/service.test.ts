@@ -31,12 +31,15 @@ let directory: string
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-own-servers-')) })
 afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
-function servers(options: { openCode?: OwnServersOpenCode | undefined; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
+function servers(options: { openCode?: OwnServersOpenCode | undefined; deepSeekRunning?: boolean; check?: (address: string, key: string | undefined) => Promise<CheckResult>; now?: () => number } = {}) {
   const events: OwnServerEvent[] = []
+  const deepSeekCalls: string[] = []
   let next = 0
-  const service = new OwnServers({ directory, openCode: () => options.openCode, log: event => events.push(event), newId: () => `test${next++}`,
+  const service = new OwnServers({ directory, openCode: () => options.openCode,
+    deepSeek: () => options.deepSeekRunning === undefined ? undefined : { running: () => options.deepSeekRunning!, changed: () => { deepSeekCalls.push('changed') } },
+    log: event => events.push(event), newId: () => `test${next++}`,
     ...(options.check ? { check: options.check } : {}), ...(options.now ? { now: options.now } : {}) })
-  return { service, events }
+  return { service, events, deepSeekCalls }
 }
 const saved = async (): Promise<OwnServer[]> => JSON.parse(await readFile(join(directory, OWN_SERVERS_FILE), 'utf8')) as OwnServer[]
 
@@ -50,6 +53,24 @@ describe('adding a server', () => {
     expect(await service.list()).toEqual(await saved())
     expect(calls).toEqual(['outdated', 'catalog'])
     expect(events).toEqual(['own-server-added'])
+  })
+
+  it('tells DeepSeek Harness on every save, and takes a keyless server with only it running (ADR-0136)', async () => {
+    const { service, deepSeekCalls } = servers({ deepSeekRunning: true })
+    const result = await service.add({ name: 'Spark', address: 'spark-head:8888', models: [model] })
+    expect(result.status).toBe('ok')
+    expect(await saved()).toHaveLength(1)
+    expect(deepSeekCalls).toEqual(['changed'])
+    const removed = await service.remove({ id: result.status === 'ok' ? result.server.id : '' })
+    expect(removed.status).toBe('ok')
+    expect(deepSeekCalls).toEqual(['changed', 'changed'])
+  })
+
+  it('still refuses a keyed server while only DeepSeek Harness runs: its key is OpenCode’s to keep', async () => {
+    const { service } = servers({ deepSeekRunning: true })
+    expect(await service.add({ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] }))
+      .toMatchObject({ status: 'refused', reason: 'opencode-not-running' })
+    expect(await service.list()).toEqual([])
   })
 
   it('signs the new source in with its key after the record has it, and keeps no copy of the key', async () => {

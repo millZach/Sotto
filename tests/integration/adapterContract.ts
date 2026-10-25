@@ -266,7 +266,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       expect((await thread()).backgroundWork ?? []).toEqual([])
     })
-    it('routes a question and delivers its answer', async () => {
+    it('routes a question and delivers its answer', withFixtureSkip(skips.questions), async () => {
       await send(); await f.driver.raiseQuestion(sessionId, 'Which color?')
       await expect.poll(async () => (await thread()).requests.length).toBe(1)
       const request = (await thread()).requests[0]!
