@@ -201,6 +201,7 @@ artifacts/composer-float/
 artifacts/composer-shrink/
 artifacts/watcher-column/
 artifacts/composer-slim-steady/
+artifacts/scene-under-column/
 # Reply quote verification captures; the cited ones are committed
 artifacts/reply-quote/
 
