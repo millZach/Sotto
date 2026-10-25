@@ -439,6 +439,7 @@ export class WatcherService implements WatcherControlHooks {
     /**
      * The Owl answer for Work across machines (ADR-0082), read once at start. With it on, list_machines shows each machine's
      * live load and work placed but not started (#1311); with it off, or absent, it shows neither, whatever a host sends.
+     * Only with it on does a start from a moved branch (`fromMove`, #1033) run, from this Watcher or a desktop's packet.
      */
     crossMachine?: boolean
     /** The ordinary news batch's timing (WatcherWakeOptions), for tests on the real clock; the default is #1190's. */
@@ -3101,6 +3102,8 @@ export class WatcherService implements WatcherControlHooks {
         if (!modelId) throw new Error('model-missing')
         const landed = await this.moveForStart(operation, create)
         // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
+        // Only with Work across machines on: a move named while it is off, by any path, starts nothing.
+        if (create.fromMove && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
         const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove } : await this.resolveCopies(create)
         const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
         const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
@@ -3660,7 +3663,9 @@ ${operation.draftId}`)
         || ('project' in call.input && call.input.project.hostId !== this.hostId())
         || operation.delivery !== (call.name === 'start_thread' ? 'now' : call.name === 'send_to_thread' ? call.input.delivery : undefined)
         || operation.expectedTurnId !== ('expectedTurnId' in call.input ? call.input.expectedTurnId : undefined)
-        || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
+        || operation.expectedLastUserMessageId !== ('expectedLastUserMessageId' in call.input ? call.input.expectedLastUserMessageId : undefined)
+        // A start from a moved branch is Work across machines' (#1033): a host with it off takes none, from any desktop.
+        || (call.name === 'start_thread' && call.input.fromMove !== undefined && this.options.crossMachine !== true)) refuse('INVALID_INPUT', 'The machine operation does not match its request and target. Nothing was sent.')
       await this.transaction(async () => {
         guard()
         this.checkRemoteMaster(master, clientId)

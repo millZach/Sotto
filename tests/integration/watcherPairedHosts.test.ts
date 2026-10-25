@@ -1999,3 +1999,18 @@ it('refuses a machine or system while Work across machines is off, and lists no 
   expect(listed).not.toHaveProperty('newWorkersStart')
   expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')
 })
+
+it('refuses a start that names a move on a Stable host, even from a desktop that sends one (#1033)', async () => {
+  const f = await master()
+  // A desktop that puts a move in the start it sends, with the digest made to match, as only Owl's Watcher would.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (request, ...rest) => {
+    if (request.call.name !== 'start_thread') return control(request, ...rest)
+    const input = watcherToolSchemas.start_thread.input.parse({ ...request.call.input, workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })
+    const operation = { ...request.operation, digest: createHash('sha256').update(JSON.stringify(['start_thread', input])).digest('hex') }
+    return control({ ...request, operation, call: { name: 'start_thread', input } } as WatcherHostControl, ...rest)
+  })
+  const started = await f.call('start_thread', { ...f.start(), title: 'Synthetic moved start' })
+  expect(started).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(f.socket.shell().host.threads.some(thread => thread.title === 'Synthetic moved start')).toBe(false)
+})
