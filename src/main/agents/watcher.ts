@@ -55,6 +55,8 @@ const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of 
 const MACHINE_FACTS_UNREAD = 'This machine’s facts could not be read just now. Nothing was changed. Ask again.'
 const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it from the Threads page to see its facts.'
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
+/** A read leaves room for the unchanged mark (#1552), so a read at the bound can still be marked. */
+const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
 /** Whether two targets name the same thread: what equal keys say, without building either key. */
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget) => left.hostId === right.hostId && left.threadId === right.threadId
 type Participant = WatcherRecord['requests'][number]['participants'][number]
@@ -2739,10 +2741,11 @@ export class WatcherService implements WatcherControlHooks {
     const progress: CallProgress = {}
     const work = this.invokeNow(threadId, name, args, progress)
     const settled = work.then(() => undefined, () => undefined)
-    if (context.waitMs === undefined) return { answer: work.then(result => this.toldReceipt(result)), settled }
+    // A read's answer is marked as it is given, so one answered too late to reach Watcher is not counted as given (#1552).
+    if (context.waitMs === undefined) return { answer: work.then(result => this.toldReceipt(this.unchangedSince(name, result))), settled }
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<typeof LATE>(resolve => { timer = setTimeout(() => resolve(LATE), Math.max(context.waitMs! - CLIENT_WAIT_MARGIN_MS, context.waitMs! / 2)) })
-    const answer = Promise.race([work, late]).then(result => this.toldReceipt(result === LATE ? this.stillWorking(name, progress) : result))
+    const answer = Promise.race([work, late]).then(result => this.toldReceipt(result === LATE ? this.stillWorking(name, progress) : this.unchangedSince(name, result)))
       .finally(() => { clearTimeout(timer) })
     return { answer, settled }
   }
@@ -2818,7 +2821,7 @@ export class WatcherService implements WatcherControlHooks {
       if (hostId && hostId !== this.hostId() && ['list_threads', 'list_working_copies', 'read_thread'].includes(name)) {
         this.requireRemote(hostId, false)
         // The host is asked as any host can answer, and what Watcher asked for is taken from its full answer here (#1191).
-        return this.unchangedSince(name, this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.record().current!, call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead)))
+        return this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.record().current!, call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead))
       }
       if (name === 'list_threads' || name === 'list_projects' || name === 'list_working_copies' || name === 'read_thread' || name === 'read_operation') {
         const call = watcherHostReadSchema.shape.call.unwrap().parse({ name, input: parsed.data })
@@ -2852,7 +2855,7 @@ export class WatcherService implements WatcherControlHooks {
           operation = this.record().operations.find(item => item.id === operation!.id)!
           return await this.dispatchRead(call, operation, true, hosted)
         }
-        return this.unchangedSince(name, this.slim(name, parsed.data, await this.dispatchRead(call, operation)))
+        return this.slim(name, parsed.data, await this.dispatchRead(call, operation))
       }
       if (name === 'send_to_thread') {
         // The merge turn marks the send for Watcher's picture alone (#1339): the send is admitted, digested, retried and
@@ -3839,8 +3842,9 @@ ${operation.draftId}`)
   /**
    * Marks a read_thread result that gives Watcher nothing its last read of that thread did not (#1552). A Watcher that
    * rereads a working thread to see whether it has finished, as one on Muse did 84 times in one turn, adds each read
-   * and each reply to its conversation and slows every later call; the mark says so where it decides to read again. The
-   * read is still given whole, since a compaction may have taken the earlier one from the conversation.
+   * and each reply to its conversation and slows every later call; the mark says so where it decides to read again. Only
+   * a watched thread that is still working is marked, since only its news is on the way. The read is still given whole,
+   * since a compaction may have taken the earlier one from the conversation.
    */
   private unchangedSince(name: WatcherToolName, result: unknown): unknown {
     if (name !== 'read_thread' || typeof result !== 'object' || result === null || (result as { status?: unknown }).status !== 'ok') return result
@@ -3848,7 +3852,9 @@ ${operation.draftId}`)
     // When a fact was last seen is left out: a refresh that changes only that leaves the fact as it was (watcherEvidence.ts).
     const facts = evidence.map(({ observedAt: _seen, fetchedAt: _fetched, ...fact }) => { void _seen; void _fetched; return fact })
     const slot = `${this.view().current?.target.threadId ?? ''} ${key(read.target)}`, given = digest([read, facts]), before = this.readsGiven.get(slot)
-    if (before?.digest === given) {
+    const thread = this.owningSnapshot(read.target.hostId)?.threads.find(item => item.id === read.target.threadId)
+    const working = thread !== undefined && !thread.requests.length && (thread.status === 'running' || watcherBackgroundWorkCount(thread) > 0)
+    if (before?.digest === given && working && this.wakes.watchedKeys().has(key(read.target))) {
       const marked = { ...result, unchangedSince: before.at }
       return Buffer.byteLength(JSON.stringify(marked)) > WATCHER_READ_BYTES_MAX ? result : marked
     }
@@ -4017,18 +4023,18 @@ ${operation.draftId}`)
       label: item.kind === 'permission' ? 'Open to answer permission' : 'Open to answer question', openTarget: input.target })), activities: input.includeActivities ? read.activities : [], evidence: this.wakes.evidence.read(input.target, this.connected(thread)),
       historyEpoch: read.historyEpoch, firstPosition: messages[0]?.position ?? null, lastPosition: messages.at(-1)?.position ?? null,
       nextPosition: read.hasMore ? messages.at(-1)?.position ?? null : null, truncated: read.hasMore, earlierAvailable: read.earlierAvailable, observedAt: now() }
-    while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX && result.messages.length > 1) {
+    while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND && result.messages.length > 1) {
       if (input.position) result.messages.pop()
       else result.messages.shift()
       result = { ...result, firstPosition: result.messages[0]?.position ?? null, lastPosition: result.messages.at(-1)?.position ?? null, truncated: true,
         ...(input.position ? { nextPosition: result.messages.at(-1)?.position ?? null } : { earlierAvailable: true }) }
     }
-    while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX && result.activities.length) { result.activities.shift(); result.truncated = true }
-    if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX) {
+    while (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND && result.activities.length) { result.activities.shift(); result.truncated = true }
+    if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND) {
       const message = result.messages[0]
       if (message) { message.text = Buffer.from(message.text).subarray(0, 32 * 1024).toString('utf8'); result.truncated = true }
     }
-    if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BYTES_MAX) refuse('HISTORY_UNAVAILABLE', 'This thread’s read exceeds the bounded response size. Read fewer messages.')
+    if (Buffer.byteLength(JSON.stringify(result)) > WATCHER_READ_BOUND) refuse('HISTORY_UNAVAILABLE', 'This thread’s read exceeds the bounded response size. Read fewer messages.')
     if (result.lastPosition !== null) await this.options.control.updateWatcher(record => {
       record.reads = record.reads.filter(item => key(item.target) !== key(input.target)); record.reads.push({ target: input.target,
         position: { historyEpoch: read.historyEpoch, afterPosition: result.lastPosition! }, readAt: now() })
