@@ -15,7 +15,7 @@ afterEach(() => {
   owl.on = new Set()
 })
 
-const nightFallsSwitch = () => screen.queryByRole('switch', { name: /Night falls between Threads and Watcher/ })
+const nightFallsSwitch = () => screen.queryByRole('switch', { name: /Night falls between Dictate or Threads and Watcher/ })
 
 describe('SettingsView night falls (Owl night-falls)', () => {
   it.each([[[]], [['watcher']], [['night-falls']]])('shows nothing of it with only %j on', async on => {
