@@ -8,6 +8,7 @@ import type { ToolsResult } from '../../../../src/shared/tools'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { TerminalStore } from '../../../../src/renderer/src/tools/terminalStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { shownNotice } from '../../../../src/renderer/src/tools/toolsWords'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
 
@@ -66,15 +67,16 @@ describe('Terminal surface', () => {
     store.attach(terminal.bridge, 'visual-gate', ID_1, document.createElement('div'), factory)
     await waitFor(() => expect(store.replaying(ID_1)).toBe(false))
     const copyNotice = views[0]!.handlers.onNotice!
-    copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+    const copyFailed = { id: 'copy-failed', message: 'Could not copy. Your selection is kept. Try Ctrl+C again.' }
+    copyNotice(copyFailed)
     copyNotice(null)
     expect(store.thread('visual-gate')?.notice).toBeNull()
-    copyNotice('Could not copy. Your selection is kept. Try Ctrl+C again.')
+    copyNotice(copyFailed)
     vi.mocked(terminal.bridge.write).mockRejectedValueOnce(new Error('Input transport failed'))
     store.write(terminal.bridge, 'visual-gate', ID_1, 'input')
-    await waitFor(() => expect(store.thread('visual-gate')?.notice).toContain('Terminal input stopped'))
+    await waitFor(() => expect(shownNotice(store.thread('visual-gate')?.notice)).toContain('Terminal input stopped'))
     copyNotice(null)
-    expect(store.thread('visual-gate')?.notice).toContain('Terminal input stopped')
+    expect(shownNotice(store.thread('visual-gate')?.notice)).toContain('Terminal input stopped')
   })
 
   it('orders separate input events and paste chunks without holding another session', async () => {
@@ -104,11 +106,11 @@ describe('Terminal surface', () => {
     store.write(terminal.bridge, 'visual-gate', ID_1, 'old queued input')
     await waitFor(() => expect(terminal.bridge.write).toHaveBeenCalled())
     first.reject(new Error('private transport internals'))
-    await waitFor(() => expect(store.thread('visual-gate')?.notice).toContain('Terminal input stopped'))
+    await waitFor(() => expect(shownNotice(store.thread('visual-gate')?.notice)).toContain('Terminal input stopped'))
     store.write(terminal.bridge, 'visual-gate', ID_1, 'fresh input')
     await waitFor(() => expect(terminal.bridge.write).toHaveBeenLastCalledWith(expect.objectContaining({ data: 'fresh input' })))
     expect(terminal.bridge.write).toHaveBeenCalledTimes(2)
-    expect(store.thread('visual-gate')?.notice).not.toContain('private transport internals')
+    expect(shownNotice(store.thread('visual-gate')?.notice)).not.toContain('private transport internals')
   })
 
   it.each(['close', 'reopen'] as const)('discards queued input when %s begins', async action => {

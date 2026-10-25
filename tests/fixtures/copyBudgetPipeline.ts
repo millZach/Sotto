@@ -70,7 +70,7 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   const adapter = new StreamingAdapter(state)
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, owl, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })

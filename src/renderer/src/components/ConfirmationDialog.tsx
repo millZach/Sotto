@@ -102,12 +102,12 @@ export function ConfirmationDialog({
         }}
       >
         <h2 id={titleId}>{title}</h2>
-        <div id={descriptionId} className="tt-dialog__description">{description}</div>
+        <div id={descriptionId} className="tt-dialog__description tt-paragraph">{description}</div>
         {submitting && pendingStatus !== undefined
-          ? <div className="tt-dialog__status" role="status" aria-live="polite">{pendingStatus}</div>
+          ? <div className="tt-dialog__status tt-paragraph" role="status" aria-live="polite">{pendingStatus}</div>
           : null}
         {failed && failureMessage !== undefined
-          ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{failureMessage}</div>
+          ? <div className="tt-dialog__status tt-dialog__status--error tt-paragraph" role="alert">{failureMessage}</div>
           : null}
         <div className="tt-dialog__actions">
           {confirmFirst && confirmButton}

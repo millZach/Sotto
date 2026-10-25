@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { useMark } from '../../components/marks'
 import { FileText } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { blockedPercent, freezeLength, mainFreezeNoticeVisible, type MainActivityBridge, type MainActivityState } from '../../../../shared/mainActivity'
 import { Button } from '../../components/Button'
@@ -39,6 +40,7 @@ function MainFreezeNoticeView({ bridge, frame }: { readonly bridge: MainActivity
 }
 
 function NoticeBody({ bridge, state, open, setOpen }: { readonly bridge: MainActivityBridge; readonly state: MainActivityState; readonly open: boolean; readonly setOpen: (open: boolean) => void }): ReactNode {
+  const { t, i18n } = useLingui()
   const command = useMainActivityCommand(bridge)
   const container = useRef<HTMLDivElement>(null)
   const pill = useRef<HTMLButtonElement>(null)
@@ -80,44 +82,56 @@ function NoticeBody({ bridge, state, open, setOpen }: { readonly bridge: MainAct
   }
   const send = (type: 'record' | 'discard' | 'not-now' | 'close' | 'show-in-folder'): void => { void command({ type }) }
 
+  const blocked = blockedPercent(reading.blockedShare)
+  const longest = freezeLength(reading.longestFreezeMs)
   let text: string, label: string, tone: 'warn' | 'quiet' = 'quiet'
-  if (recording.phase === 'recording') { text = `Recording, ${left} s`; label = `Recording a minute, ${left} seconds left. ${open ? 'Hide' : 'Show'} the recording` }
-  else if (recording.phase === 'saved') { text = 'Recording saved'; label = `Activity recording saved. ${open ? 'Hide' : 'Show'} it` }
-  else if (recording.phase === 'failed') { text = 'Recording not saved'; label = `The activity recording was not saved. ${open ? 'Hide' : 'Show'} why` }
-  else { text = 'Main is slow'; tone = 'warn'; label = `Main is slow: blocked ${blockedPercent(reading.blockedShare)} of the last minute. ${open ? 'Hide' : 'Show'} details` }
+  if (recording.phase === 'recording') {
+    text = t`Recording, ${left} s`
+    label = open ? t`Recording a minute, ${left} seconds left. Hide the recording` : t`Recording a minute, ${left} seconds left. Show the recording`
+  } else if (recording.phase === 'saved') {
+    text = t`Recording saved`
+    label = open ? t`Activity recording saved. Hide it` : t`Activity recording saved. Show it`
+  } else if (recording.phase === 'failed') {
+    text = t`Recording not saved`
+    label = open ? t`The activity recording was not saved. Hide why` : t`The activity recording was not saved. Show why`
+  } else {
+    text = t`Main is slow`
+    tone = 'warn'
+    label = open ? t`Main is slow: blocked ${blocked} of the last minute. Hide details` : t`Main is slow: blocked ${blocked} of the last minute. Show details`
+  }
 
   let body: ReactNode
   if (recording.phase === 'recording') {
     body = <>
-      <h2 ref={heading} tabIndex={-1}>Recording a minute</h2>
+      <h2 ref={heading} tabIndex={-1}><Trans>Recording a minute</Trans></h2>
       <RecordingCountdown recording={recording} />
-      <div className="main-activity__actions"><Button variant="secondary" onClick={() => { send('discard'); close() }}>Stop without saving</Button></div>
+      <div className="main-activity__actions"><Button variant="secondary" onClick={() => { send('discard'); close() }}><Trans>Stop without saving</Trans></Button></div>
     </>
   } else if (recording.phase === 'saved') {
     body = <>
-      <h2 ref={heading} tabIndex={-1}>Activity recording saved</h2>
+      <h2 ref={heading} tabIndex={-1}><Trans>Activity recording saved</Trans></h2>
       <SavedRecording recording={recording} onShowInFolder={() => send('show-in-folder')} onAttached={() => setOpen(false)}
-        extra={<Button variant="ghost" aria-label="Close: the recording stays in its folder" onClick={() => { send('close'); setOpen(false) }}>Close</Button>} />
+        extra={<Button variant="ghost" aria-label={t`Close: the recording stays in its folder`} onClick={() => { send('close'); setOpen(false) }}><Trans>Close</Trans></Button>} />
     </>
   } else if (recording.phase === 'failed') {
     body = <>
-      <h2 ref={heading} tabIndex={-1}>Recording not saved</h2>
-      <p>{recording.message}</p>
+      <h2 ref={heading} tabIndex={-1}><Trans>Recording not saved</Trans></h2>
+      <p className="tt-paragraph">{recording.message}</p>
       <div className="main-activity__actions">
-        <Button variant="primary" onClick={() => send('record')}>Record a minute</Button>
-        <Button variant="ghost" onClick={() => { send('close'); setOpen(false) }}>Close</Button>
+        <Button variant="primary" onClick={() => send('record')}><Trans>Record a minute</Trans></Button>
+        <Button variant="ghost" onClick={() => { send('close'); setOpen(false) }}><Trans>Close</Trans></Button>
       </div>
     </>
   } else {
     body = <>
-      <h2 ref={heading} tabIndex={-1}>Sotto's main process is slow</h2>
-      <p>It was blocked {blockedPercent(reading.blockedShare)} of the last minute. The longest freeze was {freezeLength(reading.longestFreezeMs)}. Threads, typing and the window may lag until it recovers.</p>
+      <h2 ref={heading} tabIndex={-1}><Trans>Sotto's main process is slow</Trans></h2>
+      <p className="tt-paragraph"><Trans>It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers.</Trans></p>
       <LoopFigures reading={reading} />
       <LoopChart reading={reading} />
-      <p className="main-activity__privacy">{RECORDING_PRIVACY}</p>
+      <p className="main-activity__privacy tt-paragraph">{i18n._(RECORDING_PRIVACY)}</p>
       <div className="main-activity__actions">
-        <Button variant="primary" onClick={() => send('record')}>Record a minute</Button>
-        <Button variant="ghost" aria-label="Not now: hide this until main recovers and freezes again" onClick={() => { send('not-now'); setOpen(false) }}>Not now</Button>
+        <Button variant="primary" onClick={() => send('record')}><Trans>Record a minute</Trans></Button>
+        <Button variant="ghost" aria-label={t`Not now: hide this until main recovers and freezes again`} onClick={() => { send('not-now'); setOpen(false) }}><Trans>Not now</Trans></Button>
       </div>
     </>
   }
@@ -130,6 +144,6 @@ function NoticeBody({ bridge, state, open, setOpen }: { readonly bridge: MainAct
         : recording.phase === 'idle' ? <span className="main-freeze__dot" aria-hidden="true" /> : <FileText size={14} aria-hidden="true" />}
       <span>{text}</span>
     </button>
-    {open ? <div id={panelId} className="main-freeze__popover main-activity" role="dialog" aria-label="Main process">{body}</div> : null}
+    {open ? <div id={panelId} className="main-freeze__popover main-activity" role="dialog" aria-label={t`Main process`}>{body}</div> : null}
   </div>
 }
