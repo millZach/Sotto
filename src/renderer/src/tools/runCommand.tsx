@@ -30,7 +30,7 @@ function startSize(threadId: string, chromeStore: PaneTerminalChromeStore): { co
 export async function runInDrawer(threadId: string, command: string, bridge: TerminalBridge, store: TerminalStore = paneTerminalStore,
   chromeStore: PaneTerminalChromeStore = paneTerminalChromeStore): Promise<boolean> {
   if (!store.thread(threadId)?.workspace) await store.activate(bridge, threadId)
-  const started = store.createAndRun(bridge, threadId, command, startSize(threadId, chromeStore))
+  const started = store.create(bridge, threadId, startSize(threadId, chromeStore), command)
   chromeStore.setOpen(threadId, true)
   return started
 }

@@ -169,7 +169,7 @@ function useRunState(run: RunCommand | undefined, command: string | null): [RunS
   const press = useCallback(() => {
     if (!run || command === null || state === 'starting') return
     setState('starting')
-    void run(command).then(started => started, () => false).then(started => { if (live.current) setState(started ? 'ran' : 'idle') })
+    void run(command).catch(() => false).then(started => { if (live.current) setState(started ? 'ran' : 'idle') })
   }, [run, command, state])
   return [state, press]
 }

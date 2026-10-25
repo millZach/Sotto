@@ -139,21 +139,12 @@ export class TerminalStore {
     if (current?.sessions.some(session => session.id === sessionId)) this.patch(threadId, { activeSessionId: sessionId })
   }
 
-  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }): Promise<void> {
-    await this.start(bridge, threadId, size)
-  }
-
   /**
-   * Starts a new shell that runs a reply's command (ADR-0136): main types it as the shell spawns, so nothing here
-   * writes it and a snapshot replay cannot drop it. True once main has started the shell with the command.
-   * The thread must be listed first. `busy` is set before the first wait, so a drawer opened alongside starts no
-   * second shell of its own.
+   * Starts a new shell, true once main has. With `run`, a reply's command (ADR-0136), main types it into the new shell
+   * itself, so nothing here writes it and a snapshot replay cannot drop it. The thread must be listed first. `busy` is
+   * set before the first wait, so a drawer opened alongside starts no second shell of its own.
    */
-  createAndRun(bridge: TerminalBridge | undefined, threadId: string, command: string, size?: { cols: number; rows: number }): Promise<boolean> {
-    return this.start(bridge, threadId, size, command)
-  }
-
-  private async start(bridge: TerminalBridge | undefined, threadId: string, size: { cols: number; rows: number } | undefined, run?: string): Promise<boolean> {
+  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }, run?: string): Promise<boolean> {
     const target = this.target(threadId)
     if (!bridge || !target) return false
     this.listen(bridge)
