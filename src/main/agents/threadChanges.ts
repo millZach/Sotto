@@ -381,19 +381,26 @@ export class ThreadChangesPublisher implements ActivityChangesSource {
     })
   }
 
+  /**
+   * A listener that throws neither stops the others getting the publication nor drops one queued from inside a listener:
+   * every subscriber still reaches the latest state, and the first failure is thrown once all of them have it.
+   */
   private publish(build: Build): void {
     if (this.delivering) { this.waiting.push(build); return }
     this.delivering = true
+    const failures: unknown[] = []
     try {
-      this.deliver(build)
-      for (let next = this.waiting.shift(); next; next = this.waiting.shift()) this.deliver(next)
+      for (let next: Build | undefined = build; next; next = this.waiting.shift()) {
+        try { this.deliver(next, failures) } catch (error) { failures.push(error) }
+      }
     } finally {
       this.delivering = false
       this.waiting.length = 0
     }
+    if (failures.length) throw failures[0]
   }
 
-  private deliver(build: Build): void {
+  private deliver(build: Build, failures: unknown[]): void {
     const sent = new Map<boolean, { changes: AgentHostChanges; map: ThreadMap; whole?: AgentHostChanges }>()
     for (const [listener, listening] of [...this.listeners]) {
       if (!listening.subscribed) continue
@@ -416,7 +423,7 @@ export class ThreadChangesPublisher implements ActivityChangesSource {
       const needsWhole = listening.whole && !form.changes.whole
       listening.whole = false
       if (needsWhole) form.whole ??= wholeOf(form.map)
-      listener(needsWhole ? form.whole! : form.changes)
+      try { listener(needsWhole ? form.whole! : form.changes) } catch (error) { failures.push(error) }
     }
   }
 }

@@ -542,6 +542,28 @@ describe('a thread changes publisher', () => {
     expect(second.map.sequence).toBe(2)
   })
 
+  it('keeps delivering past a listener that throws, drains what was queued inside a listener, and throws the first failure after', () => {
+    const publisher = new ThreadChangesPublisher()
+    let state = [thread('a'), thread('b')]
+    const first = holder(), last = holder()
+    let nested = false
+    publisher.subscribe(changes => {
+      first.listener(changes)
+      if (!nested) { nested = true; state = [thread('a'), thread('b'), thread('c')]; publisher.publishSnapshots(() => host(state)) }
+    })
+    publisher.subscribe(() => { throw new Error('a subscriber failed') })
+    publisher.subscribe(last.listener)
+    expect(() => publisher.publishSnapshots(() => host(state))).toThrow('a subscriber failed')
+    // The subscriber after the one that threw still got both publications, and the queued one was not dropped.
+    expect(last.received.map(changes => changes.sequence)).toEqual([1, 2])
+    expect(ids(last.map)).toEqual(['a', 'b', 'c'])
+    expect(ids(first.map)).toEqual(['a', 'b', 'c'])
+    // The publisher is free again: the next publication goes out normally.
+    state = [thread('a')]
+    expect(() => publisher.publishSnapshots(() => host(state))).toThrow('a subscriber failed')
+    expect(ids(last.map)).toEqual(['a'])
+  })
+
   it('goes on numbering a form after its last subscriber left and another came', () => {
     const publisher = new ThreadChangesPublisher()
     const one = holder()
