@@ -564,6 +564,10 @@ export class WatcherService implements WatcherControlHooks {
   private hostId(): string { const id = this.options.control.hostId(); if (!id) refuse('HOST_DISCONNECTED', 'This computer is not ready. Reconnect its provider.', true); return id }
   private target(threadId: string): WatcherThreadTarget { return { hostId: this.hostId(), threadId } }
   phoneSnapshot(): AgentHostSnapshot { return this.snapshot() }
+  /** Whether the thread is in its owning host's last snapshot, so a start that failed may still have made it. */
+  private madeThread(target: WatcherThreadTarget): boolean {
+    return this.owningSnapshot(target.hostId)?.threads.some(item => item.id === target.threadId) === true
+  }
   private owningSnapshot(hostId: string): AgentHostSnapshot | undefined {
     return hostId === this.hostId() ? this.options.control.watcherSnapshot() : this.remote?.snapshot(hostId)
   }
@@ -3114,11 +3118,11 @@ export class WatcherService implements WatcherControlHooks {
             ...(permission.kind === 'runtime' ? { runtimeMode: permission.mode } : { providerMode: permission.choiceId }), ...choices }, createOrigin)
         } catch (error) {
           // Stopped or refused once the branch had arrived: with no thread made, nothing owns its incoming ref.
-          if (!this.knownThread(operation.target)) await this.releaseMove(landed)
+          if (!this.madeThread(operation.target)) await this.releaseMove(landed)
           throw error
         }
         if (created.error) {
-          if (!this.knownThread(operation.target)) await this.releaseMove(landed)
+          if (!this.madeThread(operation.target)) await this.releaseMove(landed)
           throw new Error('creation-failed')
         }
         origin.guard()
