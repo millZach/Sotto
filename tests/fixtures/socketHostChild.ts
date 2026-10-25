@@ -1,3 +1,5 @@
+// Main's own code runs here, so English is active first, as it is in main (tests/fixtures/desktopMainBundle.ts).
+import '../../src/main/interfaceLanguage'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startFixtureHeadlessHost } from './desktopHostStack'

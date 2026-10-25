@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import type { Terminal } from '@xterm/xterm'
 const search = vi.hoisted(() => ({ next: vi.fn(), previous: vi.fn(), clear: vi.fn(), results: vi.fn() as (result: { resultIndex: number; resultCount: number }) => void }))
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class {
@@ -85,4 +87,34 @@ it('repaints a changed Text role even when the terminal theme is unchanged, and 
   view.refreshTheme()
   expect(search.next).toHaveBeenCalledOnce()
   view.dispose()
+})
+
+it('says its labels and its count in the interface language, again when the language changes, and keeps English’s ungrouped count', () => {
+  const element = document.createElement('div'); document.body.append(element)
+  const terminal = { options: { theme: { foreground: '#eeeeee' } }, loadAddon: vi.fn(), focus: vi.fn(), clearSelection: vi.fn(), getSelectionPosition: () => undefined, onResize: () => ({ dispose() {} }) }
+  const view = terminalSearch(terminal as unknown as Terminal, element, () => '#123456')
+  view.mount(); view.open()
+  const input = element.querySelector('input')!, count = element.querySelector('output')!
+  const [previous] = element.querySelectorAll('button')
+  input.value = 'match'; input.dispatchEvent(new Event('input'))
+  search.results({ resultIndex: 1_233, resultCount: 1_000 })
+  expect(count.textContent).toBe('1234 of 1000+')
+  const german = {
+    'Find': 'Suchen', 'Previous match': 'Vorheriger Treffer', 'Previous match (Shift+Enter)': 'Vorheriger Treffer (Umschalt+Eingabe)', '{position} of {total}': '{position} von {total}',
+  }
+  i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(german).map(([english, words]) => [generateMessageId(english), words])) })
+  try {
+    expect(input.placeholder).toBe('Suchen')
+    expect(previous!.getAttribute('aria-label')).toBe('Vorheriger Treffer')
+    expect(previous!.title).toBe('Vorheriger Treffer (Umschalt+Eingabe)')
+    expect(count.textContent).toBe('1.234 von 1.000+')
+  } finally {
+    i18n.activate('en')
+  }
+  expect(input.placeholder).toBe('Find')
+  expect(count.textContent).toBe('1234 of 1000+')
+  view.dispose()
+  // A disposed bar no longer follows the language.
+  i18n.activate('de')
+  try { expect(input.placeholder).toBe('Find') } finally { i18n.activate('en') }
 })

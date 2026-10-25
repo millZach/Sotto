@@ -1,4 +1,5 @@
 import React, { type ReactNode, type RefObject } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentVisual } from '../../../shared/visuals'
 import { VisualActions, VisualCopyStatus, type FrameControls } from './diagrams/DiagramFrame'
 import { VisualReadAll } from './VisualReadAll'
@@ -29,9 +30,11 @@ export function VisualCardShell({ visual, kind, state, interactive = false, card
   readonly stage: ReactNode
   readonly expandedView: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const steps = visual.steps ?? []
   const { walking, current } = walkthroughView(steps, place)
-  return <section ref={cardRef} className="visual-card" aria-label={`Visual: ${visual.title}`} data-state={state}
+  const title = visual.title
+  return <section ref={cardRef} className="visual-card" aria-label={t({ message: `Visual: ${title}`, comment: 'A visual an agent drew, by its title.' })} data-state={state}
     data-kind={interactive ? 'interactive' : undefined} tabIndex={interactive ? -1 : undefined}>
     <header className="visual-card__bar">
       <div className="visual-card__heading">
@@ -41,7 +44,7 @@ export function VisualCardShell({ visual, kind, state, interactive = false, card
       <VisualCopyStatus frame={frame} />
       <div className="visual-card__actions">
         {steps.length > 0 && <ReadAllToggle readAll={place.readAll} onToggle={() => movePlace({ readAll: !place.readAll })} />}
-        <VisualActions frame={frame} showing={showing} shownTitle={shownTitle} copyLabel="Copy source" expandLabel={`Expand ${visual.title}`} />
+        <VisualActions frame={frame} showing={showing} shownTitle={shownTitle} copyLabel={t`Copy source`} expandLabel={t`Expand ${title}`} />
       </div>
     </header>
     {stage}

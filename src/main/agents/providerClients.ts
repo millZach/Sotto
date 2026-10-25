@@ -13,6 +13,7 @@ import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type Ope
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { compareCursorVersions, cursorEnvironment, cursorInstallRoot, cursorProgramOf, cursorPublishedVersion, findCursorExecutable, parseCursorVersion } from './cursorRpc'
+import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
 import { findCli, miseDataFolder, withCliPath } from './cliLookup'
 import { findExecutable as findCodexExecutable } from './subscriptionCodex'
@@ -22,6 +23,7 @@ export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   claude: '@anthropic-ai/claude-code', codex: '@openai/codex', grok: '@xai-official/grok',
   // OpenCode 2's package; OpenCode 1 is `opencode-ai`, and Sotto never moves an install between them (ADR-0087).
   opencode: '@opencode/cli',
+  deepseek: '@deepseek-ai/dsh',
 }
 const REGISTRY = 'https://registry.npmjs.org'
 /** How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed (ADR-0042). */
@@ -814,5 +816,6 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'muse': return findMuseExecutable()
     case 'opencode': return findOpenCodeExecutable()
     case 'cursor': return findCursorExecutable()
+    case 'deepseek': return findDeepSeekExecutable()
   }
 }

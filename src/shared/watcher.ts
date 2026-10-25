@@ -183,6 +183,10 @@ export function watcherResultFromHostV1(value: unknown): unknown {
  * that load says against `MACHINE_LOAD_THRESHOLDS`, unknown when it is missing or over a minute old.
  */
 export const WATCHER_MACHINES_MAX = 100
+/** Why a machine in list_machines has no facts: the words Watcher reads, which the room tells apart by them (#1032). */
+export const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of machine it is. Update Sotto on it to see.'
+export const MACHINE_FACTS_UNREAD = 'This machine’s facts could not be read just now. Nothing was changed. Ask again.'
+export const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it from the Threads page to see its facts.'
 
 /**
  * Watcher's state (#1189): what it must not lose when its conversation is compacted. Watcher keeps the user's pending
@@ -300,7 +304,9 @@ export const watcherToolSchemas = {
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
       evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),
       historyEpoch: id, firstPosition: counter.nullable(), lastPosition: counter.nullable(),
-      nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time })),
+      nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time,
+      // The desktop's alone (#1552): this read gave Watcher nothing its last read of the thread had not, since that time.
+      unchangedSince: time.optional() })),
   },
   start_thread: {
     // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and

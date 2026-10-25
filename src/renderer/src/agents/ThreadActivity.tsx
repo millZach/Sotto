@@ -1,6 +1,8 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
-import { useLingui } from '@lingui/react/macro'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
 import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
@@ -8,9 +10,12 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type TurnChange,
+  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import './activity.css'
@@ -27,6 +32,7 @@ const ICONS: Record<AgentActivity['kind'], LucideIcon> = {
  * the transcript naming what the context went from and to. Only the sides the provider reported are named.
  */
 export function CompactionLine({ record }: { readonly record: AgentActivity }): ReactNode {
+  useInterfaceLanguageState()
   const summary = compactionSummary(record)
   return <p className="thread-boundary" role="separator" aria-label={[record.title, summary].filter(Boolean).join(', ')}>
     <span className="thread-boundary__rule" aria-hidden="true" />
@@ -97,13 +103,15 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
   readonly changes: readonly TurnChange[]
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
+  useInterfaceLanguageState()
   const [open, setOpen] = useState(false)
   const bodyId = useId()
   // A diff its host sent cut is read whole when the list opens, from the same answer its Edit row reads.
   const sources = [...new Set(changes.flatMap(change => change.sources ?? []).flatMap(source => source ? [source.record] : []))]
   const views = new Map(useActivityBodies(sources, open).map(view => [view.sent, view]))
   if (!changes.length) return null
-  const label = `Changed ${changes.length} ${changes.length === 1 ? 'file' : 'files'}`
+  const count = changes.length
+  const label = plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
   return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
@@ -130,6 +138,8 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
  * cannot see inside a provider's turn, so no word here claims to know what it is thinking about.
  */
 // A short turn only ever shows the first word, so that one still reads as work; the rest are for the longer waits.
+// Lines from the film Spaceballs, quoted as the film has them: they stay English in every interface language, as they
+// do on the iPhone (tests/unit/shared/iosWorkingWords.test.ts keeps the two lists the same).
 const WORKING_WORDS = [
   'Combing the desert', 'Winding up the Schwartz', 'Going to plaid', 'Ludicrous speed', 'Consulting Yogurt',
   'Checking Mr. Radar', 'Cracking 1-2-3-4-5', 'Getting to now, now', 'Raising the air shield', 'Canning the Perri-air',
@@ -140,6 +150,7 @@ const FADE_MS = 220
 
 /** Changes its own word instead of re-rendering the transcript, and never repeats the word it is replacing. */
 function WorkingWord(): ReactNode {
+  const { t } = useLingui()
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     let current = 0
@@ -148,6 +159,8 @@ function WorkingWord(): ReactNode {
       if (!node) return
       current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
       node.textContent = WORKING_WORDS[current]!
+      // The light crossing the words draws a lit copy of them, which reads the word from here.
+      node.dataset.word = WORKING_WORDS[current]!
       const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
       if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
     }, WORD_MS)
@@ -155,8 +168,8 @@ function WorkingWord(): ReactNode {
   }, [])
   // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <>
-    <span ref={ref} className="thread-activity-live__word" aria-hidden="true">{WORKING_WORDS[0]}</span>
-    <span className="tt-visually-hidden">Working</span>
+    <span ref={ref} className="thread-activity-live__word" data-word={WORKING_WORDS[0]} aria-hidden="true">{WORKING_WORDS[0]}</span>
+    <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </>
 }
 
@@ -171,17 +184,22 @@ function hasDetails(record: AgentActivity): boolean {
     || missingAgentOutput(record)
 }
 
-const STEP_LABELS: Record<string, string> = { completed: 'Done', running: 'In progress', pending: 'To do' }
+const STEP_LABELS: Record<string, MessageDescriptor> = {
+  completed: msg({ message: 'Done', context: 'plan step', comment: 'A plan step\'s state.' }),
+  running: msg({ message: 'In progress', comment: 'A plan step\'s state.' }),
+  pending: msg({ message: 'To do', comment: 'A plan step\'s state.' }),
+}
 
 /** The plan as the provider last reported it. Sotto shows its state; only the provider can change it. */
 function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
+  const { t } = useLingui()
   const steps = record.steps ?? []
-  const done = steps.filter(step => step.status === 'completed').length
-  return <ol className="thread-activity__steps" aria-label={`Plan, ${done} of ${steps.length} done`}>
+  const done = steps.filter(step => step.status === 'completed').length, total = steps.length
+  return <ol className="thread-activity__steps" aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
     {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
       <span className="thread-activity__step-mark" aria-hidden="true" />
       <span className="thread-activity__step-text">{step.text}</span>
-      <span className="tt-visually-hidden">{STEP_LABELS[step.status] ?? step.status}</span>
+      <span className="tt-visually-hidden">{Object.hasOwn(STEP_LABELS, step.status) ? t(STEP_LABELS[step.status]!) : step.status}</span>
     </li>)}
   </ol>
 }
@@ -193,9 +211,11 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   const sentParsed = activityInput(sent) !== null
   const textShown = sent.cut?.text !== undefined && !(sentParsed && (sent.kind === 'command' || sent.kind === 'file-change'))
   const needed = sent.cut !== undefined && (sent.cut.output !== undefined || textShown || activityChanges(sent).some((_, index) => changeDiffIsCut(sent, index)))
+  const { t } = useLingui()
   const body = useActivityBody(sent, needed)
   const record = body.record, cut = body.state === 'whole' ? undefined : sent.cut
-  const notes = [timingNote(record, provider), record.truncated ? 'Some details were not kept.' : ''].filter(Boolean)
+  const notes = [timingNote(record, provider), record.truncated ? t`Some details were not kept.` : ''].filter(Boolean)
+  const cwd = record.cwd
   // Native tool input arrives as JSON: it reads formatted, and is left out where the command or diff already shows it.
   const parsed = activityInput(record) !== null
   const text = parsed ? inputDetail(record) : record.text
@@ -205,7 +225,7 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
-    {record.cwd ? <p className="thread-activity__fact">In <code>{record.cwd}</code></p> : null}
+    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {cutText ? record.kind === 'reasoning' || !json
       ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
       : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
@@ -220,19 +240,22 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
         : change.diff ? <MessageContent text={fenced(displayDiff(change.diff), 'diff')} /> : null}
     </div>)}
     {/* A workflow's own entry stands for its run; the list is its agents. */}
-    {record.agents?.some(agent => agent.kind !== 'workflow') ? <ol className="thread-activity__agents" aria-label="Agents" data-connected={connected || undefined}>
-      {record.agents.filter(agent => agent.kind !== 'workflow').map((agent, index) => <li key={agent.id} data-status={agent.status}>
-        <span className="thread-activity__agent">Agent {index + 1}</span>
-        <span className="thread-activity__agent-status">{agentStatusLabel(agent.status)}</span>
-        {agent.message ? <span className="thread-activity__agent-message">{agent.message}</span> : null}
-      </li>)}
+    {record.agents?.some(agent => agent.kind !== 'workflow') ? <ol className="thread-activity__agents" aria-label={t`Agents`} data-connected={connected || undefined}>
+      {record.agents.filter(agent => agent.kind !== 'workflow').map((agent, index) => {
+        const number = index + 1
+        return <li key={agent.id} data-status={agent.status}>
+          <span className="thread-activity__agent">{t({ message: `Agent ${{ number: shownCount(number) }}`, comment: 'One of the background agents a step started, numbered from 1.' })}</span>
+          <span className="thread-activity__agent-status">{agentStatusLabel(agent.status)}</span>
+          {agent.message ? <span className="thread-activity__agent-message">{agent.message}</span> : null}
+        </li>
+      })}
     </ol> : null}
     {cut?.output !== undefined
       // Held output opens at its end, before and after the rest arrives.
       ? <CutCode view={body} kind="output" text={record.output ?? ''} language="output" cut />
       : record.output ? <MessageContent text={fenced(record.output, 'output')} /> : null}
     {record.error ? <p className="thread-activity__error">{record.error}</p> : null}
-    {missingAgentOutput(record) ? <p className="thread-activity__fact">{provider} did not report this agent’s result.</p> : null}
+    {missingAgentOutput(record) ? <p className="thread-activity__fact tt-paragraph"><Trans comment="{provider} is the provider's name, such as Codex.">{provider} did not report this agent’s result.</Trans></p> : null}
     {notes.length ? <p className="thread-activity__fact">{notes.join(' · ')}</p> : null}
   </div>
 }
@@ -243,10 +266,12 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   readonly quietUnknown: boolean
   readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const detailId = useId()
   const { record, children } = node
-  const steps = children.length ? `${children.length} ${children.length === 1 ? 'step' : 'steps'}` : ''
+  const count = children.length
+  const steps = count ? plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` }) : ''
   const base = activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
@@ -254,13 +279,13 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
   const expandable = hasDetails(record) || children.length > 0
-  const spoken = [`${label.lead ? `${label.lead} ` : ''}${label.subject}`, label.preview,
-    record.status === 'completed' ? `completed${status ? ` in ${status}` : ''}` : status].filter(Boolean).join(', ')
+  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview,
+    record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
+  const subject = label.subject
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label">
-      {shown.lead ? <span className="thread-activity__lead">{shown.lead} </span> : null}
-      <span className={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'}>{shown.subject}</span>
+      <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
@@ -278,7 +303,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
       : <div className="thread-activity__toggle" role="group" aria-label={spoken}>{body}</div>}
     {open ? <div id={detailId} className="thread-activity__open">
       {hasDetails(record) ? <ActivityDetails record={record} provider={provider} connected={connected} /> : null}
-      {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={`Steps in ${label.subject}`}>
+      {children.length ? <ul className="thread-activity__rows thread-activity__rows--nested" aria-label={t({ message: `Steps in ${subject}`, comment: '{subject} is the name of the action the steps belong to.' })}>
         {children.map(child => <ActivityRow key={child.record.id} node={child} connected={connected} provider={provider} quietUnknown={quietUnknown} onDisclosure={onDisclosure} />)}
       </ul> : null}
     </div> : null}
@@ -291,6 +316,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
  * pick, docs/prototypes/turn-steps-glow-prototype.html). Nothing here can act on the provider or its agents.
  */
 export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
+  const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
   const [showAll, setShowAll] = useState(false)
   const listId = useId()
@@ -302,7 +328,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
   const canFold = !live && group.records.length > 0
-  const name = [headline, summary].filter(Boolean).join(', ') || 'Activity'
+  const name = [headline, summary].filter(Boolean).join(', ') || t({ message: 'Activity', comment: 'A group of work an agent did, when it has no summary.' })
   // A failed turn's own group is where a press that opens the thread at its failed turn lands.
   return <section className="thread-activity" data-turn-id={group.turnId} data-live={live || undefined} data-expanded={expanded || undefined}
     data-turn-outcome={group.turn?.status === 'failed' ? 'failed' : undefined}
@@ -318,7 +344,7 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
     <TurnFailureReason turn={group.turn} />
     {rows.length ? <ul id={listId} className="thread-activity__rows">
       {earlier ? <li className="thread-activity__earlier"><button type="button" className="thread-activity__more tt-focusable"
-        onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}>Show {earlier} earlier</button></li> : null}
+        onClick={event => { onDisclosure?.(event.currentTarget); setShowAll(true) }}><Trans comment="Shows the rows of work above the newest ones.">Show {earlier} earlier</Trans></button></li> : null}
       {rows.map(node => <ActivityRow key={node.record.id} node={node} connected={connected} provider={provider} quietUnknown={(group.turn?.status ?? outcome) === 'unknown'} onDisclosure={onDisclosure} />)}
     </ul> : null}
   </section>
@@ -390,8 +416,8 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
 }
 
 /**
- * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, and
- * the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
+ * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, how
+ * long the turn has run, and the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
@@ -407,6 +433,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
+  const { t } = useLingui()
   // The turn whose steps are open, so the next turn starts folded even though this line stays mounted between turns.
   const [openTurn, setOpenTurn] = useState<string | null>(null)
   const stepsId = useId()
@@ -436,7 +463,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       onKeyDown={disclosure?.onKeyDown}>
       <div className="thread-activity-live__line">
         <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
-        <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
+        <span className="thread-activity-live__state" role="status">{connected ? t`Compacting context` : t`Last seen compacting context`}</span>
       </div>
       {disclosure ? <StepsButton steps={disclosure} /> : null}
       {disclosure?.opened}
@@ -449,15 +476,21 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} steps={disclosure} />
   }
+  // The clock beside the words counts from when the turn began, or from Send while the prompt is on its way. It ticks
+  // only while the provider is connected, as every clock in the transcript does.
+  const startedAt = turn?.startedAt ?? sendingSince
   const words = <>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
-    <span className="thread-activity-live__state">{connected ? <WorkingWord /> : 'Last seen working'}</span>
+    <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
+    {connected && startedAt ? <span className="thread-activity-live__clock"><Elapsed startedAt={startedAt} /></span> : null}
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
     <div className="thread-activity-live__line">{words}</div>
   </div>
-  const name = `${connected ? 'Working' : 'Last seen working'}, ${disclosure.label} so far`
+  const taken = disclosure.label
+  const name = connected ? t({ message: `Working, ${taken} so far`, comment: '{taken} is how many steps the running turn has taken, such as 3 steps.' })
+    : t({ message: `Last seen working, ${taken} so far`, comment: '{taken} is how many steps the turn had taken, such as 3 steps.' })
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
     onKeyDown={disclosure.onKeyDown}>
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
@@ -467,4 +500,26 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
     </button>
     {disclosure.opened}
   </div>
+}
+
+/**
+ * A row's verb and subject as one message, so a language puts the path where its grammar wants it (ADR-0123). A path
+ * or command keeps its own left-to-right box inside the sentence. `plain` leaves the verb in the line's own colour.
+ */
+function ActivityWords({ kind, label, subjectClass, plain = false }: {
+  readonly kind: ActivityLeadKind | null
+  readonly label: Pick<ActivityLabel, 'lead' | 'subject' | 'mono'>
+  readonly subjectClass: string | undefined
+  readonly plain?: boolean
+}): ReactNode {
+  const subject = <span className={subjectClass} {...(label.mono ? { dir: 'ltr' } : {})}>{label.subject}</span>
+  const words = kind === 'created' ? <Trans comment="A file change; {subject} is the file's path.">Created {subject}</Trans>
+    : kind === 'deleted' ? <Trans comment="A file change; {subject} is the file's path.">Deleted {subject}</Trans>
+      : kind === 'edited' ? <Trans comment="A file change; {subject} is the file's path.">Edited {subject}</Trans>
+        : kind === 'moved' ? <Trans comment="A file change; {subject} is the file's path.">Moved {subject}</Trans>
+          : kind === 'wrote' ? <Trans comment="A file change; {subject} is the file's path.">Wrote {subject}</Trans>
+            : kind === 'changed' ? <Trans comment="An open change of several files; {subject} is how many, such as 3 files.">Changed {subject}</Trans>
+              : null
+  if (words === null) return <>{label.lead ? plain ? `${label.lead} ` : <span className="thread-activity__lead">{label.lead} </span> : null}{subject}</>
+  return plain ? words : <span className="thread-activity__lead">{words}</span>
 }

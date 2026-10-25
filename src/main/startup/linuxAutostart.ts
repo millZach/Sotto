@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -7,7 +8,7 @@ export type LinuxAutostartEvent = 'linux-autostart-read-failed' | 'linux-autosta
 
 /** Desktop Entry Exec quoting has two escape layers and reserves percent for field codes. */
 function desktopExec(executable: string): string {
-  if (!isAbsolute(executable) || /[\r\n\0]/u.test(executable)) throw new Error('Sotto could not save its sign-in command. Reinstall the package and try again.')
+  if (!isAbsolute(executable) || /[\r\n\0]/u.test(executable)) throw new Error(t`Sotto could not save its sign-in command. Reinstall the package and try again.`)
   const escaped = executable.replaceAll('%', '%%').replace(/[\\"`$]/gu, '\\$&').replaceAll('\\', '\\\\')
   return `"${escaped}"`
 }

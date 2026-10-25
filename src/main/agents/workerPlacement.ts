@@ -114,7 +114,10 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
         : 'The machine new workers start on is no longer saved, so this one started on This computer.'
     }
   }
-  const receipt = { hostId: target.hostId, name: named(target), awayFromDefault: defaultId !== undefined && target.hostId !== defaultId, ...note ? { note } : {} }
+  const awayFromDefault = defaultId !== undefined && target.hostId !== defaultId
+  // The machine new workers start on, by name, for a receipt that says the start is not there (Zach, October 23, 2026).
+  const defaultName = awayFromDefault ? machines.find(machine => machine.hostId === defaultId)?.name : undefined
+  const receipt = { hostId: target.hostId, name: named(target), awayFromDefault, ...defaultName ? { defaultName } : {}, ...note ? { note } : {} }
   if (target.hostId === project.hostId) return { hostId: target.hostId, projectId: project.projectId, receipt }
   if (!from) refuse('UNKNOWN_TARGET', 'That project is unavailable. Read the project list again. Nothing was started.')
   return { hostId: target.hostId, projectId: await sameProject(from, target, project.projectId, sources), receipt }

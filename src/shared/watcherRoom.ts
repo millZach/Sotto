@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { watcherIdentitySchema, watcherMergeQueueItemSchema, watcherOperationSchema, watcherParticipantSchema, watcherRefusalSchema,
-  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema, WATCHER_STATE_COMPUTED_MAX } from './watcher'
+  watcherRequestSchema, watcherProviderSchema, watcherThreadTargetSchema, watcherEvidenceSchema, watcherToolSchemas, WATCHER_STATE_COMPUTED_MAX } from './watcher'
+import { workerPlacementReceiptSchema } from './workerMachine'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
 import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
@@ -23,6 +24,13 @@ export const WATCHER_START_NEW = 'sotto:watcher:start-new'
 /** The merge turns for Watcher's picture (#1339), read only while the picture shows, never pushed with the room's state. */
 export const WATCHER_READ_MERGE_TURNS = 'sotto:watcher:read-merge-turns'
 export const WATCHER_RENDERER_ARGUMENT = '--sotto-watcher-enabled'
+/**
+ * The machines for the room's machines line and Settings, under Watcher (#1032, Owl `cross-machine-work`): Watcher's own
+ * list_machines, read when asked, never pushed with the room's state. Registered, and offered by the preload, only while
+ * Work across machines is on, which `WATCHER_MACHINES_RENDERER_ARGUMENT` tells the window.
+ */
+export const WATCHER_READ_MACHINES = 'sotto:watcher:read-machines'
+export const WATCHER_MACHINES_RENDERER_ARGUMENT = '--sotto-watcher-machines-enabled'
 /** Retained previews per desktop room or authenticated paired phone, never a shared capacity. */
 export const WATCHER_STOP_ALL_PREVIEW_LIMIT = 16
 
@@ -77,6 +85,12 @@ export const watcherRoomStateSchema = z.object({
    * there: its turn is not in the conversation the window holds.
    */
   receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()).optional(),
+  /**
+   * Where each start Watcher made this run was placed (#1032, Owl `cross-machine-work`): the machine, whether it is away from
+   * where new workers start, and Sotto's sentence saying why when it chose itself. Kept in memory as the receipt's
+   * `placement` is, so a restart has none. Absent while Work across machines is off and from older hosts.
+   */
+  receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).max(1_000).optional(),
   /**
    * Watcher's conversation against the point where Sotto compacts it (#1189): its context in tokens as its provider last
    * reported it, null when unreported, whether its provider can compact it, and whether a compaction is under way.
@@ -143,6 +157,10 @@ export const watcherMergeTurnsReadSchema = z.union([
     turns: z.array(watcherMergeTurnSchema).max(WATCHER_MERGE_TURNS_KEPT) }).strict(), watcherRefusalSchema,
 ])
 export type WatcherMergeTurnsRead = z.infer<typeof watcherMergeTurnsReadSchema>
+/** What the machines line and Settings read (#1032): list_machines as Watcher gets it, `newWorkersStart` included. */
+export const watcherMachinesReadSchema = watcherToolSchemas.list_machines.output
+export type WatcherMachinesRead = z.infer<typeof watcherMachinesReadSchema>
+export type WatcherMachine = Extract<WatcherMachinesRead, { status: 'ok' }>['machines'][number]
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
@@ -336,5 +354,7 @@ export interface WatcherBridge {
   startNew?(): Promise<WatcherRoomResult>
   /** The merge turns for Watcher's picture (#1339). Older stand-ins omit it, and the picture then shows none. */
   readMergeTurns?(): Promise<WatcherMergeTurnsRead>
+  /** Each machine's facts, load and work placed but not started (#1032). Only while Work across machines is on. */
+  readMachines?(): Promise<WatcherMachinesRead>
   onChanged(listener: (state: WatcherRoomState) => void): () => void
 }

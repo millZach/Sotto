@@ -623,7 +623,7 @@ it('announces a successful provider connection on the empty workspace', () => {
 
 it('offers Dictate and Threads for the beta, without an Agents room', () => {
     const view = renderThreads(stateFixture())
-    const rooms = () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab').map(tab => tab.textContent)
+    const rooms = () => within(screen.getByRole('tablist', { name: 'Page' })).getAllByRole('tab').map(tab => tab.getAttribute('aria-label'))
     expect(rooms()).toEqual(['Dictate', 'Threads'])
     view.rerender(<ThreadsView now={NOW} />)
     expect(rooms()).toEqual(['Dictate', 'Threads'])

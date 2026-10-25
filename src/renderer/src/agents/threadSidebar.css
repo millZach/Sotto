@@ -263,9 +263,9 @@
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
 .thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
-/* The rail hides the switch, so the foot's hairline is its first row: it tops the foot, 8px over the page links. */
+/* The rail hides the switch, so the foot's hairline lies flat as its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
-.thread-nav__rail .thread-nav__foot-rule { margin: 0 0 2px; }
+.thread-nav__rail .thread-nav__foot-rule { flex: 1 0 100%; width: auto; height: 1px; margin: 0 0 6px; }
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }

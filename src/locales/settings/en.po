@@ -39,6 +39,11 @@ msgstr "“{target}” already has a light palette. Pick another name."
 msgid "“{target}” already has light and dark palettes. Pick another name."
 msgstr "“{target}” already has light and dark palettes. Pick another name."
 
+#. placeholder {0}: choice.working
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{0, plural, one {# working} other {# working}}"
+msgstr "{0, plural, one {# working} other {# working}}"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{added, plural, other {# themes added: {names}}}"
 msgstr "{added, plural, other {# themes added: {names}}}"
@@ -72,8 +77,8 @@ msgid "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandN
 msgstr "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandNames} are behind on {host}.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
-msgstr "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
+msgid "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
+msgstr "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{chosen, plural, one {Reset all roles to their defaults. # role is your choice} other {Reset all roles to their defaults. # roles are your choice}}"
@@ -116,12 +121,16 @@ msgid "{count, plural, other {# themes updated.}}"
 msgstr "{count, plural, other {# themes updated.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "{count, plural, other {Remove selected (#)}}"
-msgstr "{count, plural, other {Remove selected (#)}}"
+msgid "{count, plural, other {Remove selected ({selected})}}"
+msgstr "{count, plural, other {Remove selected ({selected})}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
+msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
-msgid "{days, plural, one {# day ago} other {# days ago}}"
-msgstr "{days, plural, one {# day ago} other {# days ago}}"
+msgid "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
+msgstr "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{days, plural, one {# day} other {# days}}"
@@ -160,8 +169,8 @@ msgid "{failedNames} did not update."
 msgstr "{failedNames} did not update."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
-msgid "{fileCount, plural, other {Only the first 40 of # files were read.}}"
-msgstr "{fileCount, plural, other {Only the first 40 of # files were read.}}"
+msgid "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
+msgstr "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{fileName}: too large"
@@ -170,6 +179,14 @@ msgstr "{fileName}: too large"
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{found, plural, one {# supported theme found.} other {# supported themes found.}}"
 msgstr "{found, plural, one {# supported theme found.} other {# supported themes found.}}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free"
+msgstr "{free} free"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{free} free, short on memory"
+msgstr "{free} free, short on memory"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS, plural, one {up to # character} other {up to # characters}}"
@@ -242,8 +259,8 @@ msgid "{minutes, plural, one {Checks origin every minute for ahead and behind, w
 msgstr "{minutes, plural, one {Checks origin every minute for ahead and behind, while this window is in front.} other {Checks origin every # minutes for ahead and behind, while this window is in front.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{minutes, plural, other {# min}}"
-msgstr "{minutes, plural, other {# min}}"
+msgid "{minutes, plural, other {{sessionMinutes} min}}"
+msgstr "{minutes, plural, other {{sessionMinutes} min}}"
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
@@ -555,6 +572,10 @@ msgstr "{startProvider} has no “{wantedMode}”, so its workers start on “{s
 msgid "{stoppingName}’s host stops now and starts again when {stoppingName} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder."
 msgstr "{stoppingName}’s host stops now and starts again when {stoppingName} restarts or when you switch it on. Turns running there are interrupted; threads and history stay in its data folder."
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
+msgstr "{title} is not connected. Until it is, new workers start on this computer, and Watcher says so in its reply."
+
 #. {to} is a version number a client can update to.
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "{to} available"
@@ -704,6 +725,10 @@ msgstr "A host name, an alias from your SSH configuration or user@server."
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "A line of stars sweeps across, with a faint trail behind it."
 msgstr "A line of stars sweeps across, with a faint trail behind it."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "A machine no longer saved"
+msgstr "A machine no longer saved"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -959,6 +984,10 @@ msgstr "An example. Each repository's recent commits and AGENTS.md set the real 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "An example. The thread's own model picks the type and scope from the change."
 msgstr "An example. The thread's own model picks the type and scope from the change."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "An older Sotto host: load unknown. Update it in Hosts & phones."
+msgstr "An older Sotto host: load unknown. Update it in Hosts & phones."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Another app already uses {refused}. {kept} still works. Pick other keys, or free that shortcut in the other app."
@@ -1760,6 +1789,18 @@ msgstr "Could not save the theme."
 msgid "Could not sign in"
 msgstr "Could not sign in"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}"
+msgstr "CPU {cpu}"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU {cpu}, busy"
+msgstr "CPU {cpu}, busy"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "CPU unknown"
+msgstr "CPU unknown"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Create theme"
@@ -2467,6 +2508,14 @@ msgstr "How Watcher looks after threads"
 msgid "How Watcher looks after threads, and what each kind of work runs on"
 msgstr "How Watcher looks after threads, and what each kind of work runs on"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "How Watcher looks after threads, and where new workers start"
+msgstr "How Watcher looks after threads, and where new workers start"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "How Watcher looks after threads, where new workers start, and what each kind of work runs on"
+msgstr "How Watcher looks after threads, where new workers start, and what each kind of work runs on"
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Idle sessions end after"
@@ -2729,6 +2778,10 @@ msgstr "Let phones connect"
 msgid "Let phones reach {name}"
 msgstr "Let phones reach {name}"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Let Watcher choose"
+msgstr "Let Watcher choose"
+
 #. The light color scheme, or the themes that paint it
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -2769,6 +2822,10 @@ msgstr "Listening. Say something."
 msgid "Live appearance"
 msgstr "Live appearance"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "load unknown"
+msgstr "load unknown"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Looking for models…"
 msgstr "Looking for models…"
@@ -2802,6 +2859,14 @@ msgstr "Max"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Maximum recording time"
 msgstr "Maximum recording time"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "may slow down"
+msgstr "may slow down"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "memory unknown"
+msgstr "memory unknown"
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -2977,6 +3042,10 @@ msgstr "New threads work in"
 msgid "New threads, replies, the browser & visuals"
 msgstr "New threads, replies, the browser & visuals"
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "New workers start here"
+msgstr "New workers start here"
+
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "New worktree"
@@ -3100,6 +3169,7 @@ msgstr "Not checked yet."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
 msgstr "Not connected"
@@ -3263,6 +3333,10 @@ msgstr "One word or name per line, so AI cleanup spells them your way."
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum."
 msgstr "One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum."
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -5252,8 +5326,8 @@ msgid "The one on {host} is too old."
 msgstr "The one on {host} is too old."
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
-msgid "The owl perched on a branch in your menu bar."
-msgstr "The owl perched on a branch in your menu bar."
+msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
+msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The pasted text was cut to fit the 4,000-character limit."
@@ -5435,6 +5509,7 @@ msgid "this computer"
 msgstr "this computer"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
 msgstr "This computer"
 
@@ -5453,6 +5528,10 @@ msgstr "This computer, other computers, and your iPhone"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr "This computer's client ID on {editingName}: <0>{clientId}</0>"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "This machine is no longer saved, so new workers start on this computer. Choose another."
+msgstr "This machine is no longer saved, so new workers start on this computer. Choose another."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged."
@@ -5991,6 +6070,10 @@ msgstr "Watcher is at {size}: it compacts at its next rest."
 msgid "Watcher is at {size}."
 msgstr "Watcher is at {size}."
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+msgstr "Watcher picks a machine from each one’s load and the project’s notes on where checks run, and says why in its reply."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher runs on {watcherProviders}. Connect one to choose its model."
 msgstr "Watcher runs on {watcherProviders}. Connect one to choose its model."
@@ -6079,6 +6162,11 @@ msgstr "When your computer starts"
 msgid "Where links in threads open. To choose for one link, right-click it or press Shift+F10."
 msgstr "Where links in threads open. To choose for one link, right-click it or press Shift+F10."
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Where new workers start"
+msgstr "Where new workers start"
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."
 msgstr "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."
@@ -6101,6 +6189,10 @@ msgstr "Why Tailscale asks"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Worker roles"
 msgstr "Worker roles"
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
+msgstr "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Workers never start wider than your new-thread default, so these start on “{heldName}”. <0>Change it in Threads</0>"

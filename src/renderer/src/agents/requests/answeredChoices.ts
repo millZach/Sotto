@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import type { AgentRequest } from '../../../../shared/agents'
 import { EMPTY_SELECTION, requestMode, textOnly, type RequestAnswer, type RequestEntry } from './requestAnswers'
 
@@ -16,7 +18,8 @@ export function chosenWords(request: AgentRequest, entry: Pick<RequestEntry, 'ch
     if (entry.choice === null) return null
     const choices = request.permissionChoices
     if (choices) return choices.find(choice => choice.id === entry.choice)?.label ?? null
-    return entry.choice === 'allow' ? 'Allow' : entry.choice === 'deny' ? 'Deny' : null
+    return entry.choice === 'allow' ? t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })
+      : entry.choice === 'deny' ? t({ message: 'Deny', comment: 'Answers an agent’s permission request.' }) : null
   }
   if (mode === 'legacy-options') {
     const picked = entry.selections[request.id]?.optionIds[0] ?? entry.choice

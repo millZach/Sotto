@@ -190,6 +190,7 @@ private struct WatcherHero: View {
                 }
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
+            WatcherMachinesLine(hostID: hostID)
             if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
                 WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
             }
@@ -238,6 +239,189 @@ private struct WatcherHero: View {
         guard let running = model.watcherModel(hostID) else { return String(localized: "On \(computer)", comment: "Where Watcher runs. %@ is the computer's name") }
         return String(localized: "\(running) on \(computer)",
                       comment: "Where Watcher runs. The first %@ is its provider and model, such as Codex · GPT-6.1 Sol; the second is the computer's name")
+    }
+}
+
+// MARK: - Machines
+
+/// The machines line (#1032, Zach's pick D "Names" on October 23, 2026), under Watcher's computer while that computer has
+/// Work across machines on: each machine's name, then its working count, then the words a problem adds, in the warning
+/// ink. A phone always shortens it: no "starting" counts, only the machines with a problem and how many more, and with
+/// nothing wrong anywhere just how many machines and how much works on them. Each name opens that machine's panel, and
+/// the count of the rest shows every machine. Plain text and underlined names, never pills or chips (ADR-0110).
+private struct WatcherMachinesLine: View {
+    @EnvironmentObject var model: AppModel
+    /// Watched for Watcher's page, which publishes on its own store, not on the model.
+    @EnvironmentObject var watcherStore: WatcherStore
+    let hostID: String
+    @State private var all = false
+    @State private var open: OpenMachine?
+    struct OpenMachine: Identifiable { let id: String }
+
+    var body: some View {
+        if model.offersWatcherMachines(hostID), let machines = model.watcherPage(hostID)?.machines, !machines.rows.isEmpty {
+            let rows = MachineLine.named(machines.rows, computer: model.name(hostID))
+            let short = MachineLine.short(rows)
+            let shown = all ? rows : short.shown
+            FlowLayout(spacing: Space.s1) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, machine in
+                    entry(machine, first: index == 0, starting: all)
+                }
+                if !all && short.more > 0 {
+                    if short.shown.isEmpty {
+                        moreButton(MachineLine.calm(rows), label: MachineLine.calmLabel(rows))
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                            Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true)
+                            moreButton(MachineLine.more(short.more), label: MachineLine.moreLabel(short.more))
+                        }
+                    }
+                }
+            }
+            .font(.sotto(.small))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Machines and what works on each")
+            .accessibilityIdentifier("watcher-machines")
+            // Machine facts are read when Watcher places work, once for each set of starts, and when a panel opens.
+            .onAppear { model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: model.watcherPage(hostID)?.receiptGroups) { _, _ in model.readWatcherMachinesAfterStarts(hostID) }
+            .onChange(of: hostID) { _, _ in all = false; open = nil }
+            .sheet(item: $open) { machine in
+                MachineSheet(hostID: hostID, machineID: machine.id)
+                    .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    /// One machine: its name, a press that opens its panel, then its count and any problem's words.
+    private func entry(_ machine: WatcherMachines.Machine, first: Bool, starting: Bool) -> some View {
+        let count = MachineLine.count(machine, starting: starting)
+        let problems = MachineLine.problems(machine).joined(separator: ", ")
+        return HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+            if !first { Text("·").foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            Button { open = OpenMachine(id: machine.id) } label: {
+                // A long saved name gives way to an ellipsis; the button's spoken label keeps it whole.
+                Text(machine.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                    .underline()
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: 180, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .frame(minHeight: 30)
+            .contentShape(Rectangle())
+            .accessibilityLabel(MachineLine.label(machine))
+            .accessibilityIdentifier("watcher-machine-\(machine.id)")
+            if !count.isEmpty { Text(count).foregroundStyle(Palette.muted).lineLimit(1).fixedSize().accessibilityHidden(true) }
+            if !problems.isEmpty {
+                Text((count.isEmpty ? "" : ", ") + problems).foregroundStyle(Palette.warningText)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func moreButton(_ words: String, label: String) -> some View {
+        Button { all = true } label: {
+            Text(words).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).underline()
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 30)
+        .contentShape(Rectangle())
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("watcher-machines-more")
+    }
+}
+
+/// One machine's panel, as a sheet (#1032, pick D): its system, CPU busy, memory available and when that was read; why its
+/// load reads unknown when it does; what works there and who started each; and whether new workers start there.
+/// Opening it reads the machines afresh. Where new workers start is changed on the computer, in Settings.
+private struct MachineSheet: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.dismiss) private var dismiss
+    let hostID: String
+    let machineID: String
+
+    var body: some View {
+        let computer = model.name(hostID)
+        let machine = model.watcherPage(hostID)?.machines.flatMap { MachineLine.named($0.rows, computer: computer).first { $0.id == machineID } }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                    Text(machine?.name ?? "Machine").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: Space.s2)
+                    Button("Done") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("machine-done")
+                }
+                if let machine { details(machine, computer: computer) }
+                else { line("\(computer) no longer lists this machine.") }
+            }
+            .padding(Space.gutter)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Palette.canvas)
+        .task { await model.readWatcherMachines(hostID) }
+    }
+
+    @ViewBuilder private func details(_ machine: WatcherMachines.Machine, computer: String) -> some View {
+        if !machine.connected {
+            line(MachineLine.notConnected(machine, computer: computer))
+        } else {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if let system = machine.system {
+                    row("System", system + (machine.logicalCpuCount.map { " · \($0) CPUs" } ?? ""), warn: false)
+                }
+                if machine.cpuState != nil {
+                    row("CPU", MachineLine.cpu(machine), warn: machine.cpuState != "not-busy")
+                    row("Memory", MachineLine.memoryRow(machine), warn: machine.memoryState != "enough")
+                }
+                if let at = machine.loadObservedAt.flatMap({ Stamp.date($0) }) {
+                    row("Read", MachineLine.ago(Date().timeIntervalSince(at)), warn: false)
+                }
+            }
+            if let why = machine.unknownWhy { line(why) }
+            Text(MachineLine.panelCount(machine)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+            if let over = MachineLine.over(machine) { line(over, warn: true) }
+            if !machine.threads.isEmpty || machine.starting > 0 {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(Array(machine.threads.enumerated()), id: \.offset) { _, thread in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(thread.title).font(.sotto(.small)).foregroundStyle(Palette.ink).lineLimit(2)
+                            Text(thread.who).font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                    if machine.working > machine.threads.count {
+                        Text("and \(machine.working - machine.threads.count) more").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    }
+                    if machine.starting > 0 {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(machine.starting) placed here, starting").font(.sotto(.small)).foregroundStyle(Palette.ink)
+                            Text("Counted, so the next start sees it").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+            }
+        }
+        line("Where new workers start is set on \(computer), in Settings, under Watcher.")
+    }
+
+    private func row(_ name: String, _ value: String, warn: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Text(name).foregroundStyle(Palette.muted).frame(width: 72, alignment: .leading)
+            Text(value).foregroundStyle(warn ? Palette.warningText : Palette.ink).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.sotto(.small))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func line(_ words: String, warn: Bool = false) -> some View {
+        Text(words).font(.sotto(.small)).foregroundStyle(warn ? Palette.warningText : Palette.muted).fixedSize(horizontal: false, vertical: true)
     }
 }
 

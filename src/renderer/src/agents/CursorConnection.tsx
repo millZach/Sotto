@@ -5,7 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { CURSOR_SIGN_IN_WORDS, type CursorSignInBridge, type CursorSignInView } from '../../../shared/cursorSignIn'
 import type { ProviderProblem } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import { shownWords, type LaterWords } from '../features/settings/laterWords'
+import { shownWords, type LaterWords } from './interfaceWords'
 
 /** How often the row asks main where a sign-in stands while it waits for the user on cursor.com. */
 const READ_EVERY_MS = 1500

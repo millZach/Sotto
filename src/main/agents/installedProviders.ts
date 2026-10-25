@@ -9,6 +9,7 @@ import { findDevinExecutable } from './devinRpc'
 import { findMuseExecutable } from './museRpc'
 import { findOpenCodeExecutable } from './opencodeServer'
 import { findCursorExecutable } from './cursorRpc'
+import { findDeepSeekExecutable } from './deepseekRpc'
 
 /**
  * Which native thread clients are on this machine. Presence only: no sign-in and no session. A provider held to Owl on
@@ -22,6 +23,7 @@ export async function detectInstalledProviders(options: { heldProviders?: HeldPr
     codex: findCodexExecutable, claude: () => claude.findExecutable(), grok: findGrokExecutable, devin: findDevinExecutable,
     muse: findMuseExecutable, opencode: findOpenCodeExecutable,
     cursor: findCursorExecutable,
+    deepseek: findDeepSeekExecutable,
   }
   const ids = providerIdSchema.options.filter(id => !held.has(id))
   const found = await Promise.all(ids.map(id => finders[id]()))
