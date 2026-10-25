@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { AdapterThreadChanges, restOf } from '../../../src/main/agents/adapterThreadChanges'
+import { AdapterThreadChanges, restOf, ThreadMarkingMap } from '../../../src/main/agents/adapterThreadChanges'
 import { ThreadMap, threadMapDifferences, type AgentHostChanges } from '../../../src/main/agents/threadChanges'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 
@@ -213,5 +213,18 @@ describe('an adapter that marks its own thread changes', () => {
     expect(fromEvents.last()).toMatchObject({ sequence: 1, whole: true })
     expect([...fromEvents.map.ids()]).toEqual(['a', 'b'])
     expect(full.upserted()).toEqual(['b'])
+  })
+})
+
+describe('a map by thread ID that an activity view reads', () => {
+  it('marks a thread on each write that changes it, and none on a read or a delete of nothing', () => {
+    const heard: string[] = []
+    const map = new ThreadMarkingMap<number>(id => heard.push(id))
+    map.set('a', 1); map.set('b', 2)
+    expect(map.get('a')).toBe(1); expect(map.has('c')).toBe(false)
+    map.delete('c'); map.delete('a')
+    map.clear()
+    expect(heard).toEqual(['a', 'b', 'a', 'b'])
+    expect(map.size).toBe(0)
   })
 })

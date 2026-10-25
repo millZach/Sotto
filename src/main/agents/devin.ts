@@ -12,7 +12,7 @@ import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
-import { AdapterThreadChanges } from './adapterThreadChanges'
+import { AdapterThreadChanges, restOf, ThreadMarkingMap } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -227,7 +227,7 @@ export class DevinAcpHost implements AgentHost {
     if (!observer) {
       this.finishUnsettledTurn(id, 'failed'); this.clearRequests(id)
       const thread = this.threads.get(id)
-      if (thread) { thread.status = 'error'; thread.requestNotice = reason }
+      if (thread) { thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
       this.state.error = reason; this.emit()
     }
     if (!origin) return this.stopSession(id)
@@ -241,8 +241,9 @@ export class DevinAcpHost implements AgentHost {
   private readonly projectStore: AtomicJsonStore<AgentHostSnapshot['projects']>
   private aliases: Record<string, Alias> = {}
   private readonly threads = new Map<string, AgentThread>()
-  private readonly connections = new Map<string, Connection>()
-  private readonly loading = new Map<string, Promise<Connection>>()
+  /** Read by `withSession`, which shows a thread's session open, so each write marks the thread changed. */
+  private readonly connections = new ThreadMarkingMap<Connection>(id => this.threadChanges.mark(id))
+  private readonly loading = new ThreadMarkingMap<Promise<Connection>>(id => this.threadChanges.mark(id))
   private readonly reading = new Map<string, Promise<void>>()
   private readonly stopping = new Map<string, Promise<void>>()
   private readonly lastReadAt = new Map<string, number>()
@@ -253,7 +254,11 @@ export class DevinAcpHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
   /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
-  private readonly threadChanges = new AdapterThreadChanges({ view: historyFromEvents => this.activitySnapshot(historyFromEvents) })
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly allProcesses = new Set<DevinRpc>()
   private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   private history: ThreadHistorySource | undefined
@@ -308,6 +313,7 @@ export class DevinAcpHost implements AgentHost {
         status: alias.devinSessionId && alias.settingsConfirmed ? 'idle' : 'error', messages: [], requests: [] }
       this.threads.set(id, thread)
     }
+    this.changed(id)
     return thread
   }
   /** The public snapshot: a copy of everything, held threads' messages included. A caller that keeps history
@@ -327,6 +333,20 @@ export class DevinAcpHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.withSession(this.log.activityThread(thread, historyFromEvents))) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.withSession(this.log.activityThread(thread, historyFromEvents))
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it, and a path that writes without it, or after a publication may have
+   * gone, marks it where it writes. One that writes into every thread marks them all. What goes through the message
+   * log, and the open sessions `withSession` reads, are marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming) }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
     this.listeners.add(listener); return () => this.listeners.delete(listener)
@@ -444,6 +464,7 @@ export class DevinAcpHost implements AgentHost {
     const settled = thoughts.length ? mergeAgentActivities(thread.activities, thoughts) : thread.activities
     thread.activities = markTurnActivity(settled?.map(activity => activity.status === 'running' && activity.kind !== 'turn'
       ? { ...activity, status: status === 'failed' ? 'unknown' : 'interrupted' } : activity), { provider: 'devin', turnId: turn.origin.messageId, status })
+    this.changed(id)
   }
   private unsupported(rpc: DevinRpc, frame: DevinFrame): void {
     if (frame.method && frame.id !== undefined) rpc.write({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Unsupported client method' } })
@@ -513,7 +534,7 @@ export class DevinAcpHost implements AgentHost {
     // refusal earlier leaves the threads and their messages as they were,
     // rather than publishing empty ones over a history Sotto already had.
     this.aliases = aliases; this.state.projects = projects
-    this.threads.clear(); this.log.forgetAll()
+    this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
     for (const id of Object.keys(this.aliases)) {
       this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
     }
@@ -991,7 +1012,7 @@ export class DevinAcpHost implements AgentHost {
           if (this.pending.get(command.requestId) !== saved || this.connections.get(id) !== connection) return { accepted: false, uncertain: true }
           checkScope()
           try { await connection.rpc.reply(decision.wireId, answer); this.removeRequest(command.requestId) }
-          catch { decision.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
+          catch { decision.request.delivery = 'uncertain'; this.changed(id); this.emit(); return { accepted: false, uncertain: true } }
         } else if (command.type === 'interrupt') {
           for (const [requestId, saved] of this.pending) if (!watcherGuard && saved.decision.threadId === id && !saved.decision.answering) {
             await connection.rpc.reply(saved.decision.wireId, devinDecline(saved.decision)); this.removeRequest(requestId)
@@ -1130,7 +1151,7 @@ export class DevinAcpHost implements AgentHost {
   }
   private clearRequests(id: string): void {
     for (const [requestId, saved] of this.pending) if (saved.decision.threadId === id) this.pending.delete(requestId)
-    const thread = this.threads.get(id); if (thread) thread.requests = []
+    const thread = this.threads.get(id); if (thread) { thread.requests = []; this.changed(id) }
   }
   private stopSession(id: string): Promise<void> {
     const previous = this.stopping.get(id)
@@ -1158,6 +1179,7 @@ export class DevinAcpHost implements AgentHost {
     this.pending.clear(); this.active.clear()
     this.loading.clear(); this.reading.clear(); this.lastReadAt.clear(); this.polling = undefined
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     for (const connection of this.connections.values()) connection.intentionalClose = true
     this.connections.clear()
     const closing = [...this.allProcesses]

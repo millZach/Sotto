@@ -24,6 +24,18 @@ export function restOf(state: AgentHostSnapshot): AgentHostRest {
   return rest as AgentHostRest
 }
 
+/**
+ * A map by Sotto thread ID that an adapter's activity view reads, such as the sessions it holds open, so each write to
+ * it marks that thread changed (#925).
+ */
+export class ThreadMarkingMap<Value> extends Map<string, Value> {
+  private changed: ((id: string) => void) | undefined
+  constructor(changed: (id: string) => void) { super(); this.changed = changed }
+  override set(id: string, value: Value): this { super.set(id, value); this.changed?.(id); return this }
+  override delete(id: string): boolean { const had = super.delete(id); if (had) this.changed?.(id); return had }
+  override clear(): void { const ids = [...this.keys()]; super.clear(); for (const id of ids) this.changed?.(id) }
+}
+
 /** One form's marks: the threads marked since its last publication, or every thread. */
 interface Marks { readonly ids: Set<string>; all: boolean }
 
