@@ -303,4 +303,44 @@ test.describe("Watcher's conversation column on the built app", () => {
       }))
     })
   }
+
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`a ripple from the margin runs on under the column, and every word keeps 4.5:1 over it, ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page)
+        await openRoom(page)
+        await resizeContentWindow(launched, 1280, 800)
+        await readBack(page, 0)
+        await settle(page)
+        // The landscape over a band of the column, beside where the margin is pressed.
+        const band = await page.evaluate(() => {
+          const pane = document.getElementById('watcher-pane')!, base = pane.getBoundingClientRect()
+          const card = pane.querySelector(':scope > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+          const y = base.top + (card.top - base.top) * 0.45
+          return { pressX: card.left - 40, pressY: y, left: card.left - base.left + 10, top: y - base.top - 70, width: 160, height: 140 }
+        })
+        const ink = (): Promise<string> => page.evaluate(band => {
+          const canvas = document.querySelector<HTMLCanvasElement>('#watcher-pane > canvas.watcher-scene--land')!, scale = canvas.width / canvas.clientWidth
+          const data = canvas.getContext('2d')!.getImageData(Math.round(band.left * scale), Math.round(band.top * scale), Math.round(band.width * scale), Math.round(band.height * scale)).data
+          let hash = 0
+          for (let i = 0; i < data.length; i += 4) hash = (Math.imul(hash, 31) + data[i + 3]! * 7 + data[i]!) | 0
+          return String(hash)
+        }, band)
+        const before = await ink()
+        await page.mouse.click(band.pressX, band.pressY)
+        let reached = false
+        let worst = Number.POSITIVE_INFINITY
+        for (let sample = 0; sample < 8; sample++) {
+          await page.waitForTimeout(120)
+          if (await ink() !== before) reached = true
+          worst = Math.min(worst, (await columnContrast(page)).worstWord)
+        }
+        recorded[`ripple-${appearance}`] = { reached, worst }
+        expect(reached, 'the ripple reached the column').toBe(true)
+        expect(worst, 'every word over the ripple in the column').toBeGreaterThanOrEqual(4.5)
+      }))
+    })
+  }
 })
