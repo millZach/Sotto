@@ -1,0 +1,27 @@
+# Thread shortcuts are editable on a Keyboard page
+
+## Status
+
+Accepted October 24, 2026. The owner picked B, "its own Keyboard page", from `docs/prototypes/thread-shortcuts-prototype.html` (notes in `thread-shortcuts-NOTES.md` beside it), and on recommendation normalized Zoom pane and left Help with a pointer instead of a second list. Amends [ADR-0115](0115-settings-is-nine-pages-in-four-runs-with-find-a-setting.md) decision 1 only in the page list. Builds on [ADR-0027](0027-git-the-way-t3-code-does-it.md) (T3's chords) and [ADR-0097](0097-dictation-shortcuts-listen-for-held-keys.md) (dictation's recorder). **Number provisional until merge** (docs/agents/domain.md).
+
+## Context
+
+Sotto's thread chords were constants in the code — New thread `mod+shift+n`, Changes `mod+d`, the Terminal drawer's `mod+j`, the branch bar's three, Add selection to prompt, Zoom pane's `ctrl+shift+m` — each standing down when the dictation hotkey meant the same keys, and none changeable. Settle, the button a finished thread most often wants, had no keys at all, and neither did Restore, closing a pane, moving between threads, focusing the prompt or stopping a turn. Dictation's shortcuts, by contrast, are recorded by pressing keys in Settings, with conflicts refused in words.
+
+Three homes were mocked: A, a group on Settings › Threads; B, a page of its own; C, a `?` sheet edited in place.
+
+## Decision
+
+1. **A twelfth page, Keyboard, in Threads' run.** Settings gains **Keyboard** after Threads (`settings-keyboard`), so its eleven pages become twelve in the same four runs. The page is a filter over grouped rows — Threads, Panes, In the composer, Tools & branch bar — then **Fixed & elsewhere**: dictation pointed to its own rows, and the keys that are not the user's to move (sending, the dialogs' commit chord, Search transcripts, the terminal's own, macOS's Settings chord). Every row is in `settingsIndex`, so Find a setting lands on it.
+2. **One settings field of choices.** `threadShortcuts` (`src/shared/threadShortcuts.ts`) holds only the rows the user changed, by id, in T3's chord spelling; a row left out follows `DEFAULT_THREAD_SHORTCUTS`, a row set to null has no shortcut. It is parsed row by row, so damage or a retired row costs only itself, and saved by the ordinary settings patch — no native step, because nothing is registered with the system. Every button title and `aria-keyshortcuts` derives from the same field, so no surface can advertise stale keys.
+3. **Defaults are the shipped chords, with one move.** New thread, Changes (keeping ADR-0027 bend 9's fallback at its default), Terminal drawer, the branch bar trio, Add selection and Open beside keep their keys. Zoom pane alone changes: `ctrl+shift+m` on every platform becomes `mod+shift+m`, the mod pattern the rest follow — the same keys off a Mac, Cmd on one. New: Settle `mod+shift+e`, Restore `mod+alt+r`, Next/Previous thread `mod+alt+↓/↑`, Next waiting on you `mod+shift+u`, Close pane `mod+shift+w`, Focus the prompt `mod+l`, Stop the running turn `mod+shift+s`. Each new chord presses the same button: Settle still asks its worktree question, Stop only where Stop itself could be pressed.
+4. **Recording is dictation's.** The rows reuse `useChordRecorder` in the window (dictation suspended meanwhile), the same chips, messages and focus return. A thread chord needs ⌘/Ctrl and one allowed key; modifier-only and Fn chords stay dictation's. A clash is refused and names its owner — another row, dictation's press or hold sets, Search transcripts, or the application menu (Electron's default menu off a Mac owns Reload and Force Reload before the renderer, which is why Restore is `mod+alt+r` and not `mod+shift+r`) — never stolen. At run time every chord still stands down for any of dictation's shortcuts — its hotkey or an extra press or hold one, defaults included — for terminals and for dialogs, exactly as before; Open beside at its default keeps answering to either primary modifier with Enter.
+5. **Help points, once.** Help's Keyboard panel gains one sentence naming Settings › Keyboard. The fixed keys are gathered on the Keyboard page alone, so there is one list to keep true.
+6. **On stable.** Like Find a setting (ADR-0115 decision 4), this ships without an Owl gate: until the user records a chord nothing behaves differently, Zoom on a Mac aside, and that move is the owner's own pick, reversible on the same page.
+
+## Consequences
+
+- Twelve rail entries; the rail already scrolls at the minimum size (ADR-0115), and Keyboard adds one more row to the second run.
+- A chord chosen then bumped into by a later dictation change simply stops claiming its keys; Settings still shows what it is set to. There is no warning surface for that yet.
+- The recorder's key table (letters, digits, F keys, Space, Enter, arrows) bounds what a thread chord can be, punctuation included out; Stop's default is S rather than the prototype's `.` for that reason.
+- System-reserved chords (Spotlight's ⌘Space and the like) are not refused — the application menu's own accelerators are; the system may still take such a keydown before the window sees it, and the row then never fires. Naming those, as dictation does, is a follow-up.

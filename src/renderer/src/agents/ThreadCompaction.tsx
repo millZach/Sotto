@@ -33,9 +33,12 @@ export function compactionBusy(thread: AgentThread, blocked = false): boolean {
   return blocked || compactionPending(thread.compaction) || thread.status === 'running' || thread.requests.length > 0
     || !thread.messages.some(message => message.role === 'user' && !/^\/compact(?:\s|$)/u.test(message.text.trim()))
 }
-/** A finished compaction in one line, naming Sotto when it compacted an idle thread on its own (ADR-0127). */
-export function compactionResult(compaction: NonNullable<AgentThread['compaction']>): string {
-  if (compaction.idle) return compaction.status === 'completed' ? t`Sotto compacted this idle thread before its cache expired.`
+/**
+ * A finished compaction in one line, naming Sotto when it compacted an idle thread on its own (ADR-0127). An idle
+ * compaction that worked says nothing here, at Zach's request: the transcript's boundary already shows it.
+ */
+export function compactionResult(compaction: NonNullable<AgentThread['compaction']>): string | null {
+  if (compaction.idle) return compaction.status === 'completed' ? null
     : compaction.status === 'failed' ? t`Sotto could not compact this idle thread. Its full history is kept.`
     : t`Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result.`
   return compaction.status === 'completed' ? 'Context compacted'
@@ -72,14 +75,15 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     finally { sending.current = false; setSubmitting(false) }
   }
   if (!supported) return null
+  const result = thread.compaction && thread.compaction.status !== 'running' ? compactionResult(thread.compaction) : null
   // Compact context itself lives in the pane header's menu; what stays here is the recommendation and its result.
   return <div className="thread-compaction">
     {offer ? <><p>This context is large and hasn’t been updated for over an hour.</p>
       <Button variant="secondary" onClick={() => void compact()}>Compact</Button>
       <Button variant="ghost" onClick={() => { dismissedSnapshots.add(snapshot); for (const listener of dismissalListeners) listener() }}>Keep full history</Button></> : null}
     {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
-    {thread.compaction && thread.compaction.status !== 'running' ? <p role="status">{compactionResult(thread.compaction)}
-      {/* Sotto did this on its own (ADR-0127), so the line says so and leads to the switch that stops it. */}
+    {thread.compaction && result !== null ? <p role="status">{result}
+      {/* Sotto tried this on its own (ADR-0127), so the line says so and leads to the switch that stops it. */}
       {thread.compaction.idle && app ? <> <button type="button" className="thread-compaction__link" aria-label={t`Turn off idle compaction in Settings`}
         onClick={() => { aimProviderSettings('claude'); app.actions.navigate('settings', 'settings-providers', COMPACT_IDLE_SETTING) }}><Trans>Turn off</Trans></button></> : null}</p> : null}
     {error ? <p role="alert">{error}</p> : null}

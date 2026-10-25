@@ -1,29 +1,27 @@
 import type { SottoPlatform } from '../../../shared/platform'
 import { chordClaimed, chordMatches } from '../agents/branchToolbar.logic'
-
-/** The Terminal drawer's chord, the owner's choice: Ctrl+J, or Cmd+J on a Mac. */
-export const PANE_TERMINAL_SHORTCUT = 'mod+j'
+import { threadChordLabel } from '../agents/threadShortcuts'
 
 export interface PaneTerminalShortcut {
   readonly chord: string
   readonly platform: SottoPlatform
-  /** The chord in a title's words: "Ctrl+J", or "Cmd+J" on a Mac. */
+  /** The chord in a title's words: "Ctrl+J", or "Cmd+J" on a Mac, at its default. */
   readonly label: string
-  /** The chord in `aria-keyshortcuts` spelling: "Control+J", or "Meta+J" on a Mac. */
+  /** The chord in `aria-keyshortcuts` spelling: "Control+J", or "Meta+J" on a Mac, at its default. */
   readonly keys: string
 }
 
-/** The chord the Terminal drawer answers to under this dictation hotkey, or null when the hotkey already means it. */
-export function paneTerminalChord(hotkey: string | undefined, platform: SottoPlatform): string | null {
-  return chordClaimed(PANE_TERMINAL_SHORTCUT, hotkey, platform) ? PANE_TERMINAL_SHORTCUT : null
+/** The chord the Terminal drawer answers to: the one chosen on Settings › Keyboard (ADR-0133), or null where removed or the dictation hotkey owns it. */
+export function paneTerminalChord(chosen: string | null, hotkey: string | undefined, platform: SottoPlatform): string | null {
+  return chosen !== null && chordClaimed(chosen, hotkey, platform) ? chosen : null
 }
 
-export function paneTerminalShortcutLabel(platform: SottoPlatform): string {
-  return `${platform === 'darwin' ? 'Cmd' : 'Ctrl'}+J`
+export function paneTerminalShortcutLabel(chord: string, platform: SottoPlatform): string {
+  return threadChordLabel(chord, platform).plain
 }
 
-export function paneTerminalShortcutKeys(platform: SottoPlatform): string {
-  return `${platform === 'darwin' ? 'Meta' : 'Control'}+J`
+export function paneTerminalShortcutKeys(chord: string, platform: SottoPlatform): string {
+  return threadChordLabel(chord, platform).keys
 }
 
 /** Whether a keydown is the chord itself, whatever it lands on. A drawer's own terminal passes it to the page. */

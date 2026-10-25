@@ -29,7 +29,7 @@ test('provider configuration and new-thread defaults have separate settings', as
     await expect(providers.getByRole('combobox', { name: 'Reasoning account', exact: true })).toHaveCount(0)
     const before = await page.evaluate(async () => (await window.sotto!.agents!.get()).configuration)
     const nav = page.getByRole('tablist', { name: 'Settings sections' })
-    await expect(nav.getByRole('tab')).toHaveText(['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'])
+    await expect(nav.getByRole('tab')).toHaveText(['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'])
     const sections = page.locator('.settings-form > [role="tabpanel"]')
     await expect(sections.nth(2)).toHaveAttribute('id', 'settings-agents')
     await expect(sections.nth(4)).toHaveAttribute('id', 'settings-providers')
