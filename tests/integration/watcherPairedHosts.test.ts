@@ -32,6 +32,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { deferred, heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/codex'
 import { storedFollowups } from '../fixtures/followupQueue'
+import { initializeGitRepository } from '../fixtures/gitRepository'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
 import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
@@ -1682,6 +1683,31 @@ it('starts on This computer and says why when the paired machine new workers sta
   const started = await f.startHere(f.staysHere())
   expect(started).toMatchObject({ status: 'ok', target: { hostId: f.control.hostId() }, placement: { hostId: f.control.hostId(), awayFromDefault: true,
     note: 'Synthetic remote, where new workers start, is not connected, so this one started on This computer.' } })
+})
+
+it('keeps a start that reuses a worktree or a base branch read here on This computer, away from the default, and says why (#1032)', async () => {
+  const f = await acrossMachines()
+  await initializeGitRepository(f.local.path)
+  vi.spyOn(f.workspace.host, 'workingCopyOptions').mockResolvedValue({ isGit: true, currentBranch: 'main', branches: ['main'],
+    worktrees: [{ path: f.local.path, branch: 'main' }] })
+  f.choice.setting = f.pairing.hostId
+  const choices = await f.call('list_working_copies', { project: f.staysHere().project })
+  if (choices.status !== 'ok' || !('choices' in choices)) throw new Error('copy read refused')
+  const worktree = { kind: 'existing-worktree', choiceId: choices.choices.find(item => item.kind === 'existing-worktree')!.choiceId }
+  const base = choices.baseRefs.find(item => item.name === 'main')!.choiceId
+  const placement = (note: string) => ({ hostId: f.control.hostId(), name: 'This computer', awayFromDefault: true, note })
+  // Zach, October 25, 2026: these choices tie a start that names neither machine nor system to this computer.
+  expect(await f.startHere({ ...f.staysHere(), title: 'Synthetic reused worktree', workingCopy: worktree })).toMatchObject({ status: 'ok',
+    target: { hostId: f.control.hostId() }, placement: placement('It reuses a worktree on This computer, so it started here rather than on Synthetic remote, where new workers start.') })
+  expect(await f.startHere({ ...f.staysHere(), title: 'Synthetic base branch', baseRefChoiceId: base })).toMatchObject({ status: 'ok',
+    target: { hostId: f.control.hostId() }, effectiveChoices: { baseRefChoiceId: base },
+    placement: placement('Its base branch was read on This computer, so it started here rather than on Synthetic remote, where new workers start.') })
+  // Naming the paired machine is still refused: those choices mean nothing in its copy, and it is sent nothing.
+  for (const choice of [{ workingCopy: worktree }, { baseRefChoiceId: base }]) {
+    expect(await f.startHere({ ...f.staysHere(), ...choice, machine: f.pairing.hostId, title: 'Synthetic named machine' }))
+      .toMatchObject({ status: 'refused', code: 'WORKING_COPY_CHANGED' })
+  }
+  expect(f.socket.shell().host.threads.filter(thread => ['Synthetic reused worktree', 'Synthetic base branch', 'Synthetic named machine'].includes(thread.title))).toEqual([])
 })
 
 it('refuses in plain words a machine with no copy of the project, and sends it nothing (#1032)', async () => {

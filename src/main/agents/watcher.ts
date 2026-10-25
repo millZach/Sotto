@@ -1060,9 +1060,11 @@ export class WatcherService implements WatcherControlHooks {
       return undefined
     }
     if (this.recorded(this.view(), input.requestId, input.retryKey)) return undefined
-    const placed = await this.placement({ machine, os }, input.project)
+    // A working copy or base branch was read for the project where it was named, and means nothing on another machine: a
+    // start that names neither machine nor system stays there, and one that names another is refused.
+    const pinnedBy = input.workingCopy.kind === 'existing-worktree' ? 'existing-worktree' as const : input.baseRefChoiceId ? 'base-branch' as const : undefined
+    const placed = await this.placement({ machine, os, pinnedBy }, input.project)
     if ('status' in placed) throw new Refusal(placed)
-    // A working copy or base branch was read for the project where it was named, and means nothing on another machine.
     if (placed.hostId !== input.project.hostId && (input.workingCopy.kind === 'existing-worktree' || input.baseRefChoiceId)) {
       refuse('WORKING_COPY_CHANGED', `Those working-copy choices are for the project where it was named, not its copy on ${placed.receipt.name}. Start on the shared checkout or a new worktree there, or read that project's choices. Nothing was started.`)
     }
