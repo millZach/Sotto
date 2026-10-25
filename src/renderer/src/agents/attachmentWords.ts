@@ -44,11 +44,15 @@ export function addFailedWords(name: string, remaining: number, next: string | n
 }
 
 const nothingAttached = (): string => t`Nothing was attached.`
+/** `imagesNotReadRefusal`'s sentence as main builds it, with the image's name in it. */
+const IMAGES_NOT_READ = /^This model does not read images\. Choose a model with image support, or remove (.+)\.$/su
 /**
  * A sentence main or a host says about attachments (ADR-0131), built in English in shared code, as the window says it in
  * the interface language (ADR-0123). Any sentence this does not know is shown as it came.
  */
 export function attachmentRefusal(sentence: string): string {
+  const unread = IMAGES_NOT_READ.exec(sentence)
+  if (unread) return imagesNotRead(unread[1]!)
   switch (sentence) {
     case HOST_CANNOT_STAGE_FILES: return t`This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached.`
     case HOST_DISCONNECTED_BEFORE_FILES: return t`This host is disconnected. Connect again before attaching files. Nothing was attached.`

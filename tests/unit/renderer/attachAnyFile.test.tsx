@@ -8,6 +8,7 @@ import { ATTACHED_FILE_TOO_LARGE, ATTACHED_IMAGE_TOO_LARGE, ATTACHED_IMAGES_TOO_
 import { ScreenshotInput } from '../../../src/renderer/src/agents/ScreenshotInput'
 import { AttachmentPreviews } from '../../../src/renderer/src/agents/MessageContent'
 import { attachmentKind, fileTypeLabel, splitAttachmentName } from '../../../src/renderer/src/agents/attachmentKinds'
+import { attachmentRefusal } from '../../../src/renderer/src/agents/attachmentWords'
 import { handleOf } from '../../fixtures/stagedImages'
 
 // Attaching any file is an Owl feature (ADR-0072, ADR-0131); each test says whether this build has it.
@@ -154,6 +155,18 @@ describe('attaching any file in the composer (ADR-0131)', () => {
     } finally {
       act(() => i18n.activate('en'))
     }
+  })
+
+  it('says main’s refusal of an image on a text-only model in the interface language, with the image’s name', () => {
+    const english = 'This model does not read images. Choose a model with image support, or remove {name}.'
+    i18n.loadAndActivate({ locale: 'de', messages: { [generateMessageId(english)]: 'Dieses Modell liest keine Bilder. Entferne {name}.' } })
+    try {
+      expect(attachmentRefusal(imagesNotReadRefusal('photo (1).png'))).toBe('Dieses Modell liest keine Bilder. Entferne photo (1).png.')
+      expect(attachmentRefusal('This model does not advertise image support.')).toBe('This model does not advertise image support.')
+    } finally {
+      act(() => i18n.activate('en'))
+    }
+    expect(attachmentRefusal(imagesNotReadRefusal('photo.png'))).toBe(imagesNotReadRefusal('photo.png'))
   })
 
   it('names the file that could not be added, adds the ones before it, and says the rest were not attached', async () => {

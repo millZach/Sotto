@@ -33,6 +33,14 @@ type Index = { version: 1; entries: Entry[] }
  */
 interface Held extends Entry { memory?: Buffer; unownedSince: number | null; lastStagedAt: number }
 
+/**
+ * Whether a handle describes content as it is kept: the same size, and for an image the same type, since its signature
+ * was checked for that type. A file's bytes are not inspected, so any kept content of its size is the file it names.
+ */
+function describes(held: Pick<Entry, 'mimeType' | 'sizeBytes'>, handle: Pick<AgentAttachmentHandle, 'mimeType' | 'sizeBytes'>): boolean {
+  return held.sizeBytes === handle.sizeBytes && (held.mimeType === handle.mimeType || !isImageAttachment(handle.mimeType))
+}
+
 /** Content staging refuses for what it is (its type, its size, its signature), not for a failure to keep it. */
 export class RefusedImage extends Error {}
 
@@ -161,11 +169,13 @@ export class AttachmentStore {
       const now = this.now()
       const existing = this.held.get(digest)
       // Re-staging content starts its grace again; the same bytes are never written twice, unless only memory had
-      // them and they must now reach disk. Content is kept under the type it was first staged as, so the same bytes
-      // attached again under another type are named the way they are kept.
+      // them and they must now reach disk. Each handle keeps the type it was attached as: the same bytes attached as an
+      // image and as a file are an image and a file (ADR-0131). Content first kept as a file and now attached as an
+      // image, whose signature was just checked, is kept as that image from now on, so its chip and preview can read it.
       if (existing && !(onDisk && existing.memory)) {
         existing.unownedSince = existing.unownedSince === null ? null : now; existing.lastStagedAt = now
-        return existing.mimeType === handle.mimeType ? handle : { ...handle, mimeType: existing.mimeType }
+        if (image && !isImageAttachment(existing.mimeType)) await this.keepAsImage(existing, mimeType, bytes)
+        return handle
       }
       if (!onDisk && !this.historyEnabled()) {
         this.held.set(digest, { digest, mimeType, sizeBytes: bytes.byteLength, stagedAt: now, memory: Buffer.from(bytes), unownedSince: now, lastStagedAt: now })
@@ -184,6 +194,23 @@ export class AttachmentStore {
       }
       return handle
     })
+  }
+  /**
+   * Keeps content first staged as a file under the image type it was just staged as. The image's file is written and
+   * indexed before the file's copy goes, and `read` follows the new entry, so nothing that names the digest loses it.
+   */
+  private async keepAsImage(existing: Held, mimeType: string, bytes: Buffer): Promise<void> {
+    const image: Held = { ...existing, mimeType }
+    if (existing.memory) { this.held.set(existing.digest, image); return }
+    await this.writeContent(image, bytes)
+    this.held.set(existing.digest, image)
+    try { await this.writeIndex() }
+    catch (error) {
+      this.held.set(existing.digest, existing)
+      await unlink(this.file(image)).catch(() => undefined)
+      throw error
+    }
+    await unlink(this.file(existing)).catch(() => undefined)
   }
   private async writeContent(entry: Pick<Entry, 'digest' | 'mimeType'>, bytes: Buffer): Promise<void> {
     await mkdir(this.folder, { recursive: true })
@@ -220,13 +247,13 @@ export class AttachmentStore {
     for (const handle of handles ?? []) {
       const held = this.held.get(handle.digest)
       if (!held) throw new Error(this.missing)
-      if (held.mimeType !== handle.mimeType || held.sizeBytes !== handle.sizeBytes) throw new Error(MISMATCHED_ATTACHMENT)
+      if (!describes(held, handle)) throw new Error(MISMATCHED_ATTACHMENT)
     }
   }
   /** Whether a handle names content this store keeps, as the handle describes it: what `verify` asks of each one. */
   keeps(handle: Pick<AgentAttachmentHandle, 'digest' | 'mimeType' | 'sizeBytes'>): boolean {
     const held = this.held.get(handle.digest)
-    return held !== undefined && held.mimeType === handle.mimeType && held.sizeBytes === handle.sizeBytes
+    return held !== undefined && describes(held, handle)
   }
   /**
    * The bytes a digest names, or null when this store no longer keeps them. Bytes read from disk are hashed first:
@@ -243,7 +270,10 @@ export class AttachmentStore {
     try { bytes = await readFile(this.file(held)) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (bytes && createHash('sha256').update(bytes).digest('hex') === digest) return bytes
-    if (this.held.get(digest) === held) {
+    // Content kept again under an image type meanwhile (`keepAsImage`) is read from its new file.
+    const current = this.held.get(digest)
+    if (current && current !== held && current.mimeType !== held.mimeType) return this.read(digest)
+    if (current === held) {
       this.held.delete(digest)
       // In turn with staging: an image staged again meanwhile has written a good file, which is left alone.
       await this.enqueue(async () => {
