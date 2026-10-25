@@ -174,7 +174,13 @@ function useRunState(run: RunCommand | undefined, command: string | null): [RunS
   return [state, press]
 }
 
+/** What each Run control says in each state: the inline button's words (its name adds the command), and a block's. */
 const RUN_LABEL: Readonly<Record<RunState, string>> = { idle: 'Run in terminal', starting: 'Starting…', ran: 'Run again' }
+const BLOCK_RUN: Readonly<Record<RunState, { readonly text: string; readonly name: string; readonly icon: ReactNode }>> = {
+  idle: { text: 'Run', name: 'Run in terminal', icon: <Play size={13} aria-hidden="true" /> },
+  starting: { text: 'Starting…', name: 'Starting in terminal…', icon: <span className="run-command__spinner" aria-hidden="true" /> },
+  ran: { text: 'Run again', name: 'Run again in terminal', icon: <Check size={14} aria-hidden="true" /> },
+}
 
 /** Inline code that reads as a command: Run floats above its start on pointing or keyboard focus, covering none of it. */
 function RunnableInline({ command, run, children }: { readonly command: string; readonly run: RunCommand; readonly children?: ReactNode }): ReactNode {
@@ -231,9 +237,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
       {command !== null ? <button type="button" className="rich-code__run tt-focusable" data-state={runState} aria-disabled={runState === 'starting' || undefined}
-        aria-label={runState === 'idle' ? 'Run in terminal' : runState === 'starting' ? 'Starting in terminal…' : 'Run again in terminal'} title="Run in a new terminal drawer shell" onClick={pressRun}>
-        {runState === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : runState === 'ran' ? <Check size={14} aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}
-        <span>{runState === 'idle' ? 'Run' : runState === 'starting' ? 'Starting…' : 'Run again'}</span>
+        aria-label={BLOCK_RUN[runState].name} title="Run in a new terminal drawer shell" onClick={pressRun}>
+        {BLOCK_RUN[runState].icon}<span>{BLOCK_RUN[runState].text}</span>
       </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-disabled={cut ? true : undefined}
         aria-label={cut ? `Copy ${language ? `${label} ` : ''}code, once the rest arrives` : `Copy ${language ? `${label} ` : ''}code`}
