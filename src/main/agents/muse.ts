@@ -27,7 +27,7 @@ import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { providerTakesNoSkills } from './providerSwitch'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
-import { AdapterThreadChanges } from './adapterThreadChanges'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { holdTurnEnd, markSendStage, type TurnEndTimings } from './sendStages'
@@ -387,7 +387,7 @@ export class MuseMspHost implements AgentHost {
     this.activePrompts.delete(id); this.activeTurns.delete(id); this.turnTimes.delete(id); this.log.release(id)
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
     const thread = this.threads.get(id)
-    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
+    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
     if (entry) this.closeProcess(entry)
     try { profile?.revoke(reason) } finally { this.emit() }
   }
@@ -508,7 +508,11 @@ export class MuseMspHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
   /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
-  private readonly threadChanges = new AdapterThreadChanges({ view: historyFromEvents => this.activitySnapshot(historyFromEvents) })
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
@@ -586,6 +590,20 @@ export class MuseMspHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it; a frame from the thread's host marks it again once applied; and a path
+   * that writes without it, or after a publication may have gone, marks it where it writes. One that writes into every
+   * thread marks them all. What goes through the message log and the open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
@@ -608,6 +626,7 @@ export class MuseMspHost implements AgentHost {
       status: alias.museSessionId ? settledStatus(alias) : 'error',
       messages: [], requests: [], manualCompactionSupported: true,
     })
+    this.changed(id)
     return this.threads.get(id)!
   }
   private fold(id: string): Fold {
@@ -624,6 +643,7 @@ export class MuseMspHost implements AgentHost {
       provider: 'muse', turnId: turn, status,
       ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}),
     })
+    this.changed(id)
   }
   private spawn(executable: string, lost: () => void, ephemeral = false): MuseRpc {
     const rpc: MuseRpc = new MuseRpc(executable, [...(this.options.args ?? []), ...museServeArguments(this.serveSandboxDisabled), ...(ephemeral ? ['--no-session-log'] : [])],
@@ -724,6 +744,7 @@ export class MuseMspHost implements AgentHost {
         thread.status = 'error'; this.markTurn(id, 'failed', active.messageId, THREAD_PROCESS_LOST)
         if (active.messageId) thread.lastTurn = { id: active.messageId, status: 'failed' }
       } else if (sending) thread.status = 'error'
+      this.changed(id)
     }
     // This also handles an unreadable notification: it must end the host, not just forget a live child.
     this.closeProcess(entry)
@@ -772,7 +793,7 @@ export class MuseMspHost implements AgentHost {
     const executable = this.options.executable ?? await findMuseExecutable(this.options.environment)
     if (!executable || !isAbsolute(executable)) throw new ProviderUnavailable('not-installed', 'Install Muse and run muse login, then connect again. Your threads and drafts are kept.')
     this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read()
-    this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
+    this.threads.clear(); this.threadChanges.markAll(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
     if (generation !== this.generation) throw new Error('Muse connection was cancelled.')
     this.executable = executable
     // The sandbox posture for everything this connection spawns, probes included: sealed by each host at
@@ -968,6 +989,7 @@ export class MuseMspHost implements AgentHost {
         if (!open.has(pending.request.id)) this.removeRequest(pending)
         else {
           pending.answering = false; delete pending.answerCommandId; delete pending.request.delivery; pending.request.answerRetryReady = true
+          this.changed(pending.threadId)
           this.recordRequestChange(pending)
         }
       }
@@ -1136,6 +1158,7 @@ export class MuseMspHost implements AgentHost {
     thread.status = alias.endedTurn.outcome === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: messageId ?? alias.endedTurn.turnId, status: alias.endedTurn.outcome }
     this.markTurn(id, alias.endedTurn.outcome, messageId, alias.endedTurn.outcome === 'failed' ? THREAD_PROCESS_LOST : undefined)
+    this.changed(id)
     delete alias.endedTurn
   }
   private requestKey(pending: MusePending): string {
@@ -1196,12 +1219,13 @@ export class MuseMspHost implements AgentHost {
     this.pending.set(held.request.id, held)
     this.recordRequestChange(held)
     this.thread(held.threadId).requests.push(held.request)
+    this.changed(held.threadId)
     this.emit()
   }
   private removeRequest(pending: Pending): void {
     if (this.pending.delete(pending.request.id)) this.recordRequestChange(pending)
     const thread = this.threads.get(pending.threadId)
-    if (thread) thread.requests = thread.requests.filter(request => request.id !== pending.request.id)
+    if (thread) { thread.requests = thread.requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId) }
     this.emit()
   }
   /**
@@ -1351,7 +1375,7 @@ export class MuseMspHost implements AgentHost {
         // Requests the old host raised while it forked end with it; the copy's own are listed when it opens.
         for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
         const thread = this.threads.get(id)
-        if (thread) thread.requests = []
+        if (thread) { thread.requests = []; this.changed(id) }
         alias.museSessionId = forked.session.sessionId
         alias.forkedMessages = items.filter(item => item.kind === 'userMessage' || item.kind === 'agentMessage').map(item => item.itemId)
         delete alias.forkCommandId; delete alias.endedTurn
@@ -1365,6 +1389,7 @@ export class MuseMspHost implements AgentHost {
         if (thread) {
           thread.status = 'error'
           thread.activities = thread.activities?.map(record => record.kind === 'turn' && record.turnId === messageId ? { ...record, error: MUSE_COPY_FAILED } : record)
+          this.changed(id)
           this.emit()
         }
         throw error
@@ -1639,6 +1664,9 @@ export class MuseMspHost implements AgentHost {
       // A frame Sotto cannot read ends this thread's host rather than half of its turn: the next action
       // starts a new one and resumes the session whole.
       if (current()) this.processLost(owner, entry)
+    } finally {
+      // Applied, whatever path the frame left by: anything it wrote reaches the next publication.
+      if (this.threads.has(owner)) this.changed(owner)
     }
   }
   async execute(command: AgentHostCommand): Promise<AgentHostResult> { return this.executeNative(command) }
@@ -1737,16 +1765,16 @@ export class MuseMspHost implements AgentHost {
             watcherGuard?.()
             if (mode !== undefined && mode !== (alias.runtimeMode ?? 'approval-required')) {
               const previousPending = alias.pendingRuntimeMode, previousConfirmed = alias.settingsConfirmed, previousStatus = thread.status
-              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; await this.persist(); this.emit()
+              alias.pendingRuntimeMode = mode; alias.settingsConfirmed = false; thread.status = 'error'; this.changed(command.threadId); await this.persist(); this.emit()
               try { watcherGuard?.() } catch (error) {
                 if (previousPending) alias.pendingRuntimeMode = previousPending; else delete alias.pendingRuntimeMode
-                alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; await this.persist(); this.emit()
+                alias.settingsConfirmed = previousConfirmed; thread.status = previousStatus; this.changed(command.threadId); await this.persist(); this.emit()
                 throw error
               }
               try {
                 await entry.rpc.request('session/setApprovalMode', { commandId: museCommandId(), sessionId: alias.museSessionId, mode: MSP_MODE[mode] })
                 alias.runtimeMode = mode; delete alias.pendingRuntimeMode
-                thread.runtimeMode = mode
+                thread.runtimeMode = mode; this.changed(command.threadId)
               } catch (error) {
                 if (error instanceof MuseRejected) {
                   delete alias.pendingRuntimeMode; this.settleSettings(command.threadId, alias); await this.persist(); this.emit()
@@ -1779,6 +1807,7 @@ export class MuseMspHost implements AgentHost {
             }
             alias.reasoningEffort = reasoningEffort
             if (reasoningEffort) thread.reasoningEffort = reasoningEffort; else delete thread.reasoningEffort
+            this.changed(command.threadId)
             this.settleSettings(command.threadId, alias)
             await this.persist()
             settled = alias.settingsConfirmed
@@ -1890,6 +1919,7 @@ export class MuseMspHost implements AgentHost {
             thread.status = 'running'
             thread.lastTurn = { id: command.type === 'send' ? command.messageId : thread.lastTurn?.id ?? command.messageId, status: 'running' }
             if (command.type === 'send') this.markTurn(command.threadId, 'running', command.messageId)
+            this.changed(command.threadId)
           } catch (error) {
             clearTimeout(timer); this.deliveries.delete(command.messageId)
             this.activePrompts.delete(command.threadId)
@@ -1925,7 +1955,7 @@ export class MuseMspHost implements AgentHost {
             if (!remembered) alias.answeredRequestIds = alias.answeredRequestIds.filter(item => item !== pending.request.id)
             pending.answering = false; throw error
           }
-          delete pending.request.answerRetryReady
+          delete pending.request.answerRetryReady; this.changed(command.threadId)
           try {
             if (pending.kind === 'approval') {
               const choiceId = decision!
@@ -1965,7 +1995,7 @@ export class MuseMspHost implements AgentHost {
               alias.answeredRequestIds = alias.answeredRequestIds.filter(id => id !== pending.request.id)
               await this.persist(); throw error
             }
-            pending.request.delivery = 'uncertain'; this.emit()
+            pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit()
             return { accepted: false, uncertain: true }
           }
         } else if (command.type === 'interrupt') {
@@ -2078,6 +2108,7 @@ export class MuseMspHost implements AgentHost {
     // A pending approval is Muse's to settle when its host ends; Sotto sends no decision for it here.
     this.pending.clear(); this.requestChanges.clear(); this.requestReads.clear(); this.requestRevision = 0
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     for (const delivery of this.deliveries.values()) delivery.reject(new MuseUncertain('Muse disconnected before acknowledgement.'))
     this.deliveries.clear()
     this.activePrompts.clear()
