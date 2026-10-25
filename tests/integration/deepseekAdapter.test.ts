@@ -100,8 +100,8 @@ describe('DeepSeek Harness ACP adapter', () => {
     expect(result.accepted).toBe(true)
     await expect.poll(async () => (await processes()).length).toBe(before + 1)
     expect((await processes()).at(-1)!.environment.DSH_PERMISSION_MODE).toBe('danger-full-access')
-    const resumes = (await f!.requests()).filter(record => record.method === 'session/resume' && record.params?.sessionId === native)
-    expect(resumes.length).toBeGreaterThan(0)
+    // The resume follows the new process's handshake, so it can land after the process is counted.
+    await expect.poll(async () => (await f!.requests()).filter(record => record.method === 'session/resume' && record.params?.sessionId === native).length).toBeGreaterThan(0)
     expect((await thread(id)).runtimeMode).toBe('full-access')
   })
 
