@@ -29,7 +29,13 @@ export interface TerminalDependencies {
   /** Whether a drawer shell may start with a command from a reply (ADR-0136, an Owl feature), read once at start. */
   runCommandEnabled?: boolean
 }
-interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[] }
+interface PendingRun { output(): void; cancel(): void }
+interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[]; pendingRun?: PendingRun | undefined }
+
+/** A reply's command waits for the new shell to go quiet this long after it last printed, so its prompt is drawn. */
+export const RUN_QUIET_MS = 150
+/** However busy a shell's start-up is, the command is typed this long after it spawned. */
+export const RUN_START_CAP_MS = 3_000
 
 /** Main owns live PTYs. Disk records are reopen hints, never process-resumption claims. */
 export class TerminalService extends ToolOperations {
@@ -126,6 +132,7 @@ export class TerminalService extends ToolOperations {
       record.pty = pty
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
+        record.pendingRun?.output()
         for (let offset = 0; offset < data.length;) {
           let end = Math.min(offset + 65536, data.length)
           if (end < data.length && /[\uD800-\uDBFF]/.test(data[end - 1]!)) end--
@@ -138,17 +145,18 @@ export class TerminalService extends ToolOperations {
         }
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
+        record.pendingRun?.cancel()
         record.pty = undefined
         record.session.status = 'exited'
         record.session.exitCode = exitCode
         this.publish(record)
         void this.save().catch(() => { record.session.status = 'unavailable'; this.publish(record) })
       }))
-      // Typed in the same tick the shell spawned, after output is followed, so no echo is missed and no window
-      // replay can drop it. The shell's own line editor holds it until its prompt is ready. The tab names the command.
+      // Main types the command, so no window replay can drop it; it waits for the shell's prompt (typeWhenSettled).
+      // The tab names the command.
       if (run !== undefined) {
         record.session.title = run.split('\n')[0]!.slice(0, 256)
-        pty.write(terminalInputFor(run))
+        record.pendingRun = this.typeWhenSettled(record, pty, run)
       }
       await this.save()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
@@ -162,6 +170,25 @@ export class TerminalService extends ToolOperations {
       if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
       return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     } finally { for (const release of releases.reverse()) release() }
+  }
+  /**
+   * Types a reply's command into a new shell once it is ready to read it: after its first output and then RUN_QUIET_MS
+   * with none, or RUN_START_CAP_MS after it spawned, whichever comes first. Typed sooner, a shell still running its
+   * profile can drop the text or echo it twice. A shell that ended or was closed meanwhile receives nothing.
+   */
+  private typeWhenSettled(record: LiveTerminal, pty: IPty, run: string): PendingRun {
+    let quiet: ReturnType<typeof setTimeout> | undefined
+    const cancel = (): void => {
+      clearTimeout(quiet); clearTimeout(cap)
+      if (record.pendingRun === pending) record.pendingRun = undefined
+    }
+    const type = (): void => {
+      cancel()
+      if (record.pty === pty && !this.disposed) pty.write(terminalInputFor(run))
+    }
+    const cap = setTimeout(type, RUN_START_CAP_MS)
+    const pending: PendingRun = { output: () => { clearTimeout(quiet); quiet = setTimeout(type, RUN_QUIET_MS) }, cancel }
+    return pending
   }
   /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
   private async projectFolder(owner: FileWorkspace): Promise<string> {
@@ -243,6 +270,7 @@ export class TerminalService extends ToolOperations {
     return this.snapshot(replacement)
   }) }
   private stop(record: LiveTerminal): void {
+    record.pendingRun?.cancel()
     const pty = record.pty; record.pty = undefined
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }

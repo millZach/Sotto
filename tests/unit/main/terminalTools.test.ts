@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
 import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
-import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
+import { RUN_QUIET_MS, RUN_START_CAP_MS, TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
@@ -324,18 +324,60 @@ describe('persistent terminal service', () => {
     expect(unwrap(await restored.list(f.target)).sessions).toEqual([])
     expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([replacement.session.id])
   })
-  it('types a reply\'s command into a new drawer shell as it spawns, and names the tab after its first line (ADR-0136)', async () => {
+  it('types a reply\'s command into a new drawer shell once it goes quiet, and names the tab after its first line (ADR-0136)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
     const f = await fixture({ runCommandEnabled: true })
     const created = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'npm run typecheck' }))
-    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls).toEqual([['npm run typecheck\r']])
+    const shell = f.processes[0]!
+    // The profile is still printing: nothing is typed until its output has stopped for RUN_QUIET_MS.
+    expect(shell.pty.write).not.toHaveBeenCalled()
+    shell.emit('Last login: today\r\n')
+    vi.advanceTimersByTime(RUN_QUIET_MS - 1)
+    shell.emit('~/work ❯ ')
+    vi.advanceTimersByTime(RUN_QUIET_MS - 1)
+    expect(shell.pty.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(vi.mocked(shell.pty.write).mock.calls).toEqual([['npm run typecheck\r']])
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(shell.pty.write).toHaveBeenCalledOnce()
     expect(created.session).toMatchObject({ place: 'drawer', title: 'npm run typecheck', status: 'running' })
     const block = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `santactl status\nosqueryi --version${' x'.repeat(200)}` }))
+    f.processes[1]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_QUIET_MS)
     expect(vi.mocked(f.processes[1]!.pty.write).mock.calls).toEqual([[`santactl status\rosqueryi --version${' x'.repeat(200)}\r`]])
     expect(block.session.title).toBe('santactl status')
     const long = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `echo ${'y'.repeat(400)}` }))
     expect(long.session.title).toHaveLength(256)
     // The saved record and the published session carry the same title, so a reload names the tab the same way.
     expect(f.events.some(event => event.type === 'session' && event.session.id === created.session.id && event.session.title === 'npm run typecheck')).toBe(true)
+  })
+  it('types the command RUN_START_CAP_MS after spawning when the shell never goes quiet, or prints nothing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' }))
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' }))
+    const [chatty, silent] = f.processes
+    for (let elapsed = 0; elapsed < RUN_START_CAP_MS - 100; elapsed += 100) { chatty!.emit('.'); vi.advanceTimersByTime(100) }
+    expect(chatty!.pty.write).not.toHaveBeenCalled()
+    expect(silent!.pty.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(100)
+    expect(chatty!.pty.write).toHaveBeenCalledWith('git status\r')
+    expect(silent!.pty.write).toHaveBeenCalledWith('git log\r')
+  })
+  it('types nothing into a shell that exits or is closed before it is ready', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' }))
+    const closed = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' }))
+    f.processes[0]!.emit('zsh: profile error\r\n')
+    f.processes[0]!.exit(1)
+    unwrap(await f.service.close({ ...f.target, sessionId: closed.session.id }))
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
   })
   it.each([
     ['a Tools shell', { runCommandEnabled: true }, { place: 'tools' as const }],
