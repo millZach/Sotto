@@ -246,15 +246,20 @@ export function unseenFailures(threads: readonly AgentThread[]): { readonly thre
  * host marked finished while no client showed it says Just finished (ADR-0046); one that babysits a pull request says so
  * (ADR-0061, variant C). Each stands where the row would say Done, in that order, so Working and anything waiting on you
  * outrank all three. Settling says Settled, which ends babysitting anyway and leaves a prototype to the thread's pane.
+ * `background` is a Done thread something will still wake, babysitting or a monitoring task, which says Monitoring there:
+ * the status ring shows an hourglass for it rather than the idle outline.
  */
 export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): {
-  readonly text: string; readonly finished: boolean; readonly babysitting: boolean; readonly prototype: boolean
+  readonly text: string; readonly finished: boolean; readonly babysitting: boolean; readonly prototype: boolean; readonly background: boolean
 } {
   const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
   const prototype = row.thread.prototypeReady !== undefined && label === 'Done'
   const finished = !prototype && row.thread.finishedUnread === true && label === 'Done'
   const babysitting = !prototype && !finished && label === 'Done' ? babysittingWord(row.thread) : undefined
-  return { text: prototype ? 'Prototype ready' : finished ? 'Just finished' : babysitting ?? label, finished, babysitting: babysitting !== undefined, prototype }
+  // A monitoring task alone says Monitoring, the creature's readout word for it; babysitting names its pull request.
+  const monitoring = !prototype && !finished && label === 'Done' && (row.thread.monitoring?.length ?? 0) > 0
+  const background = babysitting !== undefined || monitoring
+  return { text: prototype ? 'Prototype ready' : finished ? 'Just finished' : babysitting ?? (monitoring ? 'Monitoring' : label), finished, babysitting: babysitting !== undefined, prototype, background }
 }
 
 /**

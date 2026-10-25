@@ -157,11 +157,15 @@
 .thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
 
 /* The status ring: an outline while the thread is idle, a ring that turns while it works, amber when it wants
-   you, and green with a filled centre for a run that finished while you were looking somewhere else. */
+   you, green with a filled centre for a run that finished while you were looking somewhere else, and an hourglass
+   while it is done but something in the background will wake it. */
 .thread-nav__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline, var(--tt-border)); border-radius: 50%; }
 .thread-nav__ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
 .thread-nav__ring[data-state='needs'] { border: 2px solid var(--tt-attention); }
 .thread-nav__ring[data-unseen] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); mask: none; }
+/* Done, but babysitting or a monitoring task will wake it: an hourglass in the activity colour, which never moves. */
+.thread-nav__ring[data-background] { display: grid; place-items: center; border: 0; border-radius: 0; color: var(--tt-activity); }
+.thread-nav__ring[data-background] svg { display: block; }
 /* A thread whose provider is unreachable is not turning, whatever its last state said. */
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-nav__ring[data-state='working']:not([data-disconnected], [data-unseen]) { animation: thread-ring 1.5s linear infinite; }
@@ -258,6 +262,7 @@
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
+.thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
 /* The rail hides the switch, so the foot's hairline is its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
 .thread-nav__rail .thread-nav__foot-rule { margin: 0 0 2px; }
