@@ -1,0 +1,234 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: like T3 Code, the thread runs on behind the composer, and while the user reads older messages the composer
+  shrinks to a slim line. How small should it get, what brings it back, and what happens to a draft? The composer also
+  loses the thin edge that says it is focused (ADR-0110 keeps the running and highest-effort edges).
+  Variants: Now (today's float, with the focus edge), A slim line with the options row kept (T3), B slim line only,
+  C a narrow pill in the middle.
+  Picked: B, the user's pick on 2026-10-23: the slim line only, and a draft keeps the composer full (ADR-0125).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: shrink while reading back</title>
+<style>
+  :root, [data-theme='dark'] {
+    --canvas: #121211; --card: #1f1f1e; --bubble: #262624; --hairline: #3a3936; --text: #faf7ec; --text-2: #d0cdc0; --muted: #a3a197;
+    --accent: #6f8cff; --on-accent: #fff; --seg-on: #2a2a28; --code-bg: #1a1a19; --focus-edge: #6f8cff; --running: #6f8cff;
+    --shadow: rgb(0 0 0 / 0.45);
+  }
+  [data-theme='light'] {
+    --canvas: oklch(0.972257 0.008005 98.878); --card: oklch(0.93 0.006 92); --bubble: oklch(0.915 0.007 92); --hairline: oklch(0.852257 0.009879 91.871);
+    --text: oklch(0.201559 0.029562 92.844); --text-2: oklch(0.40 0.02 93); --muted: oklch(0.48 0.018 93);
+    --accent: #3a5bd9; --on-accent: #fff; --seg-on: oklch(0.897257 0.00621 91.871); --code-bg: oklch(0.932257 0.009879 91.871); --focus-edge: #3a5bd9; --running: #3a5bd9;
+    --shadow: rgb(60 50 20 / 0.16);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--canvas); color: var(--text); font-family: Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .bar { display: flex; flex-wrap: wrap; flex: none; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+  .bar b { font-weight: 600; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--hairline); border-radius: 8px; }
+  .seg button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; }
+  .seg button[aria-pressed='true'] { background: var(--seg-on); color: var(--text); }
+  .bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .note { flex-basis: 100%; margin: 0; color: var(--text-2); line-height: 1.45; }
+  .state { flex-basis: 100%; margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stage-wrap { display: flex; flex: 1; justify-content: center; min-height: 0; }
+  .stage { position: relative; flex: none; width: 100%; height: 100%; min-height: 380px; overflow: hidden; }
+
+  .transcript { position: absolute; inset: 0; overflow-y: auto; padding: 28px 0 var(--foot, 200px); scrollbar-width: thin; }
+  .col { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  .msg { margin: 0 0 22px; font-size: 15px; line-height: 1.7; }
+  .msg p { margin: 0 0 12px; }
+  .msg[data-role='user'] { width: fit-content; max-width: 78%; margin-left: auto; padding: 12px 16px; border-radius: 16px; background: var(--bubble); }
+  .msg[data-role='user'] p:last-child { margin: 0; }
+  .who { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+  .msg code { padding: 1px 6px; border: 1px solid var(--hairline); border-radius: 5px; background: var(--code-bg); font-size: 13.5px; }
+  .msg a { color: var(--accent); }
+
+  .jump { position: absolute; left: 50%; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--hairline); border-radius: 15px; background: var(--card); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; transform: translateX(-50%); opacity: 0; pointer-events: none; transition: opacity .16s, bottom .2s cubic-bezier(.2,.8,.2,1); box-shadow: 0 6px 18px var(--shadow); }
+  .jump[data-shown] { opacity: 1; pointer-events: auto; }
+
+  /* The composer floats; the strip round it lets presses through to the transcript. */
+  .compose { position: absolute; right: 0; bottom: 0; left: 0; padding: 0 max(24px, calc((100% - 760px) / 2)) 16px; pointer-events: none; }
+  .compose > * { pointer-events: auto; }
+  .card { display: grid; grid-template-rows: auto auto; margin: 0 auto; padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--card);
+    box-shadow: 0 12px 32px var(--shadow); transition: padding .2s cubic-bezier(.2,.8,.2,1), max-width .24s cubic-bezier(.2,.8,.2,1), border-radius .2s; max-width: 100%; }
+  .card[data-running] { border-color: color-mix(in srgb, var(--running) 45%, transparent); }
+  [data-focus-edge] .card:focus-within { border-color: var(--focus-edge); }
+  .editor { min-height: 74px; max-height: 220px; overflow-y: auto; outline: 0; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; transition: min-height .2s cubic-bezier(.2,.8,.2,1), max-height .2s cubic-bezier(.2,.8,.2,1); }
+  .editor:empty::before { content: attr(data-placeholder); color: var(--muted); pointer-events: none; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; overflow: hidden; max-height: 40px; transition: max-height .2s cubic-bezier(.2,.8,.2,1), opacity .16s, margin .2s; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; min-width: 0; color: var(--muted); font-size: 13px; }
+  .chips span { white-space: nowrap; }
+  .send { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 16px; cursor: pointer; }
+  .line-send { display: none; }
+  .meta { margin: 8px 4px 0; color: var(--muted); font-size: 12.5px; text-align: left; transition: opacity .16s; }
+
+  /* Shrunk, shared: one line, nothing scrolls inside it. */
+  .compose[data-shrunk] .editor { min-height: 22px; max-height: 22px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .compose[data-shrunk] .card { cursor: text; }
+  /* A: the T3 shape. One line with the send disc beside it; the options row stays under it. */
+  [data-variant='a'] .compose[data-shrunk] .card { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 12px 8px 16px; }
+  [data-variant='a'] .compose[data-shrunk] .line-send { display: inline-flex; grid-column: 2; grid-row: 1; align-self: center; }
+  [data-variant='a'] .compose[data-shrunk] .editor { grid-column: 1; grid-row: 1; align-self: center; }
+  [data-variant='a'] .compose[data-shrunk] .row { grid-column: 1 / -1; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--hairline); }
+  [data-variant='a'] .compose[data-shrunk] .row .send { display: none; }
+  /* B: a slim line only. The options row and the note under it step away. */
+  [data-variant='b'] .compose[data-shrunk] .card { grid-template-columns: minmax(0, 1fr) auto; padding: 9px 10px 9px 16px; border-radius: 14px; }
+  [data-variant='b'] .compose[data-shrunk] .line-send { display: inline-flex; grid-column: 2; grid-row: 1; }
+  [data-variant='b'] .compose[data-shrunk] .editor { grid-column: 1; grid-row: 1; align-self: center; }
+  [data-variant='b'] .compose[data-shrunk] .row { max-height: 0; margin: 0; opacity: 0; }
+  [data-variant='b'] .compose[data-shrunk] .meta { opacity: 0; }
+  /* C: a narrow pill in the middle, like a tab you pull up. */
+  [data-variant='c'] .compose[data-shrunk] .card { grid-template-columns: minmax(0, 1fr) auto; max-width: 420px; padding: 7px 8px 7px 18px; border-radius: 999px; }
+  [data-variant='c'] .compose[data-shrunk] .line-send { display: inline-flex; grid-column: 2; grid-row: 1; border-radius: 999px; }
+  [data-variant='c'] .compose[data-shrunk] .editor { grid-column: 1; grid-row: 1; align-self: center; }
+  [data-variant='c'] .compose[data-shrunk] .row { max-height: 0; margin: 0; opacity: 0; }
+  [data-variant='c'] .compose[data-shrunk] .meta { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before { transition: none !important; } }
+</style>
+</head>
+<body data-theme="dark" data-variant="a">
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <b>Composer</b>
+  <div class="seg" id="variant">
+    <button type="button" data-v="now">Now</button>
+    <button type="button" data-v="a" aria-pressed="true">A · Slim line, options kept</button>
+    <button type="button" data-v="b">B · Slim line only</button>
+    <button type="button" data-v="c">C · Pill</button>
+  </div>
+  <div class="seg" id="theme">
+    <button type="button" data-t="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-t="light">Light</button>
+  </div>
+  <div class="seg" id="width">
+    <button type="button" data-w="0" aria-pressed="true">Fill</button>
+    <button type="button" data-w="1280">1280</button>
+    <button type="button" data-w="820">820</button>
+  </div>
+  <div class="seg" id="draft" aria-label="Draft">
+    <button type="button" data-d="none" aria-pressed="true">No draft</button>
+    <button type="button" data-d="short">Short draft</button>
+    <button type="button" data-d="long">Long draft</button>
+  </div>
+  <div class="seg" id="drafted" aria-label="With a draft">
+    <button type="button" data-k="shrink" aria-pressed="true">A draft shrinks too</button>
+    <button type="button" data-k="stay">A draft keeps it full</button>
+  </div>
+  <div class="seg" id="running">
+    <button type="button" data-r="0" aria-pressed="true">Idle</button>
+    <button type="button" data-r="1">Running</button>
+  </div>
+  <p class="note" id="note"></p>
+  <p class="state" id="state" aria-live="polite"></p>
+</div>
+<div class="stage-wrap"><div class="stage" id="stage">
+  <div class="transcript" id="transcript"><div class="col" id="col"></div></div>
+  <button type="button" class="jump" id="jump">↓ Scroll to end</button>
+  <div class="compose" id="compose">
+    <div class="card" id="card">
+      <div class="editor" id="editor" contenteditable="true" role="textbox" aria-label="Message" data-placeholder="Ask for changes, send follow-ups, or attach images"></div>
+      <button type="button" class="send line-send" aria-label="Send">↑</button>
+      <div class="row"><div class="chips"><span>📎</span><span>Worktree</span><span>Claude Opus 5.5 ▾</span><span>High ▾</span><span>Full access ▾</span><span>⑂ chore/settings-wording</span></div><button type="button" class="send" aria-label="Send">↑</button></div>
+    </div>
+    <div class="meta">Context 41% used</div>
+  </div>
+</div></div>
+<script>
+(() => {
+  const NOTES = {
+    now: 'Now (the Part 1 fix): the thread runs under the composer, which keeps its full size wherever you are, and focus brings back a thin edge round the card.',
+    a: 'A · Slim line, options kept (T3): scroll back more than a screen’s worth and the message box drops to one line with the send disc beside it; the model, effort and branch row stays under it. No focus edge.',
+    b: 'B · Slim line only: the same one line, and the options row and the note under the composer step away too, so the most of the thread shows. No focus edge.',
+    c: 'C · Pill: the composer narrows to a rounded pill in the middle of the foot. Click it, press Tab to it, or start typing to open it. No focus edge.',
+  }
+  const DRAFTS = { none: '', short: 'Can you also check the light theme?', long: 'Before you merge, run the composer e2e specs again at 820 by 560.\nThen post the screenshots in the PR, dark and light, and say which ones changed.\nLast, remove the worktree.' }
+  const SHRINK_AFTER = 160
+  const body = document.body, stage = document.getElementById('stage'), transcript = document.getElementById('transcript'), col = document.getElementById('col')
+  const compose = document.getElementById('compose'), card = document.getElementById('card'), editor = document.getElementById('editor'), jump = document.getElementById('jump')
+  const params = new URLSearchParams(location.search)
+  let variant = NOTES[params.get('variant')] ? params.get('variant') : 'a', draftKeeps = false, fullHeight = 0
+
+  const turns = [
+    ['user', 'Can you clarify the Settings descriptions so each one says what the switch does?'],
+    ['assistant', 'I rewrote the descriptions in <code>SettingsView.tsx</code> so each starts with what a press does, and kept them to one sentence. The glossary nouns stay the same.', 'Two of them named things the app no longer has, so I took those words out. The prototype is kept as the tag <code>prototype/settings-copy</code>.'],
+    ['user', 'Looks good. Can you open a pull request?'],
+    ['assistant', 'Opened <a href="#">#979</a>. Typecheck, lint and the renderer unit tests pass (2,788). The Settings e2e spec passes in dark and light at 1280 by 800 and 820 by 560.'],
+    ['user', 'Yes have a follow up issue.\n\nCan you merge this now?'],
+    ['assistant', 'I opened the follow-up as <a href="#">#987</a>. It covers stopping the updater’s install ID and then taking the disclosure back out of Settings and <code>guide.md</code>.', 'I haven’t merged PR #979 yet. Its checks had passed, but <code>main</code> changed a line in <code>SettingsView.tsx</code> after they ran. The merge had no conflicts; I ran the typecheck and the renderer unit tests, then pushed it. CI is running now.', 'When Gates (Windows) and Package result both pass, I’ll merge the PR, delete the branch and remove this worktree.'],
+    ['user', 'Thanks. Is there anything else left?'],
+    ['assistant', 'Nothing else. Scroll back up and watch the composer: it shrinks while you read, and comes back when you reach the end, click it or start typing.'],
+  ]
+  col.innerHTML = turns.map(([role, ...ps]) => `<div class="msg" data-role="${role}">${role === 'assistant' ? '<p class="who">Claude</p>' : ''}${ps.map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')}</div>`).join('')
+
+  function seg(id, attr, on) {
+    const root = document.getElementById(id)
+    root.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return
+      root.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)))
+      on(b.dataset[attr])
+    })
+  }
+  const press = (id, attr, value) => document.querySelectorAll(`#${id} button`).forEach(x => x.setAttribute('aria-pressed', String(x.dataset[attr] === value)))
+  seg('variant', 'v', v => { variant = v; params.set('variant', v); history.replaceState(null, '', `?${params}`); apply() })
+  seg('theme', 't', t => { body.dataset.theme = t })
+  seg('width', 'w', w => { stage.style.width = w === '0' ? '100%' : w + 'px'; settle() })
+  seg('draft', 'd', d => { editor.innerText = DRAFTS[d]; settle() })
+  seg('drafted', 'k', k => { draftKeeps = k === 'stay'; update() })
+  seg('running', 'r', r => { card.toggleAttribute('data-running', r === '1') })
+  addEventListener('keydown', e => {
+    if (e.target.closest('input, textarea, [contenteditable]')) return
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const keys = Object.keys(NOTES), i = keys.indexOf(variant)
+    variant = keys[(i + (e.key === 'ArrowRight' ? 1 : keys.length - 1)) % keys.length]; press('variant', 'v', variant); apply()
+  })
+
+  const fromEnd = () => transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop
+  const hasDraft = () => editor.innerText.trim().length > 0
+
+  function update() {
+    const away = fromEnd() > SHRINK_AFTER
+    const focused = card.contains(document.activeElement)
+    const shrunk = variant !== 'now' && away && !focused && !(draftKeeps && hasDraft())
+    compose.toggleAttribute('data-shrunk', shrunk)
+    jump.toggleAttribute('data-shown', fromEnd() > 40)
+    jump.style.bottom = `${compose.offsetHeight + 10}px`
+    document.getElementById('state').textContent = `${shrunk ? 'Shrunk' : 'Full'} · ${Math.round(fromEnd())}px above the end · composer ${focused ? 'focused' : 'not focused'} · ${hasDraft() ? 'draft kept' : 'no draft'}`
+  }
+
+  // The transcript keeps room for the full composer, so its last line always comes clear when you reach the end.
+  function settle() {
+    const was = compose.hasAttribute('data-shrunk')
+    compose.removeAttribute('data-shrunk')
+    fullHeight = compose.offsetHeight
+    transcript.style.setProperty('--foot', `${fullHeight + 24}px`)
+    compose.toggleAttribute('data-shrunk', was)
+    update()
+  }
+
+  function apply() {
+    body.dataset.variant = variant
+    body.toggleAttribute('data-focus-edge', variant === 'now')
+    document.getElementById('note').textContent = NOTES[variant]
+    settle()
+  }
+
+  transcript.addEventListener('scroll', update, { passive: true })
+  card.addEventListener('focusin', update); card.addEventListener('focusout', () => setTimeout(update))
+  card.addEventListener('click', () => { if (document.activeElement !== editor) editor.focus() })
+  editor.addEventListener('input', settle)
+  // Typing anywhere in the thread opens the composer and goes to it, as a printable key does in Sotto's panes.
+  transcript.addEventListener('keydown', e => { if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) editor.focus() })
+  jump.addEventListener('click', () => transcript.scrollTo({ top: transcript.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
+  new ResizeObserver(settle).observe(stage)
+  press('variant', 'v', variant); apply()
+  transcript.scrollTop = transcript.scrollHeight
+})()
+</script>
+</body>
+</html>

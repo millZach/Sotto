@@ -275,7 +275,7 @@ describe('Usage page', () => {
     const refresh = vi.spyOn(bridge, 'refresh')
     render(<UsageView {...props} computers={[laptop, forge]} bridge={bridge} />)
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
-    expect(refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['codex'] })
+    expect(refresh).toHaveBeenCalledWith({ hostIds: ['forge'], providerIds: ['codex'], background: true })
   })
 
   it('reads Claude again on open when its fresh reading names no share', async () => {
@@ -287,7 +287,7 @@ describe('Usage page', () => {
     const refresh = vi.spyOn(bridge, 'refresh')
     render(<UsageView {...props} bridge={bridge} />)
     await waitFor(() => expect(refresh).toHaveBeenCalledOnce())
-    expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'] })
+    expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'], background: true })
   })
 
   it('says nothing is recorded yet once usage was cleared, keeping the room-left gauges', async () => {

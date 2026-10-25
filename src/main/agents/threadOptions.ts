@@ -1,4 +1,4 @@
-import { agentAttachmentHandlesSchema, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadOptions } from '../../shared/agents'
+import { agentAttachmentHandlesSchema, ATTACHED_FILES_NEED_A_FOLDER, isImageAttachment, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadOptions } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 
 /** Validate against the active provider's advertised model, never a substitute. */
@@ -23,11 +23,19 @@ export function effortAfterChange(snapshot: AgentHostSnapshot, options: AgentThr
 }
 
 /**
- * A prompt's staged images against the thread's model. The content itself was checked when it was staged; what is
- * checked here is the handles (count, total, unique IDs) and that the model takes images at all.
+ * A prompt's staged attachments against the thread's model and folder. The content itself was checked when it was staged;
+ * what is checked here is the handles (count, totals, unique IDs), that the model takes images when an image is attached,
+ * and, for an attached file (ADR-0131), that this build takes files (`acceptsFiles`, the coordinator's Owl answer, a
+ * defence behind the composer) and that the thread has a working folder to copy it into, when the caller names the folder.
  */
-export function validatePromptAttachments<T extends AgentAttachmentHandle>(snapshot: AgentHostSnapshot, modelId: string, attachments: readonly T[] = []): T[] {
+export function validatePromptAttachments<T extends AgentAttachmentHandle>(snapshot: AgentHostSnapshot, modelId: string, attachments: readonly T[] = [],
+  options: { readonly acceptsFiles?: boolean; readonly workingDirectory?: string | null | undefined } = {}): T[] {
   agentAttachmentHandlesSchema.parse(attachments.map(({ id, name, mimeType, sizeBytes, digest }) => ({ id, name, mimeType, sizeBytes, digest })))
-  if (attachments.length && !resolveModel(snapshot.models, modelId)?.supportsImages) throw new Error('This model does not advertise image support.')
+  // Only an image needs a model that reads images; an attached file goes to every model.
+  if (attachments.some(attachment => isImageAttachment(attachment.mimeType)) && !resolveModel(snapshot.models, modelId)?.supportsImages) throw new Error('This model does not advertise image support.')
+  if (attachments.some(attachment => !isImageAttachment(attachment.mimeType))) {
+    if (options.acceptsFiles === false) throw new Error(SCREENSHOT_WRONG_TYPE)
+    if ('workingDirectory' in options && !options.workingDirectory) throw new Error(ATTACHED_FILES_NEED_A_FOLDER)
+  }
   return [...attachments]
 }

@@ -1,4 +1,5 @@
 import { focusedComposerField } from './promptSelection'
+import { useMark } from '../components/marks'
 import React, { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { AlertTriangle, Check, Clock, Copy, LoaderCircle, Server } from 'lucide-react'
 import type { HostsBridge } from '../../../shared/hosts'
@@ -160,6 +161,7 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
  */
 export function HostUpdateControl({ bridge = window.sotto?.hosts, doneMs = HOST_UPDATE_DONE_MS }: { readonly bridge?: HostsBridge | undefined; readonly doneMs?: number }): ReactNode {
   const [updates, take] = useHostUpdateList(bridge)
+  useMark('host-update', updates.length > 0)
   const [open, setOpen] = useState(false)
   const [commands, setCommands] = useState<ReadonlySet<string>>(() => new Set())
   const [refusal, setRefusal] = useState<{ readonly id: string; readonly message: string } | null>(null)

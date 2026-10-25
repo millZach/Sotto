@@ -369,6 +369,10 @@ msgid "{name} runs it, so it can start the host for {who}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "{name} signs in on {page} in this computer's browser. {hostName} finishes signing in by itself once you do."
+msgstr ""
+
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{name} signs in with your Claude subscription in this computer's browser, then shows a code to bring back here."
 msgstr ""
 
@@ -665,8 +669,8 @@ msgid "500 entries"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "A band of text characters sweeps across the window when you open Watcher's room or go back to Threads, and the owl rides it to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr ""
+msgid "A band of text characters sweeps across the window."
+msgstr "Tekstimerkkien nauha pyyhkäisee ikkunan poikki."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A code works once, for five minutes."
@@ -683,6 +687,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "A line of stars sweeps across, with a faint trail behind it."
+msgstr "Tähtien rivi pyyhkäisee ikkunan poikki, ja sen perässä näkyy himmeä vana."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "A merged thread stays put until you settle it."
@@ -1052,6 +1060,11 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Background"
 msgstr ""
+
+#. A look for night falls: a band of text characters sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Band"
+msgstr "Nauha"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -1455,6 +1468,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Commit subject"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Compact idle threads"
 msgstr ""
 
 #. Connects a provider on a host.
@@ -2666,7 +2683,15 @@ msgid "mise did not finish updating {name} on {host}. Nothing was changed: {inst
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise does not list {to} yet. {installed} is still installed."
+msgstr ""
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "mise installed {to}, but {name}'s install step did not finish, so {host} still starts {installed}. Nothing was lost, and your threads kept working."
+msgstr ""
+
+#: src/renderer/src/features/settings/hostClientUpdateWords.ts
+msgid "mise on {host} does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: {installed} is still installed, and your threads kept working. Try again later."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -2772,6 +2797,11 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Night falls between Threads and Watcher"
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Night falls look"
+msgstr "Night falls -ulkoasu"
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3971,8 +4001,8 @@ msgid "Signing in…"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "Slower to watch the band sweep, faster to get there sooner. 1x takes under a second."
-msgstr ""
+msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
+msgstr "Hitaampi, jotta näet pyyhkäisyn, nopeampi, jotta pääset perille aiemmin. 1x kestää alle sekunnin."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Sort themes"
@@ -4276,6 +4306,11 @@ msgstr ""
 msgid "Stacked"
 msgstr ""
 
+#. A look for night falls: a line of stars sweeps across the window
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "Stars"
+msgstr "Tähdet"
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Start {name}’s host at boot"
 msgstr ""
@@ -4461,6 +4496,11 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Success message duration"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Suggest a next prompt after each turn"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -4936,6 +4976,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/ThemeLivePreview.tsx
 msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
+
+#: src/renderer/src/features/settings/NightFallsSettings.tsx
+msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "Ikkuna pyyhkäisee Threads-sivun ja Watcherin huoneen välillä, kun avaat Watcherin huoneen tai palaat Threads-sivulle, ja pöllö kulkee pyyhkäisyn mukana uuteen paikkaansa. Pois päältä ikkuna vaihtuu heti. Vähennetyllä liikkeellä se vaihtuu aina heti."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
@@ -5576,6 +5620,10 @@ msgid "When a thread needs you"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When finished"
 msgstr ""
 
@@ -5698,6 +5746,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Your instructions go to the thread's own model with every draft and win over the repository's style. Nothing is drafted while Generated commit messages and Generated pull request text are off."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Your own model servers"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

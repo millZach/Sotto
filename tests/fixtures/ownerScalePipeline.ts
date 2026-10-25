@@ -3,12 +3,14 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { asActivityPublication } from '../../src/main/agents/activitySnapshots'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
+import { NextPrompts } from '../../src/main/agents/nextPrompts'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
 import { HeldProviderHost } from '../../src/main/agents/heldProviderGate'
 import { desktopWindowClient, LocalHostService } from '../../src/main/agents/hostService'
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../../src/main/agents/requestDraftOwners'
 import { RequestDraftService } from '../../src/main/agents/requestDrafts'
+import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges } from '../../src/main/agents/threadChanges'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
@@ -27,6 +29,7 @@ import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdenti
 import type { HeldProviders } from '../../src/shared/heldProviders'
 import { requestDraftProvider, type RequestDraft, type RequestDraftOwner, type RequestDraftTarget } from '../../src/shared/requestDrafts'
 import type { WatcherThreadTarget } from '../../src/shared/watcher'
+import type { WatcherRoomListChange, WatcherRoomState, WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { FakeProviderHost } from './fakeProviderHost'
 import { addWatcherHistory, ownerRequestDrafts, ownerScaleCounts, type OwnerScale, type OwnerScaleCounts } from './ownerScale'
 import { syntheticModelCatalog } from './modelCatalog'
@@ -94,7 +97,14 @@ export interface OwnerScalePipeline {
   broadcasts(): number
   /** The draft store's look-ups of an answer's thread since the last reset. */
   ownerLookups(): number
+  /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
+  watcherRoomRecords(): number
   resetCounts(): void
+  /**
+   * With thread changes verified: for each layer, how many of its publications the shadow map applied and checked, and
+   * every way a map came to differ from that layer's whole snapshot. Empty when not verified.
+   */
+  threadChanges(): ThreadChangesReport
   /** The user's actions, as the window sends them to main. */
   readonly actions: {
     saveAnswerDraft(): Promise<void>
@@ -103,6 +113,80 @@ export interface OwnerScalePipeline {
     send(): Promise<void>
   }
   stop(): Promise<void>
+}
+
+export interface OwnerScalePipelineOptions {
+  /**
+   * Shadow every layer between the adapter and the coordinator with a thread map fed its thread changes, checked against
+   * the layer's whole snapshot after every change (#925). Defaults to `SOTTO_VERIFY_THREAD_CHANGES=1`.
+   */
+  verifyThreadChanges?: boolean
+  /** Runs the shadows' work, so a test that counts main's work can leave it out. */
+  uncounted?: <T>(work: () => T) => T
+}
+
+export interface ThreadChangesReport {
+  /** Publications each layer's shadow map applied and checked. */
+  readonly checked: Readonly<Record<string, number>>
+  /** Every difference found, named by layer. */
+  readonly drift: readonly string[]
+}
+
+type ActivityPublisher = { subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void }
+
+/**
+ * The verifying mode at the owner's scale (#925): beside each layer between the adapter and the coordinator, the thread
+ * changes the shim works out from that layer's publications, applied to a thread map that rebuilds itself from the
+ * layer's whole snapshot after every change and compares. Nothing main runs changes: each layer publishes as it does,
+ * and a shadow only reads what it published. A drift is kept for the test rather than thrown into main's path. Until a
+ * layer passes on thread changes itself, this checks the shim and the map against every real publication; once one does,
+ * its own changes take the shim's place here.
+ */
+class ShadowThreadMaps {
+  private readonly checked: Record<string, number> = {}
+  private readonly drift: string[] = []
+  constructor(private readonly on: boolean, private readonly uncounted: <T>(work: () => T) => T) {}
+
+  /** Shadows what `host`'s activity subscription publishes, from every subscription made after this. */
+  tap(host: ActivityPublisher, layer: string): void {
+    if (!this.on) return
+    const subscribe = host.subscribeActivitySnapshots?.bind(host)
+    if (!subscribe) throw new Error(`The ${layer} has no activity subscription to shadow.`)
+    const see = this.shadow(layer)
+    host.subscribeActivitySnapshots = (listener, options) => subscribe(snapshot => { see(snapshot); listener(snapshot) }, options)
+  }
+
+  /** Shadows the workspace's state after each accept, with the host stamp. */
+  tapAccept(workspace: WorkspaceHost): void {
+    if (!this.on) return
+    const inside = workspace as unknown as { accept(snapshot: AgentHostSnapshot): void; state: { snapshot: AgentHostSnapshot } }
+    if (typeof inside.accept !== 'function') throw new Error('WorkspaceHost.accept is gone; shadow the workspace\'s accepted state another way.')
+    const accept = inside.accept.bind(workspace), see = this.shadow('workspace accept')
+    inside.accept = snapshot => { accept(snapshot); see(inside.state.snapshot) }
+  }
+
+  report(): ThreadChangesReport { return { checked: { ...this.checked }, drift: [...this.drift] } }
+
+  private shadow(layer: string): (snapshot: AgentHostSnapshot) => void {
+    this.checked[layer] = 0
+    let latest: AgentHostSnapshot | undefined
+    const publisher = new ThreadChangesPublisher()
+    const map = new ThreadMap({ wholeOf: () => latest!, verify: true })
+    const subscription = publisher.subscribe(changes => {
+      try {
+        const applied = map.apply(changes)
+        if (applied === 'applied') this.checked[layer]!++
+        else this.drift.push(`${layer}: a publication was ${applied === 'resync' ? 'missed' : 'out of order'}`)
+        if (applied === 'resync') subscription.resync()
+      } catch (error) { this.drift.push(`${layer}: ${error instanceof Error ? error.message : String(error)}`) }
+    })
+    return snapshot => this.uncounted(() => {
+      // Every subscriber of a layer is handed the same publication.
+      if (snapshot === latest) return
+      latest = snapshot
+      publisher.publishSnapshots(() => snapshot)
+    })
+  }
 }
 
 /**
@@ -114,7 +198,8 @@ export interface OwnerScalePipeline {
  * threads and the history apart (`ownerScaleCounts`), and `streams` threads are ready to stream. Every payload is
  * generated, and every thread list the adapter and the remote host publish is counted (`threadVisits.ts`).
  */
-export async function ownerScalePipeline(root: string, scale: OwnerScale, streams: number, track: OwnerScaleTrack = 'owl'): Promise<OwnerScalePipeline> {
+export async function ownerScalePipeline(root: string, scale: OwnerScale, streams: number, track: OwnerScaleTrack = 'owl',
+  options: OwnerScalePipelineOptions = {}): Promise<OwnerScalePipeline> {
   const owl = track === 'owl'
   // As `heldProvidersOf` answers on each track: Owl holds nothing, stable holds every provider of an Owl feature.
   const held: HeldProviders = owl ? new Set() : new Set(['muse', 'opencode'])
@@ -137,19 +222,29 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   for (let index = state.threads.length; index < counts.threads; index++) state.threads.push(thread(`idle-${index}`, index % 10 === 0 ? records(`idle-${index}`, 40) : undefined))
   for (const project of state.projects) await mkdir(project.path, { recursive: true })
   const adapter = new SendingAdapter(state)
+  const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()))
+  shadows.tap(adapter, 'adapter')
+  const claude = new SottoThreadHost('claude', adapter, registry)
+  shadows.tap(claude, 'identity wrapper')
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
+    hosts: { claude, codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
-      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode') } })
+      opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor') } })
+  shadows.tap(native, 'provider switch')
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
+  shadows.tapAccept(workspace)
+  shadows.tap(workspace, 'workspace publication')
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
   const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
   usage?.start()
-  const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
-    ...(usage ? { usage } : {}) })
+  // Next prompts are an Owl feature (ADR-0132): they hear each thread start and finish from the coordinator's own pass, as
+  // runtime.ts wires them. Nothing here ends a turn on an answer, so no side call is asked.
+  const nextPrompts = owl ? new NextPrompts({ write: async () => null, thread: id => control.liveThread(id), publish: () => undefined }) : undefined
+  const control: AgentControl = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
+    ...(usage ? { usage } : {}), ...(nextPrompts ? { nextPrompts } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
   const localHostId = control.hostId()!
@@ -159,7 +254,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
   await watcher?.recover()
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
+  let roomRecords = 0
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: payload => { roomRecords += historyRecords(payload); return true } })
   const service = new LocalHostService({ control, events: workspace, ...(usage ? { usage } : {}), ...(watcher ? { watcher } : {}) })
   const router: DesktopHostRouter = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, heldProviders: held, streamingPublishCost: owl,
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
@@ -234,9 +330,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const asking = view.host.threads.find(item => item.id === idOf('asking-0'))!
   const question: RequestDraftTarget = { kind: 'thread', ownerId: asking.id, providerId: requestDraftProvider(view.host, asking, view.provider), requestId: 'question-1', questions: QUESTIONS }
   try {
-    // The threads that took part in Watcher's requests: this computer's idle threads and the remote host's, never one
-    // that streams. The first threads are watched.
+    // The threads that took part in Watcher's requests: this computer's idle threads and the remote host's. The threads
+    // that stream took part too and were let go, as a thread Watcher has long driven was (#1450). The first threads are watched.
     const watched = [...streamIds, ...localIds].slice(0, counts.watches)
+    const streamed: WatcherThreadTarget[] = streamIds.map(threadId => ({ hostId: localHostId, threadId }))
     const targets: WatcherThreadTarget[] = [...localIds.slice(counts.watches).map(threadId => ({ hostId: localHostId, threadId })),
       ...remoteThreads.map(item => ({ hostId: REMOTE_HOST_ID, threadId: item.id }))]
     if (watcher) {
@@ -249,13 +346,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         const result = await watcher.watchThread({ target: { hostId: localHostId, threadId } })
         if (result.status !== 'ok') throw new Error(`Watcher did not watch a thread: ${JSON.stringify(result)}`)
       }
-      await control.updateWatcher(record => { addWatcherHistory(record, targets, counts) })
+      await control.updateWatcher(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
     } else {
       // Stable starts no Watcher and keeps the record an Owl build left, whole (ADR-0072).
       control.mutateWatcher(record => {
         record.watches = watched.map((threadId, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
           target: { hostId: localHostId, threadId }, createdAt: AT, generation: 0 }))
-        addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' })
+        addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' }, streamed)
       })
     }
     // The window shows one thread and watches the streams, as after the owner opened it.
@@ -298,7 +395,27 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
     broadcasts: () => broadcasts,
     ownerLookups: () => lookups,
-    resetCounts: () => { broadcasts = 0; lookups = 0 },
+    watcherRoomRecords: () => roomRecords,
+    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
+    threadChanges: () => shadows.report(),
     stop,
   }
+}
+
+/**
+ * The records of Watcher's history a room or a room update carries to the window (#1450): requests, receipts, earlier
+ * Watchers and each watched row's participations, whole or as the entries that changed, whole or in part.
+ */
+function historyRecords(payload: WatcherRoomState | WatcherRoomUpdate): number {
+  const update = 'base' in payload && 'revision' in payload ? payload : undefined
+  const room: Partial<WatcherRoomState> = update ? update.room : payload as WatcherRoomState
+  const entries = (change: WatcherRoomListChange | undefined) => (change?.at.length ?? 0) + (change?.patch?.length ?? 0)
+  const participations = (rows: readonly unknown[]) => rows.reduce<number>((n, row) => n + ((row as { participation?: unknown[] } | undefined)?.participation?.length ?? 0), 0)
+  let records = 0
+  for (const key of ['requests', 'receipts', 'history'] as const) records += (room[key]?.length ?? 0) + entries(update?.lists?.[key])
+  records += participations(room.watchedThreads ?? [])
+  const rows = update?.lists?.watchedThreads
+  records += participations((rows?.at ?? []).map(([, row]) => row))
+  for (const [, patch] of rows?.patch ?? []) records += ((patch.set?.participation as unknown[] | undefined)?.length ?? 0) + entries(patch.lists?.participation)
+  return records
 }

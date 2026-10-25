@@ -2,12 +2,14 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
-import { agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, OPENCODE_ZEN_SOURCE, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageTokenObservation } from '../../shared/usageDashboard'
-import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
+import { mergeAgentActivities, type AgentActivity, type OwnServerTurn } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import { OWN_SERVER_ID_PREFIX, ownServerTurnText, type OwnServer } from '../../shared/ownModelServers'
+import { isHeaderTimeout, ownServerTurnFailure } from '../ownModelServers/turnFailure'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -34,6 +36,7 @@ import { SessionReaper } from './sessionReaper'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import type { ScopedThreadTools } from './threadToolServer'
 import { ThreadMessageLog } from './threadMessageLog'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -185,6 +188,15 @@ const toolEventSchema = ofSession.extend({ id: z.string().min(1), name: z.string
   content: z.unknown().optional(), error: z.looseObject({ type: z.string().optional(), message: z.string().optional() }).optional() })
 const stepStartedSchema = ofSession.extend({ assistantMessageID: z.string().min(1), started: z.number().optional() })
 const executionEndSchema = ofSession.extend({ error: z.looseObject({ type: z.string().optional() }).optional() })
+/**
+ * OpenCode is trying the model source again after a failed request (2.0.31 and 2.1.4): `attempt` numbers the request it
+ * will make next, so the first retry is attempt 2 and the last attempt 11, ten retries over about a minute and a half.
+ */
+const OPENCODE_RETRIES = 10
+/** How many times Sotto asks OpenCode to stop a turn at the five-minute limit, and how far apart, before ending its server. */
+const OWN_SERVER_STOP_TRIES = 4
+const OWN_SERVER_STOP_RETRY_MS = 1_000
+const retryScheduledSchema = ofSession.extend({ attempt: z.number().int().positive(), error: z.unknown().optional() })
 const tokensSchema = z.looseObject({ input: z.number().default(0), output: z.number().default(0), cache: z.looseObject({ read: z.number().default(0) }).optional() })
 const usageSchema = ofSession.extend({ tokens: tokensSchema })
 const stepTokensSchema = z.looseObject({ input: z.number().optional(), output: z.number().optional(), reasoning: z.number().optional(),
@@ -287,6 +299,13 @@ export interface OpenCodeHostOptions {
   heldProviders?: HeldProviders
   /** Usage's startup answer (ADR-0083): count this computer's OpenCode threads. OpenCode reports no account limits. */
   usageEnabled?: boolean
+  /**
+   * The user's own model servers (ADR-0124), read at each process start and given to it as provider blocks. Present only
+   * while the `own-model-servers` Owl answer is on; a headless host has none.
+   */
+  ownServers?: () => Promise<readonly OwnServer[]>
+  /** How far apart Sotto asks again to stop a turn at the five-minute limit; tests shorten it. */
+  ownServerStopRetryMs?: number
 }
 
 /**
@@ -306,8 +325,26 @@ export class OpenCodeHost implements AgentHost {
   /** When each prompt's answer was lost, by its inbox ID, while that still holds its server. */
   private readonly lostPrompts = new Map<string, number>()
   private readonly activePrompts = new Set<string>()
+  /** The Sotto IDs of the models whose catalog lists PDF input, which may take a PDF as part of the prompt (ADR-0131). */
+  private pdfModels = new Set<string>()
   /** The turn each thread is running, by the Sotto ID of the user message that opened it. */
   private readonly activeTurns = new Map<string, { messageId: string }>()
+  /** Threads whose running turn shows a retry of one of the user's own servers, until the server answers again. */
+  private readonly retrying = new Set<string>()
+  /**
+   * Threads whose own server sent nothing within OpenCode's 300 seconds, whose turn Sotto stopped: OpenCode would try a
+   * silent server three more times, about twenty minutes in all, and the thread says it stops waiting at five.
+   */
+  private readonly timedOut = new Set<string>()
+  /** Threads whose stop at the five-minute limit is being asked for now, so a second timeout does not ask twice at once. */
+  private readonly stoppingTimedOut = new Set<string>()
+  /**
+   * Threads whose running turn has had something from the model source since it began: reply text, thinking or tool
+   * work. Only a turn that has not is waiting for the server to start answering.
+   */
+  private readonly heard = new Set<string>()
+  /** The user's own model servers as last read for a process start, for the words a turn on one needs (ADR-0124). */
+  private knownServers: readonly OwnServer[] = []
   private readonly folds = new Map<string, Fold>()
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
@@ -427,13 +464,14 @@ export class OpenCodeHost implements AgentHost {
   }
   private touched(id: string): void { this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1) }
   private readState(id: string): string { return `${this.generation}:${this.revisions.get(id) ?? 'unread'}` }
-  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string): void {
+  private markTurn(id: string, status: AgentActivity['status'], turnId?: string, error?: string, ownServer?: OwnServerTurn): void {
     const thread = this.threads.get(id); if (!thread) return
     const last = this.log.lastUserMessageId(id)
     const turn = turnId ?? last
     if (turn === undefined) return
     thread.activities = markTurnActivity(thread.activities, {
       provider: 'opencode', turnId: turn, status, ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}),
+      ...(ownServer !== undefined ? { ownServer } : {}),
     })
   }
   /** The Sotto turn a record from OpenCode belongs to: the running turn's, or the newest user message's. */
@@ -592,10 +630,11 @@ export class OpenCodeHost implements AgentHost {
     const executable = this.executable
     if (!executable) throw new Error('Connect OpenCode before managing threads.')
     await ensureOpenCodeFolders(this.folders)
+    const servers = await this.ownServers()
     return withFirstServerLock(this.folders, async () => {
       const password = opencodePassword()
       const server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
-        env: opencodeEnvironment(this.environment, this.folders, password), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
+        env: opencodeEnvironment(this.environment, this.folders, password, servers), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
         ledger: this.folders.servers })
       try {
         const client = new OpenCodeClient(server.url, password, this.timeoutMs, closed)
@@ -716,8 +755,101 @@ export class OpenCodeHost implements AgentHost {
   }
 
   /** Asks a client its version, on Sotto's own OpenCode folders, without starting a server. */
-  private readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
-    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()), timeoutMs).catch(() => undefined)
+  private async readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
+    const servers = await this.ownServers()
+    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword(), servers), timeoutMs).catch(() => undefined)
+  }
+  /** The user's own model servers as they are saved now (ADR-0124); none while their Owl answer is off or the record cannot be read. */
+  private async ownServers(): Promise<readonly OwnServer[]> {
+    const servers = this.options.ownServers ? await this.options.ownServers().catch(() => []) : []
+    this.knownServers = servers
+    return servers
+  }
+  /**
+   * The thread's model as one of the user's own servers, for its turn's words (ADR-0124, October 24 amendment): the
+   * server's name, the model's name and the address's host and port. Undefined for every other model, and for all of
+   * them while the Owl feature is off, when OpenCode is given no server.
+   */
+  private ownServerTurn(id: string): OwnServerTurn | undefined {
+    const modelId = this.aliases[id]?.modelId ?? this.threads.get(id)?.modelId
+    if (!modelId?.startsWith(OWN_SERVER_ID_PREFIX)) return undefined
+    const at = modelId.indexOf('/')
+    const server = at > 0 ? this.knownServers.find(item => item.id === modelId.slice(0, at)) : undefined
+    if (!server) return undefined
+    const model = server.models.find(item => item.id === modelId.slice(at + 1))?.name ?? modelId.slice(at + 1)
+    let host: string
+    try { host = new URL(server.address).host } catch { host = server.address }
+    return { name: server.name, model, host }
+  }
+  /** OpenCode is trying the thread's own server again: its running turn says which try, until the server answers. */
+  private ownServerRetry(id: string, entry: ThreadServer, attempt: number, error: unknown): void {
+    const messageId = this.activeTurns.get(id)?.messageId
+    const server = this.ownServerTurn(id)
+    const alias = this.aliases[id]
+    if (!messageId || !server || !alias) return
+    // A server that has not started answering is waited for five minutes, as the thread says, and no longer. One that had
+    // started and then went quiet is left to OpenCode's own tries and words.
+    if (isHeaderTimeout(error) && !this.heard.has(id)) {
+      this.timedOut.add(id); this.retrying.delete(id)
+      if (!this.stoppingTimedOut.has(id)) void this.stopTimedOut(id, entry, alias, messageId, server)
+      return
+    }
+    this.retrying.add(id)
+    this.markTurn(id, 'running', messageId, undefined, { ...server, attempt: Math.min(Math.max(1, attempt - 1), OPENCODE_RETRIES), attempts: OPENCODE_RETRIES })
+  }
+  /**
+   * Stops a turn whose own server sent nothing within OpenCode's five minutes. The interrupt is asked for again, a short
+   * while apart, if OpenCode refuses it or does not answer; the turn is recorded as the server's timeout when OpenCode
+   * says it ended. If OpenCode cannot be made to stop it, the thread's server is ended as a lost one is, and the turn is
+   * recorded as the timeout then, so it never runs on through OpenCode's remaining tries.
+   */
+  private async stopTimedOut(id: string, entry: ThreadServer, alias: Alias, messageId: string, server: OwnServerTurn): Promise<void> {
+    const current = (): boolean => this.timedOut.has(id) && this.processes.get(id) === entry && !entry.closing && this.activeTurns.get(id)?.messageId === messageId
+    this.stoppingTimedOut.add(id)
+    try {
+      for (let attempt = 0; attempt < OWN_SERVER_STOP_TRIES; attempt++) {
+        if (attempt) await new Promise(resolve => setTimeout(resolve, this.options.ownServerStopRetryMs ?? OWN_SERVER_STOP_RETRY_MS))
+        if (!current()) return
+        try {
+          const reply = z.looseObject({ interrupted: z.boolean().optional() }).parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/interrupt`) ?? {})
+          // Nothing was running, so OpenCode will not say the turn ended: Sotto records it itself.
+          if (reply.interrupted === false && current()) this.endTimedOut(id, messageId, server)
+          return
+        } catch { /* Asked again below. */ }
+      }
+      if (!current()) return
+      this.endTimedOut(id, messageId, server)
+      alias.endedTurn = { messageId, outcome: 'failed' }; void this.persist().catch(() => undefined)
+      this.processLost(id, entry)
+    } finally { this.stoppingTimedOut.delete(id) }
+  }
+  private endTimedOut(id: string, messageId: string, server: OwnServerTurn): void {
+    this.timedOut.delete(id); this.retrying.delete(id); this.activeTurns.delete(id)
+    this.endTurn(id, messageId, 'failed', ownServerTurnText('timeout', server), { ...server, failure: 'timeout' })
+    this.emit()
+  }
+  /**
+   * The model source sent something for the running turn. A turn whose own server is being retried goes back to its
+   * work. Cheap on every other update: one set entry that is already there.
+   */
+  private ownServerAnswered(id: string): void {
+    this.heard.add(id)
+    if (!this.retrying.delete(id)) return
+    const messageId = this.activeTurns.get(id)?.messageId
+    const server = this.ownServerTurn(id)
+    if (messageId && server) this.markTurn(id, 'running', messageId, undefined, server)
+  }
+  /** Whether OpenCode is connected, so its processes may be started for a sign-in or a catalog read. */
+  isConnected(): boolean { return this.state.connected }
+  /**
+   * The user's own model servers changed (ADR-0124): every OpenCode process was started with the old list, so each thread
+   * server is outdated, as after a sign-in change, and the sign-in server moves to a fresh one once nothing uses it.
+   */
+  ownServersChanged(): void {
+    if (!this.state.connected) return
+    this.renew()
+    this.signIn.renew()
+    this.emit()
   }
   /**
    * The client to use, with what it said when asked its version: the one the adapter was given, or else `current`, the
@@ -809,6 +941,7 @@ export class OpenCodeHost implements AgentHost {
     const names = new Map(providers.map(provider => [provider.id, provider.name]))
     const sourceOf = (providerId: string): string => providerId === ZEN ? ZEN_NAME : names.get(providerId) ?? providerId
     const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
+    this.pdfModels = new Set(shown.filter(model => model.capabilities.input.includes('pdf')).map(model => `${model.providerID}/${model.id}`))
     this.state.models = shown.map((model): AgentModel => {
       const efforts = orderReasoningEfforts(model.variants.map(variant => variant.id))
       const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
@@ -1117,7 +1250,7 @@ export class OpenCodeHost implements AgentHost {
     delete alias.endedTurn
   }
   /** Settle a turn: its record, the thread's state, and any work it left showing as running. */
-  private endTurn(id: string, messageId: string, outcome: 'completed' | 'failed' | 'interrupted', error?: string): void {
+  private endTurn(id: string, messageId: string, outcome: 'completed' | 'failed' | 'interrupted', error?: string, ownServer?: OwnServerTurn): void {
     const thread = this.thread(id)
     if (this.activeTurns.get(id)?.messageId === messageId || outcome !== 'completed') this.activeTurns.delete(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.removeRequest(pending)
@@ -1126,7 +1259,7 @@ export class OpenCodeHost implements AgentHost {
     thread.lastTurn = { id: messageId, status: outcome }
     if (thread.activities?.length) thread.activities = thread.activities.map(record => record.kind !== 'turn' && record.status === 'running' && record.turnId === messageId
       ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
-    this.markTurn(id, outcome, messageId, error)
+    this.markTurn(id, outcome, messageId, error, ownServer)
   }
 
   /** A user's message as Sotto records it, the same whether it came live or from history, so a resume matches. */
@@ -1138,12 +1271,15 @@ export class OpenCodeHost implements AgentHost {
       ...(origin?.attachments.length ? { attachments: origin.attachments.map(ref => ({ ...ref })) } : {}),
     }
   }
-  /** Record a user's message; returns the Sotto message ID it is recorded under. */
+  /**
+   * Record a user's message, without the note naming its attached files when its origin recorded one (ADR-0131); returns
+   * the Sotto message ID it is recorded under.
+   */
   private recordUser(id: string, inboxId: string, text: string, at: number | undefined): string | undefined {
     const alias = this.aliases[id]; if (!alias) return undefined
-    const message = this.userMessage(alias, inboxId, text, at)
-    this.log.add(id, message)
     const origin = alias.origins.find(candidate => candidate.inboxId === inboxId)
+    const message = this.userMessage(alias, inboxId, readBackUserText(text, () => origin).text, at)
+    this.log.add(id, message)
     if (origin && !origin.confirmed) { origin.confirmed = true; this.lostPrompts.delete(inboxId); void this.persist().catch(() => undefined) }
     return message.id
   }
@@ -1287,11 +1423,13 @@ export class OpenCodeHost implements AgentHost {
           }
           const messageId = this.activeTurns.get(id)?.messageId
           thread.status = 'running'
-          if (messageId) { thread.lastTurn = { id: messageId, status: 'running' }; this.markTurn(id, 'running', messageId) }
+          this.retrying.delete(id); this.timedOut.delete(id); this.heard.delete(id)
+          if (messageId) { thread.lastTurn = { id: messageId, status: 'running' }; this.markTurn(id, 'running', messageId, undefined, this.ownServerTurn(id)) }
           this.emit(); return
         }
         case 'session.text.delta': case 'session.text.ended': {
           const parsed = blockSchema.parse(data)
+          this.ownServerAnswered(id)
           const messageId = opencodeTextMessageId(parsed.assistantMessageID, parsed.ordinal)
           const before = this.fold(id).texts.get(messageId) ?? ''
           const text = event.type === 'session.text.ended' ? parsed.text ?? before : before + (parsed.delta ?? '')
@@ -1302,6 +1440,7 @@ export class OpenCodeHost implements AgentHost {
         }
         case 'session.reasoning.started': case 'session.reasoning.delta': case 'session.reasoning.ended': {
           const parsed = blockSchema.parse(data)
+          this.ownServerAnswered(id)
           const key = `opencode-reasoning-${parsed.assistantMessageID}-${parsed.ordinal}`
           const before = this.fold(id).reasoning.get(key) ?? ''
           const text = event.type === 'session.reasoning.ended' ? parsed.text ?? before : before + (parsed.delta ?? '')
@@ -1310,6 +1449,7 @@ export class OpenCodeHost implements AgentHost {
         }
         case 'session.tool.input.started': case 'session.tool.called': case 'session.tool.success': case 'session.tool.failed': {
           const parsed = toolEventSchema.parse(data)
+          this.ownServerAnswered(id)
           const known = this.fold(id).tools.get(parsed.id)
           const output = opencodeToolOutput(parsed.content)
           const done = event.type === 'session.tool.success' || event.type === 'session.tool.failed'
@@ -1336,13 +1476,30 @@ export class OpenCodeHost implements AgentHost {
           }
           this.emit(true); return
         }
+        case 'session.retry.scheduled': {
+          // Only a turn on one of the user's own servers says it is being tried again; any other source's retry
+          // changes nothing Sotto shows. A retry Sotto cannot read is skipped rather than ending the server.
+          const parsed = retryScheduledSchema.safeParse(data)
+          if (parsed.success) { this.ownServerRetry(id, entry, parsed.data.attempt, parsed.data.error); this.emit(true) }
+          return
+        }
         case 'session.usage.updated': this.usage(thread, usageSchema.parse(data).tokens, 'total'); this.emit(true); return
         case 'session.execution.succeeded': case 'session.execution.failed': case 'session.execution.interrupted': {
           const parsed = executionEndSchema.parse(data)
           const outcome = event.type === 'session.execution.succeeded' ? 'completed' : event.type === 'session.execution.failed' ? 'failed' : 'interrupted'
           const messageId = this.activeTurns.get(id)?.messageId ?? this.log.lastUserMessageId(id)
           this.activeTurns.delete(id)
-          if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? this.sourceRefused(id) : TURN_FAILED : undefined)
+          this.retrying.delete(id)
+          const heard = this.heard.delete(id)
+          // A turn one of the user's own servers let down says how, in place of OpenCode's general words (ADR-0124); one
+          // Sotto stopped after OpenCode's five minutes without a first byte failed on the server's account too. A
+          // timeout after the server had started answering is not "didn't start answering", so it keeps the general words.
+          const timedOut = this.timedOut.delete(id) && outcome !== 'completed'
+          const server = outcome === 'failed' || timedOut ? this.ownServerTurn(id) : undefined
+          const found = server ? timedOut ? 'timeout' : ownServerTurnFailure(data.error) : undefined
+          const failure = found === 'timeout' && heard && !timedOut ? undefined : found
+          if (messageId && server && failure) this.endTurn(id, messageId, 'failed', ownServerTurnText(failure, server), { ...server, failure })
+          else if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? this.sourceRefused(id) : TURN_FAILED : undefined)
           else thread.status = outcome === 'failed' ? 'error' : 'idle'
           this.emit(); return
         }
@@ -1511,7 +1668,7 @@ export class OpenCodeHost implements AgentHost {
         } else if (command.type === 'send' || command.type === 'steer') {
           if (command.skills?.length) throw providerTakesNoSkills('opencode')
           await this.open(command.threadId); this.assertGeneration(generation)
-          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           readForSend()
           const thread = this.thread(command.threadId)
           if (command.expectedLastUserMessageId !== undefined && (this.log.lastUserMessageId(command.threadId) ?? null) !== command.expectedLastUserMessageId) throw new Error('The latest user message changed. Review the thread before replying.')
@@ -1523,12 +1680,16 @@ export class OpenCodeHost implements AgentHost {
           if (thread.requests.length) throw new Error('Answer the pending OpenCode request before sending another prompt.')
           verifyFileMentions(command.text, command.files)
           // Images go as data URIs, which OpenCode stores with the provider session and hands the model itself (ADR-0087).
+          // Any other file is saved into the thread's folder and named in a note after the user's words, and a PDF goes as
+          // a data URI too when the model's catalog lists PDF input and it passes the native rule (ADR-0131).
+          const delivered = await deliverAttachments(alias.cwd, attachments, { nativePdf: this.pdfModels.has(alias.modelId) })
           const files: { uri: string; name: string }[] = []
-          for (const attachment of attachments) files.push({ uri: `data:${attachment.mimeType};base64,${Buffer.from(await attachment.read()).toString('base64')}`, name: attachment.name })
+          for (const attachment of delivered.images) files.push({ uri: `data:${attachment.mimeType};base64,${Buffer.from(await attachment.read()).toString('base64')}`, name: attachment.name })
+          for (const pdf of delivered.nativePdfs) files.push({ uri: `data:application/pdf;base64,${Buffer.from(pdf.bytes).toString('base64')}`, name: pdf.name })
           this.assertGeneration(generation)
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, inboxId: promptId(), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })), steer: command.type === 'steer',
+            attachments: attachmentReferences(attachments), steer: command.type === 'steer',
           }
           const entry = await this.threadProcess(command.threadId)
           await this.toolsGiven(entry)
@@ -1548,7 +1709,7 @@ export class OpenCodeHost implements AgentHost {
           try {
             // The inbox ID is Sotto's, so the prompt is recognised in the stream and in history even when this answer is lost.
             const ack = promptReplySchema.parse(await entry.client!.request('POST', `/api/session/${this.sid(alias)}/prompt`, { body: {
-              id: origin.inboxId, text: command.text, ...(files.length ? { files } : {}), ...(command.type === 'steer' ? { delivery: 'steer' } : {}),
+              id: origin.inboxId, text: withAttachedFilesNote(command.text, delivered.note), ...(files.length ? { files } : {}), ...(command.type === 'steer' ? { delivery: 'steer' } : {}),
             } }))
             if (ack.data.id !== origin.inboxId) throw new OpenCodeUncertain('OpenCode answered for another prompt.')
           } catch (error) {
@@ -1567,7 +1728,7 @@ export class OpenCodeHost implements AgentHost {
           if (command.type === 'send' && !this.activeTurns.has(command.threadId) && thread.lastTurn?.id !== command.messageId) {
             this.activeTurns.set(command.threadId, { messageId: command.messageId })
             thread.status = 'running'; thread.lastTurn = { id: command.messageId, status: 'running' }
-            this.markTurn(command.threadId, 'running', command.messageId)
+            this.markTurn(command.threadId, 'running', command.messageId, undefined, this.ownServerTurn(command.threadId))
           }
           markSendStage(command.commandId, 'acknowledged')
           this.reaper.touch(command.threadId)

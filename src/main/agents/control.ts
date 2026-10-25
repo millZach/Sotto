@@ -7,7 +7,7 @@ import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextW
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
-import { immutableActivities, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
@@ -50,6 +50,7 @@ import { validatePromptAttachments, validateThreadOptions } from './threadOption
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
 import type { ThreadTitleExchange } from '../llm/threadTitle'
+import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
 import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
@@ -72,7 +73,7 @@ import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
-import { parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
+import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
 
@@ -87,6 +88,9 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
+/** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
+const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
+const BROADCAST_ACTIVITIES = Object.freeze([]) as unknown as AgentActivity[]
 const RECORDED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set([
   'connect', 'refresh', 'send', 'steer', 'steer-followup', 'manual-send', 'answer', 'create-thread', 'create-project', 'select-project',
   'select-thread', 'interrupt',
@@ -420,6 +424,8 @@ export class AgentControl {
   private readonly watcherOrigins = new WeakMap<object, WatcherCommandOrigin>()
   /** Delegation's own commands, among the machine commands above: they never reach delegation as the user's or Watcher's. */
   private readonly delegationOrigins = new WeakSet<object>()
+  /** Idle compaction's own commands (ADR-0127), among the machine commands above: Sotto's, never the user's or Watcher's. */
+  private readonly idleCompactions = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
     const identities = [...this.watcher.current ? [this.watcher.current] : [], ...this.watcher.history,
       ...this.watcher.creation ? [this.watcher.creation.identity] : []]
@@ -497,6 +503,19 @@ export class AgentControl {
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
   }
+  /**
+   * Idle compaction's own command (ADR-0127): native compaction of one quiet thread, on that thread's lane. It carries a
+   * main-owned guard, asked again as it dispatches, is never taken for the user's own command, and neither raises nor
+   * clears the window's error. A refusal or failure rejects, and the thread shows a failed compaction as it shows any.
+   */
+  async compactIdleThread(threadId: string, guard: () => void): Promise<void> {
+    const parsed = agentCommandSchema.parse({ type: 'compact-thread', threadId })
+    guard(); this.watcherOrigins.set(parsed, { guard }); this.idleCompactions.add(parsed)
+    const shell = await this.admitCommandShell(parsed)
+    if (shell.error) throw new Error(shell.error)
+  }
+  /** This host's snapshot itself, for a reader that only looks. Never changed by its holder, and never copied to reach it. */
+  hostView(): Readonly<AgentHostSnapshot> { return this.state.host }
   /** Whether the user has words or images waiting in this thread's composer: typing there pauses delegated sends (ADR-0081). */
   hasUserDraft(threadId: string): boolean {
     return (this.state.threadDrafts ?? []).some(draft => draft.threadId === threadId && (draft.text.trim() !== '' || (draft.attachments?.length ?? 0) > 0))
@@ -636,6 +655,8 @@ export class AgentControl {
   private readonly attachmentPreviews: AttachmentPreviews
   /** This host's staged images (ADR-0031); what keeps each one is `ownedAttachments()`. */
   private readonly attachments: AttachmentStore
+  /** What a prompt's attachments are held to here: with `attach-any-file` off, a file is refused even when a handle names one (ADR-0131). */
+  private get attachmentRules(): { readonly acceptsFiles: boolean } { return { acceptsFiles: this.dependencies.attachAnyFile === true } }
   private readonly listeners = new Set<(state: AgentState) => void>()
   private readonly accountChecks = new Map<SubscriptionProvider, Promise<void>>()
   private readonly clients: ProviderClients
@@ -786,7 +807,7 @@ export class AgentControl {
      */
     writeFirstMessageTitle?: (prompt: string) => Promise<string | null>
     /** Local record of a silent failure; never a banner, never shown to the user. */
-    logFailure?: (code: 'client-update-handoff-failed' | 'thread-title-failed' | 'thread-answer-attribution-failed' | 'short-writing-failed', detail: ProviderId | 'failed' | `${ShortTextPurpose} ${ShortTextFailureReason}`) => void
+    logFailure?: (code: 'client-update-handoff-failed' | 'thread-title-failed' | 'thread-answer-attribution-failed' | 'short-writing-failed' | 'next-prompt-failed', detail: ProviderId | 'failed' | 'unreadable' | `${ShortTextPurpose} ${ShortTextFailureReason}`) => void
     /** Defers a coalesced broadcast; injectable so tests own the clock. */
     schedule?: PublishScheduler
     /** What each installed client publishes, and the press that installs it. */
@@ -795,6 +816,8 @@ export class AgentControl {
     locateClient?: (provider: ProviderId) => Promise<string | undefined>
     /** The sentence a send is refused with when an image it names is no longer kept; a headless host names itself. */
     missingAttachment?: string
+    /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
+    attachAnyFile?: boolean
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
      * that is installed and signed in when it starts, except the ones the user turned off, and its refusals point
@@ -808,13 +831,15 @@ export class AgentControl {
     threadStartsEnabled?: boolean
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
+    /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
+    nextPrompts?: NextPromptHooks
   }) {
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
-    this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id))
+    this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
-    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')) })
+    this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
       activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
@@ -825,7 +850,8 @@ export class AgentControl {
     }
     // Compact: it is rewritten before every send.
     this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
-    this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment })
+    this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment,
+      acceptsFiles: dependencies.attachAnyFile === true })
     this.stageInline = inlineStager(this.attachments)
     this.attachmentPreviews = new AttachmentPreviews(dependencies.directory, this.attachments, () => dependencies.historyEnabled?.() !== false, undefined, this.dormantThreadIds)
   }
@@ -1039,6 +1065,7 @@ export class AgentControl {
     const shown = threadIds.filter(id => this.threadAvailable(id))
     // Showing a thread reads its finish and sees its failure (ADR-0092), so both records hear every show.
     const finished = this.finishedUnread.show(shown)
+    this.dependencies.nextPrompts?.shown?.(shown)
     if (!this.failuresSeen.show(shown, this.state.host.threads) && !finished) return false
     this.publish()
     void this.persist().catch(() => undefined)
@@ -1189,16 +1216,29 @@ export class AgentControl {
     return { host: this.state.host, provider: this.state.configuration.provider }
   }
   watcherCommandOutstanding(commandId: string | undefined): boolean { return Boolean(commandId && this.outbox.some(item => item.id === commandId)) }
+  /** Watcher's own workspace folder, and each project folder as `resolve` spells it, worked out once rather than on every shell. */
+  private watcherFolder: string | undefined
+  private readonly resolvedProjectPaths = new Map<string, string>()
   private hideWatcher(state: AgentState): void {
-    const folder = resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
-    state.host.projects = state.host.projects.filter(project => resolve(project.path) !== folder)
+    const folder = this.watcherFolder ??= resolve(join(this.dependencies.directory, 'watcher', 'workspace'))
+    const resolved = (path: string): string => {
+      let known = this.resolvedProjectPaths.get(path)
+      if (known === undefined) {
+        if (this.resolvedProjectPaths.size >= 1_000) this.resolvedProjectPaths.clear()
+        this.resolvedProjectPaths.set(path, known = resolve(path))
+      }
+      return known
+    }
+    // A list that loses nothing is kept as it is, so a broadcast shares the part of the last one that has not changed.
+    const kept = <T>(list: readonly T[], keep: (item: T) => boolean): T[] => (list.every(keep) ? list : list.filter(keep)) as T[]
+    state.host.projects = kept(state.host.projects, project => resolved(project.path) !== folder)
     if (!this.threadAvailable(state.activeThreadId)) { state.activeThreadId = null; state.activeProjectId = null }
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
     for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence'] as const) {
       const records = state[key]
-      if (records) (state as Record<string, unknown>)[key] = records.filter(item => this.threadAvailable(item.threadId))
+      if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
     // Stable can retain dormant receipts beside a full ordinary ledger. Public shells keep their usual bound on either track.
     for (const key of ['deliveredDrafts', 'obsoleteDrafts', 'followupReceipts'] as const) {
@@ -1220,18 +1260,23 @@ export class AgentControl {
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
-    const shown = threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish({
-      ...thread, messages: shareThreads ? [] : EMPTY_MESSAGES,
-      ...(thread.activities === undefined ? {} : { activities: shareThreads ? [] : EMPTY_ACTIVITIES }),
-      summary: this.presentedSummary(thread),
-    })))
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
-      threads: shareThreads ? EMPTY_THREADS : shown } }
-    // Every shell copies containers and keeps strings: several times faster than structuredClone.
-    const state = clonePlainData(bare)
-    if (shared) state.host.models = models
-    if (shareThreads) state.host.threads = shown
-    state.obsoleteDrafts = clonePlainData(this.persistedObsoleteDrafts)
+      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES)))) },
+      obsoleteDrafts: this.persistedObsoleteDrafts }
+    let state: AgentState
+    if (shareThreads) {
+      // Everything but the threads, copied only where it changed since the last broadcast (#1334). The coordinator writes
+      // parts of its state in place, so what changed is found by reading it against the last copy rather than by identity;
+      // that reads without making anything, where a copy on every broadcast made every object again. The copy is frozen,
+      // so the broadcasts that share it are read and never written into, as their thread records already are.
+      const [base] = immutableUpdates([bare], [this.broadcastBase])
+      this.broadcastBase = base
+      state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: this.broadcastThreads(threads) } }
+    } else {
+      // Every other shell is its caller's to change: it copies containers and keeps strings, several times faster than structuredClone.
+      state = clonePlainData(bare)
+      if (shared) state.host.models = models
+    }
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
     state.historyEnabled = this.dependencies.historyEnabled?.() !== false
@@ -1240,6 +1285,44 @@ export class AgentControl {
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     this.hideWatcher(state)
     return state
+  }
+  /** A thread as the shell lists it: its summary in place of its history. */
+  private shellThread(thread: AgentThread, messages: AgentMessage[], activities: AgentActivity[]): AgentThread {
+    return { ...thread, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
+  }
+  /** The non-thread part of the last broadcast's shell, frozen, which the next one is read against. */
+  private broadcastBase: AgentState | undefined
+  /**
+   * Each thread as the last broadcast listed it, by thread, with the record it was made from and how that record's summary
+   * was shown. Watcher's conversations and continued threads are shown through displays the coordinator holds, so a
+   * summary made from their messages is made again whenever a display moves.
+   */
+  private readonly broadcastRecords = new Map<string, { source: AgentThread; display: unknown; revision: number; hostId: string | undefined; record: AgentThread }>()
+  /**
+   * Every thread as a broadcast lists it. A thread whose record is the one the last broadcast listed, with the same finish
+   * and failure marks, is listed as the very record that broadcast carried: frozen, never written into, and made again only
+   * when its thread, a mark or the display its summary came from moved (#1334). It was a new record for every thread on
+   * every broadcast, and the router and the window's encoder then worked out again that most had not changed.
+   */
+  private broadcastThreads(threads: readonly AgentThread[]): AgentThread[] {
+    const records = this.broadcastRecords
+    const display = this.continuationDisplay, revision = this.watcherMessageDisplay?.revision ?? 0, hostId = this.state.host.hostId
+    const shown = threads.map(thread => {
+      let held = records.get(thread.id)
+      if (!held || held.source !== thread || held.display !== display || held.revision !== revision || held.hostId !== hostId) {
+        held = { source: thread, display, revision, hostId, record: Object.freeze(this.shellThread(thread, BROADCAST_MESSAGES, BROADCAST_ACTIVITIES)) }
+        records.set(thread.id, held)
+      }
+      // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
+      const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+      if (marked !== held.record) held.record = Object.freeze(marked)
+      return held.record
+    })
+    if (records.size > threads.length) {
+      const present = new Set(threads.map(thread => thread.id))
+      for (const id of records.keys()) if (!present.has(id)) records.delete(id)
+    }
+    return shown
   }
   /**
    * One thread's history — its messages and the activity beside them — for a window looking at it.
@@ -1509,9 +1592,13 @@ export class AgentControl {
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     return this.attachments.stage(image)
   }
-  /** A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it. */
+  /**
+   * A staged image's bytes, for a composer restoring a chip it holds no copy of; null once this host no longer keeps it.
+   * A file draws no chip, so its bytes are never handed back (ADR-0131).
+   */
   async attachmentContent(digest: string): Promise<AgentAttachmentContent | null> {
-    const mimeType = this.attachments.mimeType(digest)
+    const kept = this.attachments.mimeType(digest)
+    const mimeType = kept !== null && isImageAttachment(kept) ? kept : null
     const bytes = mimeType ? await this.attachments.read(digest) : null
     // A copy of exactly these bytes: a view would carry its whole backing buffer across IPC, which for a small image can be shared.
     return mimeType && bytes ? { mimeType, bytes: new Uint8Array(bytes) } : null
@@ -2255,13 +2342,15 @@ export class AgentControl {
     try {
       const result = await this.clients.install(provider, await this.clientPath(provider), process.env, step => {
         if (step > 1 && !this.disposed) { this.setClientUpdate(provider, { step }); this.publish() }
-      })
+      }, record.behind ? record.published : undefined)
       if (!result.ok) {
         this.setClientUpdate(provider, { state: 'failed', ranAt: new Date().toISOString(), ...(result.detail ? { error: result.detail } : {}),
           ...(result.step && record.steps && record.steps > 1 ? { step: result.step } : {}), ...(result.failure ? { failure: result.failure } : {}),
           ...(result.printed ? { printed: result.printed } : {}) }, false)
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
+          : result.failure === 'not-listed'
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto did not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
@@ -2938,8 +3027,10 @@ export class AgentControl {
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     return pending
   }
+  /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
+  liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
-  private threadHistory(thread: AgentThread): readonly AgentMessage[] {
+  threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
     return this.dependencies.host.threadMessages?.(thread.id) ?? thread.messages
   }
@@ -3143,6 +3234,14 @@ export class AgentControl {
     try { pending = this.commandWhileRunning(command, client, answerDecisionId, validateDraftOwner, composer) }
     catch (error) { releaseAnswer(); throw error }
     this.activeCommands.add(pending)
+    // Whatever was suggested next for a thread is over once main has taken something sent to it; a refused send keeps
+    // it (ADR-0132).
+    const sentTo = command.type === 'manual-send' || command.type === 'steer' || command.type === 'answer' || command.type === 'send'
+      ? explicitThreadId ?? implicitThreadId : undefined
+    if (sentTo && this.dependencies.nextPrompts) {
+      const sentAt = this.dependencies.nextPrompts.sending(sentTo)
+      if (sentAt !== undefined) void pending.then(result => { if (result.error === null) this.dependencies.nextPrompts?.started(sentTo, sentAt) }, () => undefined)
+    }
     const settled = () => { releaseAnswer(); this.activeCommands.delete(pending) }
     void pending.then(settled, settled)
     return pending
@@ -3295,7 +3394,8 @@ export class AgentControl {
     const task = (independent ? this.threadActions.get(laneThreadId) ?? Promise.resolve() : this.serial).catch(() => undefined).then(async () => {
       if (independent) releaseThread = this.mark(this.busyThreads, laneThreadId)
       else this.state.globalLaneBusy = true
-      if (!privateDraftReply) this.state.error = null
+      // Sotto's own idle compaction leaves the window's error as it found it.
+      if (!privateDraftReply && !this.idleCompactions.has(command)) this.state.error = null
       this.publish()
       const turn = RECORDED_COMMAND_TYPES.has(command.type)
         ? this.beginTurn({
@@ -3681,7 +3781,7 @@ export class AgentControl {
             if (latest.status === 'running' || this.waitsOnRequest(latest) || isThreadClosed(latest)
               || isWorkspaceThreadSettled(latest, this.state.host.projects.find(p => p.id === latest.projectId))) throw new Error('The thread changed before dispatch. Review it and resume the queue.')
             this.canAct(threadId)
-            validatePromptAttachments(this.state.host, latest.modelId, item.attachments)
+            validatePromptAttachments(this.state.host, latest.modelId, item.attachments, this.attachmentRules)
             // Asked again right before the provider hears it: a stop or the switch may have come while it was read.
             if (this.wakeUpOutdated(threadId, item)) throw new WakeUpNoLongerDue()
           }
@@ -3817,7 +3917,7 @@ export class AgentControl {
     try {
       const validatePrompt = (): void => {
         validate()
-        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments)
+        validatePromptAttachments(this.state.host, this.thread(command.threadId).modelId, item.attachments, this.attachmentRules)
       }
       validatePrompt()
       if (turn) { turn.threadId = command.threadId; turn.projectId = this.thread(command.threadId).projectId }
@@ -3849,7 +3949,7 @@ export class AgentControl {
       if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before steering.')
       if (thread.archivedAt) throw new Error('This thread is archived. Reopen it before steering.')
       if (!command.text.trim() && !command.attachments?.length) throw new Error('There is no prompt to steer with.')
-      validatePromptAttachments(this.state.host, thread.modelId, command.attachments)
+      validatePromptAttachments(this.state.host, thread.modelId, command.attachments, this.attachmentRules)
     }
     validate()
     // A thread settled while its turn ran is restored by the steer, as by any new work.
@@ -4164,7 +4264,7 @@ export class AgentControl {
         this.observe(); return
       case 'load-earlier-messages': {
         if (!this.dependencies.host.loadEarlierMessages) throw new Error('Earlier messages could not be read. Nothing was lost; refresh and open the thread again.')
-        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId))
+        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId, command.throughMessageId))
         return
       }
       case 'retry-thread-worktree':
@@ -4306,9 +4406,11 @@ export class AgentControl {
           const thread = this.thread(command.threadId)
           if (!capabilitiesForThread(this.state.host, thread).compact || thread.manualCompactionSupported === false) throw new Error('Native manual compaction is unavailable for this thread.')
           if (isThreadClosed(thread) || thread.nativeSessionStarted === false || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its requests before compacting.')
+          // Idle compaction asks again whether the thread is still quiet, up to the provider write.
+          if (this.idleCompactions.has(command)) this.watcherOrigins.get(command)?.guard()
         }
         validate()
-        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId }, turn, validate)
+        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId, ...(this.idleCompactions.has(command) ? { idle: true } : {}) }, turn, validate)
         return
       }
       case 'answer': {
@@ -4674,7 +4776,7 @@ export class AgentControl {
         // that ran while this waited behind a running lane is caught here rather than at the adapter.
         this.attachments.verify(prompt.attachments)
         // Checked before the provider hears anything; kept as a preview only once it has.
-        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments)
+        previewAttachments = validatePromptAttachments(this.state.host, this.thread(prompt.threadId).modelId, prompt.attachments, this.attachmentRules)
       }
       if (command.type === 'answer' && answerRequest && answerQuestions.length && provider) {
         const draftAnswers = answerRequest.questions?.length ? command.questionAnswers : { [answerRequest.id]: { optionIds: [command.answer] } }
@@ -4975,7 +5077,7 @@ export class AgentControl {
       origin?.guard()
       const latest = this.thread(threadId)
       if (!text.trim() && !attachments.length) throw new Error('There is no prompt to send.')
-      validatePromptAttachments(this.state.host, latest.modelId, attachments)
+      validatePromptAttachments(this.state.host, latest.modelId, attachments, this.attachmentRules)
       if (!capabilitiesForThread(this.state.host, latest).submit || !capabilitiesForThread(this.state.host, latest).reconcile) throw new Error('This connection cannot safely send and reconcile a prompt.')
       // Settlement parks an open thread; explicitly prompting it starts fresh work.
       if (latest.archivedAt && Number.isFinite(Date.parse(latest.archivedAt))) throw new Error('This thread is archived. Reopen it before sending a prompt.')
@@ -5026,7 +5128,7 @@ export class AgentControl {
     if (composer) this.validateComposerQuestion(composer)
     const thread = this.thread(draftThreadId)
     if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
-    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments)
+    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
     const text = draftText.trim()
     const draftId = pickedDraftId
     const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
