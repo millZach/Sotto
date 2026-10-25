@@ -219,3 +219,18 @@ describe('what the log tells its adapter changed (ADR-0016, #925)', () => {
     expect(heard.sort()).toEqual(['a:0', 'b:0'])
   })
 })
+
+describe('a thread the log holds nothing for yet (#925)', () => {
+  it('is read the same way the first time as every time after, in both forms, whether or not anything is watched', () => {
+    for (const declared of [false, true]) {
+      const log = new ThreadMessageLog()
+      if (declared) log.observe(['other'])
+      const thread = { id: 'fresh', messages: [] }
+      for (const historyFromEvents of [false, true]) {
+        const first = log.activityThread(thread, historyFromEvents)
+        expect(log.activityThread(thread, historyFromEvents)).toEqual(first)
+        expect(log.publishedThread(thread)).toEqual(log.publishedThread(thread))
+      }
+    }
+  })
+})

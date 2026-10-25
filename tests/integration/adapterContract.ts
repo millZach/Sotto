@@ -220,6 +220,28 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         }
       } finally { for (const form of forms) form.stop() }
     })
+    it('keeps a thread map equal to the activity snapshot from before a thread is first created or read (#925)', withFixtureSkip(skips.activitySnapshots), async () => {
+      // Watching starts before the new thread exists, so whatever the adapter builds lazily the first time it creates or
+      // reads the thread (a held message window, a summary) is published through the change as well as the snapshot.
+      const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
+      const shown = (form = forms[0]!, id = fresh) => form.latest()?.threads.find(t => t.id === id)
+      const fresh = randomUUID()
+      try {
+        await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: fresh, projectId: f.projectId, modelId: f.modelId, title: 'Fresh thread' })
+        await expect.poll(() => forms.every(form => form.map.has(fresh)), { timeout: 12_000 }).toBe(true)
+        // More publications, so a thread read differently the second time shows it.
+        await f.driver.raiseQuestion(sessionId, 'Another thread asks').catch(() => undefined)
+        f.host.observeThreads?.([sessionId, fresh])
+        await f.host.execute({ type: 'send', threadId: fresh, commandId: randomUUID(), messageId: 'fresh-message', text: 'Synthetic prompt' })
+        await expect.poll(() => shown()?.messages.some(m => m.id === 'fresh-message') === true).toBe(true)
+        await f.driver.completeTurn(fresh, 'Completed reply')
+        await expect.poll(() => shown()?.status === 'idle' && (shown(forms[1])?.summary?.lastAssistant?.text ?? '').includes('Completed reply')).toBe(true)
+        for (const form of forms) {
+          expect(form.drift).toEqual([])
+          expect(form.differences()).toEqual([])
+        }
+      } finally { for (const form of forms) form.stop() }
+    })
     it('publishes a thread that went as a removal of it (#925)', withFixtureSkip(skips.activitySnapshots), async () => {
       const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
       try {

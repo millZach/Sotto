@@ -143,8 +143,15 @@ export class ThreadMessageLog {
    * is open, or nothing has said yet what is being looked at.
    */
   private wanted(threadId: string): boolean { return !this.declared || this.watched.has(threadId) || this.pinned.has(threadId) }
-  /** True while this thread's messages are in hand rather than put away. */
-  holding(threadId: string): boolean { return this.tracks.get(threadId)?.messages !== undefined }
+  /**
+   * True while this thread's messages are in hand rather than put away. A thread the log holds nothing for yet counts as
+   * held, as it is once anything reads it: a fresh track holds an empty window. So a read never changes what the next
+   * read of the same thread gives, and a snapshot and a thread change built one after the other agree (#925).
+   */
+  holding(threadId: string): boolean {
+    const track = this.tracks.get(threadId)
+    return track === undefined || track.messages !== undefined
+  }
 
   /** The messages the adapter is working with. Empty once they are put away. */
   messages(threadId: string): AgentMessage[] { return this.track(threadId).messages ?? [] }
