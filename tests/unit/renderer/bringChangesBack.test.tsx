@@ -267,3 +267,14 @@ describe('branch names inside translated sentences (ADR-0123)', () => {
     expect(alert.textContent).not.toMatch(/[⁦-⁩]/u)
   })
 })
+
+describe('a branch name that holds Unicode isolates of its own', () => {
+  it('is kept left to right as one unit, its own isolates inside it', () => {
+    const named = 'feat/⁨إصلاح⁩'
+    mount(child({ worktree: worktree({ branch: named, git: status(named) }) }))
+    const boxes = [...strip().querySelectorAll('bdi[dir="ltr"]')].map(item => item.textContent)
+    expect(boxes[0]).toBe(named)
+    expect(boxes).not.toContain('إصلاح')
+    expect(plainText(`${named} stays`)).toBe(`${named} stays`)
+  })
+})
