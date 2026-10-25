@@ -12,7 +12,7 @@ import { WATCHER_WAKE_UP_PROMPT, watcherNewsText } from '../../src/main/agents/w
 import { watcherWakeUpNote } from '../../src/main/agents/wakeUp'
 import { WatcherPhoneService } from '../../src/main/agents/watcherPhone'
 import { RESUME_NOTE } from '../../src/shared/restartResume'
-import type { AgentThread, ProviderId } from '../../src/shared/agents'
+import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../src/shared/agents'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
 import { countWorkingThreads } from '../../src/shared/workingThreads'
@@ -2010,9 +2010,11 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
  * (ADR-0016, October 22), so the record is replaced in the copy's own thread list rather than written into.
  */
 function reshow(f: Awaited<ReturnType<typeof fixture>>, threadId: string, change: (thread: AgentThread) => AgentThread): void {
-  const threads = f.control.watcherSnapshot().threads
-  const at = threads.findIndex(thread => thread.id === threadId)
-  threads[at] = change(threads[at]!)
+  // The coordinator's host snapshot is replaced, never written into (#925): it finds a thread by an index of its list, and
+  // a host snapshot it did not make itself from the workspace's changes has the next change taken in whole, so the
+  // workspace's next publication says what the thread is, as every publication did.
+  const inside = f.control as unknown as { state: { host: AgentHostSnapshot } }
+  inside.state.host = { ...inside.state.host, threads: inside.state.host.threads.map(thread => thread.id === threadId ? change(thread) : thread) }
 }
 const showLinks = (f: Awaited<ReturnType<typeof fixture>>, threadId: string, links: NonNullable<AgentThread['pullRequests']>): void =>
   reshow(f, threadId, thread => ({ ...thread, pullRequests: links }))
