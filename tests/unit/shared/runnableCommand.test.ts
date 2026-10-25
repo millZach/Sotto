@@ -30,6 +30,22 @@ describe('runnable inline code (ADR-0136)', () => {
     ['echo \u001b[31mred', false],
     ['echo ‮evil', false],
     ['', false],
+    ['const x = 1', false],
+    ['return value', false],
+    ['await fetch(url)', false],
+    ['import os', false],
+    ['def main():', false],
+    ['print hello', false],
+    ['new Map()', false],
+    ['if [ -f x ]; then echo y; fi', false],
+    ['fetch(url)', false],
+    ['node -e console.log(1)', false],
+    ['echo $(date)', true],
+    ['kill $(lsof -t -i:3000)', true],
+    ['Get-ChildItem -Recurse', true],
+    ['Get-Date', true],
+    ['Set-ExecutionPolicy RemoteSigned -Scope CurrentUser', true],
+    ['Get-childitem', false],
   ])('%j runs: %s', (text, runs) => {
     expect(runnableInline(text) !== null).toBe(runs)
   })

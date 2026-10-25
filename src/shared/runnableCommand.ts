@@ -21,9 +21,16 @@ const POWERSHELL_PROMPT = /^(?:[$>] |PS(?: [^>\n]*)?> )/u
 const POWERSHELL = new Set(['powershell', 'pwsh', 'ps1'])
 /** Languages that name a transcript rather than a script: without a prompt line they hold only output. */
 const TRANSCRIPTS = new Set(['console', 'terminal'])
-// A first word a shell can run: a path (`./`, `../`, `/`, `~/`) or a lower-case program name.
+// A first word a shell can run: a path (`./`, `../`, `/`, `~/`) or a lower-case program name. A PowerShell cmdlet below.
 const PATH_START = /^(?:\.{0,2}\/|~\/)/u
 const FIRST_TOKEN = /^(?:(?:\.{0,2}\/|~\/)\S*|[a-z][\w.+-]*)$/u
+// A PowerShell cmdlet, Verb-Noun: `Get-ChildItem`. Never a word of prose, so it runs alone too.
+const CMDLET = /^[A-Z][a-z]+-[A-Z][A-Za-z]+$/u
+// Code, not a command: a span that starts like a statement in JavaScript, TypeScript or Python.
+const CODE_KEYWORDS: ReadonlySet<string> = new Set(['const', 'let', 'var', 'return', 'await', 'async', 'if', 'else', 'for', 'while', 'do', 'switch',
+  'case', 'function', 'class', 'import', 'export', 'from', 'new', 'typeof', 'def', 'print', 'yield'])
+// A call, `fetch(url)`: a word directly followed by a parenthesis. A shell's `$(…)` has no word before it.
+const CALL = /\w\(/u
 
 /** The command a fenced block runs, or null when its language is not a shell's or it cannot run as shown. */
 export function runnableBlock(code: string, language: string | undefined): string | null {
@@ -45,7 +52,9 @@ export function runnableInline(text: string): string | null {
   const command = text.trim()
   if (!command || /[›→]/u.test(command)) return null
   const first = command.split(/\s+/u)[0]!
-  if (!FIRST_TOKEN.test(first)) return null
+  if (CALL.test(command)) return null
+  if (CMDLET.test(first)) return command
+  if (!FIRST_TOKEN.test(first) || CODE_KEYWORDS.has(first)) return null
   // A lone word (`true`, `santa`, `src/shared/owlFeatures.ts`) is a name, not a command; a lone path still runs.
   return /\s/u.test(command) || PATH_START.test(first) ? command : null
 }
