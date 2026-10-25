@@ -61,6 +61,29 @@ final class PhotoTests: XCTestCase {
         let invalid = try decode(StagedImage.self, #"{"id":"a1","name":"x","mimeType":"image/jpeg","sizeBytes":2048,"digest":"NOT-A-DIGEST"}"#)
         XCTAssertFalse(invalid.valid)
     }
+    func testWhetherWatchersBoxTakesPhotosAndWhyNot() throws {
+        let shell = try decode(Shell.self, #"""
+        {"hostId":"h","host":{"hostId":"h","name":"Laptop","projects":[],"threads":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true},
+         "models":[{"id":"sees","name":"Sees","provider":"Claude","ready":true,"supportsImages":true},{"id":"blind","name":"Blind","provider":"Grok","ready":true,"supportsImages":false}]}}
+        """#)
+        func watcher(_ model: String) throws -> WatcherPhoneState.Current {
+            try decode(WatcherPhoneState.Current.self, #"{"target":{"hostId":"h","threadId":"w"},"provider":"claude","modelId":"\#(model)","reasoningEffort":null,"status":"idle","connected":true}"#)
+        }
+        let features = ["attachment-staging", WatcherWire.photosFeature]
+        XCTAssertEqual(PhotoSupport(online: true, watcher: try watcher("sees"), host: shell.host, features: features), .available)
+        XCTAssertEqual(PhotoSupport(online: true, watcher: try watcher("blind"), host: shell.host, features: features), .modelCannot)
+        XCTAssertEqual(PhotoSupport(online: true, watcher: try watcher("gone"), host: shell.host, features: features), .modelUnknown)
+        XCTAssertEqual(PhotoSupport(online: true, watcher: nil, host: shell.host, features: features), .noWatcher)
+        // A computer that stages photos for threads but not for Watcher is a Sotto from before Watcher took them.
+        XCTAssertEqual(PhotoSupport(online: true, watcher: try watcher("sees"), host: shell.host, features: ["attachment-staging"]), .needsUpdate)
+        XCTAssertEqual(PhotoSupport(online: false, watcher: try watcher("sees"), host: shell.host, features: features), .offline)
+        XCTAssertEqual(PhotoSupport.modelCannot.reason(computer: "Laptop", watcher: true),
+                       "Watcher’s model can’t take photos. Change Watcher’s model on Laptop to attach them.")
+        XCTAssertEqual(PhotoSupport.needsUpdate.reason(computer: "Laptop", watcher: true), "Update Sotto on Laptop to send photos to Watcher from this iPhone.")
+        XCTAssertEqual(PhotoSupport.modelUnknown.reason(computer: "Laptop", watcher: true),
+                       "Laptop hasn’t said whether Watcher’s model takes photos. Reconnect and try again.")
+        XCTAssertEqual(PhotoSupport.noWatcher.reason(computer: "Laptop", watcher: true), "Watcher isn’t running on Laptop. Start it there to attach photos.")
+    }
     func testWhetherAThreadTakesPhotosAndWhyNot() throws {
         let shell = try decode(Shell.self, #"""
         {"hostId":"h","host":{"hostId":"h","name":"Laptop","projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true},
