@@ -15,7 +15,7 @@ The journey checked four states at 1600x1000, 1280x800 and 820x560 in dark and l
 
 ## What the app journey does not show
 
-A child on another machine was not run in the app: there is no second machine in the Playwright journey, and no live laptop and forge run was made. That path is proved in `tests/integration/bringBackAcrossMachines.test.ts` over two real clones behind a real socket host, with the branch crossing as bundles: fast-forward, a merge after asking with a fresh move, a stale yes refused, a conflict refused in Git's words, uncommitted work refused before anything crosses, and a test-run snapshot refused. `tests/integration/bringChangesBack.test.ts` covers the host's half (`away`), including the outcome on the parent's `broughtBack`, a dirty parent folder, a parent no longer on its branch, and the incoming ref removed after every press. `tests/unit/main/bringChangesBackRemote.test.ts` covers the desktop's router.
+A child on another machine was not run in the app: there is no second machine in the Playwright journey, and no live laptop and forge run was made. That path is proved in `tests/integration/bringBackAcrossMachines.test.ts` over two real clones behind a real socket host, with the branch crossing as bundles: fast-forward, a merge after asking with a fresh move, a stale yes refused, a conflict refused in Git's words, uncommitted work refused before anything crosses, and a check's snapshot refused. `tests/integration/bringChangesBack.test.ts` covers the host's half (`away`), including the outcome on the parent's `broughtBack`, a dirty parent folder, a parent no longer on its branch, and the incoming ref removed after every press. `tests/unit/main/bringChangesBackRemote.test.ts` covers the desktop's router.
 
 ## Kept evidence
 
