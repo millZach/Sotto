@@ -72,6 +72,12 @@ export const MISMATCHED_ATTACHMENT = 'An image in this message does not match th
  */
 export class AttachmentStore {
   private readonly held = new Map<string, Held>()
+  /**
+   * Content read whole from disk and found to be its digest this run, so a part of it reads only its own bytes
+   * (`readPart`), and a whole read already under way that a part waits on. Content kept again is a new entry, checked again.
+   */
+  private readonly hashed = new WeakSet<Held>()
+  private readonly hashing = new WeakMap<Held, Promise<Buffer | null>>()
   private readonly folder: string
   private readonly index: AtomicJsonStore<Index>
   private serial: Promise<unknown> = Promise.resolve()
@@ -272,7 +278,7 @@ export class AttachmentStore {
     let bytes: Buffer | null = null
     try { bytes = await readFile(this.file(held)) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    if (bytes && createHash('sha256').update(bytes).digest('hex') === digest) return bytes
+    if (bytes && createHash('sha256').update(bytes).digest('hex') === digest) { this.hashed.add(held); return bytes }
     // Content kept again under an image type meanwhile (`keepAsImage`) is read from its new file.
     const current = this.held.get(digest)
     if (current && current !== held && current.mimeType !== held.mimeType) return this.read(digest)
@@ -286,6 +292,39 @@ export class AttachmentStore {
       }).catch(() => undefined)
     }
     return null
+  }
+  /**
+   * At most `length` of the bytes a digest names from `start`, or null when this store no longer keeps them or `start`
+   * is past their end: one part of a sent file for the iPhone's Quick Look (ADR-0131, October 25 amendment). The first
+   * read of content from disk in a run is `read`'s, whole and hashed; after it each part reads only its own bytes, so
+   * opening a file reads and hashes it once rather than once a part. A file that no longer has its size is read whole
+   * again, which lets it go when it is not the content staged; the client checks the joined parts' digest itself.
+   */
+  async readPart(digest: string, start: number, length: number): Promise<Buffer | null> {
+    const held = this.held.get(digest)
+    if (!held || !Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 1 || start >= held.sizeBytes) return null
+    const end = Math.min(held.sizeBytes, start + length)
+    if (held.memory) return held.memory.subarray(start, end)
+    if (!this.hashed.has(held)) {
+      let whole = this.hashing.get(held)
+      if (!whole) {
+        whole = this.read(digest).finally(() => this.hashing.delete(held))
+        this.hashing.set(held, whole)
+      }
+      return (await whole)?.subarray(start, end) ?? null
+    }
+    try {
+      const file = await open(this.file(held), 'r')
+      try {
+        if ((await file.stat()).size === held.sizeBytes) {
+          const part = Buffer.alloc(end - start)
+          const { bytesRead } = await file.read(part, 0, part.length, start)
+          if (bytesRead === part.length) return part
+        }
+      } finally { await file.close() }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    this.hashed.delete(held)
+    return this.readPart(digest, start, length)
   }
   /** The type a digest was staged as, so a reader can say what the bytes are. */
   mimeType(digest: string): string | null { return this.held.get(digest)?.mimeType ?? null }

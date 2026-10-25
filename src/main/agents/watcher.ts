@@ -11,7 +11,8 @@ import { countWorkingThreads, workingThreadsWarning } from '../../shared/working
 import { rebuildReservations } from './watcherRecords'
 import { isWatcherWorkActive, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
-import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
+import { WATCHER_COMPACT_AT } from '../../shared/settings'
+import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
@@ -410,6 +411,8 @@ export class WatcherService implements WatcherControlHooks {
      */
     settleFinished?: () => boolean
     settleFinishedAfterMs?: number
+    /** Compact Watcher at (`watcherCompactAtTokens`), read at every look; absent, Watcher compacts at 400K (#1189). */
+    compactAt?: () => number
     /** What Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
     log?: (event: WatcherAutoSettleEvent) => void }) {
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
@@ -436,7 +439,7 @@ export class WatcherService implements WatcherControlHooks {
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
   /**
-   * Compacts Watcher's conversation once it passes WATCHER_COMPACT_AT_TOKENS (#1189), when Watcher rests: no turn, no card,
+   * Compacts Watcher's conversation once it passes Compact Watcher at (#1189), when Watcher rests: no turn, no card,
    * no compaction, nothing queued for it. Every Watcher call rereads its whole conversation, so its cost grows with it.
    * One try per message Sotto sends Watcher, so a compaction that fails, or leaves the context high until Watcher's next
    * turn reports it, is tried again only after that turn. A compaction that finished, this one or the user's, owes Watcher its state: the
@@ -447,7 +450,7 @@ export class WatcherService implements WatcherControlHooks {
     const seen = this.lookAtState()
     if (!seen) return
     const { snapshot, thread, tokens } = seen
-    if (tokens === null || tokens <= WATCHER_COMPACT_AT_TOKENS || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
+    if (tokens === null || tokens <= this.compactAt() || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
     if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
       || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
     if (this.compactTried === this.sendsToWatcher) return
@@ -481,6 +484,17 @@ export class WatcherService implements WatcherControlHooks {
       this.lastTokens = { tokens, modelId, at }
     }
     return { snapshot, thread, tokens }
+  }
+  /** Where Watcher's conversation is compacted, as Settings has it now. */
+  private compactAt(): number { return this.options.compactAt?.() ?? WATCHER_COMPACT_AT.default }
+  /**
+   * Whether Sotto's idle compaction (ADR-0127) may compact this thread as Watcher's: it is Watcher's conversation now, and
+   * Watcher rests as its own compaction needs, with no compaction or change of its own under way and no news queued for
+   * it. The thread's own turn, cards, queue and draft are idle compaction's to check, as for any thread.
+   */
+  restsForIdleCompaction(threadId: string): boolean {
+    return !this.closed && this.view().current?.target.threadId === threadId && !this.compactingNow && !this.changing
+      && !this.options.control.watcherWakeUpQueued()
   }
   /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
   private contextTokens(thread: AgentThread): number | null {
@@ -615,8 +629,11 @@ export class WatcherService implements WatcherControlHooks {
       for (const watch of record.watches ?? []) if (ended.includes(watch.id)) watch.pausedByUserMessageId = null
     }).catch(() => undefined)
   }
-  /** A setting was saved: Settle finished threads looks now, not at the next update. */
-  settingsChanged(): void { this.lookForFinished() }
+  /**
+   * A setting was saved: Settle finished threads looks now, not at the next update, and so does compaction, against a
+   * Compact Watcher at that may now be below Watcher's conversation; the room shows the new point.
+   */
+  settingsChanged(): void { this.lookForFinished(); this.compactWhenDue(); this.publish() }
   /**
    * Settle finished threads: at most once a second while updates come, a look for a watched thread whose work is done.
    * Each look reads the setting, so turning it off stops the next one and turning it on settles what already qualifies.
@@ -1105,7 +1122,7 @@ export class WatcherService implements WatcherControlHooks {
       receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
-    room.context = current ? { tokens: this.contextTokens(current), compactAt: WATCHER_COMPACT_AT_TOKENS, canCompact: this.canCompact(snapshot, current),
+    room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
       compacting: compactionPending(current.compaction) } : null
     room.state = { watching: this.watching(room.watchedThreads), kept: this.kept.read(), ...this.kept.readable() ? {} : { unread: true as const } }
     if (current && !live.creation) room.newWatcher = this.newWatcherAnswer(live, current)
@@ -2601,7 +2618,7 @@ export class WatcherService implements WatcherControlHooks {
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settlesFinishedThreads: this.settlesFinishedThreads(),
           pendingSettles: shown.flatMap(row => row.settle ?? []), kept, staleNotes,
-          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
+          contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: this.compactAt() }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }
       const hostId = input.hostId ?? input.target?.hostId ?? input.project?.hostId

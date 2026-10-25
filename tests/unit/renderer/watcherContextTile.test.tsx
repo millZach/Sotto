@@ -57,10 +57,10 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
   }
 }
 
-function renderRoom(room: WatcherRoomState, answer: AgentState | null = agentState()) {
+function renderRoom(room: WatcherRoomState, answer: AgentState | null = agentState(), platform: 'win32' | 'darwin' = 'win32') {
   const state = agentState()
   vi.mocked(useOptionalApp).mockReturnValue({
-    navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
+    navigation: 'watcher', platform, windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async request => request.type === 'compact-thread' ? answer : state)
@@ -100,6 +100,23 @@ describe('the Sotto tile in Watcher’s room', () => {
     renderRoom(roomState({ current: null, currentOptions: null, context: null }))
     // Named for the running build, as the sidebar's mark is: a stable run here.
     expect(await screen.findByRole('img', { name: 'Sotto' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: TILE })).toBeNull()
+  })
+
+  it('wears Watcher’s owl instead of the app mark on macOS, and still opens its panel', async () => {
+    renderRoom(roomState(), undefined, 'darwin')
+    const tile = await screen.findByRole('button', { name: TILE })
+    expect(tile.querySelector('svg.watcher-owl')).not.toBeNull()
+    expect(tile.querySelector('svg[data-tile]')).toBeNull()
+    fireEvent.click(tile)
+    expect(await screen.findByRole('dialog', { name: 'Watcher’s context' })).toBeInTheDocument()
+  })
+
+  it('shows no tile at all before Watcher starts on macOS', async () => {
+    renderRoom(roomState({ current: null, currentOptions: null, context: null }), undefined, 'darwin')
+    expect(await screen.findByRole('heading', { name: 'Watcher' })).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Sotto' })).toBeNull()
+    expect(document.querySelector('.watcher-head .watcher-head__tile')).toBeNull()
     expect(screen.queryByRole('button', { name: TILE })).toBeNull()
   })
 

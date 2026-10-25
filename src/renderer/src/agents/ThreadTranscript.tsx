@@ -45,7 +45,7 @@ import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scroll
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
-import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
+import { compactionOf, isStep, liveTurnId, newsWorkLabel, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
 /** No message is left behind while no fork card is open. */
@@ -74,9 +74,11 @@ function ActivityGroups({ groups, context, outcome }: {
 }): ReactNode {
   return groups?.map(group => {
     const compaction = compactionOf(group)
+    // The running turn's steps fold under its working line at the end of the transcript; only its boundaries stay here.
     return compaction
       ? <CompactionLine key={group.key} record={compaction} />
-      : <ActivityGroupView key={group.key} group={group} live={group.turnId === context.liveTurn} threadRunning={context.running}
+      : group.turnId === context.liveTurn ? null
+      : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
         connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} />
   }) ?? null
 }
@@ -114,8 +116,10 @@ function QuestionWords({ text }: { readonly text: string }): ReactNode {
  * activity group, in the order they happened. The turn's own error stays in view, and so does every question a
  * folded reply asked, quoted under the line with a way back to the reply that asked it (#1019).
  */
-function TurnWork({ headline, delegated, open, setOpen, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
+function TurnWork({ headline, steps, delegated, open, setOpen, turn, failed, changes, onDisclosure, onSeek, lifted, who, children }: {
   readonly headline: string; readonly turn?: AgentActivity | undefined; readonly changes: readonly TurnChange[]
+  /** How many steps the fold holds, after the headline ("Worked for 2m 04s · 12 steps"). */
+  readonly steps: number
   /** The turn's delegated work in a few words, after the headline, so a closed fold still says what it holds. */
   readonly delegated?: ReactNode
   /** Whether the fold is open, held by the turn, which keeps what still works under its reply only while the fold is closed. */
@@ -142,7 +146,7 @@ function TurnWork({ headline, delegated, open, setOpen, turn, failed, changes, o
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
         onClick={event => { onDisclosure(event.currentTarget); setOpen(value => !value) }}>
-        <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{delegated}</span>
+        <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
       <TurnChangedFiles changes={changes} onDisclosure={onDisclosure} />
@@ -421,7 +425,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
   return <>
     {turn.user ? article(turn.user) : null}
-    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
+    <TurnWork headline={workHeadline(lifecycle, context.running, turn.user?.createdAt, moments)} steps={groups.reduce((count, group) => count + group.records.filter(isStep).length, 0)} delegated={<DelegatedWorkSummary views={delegations} />} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
       <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
@@ -936,7 +940,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const bodyHost = useMemo<ActivityBodyHost | null>(() => bodyHostName === undefined ? null : { threadId: thread.id, hostName: bodyHostName, connected: bodyHostConnected },
     [thread.id, bodyHostName, bodyHostConnected])
   const showsActivity = placement.trailing.length > 0 || liveTurn !== null
-  const lastGroup = placement.trailing.at(-1) ?? (lastMessageId === undefined ? undefined : placement.after.get(lastMessageId)?.at(-1))
 
   const showEarlier = (): void => {
     const element = scroller.current
@@ -994,7 +997,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
               : <div className="thread-workspace__empty"><MessageSquare size={26} strokeWidth={1.3} aria-hidden="true" /><h3>{thread.compaction?.status === 'running' ? 'Compacting the context.' : thread.status === 'running' ? 'The agent is working.' : 'What is next for this thread?'}</h3><p>{thread.status === 'running' ? 'New messages will appear here.' : 'Write a prompt below to continue.'}</p></div>}
         {/* A prompt on its way sits where it will be read, and the working line under it counts from the press. */}
         {sending.map(({ item, status }) => <PendingMessage key={item.draftId} draftId={item.draftId} submission={item} status={status} row={row} state={state} command={command} store={store} />)}
-        <LiveActivity thread={thread} connected={row.connected} adjacentRecordId={lastGroup ? nestActivities(lastGroup.records).at(-1)?.record.id : undefined} sendingSince={sendingSince} />
+        {/* Its opened steps read cut bodies whole from their host, as the rows above do. */}
+        <ActivityBodyContext.Provider value={bodyHost}>
+          <LiveActivity thread={thread} connected={row.connected} provider={row.provider} onDisclosure={onDisclosure} sendingSince={sendingSince} />
+        </ActivityBodyContext.Provider>
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </OwnServerTurnContext.Provider></div>
