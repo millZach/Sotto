@@ -68,7 +68,7 @@ import { FailuresSeen } from './failuresSeen'
 import { FinishedUnread } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
-import { withoutLegacyManagement, type HostAnswerTarget } from '../../shared/hostProtocol'
+import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
@@ -1584,6 +1584,14 @@ export class AgentControl {
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const dataUrl = await this.attachmentPreviews.preview(this.state.host, request.threadId, request.messageId, request.attachmentId)
     return dataUrl === null ? null : { dataUrl }
+  }
+  /**
+   * One part of a sent attached file, for the iPhone's Quick Look (ADR-0131, October 25 amendment): never an image, and
+   * only one the message carries and this host keeps. Each part is read whole and checked against its digest, so a part
+   * is never cut from bytes that changed since the last.
+   */
+  attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> {
+    return this.attachmentPreviews.filePart(this.state.host, request)
   }
   /**
    * Keeps an image's bytes once, on this host, and answers with the handle a draft carries instead of them

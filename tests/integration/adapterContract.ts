@@ -224,13 +224,16 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       // Watching starts before the new thread exists, so whatever the adapter builds lazily the first time it creates or
       // reads the thread (a held message window, a summary) is published through the change as well as the snapshot.
       const forms = [false, true].map(form => watchThreadChanges(f.host, form, true))
-      const shown = (form = forms[0]!, id = fresh) => form.latest()?.threads.find(t => t.id === id)
+      const shown = (form = forms[0]!, id: string = fresh) => form.latest()?.threads.find(t => t.id === id)
       const fresh = randomUUID()
       try {
         await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: fresh, projectId: f.projectId, modelId: f.modelId, title: 'Fresh thread' })
         await expect.poll(() => forms.every(form => form.map.has(fresh)), { timeout: 12_000 }).toBe(true)
-        // More publications, so a thread read differently the second time shows it.
-        await f.driver.raiseQuestion(sessionId, 'Another thread asks').catch(() => undefined)
+        // More publications, so a thread read differently the second time shows it. The question shows before the next
+        // driver action is written: a fake reads one action at a time from one file, and an action written while one of its
+        // hosts is still taking the question can be removed with it, so the turn below would never end.
+        await f.driver.raiseQuestion(sessionId, 'Another thread asks')
+        await expect.poll(() => shown(forms[0], sessionId)?.requests.length).toBe(1)
         f.host.observeThreads?.([sessionId, fresh])
         await f.host.execute({ type: 'send', threadId: fresh, commandId: randomUUID(), messageId: 'fresh-message', text: 'Synthetic prompt' })
         await expect.poll(() => shown()?.messages.some(m => m.id === 'fresh-message') === true).toBe(true)

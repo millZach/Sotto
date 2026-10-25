@@ -5,8 +5,10 @@ import { formatTokenCount } from '../../../shared/threadUsage'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
+import { useOptionalApp } from '../state/AppContext'
 import { useAgents } from '../agents/AgentContext'
 import type { WatcherRoom } from './watcherRoom'
+import { WatcherOwl } from './WatcherOwl'
 
 export const WATCHER_CONTEXT_LABEL = 'Watcher’s context and state'
 /** How close to the compaction point Watcher's context is before the tile carries its dot and the panel says so. */
@@ -46,10 +48,12 @@ function StateGroup({ label, items }: { readonly label: string; readonly items: 
  * The Sotto Owl tile in Watcher's header, once Watcher runs (#1189, Zach's pick C): a button with a thin bar under it
  * that fills toward the point where Sotto compacts Watcher's conversation, and a dot once it is close. It opens a panel
  * under it with the numbers, Compact context, and Watcher's state, which compaction keeps. Escape closes the panel and
- * returns focus to the tile; a press outside closes it and leaves focus where that press put it.
+ * returns focus to the tile; a press outside closes it and leaves focus where that press put it. On macOS, where no
+ * app mark sits in the window's corner, the button wears Watcher's owl instead of the mark.
  */
 export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): ReactNode {
   const agents = useAgents()
+  const mac = useOptionalApp()?.platform === 'darwin'
   const [open, setOpen] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -107,7 +111,7 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
   return <div className="watcher-context" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
     <button ref={tile} type="button" className="watcher-head__tile watcher-context__tile tt-focusable" aria-label={WATCHER_CONTEXT_LABEL} title={WATCHER_CONTEXT_LABEL}
       aria-describedby={summaryId} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
-      <SottoMark className="thread-nav__tile" />
+      {mac ? <WatcherOwl size={24} /> : <SottoMark className="thread-nav__tile" />}
       {showBar ? <span className="watcher-context__bar" aria-hidden="true">
         <i data-fill={fill} style={facts.compacting ? undefined : { width: `${Math.round((facts.share ?? 0) * 100)}%` }} />
       </span> : null}

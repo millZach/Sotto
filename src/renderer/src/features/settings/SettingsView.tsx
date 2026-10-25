@@ -531,7 +531,7 @@ export function SettingsView({
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
-          <SidebarTop />
+          <SidebarTop platform={platform} />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}><Trans comment="The Settings page's heading, at the top of its rail.">Settings</Trans></h1>
           <SettingsFindField query={findQuery} onQueryChange={setFindQuery} inputRef={findInputRef}
