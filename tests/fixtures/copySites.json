@@ -31,6 +31,10 @@
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },
+  "src/main/agents/deepseek.ts": {
+    "cloneHostSnapshot(": 1,
+    "cloneActivitySnapshot(": 1
+  },
   "src/main/agents/devin.ts": {
     "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
