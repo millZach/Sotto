@@ -22,6 +22,8 @@ export interface ShellDictationState {
 
 // Only reviewed copy can reach the file. Neither a renderer error message nor
 // a provider's response is accepted, even if a caller carries extra fields.
+// The file is written to disk, so its copy stays English (ADR-0123); the shell
+// pill has no interface language of its own yet.
 const nothingRecordedDetail = {
   MIC_PERMISSION_DENIED: 'Microphone access was denied. Allow it, then try again.',
   MIC_START_FAILED: 'The microphone could not start. Try again.',

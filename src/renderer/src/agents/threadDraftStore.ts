@@ -1,4 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
+import { plural, t } from '@lingui/core/macro'
 import type { AgentSkillReference } from '../../../shared/agentSkills'
 import type { AgentFileReference } from '../../../shared/agentFiles'
 import { MAX_DELIVERED_DRAFTS, agentAttachmentHandlesSchema, agentThreadDraftSchema, isImageAttachment, type AgentAttachmentHandle, type AgentCommand, type AgentDelivery, type AgentState } from '../../../shared/agents'
@@ -45,14 +46,20 @@ export interface ScreenshotReadPort {
   addLate?(images: readonly AgentAttachmentHandle[], failure: string | null): void
 }
 
-const counted = (count: number, one: string, many: string): string => count === 1 ? one : many.replace('#', String(count))
 /** Why late screenshots were left out: the draft no longer takes screenshots at all, or had no room for them. */
 function lateScreenshotsLeftOut(count: number, reason: 'answering' | 'unsupported' | 'full'): string {
-  const which = counted(count, 'A screenshot added before you moved to another thread', '# screenshots added before you moved to another thread')
-  const were = counted(count, 'was', 'were')
-  if (reason === 'answering') return `${which} ${were} not added, because this draft now answers a question.`
-  if (reason === 'unsupported') return `${which} ${were} not added, because this thread's model does not read screenshots.`
-  return `${which} did not fit in this draft and ${were} not added. Remove an attachment and add ${counted(count, 'it', 'them')} again.`
+  if (reason === 'answering') return plural(count, {
+    one: 'A screenshot added before you moved to another thread was not added, because this draft now answers a question.',
+    other: '# screenshots added before you moved to another thread were not added, because this draft now answers a question.',
+  })
+  if (reason === 'unsupported') return plural(count, {
+    one: 'A screenshot added before you moved to another thread was not added, because this thread\'s model does not read screenshots.',
+    other: '# screenshots added before you moved to another thread were not added, because this thread\'s model does not read screenshots.',
+  })
+  return plural(count, {
+    one: 'A screenshot added before you moved to another thread did not fit in this draft and was not added. Remove an attachment and add it again.',
+    other: '# screenshots added before you moved to another thread did not fit in this draft and were not added. Remove an attachment and add them again.',
+  })
 }
 
 export interface ThreadComposerSnapshot {
@@ -144,7 +151,7 @@ const combineDrafts = (content: readonly Pick<ComposerDraft, 'text' | 'attachmen
 const PLACE_SAVE_PASSES = 3
 /** How a leftover draft went into a composer: saved there, not confirmed, or refused for passing one prompt's limits. */
 export type PlaceResult = 'saved' | 'unsaved' | 'too-long'
-const SAVE_ERROR = 'Could not confirm this draft was saved. Keep your text and images and try Save again.'
+const saveError = (): string => t`Could not confirm this draft was saved. Keep your text and images and try Save again.`
 const key = (threadId: string, draftId: string): string => `${threadId}\n${draftId}`
 const isEmpty = (draft: ComposerDraft): boolean => draft.text === '' && draft.attachments.length === 0
 const persistence = (state: AgentState, threadId: string, draftId: string): ThreadComposerSnapshot['save'] =>
@@ -315,7 +322,7 @@ export class ThreadDraftStore {
       const draftId = this.uuid()
       this.submissionList = [...this.submissionList, { ...batch, threadId, draftId, mode: 'send', submittedAt: 0,
         startedAt: new Date().toISOString(), resolved: true, notSent: true, recovered: true,
-        error: 'This prompt was kept after a new thread was refused. Use Restore prompt to bring it back. Nothing was sent.',
+        error: t`This prompt was kept after a new thread was refused. Use Restore prompt to bring it back. Nothing was sent.`,
         ...(index === 0 ? { restoredAs } : {}) }]
     }
     this.emit(new Set([threadId]))
@@ -444,7 +451,7 @@ export class ThreadDraftStore {
         if (published && (status === 'saved' || !entry.saved)) {
           // A local in-flight request can precede main's first evidence. Once
           // confirmed, a late failed response cannot revoke that confirmation.
-          const error = status === 'unsaved' && entry.saving !== current.draftId ? SAVE_ERROR : null
+          const error = status === 'unsaved' && entry.saving !== current.draftId ? saveError() : null
           if (entry.saved !== (status === 'saved') || entry.error !== error) {
             entry.saved = status === 'saved'; entry.error = error; changed.add(threadId)
           }
@@ -533,7 +540,7 @@ export class ThreadDraftStore {
       current.saved ||= status === 'saved'
       // A save reply proves durability, not that its publication has reached the window.
       // Only receive() may mark the revision observed; an older queued shell cannot clear it.
-      current.error = current.saved || status === 'saving' ? null : SAVE_ERROR
+      current.error = current.saved || status === 'saving' ? null : saveError()
       this.emit(new Set([threadId]))
     }
     let result: Promise<AgentState | null>
@@ -733,7 +740,7 @@ export class ThreadDraftStore {
     entry.observed = true
     entry.saved = status === 'saved'
     entry.saving = null
-    entry.error = status === 'unsaved' ? SAVE_ERROR : null
+    entry.error = status === 'unsaved' ? saveError() : null
   }
 
   private emit(threads: ReadonlySet<string>): void {

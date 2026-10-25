@@ -1,3 +1,5 @@
+import { plural, t } from '@lingui/core/macro'
+
 import type { AgentClientHost, AgentFollowup, AgentMessage, AgentThread } from '../../../shared/agents'
 import type { AgentBabysitEnded, AgentBabysitting, BabysitEndedReason } from '../../../shared/babysitting'
 import { pullRequestKey } from '../../../shared/gitPullRequests'
@@ -38,14 +40,18 @@ export function offersBabysitting(clientHosts: readonly Pick<AgentClientHost, 'h
 /** Pull request numbers as a reader says them: "#74", "#74 and #76", "#74, #76 and #78". */
 export function pullRequestNumbers(numbers: readonly number[]): string {
   const named = numbers.map(number => `#${number}`)
-  return named.length <= 1 ? named.join('') : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`
+  if (named.length <= 1) return named.join('')
+  const first = named.slice(0, -1).join(', '), last = named.at(-1)
+  return t({ message: `${first} and ${last}`, comment: 'Pull request numbers: {first} is one or more numbers joined by commas, {last} the last one.' })
 }
 
 /** The sidebar row's state word for a thread that babysits, where it would say Done: "Babysitting #74". */
 export function babysittingWord(thread: Pick<AgentThread, 'babysitting'>): string | undefined {
   const numbers = (thread.babysitting ?? []).map(item => item.number)
   if (numbers.length === 0) return undefined
-  return numbers.length > 2 ? `Babysitting ${numbers.length} pull requests` : `Babysitting ${pullRequestNumbers(numbers)}`
+  const count = numbers.length
+  const named = pullRequestNumbers(numbers)
+  return count > 2 ? plural(count, { other: 'Babysitting # pull requests' }) : t`Babysitting ${named}`
 }
 
 const clockTime = localeFormatter({ hour: 'numeric', minute: '2-digit' })
@@ -62,7 +68,10 @@ export function babysitClock(iso: string, now = new Date()): string {
 function babysitAt(iso: string, now: Date): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''
-  return at.toDateString() === now.toDateString() ? `at ${time(at)}` : `on ${day(at)} at ${time(at)}`
+  const clock = time(at)
+  if (at.toDateString() === now.toDateString()) return t({ message: `at ${clock}`, comment: 'When babysitting ended today, as in "Ended at 4:05 pm".' })
+  const date = day(at)
+  return t({ message: `on ${date} at ${clock}`, comment: 'When babysitting ended before today, as in "Ended on Oct 7 at 4:05 pm".' })
 }
 
 /**
@@ -72,16 +81,26 @@ function babysitAt(iso: string, now: Date): string {
  */
 export function endedWords(ended: Pick<AgentBabysitEnded, 'number' | 'reason' | 'endedAt'>, now = new Date()): string {
   const at = babysitAt(ended.endedAt, now)
+  const number = ended.number
   // "Ended at 3:07 pm, after …", or "Ended after …" when the time cannot be read.
-  const lead = at ? `Ended ${at},` : 'Ended'
-  const words: Record<BabysitEndedReason, string> = {
-    merged: `${lead} after #${ended.number} merged.`,
-    closed: `${lead} after #${ended.number} was closed.`,
-    'comment-limit': `${lead} after ten wake-ups in a row brought only comments.`,
-    unreadable: `${at ? `Ended ${at}` : 'Ended'}. Sotto could not read #${ended.number} from GitHub for about 16 minutes.`,
-    'switched-off': `${lead} when Let agents babysit pull requests was turned off in Settings.`,
+  const reason: BabysitEndedReason = ended.reason
+  switch (reason) {
+    case 'merged': return at
+      ? t({ message: `Ended ${at}, after #${number} merged.`, comment: '{at} is "at 4:05 pm" or "on Oct 7 at 4:05 pm".' })
+      : t`Ended after #${number} merged.`
+    case 'closed': return at
+      ? t({ message: `Ended ${at}, after #${number} was closed.`, comment: '{at} is "at 4:05 pm" or "on Oct 7 at 4:05 pm".' })
+      : t`Ended after #${number} was closed.`
+    case 'comment-limit': return at
+      ? t({ message: `Ended ${at}, after ten wake-ups in a row brought only comments.`, comment: '{at} is "at 4:05 pm" or "on Oct 7 at 4:05 pm".' })
+      : t`Ended after ten wake-ups in a row brought only comments.`
+    case 'unreadable': return at
+      ? t({ message: `Ended ${at}. Sotto could not read #${number} from GitHub for about 16 minutes.`, comment: '{at} is "at 4:05 pm" or "on Oct 7 at 4:05 pm".' })
+      : t`Ended. Sotto could not read #${number} from GitHub for about 16 minutes.`
+    case 'switched-off': return at
+      ? t({ message: `Ended ${at}, when Let agents babysit pull requests was turned off in Settings.`, comment: '{at} is "at 4:05 pm" or "on Oct 7 at 4:05 pm". "Let agents babysit pull requests" is a setting\'s name.' })
+      : t({ message: 'Ended when Let agents babysit pull requests was turned off in Settings.', comment: '"Let agents babysit pull requests" is a setting\'s name.' })
   }
-  return words[ended.reason]
 }
 
 /**
@@ -107,19 +126,22 @@ export function babysitLine(options: {
 }): BabysitLine {
   const { thread, pullRequest, agent, offered, now = new Date() } = options
   const current = babysittingOf(thread, pullRequest.url)
+  const number = pullRequest.number
   if (current) {
     const since = babysitClock(current.startedAt, now)
-    return { kind: 'babysitting', title: since ? `Babysitting since ${since}` : 'Babysitting',
-      detail: `${current.startedBy === 'user' ? 'Started by you' : `Started by ${agent}`}. Sotto sends this thread a wake-up when #${pullRequest.number} needs it.`,
-      stop: `Stop babysitting #${pullRequest.number}` }
+    return { kind: 'babysitting', title: since ? t`Babysitting since ${since}` : t`Babysitting`,
+      detail: current.startedBy === 'user'
+        ? t`Started by you. Sotto sends this thread a wake-up when #${number} needs it.`
+        : t({ message: `Started by ${agent}. Sotto sends this thread a wake-up when #${number} needs it.`, comment: '{agent} is the thread\'s provider, such as Codex.' }),
+      stop: t`Stop babysitting #${number}` }
   }
   const ended = babysitEndedOf(thread, pullRequest.url)
   if (!ended) return null
   const words = endedWords(ended, now)
-  const dismiss = `Dismiss why babysitting #${pullRequest.number} ended`
+  const dismiss = t`Dismiss why babysitting #${number} ended`
   return pullRequest.state === 'open'
-    ? { kind: 'ended', title: 'Not babysitting', detail: offered ? `${words} Babysit pull request is under More pull request actions.` : words, dismiss }
-    : { kind: 'ended', title: 'Babysitting ended', detail: words, dismiss }
+    ? { kind: 'ended', title: t`Not babysitting`, detail: offered ? t({ message: `${words} Babysit pull request is under More pull request actions.`, comment: '{words} says why babysitting ended. "Babysit pull request" and "More pull request actions" name a menu item and its menu.' }) : words, dismiss }
+    : { kind: 'ended', title: t`Babysitting ended`, detail: words, dismiss }
 }
 
 /**
@@ -142,7 +164,7 @@ export function babysitReadout(thread: Pick<AgentThread, 'babysitting' | 'pullRe
     since: babysitClock(first.startedAt, now),
     title: babysat.map(item => {
       const since = babysitClock(item.startedAt, now)
-      return `${named(item)}\n${since ? `Babysitting since ${since}` : 'Babysitting'}`
+      return `${named(item)}\n${since ? t`Babysitting since ${since}` : t`Babysitting`}`
     }).join('\n'),
   }
 }

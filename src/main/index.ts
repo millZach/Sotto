@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
@@ -1037,10 +1038,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     hosts: { host: id => desktopHosts.jobHost(id), provider: (id, provider) => desktopHosts.providerStatus(id, provider),
       refresh: (id, provider) => desktopHosts.refreshProvider(id, provider),
       subscribe: listener => { const off = [hostRouter.subscribeChanges(listener), desktopHosts.subscribe(() => listener())]; return () => { for (const item of off) item() } } },
-    busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? `An agent is setting up ${setup.name} now. Stop that setup first. Nothing was started.` : undefined } })
+    busy: (): string | undefined => { const setup = hostSetup.state(); return setup && (setup.phase === 'starting' || setup.phase === 'running') ? t`An agent is setting up ${{ host: setup.name }} now. Stop that setup first. Nothing was started.` : undefined } })
   const hostSetup: HostSetup = new HostSetup({ version: hostVersion,
     hosts: { check: connection => desktopHosts.check(connection), add: connection => desktopHosts.setupAdd(connection), forget: id => desktopHosts.forgetSaved(id),
-      attempt: id => desktopHosts.attempt(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
+      attempt: id => desktopHosts.attempt(id), attemptInEnglish: id => desktopHosts.attemptInEnglish(id), cancelAttempt: id => desktopHosts.cancelAttempt(id), savedAs: (target, port) => desktopHosts.savedAs(target, port) },
     threads: agentJobThreads, busy: (): string | undefined => providerJobs.busySentence() })
   const hostSetupTools = new HostSetupToolServer(agentJobTools(hostSetup, providerJobs))
   quitHandles.providerJobs = providerJobs
@@ -1141,7 +1142,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   quitHandles.phoneAccess = phoneAccess
   void phoneAccess.start().catch(() => logOperational('phone-access-start-failed'))
   const requestDrafts: RequestDraftService = new RequestDraftService(userDataPath, owner => requestDraftOwnerState(owner, agentControl, hostRouter), async (target, decisionId) => {
-    if (target.kind !== 'thread') throw new Error('Standalone chats are no longer available.')
+    if (target.kind !== 'thread') throw new Error(t`Standalone chats are no longer available.`)
     const key = parseHostEntityKey(target.ownerId)
     if (key && key.hostId !== agentControl.hostId()) await hostRouter.refreshRequestDraft(target, decisionId)
     else await agentControl.refreshRequestDraft(key?.id ?? target.ownerId, target.requestId)
@@ -1648,6 +1649,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         installApplicationMenu()
         windows.sendToMain(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
         windows.sendToWidget(INTERFACE_LANGUAGE_CHANGED, interfaceLanguage.current())
+        // Main's long-lived words follow at once: a host's connect failure, a host update's failure and Add host's question.
+        desktopHosts.languageChanged()
+        hostUpdates.languageChanged()
+        hostSetup.languageChanged()
       }
       // Each provider's own sub-agents follow the worker roles (#1042): Codex's role files are written again for the
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
@@ -1984,7 +1989,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         chooseExportPath: async defaultName => {
           if (e2eConfiguration !== null) return join(userDataPath, defaultName)
           const parent = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())
-          const options = { defaultPath: defaultName, filters: [{ name: 'Theme', extensions: ['json'] }] }
+          const options = { defaultPath: defaultName, filters: [{ name: t({ message: 'Theme', comment: 'The file type a theme is exported as, in the save dialog' }), extensions: ['json'] }]
+ }
           const result = parent ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
           return result.canceled || !result.filePath ? null : result.filePath
         },

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { expect, it } from 'vitest'
-import { parseSshResolution, quoteRemoteArgument, validateSshHost } from '../../../src/main/hosts/sshConfiguration'
+import { parseSshResolution, quoteRemoteArgument } from '../../../src/main/hosts/sshConfiguration'
+import { validateSshHost } from '../../../src/main/hosts/sshHostValidation'
 import { HOST_NODE_RANGE, HOST_STOP_DRAIN_MS, HOST_STOP_REPLY_MS, LAUNCH_SCRIPT_SOURCE, launchScriptCommand } from '../../../src/main/hosts/launchScript'
 const config = { target: 'user@forge', installPath: '/opt/sotto' }
 it.each(['forge', 'user@forge', 'user-name@forge.tailnet.ts.net', '127.0.0.1', 'user@[::1]'])('accepts an SSH host spec: %s', target => {

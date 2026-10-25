@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomBytes } from 'node:crypto'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import type { AgentVisual } from '../../shared/visuals'
@@ -55,7 +56,7 @@ export class VisualPageStore {
    * diagram does (ADR-0056).
    */
   open(request: VisualPageRequest): VisualPageResult {
-    if (!this.readPage(request.threadId, request.visualId)) return { ok: false, reason: 'Sotto no longer has this page, so it is not shown.' }
+    if (!this.readPage(request.threadId, request.visualId)) return { ok: false, reason: t`Sotto no longer has this page, so it is not shown.` }
     this.sweep()
     while (this.waiting.size >= VISUAL_PAGE_TOKENS_MAX) this.waiting.delete(this.waiting.keys().next().value!)
     const token = randomBytes(32).toString('base64url')

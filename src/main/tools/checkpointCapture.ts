@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core'
+import { t } from '@lingui/core/macro'
 import type { BigIntStats } from 'node:fs'
 import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -15,6 +17,32 @@ const COUNT_MESSAGE = `This working copy exceeds the ${FILE_LIMIT.toLocaleString
 const SIZE_MESSAGE = `This working copy exceeds the checkpoint size limit (${TOTAL_BYTE_LIMIT / MIB} MiB total, ${FILE_BYTE_LIMIT / MIB} MiB per file).`
 /** Git refused to list the folder: it is not in a repository, or Git does not trust the repository's owner. */
 const UNLISTED_MESSAGE = 'Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.'
+const UNSAFE_NAME_MESSAGE = 'This working copy contains a file name that checkpoint storage cannot safely represent.'
+const HARD_LINK_MESSAGE = 'Checkpoint capture requires regular files without hard links.'
+
+/**
+ * A capture's refusal as the Changes panel shows it. The English is what a checkpoint keeps on disk as its reason and
+ * what Watcher reads; this says it in the interface language shown now (ADR-0123). Anything else is shown as written.
+ */
+export function shownCaptureMessage(message: string): string {
+  switch (message) {
+    case COUNT_MESSAGE: {
+      // Grouped by the reader's language, as the English is grouped by en-US.
+      const limit = new Intl.NumberFormat(i18n.locale).format(FILE_LIMIT)
+      return t`This working copy exceeds the ${limit}-file checkpoint limit.`
+    }
+    case SIZE_MESSAGE: {
+      const total = TOTAL_BYTE_LIMIT / MIB, file = FILE_BYTE_LIMIT / MIB
+      return t`This working copy exceeds the checkpoint size limit (${total} MiB total, ${file} MiB per file).`
+    }
+    case UNLISTED_MESSAGE: return t`Git cannot list the files in this working copy, so no checkpoint was taken. Checkpoints need a folder inside a Git repository that Git trusts.`
+    case LINK_MESSAGE: return t`Checkpoint paths cannot follow symbolic links or directory junctions.`
+    case UNSAFE_NAME_MESSAGE: return t`This working copy contains a file name that checkpoint storage cannot safely represent.`
+    case HARD_LINK_MESSAGE: return t`Checkpoint capture requires regular files without hard links.`
+    case INVALID_REQUEST: return t`This tool request is invalid. Refresh the tools panel.`
+  }
+  return message
+}
 /** `lstat` and directory checks are cheap and many; reads hold up to 8 MiB each, so fewer run at once. */
 const STAT_CONCURRENCY = 32
 const READ_CONCURRENCY = 8
@@ -289,7 +317,7 @@ export class CheckpointCapture {
       return check
     }
     const entries = await mapConcurrently<string, BigIntStats | Refusal | null>(paths, STAT_CONCURRENCY, async path => {
-      if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', 'This working copy contains a file name that checkpoint storage cannot safely represent.', [path, ''])
+      if (['__proto__', 'constructor', 'prototype'].includes(path)) return refuse('blocked', UNSAFE_NAME_MESSAGE, [path, ''])
       // The path cannot be watched; the nearest directory that can be changes its listing when the path is renamed or removed.
       if (!valid(path)) {
         let directory = parentOf(path)
@@ -307,7 +335,7 @@ export class CheckpointCapture {
       if (entry instanceof Refusal) return entry
       const path = paths[index]!
       if (entry.isSymbolicLink()) return refuse('blocked', LINK_MESSAGE, [path, parentOf(path)])
-      if (!entry.isFile() || entry.nlink > 1n) return refuse('blocked', 'Checkpoint capture requires regular files without hard links.', [path, parentOf(path)])
+      if (!entry.isFile() || entry.nlink > 1n) return refuse('blocked', HARD_LINK_MESSAGE, [path, parentOf(path)])
       if (entry.size > BigInt(FILE_BYTE_LIMIT)) { folder.oversized = [path]; return refuse('too-large', SIZE_MESSAGE, [path]) }
       total += entry.size
       if (total > BigInt(TOTAL_BYTE_LIMIT)) { folder.oversized = this.largest(paths, entries); return refuse('too-large', SIZE_MESSAGE, folder.oversized) }

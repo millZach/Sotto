@@ -1,5 +1,8 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { FolderOpen, SlidersHorizontal } from 'lucide-react'
+import { i18n } from '@lingui/core'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../../shared/newThreadDefaults'
 import { chosenModelId, resolveModel } from '../../../shared/modelCatalog'
@@ -22,6 +25,7 @@ import './agents.css'
  * permission that lets a thread act without asking, because that host does not let this computer answer.
  */
 function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
+  const { t } = useLingui()
   const configuration = state.configuration
   const models = newThreadDefaultsCatalog(state)
   const modelId = newThreadDefaultModelId(state)
@@ -30,32 +34,41 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   const reasoning = configuration.newThreadReasoningEffort || model?.defaultReasoningEffort || ''
   const efforts = effortChoices(model, reasoning)
   const chosenMode = configuration.newThreadRuntimeMode
-  const providerLabel = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider
+  const provider = (model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider) ?? t({ message: 'This provider', comment: 'Stands for a provider whose name is not known, at the start of a sentence.' })
   // An unset option at the top, so a chosen default can go back to the provider's own once it is set.
-  const permissionOptions = [{ id: '', label: 'Provider default' }, ...RUNTIME_MODE_ORDER.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
+  const permissionOptions = [{ id: '', label: t`Provider default` }, ...RUNTIME_MODE_ORDER.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode] }))]
   let fitNote: string | null = null
-  if (model?.providerModes?.length) fitNote = `${providerLabel ?? 'This provider'} uses its own permission profiles; a new thread starts on its first.`
+  if (model?.providerModes?.length) fitNote = t({ message: `${provider} uses its own permission profiles; a new thread starts on its first.`, comment: '{provider} is a provider\'s name.' })
   else if (chosenMode) {
     const resolved = resolveNewThreadPermission(model, chosenMode)
-    if (resolved.nearestFit && resolved.runtimeMode) fitNote = `${providerLabel ?? 'This provider'} has no "${RUNTIME_LABELS[chosenMode]}", so its threads start on "${RUNTIME_LABELS[resolved.runtimeMode]}".`
+    if (resolved.nearestFit && resolved.runtimeMode) {
+      const chosen = RUNTIME_LABELS[chosenMode], fit = RUNTIME_LABELS[resolved.runtimeMode]
+      fitNote = t({ message: `${provider} has no "${chosen}", so its threads start on "${fit}".`, comment: '{provider} is a provider\'s name; {chosen} and {fit} are permission modes.' })
+    }
   }
   const holding = (state.connections ?? []).filter(connection => connection.kind === 'remote' && connection.connected
     && newThreadOptionsOn(state, connection.hostId).permission.heldBack).map(connection => connection.name)
-  const heldNote = holding.length === 0 ? null
-    : `${new Intl.ListFormat('en', { type: 'conjunction' }).format(holding)} ${holding.length === 1 ? 'doesn’t' : 'don’t'} let this computer answer permission requests yet, so ${holding.length === 1 ? 'its' : 'their'} new threads start on "${RUNTIME_LABELS['approval-required']}".`
+  const count = holding.length
+  // The names are joined the interface language's way, "a and b" or its own words for it.
+  const hosts = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(holding)
+  const asking = RUNTIME_LABELS['approval-required']
+  const heldNote = count === 0 ? null : plural(count, {
+    one: `${hosts} doesn’t let this computer answer permission requests yet, so its new threads start on "${asking}".`,
+    other: `${hosts} don’t let this computer answer permission requests yet, so their new threads start on "${asking}".`,
+  })
   const save = (patch: Extract<AgentCommand, { type: 'configure' }>['patch']): void => { void command({ type: 'configure', patch }) }
   return <div className="account-row account-row--chips">
-    <span className="account-row__heading"><strong>New threads start with</strong><span>Model, reasoning effort and permissions.</span></span>
+    <span className="account-row__heading"><strong>{t`New threads start with`}</strong><span>{t`Model, reasoning effort and permissions.`}</span></span>
     <fieldset className="account-row__control" data-setting="thread-defaults">
-      <legend className="tt-visually-hidden">New threads start with</legend>
+      <legend className="tt-visually-hidden">{t`New threads start with`}</legend>
       <ModelPicker models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
       {efforts.length > 0 && <EffortPicker value={reasoning} options={efforts} disabled={false}
         onChange={effort => save({ newThreadReasoningEffort: effort })} defaultValue={model?.defaultReasoningEffort} modelName={model?.name} />}
-      <ChoiceChip label="Default permissions for new threads" placeholder="Provider default" value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}
+      <ChoiceChip label={t`Default permissions for new threads`} placeholder={t`Provider default`} value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}
         onChange={mode => save({ newThreadRuntimeMode: (mode || null) as AgentRuntimeMode | null })} />
     </fieldset>
-    {fitNote ? <p className="account-row__note">{fitNote}</p> : null}
-    {heldNote ? <p className="account-row__note">{heldNote}</p> : null}
+    {fitNote ? <p className="account-row__note tt-paragraph">{fitNote}</p> : null}
+    {heldNote ? <p className="account-row__note tt-paragraph">{heldNote}</p> : null}
   </div>
 }
 
@@ -66,6 +79,7 @@ function SavedField({ label, value, onSave, secret = false, placeholder, heading
   /** The setting it changes, for Find a setting (`data-setting`, settingsPages.ts). */
   readonly setting?: string
 }): ReactNode {
+  const { t } = useLingui()
   const [draft, setDraft] = useState(value)
   const [error, setError] = useState(false)
   useEffect(() => { setDraft(value) }, [value])
@@ -73,14 +87,15 @@ function SavedField({ label, value, onSave, secret = false, placeholder, heading
   return <label className="agent-saved-field">{shown}<input aria-label={label} data-setting={setting} value={draft} disabled={disabled} type={secret ? 'password' : 'text'} autoComplete="off" placeholder={placeholder ?? ''} onChange={event => { setDraft(event.target.value); setError(false) }} onBlur={() => {
     if (draft === value) return
     void onSave(draft).then(ok => { setError(!ok); if (ok && secret) setDraft('') }).catch(() => setError(true))
-  }} aria-invalid={error} />{error ? <span role="alert">Could not save. Check the value and try again.</span> : null}</label>
+  }} aria-invalid={error} />{error ? <span role="alert">{t`Could not save. Check the value and try again.`}</span> : null}</label>
 }
 
 export function AgentSetupFields(): ReactNode {
+  const { t } = useLingui()
   const agents = useOptionalAgents()
   const state = agents?.state
   const command = agents?.command
-  if (!state || !command) return <p>Preparing agent configuration…</p>
+  if (!state || !command) return <p className="tt-paragraph">{t`Preparing agent configuration…`}</p>
   const configuration = state.configuration
   const save = async (patch: Partial<AgentConfiguration>, hostId?: string): Promise<boolean> => {
     const result = await command({ type: 'configure', patch, ...(hostId ? { hostId } : {}) }); return result !== null && result.error === null
@@ -89,23 +104,26 @@ export function AgentSetupFields(): ReactNode {
   const computers = (state.connections?.length ?? 0) > 1 ? state.connections ?? [] : null
   // Two of Settings → Threads' cards: what new threads start with, and where new projects go.
   return <div className="account-settings">
-    <SettingsGroup title="New threads" icon={SlidersHorizontal} rows={false} note={computers
-      ? 'New threads start with these on every connected computer. Change them for one thread in its composer.'
-      : 'New threads start with these. Change them for one thread in its composer.'}>
+    <SettingsGroup title={t`New threads`} icon={SlidersHorizontal} rows={false} note={computers
+      ? t`New threads start with these on every connected computer. Change them for one thread in its composer.`
+      : t`New threads start with these. Change them for one thread in its composer.`}>
       <div className="settings-rows account-rows">
         <NewThreadDefaultsRow state={state} command={command} />
         <ProviderUpgradeNotice state={state} command={command} />
       </div>
     </SettingsGroup>
-    <SettingsGroup title="Projects" icon={FolderOpen} rows={false} {...(computers ? { note: 'Where a new project goes. Each computer has its own folder.' } : {})}>
+    <SettingsGroup title={t({ message: 'Projects', comment: 'A Settings card about where new projects go.' })} icon={FolderOpen} rows={false} {...(computers ? { note: t`Where a new project goes. Each computer has its own folder.` } : {})}>
       <div className="settings-rows account-rows">
-        {computers ? computers.map(computer => <SavedField key={computer.hostId} setting="projects-directory" heading={computer.name}
-          label={`Default projects directory on ${computer.kind === 'local' ? 'this computer' : computer.name}`}
-          description={computer.connected ? 'Default projects directory' : `Connect ${computer.name} to change its projects directory.`} disabled={!computer.connected}
-          value={state.host.clientHosts?.find(host => host.hostId === computer.hostId)?.projectsDirectory ?? ''} onSave={projectsDirectory => save({ projectsDirectory }, computer.hostId)} />)
-          : <SavedField setting="projects-directory" label="Default projects directory" value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
+        {computers ? computers.map(computer => {
+          const computerName = computer.name
+          return <SavedField key={computer.hostId} setting="projects-directory" heading={computer.name}
+            label={computer.kind === 'local' ? t`Default projects directory on this computer` : t({ message: `Default projects directory on ${computerName}`, comment: '{computerName} is the name of a saved host.' })}
+            description={computer.connected ? t`Default projects directory` : t({ message: `Connect ${computerName} to change its projects directory.`, comment: '{computerName} is the name of a saved host.' })} disabled={!computer.connected}
+            value={state.host.clientHosts?.find(host => host.hostId === computer.hostId)?.projectsDirectory ?? ''} onSave={projectsDirectory => save({ projectsDirectory }, computer.hostId)} />
+        })
+          : <SavedField setting="projects-directory" label={t`Default projects directory`} value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
       </div>
     </SettingsGroup>
-    {state.error ? <p className="agent-error" role="alert">{state.error}</p> : null}
+    {state.error ? <p className="agent-error tt-paragraph" role="alert">{state.error}</p> : null}
   </div>
 }

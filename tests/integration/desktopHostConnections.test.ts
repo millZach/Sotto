@@ -149,6 +149,8 @@ describe('Add host, the switch and reconnect on launch', () => {
     await fixture.manager.command({ type: 'add', host: connection() })
     expect(fixture.manager.get().adding).toMatchObject({ phase: 'error', step: 'sign-in' })
     await fixture.manager.command({ type: 'cancel-add', id: fixture.manager.get().adding!.id })
+    // Each failure's words go with the attempt they were said for: a cancelled add keeps none of them.
+    expect((fixture.manager as unknown as { failures: Map<string, unknown> }).failures.size).toBe(0)
     await add()
     const unapproved = new SshFailure('tailscale-unapproved')
     failures.push(unapproved)

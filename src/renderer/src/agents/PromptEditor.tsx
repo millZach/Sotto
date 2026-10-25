@@ -9,6 +9,7 @@ import { Slice } from '@tiptap/pm/model'
 import { closeHistory } from '@tiptap/pm/history'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { useLingui } from '@lingui/react/macro'
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor, type NodeViewProps } from '@tiptap/react'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import type { SkillSigil } from '../../../shared/providerProfile'
@@ -22,11 +23,12 @@ export { promptSelection, setPromptSelection, type PromptEditorElement, type Pro
 
 const Catalog = createContext<AgentSkillCatalog | undefined>(undefined)
 function SkillView({ node }: NodeViewProps): ReactNode {
+  const { t } = useLingui()
   const catalog = useContext(Catalog)
   const name = node.attrs.name as string, path = node.attrs.path as string
   const skill = catalog?.skills.find(item => item.name === name && item.path === path)
   return <NodeViewWrapper as="span" contentEditable={false} data-skill-token={node.attrs.token}>
-    <SkillPill name={name} token={node.attrs.token as string} description={skill?.description} scope={skill ? skillScopeLabel(skill.scope) : undefined} />
+    <SkillPill name={name} token={node.attrs.token as string} description={skill?.description} scope={skill ? t(skillScopeLabel(skill.scope)) : undefined} />
   </NodeViewWrapper>
 }
 const Skill = Node.create({
