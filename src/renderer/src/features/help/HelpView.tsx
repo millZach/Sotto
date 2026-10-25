@@ -87,6 +87,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
               <div><dt>Search transcripts</dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
               <div><dt>Paste manually</dt><dd><kbd className="tt-kbd">{linux ? 'Super' : modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
+            <p>Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed.</p>
           </section>
           <section className="tt-panel">
             <div className="tt-panel__header"><h2>About</h2></div>

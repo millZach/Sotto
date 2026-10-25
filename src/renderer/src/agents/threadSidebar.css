@@ -20,15 +20,15 @@
   .thread-nav--mac .thread-nav__top { padding-right: 5px; }
 }
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
-   down). On macOS the traffic lights take the left end of the row, and the narrowest expanded width does not hold
-   the wordmark beside the actions: the mark stands alone. */
+   down). On macOS the traffic lights take the left end of the row and no mark sits beside them: a spacer stands
+   in the brand's place and keeps the actions at the row's right end. */
 .thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
+.thread-nav__spacer { flex: 1 1 auto; min-width: 0; }
 .thread-nav__glyph { flex: none; width: 18px; height: 18px; }
 /* Sotto Owl: the mark alone as the brand, larger, in the room the wordmark leaves. */
 .thread-nav__tile { flex: none; width: 24px; height: 24px; }
 .thread-nav__brand:has(.thread-nav__tile) { min-width: 24px; }
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav--mac .thread-nav__wordmark { display: none; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
 
@@ -69,7 +69,7 @@
 /* A project group: a bold title with its actions on hover, then its rows flush under it. */
 .thread-folder { margin: 0 0 14px; }
 .thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
-.thread-folder__head:hover { background: var(--threads-hover); }
+.thread-folder__head:hover, .thread-folder__head[data-peeking] { background: var(--threads-hover); }
 .thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; }
 .thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
 /* Expanded, the rows themselves say the group is open; collapsed, the chevron is the only sign left. */
@@ -84,7 +84,7 @@
 .thread-folder__actions .thread-nav__action { width: 22px; height: 22px; }
 /* Row and folder actions stay reachable by keyboard and appear on hover, focus and the open row. */
 .thread-folder__actions, .thread-nav__row-actions { opacity: 0; }
-.thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions,
+.thread-folder__head:hover .thread-folder__actions, .thread-folder__head:focus-within .thread-folder__actions, .thread-folder__head[data-peeking] .thread-folder__actions,
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { opacity: 1; }
 /* Reserve the actions' width even before hover, so neither the name nor the host can sit under them. */
 .thread-folder__actions { flex: none; align-items: center; }
@@ -132,11 +132,15 @@
 .thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
 
 /* The status ring: an outline while the thread is idle, a ring that turns while it works, amber when it wants
-   you, and green with a filled centre for a run that finished while you were looking somewhere else. */
+   you, green with a filled centre for a run that finished while you were looking somewhere else, and an hourglass
+   while it is done but something in the background will wake it. */
 .thread-nav__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline, var(--tt-border)); border-radius: 50%; }
 .thread-nav__ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
 .thread-nav__ring[data-state='needs'] { border: 2px solid var(--tt-attention); }
 .thread-nav__ring[data-unseen] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); mask: none; }
+/* Done, but babysitting or a monitoring task will wake it: an hourglass in the activity colour, which never moves. */
+.thread-nav__ring[data-background] { display: grid; place-items: center; border: 0; border-radius: 0; color: var(--tt-activity); }
+.thread-nav__ring[data-background] svg { display: block; }
 /* A thread whose provider is unreachable is not turning, whatever its last state said. */
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-nav__ring[data-state='working']:not([data-disconnected], [data-unseen]) { animation: thread-ring 1.5s linear infinite; }
@@ -188,7 +192,17 @@
 .thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
 /* A closed folder's dots sit just before the count, which stays last and so keeps the column's edge. */
 .thread-nav__indicators + .thread-folder__count { margin-left: 0; }
-.thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: hidden; }
+.thread-folder__head:is(:hover, :focus-within, [data-peeking]) .thread-folder__count { visibility: hidden; }
+/* The folder peek (Owl): a closed folder rested on opens in place as a preview, under a guide line on the sunken
+   surface so it never reads as opened. Its foot says Preview and offers the real opening. */
+.thread-folder__preview { margin: 2px 0 4px 17px; padding: 2px 2px 4px 8px; border-left: 2px solid var(--tt-border); background: var(--tt-surface-sunken); }
+.thread-folder__preview-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: 11.5px; list-style: none; }
+.thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 11.5px; cursor: pointer; }
+.thread-folder__preview-action:hover { background: var(--threads-hover); color: var(--tt-text); }
+@keyframes thread-folder-preview { from { opacity: 0; transform: translateX(-4px); } }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
+}
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
 .thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }
 .thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
@@ -223,7 +237,10 @@
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
-.thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 8px 0; }
+.thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
+/* The rail hides the switch, so the foot's hairline is its first row: it tops the foot, 8px over the page links. */
+.thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
+.thread-nav__rail .thread-nav__foot-rule { margin: 0 0 2px; }
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }

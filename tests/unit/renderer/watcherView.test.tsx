@@ -565,7 +565,7 @@ describe("Watcher's room", () => {
     fireEvent.click(screen.getByRole('button', { name: 'All threads, 9. Show the list' }))
     fireEvent.click(screen.getByRole('button', { name: 'Open Grok voice previews beside Watcher' }))
     const beside = await screen.findByRole('region', { name: 'Grok voice previews' })
-    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s' })
+    const work = within(beside).getByRole('button', { name: 'Worked for 2m 04s · 1 step' })
     work.focus()
     fireEvent.click(work)
     expect(work).toHaveAttribute('aria-expanded', 'true')
@@ -598,7 +598,7 @@ describe("Watcher's room", () => {
     await paneReady()
     fireEvent.click(screen.getByRole('button', { name: 'Open Streaming WAV stall at its failed turn' }))
     const beside = await screen.findByRole('region', { name: 'Streaming WAV stall' })
-    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s' })
+    const failed = within(beside).getByRole('button', { name: 'Failed after 2m 04s · 1 step' })
     await waitFor(() => expect(failed).toHaveFocus())
     expect(failed.closest('[data-turn-outcome="failed"]')).toHaveTextContent('The playback test failed again.')
   })
@@ -821,7 +821,7 @@ describe('a watched thread', () => {
     return bridge
   }
 
-  it('shows the owl after its provider logo in its row and its pane, and says what watching does, with Stop watching', async () => {
+  it('shows the owl after its provider logo in its row and its pane, with Watch pressed and nothing under the composer', async () => {
     renderThreadsPage(true)
     const sidebar = within(screen.getByRole('complementary', { name: 'Thread sidebar' }))
     const row = await sidebar.findByRole('button', { name: 'Footer links' })
@@ -830,8 +830,9 @@ describe('a watched thread', () => {
     const pane = screen.getByRole('region', { name: 'Footer links' })
     expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
     expect(within(pane).queryByRole('button', { name: 'Watched by Watcher' })).toBeNull()
-    expect(within(pane).getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeInTheDocument()
-    expect(within(pane).getByRole('button', { name: 'Stop watching Footer links' })).toBeInTheDocument()
+    // Zach asked for the line under the composer to go: the header's Watch says the thread is watched, and stops it.
+    expect(within(pane).queryByText(/Watched by Watcher\./)).toBeNull()
+    expect(within(pane).queryByRole('button', { name: 'Stop watching Footer links' })).toBeNull()
     expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     // Watcher itself lives in its room, not in the Threads list.
     expect(sidebar.queryByRole('button', { name: 'Watcher' })).toBeNull()

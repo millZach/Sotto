@@ -41,6 +41,19 @@ const refusal = async (placing: Promise<unknown>) => {
 }
 
 describe('a start that names no machine or system', () => {
+  it('stays on This computer, away from the default and saying why, when it reuses a worktree or a base branch read here (Zach, October 25)', async () => {
+    const read = sources([laptop(), forge()])
+    expect(await placeWorker({ pinnedBy: 'existing-worktree' }, FORGE, onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',
+      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+        note: 'It reuses a worktree on This computer, so it started here rather than on forge, where new workers start.' } })
+    expect((await placeWorker({ pinnedBy: 'base-branch' }, FORGE, onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: true,
+      note: 'Its base branch was read on This computer, so it started here rather than on forge, where new workers start.' })
+    expect(read.originReads).toEqual([])
+    // A start that names the machine still goes there; where it is placed refuses the choices that do not travel.
+    expect((await placeWorker({ machine: FORGE, pinnedBy: 'existing-worktree' }, FORGE, onLaptop, read)).hostId).toBe(FORGE)
+    // While new workers start on This computer, nothing is away from the default.
+    expect((await placeWorker({ pinnedBy: 'base-branch' }, 'this-computer', onLaptop, read)).receipt).toEqual({ hostId: LAPTOP, name: 'This computer', awayFromDefault: false })
+  })
   it('stays where its project is while new workers start on This computer, and reads no machine', async () => {
     const read = sources([laptop(), forge()])
     expect(await placeWorker({}, 'this-computer', onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',

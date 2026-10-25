@@ -15,7 +15,8 @@ type WatcherRefusalCode = WatcherRefusal['code']
  *   new workers start on comes first when it is one, then the machine the project was named on, then This computer.
  * - **Neither** keeps a project named on another machine there, as Watcher has always placed work. A project named on
  *   This computer goes to the machine Settings say new workers start on, when that is another machine; one that is not
- *   connected, or no longer saved, starts the worker on This computer instead, and the receipt says why.
+ *   connected, or no longer saved, starts the worker on This computer instead, and the receipt says why. So does one
+ *   that reuses a worktree there or starts from a base branch read there: those choices mean nothing on another machine.
  *
  * On another machine than the project was named on, the project is found by its GitHub origin (`sameRepository`). A
  * machine with no copy refuses in plain words; Sotto never clones. A machine whose host cannot say its projects'
@@ -38,7 +39,17 @@ export interface PlacementSources {
   /** A machine's projects' GitHub origins, or undefined when its host does not report them. Rejects when the read fails. */
   origins(hostId: string): Promise<ProjectOrigins | undefined>
 }
-export interface PlacementAsk { readonly machine?: string | undefined; readonly os?: WorkerSystem | undefined }
+export interface PlacementAsk {
+  readonly machine?: string | undefined
+  readonly os?: WorkerSystem | undefined
+  /**
+   * A working-copy choice read for the project where it was named, which ties a start that names neither machine nor
+   * system to that machine: an existing worktree it reuses, or the base branch it starts from (Zach, October 25, 2026).
+   */
+  readonly pinnedBy?: 'existing-worktree' | 'base-branch' | undefined
+}
+/** Why a start that the machine new workers start on would have taken stayed on This computer instead. */
+const PINNED_WORDS = { 'existing-worktree': 'It reuses a worktree on This computer', 'base-branch': 'Its base branch was read on This computer' } as const
 export interface WorkerPlacement {
   readonly hostId: string
   readonly projectId: string
@@ -89,6 +100,11 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
     // Where new workers start applies only to this computer's projects (Zach, October 23, 2026). A project named on another
     // machine is placed there, whatever the setting says, as Watcher has always placed work; so is Watcher's own choice.
     target = from ?? { hostId: project.hostId, name: 'Paired machine', thisComputer: false, connected: false }
+  } else if (ask.pinnedBy !== undefined) {
+    // An explicit machine or system keeps the refusal where the start is placed; a default only stays here.
+    const chosen = machines.find(machine => machine.hostId === defaultId)
+    target = local
+    note = `${PINNED_WORDS[ask.pinnedBy]}, so it started here rather than on ${chosen ? `${named(chosen)}, where new workers start` : 'the machine new workers start on'}.`
   } else {
     const chosen = machines.find(machine => machine.hostId === defaultId)
     if (chosen?.connected) target = chosen

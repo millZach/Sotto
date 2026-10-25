@@ -586,10 +586,6 @@ msgid "Something answered at {host}, but not as an OpenAI-compatible server. Not
 msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
-msgid "Sotto compacted this idle thread before its cache expired."
-msgstr ""
-
-#: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto could not compact this idle thread. Its full history is kept."
 msgstr ""
 

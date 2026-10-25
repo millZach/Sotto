@@ -181,6 +181,9 @@ public enum WatcherWire {
     public static let manageFeature = "watcher-phone-manage"
     /// Send steers into Watcher's running turn, or the message goes next, and a follow-up waiting for Watcher can be removed (#1229).
     public static let steerFeature = "watcher-phone-steer"
+    /// A send may carry the photos this iPhone staged, with words or alone, and a Watcher message's photos are read back
+    /// through `preview`: Watcher's thread is never one of this iPhone's own to read (October 23, 2026).
+    public static let photosFeature = "watcher-phone-photos"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
@@ -207,13 +210,22 @@ public enum WatcherWire {
     public static let prepareStop: [String: JSONValue] = ["op": .string("watcher-phone-prepare-stop-all")]
     /// With `steer`, only to a computer that offers `steerFeature`: while Watcher works the words steer into its turn, or
     /// go next as their own turn when they can't.
-    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false) -> [String: JSONValue] {
+    /// `images` only to a computer that offers `photosFeature`; they go with the words however the words go.
+    public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false,
+                            images: [StagedImage] = []) -> [String: JSONValue] {
         var request: [String: JSONValue] = [
             "origin": .object(["kind": .string("phone"), "hostId": .string(target.hostId), "clientId": .string(clientID)]),
             "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
             "draftId": .string(draftID), "text": .string(text)]
         if steer { request["delivery"] = .string("steer") }
+        if !images.isEmpty { request["images"] = .array(images.map(\.wire)) }
         return ["op": .string("watcher-phone-send"), "request": .object(request)]
+    }
+    /// One photo of a message in Watcher's conversation, answered as `Photos.preview` is for a thread.
+    public static func preview(target: WatcherTarget, messageID: String, attachmentID: String) -> [String: JSONValue] {
+        ["op": .string("watcher-phone-preview"), "request": .object([
+            "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
+            "messageId": .string(messageID), "attachmentId": .string(attachmentID)])]
     }
     /// Takes a follow-up out of Watcher's queue before it goes, by its queue item.
     public static func removeFollowup(target: WatcherTarget, itemID: String) -> [String: JSONValue] {

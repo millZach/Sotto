@@ -308,6 +308,16 @@ export function liveTurnId(thread: Pick<AgentThread, 'status' | 'activities' | '
   return turns.at(-1)?.turnId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? null
 }
 
+/**
+ * A turn's steps: every record its work draws as a row, in the order they were reported. Its lifecycle record says how
+ * the turn went rather than what it did, and a compaction is a boundary drawn across the transcript, so neither counts.
+ */
+export function turnSteps(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity[] {
+  return (thread.activities ?? []).filter(record => record.turnId === turnId && isStep(record)).sort(bySequence)
+}
+export const isStep = (record: AgentActivity): boolean => !isTurnRecord(record) && record.kind !== 'compaction'
+export const stepsLabel = (count: number): string => plural(count, 'step', 'steps')
+
 /** The most recent record of the live turn that is still running: the current action. */
 export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity | undefined {
   return (thread.activities ?? []).filter(record => record.turnId === turnId && !isTurnRecord(record) && record.status === 'running').sort(bySequence).at(-1)

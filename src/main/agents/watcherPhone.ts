@@ -1,6 +1,6 @@
-import type { AgentCommand, AgentThread } from '../../shared/agents'
+import type { AgentAttachmentPreviewResult, AgentCommand, AgentThread } from '../../shared/agents'
 import { WATCHER_PHONE_FOLLOWUPS_MAX, WATCHER_PHONE_LEGACY_LIMIT, WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
-  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup } from '../../shared/watcherPhone'
+  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup, type WatcherPhonePreview } from '../../shared/watcherPhone'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { WATCHER_PHONE_MACHINE_THREADS_MAX, watcherPhoneMachinesSchema, type WatcherPhoneMachines } from '../../shared/watcherPhone'
 import { machineEntries, systemWords, unknownWhy } from '../../shared/machineLine'
@@ -72,7 +72,9 @@ export class WatcherPhoneService {
     const current = room.current && thread(room.current.target)
     const detail = current ? this.control.threadDetail(current.id) : null
     // The coordinator's detail already shows Watcher's messages as typed: an older one's routing footer is off it.
-    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt }))
+    // A message's photos go as the detail marks them, with no bytes: the phone asks for each through `preview` below.
+    const messages = (detail?.messages ?? []).slice(-200).map(message => ({ id: message.id, role: message.role, text: message.text, createdAt: message.createdAt,
+      ...(message.attachments?.length ? { attachments: message.attachments } : {}) }))
     const receiptGroups: WatcherPhoneState['receiptGroups'] = []
     for (const operation of room.receipts.slice(-500)) {
       const request = room.requests.find(row => row.id === operation.requestId)
@@ -175,7 +177,7 @@ export class WatcherPhoneService {
       check()
       if (steers && this.control.watcherPhoneTurn(threadId).running) return await this.whileWorking(request, origin, phone, sent)
       const result = await this.control.commandFromWatcherPhone({ type: 'send', draft: { threadId,
-        draftId: request.draftId, text: request.text, attachments: [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
+        draftId: request.draftId, text: request.text, attachments: request.images ?? [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
       if (!result.error) return sent()
       // Watcher began a turn between the check and the send, which sent nothing: steered or queued instead.
       if (steers && this.control.watcherPhoneTurn(threadId).running && this.control.watcherPhoneDraftUnsent(threadId, request.draftId)) {
@@ -194,13 +196,24 @@ export class WatcherPhoneService {
   private async whileWorking(request: WatcherPhoneSend, origin: WatcherCommandOrigin, client: ClientIdentity,
     sent: () => WatcherPhoneSendResult): Promise<WatcherPhoneSendResult> {
     const { draftId, text } = request, threadId = request.target.threadId
+    // The photos go with the words however they go.
+    const photos = request.images ? { attachments: request.images } : {}
     if (this.control.watcherPhoneTurn(threadId).steers) {
-      const steered = await this.control.commandFromWatcherPhone({ type: 'steer', threadId, draftId, text }, origin, client)
+      const steered = await this.control.commandFromWatcherPhone({ type: 'steer', threadId, draftId, text, ...photos }, origin, client)
       if (!steered.error) return sent()
       if (!this.control.watcherPhoneDraftUnsent(threadId, draftId)) return this.refused(steered.error, threadId, draftId)
     }
-    const queued = await this.control.commandFromWatcherPhone({ type: 'queue-followup', threadId, draftId, text }, origin, client)
+    const queued = await this.control.commandFromWatcherPhone({ type: 'queue-followup', threadId, draftId, text, ...photos }, origin, client)
     return queued.error ? this.refused(queued.error, threadId, draftId) : sent()
+  }
+  /**
+   * One photo of a message in the current Watcher's conversation, as `preview` answers for a thread: null for any other
+   * Watcher, or a photo Sotto keeps no copy of. Watcher's thread is hidden from the phone's own reads.
+   */
+  async preview(request: WatcherPhonePreview): Promise<AgentAttachmentPreviewResult> {
+    const { hostId, threadId } = request.target
+    if (hostId !== this.control.hostId() || !this.watcher.isCurrent(threadId)) return null
+    return await this.control.attachmentPreview({ threadId, messageId: request.messageId, attachmentId: request.attachmentId })
   }
   /** Why a phone's message did not go, in words for the phone: never sent twice, and the words stay on the phone. */
   private refused(error: string, threadId: string, draftId: string): WatcherRefusal {

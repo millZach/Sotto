@@ -157,6 +157,12 @@ describe('validateChord', () => {
     expect(validateChord(chord, adding('press'), darwinSet, 'darwin', owl)).toEqual({ ok: false, code: 'reserved', message })
   })
 
+  it('accepts Fn with a reserved chord, which is a different chord and not Spotlight', () => {
+    const noFnHold: DictationShortcutSet = { press: ['Control+Shift+Space'], hold: [] }
+    expect(validateChord('Fn+CommandOrControl+Space', adding('press'), noFnHold, 'darwin', owl)).toEqual({ ok: true })
+    expect(validateChord('Fn+CommandOrControl+Space', adding('hold'), noFnHold, 'darwin', owl)).toEqual({ ok: true })
+  })
+
   it.each([
     ['Super+L', 'Windows uses Win + L for locking Windows. Pick other keys.'],
     ['Alt+Tab', 'Windows uses Alt + Tab for switching windows. Pick other keys.'],

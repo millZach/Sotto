@@ -229,12 +229,14 @@ export function useSettleThread(command: AgentConnection['command'], fallbackFoc
   const [questions, setQuestions] = useState<readonly { thread: WorkingCopyThread; project: Pick<AgentProject, 'path'> | undefined; dirty: boolean }[]>([])
   const asking = questions[0]
   const nextQuestion = (): void => { setRemovalError(null); setQuestions(current => current.slice(1)) }
-  const settle = useCallback(async (thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): Promise<void> => {
+  const settle = useCallback(async (thread: WorkingCopyThread, project: Pick<AgentProject, 'path'> | undefined): Promise<boolean> => {
     const result = await command({ type: 'settle-thread', threadId: thread.id })
-    if (!result || result.error || !isReclaimable(thread)) return
+    if (!result || result.error) return false
+    if (!isReclaimable(thread)) return true
     const dirty = thread.worktree?.dirty === true
-    if (onSettleRule && !dirty) { await command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return }
+    if (onSettleRule && !dirty) { void command({ type: 'reclaim-thread-worktree', threadId: thread.id }); return true }
     setQuestions(current => current.some(question => question.thread.id === thread.id) ? current : [...current, { thread, project, dirty }])
+    return true
   }, [command, onSettleRule])
   const dialog = asking ? <ReclaimWorktreeDialog key={asking.thread.id} facts={describeWorkingCopy(asking.thread, asking.project)} dirty={asking.dirty} title="Remove its worktree too?" removalError={removalError} threadId={asking.thread.id} command={command} fallbackFocusRef={fallbackFocusRef}
     onCancel={nextQuestion}

@@ -6,6 +6,7 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
+import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -25,6 +26,11 @@ export type ReducedMotion = 'system' | 'on'
 /** Night falls' two looks (ADR-0119, decision 6): the shipped band, or a line of stars. */
 export type RoomTransitionLook = 'band' | 'stars'
 export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
+/**
+ * Compact Watcher at, in tokens: the slider's ends, its step and where it starts. Watcher's conversation is compacted at
+ * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026.
+ */
+export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 400_000 } as const
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -183,6 +189,11 @@ export interface AppSettings {
    */
   newWorkerMachine: WorkerMachineSetting
   /**
+   * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
+   * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
+   */
+  watcherCompactAtTokens: number
+  /**
    * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
    * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
    */
@@ -230,7 +241,7 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
-  /** On by default. Moving between Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  /** On by default. Moving between Dictate or Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
   roomTransitionSpeed: number
@@ -242,6 +253,12 @@ export interface AppSettings {
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
   holdShortcuts: string[]
+  /**
+   * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
+   * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
+   * Read live, so a change in Settings reaches every button and listener at once.
+   */
+  threadShortcuts: ThreadShortcutChoices
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -392,6 +409,7 @@ const fieldSchemas = {
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
+  watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
@@ -401,6 +419,7 @@ const fieldSchemas = {
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
@@ -494,6 +513,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
+  watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
   roomTransition: true,
@@ -503,6 +523,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
   holdShortcuts: [],
+  // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
+  threadShortcuts: {},
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
@@ -657,6 +679,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
+    watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
@@ -670,6 +693,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
       ? [...defaults.holdShortcuts]
       : parseShortcutList(persisted.holdShortcuts, 4),
+    // Row by row, so one damaged shortcut falls back to its own default and no other.
+    threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
