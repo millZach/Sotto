@@ -348,7 +348,7 @@ private struct MachineSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Text(machine?.name ?? "Machine").font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
+                    Text(machine?.name ?? String(localized: "Machine", comment: "A machine panel's title before its name is known")).font(.sotto(.title, .bold)).tracking(-0.4).foregroundStyle(Palette.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: Space.s2)

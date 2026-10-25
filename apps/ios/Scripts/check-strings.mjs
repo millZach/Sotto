@@ -63,7 +63,7 @@ const INTEGER_NAMES = new Set(['count', 'n', 'total', 'needs', 'working', 'hidde
   'inFlight', 'inFlightLimit', 'files', 'attachmentCount', 'number', 'added', 'removed', 'hours', 'minutes', 'rest',
   'value', 'threads', 'index', 'position', 'step', 'connected', 'exitCode', 'code', 'listed', 'shown', 'more', 'turn',
   'unknown', 'photos', 'requests', 'passed', 'failing', 'pending',
-  'remaining', 'left', 'running', 'additions', 'deletions', 'insertions', 'changedFiles', 'commits', 'comments', 'skipped'])
+  'remaining', 'left', 'running', 'starting', 'additions', 'deletions', 'insertions', 'changedFiles', 'commits', 'comments', 'skipped'])
 
 // MARK: Reading Swift
 
