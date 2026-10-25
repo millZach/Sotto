@@ -1,5 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+
+import { t } from '@lingui/core/macro'
+
 import { TERMINAL_IMAGE_MAX_BYTES } from '../../shared/terminal'
 import { fail } from '../tools/common'
 
@@ -9,7 +12,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 export async function saveTerminalImage(workingDirectory: string, dataUrl: string, now = Date.now()): Promise<string> {
   const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/u.exec(dataUrl)
   const bytes = match ? Buffer.from(match[1]!, 'base64') : null
-  if (!bytes || bytes.length > TERMINAL_IMAGE_MAX_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return fail('invalid-request', 'Only a PNG image up to 10 MiB can be pasted into a terminal.')
+  if (!bytes || bytes.length > TERMINAL_IMAGE_MAX_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return fail('invalid-request', t`Only a PNG image up to 10 MiB can be pasted into a terminal.`)
   const folder = join(workingDirectory, '.sotto', 'clipboard')
   const stamp = new Date(now).toISOString().replace(/[-:]/gu, '').replace('T', '-').replace('.', '-').replace(/Z$/u, '')
   let path = join(folder, `${stamp}.png`)
@@ -20,7 +23,7 @@ export async function saveTerminalImage(workingDirectory: string, dataUrl: strin
       try { await writeFile(path, bytes, { flag: 'wx' }); return path }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || attempt > 100) throw error; path = join(folder, `${stamp}-${attempt}.png`) }
     }
-  } catch { return fail('path-unavailable', 'The image could not be saved under this folder. Paste it again after restoring access.') }
+  } catch { return fail('path-unavailable', t`The image could not be saved under this folder. Paste it again after restoring access.`) }
 }
 
 /** A literal argument for the terminal's PowerShell or POSIX shell, even when the folder contains expansions. */

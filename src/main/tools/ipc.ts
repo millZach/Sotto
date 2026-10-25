@@ -1,3 +1,5 @@
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { namesHostThread } from '../../shared/clientIdentity'
 import { TERMINAL_CHANNEL } from '../../shared/terminal'
@@ -24,11 +26,11 @@ export interface HostedGitChanges {
 
 const GIT_CHANGES_METHODS = ['list', 'review', 'copyPath', 'reveal', 'watch', 'checkpoints', 'inspectCheckpoint', 'revertCheckpoint', 'recoverCheckpoint'] as const
 /** What each Changes request a paired host's thread cannot have says instead. */
-const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], string>> = {
-  reveal: 'This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened.',
-  watch: 'Changes reads this thread again when its host says its files changed, so there is nothing to watch here. Nothing was changed.',
+const NOT_ON_HOST: Partial<Record<typeof GIT_CHANGES_METHODS[number], MessageDescriptor>> = {
+  reveal: msg`This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened.`,
+  watch: msg`Changes reads this thread again when its host says its files changed, so there is nothing to watch here. Nothing was changed.`,
 }
-const NO_CHECKPOINTS = 'Turn checkpoints are kept only for threads on this computer. Nothing was changed.'
+const NO_CHECKPOINTS = msg`Turn checkpoints are kept only for threads on this computer. Nothing was changed.`
 
 export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: TerminalService; browser: BrowserService; gitChanges: GitChangesService; hostedGitChanges?: HostedGitChanges; onTerminalFocus?: (focused: boolean) => void }, senders: () => readonly TrustedIpcSender[]): () => void {
   const channels: string[] = []
@@ -43,12 +45,12 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
   /** A request for a thread on a paired host goes to that host, checked here as Changes would check it on this computer. */
   const onHost = async (method: typeof GIT_CHANGES_METHODS[number], payload: unknown): Promise<ToolsResult<unknown>> => {
     const hosted = services.hostedGitChanges
-    if (!hosted) return { ok: false, error: { code: 'unavailable', message: 'Changes cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.' } }
+    if (!hosted) return { ok: false, error: { code: 'unavailable', message: t`Changes cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again.` } }
     const invalid = { ok: false, error: { code: 'invalid-request', message: INVALID_REQUEST } } as const
     if (method === 'list') { const parsed = toolListRequestSchema.safeParse(payload); return parsed.success ? hosted.list(parsed.data) : invalid }
     if (method === 'review') { const parsed = gitReviewRequestSchema.safeParse(payload); return parsed.success ? hosted.review(parsed.data) : invalid }
     if (method === 'copyPath') { const parsed = gitPathRequestSchema.safeParse(payload); return parsed.success ? hosted.copyPath(parsed.data) : invalid }
-    return { ok: false, error: { code: 'unavailable', message: NOT_ON_HOST[method] ?? NO_CHECKPOINTS } }
+    return { ok: false, error: { code: 'unavailable', message: i18n._(NOT_ON_HOST[method] ?? NO_CHECKPOINTS) } }
   }
   for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
   register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(z.boolean().parse(payload)); return { ok: true, value: undefined } })
