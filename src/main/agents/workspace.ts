@@ -3016,18 +3016,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (this.unpublishedAll || published.sequence === undefined || this.acceptsWhole) return this.republishAll(rest!, sequence)
     const threads = this.state.snapshot.threads
     const upserts: AgentThread[] = [], removals: string[] = [], added: { readonly index: number; readonly record: AgentThread }[] = []
-    let read = 0
+    const sources: AgentThread[] = [], positions: number[] = []
     for (const id of this.unpublished) {
       const at = this.positionOf(id)
       const thread = at === undefined ? undefined : threads[at]
-      if (thread && this.visible(thread)) {
-        read++
-        const held = published.get(id)
-        const [record] = immutableUpdates([this.publicationSource(thread)], [held])
-        if (!held) added.push({ index: at!, record: record! })
-        else if (record !== held) upserts.push(record!)
-      } else if (published.has(id)) removals.push(id)
+      if (thread && this.visible(thread)) { sources.push(this.publicationSource(thread)); positions.push(at!) }
+      else if (published.has(id)) removals.push(id)
     }
+    // One call for every thread read, as one publication's records were always copied over the last one's.
+    const previous = sources.map(thread => published.get(thread.id))
+    const records = immutableUpdates(sources, previous)
+    for (let index = 0; index < records.length; index++) {
+      if (!previous[index]) added.push({ index: positions[index]!, record: records[index]! })
+      else if (records[index] !== previous[index]) upserts.push(records[index]!)
+    }
+    const read = sources.length
     if (added.length) {
       const last = published.lastId === undefined ? -1 : this.positionOf(published.lastId)
       if (last === undefined || added.some(item => item.index <= last)) return this.republishAll(rest!, sequence)
@@ -3221,7 +3224,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.accept(original ?? this.incomingSnapshot(), true)
       return this.watchedRecordCount() > records
     }
-    return this.acceptThreads(changes)
+    return this.acceptThreads(changes).opening
   }
   /** How many threads new to the workspace this change, with the threads waiting to be merged again, would add. */
   private bringsThreads(changes: AgentHostChanges): number {
@@ -3374,10 +3377,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * One publication of the inner host's thread changes taken in at a cost that follows the change (#925): each thread it
    * upserted or removed, and each the workspace changed since the last accept, is merged again or loses its live state,
    * exactly as taking in the whole snapshot would treat it, and goes back in its place in the state, or last when it is
-   * new. The provider's order is not followed, as it never was: the workspace keeps its own. Answers whether a thread a
-   * window may be looking at gained an activity record.
+   * new. The provider's order is not followed, as it never was: the workspace keeps its own. Answers how many threads it
+   * took in, and whether a thread a window may be looking at gained an activity record.
    */
-  private acceptThreads(changes: AgentHostChanges): boolean {
+  private acceptThreads(changes: AgentHostChanges): { readonly handled: number; readonly opening: boolean } {
     const incoming = this.incoming
     // The providers and the connection, which say whether a thread is connected; the rest did not change since the last accept.
     const host = incoming.rest! as AgentHostSnapshot
@@ -3389,7 +3392,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const id of this.remerge) ids.add(id)
     this.remerge.clear()
     const threads = this.state.snapshot.threads
-    let recordsBefore = 0, recordsAfter = 0, watcher = false
+    let recordsBefore = 0, recordsAfter = 0, watcher = false, handled = 0
     for (const id of ids) {
       const at = this.positionOf(id)
       const old = at === undefined ? undefined : threads[at]
@@ -3405,6 +3408,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         this.activityInputs.delete(id); this.storedInputs.delete(id)
         next = this.visible(old) ? { ...old, ...NO_LIVE_THREAD_STATE } as AgentThread : old
       } else continue
+      handled++
       const stamped = stampHostThread(next, this.hostId!)
       const visible = this.visible(stamped)
       if (visible && !isThreadProviderConnected(host, stamped)) dropLiveThreadState(stamped)
@@ -3423,7 +3427,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A Watcher thread with events waiting is captured whether or not this change named it, as `accept` captures it.
     if (!watcher && this.eventSourced && this.watcherEnabled) for (const id of this.pendingEvents.keys()) if (this.threadById(id)?.kind === 'watcher') { watcher = true; break }
     if (this.eventSourced && this.watcherEnabled && watcher) this.applyEvents()
-    return recordsAfter > recordsBefore
+    return { handled, opening: recordsAfter > recordsBefore }
   }
   /** An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read. */
   private refreshIfHeadMoved(thread: AgentThread, old: AgentThread): void {
