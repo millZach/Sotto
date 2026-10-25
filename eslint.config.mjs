@@ -123,6 +123,7 @@ export default tseslint.config(
       'artifacts/composer-shrink/**',
       'artifacts/watcher-column/**',
       'artifacts/composer-slim-steady/**',
+      'artifacts/scene-under-column/**',
       'artifacts/reply-quote/**',
       'artifacts/sidebar-question/**',
       'artifacts/tools-rail-run/**',

@@ -265,6 +265,15 @@ export function inLane(layout: Pick<SceneLayout, 'lane'>, x: number, y: number):
   const lane = layout.lane
   return lane !== null && x >= lane.x - LANE_PAD && x <= lane.x + lane.w + LANE_PAD && y >= lane.y && y <= lane.y + lane.h
 }
+/**
+ * Where an owl's glyph at a point is drawn: over everything in the margins (`over`), behind the words over the column
+ * and the scrubber's lane (`behind`), where it takes the column's share and ink ceiling as the hills do (the user's pick
+ * A on October 25, 2026), and nowhere in the header band or around still words.
+ */
+export function owlLayer(layout: Pick<SceneLayout, 'column' | 'lane' | 'header' | 'words'>, x: number, y: number): 'over' | 'behind' | null {
+  if (y <= layout.header || layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4)) return null
+  return owlRoom(layout, x) && !inLane(layout, x, y) ? 'over' : 'behind'
+}
 /** Room either side of the scrubber's lane that takes the lane's share. */
 const LANE_PAD = 4
 
@@ -377,7 +386,7 @@ export function nextPlace(at: OwlPlace, roll: number, leftBranch = true): OwlPla
 export const OWL_GAP = 2
 
 /** Whether an owl may be drawn at `x`: in a margin, clear of the column by OWL_GAP. */
-export function owlRoom(layout: SceneLayout, x: number): boolean {
+export function owlRoom(layout: Pick<SceneLayout, 'column'>, x: number): boolean {
   return x < layout.column.left - OWL_GAP || x > layout.column.right + OWL_GAP
 }
 
