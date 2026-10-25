@@ -5509,7 +5509,9 @@ export class AgentControl {
     for (let at = 0; at < Math.min(whole.threads.length, held.threads.length); at++) {
       const expected = whole.threads[at]!, actual = held.threads[at]!
       if (expected.id !== actual.id) { differences.push(`the threads are in another order from position ${at}`); break }
-      if (expected !== actual && !isDeepStrictEqual(expected, actual)) differences.push(`thread "${actual.id}" is shown unlike the whole path shows it, a missed change`)
+      // A thread already named to be shown again with the next change is shown as the whole path showed it before what
+      // moved under it, which the whole path too shows only with the next snapshot; this check reads it after.
+      if (expected !== actual && !this.reshow.has(actual.id) && !isDeepStrictEqual(expected, actual)) differences.push(`thread "${actual.id}" is shown unlike the whole path shows it, a missed change`)
     }
     const { threads: _whole, ...wholeRest } = whole, { threads: _held, ...heldRest } = held
     void _whole; void _held
