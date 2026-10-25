@@ -31,6 +31,7 @@ import { PairedClients } from '../../../src/main/agents/pairing'
 import { PROTOTYPE_HOLD_MAX_MS, PROTOTYPE_SEND_BACK_WINDOW_MS } from '../../../src/main/agents/prototypeQuestions'
 import { PROTOTYPES_CLEARED_MAX, PROTOTYPES_MARKED_MAX } from '../../../src/main/agents/prototypeReady'
 import { FINISHED_UNREAD_MAX } from '../../../src/main/agents/finishedUnread'
+import { QUESTION_PAGE_LINGER_MS } from '../../../src/main/agents/questionPages'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 import { SOTTO_REQUEST_PREFIX, type SottoThreadRequests } from '../../../src/main/agents/sottoRequests'
 import { ThreadChangesDrift, type AgentHostChanges, type ThreadMap } from '../../../src/main/agents/threadChanges'
@@ -46,6 +47,13 @@ import { rawPeer } from '../../fixtures/rawHostPeer'
 import { StreamingAdapter } from '../../fixtures/streamingAdapter'
 import { testCredentials } from '../../fixtures/testCredentials'
 
+/** The projects every look-up of which projects are settled reads, which a change must make once, not once per thread. */
+const projectVisits = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../../../src/main/agents/finishedUnread', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../src/main/agents/finishedUnread')>()
+  return { ...original, settledIn: (snapshot: Parameters<typeof original.settledIn>[0]) => { projectVisits.count += snapshot.projects.length; return original.settledIn(snapshot) } }
+})
+
 const cleanup: Array<() => Promise<void> | void> = []
 afterEach(async () => { vi.useRealTimers(); for (const close of cleanup.splice(0).reverse()) await close() })
 
@@ -58,12 +66,14 @@ const quiet = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 60
 const MODEL = { id: 'fake:model', provider: 'Fake', name: 'Synthetic model', ready: true }
 const OTHER_MODEL = { id: 'fake:other', provider: 'Fake', name: 'Other synthetic model', ready: true }
 
-function providerState(root: string, sessions: readonly string[]): AgentHostSnapshot {
+/** The provider's state: one project, or with `projectEach` one project for each thread, all in the same folder. */
+function providerState(root: string, sessions: readonly string[], projectEach = false): AgentHostSnapshot {
+  const projectOf = (id: string): string => projectEach ? `project-${id}` : 'project'
   return { ...structuredClone(EMPTY_AGENT_HOST), name: 'Synthetic', version: '1', connected: true,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true },
-    projects: [{ id: 'project', title: 'Synthetic project', path: join(root, 'project') }],
+    projects: (projectEach ? sessions : ['project']).map(id => ({ id: projectEach ? projectOf(id) : 'project', title: `Synthetic ${id}`, path: join(root, 'project') })),
     models: [{ ...MODEL }],
-    threads: sessions.map(id => thread(id)) }
+    threads: sessions.map(id => thread(id, { projectId: projectOf(id) })) }
 }
 
 /** Sotto's own requests, as the host setup thread's are, set and cleared by the test. */
@@ -106,7 +116,7 @@ interface Downstream {
  * the first's reads the workspace's thread changes, the second's its activity snapshots. Each usage reads usage through
  * `visitUsage`, which fails for the sessions in `failingUsage`.
  */
-async function stack(control: TestControlOptions = {}, threads = 6) {
+async function stack(control: TestControlOptions = {}, threads = 6, projectEach = false) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-coordinator-changes-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }))
   await mkdir(join(root, 'project'), { recursive: true })
@@ -117,7 +127,7 @@ async function stack(control: TestControlOptions = {}, threads = 6) {
   await registry.load()
   cleanup.push(async () => { await registry.flush().catch(() => undefined) })
   const sessions = Array.from({ length: threads }, (_, index) => `s${index + 1}`)
-  const adapter = new StreamingAdapter(providerState(root, sessions))
+  const adapter = new StreamingAdapter(providerState(root, sessions, projectEach))
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
@@ -190,7 +200,12 @@ async function stack(control: TestControlOptions = {}, threads = 6) {
   /** Marks the sessions, as the adapter's own paths do, and publishes. */
   const publish = (...marked: string[]): void => { for (const session of marked) adapter.mark(session); adapter.publish(false) }
   const settle = async (): Promise<void> => { await quiet(); await workspace.flush(); await quiet() }
-  return { root, registry, adapter, workspace, changed, whole, sessions, sotto, at, publish, settle, failingUsage }
+  /** The workspace takes a thread out of its state, as a discarded start does, and publishes. */
+  const removeInWorkspace = (session: string): void => {
+    const inside = workspace as unknown as { removeThread(id: string): void; publish(): void }
+    inside.removeThread(sotto(session)); inside.publish()
+  }
+  return { root, registry, adapter, workspace, changed, whole, sessions, sotto, at, publish, settle, failingUsage, removeInWorkspace }
 }
 type Stack = Awaited<ReturnType<typeof stack>>
 
@@ -218,6 +233,19 @@ function where(changed: string, whole: string): string {
 }
 
 /** Every way the two coordinators' downstream differs now, named. */
+/**
+ * What a coordinator keeps for its threads' prototypes and pages: prototype questions' records, the prototype-ready mark's
+ * kept replies and cleared sources in their order and its asked replies, and each page search, with how many pages it
+ * found and whether it lingers. Thread IDs are the workspace's, so the same for both.
+ */
+function records(seen: Downstream) {
+  const inside = seen.control as unknown as { prototypeQuestions: { records: Map<string, unknown> }
+    prototypeReady: { kept: Map<string, unknown>; cleared: Map<string, unknown>; asked: Map<string, string> }
+    questionPages: { entries: Map<string, { pages?: unknown[]; goneAt?: number }> } }
+  return { questions: [...inside.prototypeQuestions.records.keys()].sort(), kept: [...inside.prototypeReady.kept.keys()], cleared: [...inside.prototypeReady.cleared.keys()],
+    asked: [...inside.prototypeReady.asked].sort(), pages: [...inside.questionPages.entries].map(([key, entry]) => [key, entry.pages?.length ?? null, entry.goneAt !== undefined]).sort() }
+}
+
 async function differences({ changed, whole }: Stack): Promise<string[]> {
   const held = (seen: Downstream, targets: readonly string[]) => targets.map(id => {
     const detail = seen.details.get(id)
@@ -246,6 +274,7 @@ async function differences({ changed, whole }: Stack): Promise<string[]> {
     ['the phone\'s shell over the host socket', changed.phone()?.state, whole.phone()?.state],
     ['the threads whose usage was read', usage(changed), usage(whole)],
     ['the usage records saved', changedUsage, wholeUsage],
+    ['the prototype and page records', records(changed), records(whole)],
   ]
   return aspects.flatMap(([aspect, left, right]) => { const a = text(left), b = text(right); return a === b ? [] : [`${aspect} ${where(a, b)}`] })
 }
@@ -376,12 +405,20 @@ async function equivalenceRun(control: TestControlOptions, seed: number, rounds 
     async (session) => { at(session).modelId = at(session).modelId === OTHER_MODEL.id ? MODEL.id : OTHER_MODEL.id; publish(session); await same(`${session}'s model changing`) },
     // Kept prototype marks filled to their limit with marks of threads long gone, so the next mark a thread takes lets the
     // oldest go, and a thread that keeps its mark through a reply lets a chain of others go in turn.
-    async () => { for (const each of both) fillKept(each, `fill-${madeThreads++}`); publish(); await same('the kept marks filled to their limit') },
+    async () => { const prefix = `fill-${madeThreads++}`; for (const each of both) fillKept(each, prefix); publish(); await same('the kept marks filled to their limit') },
     // Two threads archived or unarchived in one change: unarchived, each takes its mark back and lets another's go.
     async () => {
       const [first, second] = [sessions[next(sessions.length)]!, sessions[next(sessions.length)]!]
       for (const session of new Set([first, second])) at(session).archivedAt = at(session).archivedAt ? undefined : AT
       publish(first, second); await same(`archiving or unarchiving ${first} and ${second} in one change`)
+    },
+    // Pages linger past their time, and one publication changes a thread and brings back an archived one, whose page lingered.
+    async (session, round) => {
+      await passTime(made, QUESTION_PAGE_LINGER_MS + 1_000)
+      const archived = sessions.find(each => at(each).archivedAt)
+      if (archived) at(archived).archivedAt = undefined
+      at(session).title = `Lingered ${round}`
+      publish(session, ...(archived ? [archived] : [])); await same(`pages lingering past their time, ${session} changing${archived ? ` and ${archived} coming back` : ''}`)
     },
     // A thread whose usage cannot be read yet, read again with a later publication once it can.
     async () => {
@@ -579,13 +616,109 @@ describe('the coordinator at its limits', () => {
   }, 120_000)
 })
 
+describe('the coordinator taking a change in phases', () => {
+  /**
+   * A change naming many threads across as many projects looks up which projects are settled once, not once per thread
+   * (#925 review): read for each thread, the look-up made a change of N threads cost N squared.
+   */
+  it('looks up which projects are settled once for a change, however many threads and projects it names', async () => {
+    const visits = async (count: number): Promise<number> => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+      const made = await stack({ watcherEnabled: true }, count, true)
+      for (const each of [made.changed, made.whole]) await each.control.command({ type: 'connect' })
+      made.publish()
+      await agree(made, `${count} threads in ${count} projects`)
+      const inside = made.changed.control as unknown as { acceptChanges(map: ThreadMap, changes: AgentHostChanges): void; acceptChangesInPlace(...args: unknown[]): void }
+      const inPlace = vi.spyOn(inside, 'acceptChangesInPlace')
+      const accept = inside.acceptChanges.bind(made.changed.control)
+      let counted = 0
+      inside.acceptChanges = (map, changes) => {
+        const before = projectVisits.count
+        accept(map, changes)
+        if (changes.upserts.length >= count) counted += projectVisits.count - before
+      }
+      for (const session of made.sessions) made.at(session).title = `Renamed ${session}`
+      made.publish(...made.sessions)
+      await agree(made, 'every thread renamed in one change')
+      expect(inPlace).toHaveBeenCalled()
+      for (const close of cleanup.splice(0).reverse()) await close()
+      return counted
+    }
+    const hundred = await visits(100), twoHundred = await visits(200)
+    expect(hundred).toBeGreaterThan(0)
+    expect(twoHundred, `project visits: ${hundred} for 100 threads, ${twoHundred} for 200`).toBeLessThanOrEqual(hundred * 2.2)
+  }, 240_000)
+
+  /**
+   * Codex's case (#925 review): B is archived with its page lingering, the hour passes, and one change names A, before
+   * B, and brings B back. The whole path reads B's pages before it lets go of any page past its time, so B's lingering page
+   * is B's again; reading A first must not let it go before B is read.
+   */
+  it('keeps a lingering page a change brings back, though another thread the change names comes first', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const [a, b] = ['s1', 's2']
+    await markWithPages(made, [b])
+    const token = changed.control.broadcastShell().host.threads.find(item => item.id === sotto(b))!.prototypeReady!.pages[0]!.token
+    at(b).archivedAt = AT; publish(b)
+    await agree(made, 'B archived')
+    await passTime(made, QUESTION_PAGE_LINGER_MS + 1_000)
+    const inside = changed.control as unknown as { acceptChanges(map: ThreadMap, changes: AgentHostChanges): void }
+    const accept = inside.acceptChanges.bind(changed.control)
+    let inPass: boolean | undefined
+    inside.acceptChanges = (map, changes) => {
+      accept(map, changes)
+      if (changes.upserts.some(record => record.id === sotto(b))) inPass ??= markedIn(changed, sotto(b))
+    }
+    at(a).title = 'A changed'; at(b).archivedAt = undefined; publish(a, b)
+    await agree(made, 'A changing and B coming back in one change')
+    expect(inPass, 'B marked once the change that brought it back was taken in').toBe(true)
+    expect(changed.control.questionPage(token), 'B\'s page still opens').toBeDefined()
+    expect(markedIn(changed, sotto(b))).toBe(true)
+  }, 120_000)
+
+  /** A change that only removes threads lets go of what was kept for them, with thread starts off (#925 review). */
+  it('lets go of what it kept for a thread a change removes, though the change names no other', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const r = 's3'
+    made.adapter.log.add(r, { id: 'before-question', role: 'assistant', text: 'Before the question.', createdAt: new Date().toISOString() })
+    at(r).requests = [{ id: 'removed-question', kind: 'question', text: 'Which way?', options: [] } as unknown as AgentRequest]
+    publish(r)
+    await agree(made, 'a question in the thread to be removed')
+    const before = records(changed)
+    expect(before.questions).toContain(sotto(r))
+    expect(before.asked.map(([id]) => id)).toContain(sotto(r))
+    const inPlace = vi.spyOn(changed.control as unknown as { acceptChangesInPlace(...args: unknown[]): void }, 'acceptChangesInPlace')
+    // Read once the removal is taken in: a later whole pass, such as the one the question's search sets off when it looks
+    // again, would let go of the thread's records whatever this pass did.
+    const inside = changed.control as unknown as { acceptChanges(map: ThreadMap, changes: AgentHostChanges): void }
+    const accept = inside.acceptChanges.bind(changed.control)
+    let after: ReturnType<typeof records> | undefined
+    inside.acceptChanges = (map, changes) => {
+      accept(map, changes)
+      if (changes.removals.includes(sotto(r)) && !changes.upserts.length) after ??= records(changed)
+    }
+    made.removeInWorkspace(r)
+    await agree(made, 'the thread removed')
+    expect(inPlace).toHaveBeenCalled()
+    expect(after, 'a change that only removes the thread').toBeDefined()
+    expect(after!.questions).not.toContain(sotto(r))
+    expect(after!.asked.map(([id]) => id)).not.toContain(sotto(r))
+  }, 120_000)
+})
+
 describe('the coordinator\'s thread changes', () => {
   it('shows, tracks and lists again only the thread a change names', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
     const { adapter, changed } = await stack()
     await changed.control.command({ type: 'connect' })
     adapter.publish(false); await quiet()
-    const shown = vi.spyOn(changed.control as unknown as { shownSnapshot(snapshot: AgentHostSnapshot, gone?: Set<string>): AgentHostSnapshot }, 'shownSnapshot')
+    const shown = vi.spyOn(changed.control as unknown as { shownBeforePages(snapshot: AgentHostSnapshot, gone?: Set<string>): AgentHostSnapshot }, 'shownBeforePages')
     const before = changed.control.watcherSnapshot().threads
     adapter.state.threads.find(item => item.id === 's2')!.status = 'running'; adapter.mark('s2'); adapter.publish(false); await quiet()
     const partial = shown.mock.calls.filter(([, gone]) => gone !== undefined)
@@ -642,7 +775,7 @@ describe('the coordinator\'s thread changes', () => {
    * that were named before it began. Here a kept mark is taken away and another added behind the coordinator's back, so a
    * whole pass would follow a chain of marks letting each other go to the 65th thread, which the coordinator still shows.
    */
-  it('checks a change against a whole pass that changes nothing, and leaves out only what was named before it', async () => {
+  it('checks a change against a whole pass that puts the records back and names nothing, when they changed behind its back', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
     const made = await stack({ watcherEnabled: true }, 67)
     const { changed, whole, sotto, publish, sessions } = made
@@ -661,6 +794,54 @@ describe('the coordinator\'s thread changes', () => {
     expect(() => inside.verifyChanges(inside.incoming)).toThrow(ThreadChangesDrift)
     expect({ kept: [...kept.keys()], reshow: [...inside.reshow] }).toEqual(before)
   }, 180_000)
+
+  /**
+   * The walk cut short: once it has read 64 threads a prototype mark let go, it hears of no more, so the 65th thread of a
+   * chain keeps the mark the whole path takes away. The check in verifying mode must find that, since nothing named the
+   * 65th thread before it began.
+   */
+  it('finds, verifying, a chain of marks letting each other go that the walk cut short', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true }, 68)
+    const { changed, whole, at, publish, sessions } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const n = 's1', chain = sessions.slice(1, 66), last = chain.at(-1)!
+    await markWithPages(made, [n])
+    at(n).archivedAt = AT; publish(n)
+    await agree(made, 'N archived')
+    await markWithPages(made, chain)
+    made.adapter.log.add(last, { id: 'plain', role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() }); publish(last)
+    await agree(made, 'the last of the chain replying again')
+    for (const each of [changed, whole]) fillKept(each, 'old')
+    const inside = changed.control as unknown as { verifyingChanges: boolean; verifyChanges(map: ThreadMap): void
+      prototypeReady: { onEvicted: ((threadId: string, by: string) => void) | undefined } }
+    inside.verifyingChanges = true
+    const drift: unknown[] = []
+    const verify = inside.verifyChanges.bind(changed.control)
+    inside.verifyChanges = map => { try { verify(map) } catch (error) { drift.push(error) } }
+    const told = inside.prototypeReady.onEvicted!
+    let heard = 0
+    inside.prototypeReady.onEvicted = (threadId, by) => { if (++heard <= 64) told(threadId, by) }
+    at(n).archivedAt = undefined; publish(n)
+    await quiet()
+    expect(heard).toBeGreaterThan(64)
+    expect(drift.length, 'the check found the 65th thread still marked').toBeGreaterThan(0)
+    expect(drift[0]).toBeInstanceOf(ThreadChangesDrift)
+  }, 180_000)
+
+  it('takes the first change after anything else replaced its thread list in whole, though the host snapshot is the same', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const { adapter, changed } = await stack()
+    await changed.control.command({ type: 'connect' })
+    adapter.publish(false); await quiet()
+    const whole = vi.spyOn(changed.control as unknown as { acceptSnapshot(snapshot: AgentHostSnapshot, fromChanges?: boolean): void }, 'acceptSnapshot')
+    // A list put in the coordinator's own host snapshot, with a record nobody published.
+    const host = changed.control.watcherSnapshot()
+    host.threads = host.threads.map((item, index) => index === 0 ? { ...item, title: 'Made up' } : item)
+    adapter.state.threads.find(item => item.id === 's3')!.status = 'running'; adapter.mark('s3'); adapter.publish(false); await quiet()
+    expect(whole.mock.calls.some(([, fromChanges]) => fromChanges === true)).toBe(true)
+    expect(changed.control.watcherSnapshot().threads.some(item => item.title === 'Made up')).toBe(false)
+  })
 
   it('finds, verifying, a thread shown from something that moved without anything naming it', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })

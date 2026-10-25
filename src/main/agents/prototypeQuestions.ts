@@ -136,8 +136,7 @@ export class PrototypeQuestions {
    * `gone`, the snapshot holds only the threads that changed (#925) and `gone` names the threads that went, whose record
    * is let go; every other thread is as the last snapshot left it.
    */
-  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>): AgentHostSnapshot {
-    const settled = settledIn(snapshot)
+  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>, settled: (thread: AgentThread) => boolean = settledIn(snapshot)): AgentHostSnapshot {
     let threads: AgentThread[] | undefined
     for (let index = 0; index < snapshot.threads.length; index++) {
       const thread = snapshot.threads[index]!

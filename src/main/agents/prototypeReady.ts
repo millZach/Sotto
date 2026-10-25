@@ -157,8 +157,7 @@ export class PrototypeReady {
    * The replies of each of the snapshot's threads whose pages are wanted, for QuestionPages to look in: the newest while
    * it could earn the mark, and the kept one while it holds it, so its pages keep their tokens.
    */
-  replies(snapshot: Pick<AgentHostSnapshot, 'projects'>): (thread: AgentThread) => ReplyToSearch | readonly ReplyToSearch[] | undefined {
-    const settled = settledIn(snapshot)
+  replies(snapshot: Pick<AgentHostSnapshot, 'projects'>, settled: (thread: AgentThread) => boolean = settledIn(snapshot)): (thread: AgentThread) => ReplyToSearch | readonly ReplyToSearch[] | undefined {
     return thread => {
       if (!this.markable(thread, settled)) return undefined
       const reply = this.wantedReply(thread)
@@ -188,15 +187,14 @@ export class PrototypeReady {
    * snapshot. With `gone`, the snapshot holds only the threads that changed (#925) and `gone` names the threads that went,
    * whose question is let go; every other thread is as the last snapshot left it.
    */
-  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>): AgentHostSnapshot {
-    const settled = settledIn(snapshot)
+  decorate(snapshot: AgentHostSnapshot, gone?: ReadonlySet<string>, settled: (thread: AgentThread) => boolean = settledIn(snapshot)): AgentHostSnapshot {
     let threads: AgentThread[] | undefined
     for (let index = 0; index < snapshot.threads.length; index++) {
       const thread = snapshot.threads[index]!
-      const next = this.publish(thread, this.markable(thread, settled) ? this.markOf(thread) : this.forget(thread.id))
+      const next = this.mark(thread, settled)
       if (next !== thread) (threads ??= [...snapshot.threads])[index] = next
     }
-    if (gone) for (const id of gone) this.asked.delete(id)
+    if (gone) this.letGo(gone)
     else if (this.asked.size) {
       // One set of the threads present, so the cleanup grows with the threads rather than with threads times questions.
       const present = new Set<string>()
@@ -205,6 +203,17 @@ export class PrototypeReady {
     }
     return threads ? { ...snapshot, threads } : snapshot
   }
+
+  /**
+   * One thread with its mark on it, as `decorate` marks each in turn: what it keeps can let another thread's kept reply go,
+   * so a caller that marks threads one at a time marks them in display order (#925).
+   */
+  mark(thread: AgentThread, settled: (thread: AgentThread) => boolean): AgentThread {
+    return this.publish(thread, this.markable(thread, settled) ? this.markOf(thread) : this.forget(thread.id))
+  }
+
+  /** Lets go of the question a thread that went was asked, as a snapshot without it does. */
+  letGo(gone: Iterable<string>): void { for (const id of gone) this.asked.delete(id) }
 
   private markable(thread: AgentThread, settled: (thread: AgentThread) => boolean): boolean {
     return thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && !settled(thread)

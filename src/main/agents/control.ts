@@ -67,7 +67,7 @@ import { watcherHandoversShown } from './watcherHandover'
 import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FailuresSeen } from './failuresSeen'
-import { FinishedUnread } from './finishedUnread'
+import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
 import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
@@ -806,8 +806,12 @@ export class AgentControl {
    */
   private incoming: ThreadMap | undefined
   private incomingSubscription: ActivityChangesSubscription | undefined
-  /** The host snapshot the last accept from thread changes made. Anything else that replaced it makes the next change whole. */
+  /**
+   * The host snapshot the last accept from thread changes made, and its thread list. Anything else that replaced either,
+   * even the list alone, makes the next change whole.
+   */
   private hostFromChanges: AgentHostSnapshot | undefined
+  private hostListFromChanges: readonly AgentThread[] | undefined
   /**
    * Threads whose shown record is worked out again at the next accept of changes, whatever the change names: something
    * the shown record is made from moved without a snapshot being taken again.
@@ -1151,11 +1155,22 @@ export class AgentControl {
    * each question on it (ADR-0085), and each thread's prototype waiting for review (ADR-0108), without a prototype
    * question Sotto holds while it looks for that question's pages (ADR-0108).
    */
-  private shownSnapshot(snapshot: AgentHostSnapshot, gone?: Set<string>): AgentHostSnapshot {
-    // With `gone`, the snapshot holds only the threads a change named (#925), over the rest of the host snapshot as shown,
-    // and `gone` the threads that went; a thread it holds that is not shown goes into `gone` too. Each step reads only
-    // those threads, which is what reading every thread again would have done to them, and lets go of what it kept for
-    // the threads that went.
+  private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+    const shown = this.shownBeforePages(snapshot)
+    // One look-up of which projects are settled serves every step that asks.
+    const settled = settledIn(shown)
+    // A prototype waiting for review is marked from the pages found for its question or its newest reply (ADR-0108).
+    // A question about a prototype is held last, so both of those still read it while no client sees it.
+    const paged = this.questionPages.decorate(shown, this.prototypeReady.replies(shown, settled))
+    return this.prototypeQuestions.decorate(this.prototypeReady.decorate(paged, undefined, settled), undefined, settled)
+  }
+  /**
+   * The steps of showing a snapshot before its question pages: each reads one thread at a time and nothing of another,
+   * but for the thread a started one began from, which is found by a look-up. With `gone`, the snapshot holds only the
+   * threads a change named (#925), over the rest of the host snapshot as shown, and `gone` the threads that went; a thread
+   * it holds that is not shown goes into `gone` too.
+   */
+  private shownBeforePages(snapshot: AgentHostSnapshot, gone?: Set<string>): AgentHostSnapshot {
     const given = gone ? snapshot.threads : undefined
     // The coordinator's own published snapshot, taken again, still has the questions it held: they are the provider's.
     snapshot = this.prototypeQuestions.restore(snapshot)
@@ -1182,9 +1197,7 @@ export class AgentControl {
       snapshot = startHandoversShown(snapshot, gone && incoming ? id => this.threadAvailable(id) ? incoming.get(id) : undefined : undefined)
     }
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
-    // A prototype waiting for review is marked from the pages found for its question or its newest reply (ADR-0108).
-    // A question about a prototype is held last, so both of those still read it while no client sees it.
-    return this.prototypeQuestions.decorate(this.prototypeReady.decorate(this.questionPages.decorate(snapshot, this.prototypeReady.replies(snapshot), gone), gone), gone)
+    return snapshot
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
@@ -5407,6 +5420,7 @@ export class AgentControl {
     const snapshot = this.shownSnapshot(incoming)
     this.state.host = snapshot
     this.hostFromChanges = fromChanges ? snapshot : undefined
+    this.hostListFromChanges = fromChanges ? snapshot.threads : undefined
     this.broadcastPatch = null
     this.accepted(snapshot, connecting)
   }
@@ -5426,7 +5440,7 @@ export class AgentControl {
     const applied = map.apply(changes)
     if (applied === 'resync') { this.incomingSubscription?.resync(); return }
     if (applied === 'stale') return
-    if (changes.whole || changes.rest !== undefined || this.state.host !== this.hostFromChanges
+    if (changes.whole || changes.rest !== undefined || this.state.host !== this.hostFromChanges || this.state.host.threads !== this.hostListFromChanges
       || before !== undefined && (changes.removals.length > 0 || before.some((provider, at) => provider === null || provider !== changes.upserts[at]!.providerId))) {
       this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot, true)
       return
@@ -5463,34 +5477,54 @@ export class AgentControl {
       position = id => index.at.get(id) ?? index.list.length + (fresh.get(id) ?? fresh.size)
     }
     const byPosition = (left: AgentThread, right: AgentThread): number => position(left.id) - position(right.id)
-    // The threads are read one at a time, in display order, from a queue ordered by their place. Reading one can let
-    // another thread's kept prototype reply go, which changes that thread though nothing named it. The whole path reads
-    // every thread in display order, so it reads one let go ahead of the place it has reached after the eviction, in this
-    // pass: such a thread joins the queue and is read at its place, among the threads the change named. One let go behind
-    // that place the whole path read before the eviction, as nothing it is made from had moved yet, so it shows as it
-    // did until the next snapshot: it stays named in `reshow`, and the next change reads it. Every thread not read is one
-    // the whole path would read to the same record. Only threads ahead of the place reached join the queue, and that place
-    // only moves on, so no thread is read twice and the reading ends with the threads it reached.
+    const sources: AgentThread[] = []
+    for (const id of named) { const source = map.get(id); if (source) sources.push(source) }
+    sources.sort(byPosition)
+    // A change is shown in three phases, as the whole path shows every thread in steps, each over every thread before the
+    // next begins (`shownSnapshot`). Each step is one of three kinds:
+    // - Per accept: which projects are settled (one look-up for every step that asks), the question pages' sweep of what
+    //   is still asked and their prune of pages past their time, and letting go of what was kept for threads that went.
+    // - Per thread and independent of every other: Watcher's and held providers' filters, Watcher's own messages and
+    //   handovers, start handovers (the thread one began from found by a look-up), Sotto's own requests, the question
+    //   pages each thread asks for and the replies each looks in, and prototype questions, each kept by its own thread.
+    // - Per thread and in display order: the prototype-ready mark, whose kept replies are shared, so a mark one thread
+    //   takes can let another thread's kept reply go.
+    // (a) Once, over every thread the change names: the independent steps up to the question pages, which look at each
+    // thread's pages and its replies with the prototype records as they stood, as the whole path does before it marks any
+    // thread, then sweep what is still asked and prune what is past its time, as the whole path does once there.
+    const before = this.shownBeforePages({ ...this.state.host, threads: sources }, gone)
+    const settled = settledIn(before)
+    const paged = new Map<string, AgentThread>()
+    for (const thread of this.questionPages.decorate(before, this.prototypeReady.replies(before, settled), gone).threads) paged.set(thread.id, thread)
+    // (b) The marks, one thread at a time from a queue ordered by display position. A thread whose kept prototype reply a
+    // mark lets go, ahead of the place reached, joins the queue and is marked at its place, as the whole path marks it
+    // after the eviction in the same pass. Nothing named that thread, so the whole path's look at its pages in (a) found
+    // them as the last snapshot left them and changed nothing: its pages are read, not looked at again. One let go behind
+    // the place reached the whole path marked before the eviction, so it shows as it did until the next snapshot: it stays
+    // named in `reshow`, and the next change marks it. Only threads ahead of the place reached join, and that place only
+    // moves on, so no thread is marked twice and the walk ends with the threads it reached.
     const queue = new PositionQueue(position)
-    for (const id of named) if (map.has(id)) queue.push(id)
-    const records = new Map<string, AgentThread>()
+    for (const id of paged.keys()) queue.push(id)
+    const marked = new Map<string, AgentThread>()
     this.evictions = []
-    let first = true
     for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
       const reached = position(id)
-      // Read at its place: what moved under it is in its record now, whatever named it.
+      // Marked at its place: what moved under it is in its record now, whatever named it.
       this.reshow.delete(id)
       named.add(id)
-      const went = first ? gone : new Set<string>()
-      for (const thread of this.shownSnapshot({ ...this.state.host, threads: [map.get(id)!] }, went).threads) records.set(thread.id, thread)
-      if (!first) for (const each of went) gone.add(each)
-      first = false
+      const thread = paged.get(id) ?? this.questionPages.view(this.shownBeforePages({ ...this.state.host, threads: [map.get(id)!] }, new Set())).threads[0]
+      if (thread) marked.set(id, this.prototypeReady.mark(thread, settled))
       for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) queue.push(evicted)
     }
-    const shown = [...records.values()].sort(byPosition)
+    // (c) Once: prototype questions over the threads marked, in display order, letting go of the records of threads that
+    // went, and the prototype-ready mark's questions of threads that went. Run whatever the change names, so a change that
+    // only removes threads lets go of what was kept for them too.
+    this.prototypeReady.letGo(gone)
+    const shown = this.prototypeQuestions.decorate({ ...this.state.host, threads: [...marked.values()].sort(byPosition) }, gone, settled).threads
     const list = this.patchHostThreads(index, map, named, shown, gone, changes.placements !== undefined && changes.placements.length > 0)
     this.state.host = { ...this.state.host, threads: list }
     this.hostFromChanges = this.state.host
+    this.hostListFromChanges = list
     this.accepted(this.state.host, connecting, { threads: shown, gone })
     if (this.verifyingChanges) this.verifyChanges(map)
   }

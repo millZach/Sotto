@@ -324,31 +324,9 @@ export class QuestionPages {
       const named = replyOf?.(thread)
       if (Array.isArray(named)) for (const reply of named as readonly ReplyToSearch[]) look(thread, reply)
       else if (named) look(thread, named as ReplyToSearch)
-      // Most threads ask nothing: they are read without making anything, on every snapshot.
-      if (!thread.requests.length) return thread
-      let threadChanged = false
-      const requests = thread.requests.map(request => {
-        const asked = request.kind === 'question' && !isSottoRequest(request.id)
-        const key = keyOf(thread.id, requestSource(request.id))
-        if (asked) {
-          present.add(key)
-          const entry = this.entries.get(key)
-          if (!entry) this.search(key, thread, snapshot, request)
-          else if (entry.pages?.length === 0 && entry.searches < entry.tries && this.now() - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) {
-            this.search(key, thread, snapshot, request, entry)
-          }
-        }
-        const pages = asked ? this.entries.get(key)?.pages : undefined
-        const carried = request.pages
-        if (pages?.length ? JSON.stringify(carried) === JSON.stringify(pages) : carried === undefined) return request
-        threadChanged = true
-        const { pages: _carried, ...rest } = request
-        void _carried
-        return pages?.length ? { ...rest, pages: structuredClone(pages) } : rest
-      })
-      if (!threadChanged) return thread
-      changed = true
-      return { ...thread, requests }
+      const paged = this.paged(thread, { snapshot, present })
+      if (paged !== thread) changed = true
+      return paged
     })
     const now = this.now()
     if (!gone) for (const [key, entry] of this.entries) this.sweep(key, entry, present, now)
@@ -360,6 +338,47 @@ export class QuestionPages {
     }
     this.prune()
     return changed ? { ...snapshot, threads } : snapshot
+  }
+
+  /**
+   * The snapshot's threads with each question's pages on it, as `decorate` gives them, without looking at anything: no
+   * search starts or is tried again, and nothing is read for what is still asked or let go. For a thread whose searches
+   * stand as the last snapshot left them (#925).
+   */
+  view(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+    let changed = false
+    const threads = snapshot.threads.map(thread => { const paged = this.paged(thread); if (paged !== thread) changed = true; return paged })
+    return changed ? { ...snapshot, threads } : snapshot
+  }
+
+  /**
+   * A thread with each question's pages on it. With `looking`, each question is noted as still asked, and its search
+   * starts, or is tried again when it is due.
+   */
+  private paged(thread: AgentThread, looking?: { readonly snapshot: AgentHostSnapshot; readonly present: Set<string> }): AgentThread {
+    // Most threads ask nothing: they are read without making anything, on every snapshot.
+    if (!thread.requests.length) return thread
+    let threadChanged = false
+    const requests = thread.requests.map(request => {
+      const asked = request.kind === 'question' && !isSottoRequest(request.id)
+      const key = keyOf(thread.id, requestSource(request.id))
+      if (asked && looking) {
+        looking.present.add(key)
+        const entry = this.entries.get(key)
+        if (!entry) this.search(key, thread, looking.snapshot, request)
+        else if (entry.pages?.length === 0 && entry.searches < entry.tries && this.now() - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) {
+          this.search(key, thread, looking.snapshot, request, entry)
+        }
+      }
+      const pages = asked ? this.entries.get(key)?.pages : undefined
+      const carried = request.pages
+      if (pages?.length ? JSON.stringify(carried) === JSON.stringify(pages) : carried === undefined) return request
+      threadChanged = true
+      const { pages: _carried, ...rest } = request
+      void _carried
+      return pages?.length ? { ...rest, pages: structuredClone(pages) } : rest
+    })
+    return threadChanged ? { ...thread, requests } : thread
   }
 
   /** One search read against what the snapshot still asks or looks for. */
