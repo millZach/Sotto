@@ -63,7 +63,7 @@ describe('a delegation cycle (#925 step 5 review)', () => {
       thread('c', { delegatedBy: 'b', requests: [card('q-c')] })], ['a'], [['a', 'a'], ['b', 'a'], ['c', 'a']]],
     ['A and B delegate to each other, both watched', [thread('a', { delegatedBy: 'b', requests: [card('q-a')] }), thread('b', { delegatedBy: 'a', requests: [card('q-b')] })],
       ['a', 'b'], [['a', 'a'], ['b', 'b']]],
-    ['a three-cycle hanging under a watched thread', [thread('top'), thread('a', { delegatedBy: 'top' }), thread('b', { delegatedBy: 'c', requests: [card('q-b')] }),
+    ['a watched tree beside a cycle no watched thread reaches', [thread('top'), thread('a', { delegatedBy: 'top' }), thread('b', { delegatedBy: 'c', requests: [card('q-b')] }),
       thread('c', { delegatedBy: 'b' }), thread('d', { delegatedBy: 'a' })], ['top'], [['a', 'top'], ['d', 'top']]],
   ] as const)('finds the owners and makes the wake-ups the whole pass does: %s', (_name, threads, watched, owners) => {
     const { narrowed, whole, reading } = passes([...threads], watched)

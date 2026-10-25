@@ -345,9 +345,13 @@ function passTime(made: Stack, ms: number): void {
   }
 }
 
-/** Changes both Watchers' records the same way. */
+/**
+ * Changes both Watchers' records the same way, both before either is saved. A record change can make a coordinator ask the
+ * workspace for a window, whose publication would otherwise reach the other side before its record changed, so that
+ * side's observe pass read the old record and no later publication brought it another.
+ */
 async function onBoth(made: Stack, change: (record: WatcherRecord) => void): Promise<void> {
-  for (const side of made.sides) await side.control.updateWatcher(change)
+  await Promise.all(made.sides.map(side => side.control.updateWatcher(change)))
 }
 
 /** The seeded run: every operation family once in a fixed order, then a seeded mix of them. */
