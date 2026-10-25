@@ -646,9 +646,9 @@ Pressing Stop, releasing F9 or pressing the dictation shortcut again while the m
 
 **Sotto mark.** The owl: a black owl's head on a rounded teal tile, its eyes and beak cut through to the tile (ADR-0064). `build/icon.svg` is its one master, and every icon Sotto ships is rendered from it; inside the app `SottoMark` draws the same owl in the theme's colours, and while Sotto runs on macOS the Dock icon wears them too, from the saved theme in the half the main window shows. The macOS menu bar, and the Omarchy shell's bar and dictation pill, show the owl simplified for 16 pixels, without its tile; on a Mac the menu bar shows the **menu bar owl** instead; stable 0.1.39 and earlier keep the one-tint template. The wordmark beside it is "Sotto". Avoid: "logo" for the in-app mark, "glyph" for the whole mark (the glyph is the owl, the tile is the tile).
 
-**Menu bar owl.** The macOS menu bar icon: the Sotto mark's owl, in colour, perched on a wooden branch, flapping its wings every 5 to 10 seconds, glancing around, blinking, its eyes lit (ADR-0114). Its frames are drawn ahead of time at 1x (`npm run tray:owl`), kept in the repository and shown pixel-doubled; the app only swaps them, and it sits still with reduced motion. An Owl feature (`menu-bar-owl`), sent to stable; stable 0.1.39 and earlier keep the one-tint template. Avoid: "tray icon animation", "mascot".
+**Menu bar owl.** The macOS menu bar icon: a crescent moon with the owl's lit eyes in its dark side and a star that twinkles every 5 to 10 seconds; the eyes glance around and blink (ADR-0114, ADR-0137). Its frames are drawn ahead of time at 1x (`npm run tray:owl`), kept in the repository and shown pixel-doubled; the app only swaps them, and it sits still with reduced motion. An Owl feature (`menu-bar-owl`), sent to stable; stable 0.1.39 and earlier keep the one-tint template. Avoid: "tray icon animation", "mascot".
 
-**Owl body.** The menu bar owl's body colour: Slate (the default), Ink or Light, chosen on Settings → Appearance on a Mac.
+**Owl body.** The menu bar owl's moon colour: Slate (the default), Ink or Light, chosen on Settings → Appearance on a Mac.
 
 **Owl eyes.** The menu bar owl's eye colour: Sotto teal (the default), Ice blue or Amber, chosen beside Owl body.
 
