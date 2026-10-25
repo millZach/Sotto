@@ -49,10 +49,11 @@ export class HostBranchMoves {
         return { type: 'receiving' }
       }
       case 'receive-chunk': {
-        const incoming = this.own(request.moveId, owner)?.incoming
-        if (!incoming) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
+        const transfer = this.own(request.moveId, owner), incoming = transfer?.incoming
+        if (!transfer || !incoming) return branchMoveRefusal('cut-off', branchMoveWords.cutOff)
         const bytes = Buffer.from(request.data, 'base64')
-        if (!await incoming.write(request.offset, bytes)) { await this.drop(request.moveId, this.transfers.get(request.moveId)!); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
+        // A refused chunk drops the attempt this handler holds, never one that took the move's place while it was written.
+        if (!await incoming.write(request.offset, bytes)) { await this.drop(request.moveId, transfer); return branchMoveRefusal('not-whole', branchMoveWords.notWhole) }
         return { type: 'received', bytes: incoming.received }
       }
       case 'receive-finish': {
