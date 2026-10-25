@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
@@ -93,6 +93,14 @@ export interface PaneActions {
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
+/** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
+function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
+  return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
+    data-background={background || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true">
+    {background ? <Hourglass size={10} strokeWidth={2.5} /> : null}
+  </span>
+}
+
 const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
   /** This thread's own lane is running a command. Another thread's work leaves this row's actions live. */
@@ -103,7 +111,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
 }): ReactNode {
   const title = row.thread.title
   // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done.
-  const { text: status, finished, babysitting, prototype } = rowStatus(row)
+  const { text: status, finished, babysitting, prototype, background } = rowStatus(row)
   // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
@@ -138,7 +146,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onKeyDown={event => { if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); panes.onOpenBeside(row.thread.id) } }}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
-      <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <StatusRing row={row} finished={finished} background={background} />
       <span className="thread-nav__title">{title}</span>
       <RowTime row={row} live={liveClock} id={timeId} />
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
@@ -509,7 +517,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
     afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
-      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row)} />
     </button>)}</nav>}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}
