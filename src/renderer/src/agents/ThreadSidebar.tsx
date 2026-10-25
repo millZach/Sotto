@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
@@ -9,6 +9,7 @@ import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
+import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
@@ -87,6 +88,14 @@ export interface PaneActions {
   readonly restoreShortcut?: ThreadChordLabel | undefined
 }
 
+/** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
+function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
+  return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
+    data-background={background || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true">
+    {background ? <Hourglass size={10} strokeWidth={2.5} /> : null}
+  </span>
+}
+
 /**
  * One thread in the sidebar. Memoised: with the state and the rows derived from it structurally shared, a
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
@@ -102,7 +111,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
 }): ReactNode {
   const title = row.thread.title
   // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done.
-  const { text: status, finished, babysitting, prototype } = rowStatus(row)
+  const { text: status, finished, babysitting, prototype, background } = rowStatus(row)
   // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
@@ -137,7 +146,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onKeyDown={event => { if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); panes.onOpenBeside(row.thread.id) } }}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
-      <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <StatusRing row={row} finished={finished} background={background} />
       <span className="thread-nav__title">{title}</span>
       <RowTime row={row} live={liveClock} id={timeId} />
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
@@ -416,6 +425,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
   const folderPeek = useOwlFeature('folder-peek')
+  const { collapsed } = useSidebarSize()
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings
@@ -446,7 +456,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
         event.preventDefault()
-        void settle(row.thread, row.project)
+        // The collapsed rail keeps showing the focused thread even once settled, so move on to the top open one.
+        const next = collapsed ? openRows.find(item => item.thread.id !== row.thread.id) : undefined
+        void settle(row.thread, row.project).then(settled => { if (settled && next) onOpen(next.thread.id) })
         return
       }
       if (press(restoreChord)) {
@@ -478,7 +490,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutsLive, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
+  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
@@ -505,7 +517,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
     afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
-      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row)} />
     </button>)}</nav>}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}

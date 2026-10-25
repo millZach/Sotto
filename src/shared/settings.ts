@@ -5,6 +5,7 @@ import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import {
   APPEARANCE_CONTRAST,
@@ -181,6 +182,12 @@ export interface AppSettings {
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
    */
   watcherSettlesFinishedThreads: boolean
+  /**
+   * Where new workers start (#1032), under Settings, Watcher, part of the Owl feature `cross-machine-work`: This computer
+   * by default, Watcher's own choice, or a connected machine by its saved host ID. A start that names a machine or a
+   * system overrides it for that start. Read when a start or a delegation is placed.
+   */
+  newWorkerMachine: WorkerMachineSetting
   /**
    * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
    * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
@@ -401,6 +408,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
@@ -504,6 +512,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
@@ -669,6 +678,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
