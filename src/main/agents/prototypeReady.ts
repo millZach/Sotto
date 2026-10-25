@@ -94,6 +94,13 @@ export class PrototypeReady {
     this.restore(saved)
   }
 
+  /**
+   * Told of each thread whose kept reply or cleared source was let go to make room (`by` is the thread whose own made the
+   * room), since that can change the thread's mark though nothing changed in the thread. A caller that reads only the
+   * threads that changed reads it again (#925). Unset, nothing is told.
+   */
+  onEvicted: ((threadId: string, by: string) => void) | undefined
+
   /** When marks began, as the coordinator saves it. */
   since(): number | undefined { return this.began }
 
@@ -273,7 +280,11 @@ export class PrototypeReady {
   private keep(threadId: string, messageId: string, createdAt: string): void {
     this.kept.delete(threadId)
     this.kept.set(threadId, { messageId, createdAt })
-    while (this.kept.size > PROTOTYPES_MARKED_MAX) this.kept.delete(this.kept.keys().next().value!)
+    while (this.kept.size > PROTOTYPES_MARKED_MAX) {
+      const oldest = this.kept.keys().next().value!
+      this.kept.delete(oldest)
+      this.onEvicted?.(oldest, threadId)
+    }
   }
 
   /** The thread as clients read it: with `prototypeReady` while it is marked, without it otherwise. */
@@ -294,7 +305,12 @@ export class PrototypeReady {
     const key = keyOf(threadId, source)
     if (this.cleared.has(key)) return false
     this.cleared.set(key, { threadId, source })
-    while (this.cleared.size > PROTOTYPES_CLEARED_MAX) this.cleared.delete(this.cleared.keys().next().value!)
+    while (this.cleared.size > PROTOTYPES_CLEARED_MAX) {
+      const oldest = this.cleared.keys().next().value!
+      const evicted = this.cleared.get(oldest)!
+      this.cleared.delete(oldest)
+      this.onEvicted?.(evicted.threadId, threadId)
+    }
     return true
   }
 }

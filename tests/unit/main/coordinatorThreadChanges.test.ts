@@ -3,12 +3,18 @@
  * The coordinator's side of thread changes (ADR-0016, #925, step 5). The coordinator takes the workspace's thread changes
  * in: an ordinary change shows, tracks and lists again only the threads it names, and every other thread keeps the record
  * it was shown as. These hold that to the whole path it replaces: a coordinator that takes every publication in whole,
- * as every coordinator did before, over the same workspace, says byte for byte what the one that takes in changes says,
- * across a long seeded run of mixed operations. What is compared after each operation is everything downstream of the
- * coordinator: its host snapshot, its broadcast to the window and the phone, each thread's detail, the router's state for
- * the window, and the shell a paired phone is sent over the host socket.
+ * as every coordinator did before, over the same workspace, says what the one that takes in changes says, across long
+ * seeded runs of mixed operations. Usage is held to its whole path the same way.
+ *
+ * What is compared after each operation is everything downstream of the coordinator, as JSON: its host snapshot, its
+ * last broadcast and a fresh broadcast shell (what the window and the phone are sent), what a window holds of each thread
+ * it looks at, the router's state for the window, and the shell a paired phone was last sent over the host socket. Three
+ * things are normalized, and nothing else: each failure's name and each page's token, which each coordinator makes afresh
+ * at random, are named in the order they first appear; and a window's held history is compared without its revision
+ * numbers, since each coordinator is told of a command a moment apart and one may send a revision the other never needed
+ * (every other field of the detail, such as `earlierAvailable`, is compared).
  */
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,12 +23,17 @@ import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentRequest, type Agent
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import type { HeldProviders } from '../../../src/shared/heldProviders'
 import type { AgentControl } from '../../../src/main/agents/control'
+import type { AgentHost } from '../../../src/main/agents/host'
 import { LocalHostService } from '../../../src/main/agents/hostService'
 import { PairedClients } from '../../../src/main/agents/pairing'
+import { PROTOTYPE_HOLD_MAX_MS, PROTOTYPE_SEND_BACK_WINDOW_MS } from '../../../src/main/agents/prototypeQuestions'
+import { PROTOTYPES_CLEARED_MAX, PROTOTYPES_MARKED_MAX } from '../../../src/main/agents/prototypeReady'
+import { FINISHED_UNREAD_MAX } from '../../../src/main/agents/finishedUnread'
 import { ConfiguredProviderHost } from '../../../src/main/agents/providerSwitch'
 import { SOTTO_REQUEST_PREFIX, type SottoThreadRequests } from '../../../src/main/agents/sottoRequests'
-import { ThreadChangesDrift, type ThreadMap } from '../../../src/main/agents/threadChanges'
+import { ThreadChangesDrift, type AgentHostChanges, type ThreadMap } from '../../../src/main/agents/threadChanges'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
+import { UsageService } from '../../../src/main/agents/usageService'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { startSocketServer } from '../../../src/host/socketServer'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
@@ -42,12 +53,14 @@ const thread = (id: string, fields: Partial<AgentThread> = {}): AgentThread => (
 const record = (id: string, sequence: number, status: AgentActivity['status'] = 'completed'): AgentActivity =>
   ({ id, turnId: 'turn', sequence, kind: 'tool', status, title: 'Tool', output: `Output ${id}` })
 const quiet = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 60))
+const MODEL = { id: 'fake:model', provider: 'Fake', name: 'Synthetic model', ready: true }
+const OTHER_MODEL = { id: 'fake:other', provider: 'Fake', name: 'Other synthetic model', ready: true }
 
 function providerState(root: string, sessions: readonly string[]): AgentHostSnapshot {
   return { ...structuredClone(EMPTY_AGENT_HOST), name: 'Synthetic', version: '1', connected: true,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true },
     projects: [{ id: 'project', title: 'Synthetic project', path: join(root, 'project') }],
-    models: [{ id: 'fake:model', provider: 'Fake', name: 'Synthetic model', ready: true }],
+    models: [{ ...MODEL }],
     threads: sessions.map(id => thread(id)) }
 }
 
@@ -73,6 +86,9 @@ interface Downstream {
   readonly control: AgentControl
   readonly requests: ReturnType<typeof sottoRequests>
   readonly router: DesktopHostRouter
+  /** The coordinator's prototype question timers, which the test runs when their time comes. */
+  readonly timers: { run: () => void; due: number; done: boolean }[]
+  readonly usage: UsageService
   broadcast: AgentState | undefined
   window: AgentState | undefined
   /** Each thread's history as a window holds it, from the whole details and deltas it was sent. */
@@ -84,16 +100,21 @@ interface Downstream {
 /**
  * The adapter, the identity wrapper, the provider switch and one workspace, as main wires them, with two coordinators
  * over the workspace: the first takes its thread changes in, the second every publication whole. Each has its own
- * folder, its own host service and router for the window, and a phone paired over its own host socket.
+ * folder, its own host service and router for the window, a phone paired over its own host socket, and its own usage:
+ * the first's reads the workspace's thread changes, the second's its activity snapshots. Each usage reads usage through
+ * `visitUsage`, which fails for the sessions in `failingUsage`.
  */
-async function stack(control: TestControlOptions = {}) {
+async function stack(control: TestControlOptions = {}, threads = 6) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-coordinator-changes-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }))
   await mkdir(join(root, 'project'), { recursive: true })
+  // Two prototype pages the agents' replies and questions name.
+  await writeFile(join(root, 'project', 'mock.html'), '<!doctype html><title>Mock</title>')
+  await writeFile(join(root, 'project', 'other.html'), '<!doctype html><title>Other</title>')
   const registry = new ThreadRegistry(join(root, 'registry'))
   await registry.load()
   cleanup.push(async () => { await registry.flush().catch(() => undefined) })
-  const sessions = ['s1', 's2', 's3', 's4', 's5', 's6']
+  const sessions = Array.from({ length: threads }, (_, index) => `s${index + 1}`)
   const adapter = new StreamingAdapter(providerState(root, sessions))
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
@@ -103,22 +124,37 @@ async function stack(control: TestControlOptions = {}) {
   cleanup.push(async () => { workspace.disconnect(); await workspace.privacyChanged().catch(() => undefined); workspace.dispose() })
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
+  const failingUsage = new Set<string>()
   const made: Downstream[] = []
   for (const name of ['changed', 'whole'] as const) {
     const directory = join(root, name)
     await mkdir(directory, { recursive: true })
-    const coordinator = createAgentControl({ directory, host: workspace, credentials, ...control })
+    const timers: Downstream['timers'] = []
+    const coordinator = createAgentControl({ directory, host: workspace, credentials, ...control,
+      prototypeQuestionTimer: (run, ms) => { const timer = { run, due: Date.now() + ms, done: false }; timers.push(timer); return () => { timer.done = true } } })
     if (name === 'whole') (coordinator as unknown as { acceptsWhole: boolean }).acceptsWhole = true
+    // Sotto's note to a thread about its prototype question is taken by the provider, as one that goes through is.
+    vi.spyOn(coordinator as unknown as { sendPrototypeQuestionBack(): Promise<boolean> }, 'sendPrototypeQuestionBack').mockResolvedValue(true)
     const requests = sottoRequests()
     coordinator.useSottoRequests(requests.requests)
     await coordinator.start()
     cleanup.push(() => coordinator.dispose())
+    // Usage over the workspace, reading through a `visitUsage` that fails for `failingUsage`; the second sees no thread changes.
+    const usageHost = new Proxy(workspace, { get(target, key) {
+      if (key === 'visitUsage') return (threadId: string) => { if (failingUsage.has(registry.byThread(threadId)?.sessionId ?? '')) throw new Error('The usage could not be read.') }
+      if (key === 'subscribeActivityChanges' && name === 'whole') return undefined
+      const value = Reflect.get(target, key, target) as unknown
+      return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value
+    } }) as unknown as AgentHost
+    const usage = new UsageService({ directory: join(directory, 'usage'), host: usageHost })
+    usage.start()
+    cleanup.push(() => usage.close())
     const service = new LocalHostService({ control: coordinator })
     const router = new DesktopHostRouter(() => emptyDesktopState(coordinator.hostId()), { watcherEnabled: control.watcherEnabled ?? true, ...(control.heldProviders ? { heldProviders: control.heldProviders } : {}) })
     cleanup.push(() => router.dispose())
     router.add({ hostId: coordinator.hostId()!, name: 'This computer', kind: 'local', service, detail: id => coordinator.threadDetail(id),
       preview: request => coordinator.attachmentPreview(request), subscribeDetail: listener => coordinator.subscribeThreadDetail(listener) })
-    // Both phones are paired with the same client ID, so what each is sent can be compared byte for byte.
+    // Both phones are paired with the same client ID, so what each is sent can be compared.
     let ids = 0
     const pairing = new PairedClients(join(directory, 'pairing'), { createId: () => `00000000-0000-4000-8000-${(++ids).toString(16).padStart(12, '0')}` })
     await pairing.load()
@@ -128,7 +164,7 @@ async function stack(control: TestControlOptions = {}) {
     const peer = await rawPeer(server.descriptor.port, pairing.signSession(paired.clientId))
     cleanup.push(() => peer.frames.close())
     await peer.call('hello', { op: 'hello' })
-    const seen: Downstream = { control: coordinator, requests, router, broadcast: undefined, window: undefined, details: new Map(),
+    const seen: Downstream = { control: coordinator, requests, router, timers, usage, broadcast: undefined, window: undefined, details: new Map(),
       targets: () => (coordinator as unknown as { detailTargets(): string[] }).detailTargets(),
       phone: () => peer.messages.filter(message => message.event === 'shell').at(-1) as Record<string, unknown> | undefined }
     coordinator.subscribe(state => { seen.broadcast = state })
@@ -143,69 +179,115 @@ async function stack(control: TestControlOptions = {}) {
   }
   const [changed, whole] = made as [Downstream, Downstream]
   const sotto = (session: string): string => registry.bySession('claude', session)!.threadId
-  return { root, registry, adapter, workspace, changed, whole, sessions, sotto }
+  const at = (session: string) => adapter.state.threads.find(item => item.id === session)!
+  /** Marks the sessions, as the adapter's own paths do, and publishes. */
+  const publish = (...marked: string[]): void => { for (const session of marked) adapter.mark(session); adapter.publish(false) }
+  const settle = async (): Promise<void> => { await quiet(); await workspace.flush(); await quiet() }
+  return { root, registry, adapter, workspace, changed, whole, sessions, sotto, at, publish, settle, failingUsage }
 }
+type Stack = Awaited<ReturnType<typeof stack>>
 
 /**
- * The JSON of `value` with each failure's name, which each coordinator makes afresh with a random ID, given in the order
- * it first appears: the same failures, named the same way, read the same.
+ * The JSON of `value` with each failure's name and each page's token, which each coordinator makes afresh at random,
+ * named in the order it first appears: the same failures and pages, named the same way, read the same.
  */
 function text(value: unknown): string {
   const names = new Map<string, string>()
-  return JSON.stringify(value ?? null).replace(/"failureId":"([^"]+)"/gu, (_whole, id: string) => {
-    if (!names.has(id)) names.set(id, `failure-${names.size}`)
-    return `"failureId":"${names.get(id)}"`
-  })
+  const name = (kind: string, id: string): string => {
+    const key = `${kind}:${id}`
+    if (!names.has(key)) names.set(key, `${kind}-${names.size}`)
+    return names.get(key)!
+  }
+  return JSON.stringify(value ?? null)
+    .replace(/"failureId":"([^"]+)"/gu, (_whole, id: string) => `"failureId":"${name('failure', id)}"`)
+    .replace(/"token":"([^"]+)"/gu, (_whole, id: string) => `"token":"${name('token', id)}"`)
 }
 
-/** The seeded run, with every operation family once in a fixed order first and then a seeded mix of them. */
-async function equivalenceRun(control: TestControlOptions, seed: number) {
-  vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-  const { adapter, workspace, changed, whole, sessions, sotto } = await stack(control)
-  const both = [changed, whole]
-  // The changes path takes most publications in as changes; the whole path never subscribes to them.
-  const taken = vi.spyOn(changed.control as unknown as { acceptChanges(map: ThreadMap, changes: unknown): void }, 'acceptChanges')
-  const patched = vi.spyOn(changed.control as unknown as { patchHostThreads(...args: unknown[]): unknown }, 'patchHostThreads')
-  const takenWhole = vi.spyOn(whole.control as unknown as { acceptChanges(map: ThreadMap, changes: unknown): void }, 'acceptChanges')
-  const settle = async (): Promise<void> => { await quiet(); await workspace.flush(); await quiet() }
-  let compared = 0
-  const same = async (step: string): Promise<void> => {
-    await settle()
-    compared++
-    expect(text(changed.control.watcherSnapshot()), `the coordinator's host snapshot after ${step}`).toBe(text(whole.control.watcherSnapshot()))
-    expect(text(changed.broadcast), `the coordinator's last broadcast after ${step}`).toBe(text(whole.broadcast))
-    expect(text(changed.control.broadcastShell()), `the coordinator's broadcast shell after ${step}`).toBe(text(whole.control.broadcastShell()))
-    expect(text(changed.window), `the window's state from the router after ${step}`).toBe(text(whole.window))
-    // What a window holds of each thread it looks at, without the revisions: each coordinator is told of a command a moment
-    // apart, so one may send a revision the other never needed, but what the window holds is the same.
-    const targets = changed.targets()
-    expect(targets, `the threads a window looks at after ${step}`).toEqual(whole.targets())
-    const held = (seen: Downstream) => targets.map(id => { const detail = seen.details.get(id); return detail && { messages: detail.messages, activities: detail.activities } })
-    expect(text(held(changed)), `each shown thread's history after ${step}`).toBe(text(held(whole)))
-    await expect.poll(() => text(changed.phone()?.state), { message: `the phone's shell over the host socket after ${step}` }).toBe(text(whole.phone()?.state))
+/** Where two texts first differ, with a little of each around it. */
+function where(changed: string, whole: string): string {
+  let at = 0
+  while (at < changed.length && changed[at] === whole[at]) at++
+  return `at ${at}: changes path ...${changed.slice(Math.max(0, at - 120), at + 200)}... whole path ...${whole.slice(Math.max(0, at - 120), at + 200)}...`
+}
+
+/** Every way the two coordinators' downstream differs now, named. */
+function differences({ changed, whole }: Stack): string[] {
+  const held = (seen: Downstream, targets: readonly string[]) => targets.map(id => {
+    const detail = seen.details.get(id)
+    if (!detail) return undefined
+    const { revision: _revision, ...rest } = detail as AgentThreadDetail & { baseRevision?: number }
+    void _revision
+    return rest
+  })
+  const usage = (seen: Downstream) => [...(seen.usage as unknown as { visited: Set<string> }).visited].sort()
+  const targets = changed.targets()
+  const aspects: [string, unknown, unknown][] = [
+    ['the coordinator\'s host snapshot', changed.control.watcherSnapshot(), whole.control.watcherSnapshot()],
+    ['the coordinator\'s last broadcast', changed.broadcast, whole.broadcast],
+    ['the coordinator\'s broadcast shell', changed.control.broadcastShell(), whole.control.broadcastShell()],
+    ['the window\'s state from the router', changed.window, whole.window],
+    ['the threads a window looks at', targets, whole.targets()],
+    ['each shown thread\'s history', held(changed, targets), held(whole, targets)],
+    ['the phone\'s shell over the host socket', changed.phone()?.state, whole.phone()?.state],
+    ['the threads whose usage was read', usage(changed), usage(whole)],
+  ]
+  return aspects.flatMap(([aspect, left, right]) => { const a = text(left), b = text(right); return a === b ? [] : [`${aspect} ${where(a, b)}`] })
+}
+
+/** The two coordinators agree once both have taken in what the operation set off. */
+async function agree(made: Stack, step: string): Promise<void> {
+  await made.settle()
+  await expect.poll(() => differences(made), { timeout: 3_000, message: `after ${step}` }).toEqual([])
+}
+
+/** Moves the clock on by `ms` and runs every prototype question timer that is due, on both coordinators. */
+async function passTime(made: Stack, ms: number): Promise<void> {
+  vi.setSystemTime(Date.now() + ms)
+  for (const seen of [made.changed, made.whole]) {
+    for (const timer of seen.timers.splice(0)) {
+      if (timer.done) continue
+      if (timer.due <= Date.now()) { timer.done = true; timer.run() } else seen.timers.push(timer)
+    }
   }
-  const at = (session: string) => adapter.state.threads.find(item => item.id === session)!
-  const publish = async (...marked: string[]): Promise<void> => { for (const session of marked) adapter.mark(session); adapter.publish(false) }
-  for (const each of both) await each.control.command({ type: 'connect' })
-  await publish('s1')
-  await same('connecting')
-  // mulberry32: whole 32-bit integers throughout, so every operation family is reachable.
-  const next = (below: number): number => {
+}
+
+/** mulberry32: whole 32-bit integers throughout, so every operation family is reachable. */
+function prng(seed: number): (below: number) => number {
+  return below => {
     seed = (seed + 0x6d2b79f5) | 0
     let mixed = Math.imul(seed ^ (seed >>> 15), 1 | seed)
     mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed
     return ((mixed ^ (mixed >>> 14)) >>> 0) % below
   }
-  let made = 0
+}
+
+/** The seeded run, with every operation family once in a fixed order first and then a seeded mix of them. */
+async function equivalenceRun(control: TestControlOptions, seed: number, rounds = 110) {
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+  const made = await stack(control)
+  const { adapter, workspace, changed, whole, sessions, sotto, at, publish, failingUsage } = made
+  const both = [changed, whole]
+  // The changes path takes most publications in as changes; the whole path never subscribes to them.
+  const taken = vi.spyOn(changed.control as unknown as { acceptChanges(map: ThreadMap, changes: unknown): void }, 'acceptChanges')
+  const patched = vi.spyOn(changed.control as unknown as { patchHostThreads(...args: unknown[]): unknown }, 'patchHostThreads')
+  const takenWhole = vi.spyOn(whole.control as unknown as { acceptChanges(map: ThreadMap, changes: unknown): void }, 'acceptChanges')
+  let compared = 0
+  const same = async (step: string): Promise<void> => { compared++; await agree(made, step) }
+  for (const each of both) await each.control.command({ type: 'connect' })
+  publish('s1')
+  await same('connecting')
+  const next = prng(seed)
+  let madeThreads = 0, question = 0
   const messages = new Map<string, string>()
+  const say = (session: string, id: string, role: 'user' | 'assistant', words: string): void => { adapter.log.add(session, { id, role, text: words, createdAt: new Date().toISOString() }) }
   const families: readonly ((session: string, round: number) => Promise<void>)[] = [
-    async (session) => { at(session).status = at(session).status === 'running' ? 'idle' : 'running'; await publish(session); await same(`turning ${session} ${at(session).status}`) },
-    async (session, round) => { const id = `m-${round}`; messages.set(session, id); adapter.log.add(session, { id, role: round % 2 ? 'assistant' : 'user', text: `Message ${round}`, createdAt: AT }); await publish(); await same(`a message in ${session}`) },
-    async (session, round) => { const list = at(session).activities ?? []; at(session).activities = [...list, record(`r-${round}`, list.length, round % 3 ? 'completed' : 'running')]; await publish(session); await same(`a record in ${session}`) },
-    async (session, round) => { at(session).title = `Provider ${round}`; await publish(session); await same(`the provider renaming ${session}`) },
+    async (session) => { at(session).status = at(session).status === 'running' ? 'idle' : 'running'; publish(session); await same(`turning ${session} ${at(session).status}`) },
+    async (session, round) => { const id = `m-${round}`; messages.set(session, id); say(session, id, round % 2 ? 'assistant' : 'user', `Message ${round}`); publish(); await same(`a message in ${session}`) },
+    async (session, round) => { const list = at(session).activities ?? []; at(session).activities = [...list, record(`r-${round}`, list.length, round % 3 ? 'completed' : 'running')]; publish(session); await same(`a record in ${session}`) },
+    async (session, round) => { at(session).title = `Provider ${round}`; publish(session); await same(`the provider renaming ${session}`) },
     async (session, round) => { await workspace.renameThread(sotto(session), `User ${round}`); await same(`the user renaming ${session}`) },
     async (session, round) => { await workspace.setWorkspaceSettled('thread', sotto(session), round % 2 === 0); await same(`settling ${session}`) },
-    async (session) => { at(session).status = at(session).status === 'error' ? 'idle' : 'error'; await publish(session); await same(`${session} failing or resting`) },
+    async (session) => { at(session).status = at(session).status === 'error' ? 'idle' : 'error'; publish(session); await same(`${session} failing or resting`) },
     async () => { const shown = sessions.filter(() => next(2) === 0).map(sotto); for (const each of both) each.control.showThreads(shown); await same('a client showing other threads') },
     async () => {
       // Each coordinator names its own failures; the user dismisses all of them on each.
@@ -215,21 +297,49 @@ async function equivalenceRun(control: TestControlOptions, seed: number) {
       }
       await same('Dismiss all')
     },
-    async (session) => { adapter.state.threads.splice(adapter.state.threads.indexOf(at(session)), 1); sessions.splice(sessions.indexOf(session), 1); await publish(session); await same(`the provider dropping ${session}`) },
-    async () => { const id = `n${made++}`; adapter.state.threads.push(thread(id)); sessions.push(id); await publish(id); await same(`the provider starting ${id}`) },
-    async (session, round) => { at(session).requests = at(session).requests.length ? [] : [{ id: `q-${round}`, kind: 'question', text: 'Which?', options: [] } as unknown as AgentRequest]; await publish(session); await same(`a question in ${session}`) },
-    async (session) => { at(session).archivedAt = at(session).archivedAt ? undefined : AT; await publish(session); await same(`archiving ${session}`) },
+    async (session) => { adapter.state.threads.splice(adapter.state.threads.indexOf(at(session)), 1); sessions.splice(sessions.indexOf(session), 1); publish(session); await same(`the provider dropping ${session}`) },
+    async () => { const id = `n${madeThreads++}`; adapter.state.threads.push(thread(id)); sessions.push(id); publish(id); await same(`the provider starting ${id}`) },
+    async (session, round) => { at(session).requests = at(session).requests.length ? [] : [{ id: `q-${round}`, kind: 'question', text: 'Which?', options: [] } as unknown as AgentRequest]; publish(session); await same(`a question in ${session}`) },
+    async (session) => { at(session).archivedAt = at(session).archivedAt ? undefined : AT; publish(session); await same(`archiving ${session}`) },
     async (session) => { for (const each of both) each.requests.toggle(sotto(session)); await same(`a request of Sotto's own in ${session}`) },
     async (session, round) => {
       const id = messages.get(session)
       if (id) adapter.log.appendText(session, id, ` more ${round}`)
-      else { messages.set(session, `m-${round}`); adapter.log.add(session, { id: `m-${round}`, role: 'assistant', text: `Streamed ${round}`, createdAt: AT }) }
-      await publish(); await same(`a streamed reply in ${session}`)
+      else { messages.set(session, `m-${round}`); say(session, `m-${round}`, 'assistant', `Streamed ${round}`) }
+      publish(); await same(`a streamed reply in ${session}`)
     },
     async (session) => { for (const each of both) await each.control.command({ type: 'select-thread', threadId: sotto(session) }); await same(`selecting ${session}`) },
+    // A finished turn's reply naming a prototype page, which earns the thread its prototype-ready mark once it is found.
+    async (session, round) => { at(session).status = 'idle'; say(session, `page-${round}`, 'assistant', `The mock-up is ready: ${round % 2 ? 'mock.html' : 'other.html'}`); publish(session); await same(`a reply in ${session} naming a page`) },
+    // A question about a prototype: held while its pages are looked for, shown with them, or sent back without one.
+    async (session, round) => {
+      const page = round % 3 === 0 ? ' Open mock.html to see it.' : ''
+      at(session).requests = [{ id: `prototype-${question++}`, kind: 'question', text: `Does this prototype look right?${page}`, options: [] } as unknown as AgentRequest]
+      publish(session); await same(`a prototype question in ${session}`)
+    },
+    // A prototype question's deadlines pass: the hold, the provider's word on the note, and the minute after it.
+    async (_session, round) => { await passTime(made, round % 2 ? PROTOTYPE_HOLD_MAX_MS : PROTOTYPE_SEND_BACK_WINDOW_MS); publish(); await same('a prototype deadline passing') },
+    // The user opens one of a marked thread's pages, which reviews its prototype.
+    async () => {
+      for (const each of both) {
+        const marked = each.control.broadcastShell().host.threads.find(item => item.prototypeReady?.pages.length)
+        if (marked) each.control.questionPageOpened(marked.prototypeReady!.pages[0]!.token)
+      }
+      await same('a prototype page opened')
+    },
+    // The provider's catalog changing, which is a change to the rest of the snapshot.
+    async () => { adapter.state.models = adapter.state.models.length > 1 ? [{ ...MODEL }] : [{ ...MODEL }, { ...OTHER_MODEL }]; publish(); await same('the provider\'s catalog changing') },
+    // A thread's model changing at the provider.
+    async (session) => { at(session).modelId = at(session).modelId === OTHER_MODEL.id ? MODEL.id : OTHER_MODEL.id; publish(session); await same(`${session}'s model changing`) },
+    // A thread whose usage cannot be read yet, read again with a later publication once it can.
+    async () => {
+      if (failingUsage.size) { failingUsage.clear(); publish(); await same('usage readable again'); return }
+      const id = `u${madeThreads++}`
+      failingUsage.add(id); adapter.state.threads.push(thread(id)); sessions.push(id); publish(id); await same(`a thread starting whose usage cannot be read: ${id}`)
+    },
   ]
   const ran = new Map<number, number>()
-  const order = [...families.keys(), ...Array.from({ length: 110 }, () => next(families.length))]
+  const order = [...families.keys(), ...Array.from({ length: rounds }, () => next(families.length))]
   for (const [round, family] of order.entries()) {
     // A thread is dropped only while more than three remain.
     if (family === 9 && sessions.length <= 3) continue
@@ -238,20 +348,107 @@ async function equivalenceRun(control: TestControlOptions, seed: number) {
     ran.set(family, (ran.get(family) ?? 0) + 1)
   }
   expect([...ran.keys()].sort((left, right) => left - right), 'every operation family ran').toEqual([...families.keys()])
-  expect(compared).toBeGreaterThan(80)
-  expect(taken.mock.calls.length).toBeGreaterThan(40)
+  expect(compared).toBeGreaterThan(rounds * 0.8)
+  expect(taken.mock.calls.length).toBeGreaterThan(rounds / 3)
   // Most changes are taken in as changes, not in whole.
-  expect(patched.mock.calls.length).toBeGreaterThan(20)
+  expect(patched.mock.calls.length).toBeGreaterThan(rounds / 6)
   expect(takenWhole).not.toHaveBeenCalled()
+  return made
 }
 
 describe('the coordinator taking in changes and taking in everything', () => {
   it('hands on the same as the whole path across a long run of mixed operations, on Owl', async () => {
     await equivalenceRun({ watcherEnabled: true }, 925)
-  }, 120_000)
+  }, 180_000)
 
   it('hands on the same as the whole path with providers held and threads that begin from others, as on stable', async () => {
     await equivalenceRun({ watcherEnabled: false, threadStartsEnabled: true, heldProviders: new Set(['muse', 'opencode', 'cursor']) as HeldProviders }, 1334)
+  }, 180_000)
+})
+
+describe('the coordinator at its limits', () => {
+  /**
+   * Codex's case (#925 review): with more running threads than Just finished keeps marks for, two finish in one change
+   * that names them out of display order, and then the rest finish. Which marks the limit drops follows the order the
+   * finishes are read in, so the changes path reads them in display order, as the whole path does.
+   */
+  it('reads threads that finish in one change in display order, so the Just finished limit drops the same marks', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true }, FINISHED_UNREAD_MAX + 1)
+    const { adapter, changed, whole, sessions, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    for (const session of sessions) at(session).status = 'running'
+    publish(...sessions)
+    await agree(made, 'every thread running')
+    const received = vi.spyOn(changed.control as unknown as { acceptChanges(map: ThreadMap, changes: AgentHostChanges): void }, 'acceptChanges')
+    // B and A finish together, named B first.
+    at('s2').status = 'idle'; at('s1').status = 'idle'
+    adapter.mark('s2'); adapter.mark('s1'); adapter.publish(false)
+    await agree(made, 's2 and s1 finishing together')
+    const titles = received.mock.calls.flatMap(([, changes]) => changes.upserts.map(item => item.title))
+    expect(titles.indexOf('Thread s2'), 'the change names s2 before s1').toBeLessThan(titles.indexOf('Thread s1'))
+    for (const session of sessions.slice(2)) at(session).status = 'idle'
+    publish(...sessions.slice(2))
+    await agree(made, 'every other thread finishing')
+    const marked = changed.control.broadcastShell().host.threads.filter(item => item.finishedUnread).length
+    expect(marked).toBe(FINISHED_UNREAD_MAX)
+  }, 120_000)
+
+  /**
+   * Codex's case (#925 review): kept prototype marks are full, and thread A keeps its mark through an older reply, its
+   * newest naming no page. Thread B, whose page still lingers, is unarchived and takes a mark back, which lets A's kept
+   * reply go. The whole path clears A's mark when it reads A after that, in the same pass when A comes after B and in the
+   * next when it comes before, and the changes path must too, though no change names A.
+   */
+  it.each([['before', 's1', 's2'], ['after', 's5', 's2']] as const)('clears a mark whose kept reply another thread\'s mark let go, with that thread %s it', async (_order, a, b) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { adapter, changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    // Dated now: a coordinator marks only replies written after its marks began, when it was made.
+    const reply = (session: string, id: string, words: string): void => { adapter.log.add(session, { id, role: 'assistant', text: words, createdAt: new Date().toISOString() }); publish(session) }
+    reply(a, 'a-page', 'The mock-up is ready: mock.html')
+    reply(b, 'b-page', 'The other mock-up is ready: other.html')
+    await agree(made, 'both threads marked')
+    expect(changed.control.broadcastShell().host.threads.find(item => item.id === sotto(a))?.prototypeReady).toBeDefined()
+    at(b).archivedAt = AT; publish(b)
+    reply(a, 'a-plain', 'Nothing else to show.')
+    await agree(made, `${b} archived and ${a} replying again`)
+    // Every other kept mark, newer than A's, fills the kept marks up to their limit.
+    const others = Array.from({ length: PROTOTYPES_MARKED_MAX - 1 }, (_, index) => ({ threadId: `gone-${index}`, messageId: `gone-reply-${index}`, createdAt: AT }))
+    for (const each of [changed, whole]) (each.control as unknown as { prototypeReady: { restore(saved: readonly never[], began: undefined, marked: typeof others): void } }).prototypeReady.restore([], undefined, others)
+    at(b).archivedAt = undefined; publish(b)
+    await agree(made, `${b} unarchived, taking its mark back`)
+    // Another thread's change, which names neither.
+    adapter.log.add('s3', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
+    await agree(made, 'an unrelated change')
+    expect(changed.control.broadcastShell().host.threads.find(item => item.id === sotto(a))?.prototypeReady).toBeUndefined()
+  }, 120_000)
+
+  it('brings back a mark whose cleared source the cleared sources let go, though no change names it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true })
+    const { adapter, changed, whole, sotto, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    adapter.log.add('s4', { id: 'page', role: 'assistant', text: 'The mock-up is ready: mock.html', createdAt: new Date().toISOString() }); publish('s4')
+    await agree(made, 's4 marked')
+    for (const each of [changed, whole]) {
+      const marked = each.control.broadcastShell().host.threads.find(item => item.id === sotto('s4'))!
+      each.control.questionPageOpened(marked.prototypeReady!.pages[0]!.token)
+    }
+    await agree(made, 's4\'s page opened')
+    expect(changed.control.broadcastShell().host.threads.find(item => item.id === sotto('s4'))?.prototypeReady).toBeUndefined()
+    // Opening a page takes the coordinator's own snapshot again, so the change after it is taken whole; this one is not.
+    adapter.log.add('s2', { id: 'between', role: 'user', text: 'Between', createdAt: AT }); publish()
+    await agree(made, 'a change taken in as one')
+    // Newer cleared sources fill the list past its limit, which lets s4's go.
+    for (const each of [changed, whole]) {
+      const ready = (each.control as unknown as { prototypeReady: { add(threadId: string, source: string): boolean } }).prototypeReady
+      for (let index = 0; index < PROTOTYPES_CLEARED_MAX; index++) ready.add(`gone-${index}`, `reply:gone-${index}`)
+    }
+    adapter.log.add('s1', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
+    await agree(made, 'an unrelated change')
+    expect(changed.control.broadcastShell().host.threads.find(item => item.id === sotto('s4'))?.prototypeReady).toBeDefined()
   }, 120_000)
 })
 
@@ -284,6 +481,32 @@ describe('the coordinator\'s thread changes', () => {
     whole.mockClear()
     adapter.state.threads.find(item => item.id === 's3')!.status = 'running'; adapter.mark('s3'); adapter.publish(false); await quiet()
     expect(whole.mock.calls.some(([, fromChanges]) => fromChanges === true)).toBe(true)
+  })
+
+  it('reads the clock once for a change and its check in verifying mode, so a deadline passing between them is no drift', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack()
+    const { changed, sotto, at, publish } = made
+    await changed.control.command({ type: 'connect' })
+    publish(); await made.settle()
+    // A question about a prototype with no page: held while its pages are looked for, until its deadline.
+    at('s2').requests = [{ id: 'held', kind: 'question', text: 'Does this prototype look right?', options: [] } as unknown as AgentRequest]
+    publish('s2'); await made.settle()
+    const inside = changed.control as unknown as { verifyingChanges: boolean; verifyChanges(map: ThreadMap): void
+      prototypeQuestions: { records: Map<string, { questions: Map<string, { state: string; since: number }> }> } }
+    const held = inside.prototypeQuestions.records.get(sotto('s2'))!.questions.get('held')!
+    expect(held.state).toBe('held')
+    inside.verifyingChanges = true
+    const drift: unknown[] = []
+    const verify = inside.verifyChanges.bind(changed.control)
+    // The deadline passes after the change is taken in and before it is checked.
+    let checked = 0
+    inside.verifyChanges = map => { checked++; vi.setSystemTime(held.since + PROTOTYPE_HOLD_MAX_MS + 1); try { verify(map) } catch (error) { drift.push(error) } }
+    vi.setSystemTime(held.since + PROTOTYPE_HOLD_MAX_MS - 1)
+    at('s2').title = 'Renamed'; publish('s2')
+    await quiet()
+    expect(checked).toBeGreaterThan(0)
+    expect(drift).toEqual([])
   })
 
   it('finds, verifying, a thread shown from something that moved without anything naming it', async () => {

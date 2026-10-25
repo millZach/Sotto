@@ -712,6 +712,7 @@ export class AgentControl {
   private sottoRequests: SottoThreadRequests | undefined
   /** The pages found for each question, which every client offers to open and the host's page route serves (ADR-0085). */
   private readonly questionPages = new QuestionPages({
+    now: () => this.clock(),
     messages: threadId => this.dependencies.host.threadMessages?.(threadId),
     // Found pages are taken like a new snapshot, so the question carries them at once.
     changed: () => this.acceptSnapshot(this.state.host),
@@ -720,6 +721,7 @@ export class AgentControl {
   private readonly prototypeReady = new PrototypeReady(this.questionPages, [], Date.now())
   /** Questions about a prototype, held while their pages are looked for and sent back when none opens (ADR-0108). */
   private readonly prototypeQuestions = new PrototypeQuestions({
+    now: () => this.clock(),
     searched: (threadId, source) => this.questionPages.searched(threadId, source),
     sendBack: (threadId, request, answer) => this.sendPrototypeQuestionBack(threadId, request, answer),
     // A send-back's outcome and the end of its minute are taken like a new snapshot, so every client sees them at once.
@@ -775,6 +777,17 @@ export class AgentControl {
   /** Set by a test before `start`: every publication is taken whole, as before #925, to hold the changes path to it. */
   private acceptsWhole = false
   private readonly verifyingChanges = verifyingThreadChanges()
+  /**
+   * One reading of the clock for an accept of thread changes and its check in verifying mode, so a prototype question's
+   * deadline passing between them is no drift. Undefined otherwise, when the clock is read as it goes.
+   */
+  private clockAt: number | undefined
+  private clock(): number { return this.clockAt ?? Date.now() }
+  /**
+   * The threads whose prototype mark another thread's mark let go of while an accept of changes shows its threads, each
+   * with the thread that let it go, so a thread the whole path reads after that one is read again in the same pass.
+   */
+  private evictions: { readonly id: string; readonly by: string }[] | undefined
   /** How many accepts of thread changes verifying mode checked against the whole path, for a test that asks it ran. */
   verifiedChanges = 0
   private hostIndex: HostThreadIndex | undefined
@@ -895,6 +908,9 @@ export class AgentControl {
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
     this.finishedUnread.onMoved = id => { this.marksMoved.add(id) }
+    // A thread whose kept reply or cleared source was let go may lose or regain its mark though nothing in it changed:
+    // it is shown again with the next change, as the next snapshot showed every thread (#925).
+    this.prototypeReady.onEvicted = (id, by) => { this.reshow.add(id); this.evictions?.push({ id, by }) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
@@ -5366,6 +5382,12 @@ export class AgentControl {
       return
     }
     const index = this.indexed()
+    this.clockAt = Date.now()
+    try { this.acceptChangesInPlace(map, changes, index) } finally { this.clockAt = undefined; this.evictions = undefined }
+  }
+  /** An ordinary change taken in at a cost that follows it (`acceptChanges`). */
+  private acceptChangesInPlace(map: ThreadMap, changes: AgentHostChanges, index: HostThreadIndex): void {
+    // Every outstanding first-output watch is read, by a look-up of its thread: there are a few at most, one per send.
     this.firstOutputs.observe(id => map.get(id))
     const connecting = this.state.connection === 'connecting'
     // Watcher's conversations are shown through Watcher's requests, and a question whose search found none looks again.
@@ -5377,13 +5399,50 @@ export class AgentControl {
     this.reshow.clear()
     const gone = new Set<string>()
     for (const id of changes.removals) if (!map.has(id)) gone.add(id)
+    // Read in display order, as the whole path reads every thread: what several threads do in one change, such as finishing
+    // past Just finished's limit or taking a prototype mark another holds, follows the order they are read in. A thread
+    // new to the list comes after every other, in the order the change brings it, unless the change places threads.
+    let position: (id: string) => number
+    if (changes.placements?.length) {
+      const at = new Map<string, number>()
+      for (const id of map.ids()) at.set(id, at.size)
+      position = id => at.get(id) ?? Number.MAX_SAFE_INTEGER
+    } else {
+      const fresh = new Map<string, number>()
+      for (const record of changes.upserts) if (!index.at.has(record.id) && !fresh.has(record.id)) fresh.set(record.id, fresh.size)
+      position = id => index.at.get(id) ?? index.list.length + (fresh.get(id) ?? fresh.size)
+    }
+    const byPosition = (left: AgentThread, right: AgentThread): number => position(left.id) - position(right.id)
     const sources: AgentThread[] = []
     for (const id of named) { const source = map.get(id); if (source) sources.push(source) }
-    const shown = this.shownSnapshot({ ...this.state.host, threads: sources }, gone)
-    const list = this.patchHostThreads(index, map, named, shown.threads, gone, changes.placements !== undefined && changes.placements.length > 0)
+    sources.sort(byPosition)
+    this.evictions = []
+    const records = new Map<string, AgentThread>()
+    // The pass each thread was last read in: within one, threads are read in display order, as the whole path reads them.
+    const readIn = new Map<string, number>()
+    for (const thread of this.shownSnapshot({ ...this.state.host, threads: sources }, gone).threads) records.set(thread.id, thread)
+    for (const source of sources) readIn.set(source.id, 0)
+    // A thread whose prototype mark another let go, and which the whole path reads after that one, is read again in this
+    // pass unless it was read after it already; one the whole path read before it is read with the next change
+    // (`reshow`), as the whole path reads it with the next snapshot.
+    for (let pass = 1; this.evictions.length && pass <= 64; pass++) {
+      const evicted = this.evictions
+      this.evictions = []
+      const again = new Map<string, AgentThread>()
+      for (const { id, by } of evicted) {
+        const source = map.get(id), at = readIn.get(id), byAt = readIn.get(by) ?? pass - 1
+        if (!source || position(id) <= position(by) || at !== undefined && at >= byAt) continue
+        again.set(id, source)
+      }
+      if (!again.size) break
+      for (const id of again.keys()) { named.add(id); readIn.set(id, pass) }
+      for (const thread of this.shownSnapshot({ ...this.state.host, threads: [...again.values()].sort(byPosition) }, gone).threads) records.set(thread.id, thread)
+    }
+    const shown = [...records.values()].sort(byPosition)
+    const list = this.patchHostThreads(index, map, named, shown, gone, changes.placements !== undefined && changes.placements.length > 0)
     this.state.host = { ...this.state.host, threads: list }
     this.hostFromChanges = this.state.host
-    this.accepted(this.state.host, connecting, { threads: shown.threads, gone })
+    this.accepted(this.state.host, connecting, { threads: shown, gone })
     if (this.verifyingChanges) this.verifyChanges(map)
   }
   /**
