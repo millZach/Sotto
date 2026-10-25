@@ -178,7 +178,7 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     const main = git(machines.laptop, 'rev-parse', 'main'), ref = `refs/sotto/outgoing/${moveId}`
     git(machines.laptop, 'symbolic-ref', ref, 'refs/heads/main')
     expect(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
-      .toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.failed })
+      .toEqual({ type: 'refused', reason: 'failed', message: 'Something other than Sotto changed this project's refs/sotto folder, so the branch can't move safely. Nothing was moved.' })
     expect(git(machines.laptop, 'rev-parse', 'refs/heads/main')).toBe(main)
     expect(git(machines.laptop, 'symbolic-ref', ref)).toBe('refs/heads/main')
     expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
