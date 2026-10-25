@@ -140,6 +140,6 @@ describe('quietAgo', () => {
   it('says how long ago in days, then months, then years', () => {
     const now = Date.parse('2026-10-23T12:00:00Z')
     const at = (days: number): string => new Date(now - days * DAY).toISOString()
-    expect([0, 1, 41, 59, 63, 400, 900].map(days => quietAgo(at(days), now))).toEqual(['today', 'yesterday', '41 days ago', '59 days ago', '2 months ago', '13 months ago', '2 years ago'])
+    expect([0, 1, 41, 59, 63, 400, 900].map(days => quietAgo(at(days), now, 'en'))).toEqual(['today', 'yesterday', '41 days ago', '59 days ago', '2 months ago', '13 months ago', '2 years ago'])
   })
 })
