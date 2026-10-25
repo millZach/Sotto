@@ -715,9 +715,9 @@ private struct WatcherMessage: View, Equatable {
                 if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
                     VStack(alignment: .leading, spacing: Space.s2) {
                         if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
-                        // A photo Sotto keeps no copy of is named.
+                        // A photo Sotto keeps no copy of is named, and so is a file, as in a thread (ADR-0131).
                         ForEach((message.attachments ?? []).filter { photo in !photos.contains { $0.id == photo.id } }) { attachment in
-                            Label("\(attachment.name) (open on the desktop)", systemImage: "photo").font(.sotto(.small))
+                            Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo").font(.sotto(.small))
                         }
                     }
                     .foregroundStyle(Palette.bubbleInk)
