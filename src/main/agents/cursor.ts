@@ -22,6 +22,8 @@ import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { SessionReaper } from './sessionReaper'
 import { markSendStage } from './sendStages'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
@@ -264,11 +266,14 @@ export class CursorAcpHost implements AgentHost {
   private readonly processes = new Set<CursorRpc>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
-  private readonly log = new ThreadMessageLog()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({ view: historyFromEvents => this.activitySnapshot(historyFromEvents) })
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   private readonly loaded = new OpenSessions(id => this.threads.get(id))
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly reaper: SessionReaper
   private history: ThreadHistorySource | undefined
@@ -320,6 +325,9 @@ export class CursorAcpHost implements AgentHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
+  }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }

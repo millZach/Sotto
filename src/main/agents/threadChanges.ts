@@ -369,15 +369,22 @@ export class ThreadChangesPublisher implements ActivityChangesSource {
   /**
    * Changes a publisher worked out itself, given what it last published to the form (undefined before the first, when
    * the change must be whole). Records and parts it does not own are copied and owned here, sharing what equals what
-   * was published, so nothing the publisher still holds reaches a subscriber. A publication that changed nothing still
-   * goes out, so a subscriber sees every publish.
+   * was published, so nothing the publisher still holds reaches a subscriber. Outside a whole publication, a record that
+   * equals the one published is left out, and so is a rest that equals the published rest, so a publisher may name a
+   * thread it is not sure changed and pay one comparison for it. A publication that changed nothing still goes out, so a
+   * subscriber sees every publish.
    */
   publishChanges(build: Build): void {
     this.publish((historyFromEvents, published) => {
       const set = build(historyFromEvents, published)
-      const upserts = immutableUpdates(set.upserts, set.upserts.map(record => published?.get(record.id)))
+      const previous = set.upserts.map(record => published?.get(record.id))
+      const updated = immutableUpdates(set.upserts, previous)
+      const upserts = set.whole ? updated : updated.filter((record, index) => record !== previous[index])
       const [rest] = set.rest ? immutableUpdates<AgentHostRest>([set.rest], [published?.rest]) : []
-      return { ...set, upserts, ...(rest ? { rest } : {}) }
+      const changes: { -readonly [Key in keyof ThreadChangeSet]: ThreadChangeSet[Key] } = { ...set, upserts }
+      if (rest && (set.whole || rest !== published?.rest)) changes.rest = rest
+      else delete changes.rest
+      return changes
     })
   }
 

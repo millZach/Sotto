@@ -61,6 +61,7 @@ class SendingAdapter extends StreamingAdapter {
     if (!thread) throw new Error('Unknown provider session')
     this.log.add(thread.id, { id: command.messageId, commandId: command.commandId, role: 'user', text: command.text, createdAt: new Date().toISOString() })
     thread.status = 'running'
+    this.mark(thread.id)
     this.publish(false)
     return { accepted: true }
   }
@@ -95,6 +96,8 @@ export interface OwnerScalePipeline {
   readonly question: RequestDraftTarget
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
+  /** The thread records and removals the adapter's thread changes carried since the last reset (#925). */
+  adapterChangeRecords(): number
   /** The draft store's look-ups of an answer's thread since the last reset. */
   ownerLookups(): number
   /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
@@ -145,7 +148,40 @@ type ActivityPublisher = { subscribeActivitySnapshots?(listener: (snapshot: Agen
 class ShadowThreadMaps {
   private readonly checked: Record<string, number> = {}
   private readonly drift: string[] = []
+  /** What the adapter's thread changes carried since the last reset: records upserted and threads removed. */
+  carried = 0
   constructor(private readonly on: boolean, private readonly uncounted: <T>(work: () => T) => T) {}
+
+  /**
+   * Subscribes to the adapter's thread changes in each form something subscribes to its activity snapshots in, as the
+   * identity wrapper will once it moves onto them (#925), and counts what each publication carries. Until then nothing in
+   * main subscribes, so building the publications and applying them is left out of every other count. Verifying, the
+   * subscriber's map is checked after every publication against the activity snapshot of the same form from the same emit,
+   * which is read before the subscriber it was published to gets it.
+   */
+  tapChanges(adapter: StreamingAdapter): void {
+    adapter.changesWork = this.uncounted
+    const subscribe = adapter.subscribeActivitySnapshots.bind(adapter)
+    const latest = new Map<boolean, AgentHostSnapshot>()
+    const forms = new Set<boolean>()
+    if (this.on) this.checked['adapter changes'] = 0
+    adapter.subscribeActivitySnapshots = (listener, options) => {
+      const form = options?.historyFromEvents === true
+      if (!forms.has(form)) {
+        forms.add(form)
+        const map = new ThreadMap({ wholeOf: () => latest.get(form)!, verify: this.on })
+        const subscription = adapter.subscribeActivityChanges(changes => this.uncounted(() => {
+          this.carried += changes.upserts.length + changes.removals.length
+          try {
+            const applied = map.apply(changes)
+            if (applied === 'applied') { if (this.on) this.checked['adapter changes']!++ }
+            else { this.drift.push(`adapter changes: a publication was ${applied === 'resync' ? 'missed' : 'out of order'}`); if (applied === 'resync') subscription.resync() }
+          } catch (error) { this.drift.push(`adapter changes: ${error instanceof Error ? error.message : String(error)}`) }
+        }), options)
+      }
+      return subscribe(snapshot => { latest.set(form, snapshot); listener(snapshot) }, options)
+    }
+  }
 
   /** Shadows what `host`'s activity subscription publishes, from every subscription made after this. */
   tap(host: ActivityPublisher, layer: string): void {
@@ -224,6 +260,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const adapter = new SendingAdapter(state)
   const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()))
   shadows.tap(adapter, 'adapter')
+  shadows.tapChanges(adapter)
   const claude = new SottoThreadHost('claude', adapter, registry)
   shadows.tap(claude, 'identity wrapper')
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
@@ -388,15 +425,17 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       const session = adapter.state.threads.find(item => item.id === openSession)!
       say(session.id, `reply-${revision}`, 'assistant', 'Synthetic reply')
       session.status = 'idle'
+      adapter.mark(session.id)
       adapter.publish(false)
     },
   }
   return {
     track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
     broadcasts: () => broadcasts,
+    adapterChangeRecords: () => shadows.carried,
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
-    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
+    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0; shadows.carried = 0 },
     threadChanges: () => shadows.report(),
     stop,
   }

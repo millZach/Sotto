@@ -3,6 +3,8 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { ClaudeHistory } from './claudeHistory'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { isDeepStrictEqual } from 'node:util'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
@@ -346,9 +348,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly logs = new Map<string, ClaudeSessionLog>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({ view: historyFromEvents => this.activityView(historyFromEvents) })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.view())
     this.activityListeners.publish(historyFromEvents => this.activityView(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
   /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
@@ -405,7 +410,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
   private readonly restoredHistory = new Map<string, RestoredThreadHistory>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
-  private readonly messageLog = new ThreadMessageLog()
+  private readonly messageLog = new ThreadMessageLog(id => this.threadChanges.mark(id))
   /** What the host's event store already holds, asked per thread before its transcript is read. */
   private history: ThreadHistorySource | undefined
   /**
@@ -722,6 +727,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
+  }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.messageLog.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
