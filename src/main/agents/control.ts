@@ -67,6 +67,7 @@ import { watcherHandoversShown } from './watcherHandover'
 import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FailuresSeen } from './failuresSeen'
+import { RequestWaits } from './requestWaits'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
@@ -798,6 +799,8 @@ export class AgentControl {
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
   private readonly failuresSeen: FailuresSeen
+  /** When each pending request started waiting, stamped as it is first shown (ADR-0135). */
+  private readonly requestWaits: RequestWaits
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   /**
@@ -952,11 +955,13 @@ export class AgentControl {
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
+    this.requestWaits = new RequestWaits()
     this.finishedUnread.onMoved = id => { this.marksMoved.add(id) }
     // A thread whose kept reply or cleared source was let go may lose or regain its mark though nothing in it changed:
     // it is shown again with the next change, as the next snapshot showed every thread (#925).
     this.prototypeReady.onEvicted = id => { this.reshow.add(id); this.evictions?.push(id) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
+    this.requestWaits.onMoved = id => { this.marksMoved.add(id) }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -1317,8 +1322,8 @@ export class AgentControl {
     state.host.threads = state.host.threads.map(thread => {
       // Projected from this copy's own messages, never handed the kept projection: what `get()` returns is the caller's to change.
       const presented = this.presentedMessages(thread, true), summary = thread.summary && this.presentedSummary(thread)
-      return this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
-        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) }))
+      return this.requestWaits.publish(this.failuresSeen.publish(this.finishedUnread.publish(presented === thread.messages && summary === thread.summary ? thread
+        : { ...thread, messages: [...presented], ...(summary ? { summary } : {}) })))
     })
     state.hostId = state.host.hostId
     state.threadDraftPersistence = this.draftPersistence()
@@ -1415,7 +1420,7 @@ export class AgentControl {
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
     const shared = isImmutableModels(models)
     const bare = { ...this.state, error: this.migrationSaveFailure ?? this.state.error, host: { ...this.state.host, ...(shared ? { models: EMPTY_MODELS } : {}),
-      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES)))) },
+      threads: shareThreads ? EMPTY_THREADS : threads.map(thread => this.requestWaits.publish(this.failuresSeen.publish(this.finishedUnread.publish(this.shellThread(thread, EMPTY_MESSAGES, EMPTY_ACTIVITIES))))) },
       obsoleteDrafts: this.persistedObsoleteDrafts }
     let state: AgentState
     if (shareThreads) {
@@ -1512,7 +1517,7 @@ export class AgentControl {
       records.set(thread.id, held)
     }
     // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
-    const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+    const marked = this.requestWaits.publish(this.failuresSeen.publish(this.finishedUnread.publish(held.record)))
     if (marked !== held.record) held.record = Object.freeze(marked)
     return held.record
   }
@@ -5638,6 +5643,7 @@ export class AgentControl {
     // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
     if (changed) this.finishedUnread.trackChanged(snapshot, changed.threads, changed.gone); else this.finishedUnread.track(snapshot)
     const failuresChanged = changed ? this.failuresSeen.trackChanged(snapshot, changed.threads, changed.gone) : this.failuresSeen.track(snapshot)
+    if (changed) this.requestWaits.trackChanged(snapshot, changed.threads, changed.gone); else this.requestWaits.track(snapshot)
     this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId

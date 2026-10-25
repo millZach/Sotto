@@ -1,4 +1,5 @@
-import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentRequest, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hasNoSendableChoice, isUnavailable, permissionSummary, requestMode, textOnly } from './requests/requestAnswers'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
@@ -323,6 +324,8 @@ export interface ProjectFolder {
 export interface WorkspaceOrganization {
   readonly open: readonly ProjectFolder[]
   readonly settled: readonly ProjectFolder[]
+  /** The Needs you queue over every row, search or none (ADR-0135). */
+  readonly needsYou: NeedsYouQueue
   /** Rows the query found, before attention rows are added back. */
   readonly matching: number
   /**
@@ -393,6 +396,103 @@ function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, 
   })
 }
 
+/** How many Needs you entries stand before the rest are counted in one line (ADR-0135). */
+export const NEEDS_YOU_SHOWN_MAX = 3
+/** The longest permission command, and folder, an entry shows whole; a longer ask is judged in its thread. */
+export const NEEDS_YOU_COMMAND_MAX = 160
+export const NEEDS_YOU_CWD_MAX = 80
+/** The most permission choices, and question options, an entry offers in place. */
+export const NEEDS_YOU_CHOICES_MAX = 3
+export const NEEDS_YOU_OPTIONS_MAX = 4
+
+export type NeedsYouKind = 'approval' | 'question' | 'failed'
+
+/** One thread in the sidebar's Needs you queue: what it waits for, since when, and what a press there may do. */
+export interface NeedsYouEntry {
+  readonly row: ThreadRow
+  readonly kind: NeedsYouKind
+  /** The entry thread's own first pending request; undefined for a failure or a delegated wait reached from its top. */
+  readonly request: AgentRequest | undefined
+  /** When the wait began, from the host's stamp (ADR-0135); NaN when no stamp was published, which says no wait words. */
+  readonly waitingSince: number
+  /** "12 min", "2 h": how long it has waited, from its stamp alone; empty without one. */
+  readonly wait: string
+  /** Answer it here, dismiss its failure, or open the thread — the shape of the ask alone decides; the queue's
+   * caller further withholds `answer` while an answer is busy, held, uncertain or half-drafted in the store. */
+  readonly action: 'answer' | 'dismiss' | 'open'
+}
+
+export interface NeedsYouQueue {
+  readonly entries: readonly NeedsYouEntry[]
+  readonly shown: readonly NeedsYouEntry[]
+  readonly overflow: { readonly approval: number; readonly question: number; readonly failed: number; readonly total: number }
+  /** The oldest blocking wait in words, for the heading; empty when nothing blocking carries a stamp. */
+  readonly oldestBlockingWait: string
+}
+
+/** The queue with nobody in it, for a sidebar whose rows have not been described yet. */
+export const EMPTY_NEEDS_YOU: NeedsYouQueue = { entries: [], shown: [], overflow: { approval: 0, question: 0, failed: 0, total: 0 }, oldestBlockingWait: '' }
+
+/** Whether an ask can be judged whole from a sidebar entry (ADR-0135); everything else opens its thread. */
+function fitsEntry(request: AgentRequest): boolean {
+  if (request.delivery === 'uncertain' || request.answerRetryReady === true) return false
+  const mode = requestMode(request)
+  if (mode === 'permission') {
+    if (hasNoSendableChoice(request) || request.context?.plan) return false
+    const choices = request.permissionChoices
+    if (choices && (choices.length > NEEDS_YOU_CHOICES_MAX || choices.some(choice => choice.description))) return false
+    const summary = permissionSummary(request)
+    return summary.details === undefined && (summary.command?.length ?? 0) <= NEEDS_YOU_COMMAND_MAX && (summary.cwd?.length ?? 0) <= NEEDS_YOU_CWD_MAX
+  }
+  if (mode !== 'structured') return false
+  const questions = request.questions ?? []
+  if (questions.length !== 1 || request.pages?.length || request.linkMissing) return false
+  const question = questions[0]!
+  return !question.multiSelect && !question.allowFreeText && !isUnavailable(question) && !textOnly(question)
+    && question.options.length >= 1 && question.options.length <= NEEDS_YOU_OPTIONS_MAX
+}
+
+/**
+ * The Needs you queue over the sidebar's rows (ADR-0135): one entry per row that needs the user, blocking first —
+ * permissions, then questions, then unseen failures, as `needRank` orders them — and oldest wait first inside each
+ * kind. The wait reads the host's stamp where one stands and the row's last activity where none does, unknown last;
+ * its words come from the stamp alone. Derived from the rows as given, settled rows included: what a row's state
+ * already settled (seen failures, finishes, prototypes) never reaches this list.
+ */
+export function describeNeedsYou(rows: readonly ThreadRow[], now: number): NeedsYouQueue {
+  const entries = rows.filter(row => row.state === 'needs').map((row): NeedsYouEntry => {
+    const kind: NeedsYouKind = row.waitingFor ?? 'failed'
+    const delegated = row.waitingIn !== undefined
+    const request = delegated || row.request === undefined ? undefined
+      : row.thread.requests.find(item => item.id === row.request!.requestId)
+    const waitingSince = kind === 'failed' ? parse(row.thread.failureSince) : parse(request?.since)
+    return {
+      row, kind, request, waitingSince,
+      wait: Number.isFinite(waitingSince) ? elapsedLabel(waitingSince, now) : '',
+      action: kind === 'failed' ? delegated ? 'open' : 'dismiss' : request !== undefined && fitsEntry(request) ? 'answer' : 'open',
+    }
+  }).sort((first, second) => {
+    const rank = needRank(second.row) - needRank(first.row)
+    if (rank !== 0) return rank
+    const at = (entry: NeedsYouEntry): number => Number.isFinite(entry.waitingSince) ? entry.waitingSince
+      : Number.isFinite(entry.row.activityAt) ? entry.row.activityAt : Number.POSITIVE_INFINITY
+    return (at(first) - at(second)) || first.row.thread.id.localeCompare(second.row.thread.id)
+  })
+  const rest = entries.slice(NEEDS_YOU_SHOWN_MAX)
+  const oldestBlocking = entries.find(entry => entry.kind !== 'failed' && entry.wait !== '')
+  return {
+    entries,
+    shown: entries.slice(0, NEEDS_YOU_SHOWN_MAX),
+    overflow: {
+      approval: rest.filter(entry => entry.kind === 'approval').length,
+      question: rest.filter(entry => entry.kind === 'question').length,
+      failed: rest.filter(entry => entry.kind === 'failed').length,
+      total: rest.length,
+    },
+    oldestBlockingWait: oldestBlocking?.wait ?? '',
+  }
+}
+
 function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
   const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
   return {
@@ -409,9 +509,10 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * A search keeps attention rows and projects whose name matches; without a search an open project
  * with no threads yet (or the selected project) still shows so a thread can be started there. With `delegation` (the Owl
  * answer for ADR-0081), a delegated thread has no row and no search finds it: it lives in the Tools › Agents of the thread
- * that delegated to it, whose row says when it waits on you.
+ * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
+ * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now()): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId)) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
@@ -440,5 +541,5 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
     if (settledRows.length) settled.push(folder(id, project, settledRows, false))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), settled: ordered(settled), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
+  return { open: ordered(open), settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
 }
