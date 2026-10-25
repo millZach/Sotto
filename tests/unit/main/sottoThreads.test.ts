@@ -202,7 +202,7 @@ describe('Sotto thread interface', () => {
 
 
     // The request itself is retained; when its wait began is restamped at the restart, understating it (ADR-0135).
-    const stripSince = (requests: readonly { since?: string }[] | undefined) => requests?.map(({ since: _since, ...rest }) => rest)
+    const stripSince = (requests: readonly { since?: string | undefined }[] | undefined) => requests?.map(({ since: _since, ...rest }) => { void _since; return rest })
     expect(stripSince(state.host.threads.find(t => t.id === threadId)?.requests)).toEqual(stripSince(before.host.threads.find(t => t.id === threadId)?.requests))
     expect(state.threadDrafts).toContainEqual(expect.objectContaining({ threadId, draftId, text: 'Keep this prompt' }))
     expect(JSON.stringify(state)).not.toContain('session-workshop')
