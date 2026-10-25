@@ -1,18 +1,13 @@
 import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
+import { useWatchActions, useWatchedThread } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
 import { useWatchOnSend, watchOnSend } from './watchOnSend'
-import { WATCHED_BY_WATCHER, WatcherOwl } from './WatcherOwl'
+import { WatcherOwl } from './WatcherOwl'
 
 /** What a press on a toggle does, for its tooltip: the toggle's name stays Watch, and its pressed state says the rest. */
 const WATCH_TIP = 'Watch: Watcher keeps this thread going until you stop it'
 const STOP_TIP = 'Stop watching: Watcher lets this thread be'
-/**
- * A thread Watcher watches only because it takes part in a Watcher request: the user's own send takes it over. Word for
- * word as the iPhone says it.
- */
-export const WATCHED_FOR_A_REQUEST = `${WATCHED_BY_WATCHER}. If you send here, Watcher stops sending to it.`
 
 /**
  * What every owl toggle shares: its name, pressed state, tooltip and press. Its name is Watch and the thread's title, the
@@ -71,28 +66,6 @@ export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): 
     }}>
     <WatcherOwl size={14} /><span>Watch</span>
   </button>
-}
-
-/**
- * Under a watched thread's composer, before anything is sent: what watching means, with Stop watching. A standing watch
- * lasts until it is stopped; the user's own send only holds Watcher back while that turn runs, and the line says so
- * then. A thread watched only for a Watcher request is taken over by the user's own send, and the line says that.
- */
-export function WatchedNote({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
-  const actions = useWatchActions()
-  const watched = useWatchedThread(threadId)
-  const paused = useWatchPaused(threadId)
-  const standing = useStandingWatch(threadId)
-  // Stop watching takes the note away with its own button: the composer just above it keeps the keyboard.
-  const landing = useFocusLanding(watched)
-  if (!watched) return null
-  return <p className="watched-note">
-    <WatcherOwl size={13} />
-    <span>{!standing ? WATCHED_FOR_A_REQUEST : paused ? `${WATCHED_BY_WATCHER}. While your own turn here runs, it can only steer that turn.`
-      : `${WATCHED_BY_WATCHER}. It keeps this thread going and brings you its questions and permissions.`}</span>
-    {actions === null ? null : <button type="button" className="watched-note__stop tt-focusable" aria-label={`Stop watching ${title}`}
-      onClick={event => { landing.from(event.currentTarget); void actions.setThread(threadId, false) }}>Stop watching</button>}
-  </p>
 }
 
 /** The composer field of the pane whose compose area this is, which keeps the keyboard when a control by it goes away. */
