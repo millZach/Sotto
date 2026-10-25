@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
-import { i18n, type MessageDescriptor } from '@lingui/core'
+import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
@@ -138,23 +138,13 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
  * cannot see inside a provider's turn, so no word here claims to know what it is thinking about.
  */
 // A short turn only ever shows the first word, so that one still reads as work; the rest are for the longer waits.
-// Lines from the film Spaceballs. A translation may keep a line in English or use the film's own dubbed line.
-const WORKING_WORDS: readonly MessageDescriptor[] = [
-  msg({ message: 'Combing the desert', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Winding up the Schwartz', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Going to plaid', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Ludicrous speed', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Consulting Yogurt', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Checking Mr. Radar', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Cracking 1-2-3-4-5', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Getting to now, now', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Raising the air shield', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Canning the Perri-air', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Waking Barf', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Scanning for Druidia', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Merchandising', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-  msg({ message: 'Prepping for light speed', comment: 'A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.' }),
-]
+// Lines from the film Spaceballs, quoted as the film has them: they stay English in every interface language, as they
+// do on the iPhone (tests/unit/shared/iosWorkingWords.test.ts keeps the two lists the same).
+const WORKING_WORDS = [
+  'Combing the desert', 'Winding up the Schwartz', 'Going to plaid', 'Ludicrous speed', 'Consulting Yogurt',
+  'Checking Mr. Radar', 'Cracking 1-2-3-4-5', 'Getting to now, now', 'Raising the air shield', 'Canning the Perri-air',
+  'Waking Barf', 'Scanning for Druidia', 'Merchandising', 'Prepping for light speed',
+] as const
 const WORD_MS = 3800
 const FADE_MS = 220
 
@@ -168,9 +158,9 @@ function WorkingWord(): ReactNode {
       const node = ref.current
       if (!node) return
       current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
-      node.textContent = i18n._(WORKING_WORDS[current]!)
+      node.textContent = WORKING_WORDS[current]!
       // The light crossing the words draws a lit copy of them, which reads the word from here.
-      node.dataset.word = i18n._(WORKING_WORDS[current]!)
+      node.dataset.word = WORKING_WORDS[current]!
       const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
       if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
     }, WORD_MS)
@@ -178,7 +168,7 @@ function WorkingWord(): ReactNode {
   }, [])
   // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <>
-    <span ref={ref} className="thread-activity-live__word" data-word={t(WORKING_WORDS[0]!)} aria-hidden="true">{t(WORKING_WORDS[0]!)}</span>
+    <span ref={ref} className="thread-activity-live__word" data-word={WORKING_WORDS[0]} aria-hidden="true">{WORKING_WORDS[0]}</span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </>
 }

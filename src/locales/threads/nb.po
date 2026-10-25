@@ -1764,11 +1764,6 @@ msgstr ""
 msgid "Cancel, and leave {name} on {from}"
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Canning the Perri-air"
-msgstr ""
-
 #. {carried} lists what the handover held.
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "Carried {carried}."
@@ -1863,11 +1858,6 @@ msgstr ""
 #. {path} is the folder of the worktree that has the branch.
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Checked out in {path}"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Checking Mr. Radar"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -2097,11 +2087,6 @@ msgstr ""
 msgid "Collapse sidebar"
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Combing the desert"
-msgstr ""
-
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Commands to update {name} by hand"
@@ -2249,11 +2234,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Connecting…"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Consulting Yogurt"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
@@ -2651,11 +2631,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Couldn’t get this thinking from {host}. Nothing is lost: it is still there."
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Cracking 1-2-3-4-5"
 msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
@@ -3502,11 +3477,6 @@ msgstr ""
 msgid "Getting the thinking from {host}…"
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Getting to now, now"
-msgstr ""
-
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Git initialized."
 msgstr ""
@@ -3518,11 +3488,6 @@ msgstr ""
 #. {said} is the start of the message the user sent.
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "Go to your message at {time}: {said}"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Going to plaid"
 msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
@@ -3940,11 +3905,6 @@ msgstr ""
 msgid "Low"
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Ludicrous speed"
-msgstr ""
-
 #. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
@@ -3967,11 +3927,6 @@ msgstr ""
 #. The Memory page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Memory"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Merchandising"
 msgstr ""
 
 #: src/renderer/src/agents/diagrams/diagramRenderer.ts
@@ -5036,11 +4991,6 @@ msgstr ""
 msgid "Preparing the working copy."
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Prepping for light speed"
-msgstr ""
-
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Preview could not be shown"
 msgstr ""
@@ -5219,11 +5169,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Quotes from replies"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Raising the air shield"
 msgstr ""
 
 #: src/renderer/src/agents/VisualWalkthrough.tsx
@@ -5705,11 +5650,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Scanning for Druidia"
 msgstr ""
 
 #: src/renderer/src/agents/ScreenshotInput.tsx
@@ -7806,11 +7746,6 @@ msgstr ""
 msgid "Wake-up from Sotto"
 msgstr ""
 
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Waking Barf"
-msgstr ""
-
 #: src/renderer/src/agents/VisualStepper.tsx
 msgid "Walkthrough"
 msgstr ""
@@ -7886,11 +7821,6 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Where the server listens, on this computer, your network or your tailnet."
-msgstr ""
-
-#. A joke from the film Spaceballs, shown while an agent works. Keep it short and playful.
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "Winding up the Schwartz"
 msgstr ""
 
 #. A turn that finished, when its time was not recorded.
