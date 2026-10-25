@@ -36,7 +36,7 @@ A start_thread in a project on This computer that names no machine goes where ne
 When newWorkersStart leaves the choice to you, choose for each worker: the system its checks need, then a machine with room.
 Read the project's own notes, such as its AGENTS.md, on where checks run, and follow them.
 When a start's placement says awayFromDefault, say in your reply which machine it is on and why. When it carries a note, pass that on.
-To check one thread's work on another machine, start the worker from that thread's branch with fromThread. Set testRun only when the worker is there to run tests; say so yourself, as Sotto never guesses it from commands. When a start's startedFrom carries a note, pass that on.`
+To check one thread's work on another machine, start the worker from that thread's branch with fromThread. Set testRun only when the worker is there to run tests, which the user calls a check; say so yourself, as Sotto never guesses it from commands. When a start's startedFrom carries a note, pass that on.`
 
 /** Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines. */
 export function watcherSystemPrompt(roles: boolean, machines = false): string {

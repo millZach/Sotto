@@ -26,7 +26,7 @@ import {
 export interface BranchSource { readonly branch: string; readonly commit: string; readonly snapshot?: SnapshotCarried }
 /** Who a test-run snapshot's commit names, so it reads as Sotto's own and needs no identity configured in the repository. */
 const SNAPSHOT_IDENTITY = { GIT_AUTHOR_NAME: 'Sotto', GIT_AUTHOR_EMAIL: 'sotto@localhost', GIT_COMMITTER_NAME: 'Sotto', GIT_COMMITTER_EMAIL: 'sotto@localhost' } as const
-const SNAPSHOT_MESSAGE = 'Snapshot of uncommitted work for a test run\n\nMade by Sotto from a temporary index. It is on no branch, and the working tree it came from is unchanged.\n'
+const SNAPSHOT_MESSAGE = 'Snapshot of uncommitted work for a check\n\nMade by Sotto from a temporary index. It is on no branch, and the working tree it came from is unchanged.\n'
 /** A bundle staged for sending, with what the receiver checks it against. */
 export interface PreparedBundle { readonly type: 'sending'; readonly path: string; readonly size: number; readonly sha256: string }
 /** The receiver already has the commit, from the tips it named: no bundle is needed, only its incoming ref. */
