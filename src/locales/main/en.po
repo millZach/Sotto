@@ -744,6 +744,10 @@ msgstr "Manage your own model servers from the main Sotto window."
 msgid "Matching native conversation rollback is unavailable."
 msgstr "Matching native conversation rollback is unavailable."
 
+#: src/main/llm/ownServerCleanupIpc.ts
+msgid "Measure your own server from the main Sotto window."
+msgstr "Measure your own server from the main Sotto window."
+
 #: src/main/memory/ipc.ts
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr "Memory is unavailable. Restart Sotto and try again."

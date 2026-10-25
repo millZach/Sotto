@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake picked 7 "Night" from menubar-icon-ten-prototype.html (October 25, 2026). Polish it, and offer ten
+  designs that start from Night and each take it a different way. N is the polished Night; 1 to 10 are the new ones.
+  All drawn on an 18 x 18 point grid at 1x and shown pixel-doubled, with their real motion.
+  Picked: N, Night polished (Drake, October 25, 2026).
+-->
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Menu bar icon: Night and ten directions (prototype)</title>
+<style>
+:root{--t:var(--sotto-text,#e9e9ee);--m:var(--sotto-muted,#9b9ba6);--bg:var(--sotto-background,#121211);--s:var(--sotto-surface,#1c1c1a);--b:var(--sotto-border,#34342f);--a:var(--sotto-accent,#e6c229);--f:var(--sotto-font,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font:13px/1.45 var(--f);padding:14px 16px 40px}
+h1{font-size:16px;margin:0 0 2px}p{margin:0 0 10px}.m{color:var(--m)}
+.ctl{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.ctl button{font:inherit;font-size:12px;color:var(--t);background:var(--s);border:1px solid var(--b);border-radius:7px;padding:4px 10px;cursor:pointer}
+.ctl button[aria-pressed=true]{background:var(--a);color:#1a1600;border-color:var(--a);font-weight:600}
+button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.card{background:var(--s);border:1px solid var(--b);border-radius:10px;padding:10px 11px 11px;display:grid;gap:8px}
+.card h2{font-size:13px;margin:0;display:flex;gap:7px;align-items:baseline}.card h2 span{color:var(--a);font-variant-numeric:tabular-nums}
+.card p{margin:0;font-size:12px;color:var(--m);min-height:34px}
+.zoom{display:flex;justify-content:center;background:#0a0a09;border-radius:8px;padding:8px}
+.bar{display:flex;align-items:center;justify-content:flex-end;gap:2px;height:24px;padding:0 8px;border-radius:6px;font:500 12.5px/1 -apple-system,BlinkMacSystemFont,sans-serif;white-space:nowrap}
+.bar span{padding:0 5px}.bar canvas{display:block;margin:0 1px}
+.dk{background:#26262b;color:#f3f3f6}.lt{background:#ebebef;color:#18181c}
+.wp{background:linear-gradient(rgba(16,16,20,.3),rgba(16,16,20,.3)),linear-gradient(100deg,#d9622b,#f0a63f 45%,#355fa8);color:#fff}
+</style>
+<body>
+<h1>Menu bar icon: Night, polished, and ten directions from it</h1>
+<p class="m">Each is drawn on an 18 × 18 point grid and shown pixel-doubled, at full size in a dark, light and wallpaper bar, and at 8× above. Idle motion is real. N is the polished Night; 1 to 10 each take it somewhere else. Pick by letter or number.</p>
+<div class="ctl">
+  <button id="listen" aria-pressed="false">Listening</button>
+  <button id="calm" aria-pressed="false">Reduced motion</button>
+  <button id="fast" aria-pressed="false">Speed ×3</button>
+</div>
+<div class="grid" id="grid"></div>
+<script>
+const W=18,H=18;
+const C={brown:'#8a5a34',dark:'#5a3820',cream:'#f1dfb8',amber:'#ffc23d',glow:'#ffe58a',pupil:'#1a1206',red:'#ff4d4d',bark:'#6b4423',leaf:'#5fae5a'};
+let listening=false,calm=false,speed=1;
+
+// drawing helpers bound per call
+function kit(ctx){
+  const r=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x,y,w,h)};
+  const p=(x,y,c)=>r(x,y,1,1,c);
+  const disc=(cx,cy,rad,c)=>{for(let y=0;y<H;y++)for(let x=0;x<W;x++){const dx=x+.5-cx,dy=y+.5-cy;if(dx*dx+dy*dy<=rad*rad)p(x,y,c)}};
+  const clear=(x,y,w,h)=>ctx.clearRect(x,y,w,h);
+  return {r,p,disc,clear};
+}
+const cyc=(t,period,off=0)=>((t+off)%period+period)%period;
+const blink=(t,period=4.3,off=0)=>!calm&&cyc(t,period,off)<.14;
+function glance(t){if(calm)return 0;const c=cyc(t,9);return c>2.2&&c<3.3?-1:c>5.6&&c<6.6?1:0}
+const pulse=(t,hz=1)=>.5+.5*Math.sin(t*Math.PI*2*hz);
+
+// shared eye: 2x2 with a 1-pixel glint; blinks open -> half -> shut -> half
+function eye(k,x,y,t,o={}){const e=o.c||(listening?(pulse(t,1.2)>.5?C.red:'#ff8f7f'):C.amber),g=listening?'#ffd0c8':C.glow;
+  const c=cyc(t,o.per||5.1,o.off||0),s=calm?9:c<.06?1:c<.16?2:c<.22?1:0;
+  if(s===0){k.r(x,y,2,2,e);k.p(x,y,g)}else if(s===1)k.r(x,y+1,2,1,e);else k.r(x,y+1,2,1,e+'88')}
+const eyes=(k,x,y,t,o)=>{eye(k,x,y,t,o);eye(k,x+4,y,t,o)};
+const rnd=n=>{const v=Math.sin(n*12.9898)*43758.5453;return v-Math.floor(v)};
+function star(k,x,y,t,ink,seed=0){if(calm){k.p(x,y,ink);return}const h=rnd(Math.floor(t*3.3)+seed*91);
+  if(h<.18)k.p(x,y,ink+'66');else{k.p(x,y,ink);if(h>.9){k.p(x-1,y,ink+'99');k.p(x+1,y,ink+'99');k.p(x,y-1,ink+'99');k.p(x,y+1,ink+'99')}}}
+function crescent(k,ink){k.disc(9,9.5,8,ink);k.disc(12.6,7.4,6.6,'clear')}
+
+const designs=[
+{name:'Night, polished',note:'Smoother crescent, eyes with a glint and a two-step blink, a star that twinkles on an uneven beat. Eyes pulse red while listening.',
+ draw(k,t,ink){crescent(k,ink);eyes(k,10+glance(t),8,t);star(k,16,2,t,ink)}},
+{name:'Cloud peek',note:'The eyes look out over a cloud that drifts a point either way. Softer than the moon, still night.',
+ draw(k,t,ink){const dx=calm?0:Math.round(Math.sin(t*.45));eyes(k,6+glance(t),5,t);
+  k.disc(6+dx,13,3.4,ink);k.disc(11+dx,12,4.2,ink);k.r(2+dx,13,14,3,ink);star(k,15,2,t,ink,2)}},
+{name:'Crossing',note:'A full moon. Every 10 seconds an owl’s silhouette flaps across it. While listening it stops in the middle and looks at you.',
+ draw(k,t,ink){k.disc(9,9,8,ink);k.p(5,6,ink+'99');k.p(12,13,ink+'99');
+  const owl=(x,y,up,e)=>{k.r(x,y,3,3,'clear');k.p(x,y-1,'clear');k.p(x+2,y-1,'clear');k.r(x-2,y+(up?-1:1),2,1,'clear');k.r(x+3,y+(up?-1:1),2,1,'clear');if(e){k.p(x,y,e);k.p(x+2,y,e)}};
+  if(listening)owl(8,8,false,C.red);else{const c=cyc(t,10);if(!calm&&c<2.2)owl(Math.round(-4+c*10),8+Math.round(Math.sin(c*6)),Math.floor(c*6)%2,C.amber)}}},
+{name:'Ring',note:'A moon in full eclipse: a ring of light with the eyes in the dark centre and a glint that travels round the rim.',
+ draw(k,t,ink){k.disc(9,9,8.2,ink);k.disc(9,9,6.4,'clear');eyes(k,6+glance(t),8,t);
+  if(!calm){const a=t*.9;k.p(Math.floor(9+7.3*Math.cos(a)),Math.floor(9+7.3*Math.sin(a)),C.glow)}}},
+{name:'Star field',note:'Five stars twinkle. Two of them are the owl’s eyes and blink now and then. Lightest touch of the ten.',
+ draw(k,t,ink){[[2,3],[15,2],[16,14],[3,15],[9,1]].forEach(([x,y],i)=>star(k,x,y,t,ink,i));eyes(k,5+glance(t),8,t)}},
+{name:'Cradle',note:'The crescent turned into a cup, horns up, with a small owl sitting in it. Story-book, in colour.',
+ draw(k,t,ink){k.disc(9,9.5,8,ink);k.disc(9,5.6,7.6,'clear');
+  const h=!calm&&cyc(t,9)<.35?-1:0;k.r(6,6+h,6,7,C.brown);k.p(6,5+h,C.brown);k.p(11,5+h,C.brown);k.r(7,7+h,4,2,C.cream);
+  const c=listening?C.red:C.amber;if(blink(t,5.3)){k.r(7,8+h,1,1,C.dark);k.r(10,8+h,1,1,C.dark)}else{k.p(7,7+h,c);k.p(10,7+h,c)}k.p(8,9+h,C.amber);k.p(9,9+h,C.amber)}},
+{name:'Phases',note:'The moon wanes and waxes over the day (here, every 24 seconds), eyes always in its shadow. The icon tells the time of night.',
+ draw(k,t,ink){const p=calm?.35:cyc(t,24)/24,off=(p*2-1)*16;k.disc(9,9,8,ink);k.disc(9+off,9,8,'clear');
+  if(Math.abs(off)<13){const x=Math.round(9+off)-3;if(x>=0&&x<=12)eyes(k,x,8,t)}}},
+{name:'Window',note:'A small square of night sky: rounded frame, crescent, eyes and a star. Reads as an app icon more than a symbol.',
+ draw(k,t,ink){k.r(2,1,14,1,ink);k.r(2,16,14,1,ink);k.r(1,2,1,14,ink);k.r(16,2,1,14,ink);
+  k.disc(7,9,4.6,ink);k.disc(9.2,7.6,4,'clear');k.p(10+glance(t),9,listening?C.red:C.amber);k.p(12+glance(t),9,listening?C.red:C.amber);
+  if(blink(t)){k.p(10,9,'clear');k.p(12,9,'clear')}star(k,13,4,t,ink,4)}},
+{name:'Moon face',note:'A full moon that is the owl: ear tufts on top, eye holes with amber pupils, a beak notch and two craters.',
+ draw(k,t,ink){k.disc(9,10,7.6,ink);k.r(3,2,2,3,ink);k.r(13,2,2,3,ink);
+  const d=glance(t),b=blink(t);for(const x of[4,10]){k.r(x,7,4,4,'clear');if(b)k.r(x,9,4,1,ink);else k.r(x+1+(d>0?1:0)-(d<0?1:0)+0,8,2,2,listening?C.red:C.amber)}
+  k.r(8,12,2,2,'clear');k.p(5,13,ink+'88');k.p(13,14,ink+'88')}},
+{name:'Backlit',note:'A one-colour owl silhouette standing in front of a big amber moon. Warm, still, the eyes are holes the moon shows through.',
+ draw(k,t,ink){k.disc(11,8,6.5,listening?C.red:C.amber);k.r(4,6,7,10,ink);k.r(3,8,9,6,ink);k.r(4,4,2,2,ink);k.r(9,4,2,2,ink);k.r(2,16,13,1,ink);
+  if(!blink(t)){k.r(5,8,2,2,'clear');k.r(8,8,2,2,'clear');k.p(5+(glance(t)>0?1:0),9,ink);k.p(8+(glance(t)>0?1:0),9,ink)}}},
+{name:'Asleep',note:'The crescent with its eyes shut and a Z drifting up. It wakes, eyes open and red, only while you dictate.',
+ draw(k,t,ink){crescent(k,ink);if(listening){eyes(k,10,8,t)}else{for(const x of[10,14]){k.r(x,9,2,1,C.amber);k.p(x-1,8,C.amber+'aa');k.p(x+2,8,C.amber+'aa')}
+  if(!calm){const c=cyc(t,4);if(c<3){const y=4-Math.floor(c*1.4);if(y>=0){k.r(13,y,4,1,ink);k.p(15,y+1,ink);k.p(14,y+2,ink);k.r(13,y+3,4,1,ink)}}}}}},
+];
+// "clear" colour cuts pixels (for the crescent)
+function wrap(ctx){const k=kit(ctx);const r0=k.r;k.r=(x,y,w,h,c)=>c==='clear'?ctx.clearRect(x,y,w,h):r0(x,y,w,h,c);
+  k.p=(x,y,c)=>k.r(x,y,1,1,c);k.disc=(cx,cy,rad,c)=>{for(let y=0;y<H;y++)for(let x=0;x<W;x++){const dx=x+.5-cx,dy=y+.5-cy;if(dx*dx+dy*dy<=rad*rad)k.p(x,y,c)}};return k}
+
+const views=[];
+const grid=document.getElementById('grid');
+designs.forEach((d,i)=>{
+  const card=document.createElement('section');card.className='card';
+  card.innerHTML=`<h2><span>${i?i:'N'}</span>${d.name}</h2><div class="zoom"></div><p>${d.note}</p>`;
+  const z=document.createElement('canvas');z.width=W*8;z.height=H*8;card.querySelector('.zoom').append(z);
+  views.push({d,c:z,s:8,ink:'#f3f3f6'});
+  for(const[cls,ink]of[['dk','#f3f3f6'],['lt','#18181c'],['wp','#ffffff']]){
+    const bar=document.createElement('div');bar.className='bar '+cls;bar.innerHTML='<span>◐</span>';
+    const cv=document.createElement('canvas');cv.width=W*2*devicePixelRatio;cv.height=H*2*devicePixelRatio;cv.style.width=W+'px';cv.style.height=H+'px';
+    bar.append(cv);bar.insertAdjacentHTML('beforeend','<span>ෆ</span><span>Sat 9:41</span>');
+    bar.querySelector('span').textContent='●●○';
+    bar.children[2].textContent='⌁';
+    card.append(bar);views.push({d,c:cv,s:devicePixelRatio,ink});
+  }
+  grid.append(card);
+});
+// real-size canvases: 1 art pixel = 1 pt = devicePixelRatio device pixels
+views.forEach(v=>{if(v.s!==8){v.c.width=W*v.s;v.c.height=H*v.s}});
+
+let last=performance.now(),T=0;
+function frame(now){T+=(now-last)/1000*speed;last=now;
+  for(const v of views){const ctx=v.c.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,v.c.width,v.c.height);ctx.setTransform(v.s,0,0,v.s,0,0);
+    v.d.draw(wrap(ctx),T,v.ink)}
+  requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+
+function toggle(id,fn){const b=document.getElementById(id);b.onclick=()=>{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);fn(on)}}
+toggle('listen',on=>listening=on);toggle('calm',on=>calm=on);toggle('fast',on=>speed=on?3:1);
+</script>
+</body></html>
