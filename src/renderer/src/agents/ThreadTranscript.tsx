@@ -417,7 +417,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<UnfoldedWork views={delegations} work={backgroundWork} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)

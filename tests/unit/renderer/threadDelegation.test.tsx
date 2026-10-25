@@ -485,6 +485,13 @@ describe('delegated work in the delegating thread', () => {
     rerender(list(undefined))
     expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
     expect(labels(document)).toEqual(['Research: Find the scene code, Answered', 'Review: Spec review, Working'])
+    // A turn stopped before it wrote any reply has no reply for the heading to follow, so its agents get no rows.
+    const asked = turns.slice(0, 1)
+    rerender(<DelegationWorldProvider world={world(vi.fn(), threads)}>
+      <MessageList messages={asked} provider="Claude Code" running={false} placement={placeActivities(asked, asked, [])} context={context}
+        backgroundWork={stillWorkingAgents(agents, true)} /></DelegationWorldProvider>)
+    expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
+    expect(labels(document)).toEqual([])
     // Commands alone, or a thread whose ornament is held back, give no rows at all.
     expect(stillWorkingAgents([{ id: crypto.randomUUID(), type: 'command', label: 'npm run watch' }], true)).toBeUndefined()
     expect(stillWorkingAgents(agents, false)).toBeUndefined()
