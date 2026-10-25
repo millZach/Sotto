@@ -35,7 +35,8 @@ import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import type { AgentHostSnapshot, AgentState } from '../../src/shared/agents'
 import type { WatcherThreadTarget } from '../../src/shared/watcher'
-import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from '../fixtures/ownerScalePipeline'
+import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack, type ThreadChangesReport } from '../fixtures/ownerScalePipeline'
+import { verifyingThreadChanges } from '../../src/main/agents/threadChanges'
 import type { OwnerScale } from '../fixtures/ownerScale'
 
 /** The kinds of work counted. Each is per update while streaming, and per action for the user's actions. */
@@ -231,12 +232,20 @@ async function count(pipeline: OwnerScalePipeline, work: () => Promise<void>): P
 const per = (counts: Counts, by: number): Counts => Object.fromEntries(KINDS.map(kind => [kind, Math.round(counts[kind] / Math.max(1, by) * 100) / 100])) as Counts
 
 const CHUNKS = 30
-interface Measured { threads: number; counts: Record<string, number>; scenarios: Record<Scenario, Counts>; sites: Record<Scenario, Sites>; updates: Partial<Record<Scenario, number>> }
+interface Measured { threads: number; counts: Record<string, number>; scenarios: Record<Scenario, Counts>; sites: Record<Scenario, Sites>; updates: Partial<Record<Scenario, number>>
+  threadChanges: ThreadChangesReport }
+
+/** The shadows' work in the verifying mode (`ownerScalePipeline`'s `verifyThreadChanges`), left out of every count. */
+function uncounted<T>(work: () => T): T {
+  const measuring = counter.measuring, on = visits.threadVisits.on
+  counter.measuring = false; visits.threadVisits.on = false
+  try { return work() } finally { counter.measuring = measuring; visits.threadVisits.on = on }
+}
 
 /** Builds main on `track` at `shape` of the owner's world and counts each scenario. */
 async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measured> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-owner-scale-')); roots.push(root)
-  const pipeline = await until(ownerScalePipeline(root, shape, 3, track))
+  const pipeline = await until(ownerScalePipeline(root, shape, 3, track, { uncounted }))
   counter.wholeThreads = Math.min(pipeline.counts.threads, pipeline.counts.remoteThreads)
   counter.record = () => pipeline.control.watcherRecordView()
   // Watcher's wake-up pass runs at most every 250 ms while threads stream. Here it runs on every update, as it does when
@@ -283,7 +292,7 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
       const { counts, sites: from } = await count(pipeline, () => until(action()))
       scenarios[name as Scenario] = counts; sites[name as Scenario] = from
     }
-    return { threads: pipeline.counts.threads, counts: pipeline.counts, scenarios, sites, updates }
+    return { threads: pipeline.counts.threads, counts: pipeline.counts, scenarios, sites, updates, threadChanges: pipeline.threadChanges() }
   } finally {
     counter.record = undefined; counter.wholeThreads = Number.POSITIVE_INFINITY
     await until(pipeline.stop())
@@ -526,6 +535,10 @@ function grewAt(kind: Kind, small: Sites | undefined, large: Sites | undefined):
   const most = Object.entries(after).map(([at, n]) => [at, n - (before[at] ?? 0)] as const).filter(([, more]) => more > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
   return most.length ? ` (most at ${most.map(([at, more]) => `${at} +${Math.round(more)}`).join(', ')})` : ''
 }
+/** The layers `touched` counts, and which of them each scenario must run: a hook that stops running would read as no work. */
+const LAYERS = ['adapter', 'identity wrapper', 'provider switch', 'workspace accept', 'host stamp', 'workspace publication'] as const
+const LAYERS_RUN: Record<Scenario, readonly string[]> = { '1 streaming': LAYERS, '3 streaming': LAYERS, send: LAYERS,
+  saveAnswerDraft: ['workspace publication'], typeInComposer: [], openThread: [] }
 const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
 
 describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
@@ -533,6 +546,16 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     expect(measured[track].owner.counts).toMatchObject({ threads: 250, remoteThreads: 40, retirements: 256, remoteRetirements: 40, operations: 150, requests: 160, watches: 5 })
     expect(measured[track].quarterHistory.counts).toMatchObject({ threads: 250, remoteThreads: 10, retirements: 64, operations: 38, requests: 40 })
     expect(measured[track].quarterThreads.counts).toMatchObject({ threads: 63, remoteThreads: 40, retirements: 256, operations: 150, requests: 160 })
+  })
+  // With SOTTO_VERIFY_THREAD_CHANGES=1, every layer's publications are worked into thread changes and applied to a shadow
+  // map that is checked against the layer's whole snapshot after every change, through every scenario at every shape.
+  it.runIf(verifyingThreadChanges())('keeps every layer\'s thread map equal to its whole snapshot after every change (#925)', () => {
+    for (const [shape, { threadChanges }] of Object.entries(measured[track])) {
+      expect.soft(threadChanges.drift, `On ${track} at ${shape}, a thread map came to differ from its layer's whole snapshot.`).toEqual([])
+      for (const layer of LAYERS.filter(name => name !== 'host stamp')) {
+        expect.soft(threadChanges.checked[layer] ?? 0, `On ${track} at ${shape}, the ${layer}'s thread map checked no change.`).toBeGreaterThan(0)
+      }
+    }
   })
   it.each(Object.keys(SCENARIOS) as Scenario[])('%s: flat with the history, in proportion to the threads, and within its budget', scenario => {
     const { quarterHistory, owner, quarterThreads } = measured[track]
@@ -558,5 +581,10 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
       return `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}${held ? ` (today's count, held there until #1248 stops ${held.why})` : ''}`
     }) : ['no budget']
     expect.soft(over, `${what}, at the owner's scale the work is over its budget (${show(all)}): ${over.join('; ')}.`).toEqual([])
+    for (const [shape, { sites }] of Object.entries(measured[track])) {
+      const ran = Object.keys(sites[scenario].threadRecordsTouched ?? {}).sort()
+      expect.soft(ran, `${what} at ${shape}, the layers whose thread records were counted are not the ones this scenario runs. A hook that no longer runs reads as no work; count that layer where it now hands on its threads.`)
+        .toEqual([...LAYERS_RUN[scenario]].sort())
+    }
   })
 })

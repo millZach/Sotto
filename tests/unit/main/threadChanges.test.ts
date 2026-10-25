@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import { immutableActivities, immutableRecord } from '../../../src/main/agents/activitySnapshots'
 import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, threadMapDifferences, type AgentHostChanges, type AgentHostRest } from '../../../src/main/agents/threadChanges'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 
@@ -8,12 +8,13 @@ const thread = (id: string, fields: Partial<AgentThread> = {}): AgentThread => (
   status: 'idle', messages: [], requests: [], ...fields })
 const host = (threads: AgentThread[], fields: Partial<AgentHostSnapshot> = {}): AgentHostSnapshot => ({ ...structuredClone(EMPTY_AGENT_HOST), connected: true,
   name: 'Synthetic', threads, ...fields })
-/** A frozen record, as a publisher hands one out. */
-const frozen = (id: string, fields: Partial<AgentThread> = {}): AgentThread => Object.freeze(thread(id, fields))
+/** A record copied, recursively frozen and owned, as a publisher hands one out. */
+const owned = (id: string, fields: Partial<AgentThread> = {}): AgentThread => immutableRecord(thread(id, fields))
+const message = (id: string, text: string) => ({ id, role: 'user' as const, text, createdAt: '2026-10-24T00:00:00.000Z' })
 const rest = (fields: Partial<AgentHostSnapshot> = {}): AgentHostRest => {
   const parts: Partial<AgentHostSnapshot> = host([], fields)
   delete parts.threads
-  return Object.freeze(parts as AgentHostRest)
+  return immutableRecord(parts as AgentHostRest)
 }
 const ids = (map: ThreadMap): string[] => [...map.ids()]
 /** A map holding a whole publication of `threads`. */
@@ -26,14 +27,14 @@ function started(threads: AgentThread[], sequence = 1): ThreadMap {
 describe('a thread map', () => {
   it('asks for a whole publication before it holds one', () => {
     const map = new ThreadMap()
-    expect(map.apply({ sequence: 1, upserts: [frozen('a')], removals: [] })).toBe('resync')
+    expect(map.apply({ sequence: 1, upserts: [owned('a')], removals: [] })).toBe('resync')
     expect(map.sequence).toBeUndefined()
     expect(map.size).toBe(0)
     expect(map.snapshot()).toBeUndefined()
   })
 
   it('takes the order, the records and the rest a whole publication gives', () => {
-    const a = frozen('a'), b = frozen('b'), c = frozen('c')
+    const a = owned('a'), b = owned('b'), c = owned('c')
     const map = started([c, a, b], 7)
     expect(ids(map)).toEqual(['c', 'a', 'b'])
     expect(map.get('a')).toBe(a)
@@ -42,8 +43,8 @@ describe('a thread map', () => {
   })
 
   it('keeps an upserted thread where it was and appends a new one', () => {
-    const map = started([frozen('a'), frozen('b'), frozen('c')])
-    const b = frozen('b', { status: 'running' }), d = frozen('d')
+    const map = started([owned('a'), owned('b'), owned('c')])
+    const b = owned('b', { status: 'running' }), d = owned('d')
     expect(map.apply({ sequence: 2, upserts: [d, b], removals: [] })).toBe('applied')
     expect(ids(map)).toEqual(['a', 'b', 'c', 'd'])
     expect(map.get('b')).toBe(b)
@@ -51,37 +52,76 @@ describe('a thread map', () => {
   })
 
   it('drops a removed thread, and appends it when it comes back', () => {
-    const map = started([frozen('a'), frozen('b'), frozen('c')])
+    const map = started([owned('a'), owned('b'), owned('c')])
     expect(map.apply({ sequence: 2, upserts: [], removals: ['a'] })).toBe('applied')
     expect(ids(map)).toEqual(['b', 'c'])
     expect(map.has('a')).toBe(false)
-    expect(map.apply({ sequence: 3, upserts: [frozen('a')], removals: [] })).toBe('applied')
+    expect(map.apply({ sequence: 3, upserts: [owned('a')], removals: [] })).toBe('applied')
     expect(ids(map)).toEqual(['b', 'c', 'a'])
   })
 
   it('applies removals before upserts in one change', () => {
-    const map = started([frozen('a'), frozen('b')])
-    const a = frozen('a', { title: 'Back' })
+    const map = started([owned('a'), owned('b')])
+    const a = owned('a', { title: 'Back' })
     expect(map.apply({ sequence: 2, upserts: [a], removals: ['a'] })).toBe('applied')
     expect(ids(map)).toEqual(['b', 'a'])
     expect(map.get('a')).toBe(a)
   })
 
-  it('asks for a resync on a gap or a repeated sequence, and changes nothing', () => {
-    const map = started([frozen('a')], 4)
-    expect(map.apply({ sequence: 6, upserts: [frozen('b')], removals: [] })).toBe('resync')
-    expect(map.apply({ sequence: 4, upserts: [frozen('b')], removals: ['a'] })).toBe('resync')
+  it('asks for a resync on a gap, ignores a change it already has, and changes nothing for either', () => {
+    const map = started([owned('a')], 4)
+    expect(map.apply({ sequence: 6, upserts: [owned('b')], removals: [] })).toBe('resync')
+    expect(map.apply({ sequence: 4, upserts: [owned('b')], removals: ['a'] })).toBe('stale')
+    expect(map.apply({ sequence: 3, upserts: [owned('b')], removals: ['a'] })).toBe('stale')
     expect(ids(map)).toEqual(['a'])
     expect(map.sequence).toBe(4)
     // A whole publication after the gap starts the map again, whatever its sequence.
-    expect(map.apply({ sequence: 9, whole: true, upserts: [frozen('b'), frozen('a')], removals: [], rest: rest() })).toBe('applied')
+    expect(map.apply({ sequence: 9, whole: true, upserts: [owned('b'), owned('a')], removals: [], rest: rest() })).toBe('applied')
     expect(ids(map)).toEqual(['b', 'a'])
     expect(map.apply({ sequence: 10, upserts: [], removals: ['b'] })).toBe('applied')
     expect(ids(map)).toEqual(['a'])
   })
 
+  it('refuses a whole publication older than the one it holds, and takes one of the same sequence', () => {
+    const map = started([owned('a')], 5)
+    expect(map.apply({ sequence: 4, whole: true, upserts: [owned('old')], removals: [], rest: rest() })).toBe('stale')
+    expect(ids(map)).toEqual(['a'])
+    expect(map.sequence).toBe(5)
+    // A resync is answered with the sequence of the last change sent.
+    expect(map.apply({ sequence: 5, whole: true, upserts: [owned('b')], removals: [], rest: rest() })).toBe('applied')
+    expect(ids(map)).toEqual(['b'])
+  })
+
+  it('places a new thread before another, in the middle of the list', () => {
+    const map = started([owned('claude-a'), owned('codex-b'), owned('codex-c')])
+    expect(map.apply({ sequence: 2, upserts: [owned('claude-d')], removals: [], placements: [{ id: 'claude-d', beforeId: 'codex-b' }] })).toBe('applied')
+    expect(ids(map)).toEqual(['claude-a', 'claude-d', 'codex-b', 'codex-c'])
+  })
+
+  it('moves a thread that did not change, to another place or to the end, keeping its record', () => {
+    const a = owned('a')
+    const map = started([a, owned('b'), owned('c'), owned('d')])
+    expect(map.apply({ sequence: 2, upserts: [], removals: [], placements: [{ id: 'd', beforeId: 'b' }] })).toBe('applied')
+    expect(ids(map)).toEqual(['a', 'd', 'b', 'c'])
+    expect(map.apply({ sequence: 3, upserts: [], removals: [], placements: [{ id: 'a', beforeId: null }] })).toBe('applied')
+    expect(ids(map)).toEqual(['d', 'b', 'c', 'a'])
+    expect(map.get('a')).toBe(a)
+    // Placements apply in the order given, after removals and upserts.
+    expect(map.apply({ sequence: 4, upserts: [owned('e')], removals: ['c'], placements: [{ id: 'a', beforeId: 'd' }, { id: 'e', beforeId: 'a' }] })).toBe('applied')
+    expect(ids(map)).toEqual(['e', 'a', 'd', 'b'])
+  })
+
+  it('refuses a placement naming a thread it will not hold, and applies none of the change', () => {
+    const map = started([owned('a'), owned('b')])
+    expect(() => map.apply({ sequence: 2, upserts: [], removals: [], placements: [{ id: 'missing', beforeId: 'a' }] })).toThrow(TypeError)
+    expect(() => map.apply({ sequence: 2, upserts: [owned('c')], removals: ['b'], placements: [{ id: 'c', beforeId: 'b' }] })).toThrow(TypeError)
+    expect(() => map.apply({ sequence: 2, upserts: [], removals: [], placements: [{ id: 'a', beforeId: 'a' }] })).toThrow(TypeError)
+    expect(ids(map)).toEqual(['a', 'b'])
+    expect(map.sequence).toBe(1)
+  })
+
   it('takes a new order from a whole publication that reorders', () => {
-    const a = frozen('a'), b = frozen('b'), c = frozen('c')
+    const a = owned('a'), b = owned('b'), c = owned('c')
     const map = started([a, b, c])
     expect(map.apply({ sequence: 2, whole: true, upserts: [c, a], removals: [], rest: rest() })).toBe('applied')
     expect(ids(map)).toEqual(['c', 'a'])
@@ -90,7 +130,7 @@ describe('a thread map', () => {
   })
 
   it('takes the parts that are not threads alone, keeping every thread', () => {
-    const a = frozen('a')
+    const a = owned('a')
     const map = started([a])
     const next = rest({ error: 'Provider connection failed.', connected: false })
     expect(map.apply({ sequence: 2, upserts: [], removals: [], rest: next })).toBe('applied')
@@ -99,12 +139,25 @@ describe('a thread map', () => {
     expect(map.snapshot()).toMatchObject({ connected: false, error: 'Provider connection failed.', threads: [a] })
   })
 
-  it('refuses a record that is not frozen, and applies none of the change', () => {
-    const map = started([frozen('a')])
-    expect(() => map.apply({ sequence: 2, upserts: [frozen('b'), thread('c')], removals: ['a'] })).toThrow(TypeError)
+  it('refuses a record that is not owned, even one frozen on the outside, and applies none of the change', () => {
+    const map = started([owned('a')])
+    expect(() => map.apply({ sequence: 2, upserts: [owned('b'), thread('c')], removals: ['a'] })).toThrow(TypeError)
+    // Frozen on the outside, but its messages could still be written into after the map took it.
+    const shallow = Object.freeze(thread('c', { messages: [message('m', 'Hello')] }))
+    expect(() => map.apply({ sequence: 2, upserts: [shallow], removals: [] })).toThrow(TypeError)
     expect(() => map.apply({ sequence: 2, upserts: [], removals: [], rest: { ...rest() } })).toThrow(TypeError)
+    expect(() => map.apply({ sequence: 2, upserts: [], removals: [], rest: Object.freeze({ ...rest() }) })).toThrow(TypeError)
     expect(ids(map)).toEqual(['a'])
     expect(map.sequence).toBe(1)
+  })
+
+  it('holds records frozen all the way down', () => {
+    const map = started([owned('a', { messages: [message('m', 'Hello')] })])
+    const record = map.get('a')!
+    expect(() => { record.messages.push(message('n', 'More')) }).toThrow(TypeError)
+    expect(() => { record.messages[0]!.text = 'Changed' }).toThrow(TypeError)
+    expect(() => { record.requests.push({ id: 'r', kind: 'question', text: 'Question', options: [] }) }).toThrow(TypeError)
+    expect(map.get('a')!.messages).toEqual([message('m', 'Hello')])
   })
 
   it('refuses a whole publication without the rest of the snapshot', () => {
@@ -112,7 +165,7 @@ describe('a thread map', () => {
   })
 
   it('hands out frozen records, and a snapshot of its own that any caller may change', () => {
-    const map = started([frozen('a', { messages: [{ id: 'm', role: 'user', text: 'Hello', createdAt: '2026-10-24T00:00:00.000Z' }] })])
+    const map = started([owned('a', { messages: [message('m', 'Hello')] })])
     expect(() => { (map.get('a') as { title: string }).title = 'Changed' }).toThrow(TypeError)
     const snapshot = map.snapshot()!
     snapshot.threads[0]!.title = 'Changed'
@@ -129,12 +182,12 @@ describe('a thread map', () => {
 
 describe('a thread map checked against a whole snapshot', () => {
   it('finds nothing when the map equals the snapshot', () => {
-    const map = started([frozen('a'), frozen('b')])
+    const map = started([owned('a'), owned('b')])
     expect(threadMapDifferences(map, host([thread('a'), thread('b')]))).toEqual([])
   })
 
   it('names a missed removal, a missed upsert, a stale record, the wrong order and other parts that differ', () => {
-    const map = started([frozen('a'), frozen('b'), frozen('c')])
+    const map = started([owned('a'), owned('b'), owned('c')])
     expect(threadMapDifferences(map, host([thread('a'), thread('b')]))).toEqual([expect.stringMatching(/thread "c" .*missed removal/u)])
     expect(threadMapDifferences(map, host([thread('a'), thread('b'), thread('c'), thread('d')]))).toEqual([expect.stringMatching(/thread "d" .*missed upsert/u)])
     expect(threadMapDifferences(map, host([thread('a'), thread('b', { status: 'running' }), thread('c')]))).toEqual([expect.stringMatching(/thread "b" .*stale/u)])
@@ -145,31 +198,31 @@ describe('a thread map checked against a whole snapshot', () => {
   it('in verifying mode, fails a change that leaves the map unlike the whole snapshot', () => {
     let truth = host([thread('a'), thread('b')])
     const map = new ThreadMap({ wholeOf: () => truth, verify: true })
-    expect(map.apply({ sequence: 1, whole: true, upserts: [frozen('a'), frozen('b')], removals: [], rest: rest() })).toBe('applied')
+    expect(map.apply({ sequence: 1, whole: true, upserts: [owned('a'), owned('b')], removals: [], rest: rest() })).toBe('applied')
     // The publisher removed b, but the change it sent forgot to say so.
     truth = host([thread('a', { status: 'running' })])
-    expect(() => map.apply({ sequence: 2, upserts: [frozen('a', { status: 'running' })], removals: [] })).toThrow(/thread "b" is in the map but not the snapshot/u)
+    expect(() => map.apply({ sequence: 2, upserts: [owned('a', { status: 'running' })], removals: [] })).toThrow(/thread "b" is in the map but not the snapshot/u)
   })
 
   it('in verifying mode, fails a stale record and a wrong order', () => {
     let truth = host([thread('a'), thread('b')])
     const stale = new ThreadMap({ wholeOf: () => truth, verify: true })
-    stale.apply({ sequence: 1, whole: true, upserts: [frozen('a'), frozen('b')], removals: [], rest: rest() })
+    stale.apply({ sequence: 1, whole: true, upserts: [owned('a'), owned('b')], removals: [], rest: rest() })
     truth = host([thread('a', { title: 'Renamed' }), thread('b')])
     expect(() => stale.apply({ sequence: 2, upserts: [], removals: [] })).toThrow(/thread "a" is unlike/u)
 
     truth = host([thread('a'), thread('b')])
     const order = new ThreadMap({ wholeOf: () => truth, verify: true })
-    order.apply({ sequence: 1, whole: true, upserts: [frozen('a'), frozen('b')], removals: [], rest: rest() })
+    order.apply({ sequence: 1, whole: true, upserts: [owned('a'), owned('b')], removals: [], rest: rest() })
     truth = host([thread('c'), thread('a'), thread('b')])
     // A thread that goes first can only come in a whole publication; an upsert appends it.
-    expect(() => order.apply({ sequence: 2, upserts: [frozen('c')], removals: [] })).toThrow(/order/u)
+    expect(() => order.apply({ sequence: 2, upserts: [owned('c')], removals: [] })).toThrow(/order/u)
   })
 
   it('checks nothing unless verifying is on', () => {
     const wholeOf = vi.fn(() => host([]))
     const map = new ThreadMap({ wholeOf, verify: false })
-    map.apply({ sequence: 1, whole: true, upserts: [frozen('a')], removals: [], rest: rest() })
+    map.apply({ sequence: 1, whole: true, upserts: [owned('a')], removals: [], rest: rest() })
     expect(wholeOf).not.toHaveBeenCalled()
   })
 })
@@ -227,18 +280,69 @@ describe('changes worked out from a whole snapshot', () => {
     expect(changes.upserts.map(item => item.id)).toEqual(['d'])
   })
 
-  it('sends a whole publication when the order changed some other way', () => {
+  /** `map` after `changes`, numbered as the next publication. */
+  function after(map: ThreadMap, changes: ReturnType<typeof threadChangesBetween>): string[] {
+    expect(map.apply({ ...changes, sequence: map.sequence! + 1 })).toBe('applied')
+    return ids(map)
+  }
+
+  it('places a thread that comes in the middle, as the provider switch lists a new thread of one provider before the next provider\'s', () => {
+    const { map } = published(host([thread('claude-a'), thread('codex-b'), thread('codex-c')]))
+    const changes = threadChangesBetween(map, host([thread('claude-a'), thread('claude-d'), thread('codex-b'), thread('codex-c')]))
+    expect(changes.whole).toBeUndefined()
+    expect(changes.upserts.map(item => item.id)).toEqual(['claude-d'])
+    expect(changes.placements).toEqual([{ id: 'claude-d', beforeId: 'codex-b' }])
+    expect(after(map, changes)).toEqual(['claude-a', 'claude-d', 'codex-b', 'codex-c'])
+    expect(threadMapDifferences(map, host([thread('claude-a'), thread('claude-d'), thread('codex-b'), thread('codex-c')]))).toEqual([])
+  })
+
+  it('places a thread that moved without upserting it', () => {
     const { map } = published(host([thread('a'), thread('b'), thread('c')]))
-    const a = map.get('a')!, c = map.get('c')!
-    const moved = threadChangesBetween(map, host([thread('c'), thread('a'), thread('b')]))
+    const c = map.get('c')!
+    const changes = threadChangesBetween(map, host([thread('c'), thread('a'), thread('b')]))
+    expect(changes.whole).toBeUndefined()
+    expect(changes.upserts).toEqual([])
+    expect(changes.placements).toEqual([{ id: 'c', beforeId: 'a' }])
+    expect(after(map, changes)).toEqual(['c', 'a', 'b'])
+    expect(map.get('c')).toBe(c)
+  })
+
+  it('places threads that moved and came in several places at once', () => {
+    const before = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+    const next = ['a', 'x', 'c', 'b', 'd', 'e', 'f', 'j', 'g', 'h', 'i', 'y']
+    const { map } = published(host(before.map(id => thread(id))))
+    const changes = threadChangesBetween(map, host(next.map(id => thread(id))))
+    expect(changes.whole).toBeUndefined()
+    expect(changes.upserts.map(item => item.id)).toEqual(['x', 'y'])
+    // x comes in the middle; one of b and c moved, and j; y goes last without a placement.
+    expect(changes.placements).toHaveLength(3)
+    expect(after(map, changes)).toEqual(next)
+  })
+
+  it('sends a whole publication when most of the list moved', () => {
+    const { map } = published(host([thread('a'), thread('b'), thread('c'), thread('d')]))
+    const a = map.get('a')!, d = map.get('d')!
+    const moved = threadChangesBetween(map, host([thread('d'), thread('c'), thread('b'), thread('a')]))
     expect(moved.whole).toBe(true)
-    expect(moved.upserts.map(item => item.id)).toEqual(['c', 'a', 'b'])
+    expect(moved.placements).toBeUndefined()
+    expect(moved.upserts.map(item => item.id)).toEqual(['d', 'c', 'b', 'a'])
     // A thread that did not change is still the record published last.
-    expect(moved.upserts[0]).toBe(c)
-    expect(moved.upserts[1]).toBe(a)
-    const inserted = threadChangesBetween(map, host([thread('a'), thread('new'), thread('b'), thread('c')]))
-    expect(inserted.whole).toBe(true)
-    expect(inserted.upserts.map(item => item.id)).toEqual(['a', 'new', 'b', 'c'])
+    expect(moved.upserts[0]).toBe(d)
+    expect(moved.upserts[3]).toBe(a)
+  })
+
+  it('copies a thread it is handed and keeps nothing the caller can still write into', () => {
+    const { map } = published(host([thread('a')]))
+    const alias = thread('a', { messages: [message('m', 'Hello')] })
+    const changes = threadChangesBetween(map, host([alias]))
+    expect(changes.upserts[0]).not.toBe(alias)
+    after(map, changes)
+    // The caller writes into what it handed over; the map is unchanged, and the next publication carries the write.
+    alias.messages.push(message('n', 'More'))
+    alias.messages[0]!.text = 'Changed'
+    expect(map.get('a')!.messages).toEqual([message('m', 'Hello')])
+    const next = threadChangesBetween(map, host([alias]))
+    expect(next.upserts.map(item => item.messages.map(entry => entry.text))).toEqual([['Changed', 'More']])
   })
 
   it('carries the parts that are not threads only when they changed', () => {
@@ -368,9 +472,9 @@ describe('a thread changes publisher', () => {
     const publisher = new ThreadChangesPublisher()
     const one = holder()
     publisher.subscribe(one.listener)
-    expect(() => publisher.publishChanges(() => ({ upserts: [frozen('a')], removals: [] }))).toThrow(/whole/u)
-    publisher.publishChanges(() => ({ whole: true, upserts: [frozen('a'), frozen('b')], removals: [], rest: rest() }))
-    publisher.publishChanges(() => ({ upserts: [frozen('c')], removals: ['a'] }))
+    expect(() => publisher.publishChanges(() => ({ upserts: [owned('a')], removals: [] }))).toThrow(/whole/u)
+    publisher.publishChanges(() => ({ whole: true, upserts: [owned('a'), owned('b')], removals: [], rest: rest() }))
+    publisher.publishChanges(() => ({ upserts: [owned('c')], removals: ['a'] }))
     expect(one.received.map(changes => changes.sequence)).toEqual([1, 2])
     expect(ids(one.map)).toEqual(['b', 'c'])
   })
@@ -387,6 +491,8 @@ describe('a thread changes publisher', () => {
       [thread('a', { status: 'running' }), thread('c'), thread('b')],
       [thread('c'), thread('a', { status: 'idle' }), thread('b')],
       [thread('c'), thread('a'), thread('b'), thread('d')],
+      [thread('c'), thread('e'), thread('a'), thread('b'), thread('d')],
+      [thread('d'), thread('b'), thread('a'), thread('e'), thread('c')],
       [],
       [thread('d')],
     ]
@@ -394,7 +500,59 @@ describe('a thread changes publisher', () => {
       truth = host(threads)
       publisher.publishSnapshots(() => host(threads))
     }
-    expect(one.received.map(changes => changes.whole === true)).toEqual([true, false, false, false, true, false, false, false])
+    expect(one.received.map(changes => changes.whole === true)).toEqual([true, false, false, false, false, false, false, true, false, false])
     expect(ids(one.map)).toEqual(['d'])
+  })
+
+  it('copies records a publisher marked itself when it does not own them, and keeps nothing the caller can still write into', () => {
+    const publisher = new ThreadChangesPublisher()
+    const one = holder()
+    publisher.subscribe(one.listener)
+    const alias = thread('a', { messages: [message('m', 'Hello')] })
+    const parts: Partial<AgentHostSnapshot> = host([])
+    delete parts.threads
+    publisher.publishChanges(() => ({ whole: true, upserts: [alias], removals: [], rest: parts as AgentHostRest }))
+    expect(one.map.get('a')).not.toBe(alias)
+    alias.messages.push(message('n', 'More'))
+    alias.messages[0]!.text = 'Changed'
+    ;(parts as { name: string }).name = 'Changed'
+    expect(one.map.get('a')!.messages).toEqual([message('m', 'Hello')])
+    expect(one.map.rest!.name).toBe('Synthetic')
+    // An owned record is passed on as it is.
+    const b = owned('b')
+    publisher.publishChanges(() => ({ upserts: [b], removals: [] }))
+    expect(one.map.get('b')).toBe(b)
+  })
+
+  it('delivers a publication made from inside a listener after the one being delivered, to every subscriber in order', () => {
+    const publisher = new ThreadChangesPublisher()
+    let state = [thread('a')]
+    const first = holder(), second = holder()
+    let nested = false
+    publisher.subscribe(changes => {
+      first.listener(changes)
+      // As a layer might: something this subscriber does makes the publisher publish again at once.
+      if (!nested) { nested = true; state = [thread('a'), thread('b')]; publisher.publishSnapshots(() => host(state)) }
+    })
+    publisher.subscribe(second.listener)
+    publisher.publishSnapshots(() => host(state))
+    expect(second.received.map(changes => changes.sequence)).toEqual([1, 2])
+    expect(first.received.map(changes => changes.sequence)).toEqual([1, 2])
+    expect(ids(second.map)).toEqual(['a', 'b'])
+    expect(second.map.sequence).toBe(2)
+  })
+
+  it('goes on numbering a form after its last subscriber left and another came', () => {
+    const publisher = new ThreadChangesPublisher()
+    const one = holder()
+    const off = publisher.subscribe(one.listener)
+    publisher.publishSnapshots(() => host([thread('a')]))
+    publisher.publishSnapshots(() => host([thread('a'), thread('b')]))
+    off()
+    // The same subscriber comes back with the map it kept: the whole publication it is sent is newer, never older.
+    publisher.subscribe(one.listener)
+    publisher.publishSnapshots(() => host([thread('b')]))
+    expect(one.received.at(-1)).toMatchObject({ sequence: 3, whole: true })
+    expect(ids(one.map)).toEqual(['b'])
   })
 })
