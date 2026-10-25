@@ -28,7 +28,7 @@ import { watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries,
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
-import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD } from './watcherSendHolds'
+import { defaultDelivery, NO_TURN_TO_STEER, queuedSendHeld, queueHold, RUNNING_TURN_HOLD, STEER_TURN_CHANGED, steerFallbackNote } from './watcherSendHolds'
 import { WatcherStateStore, watcherWaitsOn } from './watcherState'
 import { compactionPending } from '../../shared/compaction'
 import { watcherDisplayPrompt } from './watcherMessageDisplay'
@@ -374,6 +374,7 @@ export class WatcherService implements WatcherControlHooks {
    * record, so the record keeps its shape; a retry after a restart reads its receipt without this block.
    */
   private readonly roleStarts = new Map<string, RoleReceipt>()
+  private readonly steerFallbacks = new Map<string, string>()
   /**
    * Settle finished threads: the turn each watched thread was last settled or tried at, so one that is refused is not
    * tried again until it has worked again; the wait before the next look; and whether a look is under way.
@@ -2780,15 +2781,23 @@ export class WatcherService implements WatcherControlHooks {
       if (thread && (send || name === 'settle_thread')) this.pending(thread)
       // A paired master decided whether its Watcher turn answers the user; this host cannot read that thread.
       if (thread && name === 'stop_thread') this.checkStopTurn(thread, record, request.id, Boolean(imported) || this.answersUserNow(record, request))
-      // A send that names no delivery steers a running turn and goes now to an idle one (ADR-0130). It is picked here,
-      // after a waiting card refused it, and kept as the operation's own; a retry still matches the call as it was made.
-      const defaulted = Boolean(thread && send && !(input as WatcherToolInput<'send_to_thread'>).delivery)
-      if (thread && defaulted) {
-        const { expectedTurnId, ...sent } = input as WatcherToolInput<'send_to_thread'>
+      // A send that names no delivery, or names steer, steers a running turn and goes now to an idle one (ADR-0130). It is
+      // picked here, after a waiting card refused it, and kept as the operation's own; a retry still matches the call as it
+      // was made. A paired host takes the mode its desktop picked as it is.
+      const asked = send ? (input as WatcherToolInput<'send_to_thread'>).delivery : undefined
+      const picked = Boolean(thread && send && !imported && (!asked || asked === 'steer'))
+      if (thread && picked) {
+        const { expectedTurnId, delivery: _asked, ...sent } = input as WatcherToolInput<'send_to_thread'>; void _asked
         // Parsed again so its keys fall in the schema's order, as a paired host parses it before checking the digest.
         input = watcherToolSchemas.send_to_thread.input.parse({ ...sent, ...defaultDelivery(thread, capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer === true, expectedTurnId) })
       }
+      const steerFallback = asked === 'steer' ? steerFallbackNote((input as WatcherToolInput<'send_to_thread'>).delivery) : undefined
       if (thread && send) {
+        // A steer that names its turn is meant for that turn alone. While any turn is under way, one that is not the named
+        // turn running refuses it before it could go another way; a thread at rest has no turn to mix it into.
+        const fence = (input as WatcherToolInput<'send_to_thread'>).expectedTurnId
+        if (fence && (picked ? isThreadTurnRunning(thread) && !(thread.lastTurn?.id === fence && thread.lastTurn.status === 'running')
+          : (input as WatcherToolInput<'send_to_thread'>).delivery === 'steer' && fence !== thread.lastTurn?.id)) refuse('STEER_UNAVAILABLE', STEER_TURN_CHANGED)
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)
         // A send gives the thread no permission, so neither the new-thread default nor a host's hold-back limits it (#1145).
         const sent = input as WatcherToolInput<'send_to_thread'>
@@ -2801,12 +2810,12 @@ export class WatcherService implements WatcherControlHooks {
         const review = sent.delivery === 'queue' && !remote ? this.options.control.queueAwaitsReview(thread.id) : null
         if (review) refuse('THREAD_BUSY', queueHold(review, false))
         if (sent.delivery === 'steer' && thread.status !== 'running' && thread.lastTurn?.status !== 'running') refuse('STEER_UNAVAILABLE', NO_TURN_TO_STEER)
-        // A named steer needs a confirmed running turn. A default one does not: a turn that resumed after the user answered
-        // its card, or began from a queued prompt, runs before Sotto confirms it, and the default steers it unfenced
-        // (#1490). A paired desktop sends an unfenced steer only as its default.
-        const unfenced = !sent.expectedTurnId && (defaulted || Boolean(imported))
+        // A steer that names no turn goes into the one running, confirmed or not. Watcher's reads name only finished
+        // turns, so a turn it did not start, as one that resumed after the user answered its card, began from a queued
+        // prompt or from Sotto's restart note, has no identity it could name (#1490). A paired desktop picked the mode.
+        const unfenced = !sent.expectedTurnId && (picked || Boolean(imported))
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || thread.status !== 'running'
-          || (sent.expectedTurnId ? sent.expectedTurnId !== thread.lastTurn?.id : !unfenced))) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
+          || !sent.expectedTurnId && !unfenced)) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
       }
       if (thread && name === 'settle_thread') {
         this.checkSettlement(thread)
@@ -2819,7 +2828,7 @@ export class WatcherService implements WatcherControlHooks {
         ?? ((start || send) && !imported && (!remote || this.remote?.hosts().find(host => host.hostId === owner)?.standingWatch) ? this.newWatch(target, thread) : undefined)
       const time = now(), id = randomUUID()
       const operation: WatcherOperation = imported ?? { id, requestId: request.id, retryKey: input.retryKey, digest: digest([name, input]),
-        ...(start || offeredWatch || defaulted ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
+        ...(start || offeredWatch || picked ? { inputDigest: offeredWatch ? originalInputDigest : inputDigest } : {}),
         action: start ? 'start' : send ? 'send' : name === 'stop_thread' ? 'stop' : 'settle', target,
         ...(turn ? { promptTurnId: turn.id } : {}), ...(assignment ? { standingWatchId: assignment.id } : {}),
         generation: previous?.generation ?? assignment?.generation ?? 0, anchorMessageId: request.rootUserMessageId, deliveryState: 'queued', createdAt: time, updatedAt: time, receiptId: randomUUID(), cardId: randomUUID(),
@@ -2855,6 +2864,7 @@ export class WatcherService implements WatcherControlHooks {
         if (start && !next.reservations.some(item => key(item.target) === key(target))) next.reservations.push({ target, requestId: request.id, operationId: operation.id, generation: participant.generation, reason: 'creation' })
       })
       if (roleResult) this.rememberRoleStart(operation.id, roleResult)
+      if (steerFallback) this.rememberSteerFallback(operation.id, steerFallback)
       return { operation, retry: false }
     })
     if (progress) { progress.operationId = admitted.operation.id; progress.admitted?.(admitted.operation) }
@@ -3052,6 +3062,15 @@ ${operation.draftId}`)
     this.roleStarts.set(operationId, role)
     for (const kept of this.roleStarts.keys()) { if (this.roleStarts.size <= ROLE_STARTS_KEPT) break; this.roleStarts.delete(kept) }
   }
+  private rememberSteerFallback(operationId: string, note: string): void {
+    this.steerFallbacks.set(operationId, note)
+    for (const kept of this.steerFallbacks.keys()) { if (this.steerFallbacks.size <= ROLE_STARTS_KEPT) break; this.steerFallbacks.delete(kept) }
+  }
+  /** What a send that asked to steer did instead, said in its result. In memory only: a retry after a restart has none. */
+  private fallbackBlock(operationId: string): { note: string } | Record<string, never> {
+    const note = this.steerFallbacks.get(operationId)
+    return note ? { note } : {}
+  }
   private roleBlock(operationId: string): { role: RoleReceipt } | Record<string, never> {
     const role = this.roleStarts.get(operationId)
     return role ? { role } : {}
@@ -3081,7 +3100,7 @@ ${operation.draftId}`)
         // the user. A retry's does not: its thread may have finished long since, and it would count it again.
         ...firstRun && operation.target.hostId === this.hostId() ? this.workingWarning(operation.target.threadId) : {} }
     }
-    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery }
+    if (name === 'send_to_thread') return { status: 'ok', ...base, delivery: operation.delivery, ...this.fallbackBlock(operation.id) }
     return { status: 'ok', ...base, state: this.operationState(operation.target), ...(name === 'stop_thread' ? { stopRequested: true } : {}) }
   }
 
@@ -3150,7 +3169,7 @@ ${operation.draftId}`)
         })
       }
       return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
-        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}) } : parsed
+        ...(name === 'start_thread' ? this.roleBlock(operation.id) : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
