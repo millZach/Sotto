@@ -73,7 +73,7 @@ async function rosterFits(page: Page, where: string): Promise<void> {
     const ink = (element: Element): string => { context.clearRect(0, 0, 1, 1); context.fillStyle = getComputedStyle(element).color; context.fillRect(0, 0, 1, 1); return pixel() }
     const selectors = ['.roster-machine__name', '.roster-machine__head > span:not(.roster-machine__name)', '.roster-machine__note', '.roster-notice', '.delegated-row .subagent-title',
       '.delegated-row .subagent-description', '.delegated-row .subagent-meta', '.delegated-row .subagent-time', '.delegated-row__status', '.delegated-row__held', '.delegated-row__open',
-      '.delegation-card__outcome', '.delegation-card__wait', '.delegation-card__held', '.delegation-card__meta']
+      '.delegated-work__state', '.delegated-work__line', '.delegated-work__held', '.delegated-work__meta']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0)
       .map((element, index) => ({ name: `${selector} ${index}`, ink: ink(element), on: backdrop(element) })))
   })
@@ -170,17 +170,21 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await page.getByRole('button', { name: PARENT, exact: true }).click()
       await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(PARENT)
 
-      // The cards under the parent's reply name the host; the refusal is in the prototype's words.
+      // The parent's rows of delegated work name the host; the refusal names what it asked for, in Zach's words.
       const cards = pane(page)
-      await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' })).toBeVisible({ timeout: 30_000 })
-      await expect(cards.getByRole('group', { name: 'Delegated to Run the host contract tests' }).locator('.delegation-card__meta')).toContainText('Forge')
-      await expect(cards.getByRole('group', { name: 'Delegated to Run the host contract tests' }).locator('.delegation-card__held'))
+      const work = (title: string): Locator => cards.getByRole('listitem', { name: new RegExp(`^Building: ${title}, `, 'u') })
+      // A turn that folds keeps its rows in its Worked for fold.
+      const fold = cards.getByRole('button', { name: /^Worked for/u }).last()
+      if (await fold.count() && await fold.getAttribute('aria-expanded') === 'false') await fold.click()
+      await expect(work('Review the delegation socket changes')).toBeVisible({ timeout: 30_000 })
+      await expect(work('Run the host contract tests').locator('.delegated-work__meta')).toContainText('Forge')
+      await expect(work('Run the host contract tests').locator('.delegated-work__held'))
         .toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
-      await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__held'))
+      await expect(work('Review the delegation socket changes').locator('.delegated-work__held'))
         .toHaveText('Held at Ask for approval: this computer can\'t answer on Forge.')
-      await expect(cards.getByRole('note', { name: 'Not delegated: Building' }).locator('.delegation-card__wait'))
+      await expect(cards.getByRole('listitem', { name: 'Building, not delegated, Refused' }).locator('.delegated-work__line'))
         .toHaveText(`Asked for ${process.platform === 'darwin' ? 'a Windows machine' : 'a Mac'}. Forge can start threads only on Forge for now. Nothing was started.`)
-      await capture(launched, 'cards-dark-1280x800')
+      await capture(launched, 'delegated-work-dark-1280x800')
 
       // Tools › Agents: a heading for Forge with its count, and its threads under it, both levels.
       await pane(page).getByRole('button', { name: 'Tools', exact: true }).click()
@@ -223,8 +227,8 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(row('Review the delegation socket changes').locator('.subagent-time')).toHaveText(/^as of \d{1,2}:\d{2}/u)
       await expect(forge.getByRole('heading', { level: 3 })).toHaveText('Forge4 threadsnot connected')
       await expect(tools(page).getByRole('status').filter({ hasText: 'Forge is not connected.' })).toHaveText(/^Forge is not connected\. These threads are as Sotto last read them at \d{1,2}:\d{2}(?: [ap]m)?\. Losing the connection stops nothing on Forge\.$/u)
-      await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__outcome')).toHaveText('Working when last read')
-      await expect(cards.getByRole('group', { name: 'Delegated to Review the delegation socket changes' }).locator('.delegation-card__wait')).toContainText('Forge is not connected, so Sotto cannot read how it went since.')
+      await expect(work('Review the delegation socket changes').locator('.delegated-work__state')).toHaveText('Working when last read')
+      await expect(work('Review the delegation socket changes').locator('.delegated-work__line')).toContainText('Forge is not connected, so Sotto cannot read how it went since.')
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await resizeWindow(launched, width, height)
         for (const appearance of ['dark', 'light'] as const) {

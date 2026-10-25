@@ -3,12 +3,13 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentHost } from '../../../src/main/agents/host'
 import { UsageService } from '../../../src/main/agents/usageService'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
-import type { UsagePromptIdentity, UsagePromptSubmission, UsageTokenObservation } from '../../../src/shared/usageDashboard'
+import { USAGE_HISTORY_BATCH_MAX, type UsagePromptIdentity, type UsagePromptSubmission, type UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { parseCodexQuota } from '../../../src/main/agents/providerQuota'
 
 const at = '2026-10-12T12:00:00.000Z'
@@ -115,7 +116,7 @@ describe('host usage collection service', () => {
   it('coalesces whole streaming replacements and flushes the final counts on close', () => {
     vi.useFakeTimers()
     const f = fixture()
-    const write = vi.spyOn(f.store, 'observeTokens')
+    const write = vi.spyOn(f.store, 'observeTokenBatch')
     f.emit(token()); f.emit(token({ tokens: { input: 100, output: 22, cached: 40 } }))
     // A normal snapshot broadcast must not bypass the stream write interval.
     f.fake.emit()
@@ -222,6 +223,61 @@ describe('host usage collection service', () => {
     expect(f.fake.commands).toHaveLength(0)
   })
 
+  it('marks a refresh Usage made on its own, and never lets Read again wait on one (#1456)', async () => {
+    const f = fixture()
+    const quota = parseCodexQuota({ rateLimits: { primary: { usedPercent: 0, windowDurationMins: 300 } } }, at)
+    let finish: (() => void) | undefined
+    const read = vi.fn(async (_provider: string, _refresh: boolean, background?: boolean) => {
+      if (background) await new Promise<void>(resolve => { finish = resolve })
+      return quota
+    })
+    f.host.readProviderQuota = read
+    const background = f.service.refresh(['codex'], true), another = f.service.refresh(['codex'], true)
+    // Read again reads for itself while the one Usage made on its own is still under way.
+    await f.service.refresh(['codex'])
+    expect(read.mock.calls).toEqual([['codex', true, true], ['codex', true]])
+    finish!(); await Promise.all([background, another])
+    expect(read).toHaveBeenCalledTimes(2)
+    // One Usage made on its own joins a Read again under way rather than asking again.
+    let release: (() => void) | undefined
+    read.mockImplementationOnce(async () => { await new Promise<void>(resolve => { release = resolve }); return quota })
+    const asked = f.service.refresh(['codex']), quiet = f.service.refresh(['codex'], true)
+    release!(); await Promise.all([asked, quiet])
+    expect(read).toHaveBeenCalledTimes(3)
+    expect(f.fake.commands).toHaveLength(0)
+  })
+
+  it('keeps the reading of a later read when an earlier one finishes after it (#1456)', async () => {
+    const f = fixture()
+    const older = parseCodexQuota({ rateLimits: { primary: { usedPercent: 42, windowDurationMins: 300 } } }, at)
+    const newer = parseCodexQuota({ rateLimits: { primary: { usedPercent: 64, windowDurationMins: 300 } } }, at)
+    let finish: (() => void) | undefined
+    f.host.readProviderQuota = vi.fn(async (_provider: string, _refresh: boolean, background?: boolean) => {
+      if (!background) return newer
+      await new Promise<void>(resolve => { finish = resolve })
+      return older
+    })
+    const opened = f.service.refresh(['codex'], true)
+    expect((await f.service.refresh(['codex'])).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    finish!()
+    expect((await opened).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    // A read of the last reading while Read again is under way takes no place ahead of it.
+    let release: (() => void) | undefined
+    const newest = parseCodexQuota({ rateLimits: { primary: { usedPercent: 80, windowDurationMins: 300 } } }, at)
+    f.host.readProviderQuota = vi.fn(async (_provider: string, refresh: boolean) => {
+      if (!refresh) return newer
+      await new Promise<void>(resolve => { release = resolve })
+      return newest
+    })
+    const again = f.service.refresh(['codex'])
+    expect((await f.service.read()).quotas[0]!.windows[0]!.usedPercent).toBe(64)
+    release!()
+    expect((await again).quotas[0]!.windows[0]!.usedPercent).toBe(80)
+    // A failure later still shows the newest reading's figures.
+    f.host.readProviderQuota = vi.fn(async () => { throw new Error('synthetic failure') })
+    expect((await f.service.refresh(['codex'])).quotas[0]).toMatchObject({ status: 'error', reason: 'read-failed', windows: [{ usedPercent: 80 }] })
+  })
+
   it('reports a failed store separately while account metadata remains available', async () => {
     const store = new UsageStore(':memory:')
     vi.spyOn(store, 'open').mockImplementation(() => { throw new Error('synthetic open failure') })
@@ -232,6 +288,55 @@ describe('host usage collection service', () => {
     expect(result.quotas[0]!.windows[0]!.usedPercent).toBe(20)
     await expect(f.service.clear({ expectedRevision: 0 })).rejects.toThrow('could not be saved')
     expect(f.fake.commands).toHaveLength(0)
+  })
+
+  it('saves a backlog of token records in one transaction per batch, with the rows and revision one save per record gives', () => {
+    const f = fixture()
+    // The first snapshot's seed mark goes first, so only the backlog is counted below.
+    f.service.flush()
+    const records = Array.from({ length: USAGE_HISTORY_BATCH_MAX + 500 }, (_, index) => token({ recordKey: hash(`backlog-${index}`),
+      groupKey: hash(`backlog-turn-${index % 7}`), tokens: { input: index, output: 1 } }))
+    for (const record of records) f.emit(record)
+    // A whole replacement still arriving in the buffer, and a row it already holds, change nothing about the batching.
+    f.emit({ ...records[3]!, tokens: { input: 9_999, output: 1 } })
+    const begins = vi.spyOn(DatabaseSync.prototype, 'exec')
+    f.service.flush()
+    expect(begins.mock.calls.filter(([sql]) => sql === 'BEGIN IMMEDIATE')).toHaveLength(Math.ceil(records.length / USAGE_HISTORY_BATCH_MAX))
+    begins.mockRestore()
+
+    const reference = new UsageStore(':memory:', () => at)
+    reference.open()
+    try {
+      reference.markLegacySeedCompleted()
+      for (const record of [records[0]!, records[1]!, records[2]!, { ...records[3]!, tokens: { input: 9_999, output: 1 } }, ...records.slice(4)]) {
+        reference.observeTokens(record)
+      }
+      expect(f.store.metadata().revision).toBe(reference.metadata().revision)
+      expect(f.store.query().totals).toEqual(reference.query().totals)
+    } finally { reference.close() }
+  })
+
+  it('keeps a failed batch buffered for the retry and saves the prompts after the token records', async () => {
+    const f = fixture()
+    f.service.flush()
+    const save = f.store.observeTokenBatch.bind(f.store)
+    const write = vi.spyOn(f.store, 'observeTokenBatch')
+    const prompts = vi.spyOn(f.store, 'submitPrompt')
+    // The first batch commits; the second fails and nothing after it is attempted.
+    write.mockImplementationOnce(save).mockImplementationOnce(() => { throw new Error('synthetic disk failure') })
+    const count = USAGE_HISTORY_BATCH_MAX + 10
+    for (let index = 0; index < count; index++) f.emit(token({ recordKey: hash(`retry-${index}`), tokens: { input: 1, output: 1 } }))
+    f.service.submitPrompt(submission)
+    expect(write).toHaveBeenCalledTimes(2)
+    expect(prompts).not.toHaveBeenCalled()
+    expect(f.store.query().totals.tokenRecords).toBe(USAGE_HISTORY_BATCH_MAX)
+    const result = await f.service.read()
+    expect(result.persistence).toBe('saved')
+    expect(result.activity!.totals.tokenRecords).toBe(count)
+    expect(write).toHaveBeenCalledTimes(3)
+    expect(write.mock.calls[2]![0]).toHaveLength(10)
+    expect(prompts).toHaveBeenCalledOnce()
+    expect(prompts.mock.invocationCallOrder[0]).toBeGreaterThan(write.mock.invocationCallOrder[2]!)
   })
 })
 

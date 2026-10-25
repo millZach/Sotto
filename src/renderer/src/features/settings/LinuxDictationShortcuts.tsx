@@ -1,4 +1,5 @@
 import React, { type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 
 import type { DictationShortcutsChange, DictationShortcutsResult, HotkeyChangeResult } from '../../../../shared/contracts'
 import type { DictationShortcutSet } from '../../../../shared/dictationShortcuts'
@@ -21,6 +22,7 @@ export interface LinuxDictationShortcutsProps {
  * setup owns (ADR-0062, ADR-0097). Until Sotto's keys are set up, the rows say so and offer that setup.
  */
 export function LinuxDictationShortcuts({ settings, visible, onReplaceHotkey, onReplaceDictationShortcuts }: LinuxDictationShortcutsProps): ReactNode {
+  const { t } = useLingui()
   const omarchy = useOmarchySetup(visible)
   const owl = useOwlFeature('dictation-hold-shortcuts')
   const keys = omarchy.state?.pieces.keys
@@ -30,9 +32,9 @@ export function LinuxDictationShortcuts({ settings, visible, onReplaceHotkey, on
   const offerSetup = keys !== undefined && !keys.owned && !conflicts &&
     (keys.status === 'missing' || keys.status === 'skipped' || keys.status === 'failed' && keys.retry === 'setup')
   const locked = blocked === null ? null : {
-    message: conflicts && !keys?.owned ? `${blocked} Choose what to do with those keys under Omarchy, below.` : blocked,
+    message: conflicts && !keys?.owned ? t`${blocked} Choose what to do with those keys under Omarchy, below.` : blocked,
     action: offerSetup
-      ? <Button variant="secondary" disabled={omarchy.busy} onClick={() => void omarchy.command({ type: 'setup', pieces: ['keys'], keys: 'unconfirmed' })}>Set up the keys</Button>
+      ? <Button variant="secondary" disabled={omarchy.busy} onClick={() => void omarchy.command({ type: 'setup', pieces: ['keys'], keys: 'unconfirmed' })}>{t`Set up the keys`}</Button>
       : undefined,
   }
   const bound: DictationShortcutSet = owl

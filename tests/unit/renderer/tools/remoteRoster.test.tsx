@@ -13,7 +13,7 @@ import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
-import { DelegationCardProvider, delegationsByTurn, type DelegationCardWorld } from '../../../../src/renderer/src/agents/DelegationCards'
+import { DelegationWorldProvider, delegationsByTurn, type DelegationWorld } from '../../../../src/renderer/src/agents/DelegatedWork'
 import { MessageList, type ActivityContext } from '../../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../../src/renderer/src/agents/threadActivityView'
 import type { AgentMessage } from '../../../../src/shared/agents'
@@ -151,41 +151,41 @@ describe('a remote parent\'s roster', () => {
   })
 })
 
-describe('the cards under a remote parent\'s reply', () => {
+describe('the rows of delegated work in a remote parent\'s transcript', () => {
   const context: ActivityContext = { liveTurn: null, running: false, connected: true, provider: 'claude', onDisclosure: () => undefined }
   const messages: AgentMessage[] = [{ id: 'visual-gate-1', role: 'user', text: 'Tidy the docs.', createdAt: at(14) }, { id: 'reply', role: 'assistant', text: 'Started them on forge.', createdAt: at(13) }]
   const review = { id: REVIEW, title: 'Review the socket changes', projectId: 'workshop', modelId: 'codex:gpt', providerId: 'codex', status: 'running', messages: [], requests: [], remoteHost: true, hostId: FORGE } as AgentThread
-  const world = (away?: DelegationCardWorld['away']): DelegationCardWorld => ({ thread: id => id === REVIEW ? review : undefined, hostName: () => 'forge', open: vi.fn(), liveClock: false, now: NOW, away,
+  const world = (away?: DelegationWorld['away']): DelegationWorld => ({ thread: id => id === REVIEW ? review : undefined, hostName: () => 'forge', open: vi.fn(), liveClock: false, now: NOW, away,
     machineName: hostId => hostId === LOCAL ? 'this computer' : undefined })
-  const cards = (): ReturnType<typeof delegationsByTurn> => delegationsByTurn(answers()[PARENT]!, messages)
+  const rows = (): ReturnType<typeof delegationsByTurn> => delegationsByTurn(answers()[PARENT]!, messages)
 
   it('names forge, says why a start began at Ask for approval, and words the refusal for another machine', () => {
-    render(<DelegationCardProvider world={world({ name: 'forge', connected: true, lastReadAt: Number.NaN })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards()} /></DelegationCardProvider>)
-    const card = screen.getByRole('group', { name: 'Delegated to Review the socket changes' })
-    expect(card.querySelector('.delegation-card__meta')).toHaveTextContent('Codex·forge')
-    expect(card.querySelector('.delegation-card__outcome')).toHaveTextContent('Working')
-    expect(card.querySelector('.delegation-card__held')).toHaveTextContent('Started at Ask for approval: forge had no new-thread default from this computer yet.')
-    const refused = screen.getByRole('note', { name: 'Not delegated: Building' })
+    render(<DelegationWorldProvider world={world({ name: 'forge', connected: true, lastReadAt: Number.NaN })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows()} /></DelegationWorldProvider>)
+    const row = screen.getByRole('listitem', { name: /^Review: Review the socket changes, / })
+    expect(row.querySelector('.delegated-work__meta')).toHaveTextContent('Codex·forge')
+    expect(row.querySelector('.delegated-work__state')).toHaveTextContent('Working')
+    expect(row.querySelector('.delegated-work__held')).toHaveTextContent('Started at Ask for approval: forge had no new-thread default from this computer yet.')
+    const refused = screen.getByRole('listitem', { name: /, not delegated, Refused$/ })
     expect(refused).toHaveTextContent('Asked for this computer. forge can start threads only on forge for now. Nothing was started.')
     // It names no machine it could have started on: none was.
-    expect(refused.querySelector('.delegation-card__machine')).toBeNull()
+    expect(refused.querySelector('.delegated-work__machine')).toBeNull()
   })
 
-  it('greys a card read from what Sotto last read while forge stays connected', () => {
-    render(<DelegationCardProvider world={world({ name: 'forge', connected: true, lastReadAt: LOST })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards()} /></DelegationCardProvider>)
-    const card = screen.getByRole('group', { name: 'Delegated to Review the socket changes' })
-    expect(card.querySelector('.delegation-card__outcome')).toHaveTextContent('Working when last read')
-    expect(card.querySelector('.delegation-ring')).toHaveAttribute('data-last-read')
-    expect(card.querySelector('.delegation-card__wait')).toHaveTextContent('Sotto could not read it again on forge just now.')
+  it('greys a row read from what Sotto last read while forge stays connected', () => {
+    render(<DelegationWorldProvider world={world({ name: 'forge', connected: true, lastReadAt: LOST })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows()} /></DelegationWorldProvider>)
+    const row = screen.getByRole('listitem', { name: /^Review: Review the socket changes, / })
+    expect(row.querySelector('.delegated-work__state')).toHaveTextContent('Working when last read')
+    expect(row.querySelector('.delegation-ring')).toHaveAttribute('data-last-read')
+    expect(row.querySelector('.delegated-work__line')).toHaveTextContent('Sotto could not read it again on forge just now.')
   })
 
   it('keeps the last outcome greyed while forge is not connected, and says how it stood then', () => {
-    render(<DelegationCardProvider world={world({ name: 'forge', connected: false, lastReadAt: LOST })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={cards()} /></DelegationCardProvider>)
-    const card = screen.getByRole('group', { name: 'Delegated to Review the socket changes' })
-    const outcome = card.querySelector('.delegation-card__outcome')!
+    render(<DelegationWorldProvider world={world({ name: 'forge', connected: false, lastReadAt: LOST })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows()} /></DelegationWorldProvider>)
+    const row = screen.getByRole('listitem', { name: /^Review: Review the socket changes, / })
+    const outcome = row.querySelector('.delegated-work__state')!
     expect(outcome).toHaveTextContent('Working when last read')
     expect(outcome).toHaveAttribute('data-last-read')
-    expect(card.querySelector('.delegation-card__wait')).toHaveTextContent(`It was working at ${clockLabel(LOST)}, when Sotto last read it. forge is not connected, so Sotto cannot read how it went since. It reads it again when forge reconnects.`)
+    expect(row.querySelector('.delegated-work__line')).toHaveTextContent(`It was working at ${clockLabel(LOST)}, when Sotto last read it. forge is not connected, so Sotto cannot read how it went since. It reads it again when forge reconnects.`)
   })
 })
 

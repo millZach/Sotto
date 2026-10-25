@@ -115,6 +115,23 @@ it('leaves a thread with an open card, background work or sub-agents it cannot s
   expect(f.watching(busy.threadId)).toBe(true)
 })
 
+it('holds while three background agents work after the turn, and settles once they have ended (October 23, 2026)', async () => {
+  const f = await fixture(), target = await f.watched()
+  const summaries = f.workspace.host as unknown as { subagentSummaries: Map<string, NonNullable<AgentThread['subagentSummary']>> }
+  summaries.subagentSummaries.set(target.threadId, { total: 3, working: 3, completed: 0, failed: 0, interrupted: 0, unknown: 0 })
+  // Its finish waits for the agents' work-settled news, so Watcher is told nothing yet, and rests.
+  await f.endTurn(target.threadId)
+  await new Promise(resolve => setTimeout(resolve, 300))
+  expect(f.thread(target.threadId).subagentSummary?.working).toBe(3)
+  expect(f.settled(target.threadId)).toBe(false)
+  expect(f.watching(target.threadId)).toBe(true)
+  // The agents end. Their work-settled news is Watcher's to hear like any other; the settle waits only for that.
+  vi.spyOn(f.service.wakes, 'heardAllOf').mockReturnValue(true)
+  summaries.subagentSummaries.set(target.threadId, { total: 3, working: 0, completed: 3, failed: 0, interrupted: 0, unknown: 0 })
+  await f.emit()
+  await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
+})
+
 it('leaves a thread whose pull request is still open alone, and settles it once that pull request merges', async () => {
   const f = await fixture(), target = await f.watched()
   // The workspace keeps a thread's pull request links and brings them up to date with what GitHub says.

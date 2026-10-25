@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 23, 2026, at Drake Morey's request. An Owl feature (ADR-0072), `night-falls`, next to Watcher's own (ADR-0073), whose room it moves into and out of. **Number provisional until merge** (docs/agents/domain.md).
+Accepted October 23, 2026, at Drake Morey's request. An Owl feature (ADR-0072), `night-falls`, next to Watcher's own (ADR-0073), whose room it moves into and out of. Amended October 24, 2026 (decision 6): a second look, Stars, beside the Band. **Number provisional until merge** (docs/agents/domain.md).
 
 ## Context
 
@@ -20,10 +20,16 @@ Pressing the owl on the room switch swapped the whole window in one frame: the s
 
 **5. Held to Owl.** It shows only where both `night-falls` and `watcher` are on. Stable shows neither control and plays nothing; its saved `roomTransition` and `roomTransitionSpeed` stay whole, so sending it to stable restores the user's choice.
 
+**6. Two looks, Band and Stars (amended October 24, 2026).** The move has a look, set in Settings → Appearance under the switch and above the speed dial. **Band** is decision 1 and the default. **Stars** sweeps a line of stars across the window with a faint trail of ramp characters behind it; it is variant C of the Band and Stars prototype, whose files are kept at the tag `prototype/night-falls-look` when the build lands. The look is one setting, `roomTransitionLook`, held by the same `night-falls` Owl feature as the switch, so it adds no Owl feature of its own. Everything else in this decision holds for both looks: the same 840 ms run at speed 1, the same clip-path reveal of the room being opened, the same reduced-motion skip, and inks from the theme's tokens and the surface's luminance. Stable keeps the Band and shows no look control, and its saved `roomTransitionLook` stays whole.
+
 ## Considered options
 
 The prototype's other nine, each described at the top of its file: Glide, Stay put, Fold, Owl flight, Stretch, Iris, Pan, Zoom and Rise. Drake picked night falls. Shipping it straight to stable was not chosen: new features go through Owl first (ADR-0072).
 
+Amended October 24, 2026. Stars as the only look, with no choice, would replace decision 1 for everyone, and the choice costs one setting. A second Owl feature for Stars would add a switch and a gate for the same move, so Stars stays inside `night-falls`.
+
 ## Consequences
 
 Two settings, `roomTransition` and `roomTransitionSpeed`, on the patch allow-list. The prototype stays in `docs/prototypes/` as the record of the pick.
+
+Amended October 24, 2026: a third setting, `roomTransitionLook`, joins the patch allow-list. The Band and Stars prototype's files are kept at the tag `prototype/night-falls-look` when the build lands.

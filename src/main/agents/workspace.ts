@@ -1,5 +1,6 @@
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
 import { withKeptMessageMetadata } from '../../shared/agents'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
@@ -680,7 +681,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   readonly concurrentProviders: boolean
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   private state: Workspace = { snapshot: structuredClone(EMPTY_AGENT_HOST), creations: [], projectAliases: [] }
   /**
@@ -1771,7 +1772,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (inner.visitUsage) this.visitUsage = (threadId, visitor) => {
       if (this.ready && this.threadVisible(threadId)) inner.visitUsage!(threadId, visitor)
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.initialize()
       // A Sotto thread's rows follow its visibility, as its live rows do; work outside Sotto has no thread to hide.
@@ -2445,6 +2446,21 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     else delete thread.earlierAvailable
     thread.summary = this.threadSummary(thread, window.earlierAvailable ? undefined : window.messages)
   }
+  /**
+   * Every message the user sent before `beforeMessageId`, read from the store for the message scrubber (ADR-0109): the
+   * prompts above the window a pane holds. Wake-ups are Sotto's, so they are left out, as the window leaves them unmarked.
+   * Read only when a pane asks, and never published. Null when the store cannot answer.
+   */
+  threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null {
+    const thread = this.state.snapshot.threads.find(item => item.id === threadId)
+    if (!thread || !this.visible(thread) || this.storeUnavailable) return null
+    this.writeEvents()
+    try {
+      const skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
+        ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
+      return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
+    } catch { return null }
+  }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {
     const thread = this.state.snapshot.threads.find(item => item.id === threadId)
@@ -2454,13 +2470,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     delete thread.earlierAvailable
   }
   /**
-   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages.
-   * The store holds the whole history; only how much of it is in memory changes here.
+   * Widens the pane's window by another twenty turns, because the user pressed Show earlier messages, or back to a message
+   * the user sent, because they pressed its tick in the message scrubber (ADR-0109). The store holds the whole history;
+   * only how much of it is in memory changes here.
    */
-  async loadEarlierMessages(threadId: string): Promise<AgentHostSnapshot> {
+  async loadEarlierMessages(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot> {
     await this.initialize()
     this.thread(threadId)
-    this.watched.set(threadId, (this.watched.get(threadId) ?? FIRST_WINDOW_TURNS) + LATER_WINDOW_TURNS)
+    const turns = this.watched.get(threadId) ?? FIRST_WINDOW_TURNS
+    let through: number | undefined
+    if (throughMessageId !== undefined && !this.storeUnavailable) {
+      this.writeEvents()
+      try { through = this.threadStore.turnsFrom(threadId, throughMessageId) } catch { this.saveError = HISTORY_SAVE_ERROR }
+    }
+    this.watched.set(threadId, throughMessageId === undefined ? turns + LATER_WINDOW_TURNS : Math.max(turns, through ?? turns))
     this.loadWindow(threadId)
     this.publish()
     return this.workspaceSnapshot()
@@ -3438,10 +3461,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * restored as Restore does, with the delegated threads settled with it. A settled project returns with this thread
    * alone, as a new thread there returns it: the project's other threads keep its timestamp as their own.
    */
-  async reopenThreadForWork(threadId: string): Promise<AgentHostSnapshot> {
+  async reopenThreadForWork(threadId: string, guard?: () => void): Promise<AgentHostSnapshot> {
     await this.initialize()
     const projectId = this.thread(threadId).projectId
+    let projectRestored = false
     await this.onLane(projectId, async () => {
+      guard?.()
       const project = this.state.snapshot.projects.find(item => item.id === projectId)
       const projectSettledAt = project?.workspaceSettledAt ?? null
       if (!project || projectSettledAt === null) return
@@ -3458,9 +3483,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const thread of this.state.snapshot.threads) if (ids.has(thread.id)) thread.workspaceSettledAt = null
         throw error
       }
+      projectRestored = true
       this.publish()
     }, this.organizationLanes)
-    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false)
+    // The guard decides once: having let the project return, it does not stop the thread's own restore halfway.
+    if (this.thread(threadId).workspaceSettledAt != null) return this.setWorkspaceSettled('thread', threadId, false, undefined, projectRestored ? undefined : guard)
     return this.workspaceSnapshot()
   }
   /**

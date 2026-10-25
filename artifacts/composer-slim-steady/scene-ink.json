@@ -1,0 +1,1827 @@
+{
+ "region": {
+  "left": 4,
+  "top": 157,
+  "width": 220,
+  "height": 413,
+  "scale": 1280
+ },
+ "typical": 0.1016618974246093,
+ "steps": [
+  {
+   "at": 0,
+   "name": "a reply arrives"
+  },
+  {
+   "at": 796,
+   "name": "a fold opens"
+  },
+  {
+   "at": 1557,
+   "name": "the fold closes"
+  },
+  {
+   "at": 2334,
+   "name": "the composer slims"
+  },
+  {
+   "at": 3079,
+   "name": "the composer widens"
+  },
+  {
+   "at": 3801,
+   "name": "Watched opens"
+  },
+  {
+   "at": 4581,
+   "name": "Conversation again"
+  },
+  {
+   "at": 5362,
+   "name": "a draft is typed"
+  },
+  {
+   "at": 6169,
+   "name": "the room changes"
+  },
+  {
+   "at": 7676,
+   "name": "the window resizes"
+  }
+ ],
+ "frames": [
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a reply arrives"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a fold opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the fold closes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer slims"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the composer widens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Watched opens"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1099,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "Conversation again"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "a draft is typed"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the room changes"
+  },
+  {
+   "ink": 0.1034,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1031,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1031,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1006,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1009,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1009,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.0996,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.0996,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  },
+  {
+   "ink": 0.1017,
+   "during": "the window resizes"
+  }
+ ],
+ "blinks": []
+}

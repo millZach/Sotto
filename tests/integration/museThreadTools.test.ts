@@ -212,3 +212,74 @@ it('answers capabilityRequired when a client sends servers it never asked to att
   expect(refused).toBeInstanceOf(MuseRejected)
   expect((refused as MuseRejected).kind).toBe('capabilityRequired')
 })
+
+// Muse 1.4.12 fails every turn of a compacted session whose runtime a new host builds with tool servers; a fork of it
+// builds cleanly. Sotto moves the thread onto the fork, and the history Muse rebuilt for it stays out of the transcript.
+it('moves a compacted thread onto a copy of its conversation when a new host cannot give it Sotto’s tools', async () => {
+  const { f, id } = await open({ compactedToolsBug: true })
+  const send = (g: Fixture, text: string) => g.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text })
+  const texts = async (g: Fixture) => (await thread(g, id)).messages.map(message => message.text)
+  const toolTurn = async (g: Fixture) => (await thread(g, id)).activities?.find(record => record.kind !== 'turn' && record.turnId === firstMessage)?.turnId
+  const firstMessage = randomUUID()
+  await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: firstMessage, text: 'Before the compaction' })
+  await f.action(id, { type: 'tool-item' })
+  await expect.poll(async () => toolTurn(f)).toBe(firstMessage)
+  await f.driver.completeTurn(id, 'First reply')
+  await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  /** Compact the thread, then restart Sotto, so a new host resumes the compacted session with the thread's tools. */
+  const compactAndRestart = async (from: Fixture): Promise<Fixture> => {
+    expect(await from.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })).toMatchObject({ accepted: true })
+    const g = await from.driver.restart() as unknown as Fixture
+    closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
+    equip(g)
+    await g.host.connect()
+    g.host.observeThreads?.([id])
+    return g
+  }
+  const before = await f.realId(id)
+  const g = await compactAndRestart(f)
+  await send(g, 'After the restart')
+  await expect.poll(async () => (await records(g, 'session/fork')).length).toBe(1)
+  await expect.poll(async () => g.realId(id)).not.toBe(before)
+  const forked = await g.realId(id)
+  await expect.poll(async () => (await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/copy of the conversation/u)
+  // The next send runs on the copy, which a new host built with the thread's servers.
+  await send(g, 'Sent again')
+  await g.driver.completeTurn(id, 'Second reply')
+  await expect.poll(async () => (await thread(g, id)).status).toBe('idle')
+  const resumes = (await records(g, 'session/resume')).filter(record => record.params?.sessionId === forked)
+  expect(resumes.length).toBeGreaterThan(0)
+  expect(Object.keys(servers(resumes[0]) ?? {}).map(name => name.replace(SUFFIX, ''))).toEqual(['sotto_browser', VISUAL_MCP_SERVER])
+  expect(await texts(g)).toEqual(['Before the compaction', 'First reply', 'After the restart', 'Sent again', 'Second reply'])
+  // The copy's rebuilt history still names the first turn, so its tool call stays with it.
+  expect(await toolTurn(g)).toBe(firstMessage)
+  // When the copy compacts and a later run resumes it, it is copied again.
+  const h = await compactAndRestart(g)
+  await send(h, 'After the second restart')
+  await expect.poll(async () => (await records(h, 'session/fork')).length).toBe(2)
+  await expect.poll(async () => h.realId(id)).not.toBe(forked)
+  await send(h, 'Sent once more')
+  await h.driver.completeTurn(id, 'Third reply')
+  await expect.poll(async () => (await thread(h, id)).status).toBe('idle')
+  // This run's log starts from what the copy served (the app's own history holds the rest): nothing Muse rebuilt.
+  expect(await texts(h)).toEqual(['Sent again', 'Second reply', 'After the second restart', 'Sent once more', 'Third reply'])
+  expect(await toolTurn(h)).toBe(firstMessage)
+})
+
+it('says so, and keeps the thread on its session, when Muse will not copy a compacted conversation', async () => {
+  const { f, id } = await open({ compactedToolsBug: true })
+  await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Before the compaction' })
+  await f.driver.completeTurn(id, 'First reply')
+  await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+  await f.host.execute({ type: 'compact-thread', commandId: randomUUID(), threadId: id })
+  const before = await f.realId(id)
+  const g = await f.driver.restart() as unknown as Fixture
+  closing.push(async () => { g.adapter.disconnect(); await g.adapter.closed() })
+  equip(g)
+  await g.script({ compactedToolsBug: true, rejectFork: true })
+  await g.host.connect()
+  await g.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'After the restart' })
+  await expect.poll(async () => (await thread(g, id)).activities?.find(record => record.kind === 'turn' && record.status === 'failed')?.error).toMatch(/could not copy the conversation/u)
+  expect((await thread(g, id)).status).toBe('error')
+  expect(await g.realId(id)).toBe(before)
+})

@@ -6,7 +6,7 @@ import { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../shared/thr
 export { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../shared/threadTitle'
 
 /** Each half of the exchange is cut to this before it is sent; a title needs the opening, not the whole reply. */
-const EXCHANGE_EXCERPT_CHARACTERS = 2_000
+export const EXCHANGE_EXCERPT_CHARACTERS = 2_000
 
 /** The first exchange of a thread: what the user asked, and what the agent answered. */
 export interface ThreadTitleExchange {
@@ -61,7 +61,7 @@ export function firstMessageTitleWriter(getSettings: () => AppSettings | Promise
   }
 }
 
-function excerpt(text: string): string {
-  const trimmed = text.trim()
-  return trimmed.length <= EXCHANGE_EXCERPT_CHARACTERS ? trimmed : trimmed.slice(0, EXCHANGE_EXCERPT_CHARACTERS)
+/** The opening of a side call's text, trimmed and cut to `EXCHANGE_EXCERPT_CHARACTERS` (the next prompt's material uses it too). */
+export function excerpt(text: string): string {
+  return text.trim().slice(0, EXCHANGE_EXCERPT_CHARACTERS)
 }
