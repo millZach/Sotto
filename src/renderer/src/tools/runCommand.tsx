@@ -27,9 +27,23 @@ function startSize(threadId: string, chromeStore: PaneTerminalChromeStore): { co
  * drawer. The store marks itself busy before its first wait, so the drawer opening alongside does not start a
  * second, empty shell of its own; main types the command, so no replay in the window can drop it.
  */
-export async function runInDrawer(threadId: string, command: string, bridge: TerminalBridge, store: TerminalStore = paneTerminalStore,
+export function runInDrawer(threadId: string, command: string, bridge: TerminalBridge, store: TerminalStore = paneTerminalStore,
   chromeStore: PaneTerminalChromeStore = paneTerminalChromeStore): Promise<boolean> {
-  if (!store.thread(threadId)?.workspace) await store.activate(bridge, threadId)
+  // One Run at a time per thread, so a second quick press neither supersedes the first's listing nor races its open.
+  let lanes = runLanes.get(store)
+  if (!lanes) { lanes = new Map(); runLanes.set(store, lanes) }
+  const next = (lanes.get(threadId) ?? Promise.resolve(false)).then(() => startRun(threadId, command, bridge, store, chromeStore))
+  lanes.set(threadId, next)
+  const settled = (): void => { if (lanes.get(threadId) === next) lanes.delete(threadId) }
+  void next.then(settled, settled)
+  return next
+}
+
+const runLanes = new WeakMap<TerminalStore, Map<string, Promise<boolean>>>()
+
+async function startRun(threadId: string, command: string, bridge: TerminalBridge, store: TerminalStore, chromeStore: PaneTerminalChromeStore): Promise<boolean> {
+  // A listing superseded by another (the drawer's own, opened at the same moment) leaves no folder; list once more.
+  for (let attempt = 0; attempt < 2 && !store.thread(threadId)?.workspace; attempt++) await store.activate(bridge, threadId)
   const started = store.create(bridge, threadId, startSize(threadId, chromeStore), command)
   chromeStore.setOpen(threadId, true)
   return started

@@ -94,6 +94,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
     return <>{chrome}<div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(terminals.error ?? { code: 'unavailable', message: '' }, bridge !== undefined)}</strong>
       {bridge ? <button type="button" className="files-link tt-focusable" onClick={() => void store.activate(bridge, threadId)}>Try again</button> : null}
+      {terminals.notice ? <p className="terminal-notice" role="alert">{terminals.notice}</p> : null}
     </div></>
   }
   const start = (): void => { focusNext.current = true; void store.create(bridge, threadId, startSize?.()) }

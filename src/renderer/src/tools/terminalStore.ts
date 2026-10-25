@@ -146,7 +146,11 @@ export class TerminalStore {
    */
   async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }, run?: string): Promise<boolean> {
     const target = this.target(threadId)
-    if (!bridge || !target) return false
+    if (!bridge || !target) {
+      // A press always gets an answer: a Run that cannot start says so rather than quietly going back to idle.
+      if (run !== undefined) this.patch(threadId, { notice: 'The command did not run. Sotto could not reach this thread’s terminals. Try again.' })
+      return false
+    }
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}), ...(run === undefined ? {} : { run }) }))

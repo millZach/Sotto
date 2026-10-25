@@ -70,6 +70,39 @@ describe('running a reply\'s command in the drawer (ADR-0136)', () => {
     expect(create.mock.calls[1]![0]).not.toHaveProperty('run')
   })
 
+  it('runs both of two quick presses, each in its own new shell', async () => {
+    const commands: string[] = []
+    const create = vi.fn<TerminalBridge['create']>(async request => {
+      const created = terminalSession(commands.length === 0 ? ID : '22222222-2222-4222-8222-222222222222', workspace, { place: 'drawer', title: request.run! })
+      commands.push(request.run!)
+      terminal.setSessions([...terminal.sessions(), created])
+      return ok({ session: created, output: '', sequence: 0 })
+    })
+    const { terminal, chromeStore, store } = setup(create)
+    // The first press's listing is still out when the second comes; serving them in order shows the second superseding it.
+    const listed = Promise.withResolvers<void>()
+    const list = vi.mocked(terminal.bridge.list)
+    const plain = list.getMockImplementation()!
+    list.mockImplementationOnce(async request => { await listed.promise; return plain(request) })
+    let both: Promise<boolean[]> | undefined
+    act(() => { both = Promise.all([runInDrawer('thread-a', 'git status', terminal.bridge, store, chromeStore), runInDrawer('thread-a', 'git log', terminal.bridge, store, chromeStore)]) })
+    listed.resolve()
+    await act(async () => { expect(await both).toEqual([true, true]) })
+    expect(commands).toEqual(['git status', 'git log'])
+    await waitFor(() => expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['git status', 'git log']))
+  })
+
+  it('says so when the thread\'s terminals cannot be listed, rather than going quietly back to idle', async () => {
+    const create = vi.fn<TerminalBridge['create']>()
+    const { terminal, chromeStore, store } = setup(create)
+    vi.mocked(terminal.bridge.list).mockResolvedValue({ ok: false, error: { code: 'workspace-unavailable', message: 'gone' } })
+    let started: Promise<boolean> | undefined
+    act(() => { started = runInDrawer('thread-a', 'git status', terminal.bridge, store, chromeStore) })
+    await act(async () => { expect(await started).toBe(false) })
+    expect(create).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alert')).toHaveTextContent('The command did not run.')
+  })
+
   it('cuts a long tab name in the middle and keeps the whole of it for screen readers', () => {
     expect(middleCut('zsh')).toBe('zsh')
     expect(middleCut('sudo ~/Developer/mac-security-agent/mac/install.sh')).toBe('sudo ~/Deve…stall.sh')
