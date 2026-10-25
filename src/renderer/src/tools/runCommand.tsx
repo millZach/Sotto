@@ -2,7 +2,7 @@ import React, { createContext, useContext, useMemo, type ReactNode } from 'react
 import type { TerminalBridge } from '../../../shared/terminal'
 import { paneDomId } from '../agents/ThreadPanes'
 import { useOwlFeature } from '../state/owlFeature'
-import { defaultDrawerHeight, drawerShellSize } from './PaneTerminalDrawer'
+import { drawerHeight, drawerShellSize } from './PaneTerminalDrawer'
 import { paneTerminalChromeStore, paneTerminalStore, type PaneTerminalChromeStore } from './paneTerminalStore'
 import { windowTerminalBridge, type TerminalStore } from './terminalStore'
 
@@ -14,12 +14,11 @@ export const RunCommandContext = createContext<RunCommand | undefined>(undefined
 
 export function useRunCommand(): RunCommand | undefined { return useContext(RunCommandContext) }
 
-/** What the pane already shows of its drawer, so a new shell starts at about the size it will be drawn. */
+/** The size the drawer will open at in this pane, measured as the drawer measures it, so the shell starts that size. */
 function startSize(threadId: string, chromeStore: PaneTerminalChromeStore): { cols: number; rows: number } | undefined {
   const pane = typeof document === 'undefined' ? null : document.getElementById(paneDomId(threadId))
   if (!pane) return undefined
-  const height = Math.min(chromeStore.get(threadId).height ?? defaultDrawerHeight(pane.clientHeight), Math.max(0, pane.clientHeight - 320))
-  return drawerShellSize(pane.clientWidth, height)
+  return drawerShellSize(pane.clientWidth, drawerHeight(pane.clientHeight, chromeStore.get(threadId).height).height)
 }
 
 /**

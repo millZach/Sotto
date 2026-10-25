@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TERMINAL_LIMIT_MESSAGE, type TerminalBridge } from '../../../../src/shared/terminal'
 import type { ToolsResult } from '../../../../src/shared/tools'
 import { MessageContent } from '../../../../src/renderer/src/agents/MessageContent'
-import { PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
+import { drawerHeight, PaneTerminalDrawer } from '../../../../src/renderer/src/tools/PaneTerminalDrawer'
 import { PaneTerminalChromeStore } from '../../../../src/renderer/src/tools/paneTerminalStore'
 import { RunCommandContext, runInDrawer, type RunCommand } from '../../../../src/renderer/src/tools/runCommand'
 import { middleCut } from '../../../../src/renderer/src/tools/TerminalSurface'
@@ -101,6 +101,15 @@ describe('running a reply\'s command in the drawer (ADR-0136)', () => {
     await act(async () => { expect(await started).toBe(false) })
     expect(create).not.toHaveBeenCalled()
     expect(await screen.findByRole('alert')).toHaveTextContent('The command did not run.')
+  })
+
+  it('sizes a Run\'s shell by the same drawer height the drawer itself opens at', () => {
+    expect(drawerHeight(900, null)).toEqual({ height: 300, min: 120, max: 580 })
+    expect(drawerHeight(900, 800).height).toBe(580)
+    // A short pane leaves the conversation its room first; the drawer keeps only its minimum.
+    expect(drawerHeight(400, null).height).toBe(120)
+    expect(drawerHeight(0, 250)).toEqual({ height: 250, min: 120, max: 250 })
+    expect(drawerHeight(900, null, true).min).toBe(184)
   })
 
   it('cuts a long tab name in the middle and keeps the whole of it for screen readers', () => {

@@ -43,9 +43,17 @@ export function drawerShellSize(width: number, height: number): { cols: number; 
   }
 }
 
-/** The drawer's default height before it has measured itself: a third of the pane, never under its minimum. */
-export function defaultDrawerHeight(paneHeight: number): number {
-  return Math.max(MIN_DRAWER_HEIGHT, paneHeight > 0 ? Math.round(paneHeight / 3) : 200)
+/**
+ * How tall a pane's drawer is, and the bounds it is held to: the saved height, else a third of the pane, kept between
+ * the drawer's minimum (more while its search is open) and what leaves the conversation its room. `paneHeight` is the
+ * `.thread-pane`'s client height, 0 while unmeasured.
+ */
+export function drawerHeight(paneHeight: number, saved: number | null, searchOpen = false): { readonly height: number; readonly min: number; readonly max: number } {
+  // The search row takes 48px; another 16px keeps one output row readable even at the largest text size.
+  const min = MIN_DRAWER_HEIGHT + (searchOpen ? 64 : 0)
+  const max = paneHeight > 0 ? Math.max(min, paneHeight - MIN_CONVERSATION_AREA) : Math.max(min, saved ?? min)
+  const clamp = (value: number): number => Math.min(max, Math.max(min, value))
+  return { height: clamp(saved ?? (paneHeight > 0 ? Math.round(paneHeight / 3) : 200)), min, max }
 }
 
 /**
@@ -139,12 +147,8 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
 
   if (!chrome.open) return null
 
-  // The search row takes 48px; another 16px keeps one output row readable even at the largest text size.
-  const min = MIN_DRAWER_HEIGHT + (searchOpen ? 64 : 0)
-  const max = paneAreaHeight > 0 ? Math.max(min, paneAreaHeight - MIN_CONVERSATION_AREA) : Math.max(min, chrome.height ?? min)
+  const { height, min, max } = drawerHeight(paneAreaHeight, chrome.height, searchOpen)
   const clamp = (value: number): number => Math.min(max, Math.max(min, value))
-  const defaultHeight = clamp(paneAreaHeight > 0 ? Math.round(paneAreaHeight / 3) : 200)
-  const height = clamp(chrome.height ?? defaultHeight)
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
