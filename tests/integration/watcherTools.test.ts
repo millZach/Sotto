@@ -2103,21 +2103,26 @@ it('keeps durably waiting pull request news through Watcher recovery and same-fa
   expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
 })
 
+/** A kept list's words, without the IDs and times Sotto keeps beside them. */
+const texts = (lines: readonly { text: string }[] | undefined) => lines?.map(line => line.text)
+
 // #1189: Watcher's state, kept through compaction, and compacting its conversation when it grows.
 it('keeps the decisions, rules and issues Watcher gives, list by list, and reads them back with what each watched thread waits on', async () => {
   const f = await fixture()
   const started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
-  expect(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
-    .toMatchObject({ status: 'ok', kept: { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'], issues: [] } })
+  const kept = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.'] }))
+  if (kept.status !== 'ok') throw new Error('keep refused')
+  expect([texts(kept.kept.decisions), texts(kept.kept.rules), texts(kept.kept.issues)]).toEqual([['Merge #1186 once CI is green?'], ['Full test suites run in CI, not on the laptop.'], []])
   // A list left out stays as it was.
   await f.call('keep_state', { issues: ['#1189 Watcher: auto-compact its conversation'] })
-  const read = await f.call('read_state', {})
-  expect(read).toMatchObject({ status: 'ok', compactAtTokens: 400_000, kept: { decisions: ['Merge #1186 once CI is green?'],
-    rules: ['Full test suites run in CI, not on the laptop.'], issues: ['#1189 Watcher: auto-compact its conversation'] } })
-  if (read.status !== 'ok' || !('watching' in read)) throw new Error('read refused')
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.compactAtTokens).toBe(400_000)
+  expect([texts(read.kept.decisions), texts(read.kept.rules), texts(read.kept.issues)]).toEqual([['Merge #1186 once CI is green?'],
+    ['Full test suites run in CI, not on the laptop.'], ['#1189 Watcher: auto-compact its conversation']])
   expect(read.watching).toContainEqual(expect.objectContaining({ target: started.target, waitsOn: expect.any(String) }))
-  expect(f.service.state().state?.kept.rules).toEqual(['Full test suites run in CI, not on the laptop.'])
+  expect(texts(f.service.state().state?.kept.rules)).toEqual(['Full test suites run in CI, not on the laptop.'])
   // With Keep local history on, the kept words are saved beside the control record.
   expect(await readFile(join(f.root, 'watcher-state.json'), 'utf8')).toContain('Full test suites run in CI')
 })
@@ -2170,13 +2175,66 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   expect(read.watching.find(row => row.target.threadId === first.target.threadId)?.pullRequests).toEqual([
     expect.objectContaining({ number: 5, state: 'open', checks: 'passed' }), expect.objectContaining({ number: 6, state: 'open', checks: 'passed' })])
   expect(read.staleNotes).toEqual([
-    { list: 'decisions', index: 0, reasons: ['Names pull request #4, which is merged.'] },
-    { list: 'rules', index: 0, reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
+    { list: 'decisions', id: 'd1', reasons: ['Names pull request #4, which is merged.'] },
+    { list: 'rules', id: 'r3', reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
   ])
   // This fixture has no Settle finished threads, so nothing is pending and read_state says why.
   expect(read).toMatchObject({ settlesFinishedThreads: false, pendingSettles: [] })
   // The kept words are as Watcher gave them: the flags sit beside them and change nothing kept.
-  expect(read.kept.decisions).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
+  expect(texts(read.kept.decisions)).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
+})
+
+// October 24, 2026: Watcher kept "waiting on you" in its notes and went on saying it after the user answered.
+it('works out what waits on the user from live data at each read: open cards, a delegated thread’s card and a prototype to review', async () => {
+  const f = await fixture()
+  const started = await f.call('start_thread', f.start()), other = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started) || other.status !== 'ok' || !('target' in other)) throw new Error('start refused')
+  // Watcher noted it in its own words, which say nothing of what is open now.
+  await f.call('keep_state', { add: [{ list: 'decisions', text: 'Zach still has to answer the question on the parser thread' }] })
+  let open = true
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    if (!open) return snapshot
+    const parent = snapshot.threads.find(thread => thread.id === started.target.threadId)!
+    return { ...snapshot, threads: [...snapshot.threads.map(thread => thread.id === parent.id ? { ...thread, requests: [{ id: 'question-card', kind: 'question' as const, text: 'synthetic private question', options: [] }] }
+      : thread.id === other.target.threadId ? { ...thread, prototypeReady: { source: 'reply:synthetic-reply', pages: [{ token: 't'.repeat(32), kind: 'file' as const, name: 'greeting.html', start: 'greeting.html' }] } } : thread),
+    { ...structuredClone(parent), id: 'synthetic-delegated', title: 'Delegated', delegatedBy: parent.id, status: 'idle',
+      requests: [{ id: 'permission-card', kind: 'permission', text: 'synthetic private command', options: [] }] }] }
+  })
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.waitingOnUser).toEqual([
+    { target: started.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'question-card' },
+    { target: started.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'permission-card', delegatedThreadId: 'synthetic-delegated' },
+    { target: other.target, title: expect.any(String), waitsFor: 'prototype-review' },
+  ])
+  expect(JSON.stringify(read)).not.toContain('synthetic private')
+  // The user answers and opens the prototype: the next read says nothing waits on them, whatever the notes say.
+  open = false
+  const after = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (after.status !== 'ok') throw new Error('read refused')
+  expect(after.waitingOnUser).toEqual([])
+  expect(texts(after.kept.decisions)).toEqual(['Zach still has to answer the question on the parser thread'])
+})
+
+it('changes kept lines one at a time through keep_state, and refuses plainly when a list is full', async () => {
+  const f = await fixture()
+  const first = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { add: [{ list: 'issues', text: '#1490 composer drops pasted images' },
+    { list: 'issues', text: '#1501 widget flicker' }] }))
+  if (first.status !== 'ok') throw new Error('keep refused')
+  expect(first.kept.issues.map(line => [line.id, line.text])).toEqual([['i1', '#1490 composer drops pasted images'], ['i2', '#1501 widget flicker']])
+  const closed = watcherToolSchemas.keep_state.output.parse(await f.call('keep_state', { close: [{ id: 'i1', note: 'done: #1490 fixed by #1509' }] }))
+  if (closed.status !== 'ok') throw new Error('keep refused')
+  expect(closed.kept.issues[0]).toMatchObject({ id: 'i1', closedNote: 'done: #1490 fixed by #1509', closedAt: expect.any(String) })
+  // read_state gives the closed line until it clears, and flags no closed line.
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.kept.issues.map(line => line.id)).toEqual(['i1', 'i2'])
+  await f.call('keep_state', { decisions: Array.from({ length: 30 }, (_, at) => `Open question ${at + 1}`) })
+  expect(await f.call('keep_state', { add: [{ list: 'decisions', text: 'One more question' }] })).toMatchObject({ status: 'refused', code: 'STATE_FULL',
+    message: expect.stringContaining('Close the lines that are done or drop ones no longer needed') })
+  expect(await f.call('keep_state', { edit: [{ id: 'r7', text: 'Nothing' }] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
 })
 
 it('pages the merge queue with the watched threads, a hundred to a page, leaving none out', async () => {
@@ -2207,7 +2265,7 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
 it('saves none of Watcher’s kept words with Keep local history off', async () => {
   const f = await fixture(false)
   await f.call('keep_state', { rules: ['synthetic_private_rule_51c2'] })
-  expect(await f.call('read_state', {})).toMatchObject({ kept: { rules: ['synthetic_private_rule_51c2'] } })
+  expect(await f.call('read_state', {})).toMatchObject({ kept: { rules: [expect.objectContaining({ text: 'synthetic_private_rule_51c2' })] } })
   const saved = await readFile(join(f.root, 'watcher-state.json'), 'utf8').catch(() => '')
   expect(saved).not.toContain('synthetic_private_rule_51c2')
 })

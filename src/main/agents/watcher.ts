@@ -14,7 +14,8 @@ import { delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT_TOKENS, WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
-  type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread } from '../../shared/watcher'
+  type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
+  type WatcherWaitingOnUser, WATCHER_WAITING_ON_USER_MAX } from '../../shared/watcher'
 import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
@@ -538,7 +539,10 @@ export class WatcherService implements WatcherControlHooks {
   }
   useRemoteHosts(remote: WatcherRemoteHosts): void {
     this.remoteOff?.(); this.remote = remote
-    this.remoteOff = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
+    const off = remote.subscribe((hostId, force = true) => this.scheduleRemote(hostId, force))
+    // The user's answer to a paired host's card, sent from this computer, says the user answered it as one here does.
+    const answersOff = remote.answering?.((hostId, threadId, requestId) => this.wakes.answering({ hostId, threadId }, requestId, 'user'))
+    this.remoteOff = () => { off(); answersOff?.() }
     void this.reconcileRemote().catch(() => undefined)
   }
   /**
@@ -1141,11 +1145,29 @@ export class WatcherService implements WatcherControlHooks {
     })
   }
   /**
+   * What waits on the user among the watched threads, from live data at each read (October 24, 2026): each open question
+   * or permission card, the thread's own or one in a thread it delegated to, and each prototype waiting for review. Watcher
+   * kept these in its notes and went on saying they waited after the user had answered; now it reads them here instead.
+   */
+  private waitingOnUser(threads: WatcherRoomState['watchedThreads']): WatcherWaitingOnUser[] {
+    const snapshots = new Map<string, AgentHostSnapshot | undefined>()
+    const snapshotOf = (hostId: string) => snapshots.has(hostId) ? snapshots.get(hostId) : snapshots.set(hostId, this.owningSnapshot(hostId)).get(hostId)
+    return threads.filter(thread => thread.watched !== false).flatMap(({ target, title, waitsOn }): WatcherWaitingOnUser[] => {
+      const snapshot = snapshotOf(target.hostId), owned = snapshot?.threads.find(item => item.id === target.threadId)
+      const card = (request: { id: string; kind: 'question' | 'permission' }, delegatedThreadId?: string): WatcherWaitingOnUser =>
+        ({ target, title, waitsFor: request.kind, requestCardId: request.id, ...delegatedThreadId === undefined ? {} : { delegatedThreadId } })
+      if (!owned) return waitsOn.map(request => card(request))
+      return [...owned.requests.map(request => card(request)),
+        ...snapshot!.threads.filter(child => child.delegatedBy === owned.id).flatMap(child => child.requests.map(request => card(request, child.id))),
+        ...owned.prototypeReady ? [{ target, title, waitsFor: 'prototype-review' as const }] : []]
+    }).slice(0, WATCHER_WAITING_ON_USER_MAX)
+  }
+  /**
    * read_state's watched threads (#1274), each with its open pull requests as Sotto last read them and what the merge queue
    * reads of each: whether it is a draft and since when its checks have passed. A thread its host no longer lists gives
    * what its evidence says.
    */
-  private stateThreads() { return this.withOpenPullRequests(this.watching(this.state().watchedThreads)) }
+  private stateThreads(watched: WatcherRoomState['watchedThreads']) { return this.withOpenPullRequests(this.watching(watched)) }
   /** Each row with its open pull requests and what the merge queue reads of each (`stateThreads`). */
   private withOpenPullRequests<Row extends { readonly target: WatcherThreadTarget }>(rows: readonly Row[]): (Row & { open: WatcherOpenPullRequest[] })[] {
     const hosts = new Map<string, Map<string, AgentThread>>()
@@ -1200,7 +1222,7 @@ export class WatcherService implements WatcherControlHooks {
       const prKey = pullRequestKey(summary.url) ?? summary.url, number = pullRequests.get(prKey)?.number ?? summary.number
       if (number !== undefined) pullRequests.set(prKey, { url: summary.url, number, state: summary.state })
     }
-    return watcherStaleNotes(kept, threads, [...pullRequests.values()])
+    return watcherStaleNotes(kept, threads, [...pullRequests.values()], Date.now())
   }
   private roomObservation(observation: WatcherObservation) { const { landing: _landing, ...result } = observation; void _landing; return result }
   get(): WatcherRoomResult { return { status: 'ok', state: this.state() } }
@@ -1855,6 +1877,10 @@ export class WatcherService implements WatcherControlHooks {
   guardPhoneSend(threadId: string): void {
     this.checkCaller(threadId)
     if (this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
+  }
+  requestAnswering(threadId: string, requestId: string, by: 'user' | 'sotto'): () => void {
+    const hostId = this.options.control.hostId()
+    return hostId ? this.wakes.answering({ hostId, threadId }, requestId, by) : () => undefined
   }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
@@ -2579,6 +2605,7 @@ export class WatcherService implements WatcherControlHooks {
       if (name === 'keep_state') {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
           .catch(() => refuse('HISTORY_UNAVAILABLE', 'Sotto could not read Watcher’s kept state just now, so nothing was kept and nothing kept was lost. Try again.', true))
+        if ('code' in kept) refuse(kept.code, kept.message)
         return { status: 'ok', kept }
       }
       if (name === 'read_state') {
@@ -2589,18 +2616,19 @@ export class WatcherService implements WatcherControlHooks {
         // Computed from live data at each read (#1274), never kept, so none of it can go stale. The watched threads, the
         // merge queue and the pending settles are read once, at the first page, and paged together, a hundred of each to a
         // page; a later page reads on from what the first one found.
-        const threads = first ? this.stateThreads() : [], settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
+        const watchedRows = this.state().watchedThreads
+        const threads = first ? this.stateThreads(watchedRows) : [], settles = first ? this.pendingSettles(new Map(threads.map(row => [key(row.target), row.title]))) : []
         const watching = threads.map(({ open, ...row }) => ({ ...row, pullRequests: open.map(item => item.summary) })), queue = watcherMergeQueue(threads)
         const rows: StatePageRow[] = Array.from({ length: Math.max(watching.length, queue.length, settles.length) },
           (_, at) => ({ watching: watching[at], queue: queue[at], settle: settles[at] }))
         const page = this.page('state', rows, input.cursor, 100), shown = page.rows as StatePageRow[]
-        const staleNotes = this.staleNotes(kept, first ? threads : this.watching(this.state().watchedThreads))
+        const staleNotes = this.staleNotes(kept, first ? threads : this.watching(watchedRows)), waitingOnUser = this.waitingOnUser(watchedRows)
         // Read, and only once the read is answered: a refused one, as for an expired cursor, leaves the reminder. The look
         // comes first, so a reminder owed but not yet noticed is not raised again after this read.
         this.lookAtState(); this.stateOwed = false
         return { status: 'ok', watching: shown.flatMap(row => row.watching ?? []), nextCursor: page.nextCursor,
           mergeQueue: shown.flatMap(row => row.queue ?? []), settlesFinishedThreads: this.settlesFinishedThreads(),
-          pendingSettles: shown.flatMap(row => row.settle ?? []), kept, staleNotes,
+          pendingSettles: shown.flatMap(row => row.settle ?? []), waitingOnUser, kept, staleNotes,
           contextTokens: thread ? this.contextTokens(thread) : null, compactAtTokens: WATCHER_COMPACT_AT_TOKENS }
       }
       const input = parsed.data as { hostId?: string; target?: WatcherThreadTarget; project?: { hostId: string } }

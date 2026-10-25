@@ -116,7 +116,15 @@ const workSettledScope = (target: WatcherThreadTarget, turnId: string | undefine
  * The kinds told once per thread whatever request tells them (#1190): their IDs leave the request out, so a thread that takes
  * part in a newer request is not told its last finish again, and the saved IDs say so after a restart too.
  */
-const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet', 'prototype-ready'])
+const TOLD_ONCE: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', 'turn-failed', 'work-settled', 'needs-user', 'quiet', 'prototype-ready',
+  'request-closed', 'prototype-closed'])
+/** Who answered a card, as the coordinator says when an answer goes: the user, or Sotto sending a prototype's question back. */
+export type WatcherCardAnswerer = 'user' | 'sotto'
+/**
+ * A thread holding cards: the watched thread itself, or one it delegated to, which tells its cards as that thread's news.
+ * Each card keeps the ID of its needs-user news, so its closing is news only once that news was told.
+ */
+interface CardHolder { readonly owner: string; readonly cards: ReadonlyMap<string, { readonly kind: 'question' | 'permission'; readonly told: string }> }
 /**
  * Each thread delegated from a watched thread, directly or through a thread it delegated to (ADR-0081), by its key: the
  * key of the topmost watched thread above it, which answers for it (#1190). A delegated thread's cards are that thread's
@@ -224,6 +232,16 @@ export class WatcherWakeUp {
   private lastNewsAt = 0
   /** The wait for a finish held for its work-settled news to need Watcher anyway, once WATCHER_QUIET_MS has passed. */
   private cancelRipen: (() => void) | undefined
+  /**
+   * The cards each holding thread had open as the last pass that could read it saw them, by the holder's key, so a card
+   * that is gone makes news that it no longer waits on the user (October 24, 2026). A holder not read in a pass, as while
+   * it is disconnected, keeps what it had.
+   */
+  private readonly openCards = new Map<string, CardHolder>()
+  /** Each watched thread's prototype waiting for review as the last pass that could read it saw it, by its source. */
+  private readonly openPrototypes = new Map<string, { readonly source: string; readonly told: string }>()
+  /** Cards being answered now, by holder and card, and who answers them: the user, or Sotto sending a question back. */
+  private readonly answers = new Map<string, WatcherCardAnswerer>()
   /** Events an unknown send let go of: observed again, they are not news that came since. */
   private readonly reobserved = new Set<string>()
   private pending: WatcherEvent[] = []
@@ -839,6 +857,7 @@ export class WatcherWakeUp {
     const muted = this.delegatedOwner = watcherDelegationOwners(snapshot, watched)
     // News no longer due is let go first, so what is still true is told again in this pass, as under another request.
     if (this.pending.length) this.pending = this.stillDue(this.pending)
+    const holders = new Set<string>()
     for (const thread of snapshot.threads) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history' || !snapshot.hostId) continue
       // Each thread's key is kept from the last pass while the thread is there: this pass looks at every thread.
@@ -912,9 +931,12 @@ export class WatcherWakeUp {
           }
           for (const card of thread.requests) this.event('needs-user', target, [card.id, requestRevision(card)],
             { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), ...(turn ? { turnId: turn.id } : {}) })
+          holders.add(key)
+          this.cardsClosed(target, key, target, undefined, thread.requests)
           // A prototype waiting for the user's review is told once for its source while the mark stands (ADR-0108).
           const prototype = thread.prototypeReady && watcherPrototypeFields(thread.prototypeReady.source)
           if (prototype) this.event('prototype-ready', target, [thread.prototypeReady!.source], prototype)
+          this.prototypeClosed(target, key, thread, snapshot)
           // After the turn's own news, so a turn's end carries what its working copy became. A turn that finished with work
           // still running ends again when that work settles, which carries what the work changed since. A new turn end also
           // carries the thread's own facts when they differ from what Watcher was told, though nothing changed in this pass.
@@ -946,11 +968,16 @@ export class WatcherWakeUp {
     // that is the thread to open.
     if (muted.size) for (const child of snapshot.threads) {
       const childKey = targetKey({ hostId: child.hostId ?? snapshot.hostId ?? '', threadId: child.id }), owner = muted.get(childKey)
-      if (!owner || !child.requests.length || !this.connected(snapshot, child)) continue
+      if (!owner || !this.connected(snapshot, child)) continue
       const [hostId, threadId] = JSON.parse(owner) as [string, string]
+      holders.add(childKey)
+      this.cardsClosed({ hostId, threadId }, owner, { hostId, threadId: child.id }, child.id, child.requests)
       for (const card of child.requests) this.event('needs-user', { hostId, threadId }, [child.id, card.id, requestRevision(card)],
         { requestCardId: card.id, requestCardKind: card.kind, revision: requestRevision(card), delegatedThreadId: child.id })
     }
+    // A holder no watched thread answers for any more forgets its cards, so watching again starts from what is open then.
+    for (const [holder, open] of this.openCards) if (!holders.has(holder) && !(watched.has(open.owner) && targets.has(holder) && (holder === open.owner || muted.get(holder) === open.owner))) this.openCards.delete(holder)
+    for (const key of this.openPrototypes.keys()) if (!watched.has(key) || !targets.has(key)) this.openPrototypes.delete(key)
     this.lookedAt = lookedAt; this.sawThreads = targets; this.threadKeys = keys
     for (const [key, progress] of this.progress) if (!targets.has(key)) { progress.cancel?.(); this.progress.delete(key) }
     for (const key of this.turnsEnded.keys()) if (!watched.has(key)) this.turnsEnded.delete(key)
@@ -974,6 +1001,51 @@ export class WatcherWakeUp {
     this.batch()
     // Withdrawal is advisory; the queue also rechecks before claim and at the provider writer.
     this.tail = this.tail.catch(() => undefined).then(() => this.closed ? undefined : this.options.prune()).catch(() => this.options.failed?.())
+  }
+  /**
+   * The coordinator is sending an answer to a card: `by` the user, or by Sotto sending a prototype's question back
+   * (ADR-0108). The card's closing then says the user answered it, or, when Sotto did, is no news: its copy waits on the
+   * user instead. The answer's words never come here. The undo is for an answer that did not go.
+   */
+  answering(holder: WatcherThreadTarget, requestId: string, by: WatcherCardAnswerer): () => void {
+    const slot = JSON.stringify([targetKey(holder), requestId])
+    this.answers.delete(slot); this.answers.set(slot, by)
+    while (this.answers.size > 2_000) this.answers.delete(this.answers.keys().next().value!)
+    return () => { if (this.answers.get(slot) === by) this.answers.delete(slot) }
+  }
+  /**
+   * News that a card Watcher was told of no longer waits on the user (October 24, 2026): one the holding thread had open at
+   * the last pass that read it, and has no longer. A card whose own news was never told, as one answered before its news
+   * went or whose wake-up missed, makes none, and neither does one Sotto answered itself.
+   */
+  private cardsClosed(owner: WatcherThreadTarget, ownerKey: string, holder: WatcherThreadTarget, delegatedThreadId: string | undefined,
+    requests: AgentThread['requests']): void {
+    const holderKey = targetKey(holder), before = this.openCards.get(holderKey)
+    // The ID its needs-user news has, as `event` gives a kind told once.
+    const told = (card: AgentThread['requests'][number]) => observationDigest(['needs-user', owner,
+      delegatedThreadId === undefined ? [card.id, requestRevision(card)] : [delegatedThreadId, card.id, requestRevision(card)]])
+    const cards = new Map(requests.map(card => [card.id, { kind: card.kind, told: told(card) }]))
+    this.openCards.set(holderKey, { owner: ownerKey, cards })
+    if (before?.owner !== ownerKey) return
+    for (const [id, { kind, told: toldId }] of before.cards) {
+      if (cards.has(id) || !this.seen.has(toldId)) continue
+      const by = this.answers.get(JSON.stringify([holderKey, id]))
+      if (by === 'sotto') continue
+      this.event('request-closed', owner, [id, delegatedThreadId ?? null], { requestCardId: id, requestCardKind: kind,
+        ...delegatedThreadId === undefined ? {} : { delegatedThreadId }, ...by === 'user' ? { answeredByUser: true as const } : {} }, ownerKey)
+    }
+  }
+  /**
+   * News that a prototype Watcher was told of no longer waits on the user's review: its mark is gone, not moved to a newer
+   * reply, which is news of its own. A thread that was settled lost its mark with it, which is no review.
+   */
+  private prototypeClosed(target: WatcherThreadTarget, key: string, thread: AgentThread, snapshot: AgentHostSnapshot): void {
+    const before = this.openPrototypes.get(key), source = thread.prototypeReady?.source
+    if (source !== undefined) this.openPrototypes.set(key, { source, told: observationDigest(['prototype-ready', target, [source]]) })
+    else this.openPrototypes.delete(key)
+    if (before === undefined || source !== undefined || !this.seen.has(before.told) || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread))) return
+    const fields = watcherPrototypeFields(before.source)
+    if (fields) this.event('prototype-closed', target, [before.source], fields, key)
   }
   /**
    * An unwatched thread's facts brought current for one of Watcher's reads. No pass followed its progress, so it is never
@@ -1161,6 +1233,12 @@ export class WatcherWakeUp {
       return !!holder && this.delegatedOwner.get(targetKey({ hostId: event.target.hostId, threadId: holder.id })) === targetKey(event.target)
         && this.connected(snapshot, holder) && holder.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
     }
+    // A closed card stays news while it is still closed, wherever its holder is: one gone with its thread is closed too.
+    if (event.kind === 'request-closed') {
+      const holder = event.delegatedThreadId === undefined ? thread : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot.hostId) === event.target.hostId)
+      return !holder?.requests.some(card => card.id === event.requestCardId)
+    }
+    if (event.kind === 'prototype-closed') return thread.prototypeReady?.source !== watcherPrototypeSource(event)
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
     if (event.kind === 'prototype-ready') return thread.prototypeReady !== undefined && thread.prototypeReady.source === watcherPrototypeSource(event)

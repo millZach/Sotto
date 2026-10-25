@@ -102,6 +102,8 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
       <span className="watcher-context__title">{thread.title}</span><span className="watcher-context__aside">{thread.waitsOn}</span>
     </React.Fragment>)
   const groups: RoomKept['kept'] = kept?.kept ?? { decisions: [], rules: [], issues: [], updatedAt: null }
+  // Watcher's open lines: a closed line is done, and stays only for Watcher to read until Sotto clears it.
+  const openLines = (lines: RoomKept['kept']['decisions']): readonly ReactNode[] => lines.flatMap(line => line.closedAt === undefined ? [line.text] : [])
 
   // Escape answers on the tile as well as in the panel: Shift+Tab back to the tile leaves the panel open.
   return <div className="watcher-context" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
@@ -139,9 +141,9 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
         <div className="watcher-context__groups">
           <StateGroup label="Watching" items={watching} />
           {state?.state?.unread ? <p className="watcher-context__said" role="status">Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</p> : <>
-            <StateGroup label="Waiting on you" items={groups.decisions} />
-            <StateGroup label="Your rules" items={groups.rules} />
-            <StateGroup label="Issues filed" items={groups.issues} />
+            <StateGroup label="Waiting on you" items={openLines(groups.decisions)} />
+            <StateGroup label="Your rules" items={openLines(groups.rules)} />
+            <StateGroup label="Issues filed" items={openLines(groups.issues)} />
           </>}
         </div>
       </div>

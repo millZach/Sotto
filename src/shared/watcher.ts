@@ -54,7 +54,7 @@ export const WATCHER_REFUSAL_CODES = [
   'PERMISSION_NOT_COMPARABLE', 'RESERVED_THREAD', 'CURSOR_EXPIRED', 'HISTORY_RESET', 'HISTORY_UNAVAILABLE',
   'WORKING_COPY_UNAVAILABLE', 'WORKING_COPY_CHANGED', 'THREAD_BUSY', 'STEER_UNAVAILABLE', 'TURN_CHANGED',
   'BACKGROUND_WORK_RUNNING', 'PATH_OUTSIDE_PROJECT', 'UNSAFE_PATH', 'SENSITIVE_FILE', 'SCAN_LIMIT', 'SEARCH_TOO_BROAD',
-  'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED',
+  'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED', 'STATE_FULL',
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
@@ -187,14 +187,50 @@ export const WATCHER_MACHINES_MAX = 100
  * Watcher's state (#1189): what it must not lose when its conversation is compacted. Watcher keeps the user's pending
  * decisions, the standing rules the user gave and the issues it filed, with keep_state; Sotto adds the watched threads
  * and what each waits on from its own records. read_state gives the whole of it back.
+ *
+ * Each kept line has an ID, so Watcher adds, edits, closes or drops one line at a time (October 24, 2026). A list holds
+ * WATCHER_KEPT_ITEMS_MAX open lines; adding past that is refused, never made room for. A closed line says how it ended
+ * and stays, out of that count, until Sotto clears it WATCHER_KEPT_CLOSED_MS after it was closed.
  */
-export const WATCHER_KEPT_ITEMS_MAX = 20
+export const WATCHER_KEPT_ITEMS_MAX = 30
 export const WATCHER_KEPT_ITEM_MAX = 300
+/** Closed lines a list keeps until they clear; past this the oldest closed clear at once. */
+export const WATCHER_KEPT_CLOSED_MAX = 30
+/** How long a closed line stays before Sotto clears it: about a day. */
+export const WATCHER_KEPT_CLOSED_MS = 24 * 60 * 60 * 1_000
+/** How long an open line may go without being added or edited before read_state flags it for review. */
+export const WATCHER_KEPT_UNTOUCHED_MS = 3 * 24 * 60 * 60 * 1_000
 /** Watcher's conversation is compacted once it passes this many tokens, when it next rests (#1189, Zach's pick). */
 export const WATCHER_COMPACT_AT_TOKENS = 400_000
-const keptItems = z.array(z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)).max(WATCHER_KEPT_ITEMS_MAX)
-export const watcherKeptStateSchema = z.object({ decisions: keptItems, rules: keptItems, issues: keptItems, updatedAt: time.nullable() }).strict()
+export const WATCHER_KEPT_LISTS = ['decisions', 'rules', 'issues'] as const
+export type WatcherKeptList = typeof WATCHER_KEPT_LISTS[number]
+const keptText = z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)
+/** A line's ID: its list's letter and a number Sotto gives it, as `d3`, `r1` or `i12`. Never given twice. */
+const keptId = z.string().regex(/^[dri][1-9]\d{0,8}$/u)
+/** One kept line: its words, when Watcher last added or edited it, and, once closed, when and how it ended. */
+export const watcherKeptItemSchema = z.object({ id: keptId, text: keptText, touchedAt: time,
+  closedAt: time.optional(), closedNote: keptText.optional() }).strict()
+export type WatcherKeptItem = z.infer<typeof watcherKeptItemSchema>
+const keptLines = z.array(watcherKeptItemSchema).max(WATCHER_KEPT_ITEMS_MAX + WATCHER_KEPT_CLOSED_MAX)
+export const watcherKeptStateSchema = z.object({ decisions: keptLines, rules: keptLines, issues: keptLines, updatedAt: time.nullable() }).strict()
 export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
+/** What `watcher-state.json` holds: the lists and the next line number. */
+export const watcherKeptRecordSchema = watcherKeptStateSchema.extend({ nextId: z.number().int().positive().max(999_999_999) }).strict()
+export type WatcherKeptRecord = z.infer<typeof watcherKeptRecordSchema>
+/** The file as builds before line IDs saved it: three lists of words. Read once, and given IDs as it is read. */
+export const watcherKeptLegacySchema = z.object({ decisions: z.array(keptText).max(20), rules: z.array(keptText).max(20),
+  issues: z.array(keptText).max(20), updatedAt: time.nullable() }).strict()
+const keptWords = z.array(keptText).max(WATCHER_KEPT_ITEMS_MAX)
+/**
+ * keep_state's input. A list given whole replaces that list's open lines, as before line IDs: a line whose words are
+ * unchanged keeps its ID and when it was touched. `add`, `edit`, `close` and `drop` change one line each, by its ID.
+ */
+export const watcherKeepStateInputSchema = z.object({ decisions: keptWords.optional(), rules: keptWords.optional(), issues: keptWords.optional(),
+  add: z.array(z.object({ list: z.enum(WATCHER_KEPT_LISTS), text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
+  edit: z.array(z.object({ id: keptId, text: keptText }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
+  close: z.array(z.object({ id: keptId, note: keptText.optional() }).strict()).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional(),
+  drop: z.array(keptId).min(1).max(WATCHER_KEPT_ITEMS_MAX).optional() }).strict()
+export type WatcherKeepStateInput = z.infer<typeof watcherKeepStateInputSchema>
 /** A watched thread as Watcher's state gives it: who it is and, in Sotto's words, what it waits on. */
 export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   waitsOn: z.string().min(1).max(200) }).strict()
@@ -212,8 +248,15 @@ const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequest
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   pullRequest: watcherPullRequestSummarySchema, checksPassedAt: time }).strict()
 export const watcherPendingSettleSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), settlesWhen: sottoSentence }).strict()
-export const watcherStaleNoteSchema = z.object({ list: z.enum(['decisions', 'rules', 'issues']), index: z.number().int().min(0).max(WATCHER_KEPT_ITEMS_MAX - 1),
-  reasons: z.array(sottoSentence).min(1).max(5) }).strict()
+export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
+/**
+ * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
+ * permission card, on the thread or on a thread it delegated to (`delegatedThreadId`), or a prototype waiting for review.
+ */
+export const watcherWaitingOnUserSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
+  waitsFor: z.enum(['question', 'permission', 'prototype-review']), requestCardId: id.optional(), delegatedThreadId: id.optional() }).strict()
+export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
+export const WATCHER_WAITING_ON_USER_MAX = 200
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
 export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
@@ -305,18 +348,19 @@ export const watcherToolSchemas = {
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
   },
   keep_state: {
-    // Each list given replaces the one kept; a list left out stays as it is.
-    input: z.object({ decisions: keptItems.optional(), rules: keptItems.optional(), issues: keptItems.optional() }).strict(),
+    // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
+    input: watcherKeepStateInputSchema,
     output: result({ kept: watcherKeptStateSchema }),
   },
   read_state: {
     // A hundred watched threads to a page; nextCursor reads the rest.
     input: z.object({ cursor: cursor.optional() }).strict(),
     // Computed from live data at each read (#1274). The merge queue and pending settles page with the watched threads, a
-    // hundred of each to a page; staleNotes is whole on every page.
+    // hundred of each to a page; staleNotes and waitingOnUser are whole on every page.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
       mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settlesFinishedThreads: z.boolean(),
-      pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX), kept: watcherKeptStateSchema,
+      pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX),
+      waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
       staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
   },
   list_machines: {

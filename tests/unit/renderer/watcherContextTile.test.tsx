@@ -210,7 +210,11 @@ describe('the Sotto tile in Watcher’s room', () => {
   it('lists what Watcher watches and what it kept', async () => {
     renderRoom(roomState({ state: {
       watching: [{ target: { hostId: HOST, threadId: 'footer-links' }, title: 'Footer links', waitsOn: 'Waits on your permission to run npm test.' }],
-      kept: { decisions: ['Merge #1186 once CI is green?'], rules: ['Full test suites run in CI, not on the laptop.', 'Ask before merging.'], issues: ['#1189 Watcher: auto-compact its conversation'], updatedAt: at },
+      kept: { decisions: [{ id: 'd1', text: 'Merge #1186 once CI is green?', touchedAt: at }],
+        rules: [{ id: 'r2', text: 'Full test suites run in CI, not on the laptop.', touchedAt: at }, { id: 'r3', text: 'Ask before merging.', touchedAt: at }],
+        // A closed line is done: Watcher reads it until Sotto clears it, and the panel leaves it out.
+        issues: [{ id: 'i4', text: '#1189 Watcher: auto-compact its conversation', touchedAt: at }, { id: 'i5', text: '#1490 composer drops images', touchedAt: at, closedAt: at, closedNote: 'done: fixed by #1509' }],
+        updatedAt: at },
     } }))
     const { panel } = await openPanel()
     const group = (name: string): HTMLElement => within(panel).getByRole('heading', { name }).closest('section')!
@@ -218,6 +222,7 @@ describe('the Sotto tile in Watcher’s room', () => {
     expect(within(group('Waiting on you, 1')).getByText('Merge #1186 once CI is green?')).toBeInTheDocument()
     expect(within(group('Your rules, 2')).getAllByRole('listitem')).toHaveLength(2)
     expect(within(group('Issues filed, 1')).getByText('#1189 Watcher: auto-compact its conversation')).toBeInTheDocument()
+    expect(within(panel).queryByText('#1490 composer drops images')).toBeNull()
     expect(within(panel).queryByText('None')).toBeNull()
   })
 
