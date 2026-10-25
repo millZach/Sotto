@@ -146,14 +146,17 @@ export function watcherDelegationOwners(snapshot: Pick<AgentHostSnapshot, 'hostI
 /**
  * `watcherDelegationOwners` by the hosts' look-ups (#925 step 5), reading only the threads under the watched threads: each
  * watched thread's delegated threads, a level at a time, then for each of those the threads above it, to find the topmost
- * watched one. A delegated thread under no watched thread is never read, however many there are.
+ * watched one. A delegated thread under no watched thread is never read, however many there are. On a cycle, which saved
+ * records allow though starts make trees, the walk down reaches the watched thread itself again and counts it as one of the
+ * threads under it, as the whole walk does: climbing from it meets it again, so it can answer for itself. Each thread is
+ * walked from once per watched thread, so a cycle ends the walk.
  */
 export function delegationOwnersUnder(hostId: string | undefined, index: WatcherHostsIndex, watched: ReadonlySet<string>): Map<string, string> {
   const owners = new Map<string, string>()
   if (!hostId) return owners
   const under = new Set<string>()
   for (const key of watched) {
-    const top = keyTarget(key), seen = new Set([top.threadId])
+    const top = keyTarget(key), seen = new Set<string>()
     for (let level = [top.threadId]; level.length;) {
       const next: string[] = []
       for (const parent of level) for (const child of index.delegatedFrom({ hostId: top.hostId, threadId: parent })) {

@@ -14,10 +14,12 @@
  * Wake-ups are kept by the test rather than queued, so neither coordinator sends anything to the shared provider.
  *
  * Each seed runs with the workspace's windows held for every thread, or led by the changes side's coordinator as in
- * production, where windows go and come back as its observed threads move (`stack`). A family lets a watched thread's window
- * go and come back; another moves Watcher's record and brings its pass only through the provider's next publication,
- * asserting the test supplied no call. The clock moves only once both sides hold the same host snapshot and have read their
- * records, so neither side's pass is dated a window later than the other's.
+ * production, where windows go and come back as its observed threads move (`stack`). A family lets the window of a thread
+ * nothing else looks at go and come back, and asserts on both sides that its messages went and came back; another moves
+ * Watcher's record and brings its pass only through the provider's next publication, asserting the test supplied no call;
+ * another makes two threads delegate to each other, one watched, a cycle. The clock moves only once both sides hold the same
+ * host snapshot and have read their records, and the test fails if they do not get there, so neither side's pass is dated
+ * a window later than the other's. Before each comparison both run one pass at the same time, with no clock moving after.
  */
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -143,7 +145,7 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
   const adapter = new StreamingAdapter({ ...structuredClone(EMPTY_AGENT_HOST), name: 'Synthetic', version: '1', connected: true,
     capabilities: { ...EMPTY_AGENT_HOST.capabilities, projects: true, threads: true, submit: true, observe: true },
     projects: [{ id: 'project', title: 'Synthetic', path: join(root, 'project') }], models: [{ ...MODEL }],
-    threads: [thread('w'), ...sessions.map(id => thread(id))] })
+    threads: [thread('w'), thread('window'), thread('aside'), ...sessions.map(id => thread(id))] })
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)),
@@ -287,12 +289,13 @@ async function agree(made: Stack, step: string, supply = true): Promise<void> {
   let found: string[] = []
   for (let attempt = 0; attempt < 60; attempt++) {
     await settled(made, supply)
+    passTime(made, WATCHER_OBSERVE_MS)
+    await settled(made, supply)
     // How many passes each side ran follows when its coordinator's broadcasts reached it, which the harness, not the changes
     // path, decides: a late broadcast leaves one side a pass owed. Both run one pass now, at the same time on the clock, which
-    // takes the place of any pass owed, so what is compared is each side's own pass over the same threads.
+    // takes the place of any pass owed, and the clock does not move again before the comparison, so what is compared is each
+    // side's own pass over the same threads.
     if (supply) for (const side of made.sides) side.watcher.wakes.observe()
-    passTime(made, WATCHER_OBSERVE_MS)
-    await quiet()
     found = differences(made)
     if (!found.length) return
   }
@@ -300,7 +303,7 @@ async function agree(made: Stack, step: string, supply = true): Promise<void> {
 }
 
 /**
- * Waits, without moving the fake clock, until neither side has anything left to take in: the workspace has flushed, and
+ * Waits, without moving the fake clock, and fails if it waits too long, until neither side has anything left to take in: the workspace has flushed, and
  * each coordinator's host snapshot, Watcher's record and what its last wake-up pass read stay as they are for two looks,
  * both coordinators hold the same host snapshot, and each wake-up pass has read the record as it now stands.
  * Moving the clock while one side still has an update to take in would date that side's next pass a window later.
@@ -310,23 +313,26 @@ async function settled(made: Stack, supply = true): Promise<void> {
     const wakes = side.watcher.wakes as unknown as { observedEdges?: { record: unknown; threads: string } }
     return [side.control.watcherSnapshot(), side.control.watcherRecordView(), wakes.observedEdges?.record, wakes.observedEdges?.threads, side.delivered.length]
   }).flat()
-  let last: unknown[] = []
-  for (let round = 0; round < 50; round++) {
+  let last: unknown[] = [], waiting = 'what each side holds was still moving'
+  for (let round = 0; round < 100; round++) {
     await settleWorkspace(made.workspace)
     const now = look(), still = now.length === last.length && now.every((item, at) => item === last[at])
     last = now
-    if (!still) continue
+    if (!still) { waiting = 'what each side holds was still moving'; continue }
     // Both coordinators have taken in the same publications: one whose publication is still on its way would see it only
     // after the clock moved, and date what it finds a window later than the other.
-    if (round < 40 && text(made.sides[0].control.watcherSnapshot()) !== text(made.sides[1].control.watcherSnapshot())) continue
+    if (text(made.sides[0].control.watcherSnapshot()) !== text(made.sides[1].control.watcherSnapshot())) { waiting = 'the two coordinators held different host snapshots'; continue }
     // A record change is read by the wake-up pass the coordinator's next publish runs. A side whose record changed with no
     // publish to follow is given the call that publish would make, at the same time on the clock.
     const behind = made.sides.filter(side => (side.watcher.wakes as unknown as { observedEdges?: { record: unknown } }).observedEdges?.record !== side.control.watcherRecordView())
     if (!behind.length) return
+    waiting = `the ${behind.map(side => side.name).join(' and ')} side's wake-up pass had not read Watcher's record`
     if (!supply) continue
     made.supplied.count += behind.length
     for (const side of behind) side.watcher.wakes.observeSoon(() => undefined)
   }
+  // The clock never moves while either side still has something to take in: that would date its next pass a window late.
+  throw new Error(`The two sides did not settle before the clock was to move: ${waiting}.`)
 }
 
 /** Moves the fake clock on by `ms` and runs every timer it passes, on both sides. */
@@ -457,26 +463,49 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
     },
     // A watched thread's window going and coming back: the workspace drops its messages to a summary, then reads them back
     // from the store, as when a window stops and starts showing it.
-    'window': async session => {
-      const into = watched().length && next(2) ? pick(watched()) : session
-      const shown = (side: Side) => text(side.control.watcherSnapshot().threads.find(item => item.id === sotto(into)))
-      const before = shown(changed)
-      if (made.unloaded.has(sotto(into))) made.unloaded.delete(sotto(into)); else made.unloaded.add(sotto(into))
+    'window': async () => {
+      // A thread nothing but a window looks at, so its messages really go when the window stops showing it: no family
+      // watches it, takes part in a request with it, delegates to it or selects it. It always has words to hold.
+      const id = sotto('window')
+      if (!made.unloaded.has(id)) { say('window', 'assistant', 'Words the window shows'); publish(); await same('words in the window\'s thread') }
+      const going = !made.unloaded.has(id)
+      if (going) made.unloaded.add(id); else made.unloaded.delete(id)
       made.observeNow()
-      // The window goes or comes back through the workspace's next publication, which reaches the two coordinators a
-      // moment apart; both show it before anything else happens, or the next step would find one side still without it.
-      for (let wait = 0; wait < 60 && !(shown(changed) !== before && shown(changed) === shown(whole)); wait++) await quiet()
-      await same(`${into}'s window ${made.unloaded.has(sotto(into)) ? 'going' : 'coming back'}`)
+      // Its messages go to a summary, or come back from the store, through the workspace's next publication, which reaches
+      // the two coordinators a moment apart; both show it before anything else happens.
+      const held = (side: Side) => side.control.watcherSnapshot().threads.find(item => item.id === id)?.messages.length ?? 0
+      for (let wait = 0; wait < 100 && !made.sides.every(side => going ? held(side) === 0 : held(side) > 0); wait++) await quiet()
+      expect(made.sides.map(held).map(count => count > 0), `the window's thread's messages ${going ? 'going' : 'coming back'} on both sides`).toEqual([!going, !going])
+      if (going) windows.going++; else windows.back++
+      await same(`the window's thread's window ${going ? 'going' : 'coming back'}`)
+    },
+    // Two threads that delegate to each other, one of them watched, with a card on the other: a cycle, which saved records
+    // allow though starts make trees. The watched thread answers for both, itself included (#925 step 5 review).
+    'cycle': async () => {
+      const [a, b] = [`c${ids++}`, `c${ids++}`]
+      adapter.state.threads.push(thread(a), thread(b)); sessions.splice(sessions.length - 1, 0, a, b); publish(a, b)
+      await same(`the provider starting ${a} and ${b}`)
+      made.observeNow(); await same(`${a} and ${b} coming into view`)
+      await workspace.setDelegatedBy(sotto(a), sotto(b)); await workspace.setDelegatedBy(sotto(b), sotto(a))
+      const watch = { id: uuid(ids++), target: target(a), createdAt: new Date().toISOString(), generation: 0, pausedByUserMessageId: null, lastUserMessageId: null }
+      await onBoth(made, record => { (record.watches ??= []).push(structuredClone(watch)) })
+      at(b).requests = [{ id: `cq-${ids++}`, kind: 'question', text: 'Which?', options: [] } as unknown as AgentRequest]
+      publish(b); await same(`${a} and ${b} delegating to each other, ${a} watched`)
+      cycles++
     },
     // A change to Watcher's record whose pass comes only through the real path: the provider's next publication, taken in
     // by each coordinator and handed to its Watcher, with no call supplied by the test.
-    'record-then-publication': async session => {
+    'record-then-publication': async () => {
       const watch = changed.control.watcherRecordView().watches?.[0]
       if (!watch) return
       await onBoth(made, record => { const held = record.watches!.find(item => item.id === watch.id); if (held) held.lastUserMessageId = null })
       const before = made.supplied.count
-      say(session, 'assistant', 'Words that publish'); publish()
-      await same(`Watcher's record moving, then the provider publishing ${session}`, false)
+      // The publication is of a thread nothing else touches and no window lets go, so it always reaches both coordinators
+      // and all its pass finds is the record's move. A watched thread's
+      // words would be found by whichever pass first saw them, which follows when each side's broadcasts came, and this
+      // family runs no common pass to take the place of that.
+      say('aside', 'assistant', 'Words that publish'); publish()
+      await same("Watcher's record moving, then the provider publishing a thread it does not watch", false)
       expect(made.supplied.count, 'the publication brought each side its pass').toBe(before)
     },
     // The user's own work waiting in a watched thread's queue, or leaving it, with no change to the thread itself.
@@ -570,6 +599,9 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
     'catalog': async () => { adapter.state.models = adapter.state.models.length > 1 ? [{ ...MODEL }] : [{ ...MODEL }, { ...OTHER_MODEL }]; publish(); await same('the provider\'s catalog changing') },
   }
   const names = Object.keys(families)
+  // How many times the window family let the window go and brought it back, and how many cycles were made.
+  let cycles = 0
+  const windows = { going: 0, back: 0 }
   const ran = new Map<string, number>()
   const run = async (name: string) => {
     const session = pick(sessions.slice(0, -1))
@@ -578,12 +610,16 @@ async function equivalenceRun(seed: number, rounds: number, observation: 'held' 
   }
   for (const name of names) await run(name)
   for (let round = 0; round < rounds; round++) await run(pick(names))
-  return { made, ran, names, compared, changed, whole }
+  return { made, ran, names, compared, changed, whole, windows, cycles }
 }
 
 describe('Watcher and delegation on thread changes (#925 step 5)', () => {
   it.each([[1, 'held'], [2, 'held'], [3, 'led'], [4, 'led']] as const)('say what the whole path says across a seeded run of every operation family (seed %i, windows %s)', async (seed, observation) => {
-    const { ran, names, compared, changed, whole } = await equivalenceRun(seed, 70, observation)
+    const { ran, names, compared, changed, whole, windows, cycles } = await equivalenceRun(seed, 70, observation)
+    // The window family really let a window go, and brought one back, and the cycle family made a cycle.
+    expect(windows.going).toBeGreaterThan(0)
+    expect(windows.back).toBeGreaterThan(0)
+    expect(cycles).toBeGreaterThan(0)
     // Every family ran, and the comparisons ran after each.
     expect(names.filter(name => !ran.has(name))).toEqual([])
     expect(compared).toBeGreaterThan(names.length)
