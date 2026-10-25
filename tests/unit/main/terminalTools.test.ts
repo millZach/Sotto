@@ -11,6 +11,7 @@ import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { initializeGitRepository } from '../../fixtures/gitRepository'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
@@ -377,6 +378,39 @@ describe('persistent terminal service', () => {
     unwrap(await f.service.close({ ...f.target, sessionId: closed.session.id }))
     vi.advanceTimersByTime(RUN_START_CAP_MS)
     expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
+  })
+  it('types the command only after the session is saved, and never when the save fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    const saving = Promise.withResolvers<void>()
+    const write = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementationOnce(() => saving.promise)
+    cleanup.push(async () => { write.mockRestore() })
+    const created = f.service.create({ ...f.target, place: 'drawer', run: 'git status' })
+    await vi.waitFor(() => expect(f.processes).toHaveLength(1))
+    f.processes[0]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    saving.resolve()
+    unwrap(await created)
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledExactlyOnceWith('git status\r')
+
+    write.mockRejectedValueOnce(new Error('disk full'))
+    expect(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    f.processes[1]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.kill).toHaveBeenCalled()
+  })
+  it('names a reopened shell after its shell again, not the command it was started with', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'npm run dev' }))
+    f.processes[0]!.exit(0)
+    const reopened = unwrap(await f.service.reopen({ ...f.target, sessionId: created.session.id }))
+    const shellName = reopened.session.shell.split(/[\\/]/u).at(-1)
+    expect(reopened.session.title).toBe(shellName)
+    expect(unwrap(await f.service.list({ ...f.target, place: 'drawer' })).sessions.map(session => session.title)).toEqual([shellName])
     expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
   })
   it.each([

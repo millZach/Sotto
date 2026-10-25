@@ -29,7 +29,7 @@ export interface TerminalDependencies {
   /** Whether a drawer shell may start with a command from a reply (ADR-0136, an Owl feature), read once at start. */
   runCommandEnabled?: boolean
 }
-interface PendingRun { output(): void; cancel(): void }
+interface PendingRun { output(): void; arm(): void; cancel(): void }
 interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[]; pendingRun?: PendingRun | undefined }
 
 /** A reply's command waits for the new shell to go quiet this long after it last printed, so its prompt is drawn. */
@@ -160,6 +160,7 @@ export class TerminalService extends ToolOperations {
       }
       await this.save()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
+      record.pendingRun?.arm()
       this.publish(record)
       return record
     } catch (error) {
@@ -174,20 +175,29 @@ export class TerminalService extends ToolOperations {
   /**
    * Types a reply's command into a new shell once it is ready to read it: after its first output and then RUN_QUIET_MS
    * with none, or RUN_START_CAP_MS after it spawned, whichever comes first. Typed sooner, a shell still running its
-   * profile can drop the text or echo it twice. A shell that ended or was closed meanwhile receives nothing.
+   * profile can drop the text or echo it twice. A shell that ended or was closed meanwhile receives nothing. Nothing
+   * is typed before `arm`, which follows the session's save: a shell whose record could not be saved is stopped, so
+   * "did not start" means the command did not run.
    */
   private typeWhenSettled(record: LiveTerminal, pty: IPty, run: string): PendingRun {
     let quiet: ReturnType<typeof setTimeout> | undefined
+    let armed = false
+    let due = false
     const cancel = (): void => {
       clearTimeout(quiet); clearTimeout(cap)
       if (record.pendingRun === pending) record.pendingRun = undefined
     }
     const type = (): void => {
+      if (!armed) { due = true; return }
       cancel()
       if (record.pty === pty && !this.disposed) pty.write(terminalInputFor(run))
     }
     const cap = setTimeout(type, RUN_START_CAP_MS)
-    const pending: PendingRun = { output: () => { clearTimeout(quiet); quiet = setTimeout(type, RUN_QUIET_MS) }, cancel }
+    const pending: PendingRun = {
+      output: () => { if (due) return; clearTimeout(quiet); quiet = setTimeout(type, RUN_QUIET_MS) },
+      arm: () => { armed = true; if (due) type() },
+      cancel,
+    }
     return pending
   }
   /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
