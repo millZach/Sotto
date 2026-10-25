@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
-import { build } from 'esbuild'
+import { bundleDesktopMain } from '../fixtures/desktopMainBundle'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { OmarchySetup } from '../../src/main/omarchy/setup'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../src/shared/settings'
@@ -86,7 +86,8 @@ describe.runIf(process.platform === 'linux')('Omarchy setup across real child pr
     }
     await desktop({ blockAt, reached: false })
     const runner = join(root, 'crash-runner.mjs'), optionsFile = join(root, 'options.json')
-    await build({ entryPoints: [resolve('tests/fixtures/omarchySetupCrash.ts')], outfile: runner, bundle: true, platform: 'node', format: 'esm' })
+    // The crash runs main's own Omarchy setup, whose words are messages, so the runner is built as main is.
+    await bundleDesktopMain('tests/fixtures/omarchySetupCrash.ts', runner, { format: 'es' })
     await writeFile(optionsFile, JSON.stringify({ home, data, resources: resolve('apps/omarchy'),
       environment: { PATH: `${bin}:/usr/bin:/bin`, OMARCHY_PATH: join(root, 'omarchy'), XDG_RUNTIME_DIR: join(root, 'runtime'), SOTTO_SETUP_FIXTURE_STATE: stateFile } }))
     const child = spawn(process.execPath, [runner, optionsFile, piece, operation], { detached: true, stdio: 'ignore' })
