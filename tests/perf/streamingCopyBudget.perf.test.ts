@@ -184,9 +184,25 @@ async function measure(threads: number, owl: boolean) {
  * 9.6 objects per thread per update by how many saves fell in, near its budget of 10; with one it reads 8.6 every run,
  * and its budget is 9.5.
  */
+/*
+ * October 24, 2026 (#925, step 3): the identity wrapper and the provider switch read thread changes, so nothing reads the
+ * adapter's activity snapshots and its copy of its whole view for them is gone. That copy was 611 objects a frame on Owl
+ * and 570 on stable, and objects per thread per update fall from 7.73 to 0.11 on Owl and from 8.64 to 1.06 on stable
+ * (the workspace's one save, a copy of the organization, is most of what is left there). It made no copy call here, being
+ * counted by its objects alone; the adapter's thread changes, which the wrapper now reads, copy the records that changed
+ * once an update in a call that is counted, so copies read 3 per update on Owl, from 2, and 3.07 on stable, from 2.13. The
+ * budgets are 3.5 copies on both, and 0.5 objects per thread on Owl and 1.5 on stable.
+ */
+/*
+ * October 25, 2026 (#925, step 4): the workspace reads the provider switch's thread changes, so nothing reads the switch's
+ * activity snapshot and the switch no longer builds it for each update, with its copy of every provider's status. Copies
+ * read 2.07 per update on Owl, from 3, and 2.13 on stable, from 3.07, and objects per thread per update fall from 0.11 to
+ * 0.04 on Owl and from 1.06 to 0.99 on stable, which is mostly the workspace's one save. The budgets are 2.5 copies on
+ * both, and 0.25 objects per thread on Owl; stable's stays at 1.5, since how many saves fall in a stream moves it.
+ */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9, parsesPerUpdate: 5 },
-  stable: { copiesPerUpdate: 7.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 9.5, parsesPerUpdate: 5 },
+  Owl: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 0.25, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 1.5, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {

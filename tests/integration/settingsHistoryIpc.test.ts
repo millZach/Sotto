@@ -334,6 +334,15 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })
     })
 
+  it('persists where Watcher compacts through the allow-list, and refuses a point off the slider', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 600_000 })).resolves.toMatchObject({ watcherCompactAtTokens: 600_000 })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherCompactAtTokens: 600_000 })
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 150_000 })).rejects.toThrow('Invalid IPC payload')
+    await expect(ipc.invoke(SETTINGS_UPDATE, { watcherCompactAtTokens: 425_000 })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
+
   it('persists the night falls look through the allow-list, and refuses a look Sotto does not have (ADR-0119)', async () => {
     const { ipc, settings } = createIpcHarness()
     await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'stars' })).resolves.toMatchObject({ roomTransitionLook: 'stars' })

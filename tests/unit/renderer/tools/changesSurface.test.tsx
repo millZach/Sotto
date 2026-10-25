@@ -374,11 +374,15 @@ describe('the Changes shortcut', () => {
     fireEvent.keyDown(window, { key: 'd', ctrlKey: true })
     expect(store.getSnapshot().open).toBe(false)
 
-    expect(changesChord(undefined, 'win32')).toBe('mod+d')
-    expect(changesChord('CommandOrControl+Shift+Space', 'win32')).toBe('mod+d')
-    expect(changesChord('CommandOrControl+D', 'win32')).toBe('mod+shift+d')
-    expect(changesChord('Command+D', 'darwin')).toBe('mod+shift+d')
-    expect(changesChord('Control+D', 'darwin')).toBe('mod+d')
+    expect(changesChord('mod+d', undefined, 'win32')).toBe('mod+d')
+    expect(changesChord('mod+d', 'CommandOrControl+Shift+Space', 'win32')).toBe('mod+d')
+    expect(changesChord('mod+d', 'CommandOrControl+D', 'win32')).toBe('mod+shift+d')
+    expect(changesChord('mod+d', 'Command+D', 'darwin')).toBe('mod+shift+d')
+    expect(changesChord('mod+d', 'Control+D', 'darwin')).toBe('mod+d')
+    // A chord chosen on Settings › Keyboard answers as itself, with no understudy (ADR-0133).
+    expect(changesChord('mod+shift+c', 'CommandOrControl+D', 'win32')).toBe('mod+shift+c')
+    expect(changesChord('mod+shift+c', 'CommandOrControl+Shift+C', 'win32')).toBeNull()
+    expect(changesChord(null, undefined, 'win32')).toBeNull()
   })
 })
 

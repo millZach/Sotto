@@ -160,7 +160,7 @@ test.describe('night falls in the Stars look', () => {
         for (const [width, height] of [[1280, 800], [820, 560]] as const) {
           await resizeContentWindow(launched, width, height, [800, 540])
           await expect(night).toBeVisible()
-          await expect(night).toContainText('The window sweeps between Threads and Watcher\'s room')
+          await expect(night).toContainText('The window sweeps when you move between Dictate or Threads and Watcher\'s room')
           await expect(night).toContainText('A line of stars sweeps across, with a faint trail behind it.')
           await night.scrollIntoViewIfNeeded()
           await page.screenshot({ path: join(evidence, `settings-night-falls-${appearance}-${width}x${height}.png`) })

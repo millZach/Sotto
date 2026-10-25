@@ -128,9 +128,11 @@ describe('continuing a Claude Code agent as its own thread', () => {
     const f = await fixture()
     const agentId = await f.agent('claude')
     const folder = join(f.workspace.root, 'source-worktree'); await mkdir(folder)
-    // The parent works in a worktree of its own, not in the project folder.
-    const saved = Reflect.get(f.workspace.host, 'state') as { snapshot: { threads: AgentThread[] } }
-    saved.snapshot.threads.find(thread => thread.id === f.sotto('claude'))!.worktree = { mode: 'independent', status: 'ready', path: folder, reused: true }
+    // The parent works in a worktree of its own, not in the project folder. Marked as the workspace marks every thread it
+    // changes (#925), so its next publication reads the record again.
+    const saved = f.workspace.host as unknown as { state: { snapshot: { threads: AgentThread[] } }; touch(id: string): void }
+    saved.state.snapshot.threads.find(thread => thread.id === f.sotto('claude'))!.worktree = { mode: 'independent', status: 'ready', path: folder, reused: true }
+    saved.touch(f.sotto('claude'))
     const newThreadId = randomUUID()
     expect((await f.control.commandShell({ type: 'continue-agent', threadId: f.sotto('claude'), agentId, newThreadId, modelId: f.model('claude'), workingCopy: 'shared' })).error).toBeNull()
     expect(f.workspace.host.workspaceSnapshot().threads.find(thread => thread.id === newThreadId)!.worktree).toMatchObject({ mode: 'independent', existingWorktreePath: folder })
