@@ -296,6 +296,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/threadChips.css',
+      'src/renderer/src/agents/nextPrompt.css',
       'src/renderer/src/agents/owlSky.css',
       'src/renderer/src/watcher/watcher.css',
       'src/renderer/src/watcher/watcherPicture.css',
