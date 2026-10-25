@@ -34,6 +34,19 @@ const CELL_HEIGHT = 17
 const CHROME_HEIGHT = 80
 const CHROME_WIDTH = 40
 
+/** The cell grid a new drawer shell should start at, estimated from the drawer's width and height in pixels. */
+export function drawerShellSize(width: number, height: number): { cols: number; rows: number } | undefined {
+  if (width <= 0) return undefined
+  return {
+    cols: Math.max(20, Math.min(500, Math.floor((width - CHROME_WIDTH) / CELL_WIDTH))),
+    rows: Math.max(5, Math.min(300, Math.floor((height - CHROME_HEIGHT) / CELL_HEIGHT))),
+  }
+}
+
+/** The drawer's default height before it has measured itself: a third of the pane, never under its minimum. */
+export function defaultDrawerHeight(paneHeight: number): number {
+  return Math.max(MIN_DRAWER_HEIGHT, paneHeight > 0 ? Math.round(paneHeight / 3) : 200)
+}
 
 /**
  * Hides a pane's drawer from inside it and puts focus back in the pane once the drawer has left the page, so focus
@@ -158,14 +171,7 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
     chromeStore.setHeight(threadId, clamp(next))
   }
 
-  const startSize = (): { cols: number; rows: number } | undefined => {
-    const width = root.current?.clientWidth ?? 0
-    if (width <= 0) return undefined
-    return {
-      cols: Math.max(20, Math.min(500, Math.floor((width - CHROME_WIDTH) / CELL_WIDTH))),
-      rows: Math.max(5, Math.min(300, Math.floor((height - CHROME_HEIGHT) / CELL_HEIGHT))),
-    }
-  }
+  const startSize = (): { cols: number; rows: number } | undefined => drawerShellSize(root.current?.clientWidth ?? 0, height)
 
   const facts = describeWorkingCopy(thread, project)
   // The drawer's shells start in the project folder, so the branch is named only when the thread's own folder is that

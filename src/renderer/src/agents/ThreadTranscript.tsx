@@ -319,7 +319,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div> : null}
     {writing && !streamText
       ? <p className="thread-message__writing" role="status">Writing a reply…</p>
-      : <MessageContent text={markdown} streaming={writing} />}
+      : <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} />}
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
     {!writing && message.text.length > 0 && (message.role === 'user' || message.role === 'assistant') ? <MessageCopy message={message} article={article} /> : null}

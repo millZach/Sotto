@@ -1,6 +1,6 @@
 import React, { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Element, ElementContent, Root } from 'hast'
-import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
+import { Check, Copy, FileText, Image as ImageIcon, Play } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { isImageAttachment, type AgentAttachmentReference } from '../../../shared/agents'
@@ -15,7 +15,10 @@ import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlig
 import { useOwlFeature } from '../state/owlFeature'
 import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
 import { formatAttachmentSize } from '../../../shared/attachmentLabels'
+import { runnableBlock, runnableInline } from '../../../shared/runnableCommand'
+import { RunCommandContext, useRunCommand, type RunCommand } from '../tools/runCommand'
 import './rich-messages.css'
+import './runCommand.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
 
@@ -29,6 +32,8 @@ export interface MessageContentProps {
   readonly streaming?: boolean
   /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the surrounding link router: a thread's browser setting, else the system browser. */
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
+  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0136). */
+  readonly commands?: boolean
 }
 
 export interface AttachmentPreviewsProps {
@@ -116,6 +121,8 @@ interface LinkActions {
   readonly reveal?: ((path: string) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
+/** Inside a link, inline code stays plain: a Run button cannot sit inside something that is itself pressed. */
+const InsideLinkContext = createContext(false)
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
 const MarkdownSourceContext = createContext<{ text: string; streaming: boolean }>({ text: '', streaming: false })
 
@@ -148,9 +155,53 @@ function highlight(code: string, language: string | undefined, highlighter: High
  */
 export interface CodeBlockCut { readonly keep: 'start' | 'end'; readonly line: string; readonly status: ReactNode }
 
-export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false }: {
+type RunState = 'idle' | 'starting' | 'ran'
+
+/**
+ * One Run control's state: idle, starting while the shell is created, then ran once main has typed the command.
+ * A shell that could not start goes back to idle; the drawer's notice says why. There is no pass or fail per command:
+ * a terminal reports only its shell's exit.
+ */
+function useRunState(run: RunCommand | undefined, command: string | null): [RunState, () => void] {
+  const [state, setState] = useState<RunState>('idle')
+  const live = useRef(true)
+  useEffect(() => { live.current = true; return () => { live.current = false } }, [])
+  const press = useCallback(() => {
+    if (!run || command === null || state === 'starting') return
+    setState('starting')
+    void run(command).then(started => started, () => false).then(started => { if (live.current) setState(started ? 'ran' : 'idle') })
+  }, [run, command, state])
+  return [state, press]
+}
+
+const RUN_LABEL: Readonly<Record<RunState, string>> = { idle: 'Run in terminal', starting: 'Starting…', ran: 'Run again' }
+
+/** Inline code that reads as a command: Run floats above its start on pointing or keyboard focus, covering none of it. */
+function RunnableInline({ command, run, children }: { readonly command: string; readonly run: RunCommand; readonly children?: ReactNode }): ReactNode {
+  const [state, press] = useRunState(run, command)
+  return <span className="run-command" data-state={state}>
+    <span className="run-command__anchor"><button type="button" className="run-command__button tt-focusable" aria-label={`${RUN_LABEL[state]}: ${command}`}
+      aria-disabled={state === 'starting' || undefined} onClick={press}>
+      {state === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : <Play size={11} aria-hidden="true" />}<span>{RUN_LABEL[state]}</span>
+    </button></span>
+    <code>{children}</code>
+    {state === 'ran' ? <span className="run-command__ran" aria-hidden="true"><Check size={12} /></span> : null}
+  </span>
+}
+
+function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
+  const run = useRunCommand()
+  const insideLink = useContext(InsideLinkContext)
+  // What runs is the span's own text, the same characters the reply shows.
+  const command = run && !insideLink ? runnableInline(hastText(node)) : null
+  return run && command !== null ? <RunnableInline command={command} run={run}>{children}</RunnableInline> : <code>{children}</code>
+}
+
+export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
+  /** Offers Run beside Copy when the block holds shell input (ADR-0136). */
+  readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
   readonly anchorEnd?: boolean | undefined
 }) {
@@ -170,6 +221,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     if (anchorEnd && pre) pre.scrollTop = Math.max(0, pre.scrollHeight - pre.clientHeight - fromEnd.current)
   }, [anchorEnd, code, cut?.keep])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
+  const command = run && !cut ? runnableBlock(code, language) : null
+  const [runState, pressRun] = useRunState(run, command)
   const label = language ? language.slice(0, 24) : 'Code'
   const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showFeedback('Copied'), () => showFeedback('Copy failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
@@ -177,6 +230,11 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
+      {command !== null ? <button type="button" className="rich-code__run tt-focusable" data-state={runState} aria-disabled={runState === 'starting' || undefined}
+        aria-label={runState === 'idle' ? 'Run in terminal' : runState === 'starting' ? 'Starting in terminal…' : 'Run again in terminal'} title="Run in a new terminal drawer shell" onClick={pressRun}>
+        {runState === 'starting' ? <span className="run-command__spinner" aria-hidden="true" /> : runState === 'ran' ? <Check size={14} aria-hidden="true" /> : <Play size={13} aria-hidden="true" />}
+        <span>{runState === 'idle' ? 'Run' : runState === 'starting' ? 'Starting…' : 'Run again'}</span>
+      </button> : null}
       <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === 'Copied' || undefined} aria-disabled={cut ? true : undefined}
         aria-label={cut ? `Copy ${language ? `${label} ` : ''}code, once the rest arrives` : `Copy ${language ? `${label} ` : ''}code`}
         title={cut ? 'Copy works once the rest arrives' : 'Copy code'} onClick={copy}>
@@ -195,6 +253,14 @@ function DiagramBlock({ source, start, end }: { source: string; start: number | 
   // A finished message draws whatever it holds; a streaming one waits for the closing fence.
   const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
   return <MermaidDiagram source={source} complete={complete} />
+}
+
+/** A fenced block in Markdown. Run waits for the closing fence, so a block still being written never runs half a command. */
+function MarkdownCodeBlock({ source, language, start, end }: { source: string; language: string | undefined; start: number | undefined; end: number | undefined }): ReactNode {
+  const run = useRunCommand()
+  const { text, streaming } = useContext(MarkdownSourceContext)
+  const complete = !streaming || (start !== undefined && end !== undefined && isFenceClosed(text.slice(start, end)))
+  return <CodeBlock code={source} language={language} run={complete ? run : undefined} />
 }
 
 function MarkdownLink({ href, title, children }: { href?: string | undefined; title?: string | undefined; children?: ReactNode }): ReactNode {
@@ -242,7 +308,9 @@ const urlTransform: UrlTransform = (url, key, node) =>
   (node.tagName === 'a' && key === 'href') || (node.tagName === 'img' && key === 'src') ? url : defaultUrlTransform(url)
 
 const components: Components = {
-  a: ({ href, title, children }) => <MarkdownLink href={href} title={title}>{children}</MarkdownLink>,
+  a: ({ href, title, children }) => <InsideLinkContext.Provider value={true}><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLinkContext.Provider>,
+  // `pre` below draws fenced blocks itself, so this only ever sees inline code.
+  code: ({ node, children }) => <InlineCode node={node}>{children}</InlineCode>,
   img: ({ src, alt }) => <BlockedImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
   pre: ({ node }) => {
     const code = node?.children.find((child): child is Element => child.type === 'element' && child.tagName === 'code')
@@ -250,7 +318,7 @@ const components: Components = {
     const language = classes.find(name => name.startsWith('language-'))?.slice('language-'.length)
     const source = hastText(code).replace(/\n$/u, '')
     if (language?.toLowerCase() === 'mermaid') return <DiagramBlock source={source} start={node?.position?.start.offset} end={node?.position?.end.offset} />
-    return <CodeBlock code={source} language={language} />
+    return <MarkdownCodeBlock source={source} language={language} start={node?.position?.start.offset} end={node?.position?.end.offset} />
   },
   table: ({ children }) => <div className="rich-table tt-focusable" role="region" aria-label="Table" tabIndex={0}><table>{children}</table></div>,
   input: ({ type, checked }) => type === 'checkbox'
@@ -333,7 +401,8 @@ const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { s
 })
 
 /** Renders one message's text as safe Markdown. Raw HTML stays literal text; only vetted web links are links. */
-export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
+export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink, commands = false }: MessageContentProps): ReactNode {
+  const runCommand = useRunCommand()
   const [failedLink, setFailedLink] = useState<string | null>(null)
   const [linkNotice, setLinkNotice] = useState<string | null>(null)
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
@@ -376,7 +445,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   // a running answer stale even after its latest text has reached the renderer.
   // A finished message is one document; a running one re-parses only its last block.
   const segments = useMemo(() => streaming ? splitStreamingMarkdown(text) : [text], [text, streaming])
-  return <LinkContext.Provider value={context}>
+  return <LinkContext.Provider value={context}><RunCommandContext.Provider value={commands ? runCommand : undefined}>
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} />)}
       <div className="rich-message__feedback" role="status" aria-live="polite">
@@ -384,7 +453,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
       </div>
     </div>
     {linkMenu ? <LinkMenu at={linkMenu.at} label={`Link: ${linkLabel(linkMenu.url)}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
-  </LinkContext.Provider>
+  </RunCommandContext.Provider></LinkContext.Provider>
 })
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */

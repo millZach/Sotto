@@ -1,0 +1,54 @@
+/* Run a command from a reply (ADR-0136; Owl only), variant A of docs/prototypes/run-command-prototype.html.
+   Inline: Run floats above the start of the command's chip on pointing or keyboard focus, anchored on a zero-width
+   box before the code, so it covers none of the command and nothing reflows. Blocks: Run sits beside Copy. */
+
+.run-command { position: relative; }
+.run-command > code { transition: border-color 120ms ease, background-color 120ms ease; }
+.rich-message .run-command:is(:hover, :has(:focus-visible), [data-state='starting']) > code {
+  border-color: color-mix(in oklab, var(--tt-primary) 55%, var(--tt-code-border, var(--tt-border-faint)));
+  background: color-mix(in oklab, var(--tt-primary) 7%, var(--tt-code-bg, var(--tt-surface)));
+}
+
+.run-command__anchor { position: relative; display: inline-block; width: 0; height: 1em; user-select: none; }
+.run-command__button {
+  position: absolute; bottom: calc(100% + 7px); left: -4px; z-index: 4;
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px;
+  border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 6px 18px var(--tt-shadow-color);
+  color: var(--tt-text); font: inherit; font-family: var(--tt-font-ui); font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer;
+  opacity: 0; transform: translateY(3px); pointer-events: none;
+  transition: opacity 120ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 120ms ease;
+}
+/* A bridge below the button, so the pointer can travel up from the chip without the button fading. */
+.run-command__button::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 9px; }
+.run-command__button svg { flex: none; color: var(--tt-primary); }
+.run-command__button:hover { background: var(--tt-hover-strong); }
+.run-command__button[aria-disabled='true'] { cursor: progress; }
+/* :has(:focus-visible), not :focus-within, so a mouse press does not leave the button standing. */
+.run-command:is(:hover, :has(:focus-visible), [data-state='starting']) .run-command__button {
+  opacity: 1; transform: none; pointer-events: auto; transition-delay: 60ms;
+}
+.run-command__ran { display: inline-flex; margin-left: 4px; vertical-align: -1px; color: var(--tt-success); }
+
+.rich-code__run {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+.rich-code__run:hover { background: var(--tt-hover); color: var(--tt-text); }
+.rich-code__run:hover svg { color: var(--tt-primary); }
+.rich-code__run[data-state='ran'] svg { color: var(--tt-success); }
+.rich-code__run[aria-disabled='true'] { cursor: progress; }
+
+.run-command__spinner {
+  flex: none; width: 11px; height: 11px; border: 1.5px solid var(--tt-border); border-top-color: var(--tt-primary); border-radius: 50%;
+  animation: run-command-spin 700ms linear infinite;
+}
+@keyframes run-command-spin { to { transform: rotate(360deg); } }
+
+/* Both the system preference and Sotto's own reduced-motion setting: Run appears without moving, the spinner holds. */
+@media (prefers-reduced-motion: reduce) {
+  .run-command__button, .run-command > code, .rich-code__run { transition: none; transform: none; }
+  .run-command__spinner { animation: none; }
+}
+:root[data-reduced-motion='on'] :is(.run-command__button, .run-command > code, .rich-code__run) { transition: none; transform: none; }
+:root[data-reduced-motion='on'] .run-command__spinner { animation: none; }

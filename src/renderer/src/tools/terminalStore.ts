@@ -135,14 +135,29 @@ export class TerminalStore {
   }
 
   async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }): Promise<void> {
+    await this.start(bridge, threadId, size)
+  }
+
+  /**
+   * Starts a new shell that runs a reply's command (ADR-0136): main types it as the shell spawns, so nothing here
+   * writes it and a snapshot replay cannot drop it. True once main has started the shell with the command.
+   * The thread must be listed first. `busy` is set before the first wait, so a drawer opened alongside starts no
+   * second shell of its own.
+   */
+  createAndRun(bridge: TerminalBridge | undefined, threadId: string, command: string, size?: { cols: number; rows: number }): Promise<boolean> {
+    return this.start(bridge, threadId, size, command)
+  }
+
+  private async start(bridge: TerminalBridge | undefined, threadId: string, size: { cols: number; rows: number } | undefined, run?: string): Promise<boolean> {
     const target = this.target(threadId)
-    if (!bridge || !target) return
+    if (!bridge || !target) return false
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, 'Could not start a terminal.'); return }
+    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}), ...(run === undefined ? {} : { run }) }))
+    if (!result.ok) { this.fail(bridge, threadId, result.error, run === undefined ? 'Could not start a terminal.' : 'The command did not run.'); return false }
     this.adopt(threadId, result.value)
     this.patch(threadId, { busy: false, activeSessionId: result.value.session.id })
+    return true
   }
 
   /** A session that exited or ended with the app gets a new shell in the same place. Its old output is not restored. */

@@ -60,6 +60,14 @@ function sessionNames(sessions: readonly TerminalSession[]): Map<string, string>
   }))
 }
 
+/** A long tab name, such as a command a reply ran (ADR-0136), keeps its start and its end; the tab's title holds all of it. */
+export function middleCut(name: string, limit = 24): string {
+  const characters = [...name]
+  if (characters.length <= limit) return name
+  const head = Math.ceil((limit - 1) * 0.55)
+  return `${characters.slice(0, head).join('')}…${characters.slice(characters.length - (limit - 1 - head)).join('')}`
+}
+
 /**
  * The thread's shells, running in its working folder. Main keeps each session alive while the panel is hidden,
  * another thread is focused or the page changes; closing a tab here is the only thing that ends one.
@@ -73,9 +81,10 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const autoStarted = useRef(false)
   const screenId = `terminal-screen${idSuffix}`
   const chrome = chromeTitle === null ? null : <ToolsChrome title={chromeTitle} />
-  // A pane drawer starts its first shell on its own; it never shows "Start terminal" while that is on its way.
+  // A pane drawer starts its first shell on its own; it never shows "Start terminal" while that is on its way. A shell
+  // already starting (a reply's Run, ADR-0136) or one that just failed to start, whose notice says why, starts none.
   useEffect(() => {
-    if (!autoStart || autoStarted.current || !terminals || terminals.status !== 'ready' || terminals.sessions.length > 0 || terminals.busy || !bridge || sessionCount >= TERMINAL_SESSIONS_MAX) return
+    if (!autoStart || autoStarted.current || !terminals || terminals.status !== 'ready' || terminals.sessions.length > 0 || terminals.busy || terminals.notice || !bridge || sessionCount >= TERMINAL_SESSIONS_MAX) return
     autoStarted.current = true
     focusNext.current = true
     void store.create(bridge, threadId, startSize?.())
@@ -135,7 +144,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
               focusTab(next.id)
             }}>
             <span className="terminal-tabs__dot" aria-hidden="true" />
-            <span className="terminal-tabs__name">{names.get(session.id)}</span>
+            <TabName name={names.get(session.id) ?? ''} />
             {session.status !== 'running' ? <span className="tt-visually-hidden">, {sessionStatusText(session)}</span> : null}
           </button>
           {selected ? <button type="button" className="terminal-tabs__close tt-focusable" aria-label={`Close ${names.get(session.id)}`} title="Close terminal" disabled={terminals.busy}
@@ -152,6 +161,13 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
     {active ? <TerminalScreen key={active.id} session={active} name={names.get(active.id) ?? 'Terminal'} threadId={threadId} store={store} bridge={bridge}
       viewFactory={viewFactory} viewFailed={viewFailed} focusNext={focusNext} busy={terminals.busy} screenId={screenId} /> : null}
   </div>
+}
+
+/** A cut name is shown; the whole name is what a screen reader hears. */
+function TabName({ name }: { readonly name: string }): ReactNode {
+  const cut = middleCut(name)
+  return cut === name ? <span className="terminal-tabs__name">{name}</span>
+    : <><span className="terminal-tabs__name" aria-hidden="true">{cut}</span><span className="tt-visually-hidden">{name}</span></>
 }
 
 function CloseConfirm({ name, onEnd, onKeep }: { readonly name: string; readonly onEnd: () => void; readonly onKeep: () => void }): ReactNode {
