@@ -2795,7 +2795,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-msgid "Night falls between Threads and Watcher"
+msgid "Night falls between Dictate or Threads and Watcher"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -4978,8 +4978,8 @@ msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "మీరు Watcher గదిని తెరిచినప్పుడు లేదా Threads కి తిరిగి వెళ్లినప్పుడు, విండో Threads మరియు Watcher గది మధ్య కదులుతుంది, గుడ్లగూబ దానితో పాటు తన కొత్త స్థానానికి వెళ్తుంది. ఆఫ్‌లో ఉంటే విండో వెంటనే మారుతుంది. తగ్గించిన కదలికలో ఇది ఎప్పుడూ వెంటనే మారుతుంది."
+msgid "The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "మీరు Dictate లేదా Threads మరియు Watcher గది మధ్య కదిలినప్పుడు విండో కదులుతుంది, గుడ్లగూబ దానితో పాటు తన కొత్త స్థానానికి వెళ్తుంది. ఆఫ్‌లో ఉంటే విండో వెంటనే మారుతుంది. తగ్గించిన కదలికలో ఇది ఎప్పుడూ వెంటనే మారుతుంది."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"

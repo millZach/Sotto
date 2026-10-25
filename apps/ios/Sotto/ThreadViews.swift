@@ -740,13 +740,7 @@ private struct MessageView: View, Equatable {
     private var userMessage: some View {
         let photos = (message.attachments ?? []).filter(\.hasPreview)
         return VStack(alignment: .trailing, spacing: Space.s1) {
-            ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
-                Button { open(OpenPhotos(ref: ref, messageID: message.id, photos: photos, index: index)) } label: {
-                    SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: message.id, attachmentID: photo.id), name: photo.name)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open photo \(photo.name)")
-            }
+            SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
             if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
                 content(ink: Palette.bubbleInk)
                     .padding(.horizontal, Space.s4)
@@ -1651,10 +1645,10 @@ private struct ReplyDock: View, Equatable {
         let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? "Reply while it works" : "Reply to this thread"
         return HStack(alignment: .bottom, spacing: Space.s2) {
-            AttachPhotosButton(ref: ref)
+            AttachPhotosButton(box: .thread(ref))
             // Photos wait inside the reply box, above the words, as in Messages.
             VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty { DraftPhotoStrip(ref: ref).padding(.top, Space.s1) }
+                if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.updatesFrequently)

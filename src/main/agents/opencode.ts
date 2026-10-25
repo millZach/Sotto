@@ -30,6 +30,8 @@ import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { providerTakesNoSkills } from './providerSwitch'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { markSendStage } from './sendStages'
 import { SessionReaper } from './sessionReaper'
@@ -349,9 +351,16 @@ export class OpenCodeHost implements AgentHost {
   private readonly revisions = new Map<string, number>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly processes = new Map<string, ThreadServer>()
   private readonly holds = new Map<string, number>()
@@ -364,10 +373,10 @@ export class OpenCodeHost implements AgentHost {
   /** Aborted when Sotto disconnects, which ends the connect check's requests with its server. */
   private probeClosed = new AbortController()
   private writing = Promise.resolve()
-  private readonly log = new ThreadMessageLog()
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   private history: ThreadHistorySource | undefined
   private readonly observed = new Set<string>()
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly loading = new Map<string, Promise<void>>()
   /** Each thread's creation while it runs, so opening the thread meanwhile waits for it rather than making another session. */
   private readonly creating = new Map<string, Promise<void>>()
@@ -436,10 +445,27 @@ export class OpenCodeHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it; an event from the thread's server marks it again once applied; and a
+   * path that writes without it, or after a publication may have gone, marks it where it writes. One that writes into
+   * every thread marks them all. What goes through the message log and the open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
+  }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
@@ -455,6 +481,7 @@ export class OpenCodeHost implements AgentHost {
       status: alias.sessionConfirmed ? 'idle' : 'error', messages: [], requests: [],
       ...(this.toolsWithheld.has(id) ? { sottoToolsWithheld: true as const } : {}),
     })
+    this.changed(id)
     return this.threads.get(id)!
   }
   private fold(id: string): Fold {
@@ -473,6 +500,7 @@ export class OpenCodeHost implements AgentHost {
       provider: 'opencode', turnId: turn, status, ...(last === turn ? { afterMessageId: turn } : {}), ...(error !== undefined ? { error } : {}),
       ...(ownServer !== undefined ? { ownServer } : {}),
     })
+    this.changed(id)
   }
   /** The Sotto turn a record from OpenCode belongs to: the running turn's, or the newest user message's. */
   private turnOf(id: string): string { return this.activeTurns.get(id)?.messageId ?? this.log.lastUserMessageId(id) ?? 'native-history' }
@@ -603,7 +631,7 @@ export class OpenCodeHost implements AgentHost {
     if (withheld === this.toolsWithheld.has(id)) return
     if (withheld) this.toolsWithheld.add(id); else this.toolsWithheld.delete(id)
     const thread = this.threads.get(id)
-    if (thread) { if (withheld) thread.sottoToolsWithheld = true; else delete thread.sottoToolsWithheld; this.emit() }
+    if (thread) { if (withheld) thread.sottoToolsWithheld = true; else delete thread.sottoToolsWithheld; this.changed(id); this.emit() }
   }
   /** A send waits a moment for its server's tool servers, never longer: a connect that hangs does not hold the prompt. */
   private async toolsGiven(entry: ThreadServer): Promise<void> {
@@ -702,6 +730,7 @@ export class OpenCodeHost implements AgentHost {
         if (alias) { alias.endedTurn = { messageId: active.messageId, outcome: 'interrupted' }; void this.persist().catch(() => undefined) }
         this.endTurn(id, active.messageId, 'interrupted', SERVER_LOST)
       } else if (sending) thread.status = 'idle'
+      this.changed(id)
     }
     this.emit()
   }
@@ -892,7 +921,7 @@ export class OpenCodeHost implements AgentHost {
       if (refusal && reported && reported.generation < 2) tooOld = reported.version
       if (refusal) throw refusal
       this.aliases = await this.aliasStore.read(); this.state.projects = await this.projectStore.read()
-      this.threads.clear(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
+      this.threads.clear(); this.threadChanges.markAll(); this.activePrompts.clear(); this.activeTurns.clear(); this.folds.clear(); this.readsBeforeSend.clear()
       this.assertGeneration(generation)
       this.executable = executable
       this.probeClosed = new AbortController()
@@ -1105,7 +1134,7 @@ export class OpenCodeHost implements AgentHost {
       if (!open) this.removeRequest(pending)
       else { pending.answering = false; delete pending.request.delivery; pending.request.answerRetryReady = true }
     }
-    this.emit()
+    this.changed(id); this.emit()
   }
 
   /** Open this thread's provider session on its own server, once per connection, and read its history back. */
@@ -1247,6 +1276,7 @@ export class OpenCodeHost implements AgentHost {
       const outcome = alias.endedTurn?.outcome ?? 'interrupted'
       this.endTurn(id, messageId, outcome, outcome === 'failed' ? TURN_FAILED : undefined)
     } else if (thread.status === 'running') thread.status = 'idle'
+    this.changed(id)
     delete alias.endedTurn
   }
   /** Settle a turn: its record, the thread's state, and any work it left showing as running. */
@@ -1386,12 +1416,15 @@ export class OpenCodeHost implements AgentHost {
   private removeRequest(pending: Pending): void {
     this.pending.delete(pending.request.id)
     const thread = this.threads.get(pending.threadId)
-    if (thread) thread.requests = thread.requests.filter(request => request.id !== pending.request.id)
+    if (thread) { thread.requests = thread.requests.filter(request => request.id !== pending.request.id); this.changed(pending.threadId) }
     this.emit()
   }
 
   /** One event from one thread's server. Only this thread's provider session is read; everything else is skipped. */
   private event(id: string, entry: ThreadServer, event: OpenCodeEvent): void {
+    try { this.applyEvent(id, entry, event) } finally { if (this.threads.has(id)) this.changed(id) }
+  }
+  private applyEvent(id: string, entry: ThreadServer, event: OpenCodeEvent): void {
     if (entry.closing || this.processes.get(id) !== entry) return
     const alias = this.aliases[id]
     const data = (event.data ?? {}) as Record<string, unknown>
@@ -1653,7 +1686,7 @@ export class OpenCodeHost implements AgentHost {
             // Both apply to the live provider session in place: its rule set by PATCH, its model and effort by a model switch.
             if (modeChange) {
               await this.changeRules(entry, () => ({ alias, rules: this.rulesFor(mode, entry) }))
-              alias.runtimeMode = mode; thread.runtimeMode = mode
+              alias.runtimeMode = mode; thread.runtimeMode = mode; this.changed(command.threadId)
             }
             if (modelChange) {
               watcherGuard?.()
@@ -1661,6 +1694,7 @@ export class OpenCodeHost implements AgentHost {
               alias.modelId = modelId; thread.modelId = modelId
               if (reasoningEffort) { alias.reasoningEffort = reasoningEffort; thread.reasoningEffort = reasoningEffort }
               else { delete alias.reasoningEffort; delete thread.reasoningEffort }
+              this.changed(command.threadId)
             }
             await this.persist()
           }
@@ -1730,6 +1764,7 @@ export class OpenCodeHost implements AgentHost {
             thread.status = 'running'; thread.lastTurn = { id: command.messageId, status: 'running' }
             this.markTurn(command.threadId, 'running', command.messageId, undefined, this.ownServerTurn(command.threadId))
           }
+          this.changed(command.threadId)
           markSendStage(command.commandId, 'acknowledged')
           this.reaper.touch(command.threadId)
         } else if (command.type === 'answer') {
@@ -1742,7 +1777,7 @@ export class OpenCodeHost implements AgentHost {
           // Checked before anything is sent: a bad answer sends nothing and leaves the request answerable.
           const decision = pending.kind === 'permission' ? opencodePermissionDecision(pending, command.approved, command.permissionChoice) : undefined
           const answer = pending.kind === 'form' && command.approved !== false ? opencodeFormAnswer(pending, command.answer, command.questionAnswers) : undefined
-          pending.answering = true; delete pending.request.answerRetryReady
+          pending.answering = true; delete pending.request.answerRetryReady; this.changed(command.threadId)
           try {
             if (pending.kind === 'permission') {
               await entry.client.request('POST', `/api/session/${this.sid(alias)}/permission/${pending.permission.id}/reply`, { body: decision === 'once' ? { decision } : { decision, message: OPENCODE_DECLINED } })
@@ -1753,7 +1788,7 @@ export class OpenCodeHost implements AgentHost {
           } catch (error) {
             if (error instanceof OpenCodeRejected && (error.status === 404 || error.status === 409)) { this.removeRequest(pending); return { accepted: true } }
             if (error instanceof OpenCodeRejected) { pending.answering = false; throw new Error('OpenCode refused that answer. Nothing was sent. Review the request and answer again.', { cause: error }) }
-            pending.request.delivery = 'uncertain'; this.emit()
+            pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit()
             return { accepted: false, uncertain: true }
           }
         } else if (command.type === 'interrupt') {
@@ -1838,6 +1873,7 @@ export class OpenCodeHost implements AgentHost {
     // A pending permission is OpenCode's to settle when its server ends; Sotto sends no decision for it here.
     this.pending.clear()
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     this.activePrompts.clear()
     let ended = false
     for (const [id, active] of this.activeTurns) {
