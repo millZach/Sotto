@@ -164,7 +164,7 @@ test('a fresh Watcher request resumes a watched worker after the user takes over
       await pane(page).getByRole('tab', { name: 'Watched, 1 thread' }).click()
       await pane(page).getByRole('button', { name: 'Open Recovery worker beside Watcher' }).click()
       const worker = page.getByRole('region', { name: 'Recovery worker', exact: true })
-      await expect(worker.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(worker.getByRole('button', { name: 'Watch Recovery worker', exact: true })).toHaveAttribute('aria-pressed', 'true')
       const direct = 'Use my revised check before continuing.'
       await fillPrompt(worker.getByRole('textbox', { name: 'Prompt', exact: true }), direct)
       await worker.getByRole('textbox', { name: 'Prompt', exact: true }).press('Enter')

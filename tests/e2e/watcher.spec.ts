@@ -279,7 +279,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
       return onSky ? [under, token(element.closest('.watcher-room')!, '--tt-owl-room-night')] : [under]
     }
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-tabs__tab', '.watcher-tabs__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
-      '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watched-note__stop', '.watch-toggle', '.watch-toast > span',
+      '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-dock__switch button', '.watcher-dock__tab', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
       '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
@@ -536,7 +536,7 @@ test.describe("Watcher's room on the built app", () => {
       await expect(beside(page)).toHaveAttribute('aria-label', 'Visual gate flake')
       await expect(beside(page).locator('.agent-request[data-kind="permission"]')).toBeFocused()
       await expect(beside(page).getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-      await expect(beside(page).getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(beside(page).getByText(/Watched by Watcher\./)).toHaveCount(0)
       await expect(beside(page).getByRole('button', { name: 'Watch Visual gate flake', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toHaveText('Draft for Watcher')
       for (const [width, height] of SIZES) {
@@ -782,7 +782,7 @@ test.describe("Watcher's room on the built app", () => {
       await openThreads(page)
       await seedRoom(page, { current: true })
       await resizeContentWindow(launched, 1600, 1000)
-      // On Threads: the owl after a watched thread's provider logo, its pane says what a send does, and Watcher is not listed.
+      // On Threads: the owl after a watched thread's provider logo, Watch pressed in its pane with nothing under the composer, and Watcher is not listed.
       const threads = page.getByRole('complementary', { name: 'Thread sidebar' })
       await threads.getByRole('button', { name: /^Settled/ }).click()
       await expect(threads.getByRole('button', { name: 'Benchmark rerun', exact: true })).toBeVisible()
@@ -794,8 +794,8 @@ test.describe("Watcher's room on the built app", () => {
       await footer.click()
       const workerPane = page.getByRole('region', { name: 'Footer links' })
       await expect(workerPane.getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-      await expect(workerPane.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
-      await expect(workerPane.getByRole('button', { name: 'Stop watching Footer links', exact: true })).toBeVisible()
+      await expect(workerPane.getByText(/Watched by Watcher\./)).toHaveCount(0)
+      await expect(workerPane.getByRole('button', { name: 'Watch Footer links', exact: true })).toHaveAttribute('aria-pressed', 'true')
       await resizeContentWindow(launched, 1280, 800)
       expect(await pageBoundProblems(page)).toEqual([])
       await capture(launched, 'threads-watched-sotto-dark-1280x800.png')
@@ -1561,7 +1561,7 @@ test.describe("Watcher's room on the built app", () => {
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
         await expect(watch).toBeFocused()
         await expect(weekly.locator('.thread-workspace__head').getByRole('img', { name: 'Watched by Watcher' })).toBeVisible()
-        await expect(weekly.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+        await expect(weekly.getByText(/Watched by Watcher\./)).toHaveCount(0)
         const toast = page.locator('.watch-toast')
         await expect(toast).toHaveText(/Watcher is watching Weekly note\./)
         // The toast never takes focus, and does not cover a composer.
@@ -1801,7 +1801,7 @@ test.describe("Watcher's room on the built app", () => {
       await watch.click()
       await expect(watch).toHaveAttribute('aria-pressed', 'true')
       await expect(page.locator('.watch-toast')).toHaveText(/Watcher is watching Weekly worker\./)
-      await expect(workerPane.getByText('Watched by Watcher. It keeps this thread going and brings you its questions and permissions.')).toBeVisible()
+      await expect(workerPane.getByText(/Watched by Watcher\./)).toHaveCount(0)
       await expect(sidebar.getByRole('button', { name: 'Watch Weekly worker', exact: true })).toHaveAttribute('aria-pressed', 'true')
       expect((await mainRoom(page)).standingWatches).toEqual([expect.objectContaining({ target: worker.target })])
       expect((await mainRoom(page)).watchedThreads.find(row => row.target.threadId === worker.target.threadId)).toMatchObject({ watched: true, paused: false })
