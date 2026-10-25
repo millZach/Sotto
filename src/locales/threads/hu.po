@@ -671,6 +671,10 @@ msgstr ""
 msgid "The images in your last message were not kept. Attach them again, then send."
 msgstr ""
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}"
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "the published version"

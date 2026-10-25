@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
-import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
-import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
+import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
+import { isThreadArchived, isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
@@ -15,8 +15,9 @@ import { CloudIphoneRequest } from './requests/CloudIphoneRequest'
 import { PrototypeReady } from './requests/PrototypeReady'
 import { RequestDraftRecovery } from './requests/RequestDraftRecovery'
 import { requestAnswerOwnerKey, requestAnswerStore } from './requests/requestAnswers'
-import { threadRequestBlocked, threadRequestOwner } from './requests/threadRequests'
-import { answeredChoices, answerWords } from './requests/answeredChoices'
+import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadRequestSubmit } from './requests/threadRequests'
+
+export { checkedOnConnectedHost } from './requests/threadRequests'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { ThreadComposer } from './ThreadComposer'
 import { FailedTurnNotice, failedTurnExplanation } from './FailedTurnNotice'
@@ -143,8 +144,8 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
 }
 
 /**
- * The thread's pending requests, each answered by its own ID in this pane and nowhere else on the page.
- * A plain question points at the composer; everything the provider structured is answered in place.
+ * The thread's pending requests, each answered by its own ID through the one store every surface sends by
+ * (ADR-0135). A plain question points at the composer; everything the provider structured is answered in place.
  */
 function ThreadRequests({ row, state, command, onAnswer, kind }: {
   readonly row: ThreadRow; readonly state: AgentState; readonly command: Command; readonly onAnswer: () => void; readonly kind: 'question' | 'permission'
@@ -162,23 +163,11 @@ function ThreadRequests({ row, state, command, onAnswer, kind }: {
       messageLinks={kind === 'question' ? messageLinks(thread.messages) : []}
       draftOwner={threadRequestOwner(row, state)}
       onWriteAnswer={onAnswer}
-      onSubmit={answer => command({ type: 'answer', threadId: thread.id, requestId: request.id, ...answer }).then(result => {
-        // What main took is kept for this window, so Watcher's line for this request can say what was chosen.
-        if (watcherOn && result !== null && result.error === null) answeredChoices.note(thread.id, request.id, answerWords(request, answer), true)
-        return result === null ? null : { error: result.error }
-      })}
-      onCheck={() => command({ type: 'observe-threads', threadIds: [thread.id] }).then(result => checkedOnConnectedHost(result, thread.id))} />
+      onSubmit={threadRequestSubmit(command, thread, request, watcherOn)}
+      onCheck={() => threadRequestCheck(command, thread.id)} />
   })}</div>
 }
 
-/**
- * Whether Check again read the thread afresh. Main lets a dropped connection pass an observation quietly, so the reply
- * counts only while the thread's host is still connected.
- */
-export function checkedOnConnectedHost(result: AgentState | null, threadId: string): boolean {
-  const checked = result?.host.threads.find(item => item.id === threadId)
-  return result !== null && result.error === null && checked !== undefined && hostForThread(result.host, checked).connected
-}
 
 export interface ThreadPaneProps {
   readonly row: ThreadRow
@@ -261,7 +250,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const watched = useWatchedThread(thread.id) && !ownPane
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
-  const ornamentAllowed = rowConnected && !closed && thread.status !== 'error' && thread.requests.length === 0
+  const ornamentAllowed = threadOrnamentAllowed(thread, rowConnected)
   const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
   const liveWork = ornamentAllowed ? thread.backgroundWork ?? [] : []
   const liveCommands = liveWork.filter(task => task.type === 'command')

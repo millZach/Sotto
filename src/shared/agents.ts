@@ -335,6 +335,9 @@ export const agentRequestSchema = z.object({
     plan: z.object({ name: text.optional(), overview: text.optional(), steps: text.optional() }).strict().optional() }).optional(),
   delivery: z.literal('uncertain').optional(),
   answerRetryReady: z.literal(true).optional(),
+  /** When the host's coordinator first showed this request (ADR-0135), so a client can say how long it has waited.
+   * The host adds it; no provider does. Absent from hosts that predate it, which say no wait at all. */
+  since: z.string().datetime().optional(),
 })
 export const agentQuestionAnswersSchema = z.record(id, z.object({ optionIds: z.array(id).max(100), text: text.optional() }).strict())
 export type AgentQuestionAnswers = z.infer<typeof agentQuestionAnswersSchema>
@@ -594,6 +597,9 @@ export const agentThreadSchema = z.object({
   /** Why that failure happened, as the failed turn's own record says, cut to its first 600 characters; absent when it says
    * nothing, and from older hosts. The pane reads it to tell the thread's own failure from the provider's other errors. */
   failureReason: z.string().max(600).optional(),
+  /** When the coordinator named the failure `failureId` names (ADR-0135), so a client can say how long it has stood.
+   * Absent while the thread stands in none, for a failure named before the moment was kept, and from older hosts. */
+  failureSince: z.string().datetime().optional(),
   /** The newest message of the user's the provider's adapter has recorded, whether or not `messages` still
    * holds it. A send names it back so the adapter can refuse one that raced the user's own input; a window
    * the adapter put away and took back up carries none of the older messages, so it cannot say. */

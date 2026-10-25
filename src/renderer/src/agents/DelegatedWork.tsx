@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { GitFork, Laptop, Search, Server, Sparkle, type LucideIcon } from 'lucide-react'
+import { Bot, GitFork, Laptop, Search, Server, Sparkle, type LucideIcon } from 'lucide-react'
+import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
 import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
@@ -126,18 +127,61 @@ export function DelegatedWorkSummary({ views }: { readonly views: readonly Deleg
 }
 
 /**
- * The delegated work of a finished turn that outlives its reply, such as a Muse review still running: under the reply, so
- * it is not folded away while the thread waits on it. It goes once the work settles, and while the fold is open, where
- * the same rows already are.
+ * The provider's agents that still run in the background, for the rows under the last reply: none where the composer's
+ * ornament may not show them either, and never a command, which waits rather than works and stays the ornament's alone.
  */
-export function StillWorking({ views }: { readonly views: readonly DelegationView[] | undefined }): ReactNode {
-  const open = useMemo(() => views?.filter(view => !settledDelegation(view)), [views])
+export function stillWorkingAgents(work: readonly AgentBackgroundWork[] | undefined, ornamentAllowed: boolean): readonly AgentBackgroundWork[] | undefined {
+  const agents = ornamentAllowed ? work?.filter(task => task.type !== 'command') : undefined
+  return agents?.length ? agents : undefined
+}
+
+/**
+ * One piece of the provider's own background work, such as a Claude Code subagent, as a row beside delegated work: its kind
+ * as the Bot mark the fold's agent actions wear and a word, the provider's label for it, and Working. It is not a Sotto
+ * thread, so it opens nothing, and it goes when the provider says it ended.
+ */
+function BackgroundWorkRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
+  const kindWord = BACKGROUND_WORK_LABELS[work.type]
+  // A task the provider gave no label is labelled with its kind; the word is not said twice.
+  const label = work.label === kindWord ? undefined : work.label
+  return <li className="delegated-work__row" data-outcome="working" data-state="working" data-background={work.type} aria-label={`${label === undefined ? kindWord : `${kindWord}: ${label}`}, Working`}>
+    <Bot size={14} aria-hidden="true" className="delegated-work__glyph" />
+    <span className="delegated-work__name">
+      <span className="delegated-work__kind">{kindWord}</span>
+      {label === undefined ? null : <span title={label}>{label}</span>}
+    </span>
+    <span className="delegated-work__state" data-state="working">
+      <span className="delegation-ring" data-outcome="working" data-state="working" aria-hidden="true" />Working
+    </span>
+  </li>
+}
+
+/**
+ * The work of a finished turn that outlives its reply, under the reply, so it is not folded away while the thread waits on
+ * it: the turn's delegations that have not settled, such as a Muse review still running, and, under the last reply, the
+ * provider's own agents still running in the background. A delegation goes once it settles, an agent once the provider says
+ * it ended, and both while the fold is open, where the delegations' rows and the agents' actions already are.
+ */
+export function StillWorking({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work?: readonly AgentBackgroundWork[] | undefined }): ReactNode {
+  const open = useMemo(() => views?.filter(view => !settledDelegation(view)) ?? [], [views])
   const headingId = useId()
-  if (!open?.length) return null
+  if (!open.length && !work?.length) return null
   return <section className="delegated-work-still" aria-labelledby={headingId}>
     <p id={headingId} className="delegated-work-still__heading">Still working after this reply</p>
-    <DelegatedWork views={open} label={null} />
+    <ul className="delegated-work">
+      {open.map(view => <DelegatedWorkRow key={view.id} view={view} />)}
+      {work?.map(task => <BackgroundWorkRow key={task.id} work={task} />)}
+    </ul>
   </section>
+}
+
+/**
+ * A turn's work under a reply with nothing to fold: its delegations as rows, or, while the provider's agents still run after
+ * it, the settled ones as rows and everything still open under one "Still working after this reply".
+ */
+export function UnfoldedWork({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work: readonly AgentBackgroundWork[] | undefined }): ReactNode {
+  const settled = useMemo(() => work?.length ? views?.filter(settledDelegation) : views, [views, work])
+  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={views} work={work} /> : null}</>
 }
 
 /**
