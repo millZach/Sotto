@@ -1,7 +1,7 @@
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
-import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_UNSUPPORTED, bringBackNotConnected, incomingRefBranch } from '../../shared/bringChangesBack'
+import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_UNSUPPORTED, bringBackNotConnected, incomingRefBranch } from '../../shared/bringChangesBack'
 import type { BranchMoveReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from '../agents/branchMoves'
 import { catalogWithoutHeld, modelsWithoutHeld, heldProviderOfCommand, heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal, rememberDormantProviderThreads, type DormantProviderThread } from '../agents/heldProviderGate'
@@ -1229,6 +1229,9 @@ export class DesktopHostRouter {
     if (!child || made?.host === undefined || made.host === connection.hostId) return undefined
     const moves = this.branchMoves
     if (!moves) return { error: BRING_BACK_OFF }
+    const here = [...this.hosts.values()].find(item => item.connection.kind === 'local')?.connection.hostId
+    // Only the desktop that started the worker brings it back (Zach, October 23); a record that names none, none does.
+    if (here === undefined || made.by !== here) return { error: BRING_BACK_OTHER_DESKTOP }
     const entry = this.hosts.get(made.host)?.connection
     if (!entry || entry.available?.() === false || this.reconnecting.has(made.host)) return { error: bringBackNotConnected(entry?.name ?? 'The machine it began on') }
     if (entry.kind === 'remote' && entry.service.supportsBringBack !== true) return { error: BRING_BACK_UNSUPPORTED }
@@ -1237,7 +1240,6 @@ export class DesktopHostRouter {
     if (!parent || !target) return { error: BRING_BACK_NO_TARGET }
     // The child's branch is read as it stands, so the child must be at rest, as a Git action on its own machine asks.
     if (child.status === 'running' || child.requests.length > 0) return { error: 'Wait for this thread to finish its turn, then bring its changes back. Nothing changed.' }
-    const here = [...this.hosts.values()].find(item => item.connection.kind === 'local')?.connection.hostId ?? ''
     const moveId = randomUUID()
     const moved = await moves.forStart({ from: { hostId: connection.hostId, threadId: child.id }, to: { hostId: made.host, projectId: parent.projectId }, here, moveId, snapshot: false })
     if (moved.type === 'refused') return { error: bringBackMoveRefused(moved, target, child.worktree?.git?.branch ?? child.worktree?.branch ?? 'This branch') }

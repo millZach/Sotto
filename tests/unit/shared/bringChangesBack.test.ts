@@ -65,6 +65,8 @@ describe('where a thread’s commits would be brought back to', () => {
 
 describe('a worker started from a thread’s branch (#1033) brings its commits back to that branch', () => {
   const MOVE = '9d1c3f0e-5b8e-4d4a-8a77-1f0d2f6c4b1a', LAPTOP = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
+  // The computer the window runs on, which started the worker; it is neither the parent's machine nor the child's here.
+  const DESKTOP = '33333333-3333-4333-8333-333333333333', OTHER_DESKTOP = '44444444-4444-4444-8444-444444444444'
   const moved = (madeFrom: { thread: string; host?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x-2', git: status('feat/x-2'),
     incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom })
 
@@ -83,12 +85,12 @@ describe('a worker started from a thread’s branch (#1033) brings its commits b
   })
 
   it('names a thread on another machine only in the window, which sees both machines', () => {
-    const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP }))
+    const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
     const parent = thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x'))
     expect(bringBackParentId(child)).toBe(hostEntityKey(LAPTOP, 'parent'))
-    expect(bringBackTarget(child, [parent, child])).toEqual({ parentId: hostEntityKey(LAPTOP, 'parent'), target: 'feat/x', branch: 'feat/x-2', where: 'project', away: true })
+    expect(bringBackTarget(child, [parent, child], DESKTOP)).toEqual({ parentId: hostEntityKey(LAPTOP, 'parent'), target: 'feat/x', branch: 'feat/x-2', where: 'project', away: true })
     // Forge's own host has no thread from another machine, and offers nothing for it.
-    const own = thread('child', moved({ thread: 'parent', host: LAPTOP }))
+    const own = thread('child', moved({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
     expect(bringBackParentId(own)).toBeUndefined()
     expect(bringBackTarget(own, [thread('parent', shared('feat/x')), own])).toBeNull()
   })
@@ -96,16 +98,27 @@ describe('a worker started from a thread’s branch (#1033) brings its commits b
   it('offers a child on another machine whose branch has the parent’s name, and not one in the same repository', () => {
     const sameName = (madeFrom: { thread: string; host?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x', git: status('feat/x'),
       incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom })
-    const child = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent', host: LAPTOP }))
-    expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x')), child]))
+    const child = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
+    expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x')), child], DESKTOP))
       .toEqual({ parentId: hostEntityKey(LAPTOP, 'parent'), target: 'feat/x', branch: 'feat/x', where: 'project', away: true })
     const here = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent' }))
     expect(bringBackTarget(here, [thread(hostEntityKey(FORGE, 'parent'), shared('feat/x')), here])).toBeNull()
   })
 
+  it('offers a child on another machine only on the desktop that started it', () => {
+    const parent = thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x'))
+    const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
+    expect(bringBackTarget(child, [parent, child], DESKTOP)).toMatchObject({ away: true })
+    expect(bringBackTarget(child, [parent, child], OTHER_DESKTOP)).toBeNull()
+    expect(bringBackTarget(child, [parent, child])).toBeNull()
+    // A record that does not say which desktop started it is brought back by none.
+    const unnamed = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP }))
+    expect(bringBackTarget(unnamed, [parent, unnamed], DESKTOP)).toBeNull()
+  })
+
   it('offers nothing once the thread it began from is on another branch', () => {
-    const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP }))
-    expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('main')), child])).toBeNull()
+    const child = thread(hostEntityKey(FORGE, 'child'), moved({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
+    expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('main')), child], DESKTOP)).toBeNull()
   })
 
   it('keeps who it was from on a record the thread the commits went to holds', () => {

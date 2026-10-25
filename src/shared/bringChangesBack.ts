@@ -63,9 +63,11 @@ export type BringBack = z.infer<typeof bringBackSchema>
 /**
  * Where a thread's worktree was made from, when that was a branch Sotto moved for it (#1033): the thread whose branch it
  * was, by its Sotto thread ID on its own machine, and that machine as the desktop that started the worker names it when it
- * is not this thread's own. On the worktree record, saved with it.
+ * is not this thread's own. With `host`, `by` is the host ID of that desktop's own computer: only the desktop that started a
+ * worker brings it back across machines (Zach, October 23), and a record without `by` is brought back by none. On the
+ * worktree record, saved with it.
  */
-export const worktreeMadeFromSchema = z.object({ thread: z.string().min(1).max(512), host: z.uuid().optional() }).strict()
+export const worktreeMadeFromSchema = z.object({ thread: z.string().min(1).max(512), host: z.uuid().optional(), by: z.uuid().optional() }).strict()
 export type WorktreeMadeFrom = z.infer<typeof worktreeMadeFromSchema>
 
 /**
@@ -128,9 +130,10 @@ function branchOf(worktree: AgentThread['worktree']): string | null {
  * Where this thread's commits would go, from the records alone, with no Git run: only for a thread in a new worktree of
  * its own, made from the branch of the thread it began from, which that thread is still on. A worktree used again, a pull
  * request's checkout, one made from another branch or not made yet answers null, and so does a parent whose record is not
- * in `threads`.
+ * in `threads`. A child on another machine than its parent is offered only on `desktop`, the host ID of the computer this
+ * window runs on, when that desktop started it.
  */
-export function bringBackTarget(thread: Linked, threads: readonly Linked[]): BringBackTarget | null {
+export function bringBackTarget(thread: Linked, threads: readonly Linked[], desktop?: string): BringBackTarget | null {
   const worktree = thread.worktree
   if (!worktree || worktree.mode !== 'independent' || worktree.status !== 'ready' || !worktree.path || worktree.reclaimedAt
     || worktree.reused || worktree.existingWorktreePath || worktree.checkoutBranch) return null
@@ -148,6 +151,7 @@ export function bringBackTarget(thread: Linked, threads: readonly Linked[]): Bri
   // One name is one branch only within one repository. A child on another machine is in another clone, where a branch
   // may well have the parent's name (a laptop's feat/x starting a forge worker on feat/x), and it is offered.
   if (!branch || !away && branch === target) return null
+  if (away && (desktop === undefined || worktree.madeFrom?.by !== desktop)) return null
   return { parentId, target, branch, where: parent.worktree?.mode === 'independent' ? 'worktree' : 'project', away }
 }
 
@@ -161,5 +165,7 @@ export const BRING_BACK_NO_TARGET = 'This thread’s worktree wasn’t made from
 export const BRING_BACK_QUESTION_GONE = 'That question is out of date, so Sotto made no merge commit. Press Bring changes again to be asked again.'
 /** A child on another machine, pressed somewhere other than the desktop that moves branches. */
 export const BRING_BACK_FROM_DESKTOP = 'This thread began from a thread on another machine, so its changes are brought back from Sotto on your desktop. Nothing changed.'
+/** A child on another machine that another desktop started, or whose record does not say which desktop did. */
+export const BRING_BACK_OTHER_DESKTOP = 'Sotto on another desktop started this thread, and only that desktop can bring its changes back. Bring them back from there. Nothing changed.'
 /** The machine of the thread it began from is not connected now. */
 export const bringBackNotConnected = (machine: string): string => `${machine} isn’t connected, so nothing was brought back. Connect it, then try again. Nothing changed.`

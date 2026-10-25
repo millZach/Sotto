@@ -1094,7 +1094,8 @@ export class WatcherService implements WatcherControlHooks {
     const moveId = fromThread ? randomUUID() : undefined
     if (moveId && fromThread) this.branchStartsPlaced.set(moveId, { from: fromThread, testRun: testRun === true, name: placed.receipt.name })
     // The worker's worktree keeps the thread its branch came from, so its commits can be brought back there (#1030).
-    const from = moveId && fromThread ? { fromMove: moveId, madeFrom: { thread: fromThread.threadId, ...fromThread.hostId !== placed.hostId ? { host: fromThread.hostId } : {} } } : {}
+    // Across machines it also keeps this desktop, the only one that may bring them back.
+    const from = moveId && fromThread ? { fromMove: moveId, madeFrom: { thread: fromThread.threadId, ...fromThread.hostId !== placed.hostId ? { host: fromThread.hostId, by: this.hostId() } : {} } } : {}
     return { original: input, input: { ...start, project: { hostId: placed.hostId, projectId: placed.projectId }, ...from }, placement: placed.receipt }
   }
   /**

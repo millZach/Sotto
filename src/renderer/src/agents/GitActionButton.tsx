@@ -91,8 +91,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const allThreads = givenThreads ?? windowThreads ?? NO_THREADS
   const dismissals = useBringBackDismissals()
   // While this thread's turn runs nothing is offered, so no press is ever refused for it (Zach, October 23).
-  const bringTarget = bringOffered && thread.status !== 'running' ? bringBackTarget(thread, allThreads) : null
-  const bringView = bringOffered ? bringBackView(thread, allThreads, dismissals) : null
+  // Only the desktop that started a worker on another machine brings it back, so the window names its own computer.
+  const desktop = windowState?.connections?.find(item => item.kind === 'local')?.hostId
+  const bringTarget = bringOffered && thread.status !== 'running' ? bringBackTarget(thread, allThreads, desktop) : null
+  const bringView = bringOffered ? bringBackView(thread, allThreads, dismissals, desktop) : null
   const bringParent = bringTarget ? allThreads.find(item => item.id === bringTarget.parentId) : undefined
   // A parent on another machine is named by that machine, so the strip says where its branch is (#1030).
   const bringMachine = bringTarget?.away ? machineName(windowState?.connections, parseHostEntityKey(bringTarget.parentId)?.hostId, t`This computer`) : undefined

@@ -1008,7 +1008,7 @@ Nothing runs until you press. Then Sotto brings the branch's commits to main, in
 - A conflict is refused in Git's own words, with main unchanged. Sotto never resolves a conflict: ask the thread to merge main into its branch and resolve it, then press again.
 - A worker started as a check begins from a snapshot of uncommitted changes. Sotto won't bring that snapshot back as a commit, so the press is refused; ask the worker to put its own commits on a branch made from main.
 
-When the thread it began from is on another machine, Sotto on your desktop first moves this thread's committed branch there over the connection it already keeps, then brings it to main on that machine. Nothing else goes there, and nothing goes through GitHub. If that machine isn't connected, the press says so and nothing changes.
+When the thread it began from is on another machine, Sotto on your desktop first moves this thread's committed branch there over the connection it already keeps, then brings it to main on that machine. Nothing else goes there, and nothing goes through GitHub. If that machine isn't connected, the press says so and nothing changes. Only the desktop whose Watcher started the worker offers this; on another desktop paired with the same machines, the worker shows no strip and no menu item.
 
 Nothing is rebased, stashed or forced. A thread on a paired host brings its changes back on that host, once the host's Sotto is an Owl build that offers it; an older host says it can't yet, and nothing changes. Stable builds offer none of it.
 

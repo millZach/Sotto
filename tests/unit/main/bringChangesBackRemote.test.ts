@@ -8,7 +8,7 @@ import { remoteCommandRefusal } from '../../../src/host/remoteCommands'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
 import type { HostOperation } from '../../../src/shared/hostProtocol'
-import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_UNSUPPORTED, bringBackNotConnected } from '../../../src/shared/bringChangesBack'
+import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_UNSUPPORTED, bringBackNotConnected } from '../../../src/shared/bringChangesBack'
 import type { BranchMoveReceipt } from '../../../src/shared/branchMoves'
 
 // Bringing changes back on a paired host (#1030): the host that holds both folders runs Git, a host without the feature
@@ -61,9 +61,11 @@ describe('bringing changes back on a paired host', () => {
 // A child on another machine than the thread it began from (#1030): the desktop moves the child's branch to that machine
 // first, then sends the press there for the thread it began from, naming the move. Nothing reaches either host otherwise.
 const MAC = '33333333-3333-4333-8333-333333333333'
+// The desktop the press is made on, by its own computer's host ID, which started the worker unless a case says otherwise.
+const HERE = '55555555-5555-4555-8555-555555555555', OTHER_DESKTOP = '66666666-6666-4666-8666-666666666666'
 const MOVED = '4b5c6d7e-8f90-4a1b-8c2d-3e4f5a6b7c8d'
-function acrossMachines(options: { macFeatures?: string[]; childStatus?: 'idle' | 'running'; moves?: boolean; moved?: BranchMoveReceipt; macConnected?: boolean } = {}) {
-  const host = (hostId: string, name: string, features: string[], threads: unknown[]) => {
+function acrossMachines(options: { macFeatures?: string[]; childStatus?: 'idle' | 'running'; moves?: boolean; moved?: BranchMoveReceipt; macConnected?: boolean; startedBy?: string | null } = {}) {
+  const host = (hostId: string, name: string, features: string[], threads: unknown[], kind: 'local' | 'remote' = 'remote') => {
     const state = emptyDesktopState(hostId)
     state.host.connected = true; state.connection = 'connected'
     state.host.projects = [{ id: `${name}-project`, title: 'Project', path: '/repo' }]
@@ -71,14 +73,16 @@ function acrossMachines(options: { macFeatures?: string[]; childStatus?: 'idle' 
     const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
     const call = vi.fn(async (operation: HostOperation) => operation.op === 'command' ? { ...state, error: null } : state)
     Object.assign(service, { cached: state, features, call })
-    const connection: DesktopHostConnection = { hostId, name, kind: 'remote', service, detail: async () => null, preview: () => null }
+    const connection: DesktopHostConnection = { hostId, name, kind, service, detail: async () => null, preview: () => null }
     return { connection, call }
   }
   const forge = host(REMOTE, 'Forge', ['bring-changes-back'], [{ id: 'child', projectId: 'Forge-project', title: 'Task', modelId: '', providerId: 'codex', status: options.childStatus ?? 'idle', messages: [], requests: [],
-    worktree: { mode: 'independent', status: 'ready', path: '/repo/.sotto/child', branch: 'feat/x-2', incomingRef: `refs/sotto/incoming/${MOVED}/feat/x`, madeFrom: { thread: 'parent', host: MAC } } }])
+    worktree: { mode: 'independent', status: 'ready', path: '/repo/.sotto/child', branch: 'feat/x-2', incomingRef: `refs/sotto/incoming/${MOVED}/feat/x`, madeFrom: { thread: 'parent', host: MAC, ...options.startedBy === null ? {} : { by: options.startedBy ?? HERE } } } }])
   const mac = host(MAC, 'Mac', options.macFeatures ?? ['bring-changes-back'], [{ id: 'parent', projectId: 'Mac-project', title: 'Parent', modelId: '', providerId: 'codex', status: 'idle', messages: [], requests: [],
     worktree: { mode: 'shared', status: 'ready', branch: 'feat/x' } }])
+  const local = host(HERE, 'This computer', [], [], 'local')
   const router = new DesktopHostRouter(emptyDesktopState)
+  router.add(local.connection)
   router.add(forge.connection)
   if (options.macConnected !== false) router.add(mac.connection)
   router.select(REMOTE)
@@ -120,6 +124,8 @@ describe('bringing changes back from a child on another machine', () => {
     ['the parent’s machine predates it', { macFeatures: [] }, BRING_BACK_UNSUPPORTED],
     ['Work across machines is off, so nothing moves branches', { moves: false }, BRING_BACK_OFF],
     ['the child is working', { childStatus: 'running' as const }, 'Wait for this thread to finish its turn, then bring its changes back. Nothing changed.'],
+    ['another desktop started the worker', { startedBy: OTHER_DESKTOP }, BRING_BACK_OTHER_DESKTOP],
+    ['the worker’s record does not say which desktop started it', { startedBy: null }, BRING_BACK_OTHER_DESKTOP],
   ])('refuses when %s, and moves nothing', async (_name, options, words) => {
     const { router, forge, mac, forStart, press } = acrossMachines(options)
     expect((await router.command(press, desktopWindowClient())).error).toBe(words)

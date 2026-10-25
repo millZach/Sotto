@@ -213,7 +213,7 @@ describe('a child on another machine than the thread it began from', () => {
   const away = (over: Partial<AgentThread> = {}): AgentThread => child({ id: `host:${FORGE}:child`, delegatedBy: undefined,
     worktree: worktree({ baseBranch: 'feat/x', branch: 'feat/x-2', git: status('feat/x-2') }), ...over })
   const laptopParent = (over: Partial<AgentThread> = {}): AgentThread => ({ ...parent, id: `host:${LAPTOP}:parent`, worktree: { mode: 'shared', status: 'ready', path: '/repo', branch: 'feat/x', git: status('feat/x') }, ...over }) as AgentThread
-  const madeFrom = (thread: AgentThread): AgentThread => ({ ...thread, worktree: { ...thread.worktree!, baseBranch: undefined, incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom: { thread: 'parent', host: LAPTOP } } }) as AgentThread
+  const madeFrom = (thread: AgentThread): AgentThread => ({ ...thread, worktree: { ...thread.worktree!, baseBranch: undefined, incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom: { thread: 'parent', host: LAPTOP, by: LAPTOP } } }) as AgentThread
 
   it('names the machine the branch is checked out on', () => {
     const found = { parentId: `host:${LAPTOP}:parent`, target: 'feat/x', branch: 'feat/x-2', where: 'project' as const, away: true }
@@ -223,10 +223,16 @@ describe('a child on another machine than the thread it began from', () => {
   it('reads the outcome from the thread its commits went to, only when it names this child', () => {
     const thread = madeFrom(away())
     const done = record({ target: 'feat/x', branch: 'feat/x-2', how: 'fast-forward', commits: 2, head: 'a41c2e9', checkedOut: 'project', from: thread.id })
-    expect(bringBackView(thread, [laptopParent({ broughtBack: done }), thread], new BringBackDismissals())).toMatchObject({ kind: 'outcome', record: done })
+    expect(bringBackView(thread, [laptopParent({ broughtBack: done }), thread], new BringBackDismissals(), LAPTOP)).toMatchObject({ kind: 'outcome', record: done })
     const other = { ...done, from: `host:${FORGE}:another-child` }
-    expect(bringBackView(thread, [laptopParent({ broughtBack: other }), thread], new BringBackDismissals())?.kind).toBe('ready')
+    expect(bringBackView(thread, [laptopParent({ broughtBack: other }), thread], new BringBackDismissals(), LAPTOP)?.kind).toBe('ready')
     expect(outcome(done, 'WAV preview stall', 'This computer').body).toBe('Git fast-forwarded feat/x to a41c2e9; nothing else changed. WAV preview stall works on feat/x in the project folder on This computer and sees them now.')
+  })
+
+  it('offers it only in the window of the desktop that started the worker', () => {
+    const thread = madeFrom(away())
+    expect(bringBackView(thread, [laptopParent(), thread], new BringBackDismissals(), LAPTOP)?.kind).toBe('ready')
+    expect(bringBackView(thread, [laptopParent(), thread], new BringBackDismissals(), FORGE)).toBeNull()
   })
 
   it('says why a check’s snapshot is never brought back, and when the parent left its branch', () => {

@@ -55,11 +55,11 @@ export function branchSignature(thread: Pick<AgentThread, 'worktree'>): string {
   return JSON.stringify([thread.worktree?.branch ?? null, git?.branch ?? null, git?.ahead ?? null, git?.behind ?? null, git?.aheadOfDefault ?? null, git?.changedFiles ?? null, git?.dirty ?? null, git?.upstream ?? null])
 }
 
-/** What the strip shows for a thread now, or null for no strip. */
-export function bringBackView(thread: AgentThread, threads: readonly AgentThread[], dismissals: Pick<BringBackDismissals, 'dismissed' | 'hiddenAt'>): BringBackView | null {
+/** What the strip shows for a thread now, or null for no strip. `desktop` is this computer's host ID, as bringBackTarget takes it. */
+export function bringBackView(thread: AgentThread, threads: readonly AgentThread[], dismissals: Pick<BringBackDismissals, 'dismissed' | 'hiddenAt'>, desktop?: string): BringBackView | null {
   // Nothing shows while the thread's turn runs: its branch is still moving, and a press would only be refused.
   if (thread.status === 'running') return null
-  const found = bringBackTarget(thread, threads)
+  const found = bringBackTarget(thread, threads, desktop)
   if (!found) return null
   const record = bringBackRecord(thread, found, threads)
   if (record && record.target === found.target && !dismissals.dismissed(record.actionId)) {

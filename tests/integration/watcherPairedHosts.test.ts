@@ -1754,12 +1754,12 @@ it('starts a worker on the paired machine from a thread’s branch on This compu
   expect(moveId).toMatch(/^[0-9a-f-]{36}$/u)
   expect(packet.request.call.input).not.toHaveProperty('fromThread')
   expect(packet.request.call.input).not.toHaveProperty('testRun')
-  // Only which thread the branch came from, and its machine, so the worker can bring its commits back there (#1030).
-  expect(packet.request.call.input['madeFrom']).toEqual({ thread: f.fromThread.threadId, host: f.fromThread.hostId })
+  // Only which thread the branch came from, its machine, and this desktop, the one that may bring the commits back there (#1030).
+  expect(packet.request.call.input['madeFrom']).toEqual({ thread: f.fromThread.threadId, host: f.fromThread.hostId, by: f.control.hostId() })
   // The worker's worktree on the host is made from the move's incoming ref, on the branch's own name.
   await expect.poll(() => f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)?.worktree?.status, { timeout: 20_000 }).toBe('ready')
   const worktree = f.socket.shell().host.threads.find(thread => thread.id === started.target.threadId)!.worktree!
-  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x`, madeFrom: { thread: f.fromThread.threadId, host: f.fromThread.hostId } })
+  expect(worktree).toMatchObject({ branch: 'feat/x', incomingRef: `refs/sotto/incoming/${moveId}/feat/x`, madeFrom: { thread: f.fromThread.threadId, host: f.fromThread.hostId, by: f.control.hostId() } })
   expect((await git('git', ['-C', worktree.path!, 'rev-parse', 'HEAD'])).stdout.trim()).toBe(f.commit)
 })
 
