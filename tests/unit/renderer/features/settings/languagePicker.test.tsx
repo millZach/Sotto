@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AppearanceSettings } from '../../../../../src/renderer/src/features/settings/AppearanceSettings'
 import { LanguagePicker } from '../../../../../src/renderer/src/features/settings/LanguagePicker'
+import type { LaterWords } from '../../../../../src/renderer/src/features/settings/laterWords'
 import { firstInterfaceLanguage, showInterfaceLanguage, startInterfaceLanguage } from '../../../../../src/renderer/src/state/interfaceLanguage'
 import type { InterfaceLanguageState } from '../../../../../src/shared/interfaceLanguages'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../../../src/shared/settings'
@@ -22,7 +23,7 @@ afterEach(async () => {
   await act(() => showInterfaceLanguage({ language: 'en', system: 'en' }))
 })
 
-const appearance = (onSave = vi.fn<(patch: SettingsPatch, text?: string) => Promise<boolean>>(async () => true)) =>
+const appearance = (onSave = vi.fn<(patch: SettingsPatch, text?: LaterWords) => Promise<boolean>>(async () => true)) =>
   render(<AppearanceSettings settings={DEFAULT_SETTINGS} platform="win32" onSave={onSave} getSettings={() => DEFAULT_SETTINGS} />)
 
 describe('Settings > Appearance > Language', () => {
@@ -86,7 +87,7 @@ describe('Settings > Appearance > Language', () => {
 
   it('saves the choice as its own patch, confirmed in the language chosen', async () => {
     const user = userEvent.setup()
-    const onSave = vi.fn<(patch: SettingsPatch, text?: string) => Promise<boolean>>(async () => true)
+    const onSave = vi.fn<(patch: SettingsPatch, text?: LaterWords) => Promise<boolean>>(async () => true)
     appearance(onSave)
     await user.click(screen.getByRole('combobox', { name: /^Language/u }))
     await user.click(screen.getByRole('option', { name: /^Français/u }))

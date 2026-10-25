@@ -1,4 +1,5 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
+import { Mark } from '../../components/marks'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphone'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
@@ -61,7 +62,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
     const left = expiresAt === null ? null : expiresAt - now
     const monthMinutes = status?.monthMinutes ?? 0
     const capMinutes = status?.capMinutes ?? 0
-    return <section className="agent-request" aria-label={`Cloud iPhone request for ${threadTitle}`}>
+    return <section className="agent-request" aria-label={`Cloud iPhone request for ${threadTitle}`}><Mark name="request" />
       <div className="agent-request__head"><strong>{threadTitle} wants to start a cloud iPhone.</strong></div>
       {session.description ? <p className="agent-request__text">{session.description}</p> : null}
       <p className="agent-request__text">Uploads <code>{session.buildPath}</code> ({formatBytes(session.buildBytes)}) to run.cloud and starts an iPhone simulator.
@@ -76,7 +77,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
   }
 
   if (session.status === 'starting') {
-    return <section className="agent-request" aria-label="Starting the cloud iPhone">
+    return <section className="agent-request" aria-label="Starting the cloud iPhone"><Mark name="request" />
       <div className="agent-request__head"><strong>Starting the cloud iPhone…</strong></div>
       <p className="agent-request__status" role="status">Uploading {session.buildPath} to run.cloud and starting the simulator.</p>
     </section>
@@ -85,7 +86,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
   if (session.status === 'refused' || session.status === 'failed') {
     const text = session.problem ?? `${threadTitle} could not start a cloud iPhone.`
     const mentionsSettings = /settings/iu.test(text)
-    return <section className="agent-request" aria-label="Cloud iPhone problem">
+    return <section className="agent-request" aria-label="Cloud iPhone problem"><Mark name="request" />
       <div className="agent-request__head"><strong>{threadTitle} could not start a cloud iPhone.</strong></div>
       <p className="agent-request__error" role="status">{text}</p>
       {mentionsSettings ? <div className="agent-request__actions">

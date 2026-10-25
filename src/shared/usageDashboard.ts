@@ -243,6 +243,11 @@ export const usageQuotaReadSchema = z.object({
 export type UsageQuotaRead = z.infer<typeof usageQuotaReadSchema>
 export const usageRefreshQuerySchema = z.object({
   hostIds: z.array(identity).max(USAGE_HOSTS_MAX).optional(), providerIds: z.array(usageProviderIdSchema).max(providers.length).optional(),
+  /**
+   * A refresh Usage made on its own when it opened. A provider whose read is costly may answer it from a reading of the
+   * last few minutes (#1456). Read again leaves it out and always reads afresh.
+   */
+  background: z.literal(true).optional(),
 }).strict()
 export type UsageRefreshQuery = z.infer<typeof usageRefreshQuerySchema>
 export const usageLocalHostReadSchema = z.object({

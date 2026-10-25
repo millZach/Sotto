@@ -49,8 +49,8 @@ describe('the sidebar frame in the stylesheets', () => {
 
   it('draws the foot switch once, for every column that wears the foot', () => {
     const room = styleOf(chrome, '.thread-nav__foot .thread-nav__seg')
-    expect(room.get('display')).toBe('grid')
-    expect(room.get('grid-auto-columns')).toBe('minmax(0, 1fr)')
+    expect(room.get('--room-tile')).toBe('32px')
+    expect(room.get('flex')).toBe('1 0 100%')
     expect(selectorsOf(settings).filter(selector => selector.includes('thread-nav__foot'))).toEqual([])
   })
 

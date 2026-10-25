@@ -19,7 +19,7 @@
 .threads-view:not(.threads-view--mac) .thread-workspace__tools > .tools-panel .tools-chrome { padding-right: max(8px, calc(var(--threads-winctl-inset, 0px) - var(--tools-rail-width, 58px) + 20px)); }
 /* Linux keeps the title area but has no buttons to reserve room for. */
 [data-platform='linux'] .threads-view { --threads-winctl-inset: var(--main-freeze-room, 0px); }
-.threads-view:has(.thread-workspace__tools > .tools-panel:not([data-mode='overlay'])) .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
+.threads-view[data-tools='docked'] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
 
 /* Before agent state arrives, and for as long as an agent error stands, the page is one sentence. It is still a
    window that has to move, and one that needs a way to Settings. */
@@ -32,8 +32,7 @@
    (the Threads sidebar and the Settings column). Equal tracks fit both beta gate states without changing the
    sidebar or label size. */
 .thread-nav__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 2px; margin: auto var(--thread-nav-inset) 0; padding: 8px 6px 10px; border-top: 1px solid var(--tt-hairline); }
-.thread-nav__foot .thread-nav__seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); flex: 1 0 100%; min-width: 0; }
-.thread-nav__foot .thread-nav__seg button { min-width: 0; height: 28px; padding-inline: 0; font-size: 14px; }
+.thread-nav__foot .thread-nav__seg { --room-tile: 32px; flex: 1 0 100%; min-width: 0; }
 .thread-nav__pages { display: flex; align-items: center; }
 .thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 7px; color: var(--tt-text-muted); text-decoration: none; }
 .thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }

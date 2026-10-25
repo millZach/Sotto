@@ -17,6 +17,9 @@ const root = async (): Promise<string> => { const directory = await mkdtemp(join
 afterEach(async () => { await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 const miseCommand = (tool: string): string => process.platform === 'win32'
   ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise upgrade ${tool}"` : `MISE_MINIMUM_RELEASE_AGE=0s mise upgrade ${tool}`
+/** The line that installs one published version by name, after `mise cache clear <tool>`. */
+const miseInstall = (tool: string, version: string): string => process.platform === 'win32'
+  ? `cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise install ${tool}@${version}"` : `MISE_MINIMUM_RELEASE_AGE=0s mise install ${tool}@${version}`
 const answer = (version: string): Response => new Response(JSON.stringify({ version }), { status: 200 })
 
 /** A mise data folder with the tools forge has, each with mise's own record of its name. */
@@ -119,7 +122,8 @@ describe('what an update of a mise install runs', () => {
     const { data, installs } = await miseData()
     const clients = new ProviderClients({ fetchImpl: async () => answer('0.158.0'), misePath: async () => undefined })
     const reading = await clients.check('codex', '0.155.1', join(installs, 'codex', 'latest', 'bin', 'codex'), { MISE_DATA_DIR: data })
-    expect(reading).toMatchObject({ channel: 'mise', behind: true, canInstall: false, command: miseCommand('codex'), byHand: [miseCommand('codex')] })
+    expect(reading).toMatchObject({ channel: 'mise', behind: true, canInstall: false, command: miseInstall('codex', '0.158.0'),
+      byHand: ['mise cache clear codex', miseInstall('codex', '0.158.0')] })
     expect(reading.steps).toBeUndefined()
   })
 
@@ -127,9 +131,9 @@ describe('what an update of a mise install runs', () => {
     const { data, installs, home } = await miseData()
     const clients = new ProviderClients({ fetchImpl: async url => answer(url.includes('claude-code') ? '2.1.284' : '1.0.43'), misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
     expect(await clients.check('claude', '2.1.281', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }))
-      .toMatchObject({ channel: 'mise', canInstall: true, steps: 1, command: miseCommand('claude') })
+      .toMatchObject({ channel: 'mise', canInstall: true, steps: 1, command: miseInstall('claude', '2.1.284') })
     expect(await clients.check('grok', '1.0.41', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') }))
-      .toMatchObject({ channel: 'mise', canInstall: true, steps: 2, command: miseCommand('npm:@xai-official/grok') })
+      .toMatchObject({ channel: 'mise', canInstall: true, steps: 2, command: miseInstall('npm:@xai-official/grok', '1.0.43') })
   })
 })
 
@@ -267,6 +271,132 @@ describe('running an update of a mise install', () => {
       .install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') })
     expect(result).toMatchObject({ ok: false, step: 2, failure: 'install-step' })
     expect(ran.map(item => item.args[0])).toEqual(['upgrade', 'where'])
+  })
+})
+
+/**
+ * October 23, 2026 on forge: Claude Code 2.1.310 was on npm and GitHub, but mise's cached version list ended at 2.1.309,
+ * so `mise upgrade claude` printed "All tools are up to date", exited 0 and installed nothing. Clearing the tool's cache
+ * made `mise ls-remote` list 2.1.310, `mise upgrade` still resolved the newest version through another cache, and
+ * `mise install claude@2.1.310` installed it. These stand-ins keep both caches stale until the tool's is cleared.
+ */
+describe('a mise version list that lags what is published', () => {
+  /** A mise whose lists are cached: `upgrade` sees only what it knew, `ls-remote` sees the release once its cache is cleared. */
+  function staleMise(known: string, published: string, options: { readonly listsAfterClear?: boolean; readonly listFails?: boolean } = {}) {
+    const ran: string[][] = []
+    let cleared = false, installed = known
+    const run: RunLike = async (_executable, args, _asNode, runOptions) => {
+      ran.push([...args])
+      if (args[0] === 'cache' && args[1] === 'clear') { cleared = true; return { ok: true, stdout: `mise cache cleared for ${args[2]}` } }
+      if (args[0] === 'ls-remote') {
+        if (options.listFails) return { ok: false, detail: 'mise ERROR error sending request for url' }
+        const versions = [known, ...cleared && options.listsAfterClear !== false ? [published] : []]
+        // `ls-remote <tool> <prefix>` lists every version that starts with the prefix.
+        return { ok: true, stdout: `${versions.filter(version => version.startsWith(args[2]!)).join('\n')}\n` }
+      }
+      if (args[0] === 'upgrade') return { ok: true, stdout: 'mise All tools are up to date' }
+      if (args[0] === 'install') {
+        expect(runOptions?.cwd).toBe(homedir())
+        if (runOptions?.env?.MISE_MINIMUM_RELEASE_AGE === '0s') installed = args[1]!.slice(args[1]!.lastIndexOf('@') + 1)
+        return { ok: true }
+      }
+      if (args[0] === 'where') return { ok: true, stdout: `${join(homedir(), 'mise', 'installs', 'npm-xai-official-grok', installed)}\n` }
+      return { ok: true }
+    }
+    return { run, ran, installed: () => installed }
+  }
+
+  /** forge's mise installs: Claude Code, Codex and OpenCode through aqua, Grok Build through npm, Muse over http. */
+  async function forgeMise(): Promise<{ data: string; installs: string; home: string }> {
+    const found = await miseData()
+    for (const [folder, short, version, file] of [['opencode', 'opencode', '1.19.3', 'opencode'], ['http-muse', 'http:muse', '1.4.11-R6667.1', 'muse']] as const) {
+      await mkdir(join(found.installs, folder, version), { recursive: true })
+      await writeFile(join(found.installs, folder, '.mise.backend.toml'), `short = "${short}"\n`)
+      await writeFile(join(found.installs, folder, version, file), '')
+    }
+    return found
+  }
+
+  it.each([
+    ['claude', 'claude', '2.1.309', '2.1.310', ['claude', 'latest', 'claude']],
+    ['codex', 'codex', '0.163.0', '0.164.0', ['codex', 'latest', 'bin', 'codex']],
+    ['opencode', 'opencode', '1.19.3', '1.19.4', ['opencode', 'latest', 'opencode']],
+    ['muse', 'http:muse', '1.4.11-R6667.1', '1.4.12-R6909.1', ['http-muse', 'latest', 'muse']],
+  ] as const)('clears mise’s cache of %s, checks its list has the published version, and installs that version by name', async (provider, tool, known, published, path) => {
+    const { data, installs } = await forgeMise()
+    const { run, ran, installed } = staleMise(known, published)
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => true })
+      .install(provider, join(installs, ...path), { MISE_DATA_DIR: data }, undefined, published)
+    expect(result.ok).toBe(true)
+    expect(installed()).toBe(published)
+    expect(ran).toEqual([
+      ['cache', 'clear', tool],
+      ['ls-remote', tool, published, '--minimum-release-age', '0s'],
+      ['install', `${tool}@${published}`, '--minimum-release-age', '0s'],
+    ])
+  })
+
+  it('installs Grok Build’s published version by name, and asks mise where that version is for its install step', async () => {
+    const { data, home } = await forgeMise()
+    const { run, ran, installed } = staleMise('1.0.67', '1.0.68')
+    const steps: number[] = []
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false, nodePath: '/usr/bin/node' })
+      .install('grok', join(home, '.grok', 'bin', 'grok'), { MISE_DATA_DIR: data, GROK_HOME: join(home, '.grok') }, step => steps.push(step), '1.0.68')
+    expect(installed()).toBe('1.0.68')
+    expect(steps).toEqual([1, 2])
+    expect(ran).toEqual([['cache', 'clear', 'npm:@xai-official/grok'], ['ls-remote', 'npm:@xai-official/grok', '1.0.68'],
+      ['install', 'npm:@xai-official/grok@1.0.68'], ['where', 'npm:@xai-official/grok@1.0.68']])
+    // The stand-in's folder holds no package, so the install step reports; what matters is the version it was asked about.
+    expect(result).toMatchObject({ ok: false, step: 2, failure: 'install-step' })
+  })
+
+  it('says mise does not list the version, and installs nothing, when its list lacks it even with the cache cleared', async () => {
+    const { data, installs } = await forgeMise()
+    // mise lists 2.1.3100, which starts with the version asked for but is not it.
+    const { run, ran, installed } = staleMise('2.1.309', '2.1.3100')
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+      .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
+    expect(result).toEqual({ ok: false, step: 1, failure: 'not-listed', detail: 'mise does not list Claude Code 2.1.310 yet, so Sotto did not install it. Nothing was changed. Try again later.' })
+    expect(installed()).toBe('2.1.309')
+    expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote'])
+  })
+
+  it('still installs when mise cannot read its list, and lets the install say how it went', async () => {
+    const { data, installs } = await forgeMise()
+    const { run, ran, installed } = staleMise('2.1.309', '2.1.310', { listFails: true })
+    const result = await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+      .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, '2.1.310')
+    expect(result.ok).toBe(true)
+    expect(installed()).toBe('2.1.310')
+    expect(ran.map(args => args[0])).toEqual(['cache', 'ls-remote', 'install'])
+  })
+
+  it('upgrades as before when no published version is known, and never pins one that reads as an option', async () => {
+    const { data, installs } = await forgeMise()
+    for (const version of [undefined, '--yes', 'latest']) {
+      const { run, ran } = staleMise('2.1.309', '2.1.310')
+      await new ProviderClients({ run, misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+        .install('claude', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }, undefined, version)
+      expect(ran, String(version)).toEqual([['upgrade', 'claude']])
+    }
+  })
+
+  it('names the cache clear and the install by version to run by hand, on POSIX and Windows', () => {
+    const install = { channel: 'mise' as const, miseTool: 'claude' }
+    expect(byHandFor('claude', install, 'linux', false, '2.1.310')).toEqual(['mise cache clear claude', 'MISE_MINIMUM_RELEASE_AGE=0s mise install claude@2.1.310'])
+    expect(byHandFor('claude', install, 'win32', true, '2.1.310'))
+      .toEqual(['mise cache clear claude', 'cmd /c "set MISE_MINIMUM_RELEASE_AGE=0s&& mise install claude@2.1.310 --minimum-release-age 0s"'])
+    expect(byHandFor('grok', { channel: 'mise', miseTool: 'npm:@xai-official/grok' }, 'linux', false, '1.0.68')).toEqual(['mise cache clear npm:@xai-official/grok',
+      'MISE_MINIMUM_RELEASE_AGE=0s mise install npm:@xai-official/grok@1.0.68', 'cd "$(mise where npm:@xai-official/grok@1.0.68)/node_modules/@xai-official/grok"', 'node bin/postinstall.js'])
+  })
+
+  it('reads a client behind what is published as an install of that version, and one up to date as an upgrade', async () => {
+    const { data, installs } = await forgeMise()
+    const clients = new ProviderClients({ fetchImpl: async () => answer('2.1.310'), misePath: async () => '/usr/bin/mise', miseReleaseAgeFlag: async () => false })
+    expect(await clients.check('claude', '2.1.309', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }))
+      .toMatchObject({ behind: true, canInstall: true, command: miseInstall('claude', '2.1.310'), byHand: ['mise cache clear claude', miseInstall('claude', '2.1.310')] })
+    expect(await clients.check('claude', '2.1.310', join(installs, 'claude', 'latest', 'claude'), { MISE_DATA_DIR: data }))
+      .toMatchObject({ behind: false, canInstall: false, command: miseCommand('claude') })
   })
 })
 

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
-import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark } from './messageScrubberMarks'
+import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark, type ScrubberMessage } from './messageScrubberMarks'
 import './messageScrubber.css'
 
 /** How close the pointer must come to a tick to reach it. */
@@ -33,7 +33,7 @@ type Via = 'pointer' | 'keys' | 'touch'
  * each card, Home and End go to the ends, Enter or Space goes there and puts focus on the message, and Escape closes the
  * card and then returns to the transcript.
  */
-export function MessageScrubber({ marks, scroller, content, moreAbove, who, running, requests, onJump }: {
+export function MessageScrubber({ marks, scroller, content, moreAbove, who, running, requests, onJump, onReaderWheel }: {
   readonly marks: readonly ScrubberMark[]
   readonly scroller: RefObject<HTMLDivElement | null>
   readonly content: RefObject<HTMLDivElement | null>
@@ -45,6 +45,8 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   readonly requests: readonly AgentRequest[]
   /** Brings a message into view, and into focus when the keyboard asked. */
   readonly onJump: (messageId: string, focus: boolean) => void
+  /** The reader's wheel over the lane, which scrolls the transcript as the reader's own wheel over it does. */
+  readonly onReaderWheel?: ((event: React.WheelEvent) => void) | undefined
 }): ReactNode {
   const [geometry, setGeometry] = useState<Geometry | null>(null)
   // The card's tick and the focused tick are held by message, so loading earlier messages or a rewind, which shift the
@@ -69,6 +71,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const frame = useRef(0)
   const cardId = useId()
   const count = marks.length
+  const register = useCallback((index: number, element: HTMLButtonElement | null): void => { ticks.current[index] = element }, [])
 
   const measure = useCallback((): void => {
     const element = scroller.current
@@ -214,6 +217,7 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
   const onWheel = (event: React.WheelEvent): void => {
     const element = scroller.current
     if (element === null) return
+    onReaderWheel?.(event)
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1
     element.scrollTop += event.deltaY * unit
   }
@@ -227,8 +231,17 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
     setCardTop(Math.max(CARD_GAP, Math.min(geometry.height - height - CARD_GAP, place - height / 2)))
   }, [hot, geometry, places, marks, requests, running])
 
-  if (!shown) return null
+  // A word streamed into the newest reply changes the marks and none of the ticks, so the ticks drawn last time stand and
+  // React passes over them; only the card reads the replies.
+  const drawnMarks = useRef(marks)
+  if (!sameTicks(drawnMarks.current, marks)) drawnMarks.current = marks
+  const tickMarks = drawnMarks.current
   const tabbable = focusIndex ?? lastIndexOf(marks, inView) ?? count - 1
+  const hotTick = hot?.index ?? -1
+  const tickList = useMemo(() => tickMarks.map((mark, index) => <ScrubberTick key={mark.messageId} index={index} message={mark.message} attachments={mark.attachments} top={places[index] ?? 0}
+    tabbable={index === tabbable} hot={index === hotTick} inView={inView.has(mark.messageId)} cardId={cardId} register={register} />), [tickMarks, places, tabbable, hotTick, inView, cardId, register])
+
+  if (!shown) return null
   const style = {
     '--scrubber-left': `${geometry.column - geometry.lane}px`, '--scrubber-lane': `${geometry.lane}px`,
     '--scrubber-gap': `${geometry.lane < NARROW_LANE_PX ? 4 : 18}px`, '--scrubber-hit': `${Math.max(6, pitch)}px`,
@@ -250,28 +263,54 @@ export function MessageScrubber({ marks, scroller, content, moreAbove, who, runn
         setHot({ index, via: 'keys' })
         rise(places[index] ?? null)
       }}
-      onBlur={event => { if (!nav.current?.contains(event.relatedTarget as Node | null)) { setFocusIndex(null); if (hot?.via === 'keys') close() } }}>
-      {marks.map((mark, index) => <button key={mark.messageId} aria-describedby={hot?.index === index ? cardId : undefined} ref={element => { ticks.current[index] = element }} type="button" className="message-scrubber__tick"
-        style={{ top: `${places[index]}px` }} tabIndex={index === tabbable ? 0 : -1} data-hot={hot?.index === index || undefined} data-in-view={inView.has(mark.messageId) || undefined}
-        aria-label={`Go to your message at ${clockLabel(Date.parse(mark.message.createdAt))}: ${opening(mark, 80)}`}
-        onClick={event => {
-          // A tap shows the card first; a tap on the card goes there. Enter and Space are handled on their keys and never
-          // reach here, so a press with no pointer is assistive technology's, and goes there with focus.
-          if (event.detail === 0) { jump(index, true); return }
-          if (lastPointer.current === 'touch' && hot?.index !== index) { setHot({ index, via: 'touch' }); return }
-          // Packed ticks' buttons overlap, so a pointer's press goes to the tick it was showing, not the button on top.
-          jump(hot?.via === 'pointer' ? hot.index : index, false)
-        }} />)}
+      onBlur={event => { if (!nav.current?.contains(event.relatedTarget as Node | null)) { setFocusIndex(null); if (hot?.via === 'keys') close() } }}
+      onClick={event => {
+        // The ticks' presses are heard here, so a word streamed into the newest reply draws no tick again.
+        const index = Number((event.target as Element).closest<HTMLElement>('.message-scrubber__tick')?.dataset.index ?? -1)
+        if (!(index >= 0 && index < count)) return
+        // A tap shows the card first; a tap on the card goes there. Enter and Space are handled on their keys and never
+        // reach here, so a press with no pointer is assistive technology's, and goes there with focus.
+        if (event.detail === 0) { jump(index, true); return }
+        if (lastPointer.current === 'touch' && hot?.index !== index) { setHot({ index, via: 'touch' }); return }
+        // Packed ticks' buttons overlap, so a pointer's press goes to the tick it was showing, not the button on top.
+        jump(hot?.via === 'pointer' ? hot.index : index, false)
+      }}>
+      {tickList}
     </nav>
     {shownMark && hot ? <ScrubberCard ref={card} id={cardId} mark={shownMark} index={hot.index} count={count} who={who} running={running} requests={requests} keys={hot.via === 'keys'}
       top={cardTop} place={cardPlace} onPress={() => jump(hot.index, false)} onEnter={() => window.clearTimeout(leaveTimer.current)} onLeave={() => { if (hot.via === 'pointer') leave() }} /> : null}
   </>
 }
 
-const opening = (mark: ScrubberMark, most: number): string => {
-  const words = plainOpening(mark.message.text, most)
-  const attached = mark.message.attachments?.length ?? 0
+const opening = (message: ScrubberMessage, attached: number, most: number): string => {
+  const words = plainOpening(message.text, most)
   return words || (attached === 1 ? 'One attachment' : attached > 1 ? `${attached} attachments` : 'An empty message')
+}
+
+/**
+ * One tick. It draws again only when its own message, place or state does: a thread of thousands of messages sent keeps
+ * its ticks still while a reply streams into the newest turn.
+ */
+const ScrubberTick = React.memo(function ScrubberTick({ index, message, attachments, top, tabbable, hot, inView, cardId, register }: {
+  readonly index: number; readonly message: ScrubberMessage; readonly attachments: number; readonly top: number
+  readonly tabbable: boolean; readonly hot: boolean; readonly inView: boolean; readonly cardId: string
+  readonly register: (index: number, element: HTMLButtonElement | null) => void
+}): ReactNode {
+  const ref = useCallback((element: HTMLButtonElement | null) => register(index, element), [register, index])
+  const label = useMemo(() => `Go to your message at ${clockLabel(Date.parse(message.createdAt))}: ${opening(message, attachments, 80)}`, [message, attachments])
+  return <button ref={ref} type="button" className="message-scrubber__tick" data-index={index} aria-describedby={hot ? cardId : undefined} aria-label={label}
+    style={{ top: `${top}px` }} tabIndex={tabbable ? 0 : -1} data-hot={hot || undefined} data-in-view={inView || undefined} />
+})
+
+/** Whether two lists of marks draw the same ticks: the same messages, in the same places, whatever their replies say. */
+function sameTicks(drawn: readonly ScrubberMark[], marks: readonly ScrubberMark[]): boolean {
+  if (drawn === marks) return true
+  if (drawn.length !== marks.length) return false
+  for (const [index, mark] of marks.entries()) {
+    const before = drawn[index]!
+    if (before.messageId !== mark.messageId || before.message !== mark.message || before.attachments !== mark.attachments) return false
+  }
+  return true
 }
 
 /** The last sent message on screen, which is where Tab first lands in the column. */
@@ -296,7 +335,7 @@ function ScrubberCard({ ref, id, mark, index, count, who, running, requests, key
   const after = scrubberAfter(mark, requests)
   return <div ref={ref} id={id} role="tooltip" className="message-scrubber__card" style={{ top: `${top}px`, left: `${place.left}px`, width: `${place.width}px` }} onClick={onPress} onPointerEnter={onEnter} onPointerLeave={onLeave}>
     <div className="message-scrubber__head"><b>You</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>Message {index + 1} of {count}</span></div>
-    <p className="message-scrubber__said">{opening(mark, 400)}</p>
+    <p className="message-scrubber__said">{opening(mark.message, mark.attachments, 400)}</p>
     {after.kind === 'reply' ? <><p className="message-scrubber__who">{who} replied</p><p className="message-scrubber__then">{after.text}</p></>
       : after.kind === 'asked' ? <><p className="message-scrubber__who">{who} asked</p><p className="message-scrubber__then">{after.question}</p>
         {after.choices.length ? <ul className="message-scrubber__choices">{after.choices.map(choice => <li key={choice}>{choice}</li>)}</ul> : null}

@@ -131,7 +131,7 @@ export class SottoThreadHost implements AgentHost {
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
 
   constructor(private readonly provider: string, private readonly inner: AgentHost,
@@ -160,7 +160,7 @@ export class SottoThreadHost implements AgentHost {
       const binding = this.registry.byThread(threadId)
       if (binding?.provider === this.provider) inner.visitUsage!(binding.sessionId, record => visitor({ ...record, threadId }))
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.registry.load()
       // Owned sessions come up under their Sotto thread; one with no binding has no thread to count under.
