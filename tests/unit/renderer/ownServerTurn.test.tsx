@@ -78,7 +78,7 @@ describe('while the server will not answer', () => {
 describe('the still-waiting line', () => {
   const actions: OwnServerTurnActions = { newestFailure: null, tryAgainBy: null, canTryAgain: false, canStop: true, tryAgain: vi.fn(), openSettings: vi.fn(), stop: vi.fn() }
   const waiting = (activities: AgentActivity[], messages: AgentMessage[] = [user('u1', LAST, 0)]) =>
-    <OwnServerTurnContext.Provider value={actions}><LiveActivity thread={{ status: 'running', activities, messages }} connected /></OwnServerTurnContext.Provider>
+    <OwnServerTurnContext.Provider value={actions}><LiveActivity thread={{ status: 'running', activities, messages }} connected provider="OpenCode" /></OwnServerTurnContext.Provider>
 
   it('says it is still waiting once the server has sent nothing for 30 seconds, and what that means', () => {
     vi.useFakeTimers({ now: E2E_THREADS_NOW + 5_000 })

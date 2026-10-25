@@ -1,4 +1,4 @@
-import React, { memo, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, FilePen, Info, ListChecks, Shrink, Square, SquareTerminal, Wrench, type LucideIcon } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentActivity, OwnServerTurn } from '../../../shared/agentActivity'
@@ -6,8 +6,8 @@ import type { AgentThread } from '../../../shared/agents'
 import { MessageContent } from './MessageContent'
 import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
-  activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
-  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode, type TurnChange,
+  activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
+  isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, stepsLabel, timingNote, turnHeadline, turnSteps, type ActivityGroup, type ActivityNode, type TurnChange,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
@@ -286,8 +286,9 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 })
 
 /**
- * The work a provider reported after one message. A running turn lists its rows; a settled one folds
- * to a single line and keeps any failure in view. Nothing here can act on the provider or its agents.
+ * The work a provider reported after one message. Live, it lists its rows, which is how the working line shows the
+ * running turn's steps once opened; settled, it folds to a single line, failures and all, and opens on a press (Zach's
+ * pick, docs/prototypes/turn-steps-glow-prototype.html). Nothing here can act on the provider or its agents.
  */
 export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome }: ActivityGroupViewProps): ReactNode {
   const [choice, setChoice] = useState<boolean | null>(null)
@@ -296,9 +297,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const expanded = choice ?? live
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
-  const failures = group.records.filter(record => record.status === 'failed')
-  // Expanded, work done for a subagent or tool sits under it; folded, every failure stays in view on its own.
-  const shown: readonly ActivityNode[] = expanded ? nestActivities(group.records) : failures.map(record => ({ record, children: [] }))
+  // Work done for a subagent or tool sits under it.
+  const shown: readonly ActivityNode[] = expanded ? nestActivities(group.records) : []
   const earlier = live && expanded && !showAll ? Math.max(0, shown.length - LIVE_ROWS) : 0
   const rows = earlier ? shown.slice(-LIVE_ROWS) : shown
   const canFold = !live && group.records.length > 0
@@ -373,21 +373,29 @@ function OwnServerLine({ actions, server, startedAt }: {
 }
 
 /**
- * One line at the end of a running turn: how long it has run and what it is doing now. The current
- * action is left out when it is the row directly above, so the line never repeats it.
+ * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, and
+ * the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
+ * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
+ * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
-export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince }: {
+export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince }: {
   readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction'>>; readonly connected: boolean
-  /** The last activity row rendered immediately before this line, if any. */
-  readonly adjacentRecordId?: string | undefined
+  /** Display name of the provider, for the opened steps' "Reported by Codex". */
+  readonly provider: string
+  /** Called before the steps open or fold so the transcript can keep the line in place. */
+  readonly onDisclosure?: ((element: HTMLElement) => void) | undefined
   /**
    * When the user pressed Send, while that prompt is still on its way. The wait starts being shown
    * there rather than at the provider's first word; its own running turn takes the line over as soon as it arrives.
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
+  const [open, setOpen] = useState(false)
+  const stepsId = useId()
   const turnId = liveTurnId(thread)
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
+  const activities = thread.activities
+  const steps = useMemo(() => turnId === null ? [] : turnSteps({ activities }, turnId), [activities, turnId])
   // A turn on one of the user's own model servers (ADR-0124, October 24 amendment) says so while OpenCode tries the
   // server again, and once the server has sent nothing for 30 seconds.
   const own = useOwnServerTurnActions()
@@ -397,8 +405,10 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.
   if (thread.compaction?.status === 'running') {
     return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
-      <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
-      <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
+      <div className="thread-activity-live__line">
+        <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
+        <span className="thread-activity-live__state" role="status">{connected ? 'Compacting context' : 'Last seen compacting context'}</span>
+      </div>
     </div>
   }
   if (turnId === null && sendingSince === undefined) return null
@@ -408,18 +418,24 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} />
   }
-  const action = turnId === null ? undefined : currentAction(thread, turnId)
-  const label = action && action.id !== adjacentRecordId ? activityLabel(action) : null
-  const startedAt = turn?.startedAt ?? sendingSince
-  return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+  const words = <>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
-    <span className="thread-activity-live__state">
-      {/* With an action to name, the line says what is happening; without one, the words carry the wait. */}
-      {connected ? label ? 'Working' : <WorkingWord /> : 'Last seen working'}
-      {connected && startedAt ? <> for <Elapsed startedAt={startedAt} /></> : null}
-    </span>
-    {label ? <span className="thread-activity-live__action">
-      {label.lead ? `${label.lead} ` : null}<span className={label.mono ? 'thread-activity__subject--mono' : undefined}>{label.subject}</span>
-    </span> : null}
+    <span className="thread-activity-live__state">{connected ? <WorkingWord /> : 'Last seen working'}</span>
+  </>
+  // Until the turn has a step there is nothing to open, so the line is only its words.
+  if (!steps.length || turnId === null) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+    <div className="thread-activity-live__line">{words}</div>
+  </div>
+  const name = `${connected ? 'Working' : 'Last seen working'}, ${stepsLabel(steps.length)} so far`
+  return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
+    onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
+    <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
+      onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
+      {words}
+      <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
+    </button>
+    {open ? <div id={stepsId} className="thread-activity-live__steps">
+      <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
+    </div> : null}
   </div>
 }

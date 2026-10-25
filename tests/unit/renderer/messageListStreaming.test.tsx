@@ -43,10 +43,11 @@ describe('replies shown when finished', () => {
     expect(screen.getByText('Writing a reply…')).toHaveAttribute('role', 'status')
   })
 
-  it('shows the reply once a tool call follows it, and the tool call as it runs', () => {
+  it('shows the reply once a tool call follows it, and leaves the running tool call to the working line', () => {
     mount([user, reply('a-1', 'I will look.')], { streamText: false, activities: [command('a-1')] })
     expect(screen.getByText('I will look.')).toBeInTheDocument()
-    expect(screen.getByText('git status')).toBeInTheDocument()
+    // The running turn's steps fold under the working line, which the transcript draws after the messages.
+    expect(screen.queryByText('git status')).not.toBeInTheDocument()
   })
 
   it('shows the reply once a later provider call starts, even before it has text', () => {

@@ -1151,8 +1151,9 @@ private enum InlineStyle {
 // MARK: - Steps
 
 /// A run of steps between two messages, folded into one line (ADR-0051, October 5 amendment). While the thread works
-/// through it, the line shows the step running now in the accent; once it has ended, how many steps it had and how
-/// long they took, quietly. A press opens the steps in place under their guide, and another folds them.
+/// through it, the line shows the working words with a slow light crossing them, and VoiceOver hears the step running
+/// now; once it has ended, how many steps it had and how long they took, quietly. A press opens the steps in place
+/// under their guide, and another folds them.
 private struct FoldedRun: View, Equatable {
     let runID: String
     let steps: [Activity]
@@ -1173,7 +1174,7 @@ private struct FoldedRun: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 if working {
-                    WorkingLine(step: StepRun.running(steps), live: StepRun.now(steps), count: steps.count, open: open)
+                    WorkingLine(open: open)
                 } else {
                     summaryLine
                 }
@@ -1222,85 +1223,195 @@ private struct FoldedRun: View, Equatable {
     }
 }
 
-/// The working run's line: a breathing light, the step running now in the accent with its command or file in monospace,
-/// how long it has run and how many steps so far. Each new step rolls up into place like a ticker and the count ticks
-/// with it; under Reduce Motion the light holds still and the words crossfade.
+/// The working run's line: the working words in the muted ink with a slow band of the accent light crossing them, then
+/// the chevron. The words and the light run in UIKit and Core Animation, so nothing here is drawn again while they
+/// change or move. Under Reduce Motion a still accent light stands before the words, and they change without the fade.
 private struct WorkingLine: View {
-    /// The step running now; nil between steps, when the line reads Thinking.
-    let step: Activity?
-    let live: StepRun.Live
-    let count: Int
     let open: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: Space.s2) {
-            Light(tone: .accent, size: 7, breathing: true)
-                .frame(width: 16, height: 16)
-            ZStack(alignment: .leading) {
-                LiveStepWords(live: live)
-                    .id(step?.id ?? "thinking")
-                    .transition(roll)
+            if still {
+                Light(tone: .accent, size: 7, breathing: false)
+                    .frame(width: 16, height: 16)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.46), value: step?.id)
-            if let since = Words.date(step?.startedAt) {
-                ElapsedText(since: since)
-                    .font(.sotto(.small).monospacedDigit())
-                    .foregroundStyle(Palette.accentText)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            ZStack {
-                Text("\(count)")
-                    .id(count)
-                    .transition(tick)
-            }
-            .font(.sotto(.caption, .bold).monospacedDigit())
-            .foregroundStyle(Palette.accentText)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .frame(minWidth: 26, minHeight: 22)
-            .clipped()
-            .background(Palette.accent.opacity(Tint.accentPill), in: Capsule())
-            .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.24), lineWidth: 1))
-            .fixedSize()
-            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .spring(response: 0.42, dampingFraction: 0.62), value: count)
+            GlowingWords(ink: theme.rgb(.muted), light: theme.rgb(.accentText), typeSize: typeSize, still: still)
+                .accessibilityHidden(true)
             FoldChevron(open: open)
         }
     }
 
-    /// The old step leaves upward as the new one rises into its place.
-    private var roll: AnyTransition {
-        if reduceMotion { return .opacity }
-        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity),
-                           removal: AnyTransition.move(edge: .top).combined(with: .opacity))
-    }
+    private var still: Bool { reduceMotion || DebugFlags.still }
+}
 
-    private var tick: AnyTransition {
-        if reduceMotion { return .opacity }
-        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity), removal: .opacity)
+/// The working words as UIKit draws them, so a new word or a pass of the light never asks SwiftUI to redraw.
+private struct GlowingWords: UIViewRepresentable {
+    let ink: ThemeRGB
+    let light: ThemeRGB
+    let typeSize: DynamicTypeSize
+    let still: Bool
+    func makeUIView(context: Context) -> GlowWordsView { GlowWordsView(frame: .zero) }
+    func updateUIView(_ view: GlowWordsView, context: Context) {
+        view.paint(ink: ink, light: light)
+        view.scale(to: typeSize)
+        view.still = still
+        view.running = !still
     }
 }
 
-/// The running step's verb, then what it works on in monospace, cut in the middle when it is long.
-private struct LiveStepWords: View {
-    let live: StepRun.Live
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(live.verb)
-                .font(.sotto(.small, .semibold))
-                .lineLimit(1)
-                .layoutPriority(1)
-            if let subject = live.subject {
-                Text(subject)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+/// Two labels with the same word in Figtree semibold at the small step: the lower in the muted ink, the upper in the
+/// accent text colour, seen only through a soft band that its mask sweeps across the words. The band peaks in its
+/// middle and spans 0.72 of the words' width; it crosses from half the words' width before them to half past them in
+/// 72% of a 4.2 second cycle, easing in and out, and rests off the words for the rest, as the prototype's
+/// `words-glow` does. It is laid out in the mask's unit space, so a new word of another width never restarts it. The
+/// word changes on a timer of its own every 3.8 seconds, fading in over 0.22 seconds unless `still`.
+final class GlowWordsView: LoopingView {
+    private let ink = UILabel()
+    private let lit = UILabel()
+    private let band = CAGradientLayer()
+    private var word = 0
+    private var timer: Timer?
+    /// No moving light and no fade, for Reduce Motion.
+    var still = false {
+        didSet { if still != oldValue { lit.isHidden = still } }
+    }
+
+    /// The band's middle, as a fraction of the words' width, where a pass starts and ends.
+    private static let from: CGFloat = -0.5
+    private static let to: CGFloat = 1.5
+    /// Half the band's width, as a fraction of the words' width.
+    private static let reach: CGFloat = 0.36
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        for label in [ink, lit] {
+            label.text = WorkingWords.all[0]
+            label.numberOfLines = 1
+            label.lineBreakMode = .byTruncatingTail
+            label.backgroundColor = .clear
+            stage.addSubview(label)
         }
-        .foregroundStyle(Palette.accentText)
+        band.colors = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+        band.locations = [NSNumber(value: 0.0), NSNumber(value: 0.5), NSNumber(value: 1.0)]
+        // At rest the band waits off the words' leading edge, so the accent shows only while a pass crosses them.
+        band.startPoint = CGPoint(x: Self.from - Self.reach, y: 0.5)
+        band.endPoint = CGPoint(x: Self.from + Self.reach, y: 0.5)
+        lit.layer.mask = band
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        // A long word at the largest text sizes ends in an ellipsis rather than pushing the chevron off the line.
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        scale(to: .large)
+    }
+    required init?(coder: NSCoder) { fatalError("GlowWordsView is made in code") }
+
+    override var intrinsicContentSize: CGSize {
+        let size = ink.intrinsicContentSize
+        return CGSize(width: ceil(size.width), height: ceil(size.height))
+    }
+
+    private var painted: (ThemeRGB, ThemeRGB)?
+    func paint(ink inkColor: ThemeRGB, light: ThemeRGB) {
+        // A label given its colour again, even the same one, is drawn again; the view around it redraws far more often.
+        if let painted, painted == (inkColor, light) { return }
+        painted = (inkColor, light)
+        ink.textColor = inkColor.uiColor(1)
+        lit.textColor = light.uiColor(1)
+    }
+
+    private var scaledFor: DynamicTypeSize?
+    /// Figtree semibold at the small step, scaled with the footnote style as `Font.sotto(.small, .semibold)` is, for
+    /// the text size in effect here (the iPhone's own, moved by this app's text size step).
+    func scale(to typeSize: DynamicTypeSize) {
+        guard typeSize != scaledFor else { return }
+        scaledFor = typeSize
+        let size = TextScale.small.size
+        let face = UIFont(name: "Figtree-SemiBold", size: size) ?? UIFont.systemFont(ofSize: size, weight: .semibold)
+        let traits = UITraitCollection(preferredContentSizeCategory: Self.category(typeSize))
+        let font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: face, compatibleWith: traits)
+        ink.font = font
+        lit.font = font
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
+    }
+
+    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        default: return .large
+        }
+    }
+
+    override func layoutStage() {
+        ink.frame = stage.bounds
+        lit.frame = stage.bounds
+        band.frame = lit.bounds
+    }
+
+    override var loopLayer: CALayer { band }
+    override func makeLoops() -> [String: CAAnimation] {
+        [
+            "glow-start": Self.pass("startPoint", by: -Self.reach),
+            "glow-end": Self.pass("endPoint", by: Self.reach)
+        ]
+    }
+
+    /// One edge of the band crossing the words and resting past them. The two edges start together, so they move as one.
+    private static func pass(_ keyPath: String, by offset: CGFloat) -> CAKeyframeAnimation {
+        let start = NSValue(cgPoint: CGPoint(x: from + offset, y: 0.5))
+        let end = NSValue(cgPoint: CGPoint(x: to + offset, y: 0.5))
+        let animation = CAKeyframeAnimation(keyPath: keyPath)
+        animation.values = [start, end, end]
+        animation.keyTimes = [NSNumber(value: 0.0), NSNumber(value: 0.72), NSNumber(value: 1.0)]
+        animation.timingFunctions = [CAMediaTimingFunction(controlPoints: 0.45, 0, 0.55, 1), CAMediaTimingFunction(name: .linear)]
+        animation.duration = 4.2
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        return animation
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            timer?.invalidate()
+            timer = nil
+        } else if timer == nil {
+            // The timer holds this view until it leaves the window, where it stops.
+            let next = Timer(timeInterval: WorkingWords.seconds, target: self, selector: #selector(nextWord), userInfo: nil, repeats: true)
+            next.tolerance = 0.2
+            RunLoop.main.add(next, forMode: .common)
+            timer = next
+        }
+    }
+
+    @objc private func nextWord() {
+        word = WorkingWords.next(after: word)
+        let text = WorkingWords.all[word]
+        ink.text = text
+        lit.text = text
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
+        guard !still else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = NSNumber(value: 0.0)
+        fade.toValue = NSNumber(value: 1.0)
+        fade.duration = WorkingWords.fade
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        stage.layer.add(fade, forKey: "word-fade")
     }
 }
 
