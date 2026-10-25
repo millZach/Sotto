@@ -3,6 +3,7 @@ import { ArrowUp, Laptop, ListPlus, MessageSquare, Quote, Server, Sparkles, Squa
 import type { NextPrompt } from '../../../shared/nextPrompt'
 import { useOptionalApp } from '../state/AppContext'
 import { chordClaimed } from './branchToolbar.logic'
+import { claimedThreadChord, threadChordLabel, threadChordPressed } from './threadShortcuts'
 import { NextList, nextOptionId, nextRows, type NextRow } from './NextList'
 import { DICTATING, ghostRest, nextPromptStore, useNextPrompt, withNextText } from './nextPrompts'
 import { capabilitiesForThread, hostForThread, isThreadBusy, lastUserMessageIdOf, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -388,6 +389,18 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const hotkey = app?.settings?.hotkey, platform = app?.platform ?? 'win32'
   const nextKeysFree = { tab: chordClaimed('tab', hotkey, platform), up: chordClaimed('up', hotkey, platform),
     digit: (digit: string) => chordClaimed(digit, hotkey, platform) }
+  // Stop's chord (Settings › Keyboard, ADR-0133): this pane's Stop button from the keyboard, only where Stop itself could be pressed.
+  const stopChord = claimedThreadChord(app?.settings, 'stop-turn', platform)
+  useEffect(() => {
+    if (watcher || !focused || !canStop || stopChord === null) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (!threadChordPressed(event, stopChord, platform)) return
+      event.preventDefault()
+      void command({ type: 'interrupt', threadId })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [watcher, focused, canStop, stopChord, platform, command, threadId])
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
@@ -513,7 +526,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {running && capabilities.steer === true
             ? <Button variant="ghost" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? 'Send this now, without waiting for the turn to end' : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}>Steer now</Button>
             : null}
-          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} title={stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} aria-keyshortcuts={!watcher && stopChord ? threadChordLabel(stopChord, platform).keys : undefined} title={!watcher && stopChord ? `${stopName} ${threadChordLabel(stopChord, platform).suffix}` : stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined

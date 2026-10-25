@@ -6,8 +6,8 @@ import type { SottoPlatform } from '../../../shared/platform'
 /** The thread fields the toolbar reads; a full record satisfies it, and tests can pass less. */
 export type ToolbarThread = Pick<AgentThread, 'id' | 'projectId' | 'nativeSessionStarted' | 'worktree' | 'messages' | 'remoteHost' | 'hostLabel' | 'updatedAt' | 'summary'>
 
-/** The three shortcuts the toolbar claims, in T3's chords. Run on is static text here, so it claims none. */
-export const TOOLBAR_SHORTCUTS = { branch: 'mod+shift+g', workspace: 'mod+shift+x', previous: 'mod+shift+l' } as const
+/** The toolbar's shortcut rows on Settings › Keyboard (ADR-0133); their chords are the user's, in `threadShortcuts.ts`. Run on is static text here, so it claims none. */
+export const TOOLBAR_SHORTCUTS = { branch: 'branch', workspace: 'working-copy', previous: 'previous-working-copy' } as const
 export type ToolbarShortcut = keyof typeof TOOLBAR_SHORTCUTS
 
 /**
@@ -169,7 +169,8 @@ interface Chord { readonly key: string; readonly ctrl: boolean; readonly shift: 
 /** A chord in T3's spelling (`mod+shift+g`) resolved for one platform: mod is Command on macOS and Control elsewhere. */
 export function parseChord(chord: string, platform: SottoPlatform): Chord {
   const parts = chord.toLowerCase().split('+').map(part => part.trim()).filter(Boolean)
-  const key = parts.at(-1) ?? ''
+  // `space` names the key a keydown calls ' ', the spelling `parseAccelerator` below already resolves to, so the two agree.
+  const key = (parts.at(-1) ?? '') === 'space' ? ' ' : (parts.at(-1) ?? '')
   const mods = new Set(parts.slice(0, -1))
   const mod = mods.has('mod')
   return {
