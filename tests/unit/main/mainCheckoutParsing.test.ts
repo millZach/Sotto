@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { inTheWay } from '../../../src/main/agents/gitActions'
 import { repositoryOf, trackedChanges } from '../../../src/main/agents/mainCheckout'
 
-describe('Keep main up to date reads Git and GitHub in their own words (ADR-0140)', () => {
+describe('Keep main up to date reads Git and GitHub in their own words (ADR-0142)', () => {
   it('finds the repository of a remote URL or a pull request, whatever form it takes', () => {
     for (const url of ['https://github.com/millZach/Sotto.git', 'https://github.com/millZach/Sotto', 'git@github.com:millZach/Sotto.git', 'ssh://git@github.com/millZach/Sotto.git',
       'https://github.com/millzach/sotto/pull/1406', 'https://github.com/millZach/Sotto/pull/1406/files']) expect(repositoryOf(url)).toBe('millzach/sotto')

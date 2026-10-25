@@ -249,7 +249,7 @@ const PEEK_GRACE_MS = 300
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
 const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
-  /** Keep main up to date's line for this project, when it has one (ADR-0140). */
+  /** Keep main up to date's line for this project, when it has one (ADR-0142). */
   readonly mainCheckout?: ProjectMainCheckout | undefined
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
@@ -529,7 +529,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const connections = state.connections
   // "This computer" is in the interface language, so a change of language names the hosts again.
   const hosts = useMemo(() => listedHosts({ connections }), [connections, locale])
-  // Keep main up to date (ADR-0140): this computer's projects only, by their local ID, and only among open work.
+  // Keep main up to date (ADR-0142): this computer's projects only, by their local ID, and only among open work.
   const mainCheckout = useMainCheckoutLines(useOwlFeature('keep-main-current') ? window.sotto?.mainCheckout : undefined)
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = folderKey(section, folder.id)

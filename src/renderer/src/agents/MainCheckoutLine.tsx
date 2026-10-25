@@ -6,7 +6,7 @@ import { behindWords, blockWords, CHANGE_KIND_WORDS, showLabel } from './mainChe
 import { shownLocalCount } from '../state/interfaceNumbers'
 
 /**
- * Keep main up to date's line under a project's name (ADR-0140, variant A of the mock-up): why the default branch was
+ * Keep main up to date's line under a project's name (ADR-0142, variant A of the mock-up): why the default branch was
  * left behind, with Show changes listing what is in the way and Open folder beside it; or, after an update that changed a
  * lockfile, that dependencies changed, until dismissed. It says nothing otherwise.
  */

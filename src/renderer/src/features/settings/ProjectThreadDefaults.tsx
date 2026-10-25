@@ -26,7 +26,7 @@ export function ProjectThreadDefaults({ settings, onSave }: ProjectThreadDefault
   const contentId = useId()
   const project = projects.find(item => item.id === selectedId) ?? projects[0]
   const defaultKey = (id: string): string => projectWorkingCopyDefaultKey(agents?.state, id)
-  // Keep main up to date (ADR-0140) acts on this computer's projects alone, so a remote host's project offers no override.
+  // Keep main up to date (ADR-0142) acts on this computer's projects alone, so a remote host's project offers no override.
   const keepMain = useOwlFeature('keep-main-current')
   const localProject = project !== undefined && (defaultKey(project.id) !== project.id || !agents?.state?.connections?.some(host => host.kind === 'remote'))
 

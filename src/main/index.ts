@@ -736,7 +736,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   await plainSettings.save(await plainSettings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
   await plainSettings.migrateProjectWorkingCopyDefaults(await loadHostIdentity(userDataPath))
   const startupSettings = await settings.get()
-  // Keep main up to date (ADR-0140): this computer's projects only, so only where the local host runs, and never in a
+  // Keep main up to date (ADR-0142): this computer's projects only, so only where the local host runs, and never in a
   // design capture, whose fixture folders must look the same on every run.
   const keepMainCurrentEnabled = owlFeatures['keep-main-current'] && startupSettings.localHostEnabled && process.env['SOTTO_DESIGN_CAPTURE'] !== '1'
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
@@ -1908,7 +1908,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
         event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
-      // Keep main up to date (ADR-0140): only while its Owl feature is on, so stable registers nothing.
+      // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.
       const cleanupMainCheckout = registerMainCheckoutIpc(ipcMain, localRuntime.mainCheckout, () => windows.getTrustedRenderers(),
         async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
       const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })

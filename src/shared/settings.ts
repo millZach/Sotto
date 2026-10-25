@@ -219,7 +219,7 @@ export interface AppSettings {
    */
   gitAutoPull: boolean
   /**
-   * Keep main up to date (ADR-0140, an Owl feature): every 15 minutes and after a pull request merges, the host
+   * Keep main up to date (ADR-0142, an Owl feature): every 15 minutes and after a pull request merges, the host
    * fast-forwards each project's checkout to its remote's default branch when that branch is checked out and nothing
    * of the user's is in the way. On by default where the feature is on.
    */
@@ -582,7 +582,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitFetchIntervalSeconds: 30,
   // Off: a pull changes the user's folder, so it happens on their word until they say otherwise.
   gitAutoPull: false,
-  // On: a fast-forward of a checkout on its default branch with nothing of the user's in the way loses nothing (ADR-0140).
+  // On: a fast-forward of a checkout on its default branch with nothing of the user's in the way loses nothing (ADR-0142).
   keepMainCurrent: true,
   projectKeepMainCurrent: {},
   // T3's defaults: the method chosen last, starting from a plain merge.

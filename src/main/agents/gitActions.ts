@@ -456,7 +456,7 @@ export class GitActions {
   }
 
   /**
-   * Keep main up to date's update (ADR-0140): `git merge --ff-only` of `target`, the remote's default branch as the last
+   * Keep main up to date's update (ADR-0142): `git merge --ff-only` of `target`, the remote's default branch as the last
    * fetch left it, into `branch`, which must still be checked out. It runs under this folder's one-action rule as an
    * automatic pull does, fetches nothing itself, and never merges, rebases, stashes or resets: Git refuses, changing
    * nothing, when the branch has commits the target lacks or a file of the user's would be overwritten, and the refusal

@@ -213,7 +213,7 @@ describe('settings', () => {
     }
     expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60 })
   })
-  it('keeps main up to date by default, and keeps each project\'s own answer while dropping one it cannot read (ADR-0140)', () => {
+  it('keeps main up to date by default, and keeps each project\'s own answer while dropping one it cannot read (ADR-0142)', () => {
     expect(parseSettings({})).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
     expect(parseSettings({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })).toMatchObject({ keepMainCurrent: false, projectKeepMainCurrent: { sotto: 'off', boiler: 'on' } })
     expect(parseSettings({ keepMainCurrent: 'yes', projectKeepMainCurrent: { sotto: 'sometimes' } })).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })

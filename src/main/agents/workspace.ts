@@ -1089,12 +1089,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       return release
     } catch (error) { release(); throw error }
   }
-  /** Keep main up to date's projects (ADR-0140): each with its folder and whether the user settled it. */
+  /** Keep main up to date's projects (ADR-0142): each with its folder and whether the user settled it. */
   mainCheckoutProjects(): readonly { readonly id: string; readonly path: string; readonly settled: boolean }[] {
     return this.state.snapshot.projects.filter(project => project.path).map(project => ({ id: project.id, path: project.path, settled: Boolean(project.workspaceSettledAt) }))
   }
   /**
-   * Keep main up to date's reservation (ADR-0140): `work` runs under the mutation reservation of the checkout at `folder`
+   * Keep main up to date's reservation (ADR-0142): `work` runs under the mutation reservation of the checkout at `folder`
    * that sends, Git actions and automatic pulls share, once no thread whose working copy is that checkout is running, waiting
    * on an answer, loading its history, being set up, running a Git action or holding queued work. Null, having run nothing,
    * when anything holds it; Keep main up to date tries again later rather than wait here.
@@ -1116,7 +1116,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     } finally { release() }
   }
   /**
-   * Keep main up to date moved the checkout at `folder` (ADR-0140): each thread working in it, or in a folder inside it,
+   * Keep main up to date moved the checkout at `folder` (ADR-0142): each thread working in it, or in a folder inside it,
    * reads its Git status again, so its branch stops saying it is behind. Matched by path alone, so it costs no Git.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
@@ -1132,7 +1132,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     await Promise.all(reads)
   }
   private pullRequestMergedListener: ((url: string) => void) | undefined
-  /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0140); one listener, set by the runtime. */
+  /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0142); one listener, set by the runtime. */
   onPullRequestMerged(listener: (url: string) => void): void { this.pullRequestMergedListener = listener }
   private pullRequestMerged(url: string): void { try { this.pullRequestMergedListener?.(url) } catch { /* The listener's failure is its own. */ } }
   private onGitLane<T>(threadId: string, operation: () => Promise<T>): Promise<T> {

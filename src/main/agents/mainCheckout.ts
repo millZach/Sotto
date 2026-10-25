@@ -65,7 +65,7 @@ export function repositoryOf(url: string): string | null {
 }
 
 /**
- * Keep main up to date (ADR-0140). Every 15 minutes, once shortly after start, and when a pull request of a project's
+ * Keep main up to date (ADR-0142). Every 15 minutes, once shortly after start, and when a pull request of a project's
  * repository merges, it fetches each project's checkout and fast-forwards the default branch there, but only when that
  * branch is checked out, has no local changes and no commits of its own, nothing is in progress, and no thread is working
  * in the checkout. It never switches a branch, stashes, resets, rebases or merges, and never installs anything. What

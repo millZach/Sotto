@@ -5,7 +5,7 @@ import { isAuthorizedIpcSender, type IpcInvocationEvent, type IpcMainAdapter, ty
 import type { MainCheckoutKeeper } from './mainCheckout'
 
 /**
- * Keep main up to date's handlers (ADR-0140). Stable builds no keeper, so nothing is registered there. Only the main
+ * Keep main up to date's handlers (ADR-0142). Stable builds no keeper, so nothing is registered there. Only the main
  * window may ask, since only its Threads sidebar shows a project's line.
  */
 export function registerMainCheckoutIpc(ipc: IpcMainAdapter, keeper: MainCheckoutKeeper | undefined, senders: () => readonly TrustedIpcSender[],

@@ -377,7 +377,7 @@ export function createSottoBridge(
   nextPromptEnabled = false,
   /** AI cleanup on the user's own model servers (ADR-0136): only while its Owl feature runs, with the two it builds on. */
   ownServerCleanupEnabled = false,
-  /** Keep main up to date (ADR-0140): only while the `keep-main-current` Owl feature is on and the local host runs. */
+  /** Keep main up to date (ADR-0142): only while the `keep-main-current` Owl feature is on and the local host runs. */
   mainCheckoutEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(

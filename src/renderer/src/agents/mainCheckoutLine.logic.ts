@@ -4,7 +4,7 @@ import { msg, plural, t } from '@lingui/core/macro'
 import type { MainCheckoutBridge, MainCheckoutChanges, ProjectMainCheckout } from '../../../shared/mainCheckout'
 import { shownLocalCount } from '../state/interfaceNumbers'
 
-/** Every project's line, by local project ID, as main last said; empty without the bridge (ADR-0140). */
+/** Every project's line, by local project ID, as main last said; empty without the bridge (ADR-0142). */
 export function useMainCheckoutLines(bridge: MainCheckoutBridge | undefined = window.sotto?.mainCheckout): ReadonlyMap<string, ProjectMainCheckout> {
   const [lines, setLines] = useState<ReadonlyMap<string, ProjectMainCheckout>>(() => new Map())
   useEffect(() => {

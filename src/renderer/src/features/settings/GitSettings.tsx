@@ -201,7 +201,7 @@ export function GitSettings({ settings, onSave }: GitSettingsProps): ReactNode {
   // The descriptions below are read in the interface language, so the page draws again when it changes.
   const { t } = useLingui()
   const says = gitSettingDescriptions(settings)
-  // Keep main up to date (ADR-0140): an Owl feature, so stable shows no switch for it.
+  // Keep main up to date (ADR-0142): an Owl feature, so stable shows no switch for it.
   const keepMain = useOwlFeature('keep-main-current')
   return <div className="git-settings">
     <SettingsGroup id="settings-worktrees" title={t`Removing worktrees`} icon={FolderMinus}>

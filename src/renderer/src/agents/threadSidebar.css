@@ -284,7 +284,7 @@
 
 .thread-nav .thread-nav__row--details:is(:hover, :focus-within, [data-current]) .thread-nav__time { visibility: visible; }
 
-/* Keep main up to date's line under a project's name (ADR-0140, variant A). */
+/* Keep main up to date's line under a project's name (ADR-0142, variant A). */
 .thread-folder__main { padding: 1px 8px 6px 26px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
 .thread-folder__main-line { margin: 0; overflow-wrap: anywhere; }
 .thread-folder__main-behind { color: var(--tt-warning-text); }

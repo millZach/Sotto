@@ -564,7 +564,7 @@ export class GitStatusReader implements GitStatusSource {
   }
 
   /**
-   * Keep main up to date's fetch (ADR-0140): the fetch a remote read runs, shared with one under way in the repository,
+   * Keep main up to date's fetch (ADR-0142): the fetch a remote read runs, shared with one under way in the repository,
    * but run whatever the fetch interval says, since that switch asked for it, and even within a fetch's freshness, since it
    * runs only every 15 minutes or because a pull request merged since. A failed fetch still waits out its backoff.
    * Resolves whether the repository's `origin` refs are as fresh as a fetch can make them now: false for a folder held

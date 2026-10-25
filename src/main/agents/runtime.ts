@@ -86,7 +86,7 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
   threadStartsEnabled?: boolean
   /**
-   * Keep main up to date (ADR-0140): the Owl list's answer, read once by the process owner, and its log of stable event
+   * Keep main up to date (ADR-0142): the Owl list's answer, read once by the process owner, and its log of stable event
    * names. Absent fails closed, and a headless host builds none whatever it says.
    */
   keepMainCurrent?: { readonly log?: (event: MainCheckoutEvent) => void }
@@ -254,7 +254,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     writePullRequestText: pullRequestTextWriter(shortTextWriter, options.writingSettings),
     followPullRequestTemplates: async () => (await options.writingSettings()).followPullRequestTemplates }) : undefined
   if (gitActions) agentHost.setGitActions(gitActions)
-  // Keep main up to date (ADR-0140): this computer's own projects, every 15 minutes and when a pull request merges. A
+  // Keep main up to date (ADR-0142): this computer's own projects, every 15 minutes and when a pull request merges. A
   // headless host's projects wait for a follow-up that carries the line to its clients.
   const mainCheckout = options.keepMainCurrent && options.runsAs !== 'headless-host' && gitStatus && gitActions
     ? new MainCheckoutKeeper({ host: agentHost, status: gitStatus, actions: gitActions, directory, ...(gitRun ? { run: gitRun } : {}),
