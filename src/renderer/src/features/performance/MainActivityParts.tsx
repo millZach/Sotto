@@ -51,7 +51,7 @@ export function RecordingCountdown({ recording }: { readonly recording: Extract<
     <div className="main-activity__count" aria-hidden="true">{left} s</div>
     <div className="main-activity__progress" role="progressbar" aria-label={t`Recording`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={total - left}
       aria-valuetext={t`${left} seconds left`} style={{ '--main-activity-progress': (total - left) / total } as React.CSSProperties}><i /></div>
-    <p className="main-activity__muted"><Trans>Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness.</Trans></p>
+    <p className="main-activity__muted tt-paragraph"><Trans>Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness.</Trans></p>
   </div>
 }
 
@@ -90,8 +90,8 @@ export function SavedRecording({ recording, onShowInFolder, onAttached, extra }:
   return <div className="main-activity__saved">
     <div className="main-activity__file"><FileText size={16} aria-hidden="true" /><span>{recording.name}</span><small>{plural(files, { one: `# file, ${size}`, other: `# files, ${size}` })}</small></div>
     {attached
-      ? <p className="main-activity__done" role="status"><Trans>Added to a new thread's composer. It is sent when you send.</Trans></p>
-      : <p className="main-activity__muted">{recording.windowRecorded
+      ? <p className="main-activity__done tt-paragraph" role="status"><Trans>Added to a new thread's composer. It is sent when you send.</Trans></p>
+      : <p className="main-activity__muted tt-paragraph">{recording.windowRecorded
         ? t`Saved on this computer, in Sotto's activity recordings folder.`
         : t`Saved on this computer, in Sotto's activity recordings folder. Only main was recorded; the window could not be.`}</p>}
     <div className="main-activity__actions">

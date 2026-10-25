@@ -45,7 +45,7 @@ function StateGroup({ label, items }: { readonly label: string; readonly items: 
   const count = items.length
   return <section className="watcher-context__group">
     <h4>{count > 0 ? t({ message: `${label}, ${count}`, comment: 'A group of Watcher’s state and how many items it holds' }) : label}</h4>
-    {count > 0 ? <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="watcher-context__none">{t({ message: 'None', comment: 'A group of Watcher’s state with nothing in it' })}</p>}
+    {count > 0 ? <ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <p className="watcher-context__none tt-paragraph">{t({ message: 'None', comment: 'A group of Watcher’s state with nothing in it' })}</p>}
   </section>
 }
 
@@ -137,19 +137,19 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
         aria-valuetext={facts.compacting ? t`Compacting` : t`${used} of ${point}`}>
         <i data-fill={fill} style={facts.compacting ? undefined : { width: `${Math.round((facts.share ?? 0) * 100)}%` }} />
       </div> : null}
-      {facts.sentence !== '' ? <p className="watcher-context__said">{facts.sentence}</p> : null}
+      {facts.sentence !== '' ? <p className="watcher-context__said tt-paragraph">{facts.sentence}</p> : null}
       <div className="watcher-context__actions">
         <Button variant="secondary" disabled={!canPress} onClick={() => void compact()}
           title={!facts.canCompact ? (provider === null ? t`Its provider cannot compact` : t`${provider} cannot compact`) : facts.compacting ? t`Compacting now` : running ? t`Waits for Watcher’s turn to end` : undefined}>
           <Shrink size={14} aria-hidden="true" /><Trans>Compact context</Trans>
         </Button>
       </div>
-      {error ? <p className="watcher-context__error" role="alert">{error}</p> : null}
+      {error ? <p className="watcher-context__error tt-paragraph" role="alert">{error}</p> : null}
       <div className="watcher-context__state">
         <h3><Trans>Watcher’s state, kept through compaction</Trans></h3>
         <div className="watcher-context__groups">
           <StateGroup label={t({ message: 'Watching', comment: 'The threads Watcher watches, a group of its state' })} items={watching} />
-          {state?.state?.unread ? <p className="watcher-context__said" role="status"><Trans>Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</Trans></p> : <>
+          {state?.state?.unread ? <p className="watcher-context__said tt-paragraph" role="status"><Trans>Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</Trans></p> : <>
             <StateGroup label={t`Waiting on you`} items={groups.decisions} />
             <StateGroup label={t`Your rules`} items={groups.rules} />
             <StateGroup label={t`Issues filed`} items={groups.issues} />

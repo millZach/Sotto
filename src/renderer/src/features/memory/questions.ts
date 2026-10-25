@@ -35,8 +35,18 @@ const boundaryMessages = {
 
 export const boundaryLabels = translated(boundaryMessages)
 
-/** Every action a saved policy can name, including the ones the questionnaire never offers. */
-export const policyActionLabels = translated({
-  ...boundaryMessages,
-  'remote-answer': msg`Answering permissions from a paired client`,
+/** The same actions inside a sentence, written in the case they take there rather than lower-cased by code. */
+const boundaryPhraseMessages = {
+  spend: msg({ message: 'starting new spending', comment: 'Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one' }),
+  publish: msg({ message: 'publishing or sending work outside Sotto', comment: 'Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one' }),
+  destroy: msg({ message: 'deleting or making irreversible changes', comment: 'Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one' }),
+  'relax-verification': msg({ message: 'skipping or weakening verification', comment: 'Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one' }),
+} as const
+
+export const boundaryPhrases = translated(boundaryPhraseMessages)
+
+/** Every action a saved policy can name, including the ones the questionnaire never offers, inside a sentence. */
+export const policyActionPhrases = translated({
+  ...boundaryPhraseMessages,
+  'remote-answer': msg({ message: 'answering permissions from a paired client', comment: 'Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one' }),
 })

@@ -38,11 +38,11 @@ export function Field({ label, description, error, children, className = '' }: F
     <div className={`tt-field ${className}`.trim()}>
       <label className="tt-field__label" htmlFor={controlId}>{label}</label>
       {description === undefined ? null : (
-        <p className="tt-field__description" id={descriptionId}>{description}</p>
+        <p className="tt-field__description tt-paragraph" id={descriptionId}>{description}</p>
       )}
       {control}
       {error === undefined ? null : (
-        <p className="tt-field__error" id={errorId}>{error}</p>
+        <p className="tt-field__error tt-paragraph" id={errorId}>{error}</p>
       )}
     </div>
   )

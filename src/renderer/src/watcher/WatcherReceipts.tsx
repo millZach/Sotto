@@ -150,7 +150,7 @@ function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; 
       {...conversation.press(facts.threadId)}>{title}</button>
   return <div className="sotto-line" data-takeover={`${line.target.hostId}:${line.target.threadId}`}>
     <span className="sotto-line__mark" role="img" aria-label="Sotto"><SottoMark className="sotto-line__glyph" /></span>
-    <p><Trans>You took over {thread}. Watcher stopped sending to it.</Trans></p>
+    <p className="tt-paragraph"><Trans>You took over {thread}. Watcher stopped sending to it.</Trans></p>
     <time dateTime={line.at}>{clockLabel(Date.parse(line.at))}</time>
   </div>
 }

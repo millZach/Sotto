@@ -111,20 +111,20 @@ export function WatcherHandoverOffer({ room, offer, composerId }: {
     <div className="watcher-handover__lead">
       <CornerDownRight size={15} aria-hidden="true" />
       {/* After New Watcher, the last one was on the same provider, so the strip names none. */}
-      <p role="status">{offer.provider === room.state?.current?.provider
+      <p className="tt-paragraph" role="status">{offer.provider === room.state?.current?.provider
         ? <Trans>Sending starts the new Watcher with a <strong>handover</strong> of the last one.</Trans>
         : <Trans>Sending starts the new Watcher with a <strong>handover</strong> of the last one, from {provider}.</Trans>}</p>
       <button type="button" className="watcher-handover__dismiss tt-focusable" aria-label={t`Don’t hand over: start the new Watcher without it`}
         title={t`Don’t hand over: start the new Watcher without it`} onClick={() => void dismiss()}><X size={15} aria-hidden="true" /></button>
     </div>
-    <p className="watcher-handover__ledger">
+    <p className="watcher-handover__ledger tt-paragraph">
       {offer.counts.historyKept ? null : <>{t`Keep local history is off, so it holds only what Sotto kept since it last started.`}{' '}</>}
       {leftOut === null ? t`It carries ${carried}.` : t`It carries ${carried} and leaves out ${leftOut}.`}{' '}
       <button ref={readButton} type="button" className="watcher-handover__read tt-focusable" aria-expanded={open} aria-controls={open ? regionId : undefined}
         disabled={reading} onClick={() => void toggle()}>{open ? t`Hide it` : reading ? t`Reading it…` : t`Read it`}</button>
     </p>
     {open && text !== null ? <div id={regionId} className="watcher-handover__text tt-focusable" tabIndex={0} role="region" aria-label={t`The handover, word for word`}>{text}</div> : null}
-    {error === null ? null : <p className="watcher-handover__error" role="alert">{error}</p>}
+    {error === null ? null : <p className="watcher-handover__error tt-paragraph" role="alert">{error}</p>}
   </section>
 }
 
@@ -154,10 +154,10 @@ export function HandoverMessage({ handover, createdAt }: { readonly handover: Ag
     }}>
     <header><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{t({ message: 'Handover', comment: 'The tag on a message that carries a handover' })}</span>
       <time dateTime={createdAt}>{clockLabel(Date.parse(createdAt))}</time></header>
-    <p className="watcher-handover-message__lead">{from
+    <p className="watcher-handover-message__lead tt-paragraph">{from
       ? <Trans>From <strong>{fromTitle}</strong> on {provider}. Context, not a new request.</Trans>
       : <Trans>From the last Watcher, on {provider}. Context, not a new request.</Trans>}</p>
-    <p className="watcher-handover-message__ledger">{handover.counts.historyKept ? null : <>{t`Keep local history was off, so it held only what Sotto had kept since it last started.`}{' '}</>}
+    <p className="watcher-handover-message__ledger tt-paragraph">{handover.counts.historyKept ? null : <>{t`Keep local history was off, so it held only what Sotto had kept since it last started.`}{' '}</>}
       {t`Carried ${carried}.`}{leftOut === null ? '' : <>{' '}{t`Left out ${leftOut}.`}</>}</p>
     <button ref={button} type="button" className="watcher-handover__disclose tt-focusable" aria-expanded={open} aria-controls={open ? regionId : undefined}
       onClick={() => setOpen(value => !value)}><ChevronRight size={14} aria-hidden="true" />{open ? t`Hide the handover` : t`Read the handover, word for word`}</button>

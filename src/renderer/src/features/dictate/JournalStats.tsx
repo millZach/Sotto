@@ -3,20 +3,14 @@ import { plural, t } from '@lingui/core/macro'
 import { Plural, Trans, useLingui } from '@lingui/react/macro'
 
 import {
+  countLabel as count,
   hourLabel,
   minutesLabel,
+  wordsLabel,
   shortDate,
   type CalendarCell,
   type JournalStats as Stats,
 } from './journalFacts'
-
-const count = (value: number): string => value.toLocaleString()
-
-/** "1,240 words": the count as the column writes it, in a message that can say it in the reader's plural. */
-function wordCount(words: number): string {
-  const shown = count(words)
-  return plural(words, { one: `${shown} word`, other: `${shown} words` })
-}
 
 /**
  * The Journal's stats column: today against your usual pace, speed over the last 30 days, the streak and its
@@ -25,13 +19,12 @@ function wordCount(words: number): string {
  * (the sections marked wide) step aside.
  */
 export const JournalStats = memo(function JournalStats({ stats, typingWpm }: { readonly stats: Stats; readonly typingWpm: number }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   const { today, usual, month } = stats
   const todayPace = today.wpm === null
     ? usual === null ? { value: '0', label: t`wpm today` } : { value: String(usual), label: t`wpm, your usual` }
     : { value: String(today.wpm), label: usual === null ? t`wpm today` : t`wpm, usual ${usual}` }
-  const dictations = count(today.count)
-  const dictationCount = today.count
+  const dictationCount = today.count, dictations = count(today.count)
   const { streak, longestStreak } = stats
   return (
     <aside className="journal-stats" aria-label={t`Your dictation`}>
@@ -62,7 +55,7 @@ export const JournalStats = memo(function JournalStats({ stats, typingWpm }: { r
             {stats.where.map(({ app, words, share }) => (
               <li key={app}>
                 <span className="journal-where__name">{app}</span>
-                <span className="journal-where__value">{Math.round(share * 100)}%<small>{wordCount(words)}</small></span>
+                <span className="journal-where__value">{new Intl.NumberFormat(i18n.locale, { style: 'percent', maximumFractionDigits: 0 }).format(share)}<small>{wordsLabel(words)}</small></span>
                 <span className="journal-meter" aria-hidden="true"><i style={{ width: `${Math.max(2, Math.round((share / stats.where[0]!.share) * 100))}%` }} /></span>
               </li>
             ))}
@@ -150,7 +143,7 @@ const CALENDAR_TOP = 16
 
 function cellName(cell: CalendarCell): string {
   const date = new Date(cell.day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-  const amount = cell.words === 0 ? t`no dictation` : wordCount(cell.words)
+  const amount = cell.words === 0 ? t`no dictation` : wordsLabel(cell.words)
   return cell.today ? t`Today, ${date}: ${amount}` : t`${date}: ${amount}`
 }
 

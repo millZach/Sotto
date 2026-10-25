@@ -68,7 +68,7 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
     // Started, this composer goes with the last Watcher, and Watcher's pane gives focus to the new one's.
     try { setRefusal(room.settle(await startNew())) } catch { setRefusal(t`Sotto could not reach Watcher, so no new Watcher was started. Try again.`) } finally { setStarting(false) }
   }
-  const notice = refusal === null ? null : <p className="thread-options__notice" role="alert"><span>{refusal}</span></p>
+  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{refusal}</span></p>
   return <>
     <button type="button" className="thread-chip watcher-new tt-focusable" title={why ?? t`Start a new Watcher with a handover of this one`}
       aria-disabled={why !== null || undefined} aria-describedby={why !== null ? reasonId : undefined} onClick={() => void press()}>
@@ -113,7 +113,7 @@ export function NewWatcherNote({ model, carries }: { readonly model: string; rea
   return <div className="thread-workspace__empty watcher-new-note">
     <WatcherOwl size={26} />
     <h3><Trans>New Watcher on {model}.</Trans></h3>
-    <p><Trans>The last conversation is in Watcher history on the Threads page.</Trans>{carries === null ? '' : ` ${carries}`}</p>
+    <p className="tt-paragraph"><Trans>The last conversation is in Watcher history on the Threads page.</Trans>{carries === null ? '' : ` ${carries}`}</p>
   </div>
 }
 
@@ -134,10 +134,10 @@ export function WatcherStartStopped({ room }: { readonly room: WatcherRoom }): R
     try { setRefusal(room.settle(await startNew())) } catch { setRefusal(t`Sotto could not reach Watcher, so nothing was started. Try again.`) } finally { setTrying(false) }
   }
   return <div className="watcher-room__stopped">
-    <p role="status">{replaced
+    <p className="tt-paragraph" role="status">{replaced
       ? t`The new Watcher could not be started. Nothing was sent, and the last conversation is in Watcher history on the Threads page.`
       : t`Watcher could not be started. Nothing was sent.`} {startNew === null ? t`Reopen Sotto to try again.` : t`Try again, or check its provider in Settings, under Providers.`}</p>
     {startNew === null ? null : <Button variant="secondary" aria-disabled={trying || undefined} onClick={() => void retry()}>{trying ? t`Trying again…` : t`Try again`}</Button>}
-    {refusal === null ? null : <p className="agent-error" role="alert">{refusal}</p>}
+    {refusal === null ? null : <p className="agent-error tt-paragraph" role="alert">{refusal}</p>}
   </div>
 }

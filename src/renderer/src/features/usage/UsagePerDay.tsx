@@ -223,10 +223,10 @@ export function PerDay({ page, metric, rows, choice, onChoose, selected, hover, 
       </div>
     </div>
     {children}
-    {rankingIncomplete ? <p className="usage-note">{tokens
+    {rankingIncomplete ? <p className="usage-note tt-paragraph">{tokens
       ? t`Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest.`
       : t`Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most prompts. Other counts the rest.`}</p> : null}
-    {failed ? <p className="usage-note">{byProvider
+    {failed ? <p className="usage-note tt-paragraph">{byProvider
       ? t`Each provider's days couldn't be read. Nothing was lost, and the totals above still count them.`
       : t`Each model's days couldn't be read. Nothing was lost, and the totals above still count them.`} <button type="button" className="usage-link tt-focusable" onClick={retry}><Trans>Try again</Trans></button></p> : null}
     {split && plan.series.length > 0 ? <SeriesValues plan={plan} dayIndex={dayIndex} metric={metric} kind={kind} ready={plan.ready}

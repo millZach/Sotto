@@ -176,7 +176,7 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
     <div className={leaving ? 'starting-screen starting-screen--leaving' : 'starting-screen'}>
       <div className="starting-screen__block" data-revealed={revealed ? 'true' : 'false'}>
         <SottoMark className="starting-screen__mark" />
-        <p className="starting-screen__line" role="status">{revealed ? view.line : ''}</p>
+        <p className="starting-screen__line tt-paragraph" role="status">{revealed ? view.line : ''}</p>
         {revealed && view.dots.length > 0 ? (
           <ul className="starting-screen__items" aria-label={t`Providers and hosts`}>
             {view.dots.map(dot => (
@@ -190,7 +190,7 @@ function StartingScreen({ leaving, hosts, onOpen }: StartingScreenProps): ReactN
         ) : null}
         {view.late !== null ? (
           <div className="starting-screen__late">
-            <p id={noteId}>{view.late.text}</p>
+            <p className="tt-paragraph" id={noteId}>{view.late.text}</p>
             <Button ref={buttonRef} variant="secondary" aria-describedby={noteId} disabled={leaving} onClick={() => onOpen(true)}>
               {view.late.button}
             </Button>

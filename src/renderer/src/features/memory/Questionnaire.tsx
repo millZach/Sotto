@@ -2,7 +2,7 @@ import React, { useEffect, useRef, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { MAX_MEMORY_CONTENT_CHARACTERS, type MemoryCommand, type MemoryTopic } from '../../../../shared/memory'
 import { Button } from '../../components/Button'
-import { questions, boundaryLabels } from './questions'
+import { questions, boundaryLabels, boundaryPhrases } from './questions'
 
 type Boundary = keyof typeof boundaryLabels
 export interface QuestionnaireDraft { step: number; answers: Partial<Record<MemoryTopic, string>>; boundaries: Boundary[] }
@@ -24,18 +24,18 @@ export function Questionnaire({ draft, onChange, onSave, onLater, busy, error }:
   const title = question?.question ?? (review ? t`Here’s what Sotto will remember` : t`What should Sotto always confirm?`)
   const answer = question ? draft.answers[question.topic] ?? '' : ''
   const step = draft.step + 1
-  const confirmed = draft.boundaries.map(boundary => boundaryLabels[boundary].toLowerCase()).join('; ')
+  const confirmed = draft.boundaries.map(boundary => boundaryPhrases[boundary]).join('; ')
   const changeAnswer = (content: string) => { if (question) onChange({ ...draft, answers: { ...draft.answers, [question.topic]: content } }) }
   return <section className="memory-page memory-conversation" aria-label={t`Working preferences`}>
     <div className="memory-step" key={draft.step}>
       <h1 ref={heading} tabIndex={-1}>{title}</h1>
       {question ? <>
-        <p className="memory-description" id="memory-question-hint">{question.hint}</p>
+        <p className="memory-description tt-paragraph" id="memory-question-hint">{question.hint}</p>
         <textarea className="memory-answer" aria-label={question.question} aria-describedby="memory-question-hint" maxLength={MAX_MEMORY_CONTENT_CHARACTERS} rows={5}
           value={answer} onChange={event => changeAnswer(event.target.value)} disabled={busy} />
         <Button variant="ghost" onClick={() => changeAnswer('No preference.')} disabled={busy}><Trans>No preference</Trans></Button>
       </> : review ? <>
-        <p className="memory-description"><Trans>Saved on this computer. Sotto does not send them to any provider.</Trans></p>
+        <p className="memory-description tt-paragraph"><Trans>Saved on this computer. Sotto does not send them to any provider.</Trans></p>
         <div className="memory-review">{questions.map((item, index) => {
           const topic = item.topic
           return <div key={item.topic}>
@@ -43,10 +43,10 @@ export function Questionnaire({ draft, onChange, onSave, onLater, busy, error }:
             <Button variant="ghost" onClick={() => onChange({ ...draft, step: index })} disabled={busy} aria-label={t`Change ${topic} answer`}><Trans>Change</Trans></Button>
           </div>
         })}</div>
-        <p>{draft.boundaries.length ? t`Always confirm: ${confirmed}.` : t`Your existing permission boundaries stay in place.`}</p>
-        <p className="memory-description"><Trans>Answers are preferences. Only the confirmation choices create policies; they grant no new permissions.</Trans></p>
+        <p className="tt-paragraph">{draft.boundaries.length ? t`Always confirm: ${confirmed}.` : t`Your existing permission boundaries stay in place.`}</p>
+        <p className="memory-description tt-paragraph"><Trans>Answers are preferences. Only the confirmation choices create policies; they grant no new permissions.</Trans></p>
       </> : <>
-        <p className="memory-description"><Trans>These choices become explicit policies. Leaving a box unchecked grants no permission.</Trans></p>
+        <p className="memory-description tt-paragraph"><Trans>These choices become explicit policies. Leaving a box unchecked grants no permission.</Trans></p>
         <div className="memory-boundaries">{(Object.keys(boundaryLabels) as Boundary[]).map(boundary => <label key={boundary}>
           <input type="checkbox" checked={draft.boundaries.includes(boundary)} disabled={busy} onChange={event => onChange({ ...draft,
             boundaries: event.target.checked ? [...draft.boundaries, boundary] : draft.boundaries.filter(value => value !== boundary),
@@ -54,7 +54,7 @@ export function Questionnaire({ draft, onChange, onSave, onLater, busy, error }:
         </label>)}</div>
       </>}
     </div>
-    {error && <p role="alert" className="memory-error">{error}</p>}
+    {error && <p role="alert" className="memory-error tt-paragraph">{error}</p>}
     <div className="memory-actions">
       {draft.step > 0 && <Button variant="secondary" disabled={busy} onClick={() => onChange({ ...draft, step: draft.step - 1 })}><Trans>Back</Trans></Button>}
       {review ? <Button disabled={busy} onClick={() => void onSave({ type: 'complete-questionnaire', answers: questions.map(item => ({ topic: item.topic, content: draft.answers[item.topic] ?? '' })), boundaries: draft.boundaries })}>{busy ? t`Saving…` : t`Save preferences`}</Button>

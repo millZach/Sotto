@@ -183,17 +183,17 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         <div className="watcher-first__intro">
           <WatcherOwl size={28} className="watcher-first__owl" />
           <h2><Trans>Start Watcher</Trans></h2>
-          <p><Trans>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</Trans></p>
-          <p><Trans>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</Trans></p>
+          <p className="tt-paragraph"><Trans>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</Trans></p>
+          <p className="tt-paragraph"><Trans>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</Trans></p>
           {model === undefined ? <>
-            <p className="watcher-first__missing"><Trans>Connect {providers} in Settings, under Providers, to start Watcher.</Trans></p>
+            <p className="watcher-first__missing tt-paragraph"><Trans>Connect {providers} in Settings, under Providers, to start Watcher.</Trans></p>
             {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button></div> : null}
-          </> : <p><Trans>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</Trans></p>}
+          </> : <p className="tt-paragraph"><Trans>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</Trans></p>}
         </div>
       </div>
     </div>
     {model !== undefined ? <div className="thread-workspace__compose">
-      {error ? <p className="agent-error watcher-first__error" role="alert">{error}</p> : null}
+      {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check. Sending starts Watcher.`}
@@ -231,7 +231,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         <div ref={setNotices} className="thread-options-notices" />
       </form>
       <div className="thread-pane__meta">
-        <p className="watched-note"><WatcherOwl size={13} /><span><Trans>Your first message starts Watcher on {modelName}, with your own {accountProvider} account.</Trans></span></p>
+        <p className="watched-note tt-paragraph"><WatcherOwl size={13} /><span><Trans>Your first message starts Watcher on {modelName}, with your own {accountProvider} account.</Trans></span></p>
       </div>
     </div> : null}
   </>
@@ -571,7 +571,7 @@ export function WatcherView({ now: fixedNow, updateControl }: {
     <WatcherGlance entries={needs} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} />
   </>
   let watcherContent: ReactNode
-  const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status' : 'watcher-room__status'} role={alert ? 'alert' : 'status'}>{text}</p></>
+  const status = (text: string, alert = false): ReactNode => <>{header}<p className={alert ? 'agent-error watcher-room__status tt-paragraph' : 'watcher-room__status tt-paragraph'} role={alert ? 'alert' : 'status'}>{text}</p></>
   if (room === null || room.status === 'unavailable') watcherContent = status(t`This build cannot reach Watcher yet. Nothing was started. A later Sotto build adds it.`)
   else if (state === null || room.status === 'loading') watcherContent = status(agents.error ?? t`Opening Watcher…`)
   else if (room.error !== null && room.state === null) watcherContent = status(room.error, true)

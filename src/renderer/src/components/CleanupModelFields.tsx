@@ -40,12 +40,13 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
   readonly onSave: (patch: SettingsPatch) => Promise<boolean> | void
   readonly onListModels: () => Promise<OpenRouterModelList>
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const id = useId()
   const [models, setModels] = useState<readonly Model[] | null>(null)
   const [complete, setComplete] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
+  // Why the list could not be read, named in words only when it is shown, so a new interface language reaches it too.
+  const [failure, setFailure] = useState<'http' | 'network' | 'timeout' | null>(null)
   const [open, setOpen] = useState(false)
   const [above, setAbove] = useState(false)
   const [query, setQuery] = useState('')
@@ -57,7 +58,8 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
     : models?.find(model => model.id === settings.llmModel) ?? { id: settings.llmModel, name: settings.llmModel }
   // Only a whole list can say a model is gone; one cut short may hold it on a page not read.
   const gone = settings.llmModel !== null && models !== null && complete && !models.some(model => model.id === settings.llmModel)
-  const matches = useMemo(() => matchModels(models ?? [], query), [models, query])
+  // Default is named in the interface language, so a new language lists it again.
+  const matches = useMemo(() => matchModels(models ?? [], query), [models, query, locale])
 
   const load = async (): Promise<void> => {
     const current = request.current += 1
@@ -67,7 +69,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
     if (current !== request.current) return
     setLoading(false)
     if (result.ok) { setModels(result.models); setComplete(result.complete) }
-    else setFailure(failureCopy(result.reason))
+    else setFailure(result.reason)
   }
 
   // Opening is the only thing that reads the list: focus alone, as when tabbing past, asks OpenRouter nothing.
@@ -140,8 +142,8 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
         </ul> : null}
       </div>
     </div>
-    {failure === null && !gone ? null : <p className="settings-remote-status settings-remote-status--error" role="status">
-      <CircleAlert size={16} aria-hidden="true" />{failure ?? t`OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.`}
+    {failure === null && !gone ? null : <p className="settings-remote-status settings-remote-status--error tt-paragraph" role="status">
+      <CircleAlert size={16} aria-hidden="true" />{failure !== null ? failureCopy(failure) : t`OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.`}
     </p>}
     <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
       <SegmentedControl label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}

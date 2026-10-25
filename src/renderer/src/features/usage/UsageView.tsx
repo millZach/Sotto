@@ -250,9 +250,9 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const clearingList = clearRead === null ? '' : joinNames(clearRead.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => midSentence(hostName(host.hostId))))
 
   let body: ReactNode
-  if (bridge === undefined) body = <p className="usage-none" role="alert"><Trans>Usage is not available in this build.</Trans></p>
+  if (bridge === undefined) body = <p className="usage-none tt-paragraph" role="alert"><Trans>Usage is not available in this build.</Trans></p>
   else if (usage.read === null && usage.failed.length > 0 && !usage.loading) body = null
-  else if (usage.read === null) body = <p className="usage-loading" role="status"><Trans>Reading usage…</Trans></p>
+  else if (usage.read === null) body = <p className="usage-loading tt-paragraph" role="status"><Trans>Reading usage…</Trans></p>
   else if (invalidRange) body = null
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
   else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory names={read.hosts.map(host => hostName(host.hostId))} /></>
@@ -268,7 +268,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         <ActionMenu ref={moreButton} label={t`More usage actions`} items={[{ id: 'clear', label: t`Clear usage…`, tone: 'danger', disabled: clearable.length === 0,
           ...(clearable.length === 0 ? { hint: t`Nothing on the selected computers can be cleared.` } : {}), run: () => { setNotice(null); setClearRead(read) } }]} />
       </div>
-      <p className="usage-subtitle"><Trans>Your subscriptions, and the work on each computer, in Sotto and outside it.</Trans></p>
+      <p className="usage-subtitle tt-paragraph"><Trans>Your subscriptions, and the work on each computer, in Sotto and outside it.</Trans></p>
       <div className="usage-bar">
         <div ref={tabs} className="usage-seg" role="tablist" aria-label={t`Usage views`}>{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
           id={`${id}-${value}`} aria-controls={`${id}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
@@ -286,22 +286,22 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       </div> : null}
     </header>
     <div className="usage-notices">
-      {invalidRange && activityFilters ? <p className="usage-notice" role="alert"><Trans>Choose an end date on or after the start date.</Trans></p> : null}
-      {notice !== null ? <p className="usage-notice" role="status">{notice}</p> : null}
+      {invalidRange && activityFilters ? <p className="usage-notice tt-paragraph" role="alert"><Trans>Choose an end date on or after the start date.</Trans></p> : null}
+      {notice !== null ? <p className="usage-notice tt-paragraph" role="status">{notice}</p> : null}
       {usage.failed.map(item => {
         const from = item === EVERY_HOST ? '' : midSentence(hostName(item))
-        return <p key={item} className="usage-notice" role="alert">{item === EVERY_HOST ? t`Usage could not be read. Your saved figures were not changed.` : t`Usage could not be read from ${from}. Your saved figures were not changed.`} <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}><Trans>Try again</Trans></button></p>
+        return <p key={item} className="usage-notice tt-paragraph" role="alert">{item === EVERY_HOST ? t`Usage could not be read. Your saved figures were not changed.` : t`Usage could not be read from ${from}. Your saved figures were not changed.`} <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}><Trans>Try again</Trans></button></p>
       })}
-      {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice" role="alert"><Trans>Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</Trans></p> : null}
+      {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice tt-paragraph" role="alert"><Trans>Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</Trans></p> : null}
       {read.hosts.filter(host => host.status !== 'ready' || withoutHistory(host)).filter(host => !(noHistory && withoutHistory(host))).map(host => {
         const name = hostName(host.hostId), from = midSentence(name)
-        return <p key={host.hostId} className="usage-notice usage-notice--quiet">{
+        return <p key={host.hostId} className="usage-notice usage-notice--quiet tt-paragraph">{
           withoutHistory(host) ? t`${name}'s history appears after its host update.`
             : host.status === 'offline' ? t`${name} is offline. Its figures appear when it reconnects.`
               : t`Usage could not be read from ${from}. Nothing was changed. Try again in a moment.`}</p>
       })}
-      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status"><Trans>Still reading {pendingList}…</Trans></p> : null}
-      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet"><Trans>Still reading {scanningList} history. The figures fill in as it reads.</Trans></p> : null}
+      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet tt-paragraph" role="status"><Trans>Still reading {pendingList}…</Trans></p> : null}
+      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet tt-paragraph"><Trans>Still reading {scanningList} history. The figures fill in as it reads.</Trans></p> : null}
     </div>
     <div id={`${id}-panel`} className="usage-panel" role="tabpanel" aria-labelledby={`${id}-${tab}`} aria-busy={usage.loading || undefined}>
       <div key={tab} className="usage-enter">{body}</div>
@@ -309,9 +309,9 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     <p className="tt-visually-hidden" aria-live="polite">{announcement}</p>
   </div></div>
   {clearRead !== null ? <ConfirmationDialog title={t`Clear saved usage?`} description={<>
-    <p><Trans>Remove the usage figures saved on {clearingList}?</Trans></p>
-    <p><Trans>This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are.</Trans></p>
-    <p><Trans>Records from before the clear never come back. New work counts afterward.</Trans></p>
+    <p className="tt-paragraph"><Trans>Remove the usage figures saved on {clearingList}?</Trans></p>
+    <p className="tt-paragraph"><Trans>This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are.</Trans></p>
+    <p className="tt-paragraph"><Trans>Records from before the clear never come back. New work counts afterward.</Trans></p>
   </>} confirmLabel={t`Clear saved usage`} cancelLabel={t`Keep usage`} onConfirm={clear} onCancel={() => setClearRead(null)} failureMessage={t`Usage could not be cleared. Your saved figures may remain. Try again.`} fallbackFocusRef={moreButton} /> : null}
   </section>
 }

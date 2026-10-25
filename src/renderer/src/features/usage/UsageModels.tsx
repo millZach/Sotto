@@ -46,13 +46,13 @@ export function Models({ page }: { readonly page: UsagePage }): ReactNode {
   }
   return <>
     <div className="usage-models-head">
-      <p className="usage-models-summary"><Trans><b>{modelsShown}</b> <Plural value={modelCount} one="model" other="models" /> · <b>{promptsShown}</b> <Plural value={promptCount} one="prompt" other="prompts" /> · <b>{tokensShown}</b> tokens · {range}</Trans></p>
+      <p className="usage-models-summary tt-paragraph"><Trans><b>{modelsShown}</b> <Plural value={modelCount} one="model" other="models" /> · <b>{promptsShown}</b> <Plural value={promptCount} one="prompt" other="prompts" /> · <b>{tokensShown}</b> tokens · {range}</Trans></p>
       <div className="usage-sort"><span id={label}><Trans>Sort by</Trans></span>
         <div ref={sorts} className="usage-seg usage-seg--small" role="radiogroup" aria-labelledby={label}>{SORTS.map(([key, name], index) => <button key={key} type="button" role="radio" className="tt-focusable"
           aria-checked={sort === key} tabIndex={sort === key ? 0 : -1} onClick={() => setSort(key)} onKeyDown={event => onSortKey(event, index)}>{i18n._(name)}</button>)}</div>
       </div>
     </div>
-    {summary.modelsTruncated ? <p className="usage-note"><Trans>Some computers have more models than one read returns. The table shows the models returned; the totals still count every model.</Trans></p> : null}
+    {summary.modelsTruncated ? <p className="usage-note tt-paragraph"><Trans>Some computers have more models than one read returns. The table shows the models returned; the totals still count every model.</Trans></p> : null}
     <div className="usage-table">
       <div className="usage-table__columns" aria-hidden="true"><span><Trans>Model</Trans></span><span><Trans>Tokens by kind</Trans></span><span><Trans>Prompts</Trans></span><span><Trans>Tokens</Trans></span><span><Trans>From cache</Trans></span></div>
       <ul className="usage-table__rows">{rows.map(row => {
@@ -134,6 +134,6 @@ function ModelDetail({ id, row, page, daily }: { readonly id: string; readonly r
       {fact(t`Provider sessions`, fmtInt(row.activeThreads))}{fact(t`Days used`, fmtInt(daysUsed))}{fact(t`Last used`, last === undefined ? <Dash /> : relativeDay(last, page.today))}
     </dl>
     <div className="usage-detail__spark">{daily === undefined ? <span className="usage-detail__wait" aria-hidden="true" /> : <Spark values={values} width={220} height={40} />}<p>{usePrompts ? t`Prompts per day` : t`Tokens per day`}</p></div>
-    {notes.length > 0 ? <p className="usage-detail__note">{notes.join(' ')}</p> : null}
+    {notes.length > 0 ? <p className="usage-detail__note tt-paragraph">{notes.join(' ')}</p> : null}
   </div>
 }

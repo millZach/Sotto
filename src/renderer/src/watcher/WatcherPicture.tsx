@@ -186,12 +186,13 @@ function moodOfNode(node: PictureNode): OwlMood {
  */
 function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: { readonly node: PictureNode; readonly room: WatcherRoomState; readonly state: AgentState
   readonly goes: ReadonlyMap<string, number>; readonly layout: GroveLayout; readonly onClose: (refocus: boolean) => void; readonly onOpen: OpenThread; readonly from: HTMLElement | null }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const card = useRef<HTMLDivElement>(null)
   useEffect(() => { card.current?.querySelector<HTMLElement>('button')?.focus() }, [node.key])
   const at = layout.at.get(node.key)
   const thread = node.threadId === null ? undefined : state.host.threads.find(item => item.id === node.threadId)
-  const activity = useMemo(() => nodeActivity(room, node.key, goes), [room, node.key, goes])
+  // The activity lines are words, so a new interface language writes them again.
+  const activity = useMemo(() => nodeActivity(room, node.key, goes), [room, node.key, goes, locale])
   const words = (id: string | undefined): string | null => {
     const text = id === undefined ? undefined : thread?.messages.find(message => message.id === id)?.text
     const line = text?.split('\n').find(part => part.trim() !== '')?.trim()
@@ -218,18 +219,18 @@ function DetailCard({ node, room, state, goes, layout, onClose, onOpen, from }: 
     {node.pullRequests.length ? <ul className="watcher-picture__card-prs" aria-label={t`Its pull requests`}>
       {node.pullRequests.map(pr => <li key={pr.id}><PullRequestChip pr={pr} /><span>{pullRequestWords(pr)}</span></li>)}
     </ul> : null}
-    {asks ? <p className="watcher-picture__card-asks">{node.waits === 'permission' ? t`Asks permission: ${asks}` : t`Asks: ${asks}`}</p> : null}
+    {asks ? <p className="watcher-picture__card-asks tt-paragraph">{node.waits === 'permission' ? t`Asks permission: ${asks}` : t`Asks: ${asks}`}</p> : null}
     {activity.length ? <ol className="watcher-picture__card-did" aria-label={t`What Watcher last did with it`}>
       {activity.map(item => {
         const sent = words(item.messageId), reply = words(item.replyMessageId)
         return <li key={item.id}>
-          <span><b>{item.did}</b>, {item.went.toLowerCase()}{sent ? <span className="watcher-picture__words">“{sent}”</span> : null}
+          <span><b>{item.did}</b>, {item.wentPhrase}{sent ? <span className="watcher-picture__words">“{sent}”</span> : null}
             {reply ? <span className="watcher-picture__words"><Trans>Reply: “{reply}”</Trans></span> : null}</span>
           <time>{clockLabel(item.at)}</time>
         </li>
       })}
-    </ol> : <p className="watcher-picture__card-none"><Trans>Watcher has sent it nothing yet.</Trans></p>}
-    {node.threadId === null ? <p className="watcher-picture__card-none"><Trans>This window does not list this thread.</Trans></p>
+    </ol> : <p className="watcher-picture__card-none tt-paragraph"><Trans>Watcher has sent it nothing yet.</Trans></p>}
+    {node.threadId === null ? <p className="watcher-picture__card-none tt-paragraph"><Trans>This window does not list this thread.</Trans></p>
       : <div className="watcher-picture__card-actions">
         {node.waits !== null ? <button type="button" className="watcher-answer tt-focusable" onClick={() => { onClose(false); onOpen(node.threadId!, { atRequest: true, from }) }}>
           {node.waits === 'failed' || node.waits === 'prototype' ? t({ message: 'Open', context: 'Open a thread' }) : t`Open to answer`}</button> : null}
@@ -351,11 +352,12 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
   readonly labelledBy: string
   readonly onOpen: OpenThread
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const [showSettled, setShowSettled] = useState(false)
   const idOf = useMemo(() => threadAddressIndex(agents), [agents])
   const model = useMemo<PictureModel>(() => buildPicture({ room: roomState, state: agents, entries: known, idOf, merge: merge?.turns ?? null, showSettled }),
-    [roomState, agents, known, idOf, merge, showSettled])
+    // The picture names its projects and computers in words, so a new interface language draws it again.
+    [roomState, agents, known, idOf, merge, showSettled, locale])
   // Each send Watcher marked as a merge turn, with the pull request it gave its turn to.
   const goes = useMemo<ReadonlyMap<string, number>>(() => new Map(merge?.turns.turns.map(turn => [turn.operationId, turn.pullRequest] as const) ?? []), [merge])
   const scroller = useRef<HTMLDivElement>(null)
@@ -502,7 +504,7 @@ const Picture = memo(function Picture({ roomState, agents, known, merge, ask, ca
         {showSettled ? t`Hide settled` : t`Show ${settledCount} settled`}</button> : null}
     </div>
     <div ref={scroller} className="watcher-picture__canvas" onPointerDown={event => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('watcher-picture__space')) setOpen(null) }}>
-      {total === 0 ? <p className="watcher-picture__empty">{watchedLead(0, 0)}</p> : layout === null ? null : <div className="watcher-picture__space" style={{ height: layout.height }}>
+      {total === 0 ? <p className="watcher-picture__empty tt-paragraph">{watchedLead(0, 0)}</p> : layout === null ? null : <div className="watcher-picture__space" style={{ height: layout.height }}>
         <GroveScene layout={layout} model={model} />
         {layout.trees.map(tree => <p key={`${tree.computer}:${tree.x}:${tree.y}`} className="watcher-picture__computer" aria-hidden="true"
           style={{ left: tree.pill.x, top: tree.pill.y, width: tree.pill.w }}><span>{tree.computer || t`Not in this window`}</span></p>)}

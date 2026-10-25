@@ -373,7 +373,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   let content: ReactNode
   if (app.status === 'loading') {
-    content = <main className="app-loading" aria-busy="true"><p role="status"><Trans>Preparing Sotto...</Trans></p></main>
+    content = <main className="app-loading" aria-busy="true"><p className="tt-paragraph" role="status"><Trans>Preparing Sotto...</Trans></p></main>
   } else if (app.status === 'unavailable' || app.settings === null) {
     content = (
       <main className="app-unavailable">

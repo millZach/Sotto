@@ -472,8 +472,8 @@ export function UpdateAllCard({ hosts: hostsBridge = window.sotto?.hosts }: { re
         {steps.map(step => <StepRow key={step.key} step={step} busy={busy} onRetry={retry} onStopThreads={stopThreads} onCancel={cancel} />)}
       </ol>
     </div>
-    {words.notes.length ? <div className="update-all__notes">{words.notes.map(note => <p key={note}>{note}</p>)}</div> : null}
-    {failure ? <p className="update-all__error" role="alert">{failure}</p> : null}
+    {words.notes.length ? <div className="update-all__notes">{words.notes.map(note => <p className="tt-paragraph" key={note}>{note}</p>)}</div> : null}
+    {failure ? <p className="update-all__error tt-paragraph" role="alert">{failure}</p> : null}
     {actions ? <div className="update-all__actions">{actions}</div> : null}
   </section>
 }

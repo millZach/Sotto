@@ -22,7 +22,7 @@ export function PerformanceSettings({ visible, settings, onUpdateSettings, bridg
   const { t, i18n } = useLingui()
   const state = useMainActivity(visible, bridge)
   const command = useMainActivityCommand(bridge)
-  if (state === null) return <p className="main-activity__muted"><Trans>Reading main's numbers…</Trans></p>
+  if (state === null) return <p className="main-activity__muted tt-paragraph"><Trans>Reading main's numbers…</Trans></p>
   const { reading, recording } = state
   const blocked = blockedPercent(reading.blockedShare)
   const longest = freezeLength(reading.longestFreezeMs)
@@ -38,18 +38,18 @@ export function PerformanceSettings({ visible, settings, onUpdateSettings, bridg
     wide = <SavedRecording recording={recording} onShowInFolder={() => void command({ type: 'show-in-folder' })} />
   } else {
     control = <Button variant="secondary" onClick={() => void command({ type: 'record' })}>{recording.phase === 'failed' ? t`Record a minute again` : t`Record a minute`}</Button>
-    if (recording.phase === 'failed') wide = <p className="main-activity__failure" role="alert">{recording.message}</p>
+    if (recording.phase === 'failed') wide = <p className="main-activity__failure tt-paragraph" role="alert">{recording.message}</p>
   }
   return <div className="settings-rows main-activity">
     <div className="main-activity__row">
       <h3 className="main-activity__label"><Trans>Main process, last minute</Trans></h3>
-      <p className="main-activity__status" data-warn={reading.frozen ? '' : undefined} aria-live="polite">{status}</p>
+      <p className="main-activity__status tt-paragraph" data-warn={reading.frozen ? '' : undefined} aria-live="polite">{status}</p>
       <LoopFigures reading={reading} />
       <LoopChart reading={reading} />
     </div>
     <div className="main-activity__row">
       <div className="main-activity__grid">
-        <div><h3 className="main-activity__label"><Trans>Record a minute of activity</Trans></h3><p className="main-activity__muted">{i18n._(RECORDING_PRIVACY)}</p></div>
+        <div><h3 className="main-activity__label"><Trans>Record a minute of activity</Trans></h3><p className="main-activity__muted tt-paragraph">{i18n._(RECORDING_PRIVACY)}</p></div>
         {control}
       </div>
       {wide}

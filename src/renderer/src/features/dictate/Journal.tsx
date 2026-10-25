@@ -155,7 +155,7 @@ export const Journal = memo(function Journal({
     <div className="journal">
       <h2 ref={headingRef} tabIndex={-1} className="tt-visually-hidden"><Trans>Transcripts</Trans></h2>
       {historyEnabled ? null : (
-        <p className="journal-note">
+        <p className="journal-note tt-paragraph">
           <span>{entries.length > 0
             ? t`History is off. New dictations keep their numbers only; older transcripts stay here until you delete them.`
             : t`History is off. New dictations keep their numbers only.`}</span>

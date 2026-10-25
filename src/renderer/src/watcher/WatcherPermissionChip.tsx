@@ -84,7 +84,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
       setPressed(null)
     }
   }
-  const notice = refusal === null ? null : <p className="thread-options__notice" role="alert"><span>{refusal}</span></p>
+  const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{refusal}</span></p>
   return <>
     <ChoiceChip label={t`Watcher’s permissions`} placeholder={RUNTIME_LABELS[FIRST_MODE]} value={chosen} options={choices(model, chosen, provider)}
       disabled={disabled} fixedReason={fixedReason} pending={pending} describedBy={captionId} foot={t`When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.`} flip={flip} icon={PERMISSIONS_ICON}

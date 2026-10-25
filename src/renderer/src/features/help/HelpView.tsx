@@ -56,21 +56,21 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
 
   const gettingStarted: Topic[] = [
     { title: t`Start and stop`, body: linux
-      ? <p>{linuxStart}</p>
-      : <p><Trans>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</Trans></p> },
+      ? <p className="tt-paragraph">{linuxStart}</p>
+      : <p className="tt-paragraph"><Trans>Press <ShortcutKey accelerator={shortcut} platform={platform} /> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing.</Trans></p> },
     linux
-      ? { title: t`Global shortcut`, body: <p>{copy.settingsGlobalShortcutDescription}</p> }
-      : { title: t`Shortcut conflicts`, body: <p><Trans>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</Trans></p> },
-    { title: t`Transcription`, body: <p><Trans>A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</Trans></p> },
+      ? { title: t`Global shortcut`, body: <p className="tt-paragraph">{copy.settingsGlobalShortcutDescription}</p> }
+      : { title: t`Shortcut conflicts`, body: <p className="tt-paragraph"><Trans>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</Trans></p> },
+    { title: t`Transcription`, body: <p className="tt-paragraph"><Trans>A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</Trans></p> },
   ]
   const privacy: Topic[] = [
-    { title: t`Privacy`, body: <p><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</Trans></p> },
+    { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</Trans></p> },
   ]
   const troubleshooting: Topic[] = [
-    { title: t`Microphone access`, body: <p>{copy.helpMicrophoneAccess}</p> },
-    { title: t`Paste fallback`, body: <p>{copy.helpPasteFallback}</p> },
-    ...(copy.accessibilityHelp === null ? [] : [{ title: t`Paste permissions`, body: <p>{copy.accessibilityHelp}</p> }]),
-    { title: t`Reset safely`, body: <p><Trans>Resetting settings reopens first-run setup, but does not clear transcript history. Delete a transcript, or use Clear history in the Dictate room or in Settings, when you want to remove saved text.</Trans></p> },
+    { title: t`Microphone access`, body: <p className="tt-paragraph">{copy.helpMicrophoneAccess}</p> },
+    { title: t`Paste fallback`, body: <p className="tt-paragraph">{copy.helpPasteFallback}</p> },
+    ...(copy.accessibilityHelp === null ? [] : [{ title: t`Paste permissions`, body: <p className="tt-paragraph">{copy.accessibilityHelp}</p> }]),
+    { title: t`Reset safely`, body: <p className="tt-paragraph"><Trans>Resetting settings reopens first-run setup, but does not clear transcript history. Delete a transcript, or use Clear history in the Dictate room or in Settings, when you want to remove saved text.</Trans></p> },
   ]
 
   return (
@@ -97,7 +97,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
           </section>
           <section className="tt-panel">
             <div className="tt-panel__header"><h2><Trans comment="Heading over the running version and what Sotto sends where">About</Trans></h2></div>
-            <p className="help-about">
+            <p className="help-about tt-paragraph">
               <Trans>
                 {about}, {system}. No account with Sotto and no telemetry.
                 <br />

@@ -360,10 +360,10 @@ export function Onboarding({
                 ? t`Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`
                 : t`Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`)}
               <div className="onboarding-assurances">
-                <p><Check aria-hidden="true" size={18} /> <Trans>Transcribed on this computer by the speech model you choose</Trans></p>
-                <p><Check aria-hidden="true" size={18} /> <Trans>Your audio never leaves this computer</Trans></p>
-                <p><Check aria-hidden="true" size={18} /> <Trans>Your threads go only to each agent's own provider</Trans></p>
-                <p><Check aria-hidden="true" size={18} /> <Trans>No Sotto account, no telemetry</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Transcribed on this computer by the speech model you choose</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your audio never leaves this computer</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your threads go only to each agent's own provider</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>No Sotto account, no telemetry</Trans></p>
               </div>
               <p className="onboarding-aside tt-paragraph"><Trans>Every step after this one can be skipped and finished later in Settings.</Trans></p>
             </section>
@@ -405,7 +405,7 @@ export function Onboarding({
                   ? <span className="onboarding-microphone-test__heard"><Check aria-hidden="true" size={18} /></span>
                   // The wave the widget and the Dictate room show; it listens for as long as the test's stream runs.
                   : <VoiceWave stage={microphoneState === 'requesting' || listening ? 'listening' : 'idle'} value={microphoneLevel} label={t`Microphone level`} size="deck" holdSpeaking={listening} />}
-                <p role="status"><strong>{testStatus.title}</strong>{testStatus.next ? <span>{testStatus.next}</span> : null}</p>
+                <p className="tt-paragraph" role="status"><strong>{testStatus.title}</strong>{testStatus.next ? <span>{testStatus.next}</span> : null}</p>
                 {/* One button that changes with the test, so focus stays on it from Test to Stop to Test again. */}
                 <Button
                   variant={listening || microphoneHeard ? 'secondary' : 'primary'}

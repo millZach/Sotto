@@ -111,7 +111,7 @@ function WatcherAskEntry({ ask, facts, answering, press }: {
   // A thread the window does not hold right now, such as one on a host still joining, has nothing to show or open: the
   // needs-you line still names it while it waits.
   if (row === undefined) return null
-  return <p className="watcher-ask-receipt" data-ask-request={ask.requestCardId}>
+  return <p className="watcher-ask-receipt tt-paragraph" data-ask-request={ask.requestCardId}>
     <span className="watcher-ask-receipt__words">{receiptWords(title, sent)}</span>
     <button type="button" className="watcher-ask__open tt-focusable" aria-label={t`Open ${title} beside Watcher`} title={t`Open ${title} beside Watcher`}
       {...press(row.thread.id)}>{t({ message: 'Open', context: 'Open a thread' })}</button>
@@ -199,6 +199,6 @@ function WhatItSaid({ row }: { readonly row: ThreadRow }): ReactNode {
       {open ? t`Hide what it said` : t`Show what it said`}{open ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
     </button>
     {open ? <div id={bodyId} className="watcher-ask__said-body" role="group" aria-label={t`What ${title} said last`}><MessageContent text={text} />
-      {shortened ? <p className="watcher-ask__said-cut"><Trans>Shortened here. Open the thread for the rest.</Trans></p> : null}</div> : null}
+      {shortened ? <p className="watcher-ask__said-cut tt-paragraph"><Trans>Shortened here. Open the thread for the rest.</Trans></p> : null}</div> : null}
   </div>
 }

@@ -79,7 +79,7 @@ export function WatchedNote({ threadId, title }: { readonly threadId: string; re
   // Stop watching takes the note away with its own button: the composer just above it keeps the keyboard.
   const landing = useFocusLanding(watched)
   if (!watched) return null
-  return <p className="watched-note">
+  return <p className="watched-note tt-paragraph">
     <WatcherOwl size={13} />
     {/* A thread watched only for a Watcher request is taken over by the user's own send: word for word as the iPhone says it. */}
     <span>{!standing ? t`Watched by Watcher. If you send here, Watcher stops sending to it.` : paused ? t`Watched by Watcher. While your own turn here runs, it can only steer that turn.`

@@ -114,7 +114,7 @@ function NoticeBody({ bridge, state, open, setOpen }: { readonly bridge: MainAct
   } else if (recording.phase === 'failed') {
     body = <>
       <h2 ref={heading} tabIndex={-1}><Trans>Recording not saved</Trans></h2>
-      <p>{recording.message}</p>
+      <p className="tt-paragraph">{recording.message}</p>
       <div className="main-activity__actions">
         <Button variant="primary" onClick={() => send('record')}><Trans>Record a minute</Trans></Button>
         <Button variant="ghost" onClick={() => { send('close'); setOpen(false) }}><Trans>Close</Trans></Button>
@@ -123,10 +123,10 @@ function NoticeBody({ bridge, state, open, setOpen }: { readonly bridge: MainAct
   } else {
     body = <>
       <h2 ref={heading} tabIndex={-1}><Trans>Sotto's main process is slow</Trans></h2>
-      <p><Trans>It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers.</Trans></p>
+      <p className="tt-paragraph"><Trans>It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers.</Trans></p>
       <LoopFigures reading={reading} />
       <LoopChart reading={reading} />
-      <p className="main-activity__privacy">{i18n._(RECORDING_PRIVACY)}</p>
+      <p className="main-activity__privacy tt-paragraph">{i18n._(RECORDING_PRIVACY)}</p>
       <div className="main-activity__actions">
         <Button variant="primary" onClick={() => send('record')}><Trans>Record a minute</Trans></Button>
         <Button variant="ghost" aria-label={t`Not now: hide this until main recovers and freezes again`} onClick={() => { send('not-now'); setOpen(false) }}><Trans>Not now</Trans></Button>

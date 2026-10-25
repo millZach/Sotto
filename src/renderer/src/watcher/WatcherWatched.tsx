@@ -120,7 +120,7 @@ function Card({ card, room, onOpen, onStopping }: { readonly card: WatchedCard; 
       {where ? <span className="watched-card__where">{where}</span> : null}
       <span className="watcher-row__status" data-tone={tone}>{word}</span>
     </span>
-    {doing === null ? null : <p className="watched-card__doing">{doing}</p>}
+    {doing === null ? null : <p className="watched-card__doing tt-paragraph">{doing}</p>}
     <span id={describedBy} className="tt-visually-hidden">{[entry?.facts.provider, where, word, watchedByWatcher(), doing].filter(Boolean).join(', ')}</span>
   </li>
 }
@@ -173,7 +173,7 @@ export function WatcherWatchedView({ room, state, groups, labelledBy, id, onOpen
   }
   return <div ref={panel} id={id} className="thread-workspace__transcript watcher-watched" role="tabpanel" aria-labelledby={labelledBy} tabIndex={0}>
     <div className="watcher-watched__lead">
-      <p>{lead}</p>
+      <p className="tt-paragraph">{lead}</p>
       {actions === null ? null : <button type="button" className="watcher-watched__add tt-focusable" aria-haspopup="dialog" onClick={event => onShowAll(event.currentTarget)}>
         <WatcherOwl size={14} />{t`Watch a thread`}</button>}
     </div>

@@ -132,16 +132,16 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
   }
   let body: ReactNode
   if (phase === null) body = null
-  else if (phase.kind === 'preparing') body = <><h2 id={titleId}><Trans>Stop the threads Watcher started?</Trans></h2><p className="watcher-stop__note" role="status"><Trans>Checking which threads are Watcher’s…</Trans></p></>
+  else if (phase.kind === 'preparing') body = <><h2 id={titleId}><Trans>Stop the threads Watcher started?</Trans></h2><p className="watcher-stop__note tt-paragraph" role="status"><Trans>Checking which threads are Watcher’s…</Trans></p></>
   else if (phase.kind === 'refused') body = <>
     <h2 id={titleId}><Trans>Nothing was stopped</Trans></h2>
-    <p className="watcher-stop__note watcher-stop__refused" role="alert">{phase.message}</p>
+    <p className="watcher-stop__note watcher-stop__refused tt-paragraph" role="alert">{phase.message}</p>
     <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}><Trans>Close</Trans></Button></div>
   </>
   else if (phase.kind === 'unknown') body = <>
     <h2 id={titleId}><Trans>Sotto can’t tell what stopped</Trans></h2>
     {/* The stop may have gone through, and how to find out. */}
-    <p className="watcher-stop__note watcher-stop__unknown" role="alert"><Trans>Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running.</Trans></p>
+    <p className="watcher-stop__note watcher-stop__unknown tt-paragraph" role="alert"><Trans>Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running.</Trans></p>
     {phase.targets.length ? <ul className="watcher-stop__results">{phase.targets.map(target => <li key={`${target.hostId}:${target.threadId}`} className="watcher-stop__result" data-result="uncertain">
       <TriangleAlert size={15} aria-hidden="true" /><span>{name(target)}</span></li>)}</ul> : null}
     <div className="watcher-stop__actions"><Button variant="secondary" data-autofocus onClick={close}><Trans>Close</Trans></Button></div>
@@ -172,7 +172,7 @@ export function WatcherStopAll({ room, conversation, fallbackFocus }: {
           {facts.status === null ? null : <span className="watcher-stop__state" data-tone={facts.tone}>{facts.status}</span>}
         </li>
       })}</ul> : null}
-      {targets.length ? <p className="watcher-stop__note" id={noteId}><Trans>Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.</Trans></p> : null}
+      {targets.length ? <p className="watcher-stop__note tt-paragraph" id={noteId}><Trans>Each stops its current turn and keeps the work it has done. Threads you started or took over keep running.</Trans></p> : null}
       <div className="watcher-stop__actions">
         <Button variant="secondary" data-autofocus disabled={stopping} onClick={close}>{targets.length ? t`Cancel` : t`Close`}</Button>
         {targets.length && phase.kind === 'confirm' ? <Button variant="danger" onClick={() => void confirm(phase.confirmationId, targets)}>{stopButton(targets.length)}</Button> : null}

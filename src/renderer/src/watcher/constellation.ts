@@ -359,6 +359,8 @@ export interface PictureActivity {
   readonly did: string
   /** How it went, from Sotto's receipt. */
   readonly went: string
+  /** The same inside a sentence, after what Watcher did and a comma, in the case it takes there. */
+  readonly wentPhrase: string
   readonly at: number
   /** The message Watcher sent, when the window holds the thread's history and it is there. */
   readonly messageId: string | undefined
@@ -376,7 +378,7 @@ function didWords(receipt: Receipt, goes: ReadonlyMap<string, number>): string {
     }
   }
 }
-// How it went follows what Watcher did on a detail card, after a comma, where it is shown in lower case.
+// How it went, on its own.
 function wentWords(receipt: Receipt): string {
   if (receipt.deliveryState === 'failed') return t`Did not reach it`
   if (receipt.deliveryState === 'uncertain') return t`Not confirmed`
@@ -392,13 +394,29 @@ function wentWords(receipt: Receipt): string {
     default: return t({ message: 'Delivered', comment: 'How a message Watcher sent went' })
   }
 }
+// How it went follows what Watcher did on a detail card, after a comma, so each is written in the case it takes there.
+function wentPhrase(receipt: Receipt): string {
+  if (receipt.deliveryState === 'failed') return t({ message: 'did not reach it', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  if (receipt.deliveryState === 'uncertain') return t({ message: 'not confirmed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  if (receipt.deliveryState !== 'accepted') return t({ message: 'sending', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  switch (receipt.outcome) {
+    case 'answered': return t({ message: 'answered', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'working': return t({ message: 'working on it', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'background': return t({ message: 'background work running', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'failed': return t({ message: 'its turn failed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'stopped': return t({ message: 'stopped', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'paused': return t({ message: 'waits for your turn there', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    case 'unknown': return t({ message: 'not confirmed', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+    default: return t({ message: 'delivered', comment: 'How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered' })
+  }
+}
 /** What Watcher last did with one thread, newest first, from Sotto's receipts alone. */
 export function nodeActivity(room: WatcherRoomState, key: string, goes: ReadonlyMap<string, number>, limit = 5): PictureActivity[] {
   const found: PictureActivity[] = []
   for (let at = room.receipts.length - 1; at >= 0 && found.length < limit; at--) {
     const receipt = room.receipts[at]!
     if (targetKey(receipt.target) !== key) continue
-    found.push({ id: receipt.id, did: didWords(receipt, goes), went: wentWords(receipt), at: Date.parse(receipt.updatedAt || receipt.createdAt),
+    found.push({ id: receipt.id, did: didWords(receipt, goes), went: wentWords(receipt), wentPhrase: wentPhrase(receipt), at: Date.parse(receipt.updatedAt || receipt.createdAt),
       messageId: receipt.messageId, replyMessageId: receipt.replyMessageId })
   }
   return found

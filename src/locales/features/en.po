@@ -129,6 +129,10 @@ msgid "{days, plural, one {# day} other {# days}}"
 msgstr "{days, plural, one {# day} other {# days}}"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
+msgid "{days, plural, one {read # day ago} other {read # days ago}}"
+msgstr "{days, plural, one {read # day ago} other {read # days ago}}"
+
+#: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{days, plural, one {Read # day ago} other {Read # days ago}}"
 msgstr "{days, plural, one {Read # day ago} other {Read # days ago}}"
 
@@ -575,7 +579,6 @@ msgid "{whose}'s"
 msgstr "{whose}'s"
 
 #: src/renderer/src/features/dictate/journalFacts.ts
-#: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "{words, plural, one {{shown} word} other {{shown} words}}"
 msgstr "{words, plural, one {{shown} word} other {{shown} words}}"
 
@@ -859,14 +862,20 @@ msgstr "an unreported share"
 msgid "Answer your threads from your iPhone"
 msgstr "Answer your threads from your iPhone"
 
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "answered"
+msgstr "answered"
+
 #. How a message Watcher sent went
 #: src/renderer/src/watcher/constellation.ts
 msgid "Answered"
 msgstr "Answered"
 
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
 #: src/renderer/src/features/memory/questions.ts
-msgid "Answering permissions from a paired client"
-msgstr "Answering permissions from a paired client"
+msgid "answering permissions from a paired client"
+msgstr "answering permissions from a paired client"
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Answers are preferences. Only the confirmation choices create policies; they grant no new permissions."
@@ -960,6 +969,11 @@ msgstr "Automation"
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "Back"
 msgstr "Back"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "background work running"
+msgstr "background work running"
 
 #: src/renderer/src/watcher/constellation.ts
 msgid "Background work running"
@@ -1549,9 +1563,19 @@ msgstr "Delete transcript"
 msgid "Delete transcript?"
 msgstr "Delete transcript?"
 
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "deleting or making irreversible changes"
+msgstr "deleting or making irreversible changes"
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Deleting or making irreversible changes"
 msgstr "Deleting or making irreversible changes"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "delivered"
+msgstr "delivered"
 
 #. How a message Watcher sent went
 #: src/renderer/src/watcher/constellation.ts
@@ -1596,6 +1620,11 @@ msgstr "Dictation still works. Reopen Sotto to try reading them again."
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "did not finish"
 msgstr "did not finish"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "did not reach it"
+msgstr "did not reach it"
 
 #: src/renderer/src/watcher/constellation.ts
 msgid "Did not reach it"
@@ -2189,6 +2218,11 @@ msgstr "Its pull requests"
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Its reason:"
 msgstr "Its reason:"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "its turn failed"
+msgstr "its turn failed"
 
 #: src/renderer/src/watcher/constellation.ts
 msgid "Its turn failed"
@@ -2821,6 +2855,12 @@ msgstr "not answering"
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "not confirmed"
+msgstr "not confirmed"
+
 #: src/renderer/src/watcher/constellation.ts
 msgid "Not confirmed"
 msgstr "Not confirmed"
@@ -2872,6 +2912,11 @@ msgstr "Not now: hide these updates until something new is published"
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 msgid "Not now: hide this until main recovers and freezes again"
 msgstr "Not now: hide this until main recovers and freezes again"
+
+#. Usage, inside a sentence after a middle dot: "37% left · not read yet"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "not read yet"
+msgstr "not read yet"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Not read yet"
@@ -3453,6 +3498,11 @@ msgstr "Provider sessions"
 msgid "Providers and hosts"
 msgstr "Providers and hosts"
 
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "publishing or sending work outside Sotto"
+msgstr "publishing or sending work outside Sotto"
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Publishing or sending work outside Sotto"
 msgstr "Publishing or sending work outside Sotto"
@@ -3522,9 +3572,19 @@ msgstr "Ranking is incomplete. There are more models than Usage lists, so the mo
 msgid "Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest."
 msgstr "Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest."
 
+#. Usage, inside a sentence after a middle dot
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read {hours} h ago"
+msgstr "read {hours} h ago"
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Read {hours} h ago"
 msgstr "Read {hours} h ago"
+
+#. Usage, inside a sentence after a middle dot
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read {minutes} min ago"
+msgstr "read {minutes} min ago"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Read {minutes} min ago"
@@ -3541,6 +3601,11 @@ msgstr "Read again"
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Read it"
 msgstr "Read it"
+
+#. Usage, inside a sentence after a middle dot: "37% left · read just now"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "read just now"
+msgstr "read just now"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Read just now"
@@ -3920,6 +3985,11 @@ msgstr "Search transcripts"
 msgid "See what Watcher is doing as a picture"
 msgstr "See what Watcher is doing as a picture"
 
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "sending"
+msgstr "sending"
+
 #. How a message Watcher sent went: still on its way
 #: src/renderer/src/watcher/constellation.ts
 msgid "Sending"
@@ -4136,6 +4206,11 @@ msgstr "Skip for now"
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "Skip tour"
 msgstr "Skip tour"
+
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "skipping or weakening verification"
+msgstr "skipping or weakening verification"
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "Skipping or weakening verification"
@@ -4552,6 +4627,11 @@ msgstr "Starting"
 msgid "Starting a new Watcher…"
 msgstr "Starting a new Watcher…"
 
+#. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
+#: src/renderer/src/features/memory/questions.ts
+msgid "starting new spending"
+msgstr "starting new spending"
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Starting new spending"
 msgstr "Starting new spending"
@@ -4695,6 +4775,11 @@ msgstr "Stop watching: Watcher lets this thread be"
 #: src/renderer/src/features/performance/PerformanceSettings.tsx
 msgid "Stop without saving"
 msgstr "Stop without saving"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "stopped"
+msgstr "stopped"
 
 #. Before a thread’s name on a receipt card
 #. How a message Watcher sent went: the thread’s turn stopped
@@ -5479,6 +5564,11 @@ msgstr "Waiting to hear from {hostName}…"
 msgid "Waits for Watcher’s turn to end"
 msgstr "Waits for Watcher’s turn to end"
 
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "waits for your turn there"
+msgstr "waits for your turn there"
+
 #: src/renderer/src/watcher/constellation.ts
 msgid "Waits for your turn there"
 msgstr "Waits for your turn there"
@@ -5630,6 +5720,11 @@ msgstr "Watching"
 msgid "Watching since {since}. Nothing sent yet."
 msgstr "Watching since {since}. Nothing sent yet."
 
+#. A subscription window inside a sentence: "37% left, week"
+#: src/renderer/src/features/usage/usagePresentation.ts
+msgid "week"
+msgstr "week"
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Week"
 msgstr "Week"
@@ -5750,6 +5845,11 @@ msgstr "words so far"
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Working"
 msgstr "Working"
+
+#. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
+#: src/renderer/src/watcher/constellation.ts
+msgid "working on it"
+msgstr "working on it"
 
 #: src/renderer/src/watcher/constellation.ts
 msgid "Working on it"

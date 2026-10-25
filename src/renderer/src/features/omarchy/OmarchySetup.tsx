@@ -139,10 +139,10 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
   return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label={t`Omarchy setup`} aria-busy={busy}
     onKeyDown={event => { if (event.key === 'Escape' && files && !updateQuestion) { event.stopPropagation(); setFiles(false); filesButton.current?.focus() } }}>
     {surface === 'settings' ? <div className="omarchy-setup__head"><div>
-      <p className="tt-field__label">Omarchy</p><p className="tt-field__description"><Trans>Sotto’s keys, its owl in the bar and the Omarchy theme.</Trans></p>
+      <p className="tt-field__label">Omarchy</p><p className="tt-field__description tt-paragraph"><Trans>Sotto’s keys, its owl in the bar and the Omarchy theme.</Trans></p>
     </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}><Trans>Remove all</Trans></Button> : null}</div> : null}
-    {state?.notice ? <p className="omarchy-setup__notice" role="status">{state.notice}</p> : null}
-    {setup.error || !setup.available ? <p role="alert"><Trans>Sotto could not check Omarchy setup. Your files were left alone. Try again.</Trans>
+    {state?.notice ? <p className="omarchy-setup__notice tt-paragraph" role="status">{state.notice}</p> : null}
+    {setup.error || !setup.available ? <p className="tt-paragraph" role="alert"><Trans>Sotto could not check Omarchy setup. Your files were left alone. Try again.</Trans>
       {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}><Trans>Try again</Trans></Button> : null}</p> : null}
     <ul className="omarchy-setup__pieces">
       {OMARCHY_PIECES.map(piece => {
@@ -153,21 +153,21 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
         return <li key={piece} className="omarchy-setup__piece" data-piece={piece} data-state={current?.status ?? 'checking'}>
           <span className="omarchy-setup__icon">{piece === 'keys' ? <Keyboard size={20} /> : piece === 'theme' ? <Palette size={20} /> : <SottoGlyph />}</span>
           <strong className="omarchy-setup__name">{definition.title}</strong>
-          <p className="omarchy-setup__what">{definition.what}</p>
+          <p className="omarchy-setup__what tt-paragraph">{definition.what}</p>
           <div className="omarchy-setup__side"><span className="omarchy-setup__status" role="status">
             {current?.status === 'working' ? <LoaderCircle size={15} className="omarchy-setup__spin" aria-hidden="true" /> : ['done', 'manual'].includes(current?.status ?? '') ? <Check size={15} aria-hidden="true" /> : null}
             {statusText(piece)}</span>
             {surface === 'settings' && owned.includes(piece) ? <Button variant="ghost" disabled={busy} aria-label={t`Remove ${short}`} onClick={() => void act({ type: 'remove', pieces: [piece] })}><Trans>Remove</Trans></Button> : null}
             {current?.status === 'stale' && piece === 'owl' ? <Button variant="secondary" disabled={busy} onClick={() => setUpdateQuestion(true)}><Trans>Update the owl</Trans></Button> : null}
           </div>
-          {conflict ? <div className="omarchy-setup__detail"><p id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
+          {conflict ? <div className="omarchy-setup__detail"><p className="tt-paragraph" id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
             {current?.retry !== 'remove' ? <div className="omarchy-setup__choices" role="radiogroup" aria-labelledby={`${label}-keys`}>
               <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'give'} disabled={busy} onChange={() => setKeyChoice('give')} /><Trans>Give F9 to Sotto</Trans></label>
               <label><input type="radio" name={`${label}-choice`} checked={keyChoice === 'keep'} disabled={busy} onChange={() => setKeyChoice('keep')} /><Trans>Leave my keys alone</Trans></label>
             </div> : null}
           </div> : null}
-          {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail"><Trans>Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</Trans></p> : null}
-          {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p>{current.message}</p>
+          {piece === 'keys' && state?.voxtype && current?.status === 'missing' ? <p className="omarchy-setup__detail tt-paragraph"><Trans>Voxtype has these keys now. Sotto takes them over; Voxtype stays installed.</Trans></p> : null}
+          {current?.message && current.status !== 'working' ? <div className="omarchy-setup__detail" role={current.status === 'failed' ? 'alert' : undefined}><p className="tt-paragraph">{current.message}</p>
             {current.status === 'failed' ? <Button data-next variant="secondary" disabled={busy} aria-label={t`Try ${short} again`}
               onClick={() => void (current.retry === 'inspect' ? act({ type: 'inspect' }) : current.retry === 'remove' ? act({ type: 'remove', pieces: [piece] }) : install([piece]))}><Trans>Try again</Trans></Button> : null}
           </div> : null}
@@ -176,7 +176,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       })}
     </ul>
     {all ? <div className="omarchy-setup__done" role="status"><strong><Trans>Sotto is set up in Omarchy.</Trans></strong>
-      <p>{surface === 'first-run' ? t`You’ll try F9 in the Shortcut step, once the speech model is downloaded.` : keys.done}</p></div> : null}
+      <p className="tt-paragraph">{surface === 'first-run' ? t`You’ll try F9 in the Shortcut step, once the speech model is downloaded.` : keys.done}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
         {busy ? setup.removing ? t`Removing` : t`Setting up` : todo.length === 3 ? t`Set up all three` : setUpLabel}

@@ -1,4 +1,4 @@
-import type { MessageDescriptor } from '@lingui/core'
+import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
 import { publicProviderEntityId } from '../../../../shared/agents'
@@ -49,8 +49,12 @@ export const CLIENT_PROVIDER: Partial<Record<UsageClient, UsageProviderId>> = {
 
 /* ---------- Numbers ---------- */
 
-const integers = new Intl.NumberFormat('en-US')
-export const fmtInt = (value: number): string => integers.format(Math.round(value))
+/** Whole numbers as the interface language writes them; the formatter is made again only when the language changes. */
+let integers = { locale: '', format: new Intl.NumberFormat('en') }
+export function fmtInt(value: number): string {
+  if (integers.locale !== i18n.locale) integers = { locale: i18n.locale, format: new Intl.NumberFormat(i18n.locale) }
+  return integers.format.format(Math.round(value))
+}
 /** Tokens in B, M and K: one decimal below a hundred, whole from a hundred up, and every token below 10,000. */
 export function fmtTok(value: number): string {
   if (value >= 1e11) return `${Math.round(value / 1e9)}B`
@@ -399,6 +403,18 @@ export function readAge(at: number | undefined, now: number): string {
   return plural(days, { one: 'Read # day ago', other: 'Read # days ago' })
 }
 
+/** readAge inside a sentence, after a middle dot, written in the case it takes there. */
+export function readAgePhrase(at: number | undefined, now: number): string {
+  if (at === undefined) return t({ message: 'not read yet', comment: 'Usage, inside a sentence after a middle dot: "37% left · not read yet"' })
+  const minutes = Math.max(0, Math.floor((now - at) / 6e4))
+  if (minutes < 1) return t({ message: 'read just now', comment: 'Usage, inside a sentence after a middle dot: "37% left · read just now"' })
+  if (minutes < 60) return t({ message: `read ${minutes} min ago`, comment: 'Usage, inside a sentence after a middle dot' })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t({ message: `read ${hours} h ago`, comment: 'Usage, inside a sentence after a middle dot' })
+  const days = Math.floor(hours / 24)
+  return plural(days, { one: 'read # day ago', other: 'read # days ago' })
+}
+
 /* ---------- Subscription limits ---------- */
 
 export const LOW_LEFT = 20
@@ -410,6 +426,8 @@ export interface UsageWindowView {
   readonly label: string
   /** "5-hour window", for sentences. */
   readonly noun: string
+  /** The label inside a sentence, in the case it takes there: "5 hours", "week". */
+  readonly phrase: string
   readonly durationMinutes: number | undefined
   readonly left: number | undefined
   readonly usedPercent: number | undefined
@@ -422,20 +440,24 @@ export interface UsageWindowView {
 function forModel(text: string, model: string): string {
   return t`${text} for ${model}`
 }
-function windowName(window: UsageQuotaWindow, providerId: UsageProviderId): { label: string; noun: string } {
+function windowName(window: UsageQuotaWindow, providerId: UsageProviderId): { label: string; noun: string; phrase: string } {
   const length = usageWindowLength(window.durationMinutes)
+  // The host's own label is data, so lower-casing it for a sentence is as before. A length's words come from src/shared,
+  // which is English until that area moves into the catalogs.
   const lower = window.label.toLowerCase()
-  let { label, noun } = length ?? (window.kind === 'weekly' ? { label: t`Week`, noun: t`weekly window` } : { label: window.label, noun: t`${lower} window` })
+  let { label, noun, phrase } = length !== undefined ? { ...length, phrase: length.label.toLowerCase() }
+    : window.kind === 'weekly' ? { label: t`Week`, noun: t`weekly window`, phrase: t({ message: 'week', comment: 'A subscription window inside a sentence: "37% left, week"' }) }
+      : { label: window.label, noun: t`${lower} window`, phrase: lower }
   // A host that already qualifies its window ("Opus, week", "Week, with extra usage", "Other limit, week") says more than its length.
   if (window.modelId === undefined && (window.kind === 'model' || window.kind === 'other' || window.label.includes(','))) {
     const named = `${window.label.charAt(0).toLowerCase()}${window.label.slice(1)}`
-    return { label: window.label, noun: t`${named} window` }
+    return { label: window.label, noun: t`${named} window`, phrase: named }
   }
   if (window.modelId !== undefined) {
     const model = servedModelName(providerId, window.modelId)
-    label = forModel(label, model); noun = forModel(noun, model)
+    label = forModel(label, model); noun = forModel(noun, model); phrase = forModel(phrase, model)
   }
-  return { label, noun }
+  return { label, noun, phrase }
 }
 export function windowView(window: UsageQuotaWindow, providerId: UsageProviderId, now: number): UsageWindowView {
   const resetsAt = window.resetsAt === undefined ? undefined : Date.parse(window.resetsAt)

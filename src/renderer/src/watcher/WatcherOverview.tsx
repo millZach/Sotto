@@ -290,10 +290,10 @@ export function WatcherOverviewList({ groups, watched, besideId, liveClock, anch
       </label>
       <div className="watcher-list__scroll">
         {shown.map(({ group, entries }) => <OverviewGroupList key={group} group={group} entries={entries} watched={watched} besideId={besideId} liveClock={liveClock} searching={needle !== ''} onOpen={open} />)}
-        {groups.length === 0 ? <p className="watcher-list__none"><Trans>No other threads yet. Threads you or Watcher start show here.</Trans></p>
-          : shown.length === 0 ? <p className="watcher-list__none"><Trans>No thread matches “{typed}”.</Trans></p> : null}
+        {groups.length === 0 ? <p className="watcher-list__none tt-paragraph"><Trans>No other threads yet. Threads you or Watcher start show here.</Trans></p>
+          : shown.length === 0 ? <p className="watcher-list__none tt-paragraph"><Trans>No thread matches “{typed}”.</Trans></p> : null}
       </div>
-      <p className="watcher-list__foot">{watching ? <><Trans>The owl watches a thread until you press it again.</Trans>{' '}</> : null}<Trans>Shift-click opens a thread in Threads. <kbd>Esc</kbd> closes.</Trans></p>
+      <p className="watcher-list__foot tt-paragraph">{watching ? <><Trans>The owl watches a thread until you press it again.</Trans>{' '}</> : null}<Trans>Shift-click opens a thread in Threads. <kbd>Esc</kbd> closes.</Trans></p>
     </div>
   </>
 }

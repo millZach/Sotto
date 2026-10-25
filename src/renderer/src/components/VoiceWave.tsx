@@ -1,5 +1,7 @@
 import { ListeningBars } from './ListeningBars'
+import { levelText } from './LevelMeter'
 import React, { type CSSProperties, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 
 export type VoiceWaveStage = 'idle' | 'listening' | 'processing'
 
@@ -48,6 +50,7 @@ const GEOMETRY: Readonly<Record<VoiceWaveSize, { width: number; gap: number; res
  * Idle and processing retain the room's resting silhouette.
  */
 export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking = false }: VoiceWaveProps): ReactNode {
+  const { i18n } = useLingui()
   const geometry = GEOMETRY[size]
   const safeValue = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
   const listening = stage === 'listening'
@@ -61,7 +64,7 @@ export function VoiceWave({ stage, value, label, size = 'widget', holdSpeaking =
       'aria-valuemin': 0,
       'aria-valuemax': 1,
       'aria-valuenow': safeValue,
-      'aria-valuetext': `${Math.round(safeValue * 100)} percent`,
+      'aria-valuetext': levelText(safeValue, i18n.locale),
     }
     : { 'aria-hidden': true as const }
   const style = {

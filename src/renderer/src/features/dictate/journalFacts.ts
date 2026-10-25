@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 
 import { countWords, type DictationRecord } from '../../../../shared/dictationRecord'
@@ -66,8 +67,14 @@ export function shortDate(day: number): string {
   return new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** A count as the interface language writes it: "1,240" in English, "1.240" in German. */
+export function countLabel(value: number): string {
+  return new Intl.NumberFormat(i18n.locale).format(value)
+}
+
+/** "1,240 words": the count written by countLabel, in a message that says it in the reader's plural. */
 export function wordsLabel(words: number): string {
-  const shown = words.toLocaleString()
+  const shown = countLabel(words)
   return plural(words, { one: `${shown} word`, other: `${shown} words` })
 }
 

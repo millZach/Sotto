@@ -10,7 +10,7 @@ import { Dash, HourGrid, Ring, Spark, TokenBar, dismissDisclosure, type DayValue
 import { PerDay, useChartChoice } from './UsagePerDay'
 import type { UsagePage } from './usagePage'
 import {
-  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, PROVIDER_NAMES, clientName, fieldShare, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, joinNames, longDay, midSentence, pct, readAge, resetLong, resetShort, sentFrom, share,
+  PROVIDER_ORDER, LOW_LEFT, NO_TOKENS, cacheShare, PROVIDER_NAMES, clientName, fieldShare, fieldTokens, fieldValue, fmtInt, fmtTok, hourLabel, joinNames, longDay, midSentence, pct, readAge, readAgePhrase, resetLong, resetShort, sentFrom, share,
   shortDay, usagePlaces, WEEKDAYS_PLURAL, WEEKDAYS_SHORT, type UsageProviderLimits,
 } from './usagePresentation'
 
@@ -71,7 +71,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const sottoShare = fieldShare(summary.sottoField, totals.tokens.total) ?? '—'
   const sottoPromptShare = share(summary.sottoPrompts, prompts)
   const lowestName = lowest === undefined ? '' : PROVIDER_NAMES[lowest.providerId]
-  const lowestWindow = lowest?.primary.tightest?.label.toLowerCase() ?? ''
+  const lowestWindow = lowest?.primary.tightest?.phrase ?? ''
   const topShare = topModel === undefined ? '' : share(topModel.prompts.total, prompts)
   const items: Record<Focus, { value: ReactNode; text: string; note: string; viz?: ReactNode; low?: boolean; words?: boolean }> = {
     room: {
@@ -100,19 +100,19 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
   const split = chartChoice.show !== 'total'
   /** The Per day block, or why there is none: the controls appear only when there are days to draw. */
   const perDay = (metric: 'prompts' | 'tokens', when?: ReactNode): ReactNode => series === null
-    ? <p className="usage-none"><Trans>Choose a range of a year or less to see each day. The totals still cover the whole range.</Trans></p>
-    : series.length === 0 ? <p className="usage-none"><Trans>No dated activity in this range.</Trans></p>
+    ? <p className="usage-none tt-paragraph"><Trans>Choose a range of a year or less to see each day. The totals still cover the whole range.</Trans></p>
+    : series.length === 0 ? <p className="usage-none tt-paragraph"><Trans>No dated activity in this range.</Trans></p>
       : <PerDay page={page} metric={metric} rows={series} choice={chartChoice} onChoose={setChartChoice} selected={day} hover={hover} pin={pin} setHover={setHover} setPin={setPin}>{when}</PerDay>
   const head = (title: string, right: ReactNode = page.rangeLabel): ReactNode => <div className="usage-stage__head"><h2>{title}</h2>{typeof right === 'string' ? <span>{right}</span> : right}</div>
-  const placesNote = page.withoutPlacesNote === null ? null : <p className="usage-note">{page.withoutPlacesNote}</p>
+  const placesNote = page.withoutPlacesNote === null ? null : <p className="usage-note tt-paragraph">{page.withoutPlacesNote}</p>
 
   let stage: ReactNode
   switch (focus) {
     case 'room':
       stage = <>
         {head(t`Room left`, <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('subscriptions')}><Trans>Subscriptions</Trans></button>)}
-        <p className="usage-when"><Trans>Account-wide, as each provider reports it.</Trans></p>
-        {limits.length === 0 ? <p className="usage-none"><Trans>No subscription readings on the selected computers.</Trans></p> : <div className="usage-rings">{limits.map(item => <RingCard key={item.providerId} limits={item} page={page} />)}</div>}
+        <p className="usage-when tt-paragraph"><Trans>Account-wide, as each provider reports it.</Trans></p>
+        {limits.length === 0 ? <p className="usage-none tt-paragraph"><Trans>No subscription readings on the selected computers.</Trans></p> : <div className="usage-rings">{limits.map(item => <RingCard key={item.providerId} limits={item} page={page} />)}</div>}
       </>
       break
     case 'tokens': {
@@ -124,13 +124,13 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       stage = <>
         {head(t`Tokens`)}
         {totals.tokens.input.value === undefined && totals.tokens.output.value === undefined
-          ? <p className="usage-none">{devin.length > 0 ? t`Devin doesn't report tokens. Prompts are still counted.` : t`No tokens in this range.`}</p>
+          ? <p className="usage-none tt-paragraph">{devin.length > 0 ? t`Devin doesn't report tokens. Prompts are still counted.` : t`No tokens in this range.`}</p>
           : <TokenBar tokens={totals.tokens} large>
-            {page.placesKnown ? <p className="usage-note"><Trans>Subagents: <b>{subAgentTokens}</b> of these tokens.</Trans></p> : null}
-            {devin.length > 0 ? <p className="usage-note"><Trans>Devin doesn't report tokens, so its <b>{devinShown}</b> <Plural value={devinPrompts} one="prompt" other="prompts" /> aren't in these totals.</Trans></p> : null}
+            {page.placesKnown ? <p className="usage-note tt-paragraph"><Trans>Subagents: <b>{subAgentTokens}</b> of these tokens.</Trans></p> : null}
+            {devin.length > 0 ? <p className="usage-note tt-paragraph"><Trans>Devin doesn't report tokens, so its <b>{devinShown}</b> <Plural value={devinPrompts} one="prompt" other="prompts" /> aren't in these totals.</Trans></p> : null}
           </TokenBar>}
         {(() => {
-          const when = <p className="usage-when">{day !== null ? (() => {
+          const when = <p className="usage-when tt-paragraph">{day !== null ? (() => {
             const row = series!.find(item => item.day === day)!
             const all = fmtTok(row.input + row.output), input = fmtTok(row.input), output = fmtTok(row.output)
             const counted = split
@@ -157,8 +157,8 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
         : place.inSotto && page.where === 'sotto' ? summary.providers.filter(row => row.prompts.total > 0 || fieldValue(row.tokens.total) > 0).map(row => row.providerId) : []
       stage = <>
         {head(t`Where you work`)}
-        <p className="usage-when">{tokenTotal > 0 ? <Trans><b>{sottoShare}</b> of tokens and <b>{sottoPromptShare}</b> of prompts were in Sotto.</Trans> : t`No tokens in this range.`}</p>
-        {places.length === 0 ? <p className="usage-none"><Trans>Nothing in this range.</Trans></p> : <ol className="usage-shares usage-shares--where">{places.map(place => {
+        <p className="usage-when tt-paragraph">{tokenTotal > 0 ? <Trans><b>{sottoShare}</b> of tokens and <b>{sottoPromptShare}</b> of prompts were in Sotto.</Trans> : t`No tokens in this range.`}</p>
+        {places.length === 0 ? <p className="usage-none tt-paragraph"><Trans>Nothing in this range.</Trans></p> : <ol className="usage-shares usage-shares--where">{places.map(place => {
           const placePrompts = fmtInt(place.prompts), wakeUps = fmtInt(place.wakeUps), fromSubagents = fieldTokens(place.subAgentField)
           // The prompts, then each fact that applies, joined as the English list joins them.
           const placePromptCount = place.prompts
@@ -190,12 +190,12 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           : input.value === 0 && !input.partial ? t`No input tokens in this range, so none came from cache.`
             : t`Some token counts in this range weren't reported in full, so the share from cache can't be worked out.`
       const cachedTokens = fieldTokens(totals.tokens.cached), inputTokens = fieldTokens(totals.tokens.input)
-      stage = summary.cacheShare === undefined ? <>{head(t`Cache reads`)}<p className="usage-none">{unshared}</p></> : <>
+      stage = summary.cacheShare === undefined ? <>{head(t`Cache reads`)}<p className="usage-none tt-paragraph">{unshared}</p></> : <>
         {head(t`Cache reads`)}
         <div className="usage-cache">
           <div className="usage-ring-figure usage-ring-figure--large"><Ring size={156} parts={[{ left: summary.cacheShare * 100, width: 10, inset: 0 }]} lowAware={false} /><span><b>{pct(summary.cacheShare)}</b><small><Trans>of input</Trans></small></span></div>
           <div>
-            <p className="usage-lead"><Trans>{cachedTokens} of {inputTokens} input tokens were read from cache. They count as input, not on top of it.</Trans></p>
+            <p className="usage-lead tt-paragraph"><Trans>{cachedTokens} of {inputTokens} input tokens were read from cache. They count as input, not on top of it.</Trans></p>
             <ol className="usage-shares">{shown.map(row => {
               const fraction = fieldValue(row.tokens.cached) / fieldValue(row.tokens.input)
               const rowInput = fieldTokens(row.tokens.input)
@@ -205,7 +205,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
                 <span className="usage-share__bar"><i className="usage-grow" style={{ '--usage-w': fraction.toFixed(3) } as React.CSSProperties} /></span>
               </li>
             })}</ol>
-            {rest > 0 ? <p className="usage-more-line"><Trans>{rest} more in <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}>Models</button></Trans></p> : null}
+            {rest > 0 ? <p className="usage-more-line tt-paragraph"><Trans>{rest} more in <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}>Models</button></Trans></p> : null}
           </div>
         </div>
       </>
@@ -218,7 +218,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const more = ranked.length - shown.length
       stage = <>
         {head(t`Models`, <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}><Trans>All model details</Trans></button>)}
-        {shown.length === 0 || prompts === 0 ? <p className="usage-none"><Trans>No prompts in this range.</Trans></p> : <ol className="usage-shares">{shown.map(row => {
+        {shown.length === 0 || prompts === 0 ? <p className="usage-none tt-paragraph"><Trans>No prompts in this range.</Trans></p> : <ol className="usage-shares">{shown.map(row => {
           const tokens = fieldValue(row.tokens.total)
           const rowTokens = fieldTokens(row.tokens.total), rowCache = cacheShare(row.tokens) ?? t`an unreported share`
           const detail = NO_TOKENS.has(row.providerId) || row.tokens.total.value === undefined ? t`Tokens not reported` : tokens > 0 ? t`${rowTokens} tokens · ${rowCache} from cache` : t`No tokens of its own`
@@ -230,7 +230,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
             <span className="usage-share__note">{plural(activeThreads, { one: `${detail} · ${sessions} provider session`, other: `${detail} · ${sessions} provider sessions` })}</span>
           </li>
         })}</ol>}
-        {ranked.length > shown.length ? <p className="usage-more-line"><Trans>{more} more in <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}>Models</button></Trans></p> : null}
+        {ranked.length > shown.length ? <p className="usage-more-line tt-paragraph"><Trans>{more} more in <button type="button" className="usage-link tt-focusable" onClick={() => page.openTab('models')}>Models</button></Trans></p> : null}
       </>
       break
     }
@@ -268,7 +268,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       }
       stage = <>
         {head(t`When you work`)}
-        <p className="usage-when">{when}</p>
+        <p className="usage-when tt-paragraph">{when}</p>
         <div onPointerLeave={event => { if (document.activeElement !== event.currentTarget.firstElementChild) setCell(null) }}>
           <HourGrid grid={grid} cell={cell} onCell={setCell} onKey={onKey} label={t`Prompts you sent, by weekday and hour. Use the arrow keys to read one hour.`} />
         </div>
@@ -292,7 +292,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
       const sent = fmtInt(totals.prompts.user), watcher = fmtInt(totals.prompts.watcher), wakeUps = fmtInt(totals.prompts.wakeUp)
       stage = <>
         {head(t`Prompts`)}
-        <p className="usage-when">{when}</p>
+        <p className="usage-when tt-paragraph">{when}</p>
         {perDay('prompts')}
         {byProvider.length > 0 ? <div className="usage-split-block"><p className="usage-split-caption"><Trans>By provider</Trans></p><div className="usage-split">{byProvider.map(row => <div key={row.providerId} className="usage-split__item">
           <span><ProviderMark provider={row.providerId} name={PROVIDER_NAMES[row.providerId]} size={14} />{PROVIDER_NAMES[row.providerId]}</span><b>{fmtInt(row.prompts.total)}</b>
@@ -301,7 +301,7 @@ export function Overview({ page }: { readonly page: UsagePage }): ReactNode {
           {clients.length > 0 ? <div className="usage-split usage-split--small">{clients.map(row => <div key={row.clientId} className="usage-split__item"><span>{clientName(row.clientId)}</span><b>{fmtInt(row.prompts)}</b></div>)}</div> : null}
           {placesNote}
         </div> : null}
-        <p className="usage-origin"><Trans>You sent <b>{sent}</b>, Watcher <b>{watcher}</b> and wake-ups <b>{wakeUps}</b>.</Trans></p>
+        <p className="usage-origin tt-paragraph"><Trans>You sent <b>{sent}</b>, Watcher <b>{watcher}</b> and wake-ups <b>{wakeUps}</b>.</Trans></p>
       </>
     }
   }
@@ -377,7 +377,7 @@ export function Glance({ page }: { readonly page: UsagePage }): ReactNode {
       const left = tight.left, noun = tight.noun
       let resets = ''
       if (tight.resetsAt !== undefined) resets = resetShort(tight.resetsAt, page.now, page.timeZone)
-      sub = <><Trans><b data-low={tight.left! <= LOW_LEFT || undefined}>{left}%</b> left</Trans> · {primary.stale ? readAge(primary.observedAt, page.now).toLowerCase() : tight.resetsAt === undefined ? tight.label.toLowerCase() : t`resets ${resets}`}</>
+      sub = <><Trans><b data-low={tight.left! <= LOW_LEFT || undefined}>{left}%</b> left</Trans> · {primary.stale ? readAgePhrase(primary.observedAt, page.now) : tight.resetsAt === undefined ? tight.phrase : t`resets ${resets}`}</>
       if (tight.resetsAt === undefined) label = t`${name}: ${left}% left in the ${noun}`
       else {
         const resetsLong = resetLong(tight.resetsAt, page.now, page.timeZone)
@@ -401,7 +401,7 @@ export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }:
   return <div className="usage-empty">
     <div className="usage-empty__art" aria-hidden="true">{bars.map((height, index) => <i key={index} style={{ height: height * 2 }} />)}</div>
     <h2>{title}</h2>
-    <p>{detail}</p>
+    <p className="tt-paragraph">{detail}</p>
   </div>
 }
 

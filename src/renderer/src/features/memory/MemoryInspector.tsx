@@ -4,7 +4,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { MAX_MEMORY_CONTENT_CHARACTERS, memoryTopicSchema, type MemoryItem } from '../../../../shared/memory'
 import { Button } from '../../components/Button'
-import { policyActionLabels } from './questions'
+import { policyActionPhrases } from './questions'
 import type { MemoryController } from './useMemory'
 
 function date(value: string | null): string { return value === null ? i18n._(msg`Not recorded`) : new Date(value).toLocaleString() }
@@ -28,7 +28,7 @@ function MemoryRow({ memory, controller, editor, onEditorChange, replacement, mi
   return <article className="memory-item" aria-label={memory.content}>
     <p className="memory-content">{memory.content}</p>
     {editor && <>
-      {stale && <p className="memory-description">{missing
+      {stale && <p className="memory-description tt-paragraph">{missing
         ? t`This memory was deleted. Your unsaved wording is still here to copy.`
         : t`This memory changed in another window. Your unsaved wording is still here. Review its current replacement before saving.`}</p>}
       <textarea className="memory-answer" aria-label={editor.type === 'edit' ? t`Edit memory` : t`Replacement memory`} value={editor.text} maxLength={MAX_MEMORY_CONTENT_CHARACTERS} rows={4}
@@ -69,7 +69,7 @@ function MemoryRow({ memory, controller, editor, onEditorChange, replacement, mi
       <Button variant="ghost" disabled={controller.busy || anotherEditor} onClick={() => setDeleting(true)}><Trans>Delete</Trans></Button>
     </div>}
     {deleting && <div className="memory-delete">
-      <p><Trans>Delete this memory and all its past versions? This cannot be undone.</Trans></p>
+      <p className="tt-paragraph"><Trans>Delete this memory and all its past versions? This cannot be undone.</Trans></p>
       <div className="memory-actions"><Button variant="danger" disabled={controller.busy} onClick={() => void controller.command({ type: 'delete', id: memory.id })}><Trans>Delete memory</Trans></Button>
         <Button variant="ghost" disabled={controller.busy} onClick={() => setDeleting(false)}><Trans>Cancel</Trans></Button></div>
     </div>}
@@ -98,23 +98,23 @@ export function MemoryInspector({ controller, onQuestionnaire }: { controller: M
   if (replacement?.id === editor?.memory.id || replacement?.supersededBy || replacement?.state === 'superseded') replacement = undefined
   return <section className="memory-page" aria-label={t`Memory inspector`}>
     <h1><Trans>What Sotto remembers</Trans></h1>
-    <p className="memory-description"><Trans>Preferences stay on this computer. Sotto does not send them to any provider.</Trans></p>
+    <p className="memory-description tt-paragraph"><Trans>Preferences stay on this computer. Sotto does not send them to any provider.</Trans></p>
     {error && <div role="alert" className="memory-error">{error} <Button variant="ghost" onClick={() => void controller.refresh()}><Trans>Refresh memory</Trans></Button></div>}
-    {!snapshot ? <p role="status">{error ? t`Memory has not loaded.` : t`Reading memory…`}</p> : !snapshot.available ? <p role="status"><Trans>Memory is unavailable. Restart Sotto and try again.</Trans></p> : <>
+    {!snapshot ? <p className="tt-paragraph" role="status">{error ? t`Memory has not loaded.` : t`Reading memory…`}</p> : !snapshot.available ? <p className="tt-paragraph" role="status"><Trans>Memory is unavailable. Restart Sotto and try again.</Trans></p> : <>
       <div className="memory-toolbar">
         {!snapshot.questionnaireCompletedAt && <Button onClick={onQuestionnaire}><Trans>Set working preferences</Trans></Button>}
         <label className="memory-history-toggle"><input type="checkbox" checked={history} onChange={event => setHistory(event.target.checked)} /><Trans>Show past versions</Trans></label>
       </div>
       {memories.length ? <div>{memories.map(memory => <MemoryRow key={memory.id} memory={memory} controller={controller}
         editor={editor?.memory.id === memory.id ? editor : null} onEditorChange={setEditor} replacement={replacement}
-        missing={missingEditor && editor?.memory.id === memory.id} anotherEditor={editor !== null && editor.memory.id !== memory.id} />)}</div> : <p className="memory-empty">{snapshot.memories.length ? t`No current memories. Past versions are still available.` : t`Sotto has no saved memories yet.`}</p>}
+        missing={missingEditor && editor?.memory.id === memory.id} anotherEditor={editor !== null && editor.memory.id !== memory.id} />)}</div> : <p className="memory-empty tt-paragraph">{snapshot.memories.length ? t`No current memories. Past versions are still available.` : t`Sotto has no saved memories yet.`}</p>}
       <section className="memory-policies" aria-label={t`Policies`}>
         <h2><Trans>Permission boundaries</Trans></h2>
-        <p className="memory-description"><Trans>Policies are separate from memory. Editing a preference does not change a permission.</Trans></p>
+        <p className="memory-description tt-paragraph"><Trans>Policies are separate from memory. Editing a preference does not change a permission.</Trans></p>
         {snapshot.policies.length ? <ul>{snapshot.policies.map(policy => {
-          const action = policyActionLabels[policy.action].toLowerCase()
+          const action = policyActionPhrases[policy.action]
           return <li key={policy.id}>
-            <p>{policy.effect === 'always-confirm' ? t`Always confirm: ${action}` : t`Allowed: ${action}`}</p>
+            <p className="tt-paragraph">{policy.effect === 'always-confirm' ? t`Always confirm: ${action}` : t`Allowed: ${action}`}</p>
             <p className="memory-meta">{policy.source === 'questionnaire' ? t`You chose this in working preferences` : t`You set this policy`} · {date(policy.grantedAt)}{policy.revokedAt ? ` · ${t`Revoked`}` : policy.expiresAt && new Date(policy.expiresAt).getTime() <= Date.now() ? ` · ${t`Expired`}` : ''}</p>
             <details className="memory-details"><summary><Trans>Policy details</Trans></summary><dl>
               <dt><Trans>Resource</Trans></dt><dd>{policy.resource}</dd><dt><Trans>Scope</Trans></dt><dd>{policy.scope}</dd>
@@ -122,7 +122,7 @@ export function MemoryInspector({ controller, onQuestionnaire }: { controller: M
               <dt><Trans>Revoked</Trans></dt><dd>{date(policy.revokedAt)}</dd><dt><Trans>Reason</Trans></dt><dd>{policy.note}</dd>
             </dl></details>
           </li>
-        })}</ul> : <p><Trans>No saved policies. Existing permission checks still apply.</Trans></p>}
+        })}</ul> : <p className="tt-paragraph"><Trans>No saved policies. Existing permission checks still apply.</Trans></p>}
       </section>
     </>}
   </section>

@@ -42,7 +42,7 @@ export function WatcherOwnChangeLine({ change }: { readonly change: WatcherOwnCh
       if (!open || event.key !== 'Escape' || event.nativeEvent.isComposing) return
       event.preventDefault(); event.stopPropagation(); setOpen(false); toggle.current?.focus()
     }}>
-    <p className="watcher-own__line">
+    <p className="watcher-own__line tt-paragraph">
       <FilePen size={14} aria-hidden="true" className="watcher-own__icon" />
       <span className="watcher-own__words"><strong>{ownChangeHeadline(count)}</strong>{' '}
         {reason === null ? <span className="watcher-own__none"><Trans>It gave no reason.</Trans></span>
