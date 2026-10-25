@@ -104,6 +104,7 @@ export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
   return <div className="thread-nav__foot">
     <RoomSwitch className="thread-nav__seg" />
+    <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
     {updateControl}
   </div>
