@@ -33,8 +33,10 @@ export interface PreparedBundle { readonly type: 'sending'; readonly path: strin
 export interface AlreadyPresent { readonly type: 'present' }
 
 /**
- * Each move a receiver took, by its ID, with the commit and ref it was for. Written before anything is imported, so a
- * retry of the same move is answered from it and a move ID that comes back with another commit is refused (ADR-0105).
+ * Each move a receiver took, by its ID, with the commit and ref it was for. Written once its objects are imported and its
+ * commit is checked to be a commit, before any ref, so a retry of the same move is answered from it and a move ID that
+ * comes back with another commit is refused (ADR-0105). A move ended before it is recorded leaves only unreferenced
+ * objects, for Git to collect, and no record, so a retry starts again.
  */
 const recordsSchema = z.object({ v: z.literal(1), moves: z.record(z.string(), z.object({ commit: commitIdSchema, ref: z.string(), at: z.string() })) })
 type Records = z.infer<typeof recordsSchema>
