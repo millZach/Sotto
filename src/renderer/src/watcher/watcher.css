@@ -7,16 +7,6 @@
 
 .watcher-owl { display: block; flex: none; fill: currentColor; }
 
-/* ---------- The room switch: Dictate | owl | Threads ---------- */
-/* Dictate and Threads keep equal shares; the owl takes a fixed part between them. With dictation off (ADR-0107)
-   the owl keeps its fixed part and Threads takes the rest. */
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg[data-rooms='3'] { display: grid; grid-template-columns: minmax(0, 1fr) 46px minmax(0, 1fr); }
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg[data-rooms='owl'] { display: grid; grid-template-columns: 46px minmax(0, 1fr); }
-:is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg:is([data-rooms='3'], [data-rooms='owl']) button { min-width: 0; }
-.thread-nav__seg button[data-room='watcher'] { padding: 0; }
-.thread-nav__seg button[data-room='watcher'][aria-selected='true'],
-.app-switch__tab[data-room='watcher'][aria-selected='true'] { color: var(--tt-accent-text); }
-
 /* ---------- A watched thread ---------- */
 /* The owl right after the provider logo, the logo's own size, in the muted text colour of whatever row holds it. */
 .watched-badge { display: inline-grid; flex: none; place-items: center; color: var(--tt-text-muted); }
@@ -265,8 +255,6 @@
   :root:not([data-reduced-motion='on']) .watcher-dock__pill > * { transition: opacity 120ms; }
 }
 .watcher-dock__pill .thread-nav__page { border-radius: 6px; }
-.watcher-dock__switch { width: 236px; }
-.watcher-dock__switch.thread-nav__seg button { height: 30px; padding: 0 8px; }
 .watcher-dock__sep { flex: none; width: 1px; height: 18px; margin: 0 5px; background: var(--tt-hairline); }
 
 /* ---------- The Overview over the room ---------- */
@@ -577,7 +565,7 @@
 :root[data-room-transition] .night-falls-band { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; view-transition-name: night-falls-band; }
 :root[data-room-transition]::view-transition-group(night-falls-band),
 :root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
-:root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] { view-transition-name: room-owl; }
+:root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] .watcher-owl { view-transition-name: room-owl; }
 :root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }
 
 /* The owl's eye holes are lit only on a pressed toggle: there they glow in the theme's accent, with pupils in the colour
