@@ -16,7 +16,7 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
@@ -30,7 +30,8 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { findExecutable, nativeEnvironment, writeWithCodexExec } from './subscriptionCodex'
 import { withCliPath } from './cliLookup'
-import { CodexSessionLogWatcher, promptDigest, textOf } from './codexSessionLog'
+import { CodexSessionLogWatcher, promptDigest, textOf, wordsOf } from './codexSessionLog'
+import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -778,7 +779,7 @@ export class CodexAppServerHost implements AgentHost {
       this.ensureThread(id)
       this.log.seed(id, this.history?.messageIdentities(id) ?? [])
       this.watcher.observe(alias.codexThreadId)
-      for (const origin of alias.origins) this.watcher.sentDigest(alias.codexThreadId, origin.messageId, origin.digest)
+      for (const origin of alias.origins) this.watcher.sentDigest(alias.codexThreadId, origin.messageId, origin.digest, carriesAttachedFiles(origin.attachments))
     }
     this.executable = executable
     const provider = this.spawnServer(executable)
@@ -856,14 +857,19 @@ export class CodexAppServerHost implements AgentHost {
         error: 'Codex skills could not be listed. Check Codex and refresh skills.' }
     }
   }
-  /** Send and steer share native reference validation and input mapping. */
+  /**
+   * Send and steer share native reference validation and input mapping. Any attached file that is not an image is saved
+   * into the thread's folder and named in a `text` input item of its own, after everything else (ADR-0131); Codex has no
+   * input type for a file, so a PDF goes by path too. `userItemText` leaves that item out when the message is read back.
+   */
   async prepareSkillInput(threadId: string, text: string, skills: readonly AgentSkillReference[] = [], files: readonly AgentFileReference[] = [], attachments: readonly PromptImage[] = []) {
     verifyFileMentions(text, files)
     const input = skills.length ? codexSkillInput(text, skills, await this.listThreadSkills(threadId, true)) : [{ type: 'text' as const, text }]
+    const delivered = await deliverAttachments(this.aliases[threadId]?.cwd, attachments)
     // A data URL, as before: Codex's `localImage` scales an image to its own limits, which is #321's decision (ADR-0031).
-    const images = await Promise.all(attachments.map(async image => ({ type: 'image' as const,
+    const images = await Promise.all(delivered.images.map(async image => ({ type: 'image' as const,
       url: `data:${image.mimeType};base64,${Buffer.from(await image.read()).toString('base64')}` })))
-    return [...input, ...images]
+    return [...input, ...images, ...(delivered.note ? [{ type: 'text' as const, text: delivered.note }] : [])]
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
@@ -1215,10 +1221,23 @@ export class CodexAppServerHost implements AgentHost {
     }
     this.addMessage(id, message)
   }
-  private identityItem(item: z.infer<typeof itemSchema>): IdentityItem | undefined {
+  private identityItem(item: z.infer<typeof itemSchema>, origins: readonly Origin[], turnId: string | undefined): IdentityItem | undefined {
     if (item.type !== 'userMessage' && item.type !== 'agentMessage') return
     return { id: item.id, role: item.type === 'userMessage' ? 'user' : 'assistant', clientId: item.clientId,
-      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))) }
+      digest: promptDigest(item.type === 'agentMessage' ? item.text ?? '' : this.userItemText(item, origins, turnId)) }
+  }
+  /**
+   * A user item's text. The item naming attached files is left out only when the origin the rest then matches, by
+   * client ID or item ID with its digest, recorded an attached file, since only then did Sotto send it (ADR-0131).
+   */
+  private userItemText(item: z.infer<typeof itemSchema>, origins: readonly Origin[], turnId: string | undefined): string {
+    const content = userContent.parse(item.content)
+    const all = textOf(content); const words = wordsOf(content)
+    if (words === all) return all
+    const probe: IdentityItem = { id: item.id, role: 'user', digest: promptDigest(words), clientId: item.clientId }
+    const origin = (turnId ? messageOrigin(origins, turnId, probe) : undefined)
+      ?? origins.find(candidate => candidate.digest === probe.digest && (candidate.itemId === item.id || !!item.clientId && candidate.messageId === item.clientId))
+    return carriesAttachedFiles(origin?.attachments) ? words : all
   }
   private stableMessageId(id: string, turnId: string, itemId: string): string {
     return this.aliases[id]!.messageIdentities.find(turn => turn.turnId === turnId)?.messages.find(m => m.nativeIds.includes(itemId))?.id ?? itemId
@@ -1263,8 +1282,8 @@ export class CodexAppServerHost implements AgentHost {
     if (item.type === 'agentMessage' && lifecycle.phase === 'started' && this.completedMessages.has(messageKey)) return
     if (item.type === 'agentMessage' && (lifecycle.phase === 'completed' || lifecycle.terminal)) this.completedMessages.add(messageKey)
     const alias = this.aliases[id]!
-    const text = item.type === 'agentMessage' ? item.text ?? '' : textOf(userContent.parse(item.content))
-    const input = this.identityItem(item)!
+    const text = item.type === 'agentMessage' ? item.text ?? '' : this.userItemText(item, alias.origins, turnId)
+    const input = this.identityItem(item, alias.origins, turnId)!
     let origin = turnId && item.type === 'userMessage' ? messageOrigin(alias.origins, turnId, input) : undefined
     const identities = turnId ? identityTurn(alias.messageIdentities, turnId) : undefined
     const known = identities?.messages.find(m => m.nativeIds.includes(item.id) && compatibleClient(m, input))
@@ -1289,7 +1308,7 @@ export class CodexAppServerHost implements AgentHost {
    */
   private reconcileTurn(id: string, identities: CodexTurnIdentity[], origins: Origin[], turn: Turn): void {
     const alias = this.aliases[id]!
-    reconcileMessageIdentities(identities, turn.id, turn.items.flatMap(item => { const message = this.identityItem(item); return message ? [message] : [] }),
+    reconcileMessageIdentities(identities, turn.id, turn.items.flatMap(item => { const message = this.identityItem(item, origins, turn.id); return message ? [message] : [] }),
       origins, turnCreatedAt(alias, turn), this.watcher?.identities(alias.codexThreadId, turn.id), turn.status !== 'inProgress')
   }
   /**
@@ -1321,7 +1340,7 @@ export class CodexAppServerHost implements AgentHost {
     let anchor = this.log.lastMessageId(id)
     for (const item of turn.items) {
       // A display summary is not an authoritative message sequence or origin.
-      if (turn.itemsView !== 'full' && this.identityItem(item)) continue
+      if (turn.itemsView !== 'full' && this.identityItem(item, alias.origins, turn.id)) continue
       this.applyItem(id, item, turn.id, createdAt, { phase: 'history', afterMessageId: anchor, terminal: turn.status !== 'inProgress' })
       if (item.type === 'userMessage' || item.type === 'agentMessage') anchor = this.stableMessageId(id, turn.id, item.id)
     }
@@ -1711,7 +1730,7 @@ export class CodexAppServerHost implements AgentHost {
             if (thread.requests.length) throw new Error('Answer the pending Codex request explicitly before steering.')
             if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The thread changed in Codex. Review it before steering.')
           }
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           if (alias.origins.some(o => o.messageId === command.messageId)) return this.log.has(id, command.messageId) ? { accepted: true } : { accepted: false, uncertain: true }
           validate()
           if (this.dispatching.has(id)) throw new Error('A Codex prompt is already being submitted.')
@@ -1724,12 +1743,12 @@ export class CodexAppServerHost implements AgentHost {
             validate()
           } catch (error) { this.dispatching.delete(id); throw error }
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), turnId: expectedTurnId!, clientIdentity: true,
-            ...(command.attachments?.length ? { attachments: command.attachments.map(image => ({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: image.sizeBytes })) } : {}) }
+            ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           try {
             try { await this.persist(); await this.watcher?.pollThread(alias.codexThreadId); validate() }
             catch (error) { alias.origins = alias.origins.filter(o => o !== origin); await this.persist(); throw error }
-            this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+            this.watcher?.sent(alias.codexThreadId, command.messageId, command.text, carriesAttachedFiles(command.attachments))
             const save = this.saveBehindResponse()
             try {
               await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, value => {
@@ -1762,7 +1781,7 @@ export class CodexAppServerHost implements AgentHost {
             this.terminalTurns.add(turnKey(id, turnId)); this.runningTurns.delete(id); this.ensureThread(id).status = 'idle'; this.emit()
           }, undefined, undefined, watcherGuard)
         } else {
-          validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A send the coordinator's read stands for still waits for any read of this thread in flight, which `sync`
           // would have queued behind, so no read applies the thread across turn/start. It reads after all when the
           // thread moved since that read, by a read in flight or the resume above, or when the read in flight
@@ -1786,7 +1805,7 @@ export class CodexAppServerHost implements AgentHost {
           catch (error) { this.dispatching.delete(id); throw error }
           const skillsRevision = this.skillsRevision
           const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: promptDigest(command.text), createdAt: new Date().toISOString(), clientIdentity: true,
-            ...(command.attachments?.length ? { attachments: command.attachments.map(image => ({ id: image.id, name: image.name, mimeType: image.mimeType, sizeBytes: image.sizeBytes })) } : {}) }
+            ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
           alias.origins.push(origin)
           try {
             await this.persist()
@@ -1803,7 +1822,7 @@ export class CodexAppServerHost implements AgentHost {
             alias.origins = alias.origins.filter(candidate => candidate !== origin); this.dispatching.delete(id)
             await this.persist(); throw error
           }
-          this.watcher?.sent(alias.codexThreadId, command.messageId, command.text)
+          this.watcher?.sent(alias.codexThreadId, command.messageId, command.text, carriesAttachedFiles(command.attachments))
           const save = this.saveBehindResponse()
           try {
             markSendStage(command.commandId, 'written')

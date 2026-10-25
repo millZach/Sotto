@@ -38,6 +38,7 @@ export const OWL_FEATURES = [
   { id: 'interface-language', name: 'Interface language', owlSince: '2026-10-23', owner: 'docs/adr/0123-sottos-interface-speaks-the-computers-language.md', sentToStable: false },
   { id: 'own-model-servers', name: 'Your own model servers', owlSince: '2026-10-23', owner: 'docs/adr/0124-your-own-model-server-is-a-model-source.md', sentToStable: false },
   { id: 'composer-shrink', name: 'Slim composer while reading back', owlSince: '2026-10-23', owner: 'docs/adr/0125-the-composer-slims-while-the-user-reads-back.md', sentToStable: false },
+  { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0131-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]

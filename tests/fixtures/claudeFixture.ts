@@ -42,7 +42,7 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
       return { process: current.pid, modelId: current.model, ...(current.effort ? { reasoningEffort: current.effort } : {}), runtimeMode: modes[current.mode] ?? current.mode }
     },
   }
-  return { root, adapter, host: adapter, providerId: 'claude' as const, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips,
+  return { root, adapter, host: adapter, providerId: 'claude' as const, projectId: 'project', modelId: 'fixture-model', realId, action, skips: claudeFixtureSkips, nativePdf: true,
     protocol: { promptMethod: 'user', resumeMethod: 'resume', permissionDecision: (record: RecordedRpc) => {
       const frame = record.params?.frame as { response?: { response?: { behavior?: string } } } | undefined
       const behavior = frame?.response?.response?.behavior

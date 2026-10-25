@@ -139,6 +139,10 @@ msgstr "Added {doneName}"
 msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
 msgstr "Added {name}. Its models are in the model menu under {name}, with OpenCode."
 
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Adding files..."
+msgstr "Adding files..."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Adding…"
 msgstr "Adding…"
@@ -159,6 +163,26 @@ msgstr "An OpenAI-compatible server"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"
 msgstr "Asking the server for its models…"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach files"
+msgstr "Attach files"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach up to 8 files at a time. Nothing was attached."
+msgstr "Attach up to 8 files at a time. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached files"
+msgstr "Attached files"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached images"
+msgstr "Attached images"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
+msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
 
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Back to Cursor’s model makers"
@@ -217,6 +241,30 @@ msgstr "Compact idle threads"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Context, in tokens"
 msgstr "Context, in tokens"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. {next}"
+msgstr "Could not add {name}, so it and the {after} after it were not attached. {next}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. Try adding them again."
+msgstr "Could not add {name}, so it and the {after} after it were not attached. Try adding them again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. {next}"
+msgstr "Could not add {name}, so it was not attached. {next}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. Try adding it again."
+msgstr "Could not add {name}, so it was not attached. Try adding it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add this file. Nothing was attached. Try again."
+msgstr "Could not add this file. Nothing was attached. Try again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not read this file. Nothing was attached. Try adding it again."
+msgstr "Could not read this file. Nothing was attached. Try adding it again."
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
@@ -278,9 +326,30 @@ msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
 msgid "Done"
 msgstr "Done"
 
+#. Shown over the message box while files are dragged over it.
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Drop to attach"
+msgstr "Drop to attach"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+msgstr "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
+msgstr "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
+
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Every model here runs through Cursor, on your Cursor plan."
 msgstr "Every model here runs through Cursor, on your Cursor plan."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files cannot be attached while this thread waits for your answer. Nothing was attached."
+msgstr "Files cannot be attached while this thread waits for your answer. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files to attach"
+msgstr "Files to attach"
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Finish signing in on cursor.com in your browser."
@@ -289,6 +358,10 @@ msgstr "Finish signing in on cursor.com in your browser."
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "From the address, if left empty"
 msgstr "From the address, if left empty"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
+msgstr "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Install guide"
@@ -365,6 +438,10 @@ msgstr "Nothing in the thread was lost. In Settings › Providers › Your own m
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
 msgstr "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Nothing was attached."
+msgstr "Nothing was attached."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Only if the server was started with one"
@@ -445,6 +522,8 @@ msgstr "Reject Cursor’s plan"
 msgid "Remove"
 msgstr "Remove"
 
+#. {name} is an attached file's name. The button takes it off the draft.
+#: src/renderer/src/agents/attachmentWords.ts
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Remove {name}"
 msgstr "Remove {name}"
@@ -606,6 +685,31 @@ msgstr "Thinking"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking for {model}"
 msgstr "Thinking for {model}"
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file changed on its way to the host. Nothing was attached. Attach it again."
+msgstr "This file changed on its way to the host. Nothing was attached. Attach it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file did not reach the host whole. Nothing was attached. Attach it again."
+msgstr "This file did not reach the host whole. Nothing was attached. Attach it again."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+msgstr "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
+msgstr "This host is disconnected. Connect again before attaching files. Nothing was attached."
+
+#. {name} is the file name of the image, such as "screenshot.png".
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This model does not read images. Choose a model with image support, or remove {name}."
+msgstr "This model does not read images. Choose a model with image support, or remove {name}."
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
+msgstr "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "This thread is too long for {model}."

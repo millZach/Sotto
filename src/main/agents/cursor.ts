@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
+import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -27,6 +27,7 @@ import { markSendStage } from './sendStages'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
+import { deliverAttachments, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -1019,7 +1020,7 @@ export class CursorAcpHost implements AgentHost {
     const running = this.turns.get(id)
     if (running && !running.ended) throw new Error('Cursor is still working on this thread. Queue this follow-up.')
     if (this.thread(id).requests.length) throw new Error('Answer Cursor’s pending request before sending another message.')
-    const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
+    const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     verifyFileMentions(command.text, command.files)
     // A skill is Cursor's own `/name`, read at the start of the prompt. One the user typed at the start of the words stays
     // there, ahead of anything Sotto adds; one chosen and not typed goes first.
@@ -1042,14 +1043,18 @@ export class CursorAcpHost implements AgentHost {
     // words. Sotto keeps where its own part starts and how long it is, never the words.
     const head = (skills.length ? `${skills.join(' ')} ` : '') + (instructing ? cursorWatcherInstructions(profile.instructions) : '')
     const tail = note ? watcherRequestLine(note) : ''
-    const nativeText = lead + head + command.text.slice(lead.length) + tail
+    // Files that are not images are saved into the thread's folder and named in a note after everything else (ADR-0131),
+    // which joins Sotto's own tail: the replay takes it off by its length, so words that only look like a note stay.
+    const delivered = await deliverAttachments(alias.cwd, attachments)
+    const nativeText = withAttachedFilesNote(lead + head + command.text.slice(lead.length) + tail, delivered.note)
+    const sottoTail = nativeText.length - head.length - command.text.length
     const images: { type: 'image'; mimeType: string; data: string }[] = []
-    for (const attachment of attachments) images.push({ type: 'image', mimeType: attachment.mimeType, data: Buffer.from(await attachment.read()).toString('base64') })
+    for (const attachment of delivered.images) images.push({ type: 'image', mimeType: attachment.mimeType, data: Buffer.from(await attachment.read()).toString('base64') })
     await this.applySettings(alias, connection)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
-      attachments: attachments.map(({ id: attachmentId, name, mimeType, sizeBytes }) => ({ id: attachmentId, name, mimeType, sizeBytes })),
-      ...(profile ? { ...(lead.length ? { sottoAt: lead.length } : {}), sottoHead: head.length, sottoTail: tail.length } : {}) }
+      attachments: attachmentReferences(attachments),
+      ...(profile ? { ...(lead.length ? { sottoAt: lead.length } : {}), sottoHead: head.length, sottoTail } : delivered.note ? { sottoTail } : {}) }
     index.add(origin); alias.turns++
     await this.persist()
     current()

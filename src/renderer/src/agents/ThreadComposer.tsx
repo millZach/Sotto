@@ -24,6 +24,7 @@ import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComment
 import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
 import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
+import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
@@ -108,7 +109,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
     const result = await command(mode === 'queue' ? { type: 'queue-followup', ...payload } : mode === 'steer' ? { type: 'steer', ...payload } : { type: 'manual-send', ...payload })
     // Exact queue ownership wins an unrelated shell error, even before its publication reaches the draft store.
     const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
-      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
+      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error === null ? null : attachmentRefusal(result.error)
     store.resolve(threadId, draft.draftId, error)
     return result === null ? null : error === null
   } catch {
@@ -457,7 +458,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span>This answer was for a question that is no longer pending.</span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}>Discard answer</Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
-        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} watcher={watcher}
+        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} attachable={!answering && !permission} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
         dictating={dictating || ghostAway} nextKey={nextKey}
@@ -563,7 +564,7 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
 }
 
 /** The small, immediate typing path, including the menus that follow its caret. */
-function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported, watcher,
+function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported, attachable, watcher,
   field, caretAfterInsert, leavePickers, onMenuChange, next = null, nextOpen = false, nextListId, nextActiveId, dictating = false, nextKey, edit, onSend, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
@@ -574,6 +575,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly answering: boolean
   readonly placeholder: string
   readonly supported: boolean
+  /** Whether the draft takes attachments at all, whatever the model reads: once any file can be attached (ADR-0131). */
+  readonly attachable: boolean
   /** Watcher's composer offers no native skills. */
   readonly watcher: boolean
   readonly field: RefObject<PromptEditorElement | null>
@@ -593,6 +596,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
 }): ReactNode {
   const threadId = row.thread.id
   const { draft } = useThreadComposer(store, threadId)
+  const anyFile = useOwlFeature('attach-any-file')
   const screenshotReads = useScreenshotReadPort(store, threadId, row.model?.supportsImages === true)
   const capabilities = capabilitiesForThread(state.host, row.thread)
   const skills = capabilities.skills === true && !watcher
@@ -660,7 +664,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     {children}
     {ghost !== null && next !== null ? <span className="tt-visually-hidden" id={ghostId}>{`Suggested next prompt: ${next.ghost}. Press Tab to take it, or Up for more.`}</span> : null}
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
-    <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={supported}
+    <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
+      imagesSupported={row.model?.supportsImages === true}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
       <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
         label={answering ? 'Your answer' : watcher ? 'Watcher message' : 'Prompt'} editable={editable} ghost={ghost}

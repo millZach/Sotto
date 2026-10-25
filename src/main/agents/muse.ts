@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
-import { agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentProjectSchema, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActivity'
@@ -33,6 +33,7 @@ import { SessionReaper } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
 import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
+import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
@@ -1222,8 +1223,11 @@ export class MuseMspHost implements AgentHost {
       if (turnOnly) return
       // A message Sotto sent with a display text is shown as that: Watcher's instructions and note are the model's alone.
       // When Muse kept none whole, the words come from the wire text with Sotto's own parts off.
-      const text = !origin ? merged.text : merged.displayText !== undefined && !merged.truncated ? merged.displayText
-        : museWatcherTyped(merged.text ?? '', origin.digest) ?? merged.text
+      // The note naming attached files comes off first, when the origin recorded one: it is the last thing Sotto put in
+      // the words (ADR-0131).
+      const wire = merged.text === undefined ? undefined : readBackUserText(merged.text, () => origin).text
+      const text = !origin ? wire : merged.displayText !== undefined && !merged.truncated ? merged.displayText
+        : museWatcherTyped(wire ?? '', origin.digest) ?? wire
       const message: AgentMessage = {
         id: messageId, role: 'user', text: text ?? '',
         createdAt: origin?.createdAt ?? (merged.recordedAt ?? new Date().toISOString()),
@@ -1777,7 +1781,7 @@ export class MuseMspHost implements AgentHost {
           await this.open(command.threadId); this.assertGeneration(generation)
           if (!alias.museSessionId) throw new MuseUncertain('Muse has not confirmed this thread’s session.')
           if (alias.pendingRuntimeMode) throw new Error('Muse has not confirmed this thread’s permission mode. Reconnect to check before sending.')
-          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments)
+          const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
           // A loaded session streams live on this connection, so what the log holds is current; only a
           // session this send had to open needed the read its resume just did. `readForSend` still consumed
           // the coordinator's read receipt, so a later send repays it the same way.
@@ -1797,9 +1801,12 @@ export class MuseMspHost implements AgentHost {
           // wake-up's news for Watcher goes the same way as the note.
           const watcherNote = command.type === 'send' ? command.watcherRequestNote ?? command.watcherNews : undefined
           const note = watcherProfile && watcherNote ? watcherRequestLine(watcherNote) : ''
-          const parts: Record<string, unknown>[] = [{ type: 'text', text: command.text + note }]
-          const display = watcherProfile && command.type === 'send' ? { displayText: command.text } : {}
-          for (const attachment of attachments) {
+          // Any attached file that is not an image is saved into the thread's folder and named in a note after everything
+          // else in the words (ADR-0131), which the display text leaves out as it leaves out Watcher's note.
+          const delivered = await deliverAttachments(alias.cwd, attachments)
+          const parts: Record<string, unknown>[] = [{ type: 'text', text: withAttachedFilesNote(command.text + note, delivered.note) }]
+          const display = (watcherProfile || delivered.note) && command.type === 'send' ? { displayText: command.text } : {}
+          for (const attachment of delivered.images) {
             const bytes = await attachment.read()
             parts.push({
               type: 'image', mediaType: attachment.mimeType, base64Data: Buffer.from(bytes).toString('base64'),
@@ -1811,7 +1818,7 @@ export class MuseMspHost implements AgentHost {
           const origin: Origin = {
             messageId: command.messageId, commandId: command.commandId, nativeCommandId: museCommandId(),
             digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
-            attachments: attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes })),
+            attachments: attachmentReferences(attachments),
           }
           const entry = await this.threadProcess(command.threadId)
           // A model Muse has not confirmed is asked for again before a new turn; a refusal sends on the model Muse has.
