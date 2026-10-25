@@ -83,6 +83,7 @@ const customSettings = {
   llmModel: 'google/gemini-3.1-flash-lite',
   llmMode: 'nitro',
   threadTitles: false,
+  nextPromptSuggestions: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
@@ -155,6 +156,11 @@ describe('settings', () => {
     expect(parseSettings({}).compactIdleThreads).toBe(true)
     expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
     expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
+  })
+  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0132)', () => {
+    expect(parseSettings({}).nextPromptSuggestions).toBe(true)
+    expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
+    expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
@@ -397,6 +403,7 @@ describe('settings', () => {
       llmModel: null,
       llmMode: 'default',
       threadTitles: true,
+      nextPromptSuggestions: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },

@@ -4498,6 +4498,11 @@ msgstr ""
 msgid "Success message duration"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Suggest a next prompt after each turn"
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Surface"
@@ -5612,6 +5617,10 @@ msgstr ""
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "When a thread needs you"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
