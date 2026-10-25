@@ -17,6 +17,7 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { openCodeForOwnServers } from '../ownModelServers/openCode'
@@ -54,6 +55,7 @@ import { UsageService } from './usageService'
 import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
 import type { HostMachineReport } from '../../shared/hostFacts'
+import { readProjectOrigins } from './projectOrigins'
 import { threadDelegations } from './agentsView'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
@@ -86,8 +88,10 @@ export interface AgentRuntimeOptions {
   /** The Owl list's answer for the iPhone's Agents view (ADR-0103), read once by the process owner. Absent fails closed. */
   agentsViewEnabled?: boolean
   /**
-   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: this
-   * machine's report is its host facts and running threads alone, no live load is sampled, and list_machines shows none.
+   * The Owl list's answer for Work across machines (ADR-0082), read once by the process owner. Absent fails closed: a
+   * start names no machine or system, nothing reads where new workers start, the host does not report its projects'
+   * origins, this machine's report is its host facts and running threads alone, no live load is sampled, and
+   * list_machines shows none of it.
    */
   crossMachineEnabled?: boolean
   /**
@@ -188,6 +192,10 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory)),
+    // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
+    // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
+    deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
+      : new DeepSeekAcpHost(directory, { heldProviders: held, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
@@ -199,6 +207,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
       cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+      deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
     },
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
@@ -287,15 +296,23 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const workerRoles = options.workerRolesEnabled === true && options.runsAs !== 'headless-host'
     ? new WorkerRoles(() => subagentRoleTable(options.settings().workerRoles, agentControl.watcherSnapshot().models)) : undefined
   if (workerRoles) agentHost.useWorkerRoles(workerRoles)
+  // Work across machines (#1032): only the desktop places starts, so only its Watcher reads where new workers start. Every
+  // host that has it on, the desktop's own included, reports its projects' origins.
+  const placing = crossMachine && options.runsAs !== 'headless-host'
+    ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects) } : {}
   const watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine,
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
-      ...roles }) : undefined
+      ...roles, ...placing }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
     agentHost.enableDelegation()
+    // A delegating thread lists and names machines through Watcher's own reads (#1032), so only while Watcher runs too.
+    const placingWatcher = 'workerMachine' in placing ? watcher : undefined
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
-      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles })
+      tool: threadId => options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId), ...roles,
+      ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
+        name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {} })
   }
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
@@ -439,6 +456,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+    ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
@@ -453,6 +471,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const opencodeSignIn = providers.opencode instanceof OpenCodeHost ? providers.opencode.signIn : undefined
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
+  // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
+  const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
+  const ownServersDeepSeek = options.ownServers && deepseekHost ? { changed: () => deepseekHost.ownServersChanged() } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
@@ -466,5 +487,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, cursorSignIn, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, watcher, watcherTools, delegation, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, prepareForShutdown, close }
 }

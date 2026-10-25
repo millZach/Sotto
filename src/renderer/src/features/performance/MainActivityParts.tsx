@@ -1,51 +1,58 @@
 import React, { useCallback, type ReactNode } from 'react'
 import { FileText, FolderOpen, Paperclip } from 'lucide-react'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { blockedPercent, freezeLength, type ActivityRecordingState, type MainLoopReading } from '../../../../shared/mainActivity'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
+import { shownCount } from '../../state/interfaceNumbers'
 import './mainActivity.css'
 import { attachRecordingToNewThread, recordingSize, useAttachedRecording, useSecondsLeft } from './useMainActivity'
 
 /** What Record a minute saves and where, in the words the mock-up settled on. */
-export const RECORDING_PRIVACY = 'Record a minute saves the function names and timings of main and the window on this computer. No sound, nothing you dictated or typed, and nothing leaves this computer.'
-export const CHART_CAPTION = 'Each bar is one second of the last minute; taller means main was blocked longer.'
+export const RECORDING_PRIVACY = msg`Record a minute saves the function names and timings of main and the window on this computer. No sound, nothing you dictated or typed, and nothing leaves this computer.`
+export const CHART_CAPTION = msg`Each bar is one second of the last minute; taller means main was blocked longer.`
 /** A second this blocked or more is drawn in the warning colour. */
 const WARN_BAR_MS = 500
 
 export function LoopFigures({ reading }: { readonly reading: MainLoopReading }): ReactNode {
   const warn = reading.frozen ? '' : undefined
   return <div className="main-activity__figures">
-    <div className="main-activity__figure" data-warn={warn}><b>{blockedPercent(reading.blockedShare)}</b><span>blocked</span></div>
-    <div className="main-activity__figure" data-warn={warn}><b>{freezeLength(reading.longestFreezeMs)}</b><span>longest freeze</span></div>
-    <div className="main-activity__figure"><b>{reading.freezesOver100ms}</b><span>freezes over 100 ms</span></div>
+    <div className="main-activity__figure" data-warn={warn}><b>{blockedPercent(reading.blockedShare)}</b><span><Trans>blocked</Trans></span></div>
+    <div className="main-activity__figure" data-warn={warn}><b>{freezeLength(reading.longestFreezeMs)}</b><span><Trans>longest freeze</Trans></span></div>
+    <div className="main-activity__figure"><b>{reading.freezesOver100ms}</b><span><Trans>freezes over 100 ms</Trans></span></div>
   </div>
 }
 
 export function LoopChart({ reading }: { readonly reading: MainLoopReading }): ReactNode {
+  const { t, i18n } = useLingui()
   const width = 10, height = 44
+  const blocked = blockedPercent(reading.blockedShare)
+  const longest = freezeLength(reading.longestFreezeMs)
   return <figure className="main-activity__chart-figure">
     <svg className="main-activity__chart" viewBox={`0 0 ${reading.bars.length * width} ${height}`} preserveAspectRatio="none" role="img"
-      aria-label={`Main was blocked ${blockedPercent(reading.blockedShare)} of the last minute; the longest freeze was ${freezeLength(reading.longestFreezeMs)}.`}>
+      aria-label={t`Main was blocked ${blocked} of the last minute; the longest freeze was ${longest}.`}>
       {reading.bars.map((blocked, index) => {
         const tall = Math.max(2, blocked / 1_000 * height)
         return <rect key={index} x={index * width + 1} y={height - tall} width={width - 2} height={tall} rx={1.5} data-warn={blocked >= WARN_BAR_MS ? '' : undefined} />
       })}
     </svg>
-    <figcaption className="main-activity__caption">{CHART_CAPTION}</figcaption>
+    <figcaption className="main-activity__caption">{i18n._(CHART_CAPTION)}</figcaption>
   </figure>
 }
 
 /** The countdown while a recording runs. */
 export function RecordingCountdown({ recording }: { readonly recording: Extract<ActivityRecordingState, { phase: 'recording' }> }): ReactNode {
+  const { t } = useLingui()
   const total = Math.max(1, Math.round(recording.durationMs / 1_000))
   const left = useSecondsLeft(recording.startedAt, recording.durationMs)
   return <div className="main-activity__recording">
     <div className="main-activity__count" aria-hidden="true">{left} s</div>
-    <div className="main-activity__progress" role="progressbar" aria-label="Recording" aria-valuemin={0} aria-valuemax={total} aria-valuenow={total - left}
-      aria-valuetext={`${left} seconds left`} style={{ '--main-activity-progress': (total - left) / total } as React.CSSProperties}><i /></div>
-    <p className="main-activity__muted">Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness.</p>
+    <div className="main-activity__progress" role="progressbar" aria-label={t`Recording`} aria-valuemin={0} aria-valuemax={total} aria-valuenow={total - left}
+      aria-valuetext={t`${left} seconds left`} style={{ '--main-activity-progress': (total - left) / total } as React.CSSProperties}><i /></div>
+    <p className="main-activity__muted tt-paragraph"><Trans>Recording main and the window. Keep using Sotto as you were, so the minute catches the slowness.</Trans></p>
   </div>
 }
 
@@ -78,17 +85,19 @@ export function SavedRecording({ recording, onShowInFolder, onAttached, extra }:
 }): ReactNode {
   const attached = useAttachedRecording() === recording.name
   const attach = useAttach(recording, onAttached)
+  const { t } = useLingui()
   const files = recording.files.length
+  const size = recordingSize(recording.bytes), fileCount = shownCount(files)
   return <div className="main-activity__saved">
-    <div className="main-activity__file"><FileText size={16} aria-hidden="true" /><span>{recording.name}</span><small>{files} {files === 1 ? 'file' : 'files'}, {recordingSize(recording.bytes)}</small></div>
+    <div className="main-activity__file"><FileText size={16} aria-hidden="true" /><span>{recording.name}</span><small>{plural(files, { one: `${fileCount} file, ${size}`, other: `${fileCount} files, ${size}` })}</small></div>
     {attached
-      ? <p className="main-activity__done" role="status">Added to a new thread's composer. It is sent when you send.</p>
-      : <p className="main-activity__muted">{recording.windowRecorded
-        ? 'Saved on this computer, in Sotto\'s activity recordings folder.'
-        : 'Saved on this computer, in Sotto\'s activity recordings folder. Only main was recorded; the window could not be.'}</p>}
+      ? <p className="main-activity__done tt-paragraph" role="status"><Trans>Added to a new thread's composer. It is sent when you send.</Trans></p>
+      : <p className="main-activity__muted tt-paragraph">{recording.windowRecorded
+        ? t`Saved on this computer, in Sotto's activity recordings folder.`
+        : t`Saved on this computer, in Sotto's activity recordings folder. Only main was recorded; the window could not be.`}</p>}
     <div className="main-activity__actions">
-      {attached ? null : <Button variant="primary" onClick={attach}><Paperclip size={14} aria-hidden="true" />Attach to a thread</Button>}
-      <Button variant="secondary" onClick={onShowInFolder}><FolderOpen size={14} aria-hidden="true" />Show in folder</Button>
+      {attached ? null : <Button variant="primary" onClick={attach}><Paperclip size={14} aria-hidden="true" /><Trans>Attach to a thread</Trans></Button>}
+      <Button variant="secondary" onClick={onShowInFolder}><FolderOpen size={14} aria-hidden="true" /><Trans>Show in folder</Trans></Button>
       {extra}
     </div>
   </div>

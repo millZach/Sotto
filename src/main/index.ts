@@ -238,6 +238,9 @@ import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OwnServers, type OwnServerEvent, type OwnServersOpenCode } from './ownModelServers/service'
 import { registerOwnServersIpc } from './ownModelServers/ipc'
+import { OwnCleanupMeasures, type OwnCleanupEvent } from './llm/ownServerCleanup'
+import { registerOwnServerCleanupIpc } from './llm/ownServerCleanupIpc'
+import { OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, type OwnCleanupChoice } from '../shared/ownServerCleanup'
 import { SUBAGENTS_CHANGED } from '../shared/subagents'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from './agents/control'
 import { createWatcherRoomDesktop } from './agents/watcherRoomDesktop'
@@ -347,6 +350,7 @@ type NativeDiagnostic =
   | 'owl-failed'
   | 'desktop-notification-failed'
   | OwnServerEvent
+  | OwnCleanupEvent
   | 'interface-language-load-failed'
 
 function logOperational(code: NativeDiagnostic): void {
@@ -680,8 +684,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
-  // Work across machines (ADR-0082): this computer's live load and work placed but not started (#1311), and list_machines
-  // showing them. Stable samples nothing and shows none of it.
+  // Work across machines (ADR-0082): where new workers start, a start's machine or system, and the machines a delegating
+  // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
+  // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
@@ -739,11 +744,17 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode, so it exists only while the
-  // Owl list turns it on, OpenCode is not held and the local host runs. Otherwise main keeps the record untouched, gives
-  // OpenCode no server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && !heldProviders.has('opencode') && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, log: event => { logOperational(event) } }) : undefined
+  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
+  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode, deepSeek: () => localRuntime?.ownServersDeepSeek, log: event => { logOperational(event) } }) : undefined
+  // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
+  // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
+  // choice and measures are kept. E2E runs never reach a server.
+  const ownServerCleanup: OwnCleanupMeasures | undefined = ownServers && cleanupModelEnabled && owlFeatures['own-server-cleanup']
+    ? new OwnCleanupMeasures({ directory: userDataPath, servers: () => ownServers.list(), log: event => { logOperational(event) },
+      ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }) }) : undefined
   const omarchyResources = platform === 'linux' ? await findOmarchyResources(e2eConfiguration ? userDataPath : process.resourcesPath, join(__dirname, '../..')) : null
   let agentHistoryEnabled = startupSettings.historyEnabled
   const retiredChatHistory = new RetiredChatHistory(userDataPath, () => agentHistoryEnabled)
@@ -804,7 +815,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
-        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : [])] : [])]
+        ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),
+        ...(ownServerCleanup ? [OWN_SERVER_CLEANUP_RENDERER_ARGUMENT] : [])] : [])]
       const window = new BrowserWindow(featureArguments.length
         ? { ...options, webPreferences: { ...options.webPreferences, additionalArguments: [...(options.webPreferences?.additionalArguments ?? []), ...featureArguments] } } : options)
       window.webContents.on('before-input-event', (_event, input) => {
@@ -1046,7 +1058,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
@@ -1326,6 +1338,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const transcriptPolish = new TranscriptPolishService({
     getSettings: () => settings.forFormatting(),
     chosenModel: cleanupModelEnabled,
+    ...(ownServerCleanup ? { ownServer: (choice: OwnCleanupChoice) => ownServerCleanup.resolve(choice) } : {}),
     onDiagnostic: diagnosticsAppender('polish-diagnostics.jsonl'),
     ...(e2eConfiguration === null
       ? {}
@@ -1884,6 +1897,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
       const cleanupOwnServers = registerOwnServersIpc(ipcMain, ownServers, () => windows.getTrustedRenderers())
+      // Measure for AI cleanup on the user's own servers (ADR-0136): only while its Owl feature runs.
+      const cleanupOwnServerCleanup = registerOwnServerCleanupIpc(ipcMain, ownServerCleanup, () => windows.getTrustedRenderers())
       const checkpointIntegration = connectCheckpoints({ historyEnabled: () => agentHistoryEnabled, files, directory: userDataPath, host: agentHost, control: agentControl, registry: threadRegistry,
         report: () => { logOperational('checkpoint-unavailable') } })
       agentHost.setMutationGuard(checkpointIntegration.canMutate)
@@ -2118,6 +2133,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
         cleanupOwnServers()
+        cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()
         cleanupTools()
         browserService = undefined

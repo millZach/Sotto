@@ -275,3 +275,7 @@
 .cleanup-model__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .cleanup-model__slug { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .cleanup-model__empty { padding: 8px 9px; color: var(--tt-text-muted); font-size: 13px; }
+/* The list's sections when the user's own servers are listed (ADR-0136), and Measure's line under the box. */
+.cleanup-model__section { padding: 8px 9px 4px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.cleanup-model__measure { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cleanup-model__measure > .settings-remote-status { flex: 1 1 260px; margin: 0; }

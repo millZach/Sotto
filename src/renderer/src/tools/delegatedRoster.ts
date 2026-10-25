@@ -1,3 +1,4 @@
+import { plural, t } from '@lingui/core/macro'
 import { hostForThread, PROVIDER_LABELS, type AgentHostSnapshot, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView } from '../../../shared/delegation'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -196,8 +197,6 @@ export function mixedRoster(agents: readonly { readonly row: SubagentRow; readon
   return blocks.map((block, index) => ({ block, index })).sort((first, second) => newestFirst(first.block, second.block) || first.index - second.index).map(({ block }) => block)
 }
 
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
-
 /**
  * The roster's line of chrome while it lists delegated threads: "4 delegated threads · 2 agents", and beside it what
  * needs the user and what is working, delegated threads and agents together ("1 needs you · 2 working").
@@ -205,16 +204,19 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
 export function rosterCounts(rows: readonly DelegatedRosterRow[], summary: Pick<SubagentSummary, 'total' | 'working' | 'unknown'>): { readonly title: string; readonly detail: string | null } {
   const needs = rows.filter(row => row.status === 'needs').length
   const working = rows.filter(row => row.status === 'working' || row.status === 'background').length + summary.working
-  const title = [plural(rows.length, 'delegated thread'), ...summary.total ? [plural(summary.total, 'agent')] : []].join(' · ')
-  const detail = [needs ? `${needs} needs you` : '', working ? `${working} working` : ''].filter(Boolean).join(' · ')
-  return { title, detail: detail || (summary.unknown ? 'Activity not confirmed' : 'None working') }
+  const delegatedCount = rows.length, total = summary.total
+  const title = [plural(delegatedCount, { one: '# delegated thread', other: '# delegated threads' }), ...total ? [plural(total, { one: '# agent', other: '# agents' })] : []].join(' · ')
+  const detail = [needs ? plural(needs, { other: '# needs you' }) : '', working ? plural(working, { other: '# working' }) : ''].filter(Boolean).join(' · ')
+  return { title, detail: detail || (summary.unknown ? t`Activity not confirmed` : t`None working`) }
 }
 
 /** What a delegated thread's open control says and does, by whether it waits on the user and whether it is in the pane. */
 export function openAction(row: Pick<DelegatedRosterRow, 'thread' | 'waitingFor'>, shown: boolean): { readonly kind: 'shown' } | { readonly kind: 'open' | 'answer'; readonly label: string; readonly name: string } {
   if (shown) return { kind: 'shown' }
   const title = row.thread.title
-  return row.waitingFor !== null ? { kind: 'answer', label: 'Open to answer', name: `Open ${title} to answer its request` } : { kind: 'open', label: 'Open as thread', name: `Open ${title} as a thread` }
+  return row.waitingFor !== null
+    ? { kind: 'answer', label: t`Open to answer`, name: t({ message: `Open ${title} to answer its request`, comment: '{title} is a thread\'s title.' }) }
+    : { kind: 'open', label: t`Open as thread`, name: t({ message: `Open ${title} as a thread`, comment: '{title} is a thread\'s title.' }) }
 }
 
 /**

@@ -146,7 +146,8 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
     threads: [thread('w'), ...sessions.map(id => thread(id))] })
   const native = new ConfiguredProviderHost({ directory: join(root, 'switch'), provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)),
+      deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   await mkdir(join(root, 'workspace'), { recursive: true })
   const workspace = new WorkspaceHost(native, join(root, 'workspace'), () => true, 600_000, true)
   workspace.enableDelegation()

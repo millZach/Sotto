@@ -72,8 +72,8 @@ msgid "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandN
 msgstr "{byHand, plural, one {{byHandNames} is behind on {host}.} other {{byHandNames} are behind on {host}.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
-msgstr "{capMinutes, plural, other {{usedMinutes} of # minutes}}"
+msgid "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
+msgstr "{capMinutes, plural, other {{usedMinutes} of {allowance} minutes}}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{chosen, plural, one {Reset all roles to their defaults. # role is your choice} other {Reset all roles to their defaults. # roles are your choice}}"
@@ -116,12 +116,12 @@ msgid "{count, plural, other {# themes updated.}}"
 msgstr "{count, plural, other {# themes updated.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
-msgid "{count, plural, other {Remove selected (#)}}"
-msgstr "{count, plural, other {Remove selected (#)}}"
+msgid "{count, plural, other {Remove selected ({selected})}}"
+msgstr "{count, plural, other {Remove selected ({selected})}}"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
-msgid "{days, plural, one {# day ago} other {# days ago}}"
-msgstr "{days, plural, one {# day ago} other {# days ago}}"
+msgid "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
+msgstr "{days, plural, one {{shownDays} day ago} other {{shownDays} days ago}}"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "{days, plural, one {# day} other {# days}}"
@@ -160,8 +160,8 @@ msgid "{failedNames} did not update."
 msgstr "{failedNames} did not update."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
-msgid "{fileCount, plural, other {Only the first 40 of # files were read.}}"
-msgstr "{fileCount, plural, other {Only the first 40 of # files were read.}}"
+msgid "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
+msgstr "{fileCount, plural, other {Only the first 40 of {filesShown} files were read.}}"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{fileName}: too large"
@@ -242,8 +242,8 @@ msgid "{minutes, plural, one {Checks origin every minute for ahead and behind, w
 msgstr "{minutes, plural, one {Checks origin every minute for ahead and behind, while this window is in front.} other {Checks origin every # minutes for ahead and behind, while this window is in front.}}"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
-msgid "{minutes, plural, other {# min}}"
-msgstr "{minutes, plural, other {# min}}"
+msgid "{minutes, plural, other {{sessionMinutes} min}}"
+msgstr "{minutes, plural, other {{sessionMinutes} min}}"
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "{minutes, plural, other {The code lasts # minutes.}}"
@@ -5252,8 +5252,8 @@ msgid "The one on {host} is too old."
 msgstr "The one on {host} is too old."
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
-msgid "The owl perched on a branch in your menu bar."
-msgstr "The owl perched on a branch in your menu bar."
+msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
+msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The pasted text was cut to fit the 4,000-character limit."

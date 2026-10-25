@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
@@ -9,6 +9,7 @@ import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
+import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
@@ -17,6 +18,8 @@ import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
+import { NeedsYouQueue } from './NeedsYouQueue'
+import { useOwlFeature } from '../state/owlFeature'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
@@ -39,8 +42,10 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
 /** What follows a row's status while its provider is out of reach: Reconnecting while its host restarts for an update. */
 const disconnectedLabel = (row: ThreadRow): string => row.connected ? '' : row.reconnecting ? ' · Reconnecting' : ' · Disconnected'
 
-function Indicators({ working, needs, id }: { readonly working: number; readonly needs: number; readonly id?: string }): ReactNode {
+function Indicators({ working, needs, id, hidden = false }: { readonly working: number; readonly needs: number; readonly id?: string; readonly hidden?: boolean }): ReactNode {
   if (!working && !needs) return null
+  // While Needs you stands (ADR-0135) the dots are not drawn, but the toggle keeps naming what waits behind it.
+  if (hidden) return <span id={id} className="tt-visually-hidden">{[needs ? `${needs} waiting on you` : '', working ? `${working} working` : ''].filter(Boolean).join(', ')}</span>
   return <span id={id} className="thread-nav__indicators">
     {needs ? <span data-state="needs" title={`${needs} waiting on you`}><i aria-hidden="true" /><span className="tt-visually-hidden">{needs} waiting on you</span></span> : null}
     {working ? <span data-state="working" title={`${working} working`}><i aria-hidden="true" /><span className="tt-visually-hidden">{working} working</span></span> : null}
@@ -86,6 +91,14 @@ export interface PaneActions {
   readonly restoreShortcut?: ThreadChordLabel | undefined
 }
 
+/** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
+function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
+  return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
+    data-background={background || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true">
+    {background ? <Hourglass size={10} strokeWidth={2.5} /> : null}
+  </span>
+}
+
 /**
  * One thread in the sidebar. Memoised: with the state and the rows derived from it structurally shared, a
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
@@ -101,7 +114,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
 }): ReactNode {
   const title = row.thread.title
   // Prototype ready (ADR-0108), Just finished (ADR-0046) and Babysitting #74 (ADR-0061) stand where the row would say Done.
-  const { text: status, finished, babysitting, prototype } = rowStatus(row)
+  const { text: status, finished, babysitting, prototype, background } = rowStatus(row)
   // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const [renaming, setRenaming] = useState(false)
@@ -136,7 +149,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onKeyDown={event => { if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); panes.onOpenBeside(row.thread.id) } }}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
-      <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <StatusRing row={row} finished={finished} background={background} />
       <span className="thread-nav__title">{title}</span>
       <RowTime row={row} live={liveClock} id={timeId} />
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
@@ -213,8 +226,12 @@ function useFolderToggles(): readonly [(key: string) => boolean, (key: string) =
   return [isOpen, toggle]
 }
 
+/** How long the pointer or focus rests on a closed folder before its preview opens, and how long it lingers after leaving. */
+const PEEK_DELAY_MS = 350
+const PEEK_GRACE_MS = 300
+
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
@@ -227,6 +244,10 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   /** The threads whose own lane is running; each row reads only its own entry. */
   readonly busyThreadIds: readonly string[] | undefined
   readonly newThreadShortcut?: { readonly suffix: string; readonly keys: string } | undefined
+  /** The folder peek (Owl, docs/plans/collapsed-folder-peek.md): a closed folder previews its rows in place while rested on. */
+  readonly peekEnabled: boolean
+  /** Needs you stands at the sidebar's head (ADR-0135): the folder dots give their telling to it. */
+  readonly indicatorsHidden: boolean
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
   const indicatorsId = `${listId}-indicators`
@@ -234,14 +255,90 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   // The chord opens a thread in the focused pane's project, so only this project's pen answers to it while one of its threads is focused.
   const listed = panes.listedThreadId ?? panes.currentThreadId
   const chordAppliesHere = listed !== null && folder.rows.some(row => row.thread.id === listed)
-  return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
-    <div className="thread-folder__head">
+  const key = folderKey(section, folder.id)
+  // The preview: a closed folder rested on by pointer or focus opens in place until you leave (Zach's pick, variant B).
+  // It never touches the toggled folders; Keep open and the toggle itself do the real opening.
+  const [preview, setPreview] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const previewRef = useRef<HTMLUListElement>(null)
+  const enterTimer = useRef(0)
+  const leaveTimer = useRef(0)
+  const hoverRef = useRef(false)
+  const draggingRef = useRef(false)
+  /** Escape latches the preview shut until focus leaves the folder; returned focus alone must not reopen it. */
+  const suppressRef = useRef(false)
+  const focusFirstRow = useRef(false)
+  const canPreview = peekEnabled && !expanded && folder.rows.length > 0
+  const peeking = preview && canPreview
+  useEffect(() => () => { window.clearTimeout(enterTimer.current); window.clearTimeout(leaveTimer.current) }, [])
+  useLayoutEffect(() => {
+    if (!peeking || !focusFirstRow.current) return
+    focusFirstRow.current = false
+    previewRef.current?.querySelector<HTMLElement>('.thread-nav__item')?.focus()
+  }, [peeking])
+  const clearTimers = (): void => { window.clearTimeout(enterTimer.current); window.clearTimeout(leaveTimer.current) }
+  const focusInside = (): boolean => { const active = document.activeElement; return active !== null && active !== document.body && rootRef.current?.contains(active) === true }
+  const schedulePreview = (trigger: 'hover' | 'focus'): void => {
+    if (!canPreview) return
+    if (trigger === 'focus' && suppressRef.current) return
+    if (trigger === 'hover') suppressRef.current = false
+    window.clearTimeout(leaveTimer.current)
+    if (peeking) return
+    window.clearTimeout(enterTimer.current)
+    enterTimer.current = window.setTimeout(() => setPreview(true), PEEK_DELAY_MS)
+  }
+  const scheduleHide = (from: 'hover' | 'focus'): void => {
+    window.clearTimeout(enterTimer.current)
+    if (draggingRef.current) return
+    if (from === 'hover' && focusInside()) return
+    if (from === 'focus' && hoverRef.current) return
+    window.clearTimeout(leaveTimer.current)
+    leaveTimer.current = window.setTimeout(() => setPreview(false), PEEK_GRACE_MS)
+  }
+  const hidePreview = (latch = false): void => { if (latch) suppressRef.current = true; clearTimers(); setPreview(false) }
+  const keepOpen = (): void => { hidePreview(); onToggle(key); toggleRef.current?.focus() }
+  const fineHover = (pointerType: string): boolean => {
+    if (pointerType !== '' && pointerType !== 'mouse' && pointerType !== 'pen') return false
+    return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches
+  }
+  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
+    liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} />)
+  return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}
+    onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
+    onPointerLeave={() => { hoverRef.current = false; scheduleHide('hover') }}
+    onFocus={event => { if (!rootRef.current?.contains(event.relatedTarget as Node | null)) schedulePreview('focus'); else window.clearTimeout(leaveTimer.current) }}
+    onBlur={event => { if (rootRef.current?.contains(event.relatedTarget as Node | null)) return; suppressRef.current = false; scheduleHide('focus') }}
+    onDragStart={() => { draggingRef.current = true; clearTimers() }}
+    onDragEnd={() => { draggingRef.current = false; scheduleHide('hover') }}
+    onKeyDown={event => {
+      // Keys typed in a row's rename field belong to the field: caret arrows must never navigate the preview.
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable)) return
+      if (event.key === 'Escape' && peeking) { event.preventDefault(); event.stopPropagation(); hidePreview(true); toggleRef.current?.focus(); return }
+      const inPreview = previewRef.current?.contains(event.target as Node) === true
+      if (inPreview && event.key === 'ArrowLeft') { event.preventDefault(); hidePreview(true); toggleRef.current?.focus(); return }
+      if (inPreview && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        const rows = [...(previewRef.current?.querySelectorAll<HTMLElement>('.thread-nav__item') ?? [])]
+        const at = rows.findIndex(row => row === event.target || row.contains(event.target as Node))
+        if (!rows.length || at < 0) return
+        event.preventDefault()
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? rows.length - 1 : at + (event.key === 'ArrowDown' ? 1 : -1)
+        rows[Math.max(0, Math.min(next, rows.length - 1))]?.focus()
+        return
+      }
+      if (event.target === toggleRef.current && (event.key === 'ArrowDown' || event.key === 'ArrowRight') && canPreview) {
+        event.preventDefault(); suppressRef.current = false; clearTimers()
+        if (peeking) previewRef.current?.querySelector<HTMLElement>('.thread-nav__item')?.focus()
+        else { focusFirstRow.current = true; setPreview(true) }
+      }
+    }}>
+    <div className="thread-folder__head" data-peeking={peeking || undefined}>
       {/* The toggle includes the visible count in its accessible name, with the project title first. */}
-      <button type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(folderKey(section, folder.id))}
-        aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={project?.path}>
+      <button ref={toggleRef} type="button" className="thread-folder__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => { hidePreview(); onToggle(key) }}
+        aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={peeking ? undefined : project?.path}>
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
         <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
-        {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
+        {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} hidden={indicatorsHidden} /> : null}
         <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
@@ -252,9 +349,15 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         {folder.settled || section === 'open' ? <ProjectSettleAction projectId={folder.id} title={folder.title} settled={folder.settled} disabled={globalLaneBusy} command={command} /> : null}
       </span> : null}
     </div>
+    {peeking ? <ul ref={previewRef} className="thread-folder__rows thread-folder__preview" id={`${listId}-preview`} role="group" aria-label={`Preview of threads in ${folder.title}`}>
+      {renderRows(threadId => { hidePreview(); onOpen(threadId) }, { ...panes, onOpenBeside: threadId => { hidePreview(); panes.onOpenBeside(threadId) } })}
+      <li className="thread-folder__preview-foot"><span>Preview</span>
+        <button type="button" className="thread-folder__preview-action tt-focusable" onClick={keepOpen}>Keep open</button>
+        {section === 'open' && project !== undefined ? <button type="button" className="thread-folder__preview-action tt-focusable" aria-label={`New thread in ${folder.title}`} onClick={() => { hidePreview(); onNewThread(folder.id) }}>New thread</button> : null}
+      </li>
+    </ul> : null}
     {expanded ? <ul className="thread-folder__rows" id={listId}>
-      {folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-        liveClock={liveClock} onOpen={onOpen} command={command} panes={panes} settle={settle} />)}
+      {renderRows(onOpen, panes)}
       {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? 'No open threads.' : 'No threads yet.'}</li> : null}
     </ul> : null}
   </div>
@@ -322,10 +425,13 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
    */
   readonly shortcutsLive?: boolean | undefined
 }): ReactNode {
+  const queueOn = useOwlFeature('needs-you-queue')
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
+  const folderPeek = useOwlFeature('folder-peek')
+  const { collapsed } = useSidebarSize()
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings
@@ -356,7 +462,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
         event.preventDefault()
-        void settle(row.thread, row.project)
+        // The collapsed rail keeps showing the focused thread even once settled, so move on to the top open one.
+        const next = collapsed ? openRows.find(item => item.thread.id !== row.thread.id) : undefined
+        void settle(row.thread, row.project).then(settled => { if (settled && next) onOpen(next.thread.id) })
         return
       }
       if (press(restoreChord)) {
@@ -388,7 +496,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutsLive, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
+  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
@@ -397,8 +505,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     const key = folderKey(section, folder.id)
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
-      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut}
-      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
+      host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
+      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn} />
   }
   const { open, settled } = organization
   const threads = state.host.threads
@@ -413,9 +521,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
-    afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
+    afterSearch={queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
-      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
+      <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row)} />
     </button>)}</nav>}>
       <section aria-label="Projects">
         {open.map(folderView('open'))}
@@ -426,7 +534,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           aria-label={[`Settled ${plural(settledThreads, 'thread')}`, settledNeeds ? `${settledNeeds} waiting on you` : '', settledWorking ? `${settledWorking} working` : ''].filter(Boolean).join(', ')}>
           <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span>Settled</span>
-          {!settledShown ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
+          {!settledShown && !queueOn ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
         </button>
         {settledShown ? <div>{settled.map(folderView('settled'))}{!settled.length ? <p className="thread-nav__empty">No settled threads.</p> : null}</div> : null}
       </section>

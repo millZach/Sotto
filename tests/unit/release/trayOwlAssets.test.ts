@@ -10,7 +10,7 @@ import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_BODY_SWATCHES, MENU_BAR_OWL_EYES, MEN
 
 const root = resolve(__dirname, '../../..')
 const owlDir = join(root, 'resources/tray/owl')
-const frameBytes = 27 * 22 * 4
+const frameBytes = 18 * 18 * 4
 
 interface Manifest {
   version: number
@@ -25,7 +25,7 @@ const manifest = JSON.parse(readFileSync(join(owlDir, 'manifest.json'), 'utf8'))
 
 describe('menu bar owl assets', () => {
   it('lists every pose poses.mjs can show, in frame order', () => {
-    expect(manifest).toMatchObject({ version: 1, width: 27, height: 22, frames: allOwlPoses().length })
+    expect(manifest).toMatchObject({ version: 1, width: 18, height: 18, frames: allOwlPoses().length })
     expect(manifest.poseKeys).toEqual(allOwlPoses().map(poseKey))
   })
 
@@ -41,7 +41,7 @@ describe('menu bar owl assets', () => {
     const rest = raw.subarray(0, frameBytes)
     let opaque = 0
     for (let i = 3; i < rest.length; i += 4) if (rest[i] === 255) opaque++
-    expect(opaque).toBeGreaterThan(100)
+    expect(opaque).toBeGreaterThan(60)
   })
 
   it('stays under 1 MB', () => {

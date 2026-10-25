@@ -297,6 +297,9 @@
   --tt-owl-faintest-stars: block;
   --tt-owl-star-scale: 1;
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  /* The light crossing a running turn's working words (agents/activity.css): the accent at its most vivid, lifted well
+     above the words' muted ink so it reads on any theme, however dull its accent. */
+  --tt-working-light: oklch(from var(--tt-accent) max(l, .9) min(calc(c * 1.6), .2) h);
   --tt-owl-night: oklch(from var(--tt-sidebar) calc(l - .011) min(calc(c + .025), .05) var(--owl-night-hue));
   --tt-owl-night-field: oklch(from var(--tt-sidebar) calc(l - .05) min(calc(c + .023), .045) var(--owl-night-hue));
   /* Watcher's room has no sidebar, so its night sits in the room's top-left corner (watcher/watcher.css), derived
@@ -418,6 +421,8 @@
   --tt-owl-faintest-stars: none;
   --tt-owl-star-scale: 1.2;
   --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  /* By day the light is the accent deepened instead, below the muted ink. */
+  --tt-working-light: oklch(from var(--tt-accent) min(l, .38) min(calc(c * 1.6), .2) h);
   --tt-owl-night: color-mix(in oklab, var(--tt-sidebar) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-room-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h));
   --tt-owl-night-field: var(--tt-field);

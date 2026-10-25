@@ -1,4 +1,7 @@
 import React, { type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { i18n as interfaceI18n } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import type { UsageTokenTotals } from '../../../../shared/usageDashboard'
 import { seriesValues, type ChartKind, type ChartMetric, type ChartPlan } from './usageChartSeries'
 import { fmtInt, fmtTok, hourLabel, shortDay, tokenParts, WEEKDAYS_SHORT, weekdayOf, LOW_LEFT, type TokenFigure } from './usagePresentation'
@@ -7,7 +10,7 @@ type Style = CSSProperties & Record<`--${string}`, string | number>
 
 /** A dash that a screen reader reads as what it means. */
 export function Dash(): ReactNode {
-  return <span className="usage-dash"><span aria-hidden="true">—</span><span className="tt-visually-hidden">Not reported</span></span>
+  return <span className="usage-dash"><span aria-hidden="true">—</span><span className="tt-visually-hidden"><Trans>Not reported</Trans></span></span>
 }
 
 export function dismissDisclosure(event: KeyboardEvent<HTMLDetailsElement>): void {
@@ -82,13 +85,14 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
   readonly onPin: () => void
   readonly onKey: (event: KeyboardEvent<HTMLDivElement>) => void
 }): ReactNode {
+  const { t } = useLingui()
   const count = days.length
   const top = niceMax(Math.max(metric === 'prompts' ? 10 : 1e5, plan.peak))
   const gap = count <= 7 ? 18 : count <= 45 ? 4 : count <= 100 ? 2 : 1
   const radius = count > 60 ? 1 : count > 20 ? 3 : 5
   // A token chart with nothing reported, or a split with no series to draw, says so rather than draw an empty frame.
-  const none = waiting !== undefined ? undefined : metric === 'tokens' && plan.peak === 0 ? 'No token counts in this range'
-    : plan.series.length === 0 ? 'No prompts in this range' : undefined
+  const none = waiting !== undefined ? undefined : metric === 'tokens' && plan.peak === 0 ? t`No token counts in this range`
+    : plan.series.length === 0 ? t`No prompts in this range` : undefined
   const scale = (amount: number): string => metric === 'prompts' ? fmtInt(amount) : fmtTok(amount)
   const index = selected === null ? -1 : days.indexOf(selected)
   const point = (event: PointerEvent<HTMLDivElement>): void => {
@@ -128,7 +132,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
     </div>
   }
   return <div className="usage-chart" data-kind={kind} style={{ '--usage-gap': `${gap}px`, '--usage-radius': `${radius}px`, '--usage-count': count } as Style}>
-    <div className="usage-chart__plot tt-focusable" tabIndex={0} role="group" aria-label={`${label} Use Left and Right to read one day; Escape goes back to the whole range.`}
+    <div className="usage-chart__plot tt-focusable" tabIndex={0} role="group" aria-label={t`${label} Use Left and Right to read one day; Escape goes back to the whole range.`}
       aria-busy={waiting !== undefined || undefined} data-active={selected !== null || undefined} onPointerMove={point} onPointerLeave={() => onHover(null)} onClick={onPin} onKeyDown={onKey}>
       {drawing}
       {waiting !== undefined ? <div className="usage-chart__none">{waiting}</div> : none !== undefined ? <div className="usage-chart__none">{none}</div> : <>
@@ -138,7 +142,7 @@ export function DailyChart({ days, plan, kind, metric, label, today, selected, w
     </div>
     <div className="usage-chart__axis" aria-hidden="true">{marks.map((at, place) => {
       const day = days[at]!
-      const text = day === today ? 'Today' : count <= 7 ? `${WEEKDAYS_SHORT[weekdayOf(day)]} ${Number(day.slice(8, 10))}` : shortDay(day)
+      const text = day === today ? t`Today` : count <= 7 ? `${WEEKDAYS_SHORT[weekdayOf(day)]} ${Number(day.slice(8, 10))}` : shortDay(day)
       const edge = count > 7 && (place === 0 || place === marks.length - 1)
       const left = edge ? (place === 0 ? 0 : 100) : (at + 0.5) / count * 100
       return <span key={day} className={count > 7 && place === 0 ? 'usage-chart__tick--start' : count > 7 && place === marks.length - 1 ? 'usage-chart__tick--end' : undefined} style={{ left: `${left.toFixed(2)}%` }}>{text}</span>
@@ -188,9 +192,14 @@ export function HourGrid({ grid, cell, onCell, onKey, label }: {
 
 /** One figure as reported: a dash when no row reports it, "at least" when some rows leave it out. */
 function Figure({ of, format = fmtTok }: { readonly of: TokenFigure; readonly format?: (value: number) => string }): ReactNode {
-  return of.known ? <>{of.partial ? <small>at least </small> : null}{format(of.value)}</> : <Dash />
+  const { t } = useLingui()
+  return of.known ? <>{of.partial ? <small>{t({ message: 'at least', comment: 'Before a token figure some records left out' })} </small> : null}{format(of.value)}</> : <Dash />
 }
-const figureWords = (of: TokenFigure): string => of.known ? `${of.partial ? 'at least ' : ''}${fmtTok(of.value)}` : 'an unreported number of'
+function figureWords(of: TokenFigure): string {
+  if (!of.known) return interfaceI18n._(msg`an unreported number of`)
+  const shown = fmtTok(of.value)
+  return of.partial ? interfaceI18n._(msg`at least ${shown}`) : shown
+}
 
 
 /** The coloured pieces of input and output, each as wide as its amount. */
@@ -200,22 +209,24 @@ function kindSegments(parts: ReturnType<typeof tokenParts>, className = ''): Rec
 }
 
 export function TokenBar({ tokens, large = false, children }: { readonly tokens: UsageTokenTotals; readonly large?: boolean; readonly children?: ReactNode }): ReactNode {
+  const { t } = useLingui()
   const parts = tokenParts(tokens)
   const pieces = kindSegments(parts, 'usage-tokens__segment ')
+  const input = figureWords(parts.input), read = figureWords(parts.read), write = figureWords(parts.write), output = figureWords(parts.output)
   return <div className={`usage-tokens${large ? ' usage-tokens--large' : ''}`}>
     <div className="usage-tokens__brackets" aria-hidden="true">
-      <span className="usage-tokens__bracket" style={{ flexGrow: Math.max(1, parts.input.value) }}><span><b><Figure of={parts.input} /></b>input</span></span>
-      <span className="usage-tokens__bracket usage-tokens__bracket--output" style={{ flexGrow: Math.max(1, parts.output.value) }}><span><b><Figure of={parts.output} /></b>output</span></span>
+      <span className="usage-tokens__bracket" style={{ flexGrow: Math.max(1, parts.input.value) }}><span><b><Figure of={parts.input} /></b><Trans comment="After a token figure">input</Trans></span></span>
+      <span className="usage-tokens__bracket usage-tokens__bracket--output" style={{ flexGrow: Math.max(1, parts.output.value) }}><span><b><Figure of={parts.output} /></b><Trans comment="After a token figure">output</Trans></span></span>
     </div>
-    <div className="usage-tokens__bar usage-grow" role="img" aria-label={`${figureWords(parts.input)} input tokens, including ${figureWords(parts.read)} cache read and ${figureWords(parts.write)} cache write, then ${figureWords(parts.output)} output tokens.`}>
+    <div className="usage-tokens__bar usage-grow" role="img" aria-label={t`${input} input tokens, including ${read} cache read and ${write} cache write, then ${output} output tokens.`}>
       <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.input.value) }}>{pieces.read}{pieces.write}{pieces.new}</span>
       <span className="usage-tokens__group" style={{ flexGrow: Math.max(1, parts.output.value) }}>{pieces.out}</span>
     </div>
     <dl className="usage-tokens__legend">
-      <div><dt><i className="usage-kind--read" />Cache read</dt><dd><Figure of={parts.read} /></dd></div>
-      <div><dt><i className="usage-kind--write" />Cache write</dt><dd><Figure of={parts.write} /></dd></div>
-      <div><dt><i className="usage-kind--new" />Uncached input</dt><dd><Figure of={parts.uncached} /></dd></div>
-      <div><dt><i className="usage-kind--out" />Output</dt><dd><Figure of={parts.output} /></dd></div>
+      <div><dt><i className="usage-kind--read" /><Trans>Cache read</Trans></dt><dd><Figure of={parts.read} /></dd></div>
+      <div><dt><i className="usage-kind--write" /><Trans>Cache write</Trans></dt><dd><Figure of={parts.write} /></dd></div>
+      <div><dt><i className="usage-kind--new" /><Trans>Uncached input</Trans></dt><dd><Figure of={parts.uncached} /></dd></div>
+      <div><dt><i className="usage-kind--out" /><Trans>Output</Trans></dt><dd><Figure of={parts.output} /></dd></div>
     </dl>
     {children}
   </div>

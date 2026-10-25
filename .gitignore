@@ -199,6 +199,7 @@ artifacts/question-choices/
 artifacts/composer-float/
 # Slim composer and Watcher column verification captures; the cited ones are committed
 artifacts/composer-shrink/
+artifacts/needs-you-queue/
 artifacts/watcher-column/
 artifacts/composer-slim-steady/
 artifacts/scene-under-column/

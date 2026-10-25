@@ -8,6 +8,9 @@ import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/new
 import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { countWorkingThreads, workingThreadsWarning } from '../../shared/workingThreads'
+import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
+import type { WatcherRefusal } from '../../shared/watcher'
+import type { PlacementAsk, WorkerPlacement } from './workerPlacement'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
@@ -84,6 +87,18 @@ export interface DelegationServiceOptions {
    * permission come from its kind of work unless the call names them. Read once per `delegate` call, in admission.
    */
   readonly roles?: () => WorkerRoleChoices
+  /**
+   * Where a delegated thread starts (#1032), present only while the Owl feature `cross-machine-work` is on and Watcher runs:
+   * the machine list a delegating thread reads, the placement a start that names a machine or a system asks for, a
+   * machine's saved name, and where new workers start. A delegated thread starts on This computer for now, whatever the
+   * setting says, until delegation reaches other machines (#1316).
+   */
+  readonly machines?: {
+    list(): Promise<unknown>
+    place(ask: PlacementAsk, project: { readonly hostId: string; readonly projectId: string }, setting: WorkerMachineSetting): Promise<WorkerPlacement | WatcherRefusal>
+    name(hostId: string): string | undefined
+    setting(): WorkerMachineSetting
+  }
   /** The clock a held background outcome's release reads, and how it waits for it; tests give their own. */
   readonly now?: () => number
   readonly schedule?: (callback: () => void, delay: number) => () => void
@@ -383,6 +398,8 @@ export class DelegationService {
         : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
     }
     const input = parsed.data
+    const placed = await this.place(threadId, input)
+    if (placed && 'status' in placed) return placed
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) {
@@ -410,7 +427,7 @@ export class DelegationService {
         if (this.open(this.record(record.id)!)) this.update(record.id, saved => { saved.wentOnAt = now() })
       }
       const answer = await this.result(this.record(record.id)!)
-      return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...warning ? { warning } : {} }
+      return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -572,6 +589,37 @@ export class DelegationService {
   }
 
   private snapshot(): AgentHostSnapshot { return this.options.control.watcherSnapshot() }
+  /**
+   * Where a new delegated thread starts (#1032): This computer, the only machine delegation reaches for now (#1316). A
+   * machine or system the call named is placed as Watcher's starts are, and one that resolves anywhere else is refused in
+   * plain words and recorded. With none named, a setting that puts new workers on another machine is noted, not followed.
+   * Undefined when there is nothing to say: Work across machines is off, the call sends to a thread, or retries one. With
+   * the feature off, a call naming a machine or system is refused as invalid, since the tool offers neither.
+   */
+  private async place(threadId: string, input: DelegateInput): Promise<WorkerPlacementReceipt | DelegationRefusal | undefined> {
+    const asks = input.machine !== undefined || input.os !== undefined
+    const machines = this.options.machines
+    if (!machines) return asks ? delegationRefusal('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema. Nothing was started.') : undefined
+    if (input.thread !== undefined) return asks ? delegationRefusal('INVALID_INPUT', 'A machine or system is only for a new thread. Leave them out to send another brief. Nothing was sent.') : undefined
+    // A caller that may not delegate is refused by admission, under its own rule; a retry reads the first call's result.
+    const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
+    if (!caller || !local || !this.admits(threadId)) return undefined
+    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    if (!asks) {
+      const away = workerMachineHostId(machines.setting())
+      if (away === undefined || away === local) return undefined
+      const name = machines.name(away)
+      return { hostId: local, name: 'This computer', awayFromDefault: true,
+        note: `New workers start on ${name ?? 'another machine'}, but a delegated thread starts on This computer for now.` }
+    }
+    let placed: WorkerPlacement | WatcherRefusal
+    try { placed = await machines.place({ machine: input.machine, os: input.os }, { hostId: local, projectId: caller.projectId }, 'this-computer') }
+    catch { return delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the machines just now. Nothing was started. Try again.') }
+    if ('status' in placed) return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE', placed.message))
+    if (placed.hostId !== local) return await this.refused(threadId, input, delegationRefusal('MACHINE_UNAVAILABLE',
+      `A delegated thread starts only on This computer for now, so it cannot start on ${placed.receipt.name}. Leave out the machine and system to start it here. Nothing was started.`))
+    return { ...placed.receipt, awayFromDefault: false }
+  }
   /**
    * Records a delegation main refused under its rules, when a thread Sotto holds asked for it, and answers with the
    * refusal and that delegation's ID. Nothing is started, sent, reserved or charged, and no wake-up goes for it.
@@ -1291,6 +1339,17 @@ export class DelegationService {
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
       efforts: model.reasoningEfforts ?? [], permissions: model.runtimeModes ?? [] }))
     return { status: 'ok' as const, delegations: own, models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}), limits: this.limits() }
+  }
+  /**
+   * The machines this thread could name, as Watcher's `list_machines` gives them (#1032), while Work across machines is on.
+   * Reads each machine's facts when asked, and only then.
+   */
+  async machines(threadId: string): Promise<unknown> {
+    try {
+      this.caller(threadId, this.snapshot())
+      if (!this.options.machines) return delegationRefusal('INVALID_INPUT', 'That tool is unavailable.')
+      return await this.options.machines.list()
+    } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the machines just now. Nothing was changed.') }
   }
   /**
    * What each kind of work would start on now with nothing named (#1041): the worker role's model, effort and permission,

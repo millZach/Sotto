@@ -67,6 +67,7 @@ import { watcherHandoversShown } from './watcherHandover'
 import { startHandoverSend, startHandoversShown } from './startHandover'
 import { NATIVE_FORKS, START_HANDOVER_UNREADABLE, startsThread } from '../../shared/threadStarts'
 import { FailuresSeen } from './failuresSeen'
+import { RequestWaits } from './requestWaits'
 import { FinishedUnread, settledIn } from './finishedUnread'
 import { PrototypeReady } from './prototypeReady'
 import { PrototypeQuestions, startTimer, type PrototypeSendBack } from './prototypeQuestions'
@@ -859,6 +860,8 @@ export class AgentControl {
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
   private readonly failuresSeen: FailuresSeen
+  /** When each pending request started waiting, stamped as it is first shown (ADR-0135). */
+  private readonly requestWaits: RequestWaits
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
   /**
@@ -1013,11 +1016,13 @@ export class AgentControl {
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
+    this.requestWaits = new RequestWaits()
     this.finishedUnread.onMoved = id => { this.marksMoved.add(id) }
     // A thread whose kept reply or cleared source was let go may lose or regain its mark though nothing in it changed:
     // it is shown again with the next change, as the next snapshot showed every thread (#925).
     this.prototypeReady.onEvicted = id => { this.reshow.add(id); this.evictions?.push(id) }
     this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
+    this.requestWaits.onMoved = id => { this.marksMoved.add(id) }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -1258,7 +1263,8 @@ export class AgentControl {
       snapshot = startHandoversShown(snapshot, gone && incoming ? id => this.threadAvailable(id) ? incoming.get(id) : undefined : undefined)
     }
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
-    return snapshot
+    // Each request is stamped with when its wait began as it is first shown (ADR-0135), Sotto's own included.
+    return this.requestWaits.decorate(snapshot, gone)
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
