@@ -194,3 +194,43 @@ describe('a reply that has said nothing but whitespace', () => {
     expect(log.recorded()).toBe(2)
   })
 })
+
+describe('what the log tells its adapter changed (ADR-0016, #925)', () => {
+  it('names each thread whose messages, summary or held window it changed, once the change is made', () => {
+    const heard: string[] = []
+    const log: ThreadMessageLog = new ThreadMessageLog(id => { heard.push(`${id}:${log.messages(id).length}`) })
+    log.add('a', message('m1', 'user', 'Ask'))
+    expect(heard).toEqual(['a:1'])
+    log.add('a', message('r1', 'assistant', 'First'))
+    log.appendText('a', 'r1', ' words')
+    expect(heard.slice(1)).toEqual(['a:2', 'a:2'])
+    heard.length = 0
+    // Watching another thread puts this one's messages away, and watching it again takes them back up.
+    log.observe(['b'])
+    expect(heard).toEqual(['a:0'])
+    heard.length = 0
+    log.pin('a'); log.release('a')
+    expect(heard).toEqual(['a:0', 'a:0'])
+    heard.length = 0
+    log.set('b', [message('n1', 'user', 'Other')]); log.reset('b'); log.dropEmpty('b')
+    expect(heard).toEqual(['b:1', 'b:0'])
+    heard.length = 0
+    log.forgetAll()
+    expect(heard.sort()).toEqual(['a:0', 'b:0'])
+  })
+})
+
+describe('a thread the log holds nothing for yet (#925)', () => {
+  it('is read the same way the first time as every time after, in both forms, whether or not anything is watched', () => {
+    for (const declared of [false, true]) {
+      const log = new ThreadMessageLog()
+      if (declared) log.observe(['other'])
+      const thread = { id: 'fresh', messages: [] }
+      for (const historyFromEvents of [false, true]) {
+        const first = log.activityThread(thread, historyFromEvents)
+        expect(log.activityThread(thread, historyFromEvents)).toEqual(first)
+        expect(log.publishedThread(thread)).toEqual(log.publishedThread(thread))
+      }
+    }
+  })
+})

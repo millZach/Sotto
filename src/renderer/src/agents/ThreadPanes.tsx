@@ -4,7 +4,8 @@ import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'luc
 import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
 import { useOptionalApp } from '../state/AppContext'
-import { chordClaimed } from './branchToolbar.logic'
+import { chordMatches } from './branchToolbar.logic'
+import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
 import {
   DIVIDER_WIDTH, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, PANE_DRAG_TYPE, RESIZE_STEP, THREAD_DRAG_TYPE,
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
@@ -225,7 +226,11 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  */
 export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, onVisiblePaneIdsChange, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
   const app = useOptionalApp()
-  const zoomShortcut = chordClaimed('ctrl+shift+m', app?.settings?.hotkey, app?.platform ?? 'win32')
+  const panePlatform = app?.platform ?? 'win32'
+  // Zoom and Close pane answer to Settings › Keyboard (ADR-0133); Zoom's default is now `mod+shift+m` on every
+  // platform, where it was Ctrl+Shift+M even on a Mac — off a Mac the same keys, by the mod pattern's own rule.
+  const zoomChord = claimedThreadChord(app?.settings, 'zoom-pane', panePlatform)
+  const closeChord = claimedThreadChord(app?.settings, 'close-pane', panePlatform)
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
   const [moving, setMoving] = useState<string | null>(null)
@@ -292,11 +297,18 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
     change(movePane(layout, index, next), `${title(threadId)} moved to pane ${next + 1} of ${layout.panes.length}`)
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
-    // Ctrl+Shift+M zooms the focused pane or returns to the arrangement.
-    if (!zoomShortcut || !split || event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
-    if (narrow && !layout.zoomed) return
-    event.preventDefault()
-    if (shownId !== null) toggleZoom(shownId)
+    if (!split || event.defaultPrevented || event.repeat) return
+    // Zoom pane zooms the focused pane or returns to the arrangement; Close pane closes it, as its button does.
+    if (zoomChord !== null && chordMatches(event, zoomChord, panePlatform)) {
+      if (narrow && !layout.zoomed) return
+      event.preventDefault()
+      if (shownId !== null) toggleZoom(shownId)
+      return
+    }
+    if (closeChord !== null && chordMatches(event, closeChord, panePlatform) && shownId !== null) {
+      event.preventDefault()
+      onClosePane(shownId)
+    }
   }
 
   const sidebarDrop = (label: string, target: DropTarget, style?: CSSProperties, key?: string, name?: string): ReactNode =>
@@ -402,12 +414,12 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
               onDragEnd={() => { window.clearTimeout(moveStart.current); setMoving(null) }}>
               <GripVertical size={16} aria-hidden="true" />
             </button> : null}
-            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomShortcut ? 'Control+Shift+M' : undefined}
-              aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={`${layout.zoomed ? 'Show all panes' : 'Zoom pane'}${zoomShortcut ? ' (Ctrl+Shift+M)' : ''}`}
+            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomChord ? threadChordLabel(zoomChord, panePlatform).keys : undefined}
+              aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={`${layout.zoomed ? 'Show all panes' : 'Zoom pane'}${zoomChord ? ` ${threadChordLabel(zoomChord, panePlatform).suffix}` : ''}`}
               onClick={() => toggleZoom(id)}>
               {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
             </button> : null}
-            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={`Close ${title(id)} pane`} title="Close pane"
+            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={`Close ${title(id)} pane`} aria-keyshortcuts={closeChord ? threadChordLabel(closeChord, panePlatform).keys : undefined} title={closeChord ? `Close pane ${threadChordLabel(closeChord, panePlatform).suffix}` : 'Close pane'}
               onClick={() => onClosePane(id)}>
               <X size={16} aria-hidden="true" />
             </button>

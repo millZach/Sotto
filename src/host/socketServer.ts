@@ -281,12 +281,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     // The iPhone's Agents view (ADR-0103) only where the host's Owl answer turns it on.
     && (feature !== 'agents-view' || service.supportsAgentsView === true)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
-    && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined))
+    && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
+    // A sent file's bytes for the iPhone's Quick Look go with file staging (ADR-0131, October 25 amendment).
+    && (feature !== 'attachment-files' || service.supportsFileStaging === true && service.attachmentFile !== undefined))
   /**
    * Each paired client's file on its way here, by its client ID, so a client holds one upload at a time however many
    * sockets it opens (ADR-0131). A part may come on any of its sockets; the upload goes when the last of them closes.
    */
   const uploads = new FileUploads<string>()
+  /** The paired clients with a sent file's part being read for them, so a client has one such read at a time however many sockets it opens. */
+  const fileReads = new Set<string>()
   const connected = (clientId: string): boolean => {
     for (const peer of peers) if (peer.client.clientId === clientId) return true
     return false
@@ -1237,6 +1241,15 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
+      // A part of a sent file, on the socket's one-at-a-time guard as a preview is, and one at a time for the paired client
+      // across all its sockets (ADR-0131, October 25 amendment).
+      case 'attachment-file': {
+        if (!offers(peer, 'attachment-files') || !service.attachmentFile) throw new Refusal('invalid_request')
+        const clientId = peer.client.clientId
+        if (peer.preview || fileReads.has(clientId)) throw new Refusal('busy')
+        peer.preview = true; fileReads.add(clientId)
+        try { return await service.attachmentFile(request.request) } finally { peer.preview = false; fileReads.delete(clientId) }
+      }
     }
   }
   const onMessage = (peer: Peer, text: string): void => {
@@ -1287,7 +1300,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
         if (!response.ok) return
         if (request.op === 'detail') {

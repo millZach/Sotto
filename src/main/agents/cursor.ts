@@ -22,6 +22,8 @@ import { OpenSessions } from './openSessions'
 import { verifyFileMentions } from './promptFiles'
 import { ProviderUnavailable } from './providerProblem'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { SessionReaper } from './sessionReaper'
 import { markSendStage } from './sendStages'
 import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
@@ -264,11 +266,18 @@ export class CursorAcpHost implements AgentHost {
   private readonly processes = new Set<CursorRpc>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
-  private readonly log = new ThreadMessageLog()
-  private readonly loaded = new OpenSessions(id => this.threads.get(id))
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
+  private readonly loaded = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly reaper: SessionReaper
   private history: ThreadHistorySource | undefined
@@ -313,6 +322,20 @@ export class CursorAcpHost implements AgentHost {
     certifyActivityView(this.state, this.threads.values())
     return { ...this.state, threads: [...this.threads.values()].map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `thread`, which most paths that
+   * write into a thread take it from, marks it, and a path that writes without it, or after a publication may have
+   * gone, marks it where it writes. One that writes into every thread marks them all. What goes through the message
+   * log and the open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   /** The program this adapter starts, and Sotto's Cursor folder it runs with, so the tile's sign-in uses the same client. */
   async clientProgram(): Promise<CursorProgram | undefined> { return this.program ?? this.options.program ?? findCursorProgram(this.options.environment) }
@@ -320,6 +343,9 @@ export class CursorAcpHost implements AgentHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
+  }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
@@ -345,6 +371,7 @@ export class CursorAcpHost implements AgentHost {
       this.threads.set(id, thread)
       if (this.connections.has(id) && !this.loading.has(id)) this.loaded.add(id)
     }
+    this.changed(id)
     return thread
   }
   private assertGeneration(generation: number): void {
@@ -398,7 +425,7 @@ export class CursorAcpHost implements AgentHost {
       if (!pending.answering) void pending.connection.rpc.reply(pending.wireId, cursorDecline(pending)).catch(() => undefined)
     }
     const thread = this.threads.get(id)
-    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason }
+    if (thread) { thread.requests = []; thread.status = 'error'; thread.requestNotice = reason; this.changed(id) }
     if (connection) this.close(connection)
     try { profile?.revoke(reason) } finally { this.emit() }
   }
@@ -489,7 +516,7 @@ export class CursorAcpHost implements AgentHost {
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
       this.assertGeneration(generation)
       this.aliases = aliases; this.indexes.clear(); this.state.projects = projects; this.program = program
-      this.threads.clear(); this.log.forgetAll()
+      this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
       this.state.connected = true; this.state.version = `${version} / ACP ${CURSOR_ACP_VERSION}`
       delete this.state.error; delete this.state.problem; delete this.state.requiredVersion
@@ -861,6 +888,7 @@ export class CursorAcpHost implements AgentHost {
     const closed = settled?.map(row => row.status === 'running' && row.kind !== 'turn' && row.kind !== 'plan' && row.turnId === turn.places.key
       ? { ...row, status: status === 'completed' ? 'completed' as const : status === 'interrupted' ? 'interrupted' as const : 'unknown' as const } : row)
     thread.activities = markTurnActivity(closed, { provider: 'cursor', turnId: turn.places.key, status, ...(error ? { error } : {}) })
+    this.changed(id)
     this.reaper.touch(id)
   }
 
@@ -995,6 +1023,7 @@ export class CursorAcpHost implements AgentHost {
     thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode
     if (alias.reasoningEffort) thread.reasoningEffort = alias.reasoningEffort; else delete thread.reasoningEffort
     if (command.runtimeMode === 'auto-accept-edits') thread.requestNotice = CURSOR_ALLOW_EDITS_NOTICE
+    this.changed(id)
     // The model and effort reach Cursor before the next prompt that needs them. The mode starts a fresh process, which
     // loads the session there straight away for a thread someone is looking at.
     if (modeChanges && this.connections.has(id)) {
@@ -1124,7 +1153,7 @@ export class CursorAcpHost implements AgentHost {
     try { await this.persist() } catch (error) { index.unanswer(pending.request.id); pending.answering = false; throw error }
     if (this.pending.get(command.requestId) !== pending || this.connections.get(command.threadId) !== connection) return { accepted: false, uncertain: true }
     try { await connection.rpc.reply(pending.wireId, result); this.removeRequest(command.requestId) }
-    catch { pending.request.delivery = 'uncertain'; this.emit(); return { accepted: false, uncertain: true } }
+    catch { pending.request.delivery = 'uncertain'; this.changed(command.threadId); this.emit(); return { accepted: false, uncertain: true } }
     this.emit(); return { accepted: true }
   }
   private async interrupt(id: string, alias: Alias, watcherGuard?: () => void): Promise<AgentHostResult> {
@@ -1141,11 +1170,11 @@ export class CursorAcpHost implements AgentHost {
     const pending = this.pending.get(requestId); if (!pending) return
     this.pending.delete(requestId)
     const thread = this.threads.get(pending.threadId)
-    if (thread) thread.requests = thread.requests.filter(request => request.id !== requestId)
+    if (thread) { thread.requests = thread.requests.filter(request => request.id !== requestId); this.changed(pending.threadId) }
   }
   private clearRequests(id: string): void {
     for (const [requestId, pending] of this.pending) if (pending.threadId === id) this.pending.delete(requestId)
-    const thread = this.threads.get(id); if (thread) thread.requests = []
+    const thread = this.threads.get(id); if (thread) { thread.requests = []; this.changed(id) }
   }
 
   // ---- Skills and short text -----------------------------------------------------------------------------------------
@@ -1232,6 +1261,7 @@ export class CursorAcpHost implements AgentHost {
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     this.turns.clear()
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
     for (const connection of this.connections.values()) this.close(connection)
     for (const rpc of this.processes) rpc.close()
     this.connections.clear(); this.loading.clear(); this.loaded.clear(); this.outdated.clear()

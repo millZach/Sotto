@@ -21,6 +21,7 @@ import { chordMatches } from '../agents/branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { changesChord, chordBelongsElsewhere } from './changesShortcut'
+import { chosenThreadChord } from '../agents/threadShortcuts'
 import { describeWorkingCopy } from '../agents/ThreadWorkingCopy'
 import { BrowserPlayer } from './BrowserPlayer'
 import { browserPlayerStore, type BrowserPlayerStore } from './browserPlayerStore'
@@ -307,9 +308,9 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const app = useOptionalApp()
   // One platform for the whole panel: the app's, or the preload's where there is no app context, so a Mac never reads mod as Ctrl.
   const platform: SottoPlatform = app?.platform ?? (bridgePlatform() as SottoPlatform | undefined) ?? 'win32'
-  const chord = changesChord(app?.settings?.hotkey, platform)
+  const chord = changesChord(chosenThreadChord(app?.settings, 'changes'), app?.settings?.hotkey, platform)
 
-  // The Changes shortcut, T3's `mod+d` unless the dictation hotkey has it: it opens the panel on Changes, and closes
+  // The Changes shortcut (T3's `mod+d` until changed on Settings › Keyboard), unless the dictation hotkey has it: it opens the panel on Changes, and closes
   // the panel when Changes is what it shows. A terminal keeps its own Ctrl+D, and an open dialog keeps its keys.
   useEffect(() => {
     if (chord === null) return

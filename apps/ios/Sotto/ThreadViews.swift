@@ -408,7 +408,7 @@ private struct Conversation: View {
             }
             ForEach(pending) { item in
                 UnconfirmedRow(item: item, text: model.submitted[item.id], photos: model.submittedPhotos[item.id] ?? [],
-                               sending: model.isSending(item)) { dismissMarker = item }
+                               files: model.submittedFiles[item.id] ?? [], sending: model.isSending(item)) { dismissMarker = item }
             }
             if let text = model.failedReplies[ref.id] {
                 FailedReplyCard(ref: ref, text: text)
@@ -421,7 +421,8 @@ private struct Conversation: View {
                                       scroll: ScrollViewProxy) -> some View {
         switch row.item {
         case .message(let message):
-            MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref) { viewing = $0 }.equatable()
+            MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
+                        opensFiles: model.opensSentFiles(ref.hostID)) { viewing = $0 }.equatable()
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
@@ -716,11 +717,13 @@ private struct MessageView: View, Equatable {
     let provider: String
     let showsWho: Bool
     let ref: ThreadRef
+    /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
+    let opensFiles: Bool
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
-        a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref
+        a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
         if message.role == "user" {
@@ -736,13 +739,17 @@ private struct MessageView: View, Equatable {
         UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20, bottomTrailingRadius: 6, topTrailingRadius: 20, style: .continuous)
     }
 
-    /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages.
+    /// The user's words in a bubble at the trailing edge, with their photos standing on their own above, as in Messages,
+    /// and under the photos their files, each a pill that opens it in Quick Look where the computer hands files back.
     private var userMessage: some View {
-        let photos = (message.attachments ?? []).filter(\.hasPreview)
+        let attachments = message.attachments ?? []
+        let photos = attachments.filter(\.hasPreview)
+        let files = opensFiles ? attachments.filter { !$0.hasPreview && Files.isFile($0) } : []
         return VStack(alignment: .trailing, spacing: Space.s1) {
             SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open)
-            if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
-                content(ink: Palette.bubbleInk)
+            if !files.isEmpty { SentFilePills(ref: ref, messageID: message.id, attachments: files) }
+            if !message.text.isEmpty || photos.count + files.count != attachments.count {
+                content(ink: Palette.bubbleInk, drawn: Set(files.map(\.id)))
                     .padding(.horizontal, Space.s4)
                     .padding(.vertical, Space.dense(Space.s3, density))
                     .background(Palette.bubble, in: bubble)
@@ -772,14 +779,15 @@ private struct MessageView: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func content(ink: ThemeRole) -> some View {
+    /// `drawn`: the files already drawn as pills above.
+    private func content(ink: ThemeRole, drawn: Set<String> = []) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if !message.text.isEmpty {
                 MarkdownText(text: message.text).equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other photo is named, and so is a file, with a
             // document symbol (ADR-0131). Only the four photo types are photos: an SVG or a HEIC is a file here.
-            ForEach((message.attachments ?? []).filter { message.role != "user" || !$0.hasPreview }) { attachment in
+            ForEach((message.attachments ?? []).filter { (message.role != "user" || !$0.hasPreview) && !drawn.contains($0.id) }) { attachment in
                 Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
@@ -1145,8 +1153,9 @@ private enum InlineStyle {
 // MARK: - Steps
 
 /// A run of steps between two messages, folded into one line (ADR-0051, October 5 amendment). While the thread works
-/// through it, the line shows the step running now in the accent; once it has ended, how many steps it had and how
-/// long they took, quietly. A press opens the steps in place under their guide, and another folds them.
+/// through it, the line shows the working words with a slow light crossing them, and VoiceOver hears the step running
+/// now; once it has ended, how many steps it had and how long they took, quietly. A press opens the steps in place
+/// under their guide, and another folds them.
 private struct FoldedRun: View, Equatable {
     let runID: String
     let steps: [Activity]
@@ -1167,7 +1176,7 @@ private struct FoldedRun: View, Equatable {
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 if working {
-                    WorkingLine(step: StepRun.running(steps), live: StepRun.now(steps), count: steps.count, open: open)
+                    WorkingLine(open: open)
                 } else {
                     summaryLine
                 }
@@ -1216,85 +1225,195 @@ private struct FoldedRun: View, Equatable {
     }
 }
 
-/// The working run's line: a breathing light, the step running now in the accent with its command or file in monospace,
-/// how long it has run and how many steps so far. Each new step rolls up into place like a ticker and the count ticks
-/// with it; under Reduce Motion the light holds still and the words crossfade.
+/// The working run's line: the working words in the muted ink with a slow band of the accent light crossing them, then
+/// the chevron. The words and the light run in UIKit and Core Animation, so nothing here is drawn again while they
+/// change or move. Under Reduce Motion a still accent light stands before the words, and they change without the fade.
 private struct WorkingLine: View {
-    /// The step running now; nil between steps, when the line reads Thinking.
-    let step: Activity?
-    let live: StepRun.Live
-    let count: Int
     let open: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         HStack(spacing: Space.s2) {
-            Light(tone: .accent, size: 7, breathing: true)
-                .frame(width: 16, height: 16)
-            ZStack(alignment: .leading) {
-                LiveStepWords(live: live)
-                    .id(step?.id ?? "thinking")
-                    .transition(roll)
+            if still {
+                Light(tone: .accent, size: 7, breathing: false)
+                    .frame(width: 16, height: 16)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.46), value: step?.id)
-            if let since = Words.date(step?.startedAt) {
-                ElapsedText(since: since)
-                    .font(.sotto(.small).monospacedDigit())
-                    .foregroundStyle(Palette.accentText)
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            ZStack {
-                Text("\(count)")
-                    .id(count)
-                    .transition(tick)
-            }
-            .font(.sotto(.caption, .bold).monospacedDigit())
-            .foregroundStyle(Palette.accentText)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .frame(minWidth: 26, minHeight: 22)
-            .clipped()
-            .background(Palette.accent.opacity(Tint.accentPill), in: Capsule())
-            .overlay(Capsule().strokeBorder(Palette.accent.opacity(0.24), lineWidth: 1))
-            .fixedSize()
-            .animation(reduceMotion ? .easeInOut(duration: 0.3) : .spring(response: 0.42, dampingFraction: 0.62), value: count)
+            GlowingWords(ink: theme.rgb(.muted), light: theme.rgb(.accentText), typeSize: typeSize, still: still)
+                .accessibilityHidden(true)
             FoldChevron(open: open)
         }
     }
 
-    /// The old step leaves upward as the new one rises into its place.
-    private var roll: AnyTransition {
-        if reduceMotion { return .opacity }
-        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity),
-                           removal: AnyTransition.move(edge: .top).combined(with: .opacity))
-    }
+    private var still: Bool { reduceMotion || DebugFlags.still }
+}
 
-    private var tick: AnyTransition {
-        if reduceMotion { return .opacity }
-        return .asymmetric(insertion: AnyTransition.move(edge: .bottom).combined(with: .opacity), removal: .opacity)
+/// The working words as UIKit draws them, so a new word or a pass of the light never asks SwiftUI to redraw.
+private struct GlowingWords: UIViewRepresentable {
+    let ink: ThemeRGB
+    let light: ThemeRGB
+    let typeSize: DynamicTypeSize
+    let still: Bool
+    func makeUIView(context: Context) -> GlowWordsView { GlowWordsView(frame: .zero) }
+    func updateUIView(_ view: GlowWordsView, context: Context) {
+        view.paint(ink: ink, light: light)
+        view.scale(to: typeSize)
+        view.still = still
+        view.running = !still
     }
 }
 
-/// The running step's verb, then what it works on in monospace, cut in the middle when it is long.
-private struct LiveStepWords: View {
-    let live: StepRun.Live
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(live.verb)
-                .font(.sotto(.small, .semibold))
-                .lineLimit(1)
-                .layoutPriority(1)
-            if let subject = live.subject {
-                Text(subject)
-                    .font(.system(.caption, design: .monospaced))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+/// Two labels with the same word in Figtree semibold at the small step: the lower in the muted ink, the upper in the
+/// accent text colour, seen only through a soft band that its mask sweeps across the words. The band peaks in its
+/// middle and spans 0.72 of the words' width; it crosses from half the words' width before them to half past them in
+/// 72% of a 4.2 second cycle, easing in and out, and rests off the words for the rest, as the prototype's
+/// `words-glow` does. It is laid out in the mask's unit space, so a new word of another width never restarts it. The
+/// word changes on a timer of its own every 3.8 seconds, fading in over 0.22 seconds unless `still`.
+final class GlowWordsView: LoopingView {
+    private let ink = UILabel()
+    private let lit = UILabel()
+    private let band = CAGradientLayer()
+    private var word = 0
+    private var timer: Timer?
+    /// No moving light and no fade, for Reduce Motion.
+    var still = false {
+        didSet { if still != oldValue { lit.isHidden = still } }
+    }
+
+    /// The band's middle, as a fraction of the words' width, where a pass starts and ends.
+    private static let from: CGFloat = -0.5
+    private static let to: CGFloat = 1.5
+    /// Half the band's width, as a fraction of the words' width.
+    private static let reach: CGFloat = 0.36
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        for label in [ink, lit] {
+            label.text = WorkingWords.all[0]
+            label.numberOfLines = 1
+            label.lineBreakMode = .byTruncatingTail
+            label.backgroundColor = .clear
+            stage.addSubview(label)
         }
-        .foregroundStyle(Palette.accentText)
+        band.colors = [UIColor.clear.cgColor, UIColor.white.cgColor, UIColor.clear.cgColor]
+        band.locations = [NSNumber(value: 0.0), NSNumber(value: 0.5), NSNumber(value: 1.0)]
+        // At rest the band waits off the words' leading edge, so the accent shows only while a pass crosses them.
+        band.startPoint = CGPoint(x: Self.from - Self.reach, y: 0.5)
+        band.endPoint = CGPoint(x: Self.from + Self.reach, y: 0.5)
+        lit.layer.mask = band
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        // A long word at the largest text sizes ends in an ellipsis rather than pushing the chevron off the line.
+        setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        scale(to: .large)
+    }
+    required init?(coder: NSCoder) { fatalError("GlowWordsView is made in code") }
+
+    override var intrinsicContentSize: CGSize {
+        let size = ink.intrinsicContentSize
+        return CGSize(width: ceil(size.width), height: ceil(size.height))
+    }
+
+    private var painted: (ThemeRGB, ThemeRGB)?
+    func paint(ink inkColor: ThemeRGB, light: ThemeRGB) {
+        // A label given its colour again, even the same one, is drawn again; the view around it redraws far more often.
+        if let painted, painted == (inkColor, light) { return }
+        painted = (inkColor, light)
+        ink.textColor = inkColor.uiColor(1)
+        lit.textColor = light.uiColor(1)
+    }
+
+    private var scaledFor: DynamicTypeSize?
+    /// Figtree semibold at the small step, scaled with the footnote style as `Font.sotto(.small, .semibold)` is, for
+    /// the text size in effect here (the iPhone's own, moved by this app's text size step).
+    func scale(to typeSize: DynamicTypeSize) {
+        guard typeSize != scaledFor else { return }
+        scaledFor = typeSize
+        let size = TextScale.small.size
+        let face = UIFont(name: "Figtree-SemiBold", size: size) ?? UIFont.systemFont(ofSize: size, weight: .semibold)
+        let traits = UITraitCollection(preferredContentSizeCategory: Self.category(typeSize))
+        let font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: face, compatibleWith: traits)
+        ink.font = font
+        lit.font = font
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
+    }
+
+    private static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        default: return .large
+        }
+    }
+
+    override func layoutStage() {
+        ink.frame = stage.bounds
+        lit.frame = stage.bounds
+        band.frame = lit.bounds
+    }
+
+    override var loopLayer: CALayer { band }
+    override func makeLoops() -> [String: CAAnimation] {
+        [
+            "glow-start": Self.pass("startPoint", by: -Self.reach),
+            "glow-end": Self.pass("endPoint", by: Self.reach)
+        ]
+    }
+
+    /// One edge of the band crossing the words and resting past them. The two edges start together, so they move as one.
+    private static func pass(_ keyPath: String, by offset: CGFloat) -> CAKeyframeAnimation {
+        let start = NSValue(cgPoint: CGPoint(x: from + offset, y: 0.5))
+        let end = NSValue(cgPoint: CGPoint(x: to + offset, y: 0.5))
+        let animation = CAKeyframeAnimation(keyPath: keyPath)
+        animation.values = [start, end, end]
+        animation.keyTimes = [NSNumber(value: 0.0), NSNumber(value: 0.72), NSNumber(value: 1.0)]
+        animation.timingFunctions = [CAMediaTimingFunction(controlPoints: 0.45, 0, 0.55, 1), CAMediaTimingFunction(name: .linear)]
+        animation.duration = 4.2
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        return animation
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            timer?.invalidate()
+            timer = nil
+        } else if timer == nil {
+            // The timer holds this view until it leaves the window, where it stops.
+            let next = Timer(timeInterval: WorkingWords.seconds, target: self, selector: #selector(nextWord), userInfo: nil, repeats: true)
+            next.tolerance = 0.2
+            RunLoop.main.add(next, forMode: .common)
+            timer = next
+        }
+    }
+
+    @objc private func nextWord() {
+        word = WorkingWords.next(after: word)
+        let text = WorkingWords.all[word]
+        ink.text = text
+        lit.text = text
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
+        guard !still else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = NSNumber(value: 0.0)
+        fade.toValue = NSNumber(value: 1.0)
+        fade.duration = WorkingWords.fade
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        stage.layer.add(fade, forKey: "word-fade")
     }
 }
 
@@ -1457,6 +1576,7 @@ private struct UnconfirmedRow: View {
     let item: PendingOperation
     let text: String?
     let photos: [DraftPhoto]
+    let files: [DraftFile]
     let sending: Bool
     let dismiss: () -> Void
     var body: some View {
@@ -1466,6 +1586,9 @@ private struct UnconfirmedRow: View {
                     Image(decorative: thumbnail, scale: 1).resizable().scaledToFit().frame(maxWidth: 220, maxHeight: 240)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).opacity(0.6).padding(.leading, 48)
                 }
+            }
+            ForEach(files) { file in
+                FilePill(name: file.name, sizeBytes: file.sizeBytes).opacity(0.6).padding(.leading, 48)
             }
             if let text, !text.isEmpty {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
@@ -1520,18 +1643,20 @@ private struct FailedReplyCard: View {
     let ref: ThreadRef
     let text: String
     var body: some View {
-        let photos = model.failedPhotos[ref.id] ?? []
+        let photos = model.failedPhotos[ref.id] ?? [], files = model.failedFiles[ref.id] ?? []
         VStack(alignment: .leading, spacing: Space.s3) {
             Text("Your reply wasn’t sent").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             if !text.isEmpty {
                 Text(text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
             }
-            if !photos.isEmpty {
-                Text(photos.count == 1 ? "With 1 photo" : "With \(photos.count) photos").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            if !photos.isEmpty || !files.isEmpty {
+                let carried = [photos.isEmpty ? "" : photos.count == 1 ? "1 photo" : "\(photos.count) photos",
+                               files.isEmpty ? "" : files.count == 1 ? "1 file" : "\(files.count) files"].filter { !$0.isEmpty }
+                Text("With " + carried.joined(separator: " and ")).font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             Button("Put it back in the reply box") { model.restoreReply(ref) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[ref.id] ?? "").isEmpty || !model.photos(ref).isEmpty)
+                .disabled(!(model.drafts[ref.id] ?? "").isEmpty || !model.photos(ref).isEmpty || !model.files(ref).isEmpty)
         }
         .card()
     }
@@ -1641,14 +1766,15 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let photos = model.photos(ref)
-        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
+        let photos = model.photos(ref), files = model.files(ref)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty && files.isEmpty ? 26 : 22, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? "Reply while it works" : "Reply to this thread"
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: .thread(ref))
-            // Photos wait inside the reply box, above the words, as in Messages.
+            // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
+                if !files.isEmpty { DraftFilePills(ref: ref).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.updatesFrequently)
@@ -1685,6 +1811,7 @@ private struct ReplyDock: View, Equatable {
     @ViewBuilder private var trailingButtons: some View {
         let stops = model.canInterrupt(ref)
         let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+            || !model.files(ref).isEmpty
         if stops { stopButton }
         if !stops || written { sendButton }
     }

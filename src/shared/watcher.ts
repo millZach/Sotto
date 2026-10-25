@@ -191,8 +191,6 @@ export const WATCHER_MACHINES_MAX = 100
  */
 export const WATCHER_KEPT_ITEMS_MAX = 20
 export const WATCHER_KEPT_ITEM_MAX = 300
-/** Watcher's conversation is compacted once it passes this many tokens, when it next rests (#1189, Zach's pick). */
-export const WATCHER_COMPACT_AT_TOKENS = 400_000
 const keptItems = z.array(z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)).max(WATCHER_KEPT_ITEMS_MAX)
 export const watcherKeptStateSchema = z.object({ decisions: keptItems, rules: keptItems, issues: keptItems, updatedAt: time.nullable() }).strict()
 export type WatcherKeptState = z.infer<typeof watcherKeptStateSchema>
