@@ -11,7 +11,7 @@ import { useOverlayOpen } from './browserOverlay'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
 import type { ToolsPanelStore } from './toolsPanelStore'
 import type { WindowSize } from './browserPlayerStore'
-import { shownCount } from './toolsWords'
+import { shownCount } from '../state/interfaceNumbers'
 import {
   PHONE_PLAYER_CHROME_HEIGHT, PHONE_PLAYER_MOVE_STEP, PHONE_PLAYER_MOVE_STEP_LARGE, PHONE_SIZES, phoneLayout, phonePlayerStore,
   usePhonePlacement, usePhonePlayerOpen, type PhonePlayerStore,

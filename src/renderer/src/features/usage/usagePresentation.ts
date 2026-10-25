@@ -2,6 +2,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
 import { publicProviderEntityId } from '../../../../shared/agents'
+import { shownCount } from '../../state/interfaceNumbers'
 import { canonicalModelId, servedModelName } from '../../../../shared/modelCatalog'
 import {
   USAGE_LIMIT_PROVIDERS, USAGE_TOKEN_FIELDS, usageProviderIdSchema, usageWindowLength,
@@ -399,8 +400,8 @@ export function readAge(at: number | undefined, now: number): string {
   if (minutes < 60) return t`Read ${minutes} min ago`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return t`Read ${hours} h ago`
-  const days = Math.floor(hours / 24)
-  return plural(days, { one: 'Read # day ago', other: 'Read # days ago' })
+  const days = Math.floor(hours / 24), shownDays = shownCount(days)
+  return plural(days, { one: `Read ${shownDays} day ago`, other: `Read ${shownDays} days ago` })
 }
 
 /** readAge inside a sentence, after a middle dot, written in the case it takes there. */
@@ -411,8 +412,8 @@ export function readAgePhrase(at: number | undefined, now: number): string {
   if (minutes < 60) return t({ message: `read ${minutes} min ago`, comment: 'Usage, inside a sentence after a middle dot' })
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return t({ message: `read ${hours} h ago`, comment: 'Usage, inside a sentence after a middle dot' })
-  const days = Math.floor(hours / 24)
-  return plural(days, { one: 'read # day ago', other: 'read # days ago' })
+  const days = Math.floor(hours / 24), shownDays = shownCount(days)
+  return plural(days, { one: `read ${shownDays} day ago`, other: `read ${shownDays} days ago` })
 }
 
 /* ---------- Subscription limits ---------- */

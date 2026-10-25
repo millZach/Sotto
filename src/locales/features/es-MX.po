@@ -45,7 +45,7 @@ msgid "{clients, plural, one {# client} other {# clients}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
-msgid "{count, plural, =1 {Hide the file} other {Hide the # files}}"
+msgid "{count, plural, =1 {Hide the file} other {Hide the {files} files}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherWatched.tsx
@@ -57,7 +57,7 @@ msgid "{count, plural, =1 {It stays watched until you stop it.} other {Each stay
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
-msgid "{count, plural, =1 {Show the file} other {Show the # files}}"
+msgid "{count, plural, =1 {Show the file} other {Show the {files} files}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -105,7 +105,7 @@ msgid "{count, plural, one {Watched, # thread} other {Watched, # threads}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
-msgid "{count, plural, one {Watcher changed # file itself.} other {Watcher changed # files itself.}}"
+msgid "{count, plural, one {Watcher changed {files} file itself.} other {Watcher changed {files} files itself.}}"
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
@@ -129,11 +129,11 @@ msgid "{days, plural, one {# day} other {# days}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
-msgid "{days, plural, one {read # day ago} other {read # days ago}}"
+msgid "{days, plural, one {read {shownDays} day ago} other {read {shownDays} days ago}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
-msgid "{days, plural, one {Read # day ago} other {Read # days ago}}"
+msgid "{days, plural, one {Read {shownDays} day ago} other {Read {shownDays} days ago}}"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -161,7 +161,7 @@ msgid "{figure} tokens"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
-msgid "{files, plural, one {# file, {size}} other {# files, {size}}}"
+msgid "{files, plural, one {{fileCount} file, {size}} other {{fileCount} files, {size}}}"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -522,7 +522,7 @@ msgid "{topShare} of prompts"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
-msgid "{unnamed, plural, one {and # file more} other {and # files more}}"
+msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx

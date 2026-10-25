@@ -1,9 +1,9 @@
-import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 
 import { countWords, type DictationRecord } from '../../../../shared/dictationRecord'
 import type { HistoryEntry } from '../../../../shared/history'
 import { languageLabel } from '../../languages'
+import { shownLocalCount } from '../../state/interfaceNumbers'
 
 /**
  * The Journal's arithmetic: days, labels, a transcript's facts, and the stats column, all worked out from
@@ -67,10 +67,8 @@ export function shortDate(day: number): string {
   return new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-/** A count as the interface language writes it: "1,240" in English, "1.240" in German. */
-export function countLabel(value: number): string {
-  return new Intl.NumberFormat(i18n.locale).format(value)
-}
+/** A count as the interface language writes it; English keeps the computer's own grouping, as the Journal always did. */
+export const countLabel = shownLocalCount
 
 /** "1,240 words": the count written by countLabel, in a message that says it in the reader's plural. */
 export function wordsLabel(words: number): string {

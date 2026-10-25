@@ -7,6 +7,7 @@ import { blockedPercent, freezeLength, type ActivityRecordingState, type MainLoo
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
+import { shownCount } from '../../state/interfaceNumbers'
 import './mainActivity.css'
 import { attachRecordingToNewThread, recordingSize, useAttachedRecording, useSecondsLeft } from './useMainActivity'
 
@@ -86,9 +87,9 @@ export function SavedRecording({ recording, onShowInFolder, onAttached, extra }:
   const attach = useAttach(recording, onAttached)
   const { t } = useLingui()
   const files = recording.files.length
-  const size = recordingSize(recording.bytes)
+  const size = recordingSize(recording.bytes), fileCount = shownCount(files)
   return <div className="main-activity__saved">
-    <div className="main-activity__file"><FileText size={16} aria-hidden="true" /><span>{recording.name}</span><small>{plural(files, { one: `# file, ${size}`, other: `# files, ${size}` })}</small></div>
+    <div className="main-activity__file"><FileText size={16} aria-hidden="true" /><span>{recording.name}</span><small>{plural(files, { one: `${fileCount} file, ${size}`, other: `${fileCount} files, ${size}` })}</small></div>
     {attached
       ? <p className="main-activity__done tt-paragraph" role="status"><Trans>Added to a new thread's composer. It is sent when you send.</Trans></p>
       : <p className="main-activity__muted tt-paragraph">{recording.windowRecorded
