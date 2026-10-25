@@ -9,7 +9,7 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { DEFAULT_THREAD_SHORTCUTS, resolveThreadShortcut, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
-import { acceleratorForChord, chordFromAccelerator, sameThreadKeys } from '../../agents/threadShortcuts'
+import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { SettingsGroup } from './SettingsGroup'
 import { shownWords, type LaterWords } from './laterWords'
@@ -23,6 +23,17 @@ export interface ThreadShortcutsSettingsProps {
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Dictation's keys keep their own rows; this page's entry for them only points there. */
   readonly onOpenDictation?: (() => void) | undefined
+}
+
+/** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
+const MENU_OWNER_NAMES: Readonly<Record<string, MessageDescriptor>> = {
+  'ctrl+r': msg`Reload the window`,
+  'ctrl+shift+r': msg`Force reload the window`,
+  'ctrl+shift+i': msg`Toggle developer tools`,
+  'ctrl+w': msg`Close the window`,
+  'mod+w': msg`Close the window`,
+  'ctrl+0': msg`Actual size`,
+  'mod+0': msg`Actual size`,
 }
 
 interface RowCopy { readonly id: ThreadShortcutId; readonly label: MessageDescriptor; readonly description: MessageDescriptor }
@@ -130,6 +141,12 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     }
     if (sameThreadKeys(chord, 'mod+k', platform)) {
       return msg`Search transcripts already uses ${keys}. Pick other keys.`
+    }
+    // The application menu sees its accelerators before the window does, so these keys would never arrive.
+    const menuOwned = menuOwnedChord(chord, platform)
+    if (menuOwned !== null) {
+      const name = i18n._(MENU_OWNER_NAMES[menuOwned] ?? msg`Sotto’s menu`)
+      return msg`${name} already uses ${keys}. Pick other keys.`
     }
     for (const group of GROUPS) for (const row of group.rows) {
       if (row.id === except) continue

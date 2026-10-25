@@ -29,6 +29,7 @@ Decided alongside (October 24, 2026, on recommendation):
 B is implemented with this prototype's production change (ADR-0133): `settings-keyboard` page, `threadShortcuts` field, all shipped chords rewired, seven new shortcuts live. Deviations from this mock-up, each forced by the real code:
 
 - **Stop the running turn defaults to `mod+shift+s`, not `mod+.`** The shared recorder's key table has no punctuation, so `.` could be shown but never re-recorded.
+- **Restore defaults to `mod+alt+r`, not `mod+shift+r` (PR review).** Off a Mac `mod+shift+r` is the application menu's Force Reload, which fires before the renderer; the Keyboard page now refuses menu-owned chords and a test pins every default clear of them.
 - **Clearing is a Remove (✕) button, not ⌫ while recording** — the dictation recorder's own pattern; the prototype's recorder was its own invention.
 - **The "Rooms ⌘1/2/3" fixed row was dropped.** No such shortcut exists in Sotto; the shipped Fixed list names only real keys.
 - **Ungated, on stable**, as mocked — recorded in ADR-0133 decision 6 with Find a setting as precedent.

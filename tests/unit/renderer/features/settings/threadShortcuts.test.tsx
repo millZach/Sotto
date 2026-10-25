@@ -33,6 +33,7 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     setup()
     expect(within(row('New thread')).getByRole('button', { name: 'Change shortcut, Ctrl Shift N' })).toBeVisible()
     expect(within(row('Settle thread')).getByRole('button', { name: 'Change shortcut, Ctrl Shift E' })).toBeVisible()
+    expect(within(row('Restore settled thread')).getByRole('button', { name: 'Change shortcut, Ctrl Alt R' })).toBeVisible()
     expect(within(row('Zoom pane')).getByRole('button', { name: 'Change shortcut, Ctrl Shift M' })).toBeVisible()
     expect(row('New thread')).toHaveAttribute('data-setting', 'shortcut-new-thread')
     expect(screen.getByText('Every shortcut is at its default.')).toBeVisible()
@@ -67,6 +68,15 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     press('KeyB')
     release('KeyB')
     expect(await within(row('New thread')).findByRole('alert')).toHaveTextContent('A thread shortcut needs Ctrl, so plain typing can never set it off.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
+
+  it('refuses keys the application menu takes before the window, such as Force Reload’s', async () => {
+    const { onUpdateSettings, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))
+    press('ControlLeft', 'ShiftLeft', 'KeyR')
+    release('KeyR')
+    expect(await within(row('Restore settled thread')).findByRole('alert')).toHaveTextContent('Force reload the window already uses Ctrl + Shift + R. Pick other keys.')
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 

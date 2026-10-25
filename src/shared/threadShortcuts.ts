@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import type { SottoPlatform } from './platform'
+
 /**
  * The keyboard shortcuts for working in threads (Settings › Keyboard, ADR-0133), in T3's chord spelling
  * (`mod+shift+n`: mod is Command on macOS and Control elsewhere). They are read from keydown events while
@@ -36,7 +38,7 @@ export type ThreadShortcutId = (typeof THREAD_SHORTCUT_IDS)[number]
 export const DEFAULT_THREAD_SHORTCUTS: Readonly<Record<ThreadShortcutId, string>> = Object.freeze({
   'new-thread': 'mod+shift+n',
   'settle': 'mod+shift+e',
-  'restore': 'mod+shift+r',
+  'restore': 'mod+alt+r',
   'open-beside': 'ctrl+enter',
   'next-thread': 'mod+alt+arrowdown',
   'previous-thread': 'mod+alt+arrowup',
@@ -52,6 +54,19 @@ export const DEFAULT_THREAD_SHORTCUTS: Readonly<Record<ThreadShortcutId, string>
   'working-copy': 'mod+shift+x',
   'previous-working-copy': 'mod+shift+l',
 })
+
+/**
+ * The chords the application menu answers before the renderer sees the keys, so no thread shortcut may
+ * claim them however they are spelled. Windows and Linux keep Electron's default menu, whose Reload,
+ * Force Reload, Toggle Developer Tools, Close and Actual Size these are; a Mac gets Sotto's own menu
+ * (`applicationMenu.ts`), whose Close and Actual Size are the recordable ones it owns. The menus' other
+ * zoom keys (Ctrl+=/-) and F11 cannot end a thread chord, so they need no entry.
+ */
+export function menuOwnedChords(platform: SottoPlatform): readonly string[] {
+  return platform === 'darwin'
+    ? ['mod+w', 'mod+0']
+    : ['ctrl+r', 'ctrl+shift+r', 'ctrl+shift+i', 'ctrl+w', 'ctrl+0']
+}
 
 /** The modifier spellings `parseChord` (renderer) understands, so a hand-written chord classifies the same way here. */
 const MODIFIER_TOKENS: ReadonlySet<string> = new Set(['mod', 'ctrl', 'control', 'alt', 'option', 'shift', 'meta', 'cmd', 'command'])

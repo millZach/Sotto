@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
+import { DEFAULT_THREAD_SHORTCUTS, THREAD_SHORTCUT_IDS } from '../../../src/shared/threadShortcuts'
 import {
-  acceleratorForChord, chordFromAccelerator, chosenThreadChord, claimedThreadChord, openBesidePressed,
+  acceleratorForChord, chordFromAccelerator, chosenThreadChord, claimedThreadChord, menuOwnedChord, openBesidePressed,
   sameThreadKeys, threadChordLabel, threadChordPressed,
 } from '../../../src/renderer/src/agents/threadShortcuts'
 
@@ -16,6 +17,23 @@ describe('thread shortcut choices (ADR-0133)', () => {
     expect(chosenThreadChord(undefined, 'changes')).toBe('mod+d')
     expect(chosenThreadChord(settings({ threadShortcuts: { settle: 'mod+alt+s' } }), 'settle')).toBe('mod+alt+s')
     expect(chosenThreadChord(settings({ threadShortcuts: { settle: null } }), 'settle')).toBeNull()
+  })
+
+  it('keeps every default clear of the application menu’s own accelerators, which fire before the window', () => {
+    // Windows and Linux keep Electron's default menu; its Force Reload is why Restore is not mod+shift+r.
+    for (const platform of ['win32', 'linux', 'darwin'] as const) {
+      for (const id of THREAD_SHORTCUT_IDS) {
+        expect(menuOwnedChord(DEFAULT_THREAD_SHORTCUTS[id], platform), `${id} on ${platform}`).toBeNull()
+      }
+    }
+    expect(chosenThreadChord(settings(), 'restore')).toBe('mod+alt+r')
+    expect(menuOwnedChord('mod+shift+r', 'win32')).toBe('ctrl+shift+r')
+    expect(menuOwnedChord('ctrl+shift+r', 'linux')).toBe('ctrl+shift+r')
+    expect(menuOwnedChord('mod+r', 'win32')).toBe('ctrl+r')
+    expect(menuOwnedChord('mod+w', 'darwin')).toBe('mod+w')
+    // Close pane's shifted W is not the menu's Close, on any platform.
+    expect(menuOwnedChord('mod+shift+w', 'win32')).toBeNull()
+    expect(menuOwnedChord('mod+shift+r', 'darwin')).toBeNull()
   })
 
   it('claims a chord unless the dictation hotkey already means it, on the platform it runs on', () => {

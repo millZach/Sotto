@@ -769,6 +769,10 @@ msgstr "Accounts & connections"
 msgid "Action"
 msgstr "Action"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Actual size"
+msgstr "Actual size"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
 msgstr "Add a hold shortcut"
@@ -1457,6 +1461,10 @@ msgstr "Close the focused pane in a split. The thread keeps running."
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Close the theme editor"
 msgstr "Close the theme editor"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Close the window"
+msgstr "Close the window"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Close. Sotto still waits for {name}’s threads"
@@ -2217,6 +2225,10 @@ msgstr "For a machine that already has the host. Sotto connects now and says wha
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
 msgstr "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Force reload the window"
+msgstr "Force reload the window"
 
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -3741,6 +3753,10 @@ msgstr "Reduce motion"
 msgid "Reduced motion"
 msgstr "Reduced motion"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reload the window"
+msgstr "Reload the window"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remote hosts"
@@ -4515,6 +4531,10 @@ msgstr "Sotto’s hold-to-talk dictation shortcut already uses those keys. Pick 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys."
 msgstr "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s menu"
+msgstr "Sotto’s menu"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Sotto’s start-and-stop dictation shortcut already uses {keys}. Pick other keys."
@@ -5479,6 +5499,10 @@ msgstr "Threads, pairing and settings for this host live here."
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
 msgstr "to"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Toggle developer tools"
+msgstr "Toggle developer tools"
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "Too many copies of \"{name}\"."

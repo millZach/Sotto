@@ -1,6 +1,6 @@
 import type { SottoPlatform } from '../../../shared/platform'
 import type { AppSettings } from '../../../shared/settings'
-import { DEFAULT_THREAD_SHORTCUTS, isThreadChord, resolveThreadShortcut, type ThreadShortcutId } from '../../../shared/threadShortcuts'
+import { DEFAULT_THREAD_SHORTCUTS, isThreadChord, menuOwnedChords, resolveThreadShortcut, type ThreadShortcutId } from '../../../shared/threadShortcuts'
 import { chordBelongsElsewhere } from '../tools/changesShortcut'
 import { chordClaimed, chordMatches, parseAccelerator, parseChord } from './branchToolbar.logic'
 
@@ -19,6 +19,15 @@ export function chosenThreadChord(settings: Pick<AppSettings, 'threadShortcuts'>
 export function claimedThreadChord(settings: ThreadShortcutSettings | null | undefined, id: ThreadShortcutId, platform: SottoPlatform): string | null {
   const chosen = chosenThreadChord(settings, id)
   return chosen !== null && chordClaimed(chosen, settings?.hotkey, platform) ? chosen : null
+}
+
+/**
+ * The menu-owned chord these keys already are on this platform (`menuOwnedChords`), or null when the
+ * application menu does not take them first. Settings refuses the match, so a shortcut can never be
+ * recorded onto keys its press would never reach.
+ */
+export function menuOwnedChord(chord: string, platform: SottoPlatform): string | null {
+  return menuOwnedChords(platform).find(owned => sameThreadKeys(chord, owned, platform)) ?? null
 }
 
 /**

@@ -769,6 +769,10 @@ msgstr ""
 msgid "Action"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Actual size"
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
 msgstr ""
@@ -1456,6 +1460,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Close the theme editor"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Close the window"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -2216,6 +2224,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "For a machine without the host yet. The agent installs it, fixes what is missing and adds the host. It works in a new thread, and you answer each command it wants to run."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Force reload the window"
 msgstr ""
 
 #. An example SSH host: forge and server are machine names, user an account name.
@@ -3741,6 +3753,10 @@ msgstr ""
 msgid "Reduced motion"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reload the window"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remote hosts"
@@ -4514,6 +4530,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Sotto’s hold-to-talk shortcut already uses those keys. Pick other keys."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Sotto’s menu"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -5478,6 +5498,10 @@ msgstr ""
 #. Read between two version numbers: from one version to another.
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Toggle developer tools"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
