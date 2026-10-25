@@ -223,7 +223,7 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
-  /** On by default. Moving between Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  /** On by default. Moving between Dictate or Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
   roomTransitionSpeed: number
