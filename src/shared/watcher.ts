@@ -3,6 +3,7 @@ import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from '
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
+import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -303,13 +304,18 @@ export const watcherToolSchemas = {
   },
   start_thread: {
     // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and
-    // never sends `role` to a paired host: an older one refuses keys it does not know.
-    input: z.object({ ...mutation, project: watcherProjectTargetSchema, role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
+    // never sends `role` to a paired host: an older one refuses keys it does not know. `machine` and `os` say where it
+    // starts (#1032, Owl `cross-machine-work`); main places the start before admission and sends neither to a paired host.
+    input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
       // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
       role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional(),
-      // The working threads warning (#1183), when more than ten threads are working on this computer after this start. Never on a paired host's start.
+      // Where the start was placed (#1032): the machine, whether it is somewhere other than where new workers start, and
+      // why when Sotto placed it itself. In memory only, as `role` is; never from a paired host, which places nothing.
+      placement: workerPlacementReceiptSchema.optional(),
+      // The working threads warning (#1183), when more than ten threads are working on the machine the start went to,
+      // counting it. A paired host never sends one: the desktop counts that machine's threads itself (#1032).
       warning: shortText.min(1).optional() }),
   },
   send_to_thread: {
@@ -364,7 +370,8 @@ export const watcherToolSchemas = {
   },
   list_machines: {
     input: z.object({}).strict(),
-    output: result({ machines: z.array(machine).max(WATCHER_MACHINES_MAX), observedAt: time }),
+    // `newWorkersStart` says where a start that names no machine goes (#1032), only while Work across machines is on.
+    output: result({ machines: z.array(machine).max(WATCHER_MACHINES_MAX), observedAt: time, newWorkersStart: newWorkersStartSchema.optional() }),
   },
   list_working_copies: {
     input: z.object({ project: watcherProjectTargetSchema, ...paging }).strict(),

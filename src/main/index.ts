@@ -684,8 +684,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
   const continueEnabled = owlFeatures['continue-on-provider']
-  // Work across machines (ADR-0082): this computer's live load and work placed but not started (#1311), and list_machines
-  // showing them. Stable samples nothing and shows none of it.
+  // Work across machines (ADR-0082): where new workers start, a start's machine or system, and the machines a delegating
+  // thread may list (#1032); this computer's live load and work placed but not started, and list_machines showing them
+  // (#1311). Stable reads no setting for it, offers none of it, samples nothing and asks no host for its projects' origins.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
   // Next prompts (ADR-0132): stable builds none, asks no provider and gives the window no bridge.
   const nextPromptEnabled = owlFeatures['next-prompt']
@@ -1057,7 +1058,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, pullRequestTools, ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
