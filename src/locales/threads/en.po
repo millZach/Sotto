@@ -598,10 +598,6 @@ msgid "Something answered at {host}, but not as an OpenAI-compatible server. Not
 msgstr "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
-msgid "Sotto compacted this idle thread before its cache expired."
-msgstr "Sotto compacted this idle thread before its cache expired."
-
-#: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto could not compact this idle thread. Its full history is kept."
 msgstr "Sotto could not compact this idle thread. Its full history is kept."
 

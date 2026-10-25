@@ -224,6 +224,8 @@ describe('AppShell', () => {
     expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /close sotto to tray/i })).not.toBeInTheDocument()
     expect(container.querySelector('.app-strip')).toHaveClass('app-strip--mac')
+    // No app mark beside the traffic lights: the strip's left end stays empty on macOS.
+    expect(container.querySelector('.app-mark')).toBeNull()
   })
 
   it('maps pages to the room they light', () => {

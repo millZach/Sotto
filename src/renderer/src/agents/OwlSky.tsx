@@ -61,9 +61,9 @@ function place({ at, top, size }: OwlSkyStar): CSSProperties {
 }
 
 /**
- * Sotto Owl's night sky behind the sidebar header: a scatter of tiny stars and the accent's glow behind the tile,
- * over the night the sidebar paints there (`data-sky`). It is decoration: hidden from assistive technology, under
- * every control, and never the target of a press.
+ * Sotto Owl's night sky behind the sidebar header: a scatter of tiny stars and the accent's glow behind the tile
+ * (on macOS there is no tile in the corner and no glow), over the night the sidebar paints there (`data-sky`).
+ * It is decoration: hidden from assistive technology, under every control, and never the target of a press.
  */
 export function OwlSky(): ReactNode {
   return <div className="thread-nav__sky" aria-hidden="true">

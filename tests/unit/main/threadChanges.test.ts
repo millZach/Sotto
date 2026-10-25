@@ -479,6 +479,35 @@ describe('a thread changes publisher', () => {
     expect(ids(one.map)).toEqual(['b', 'c'])
   })
 
+  it('keeps a record equal to the one published when the same change removes or places that thread (#925)', () => {
+    const publisher = new ThreadChangesPublisher()
+    const one = holder()
+    publisher.subscribe(one.listener)
+    publisher.publishChanges(() => ({ whole: true, upserts: [thread('a'), thread('b'), thread('c')], removals: [], rest: rest() }))
+    // Removed and put back unchanged in one change: removals apply first, so the upsert brings it back, last.
+    publisher.publishChanges(() => ({ upserts: [thread('a')], removals: ['a'] }))
+    expect(one.received[1]!.upserts.map(record => record.id)).toEqual(['a'])
+    expect(ids(one.map)).toEqual(['b', 'c', 'a'])
+    // Placed unchanged: the upsert stays beside its placement, and the order is the one asked for.
+    publisher.publishChanges(() => ({ upserts: [thread('a')], removals: [], placements: [{ id: 'a', beforeId: 'b' }] }))
+    expect(one.received[2]!.upserts.map(record => record.id)).toEqual(['a'])
+    expect(ids(one.map)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('leaves out a marked record and a rest that equal what was published, outside a whole publication', () => {
+    const publisher = new ThreadChangesPublisher()
+    const one = holder()
+    publisher.subscribe(one.listener)
+    // Built afresh each time, as an adapter reads its own state, rather than owned.
+    const parts = (fields: Partial<AgentHostSnapshot> = {}): AgentHostRest => { const others: Partial<AgentHostSnapshot> = host([], fields); delete others.threads; return others as AgentHostRest }
+    publisher.publishChanges(() => ({ whole: true, upserts: [thread('a'), thread('b')], removals: [], rest: parts() }))
+    publisher.publishChanges(() => ({ upserts: [thread('a'), thread('b', { status: 'running' })], removals: [], rest: parts() }))
+    expect(one.received[1]!.upserts.map(record => record.id)).toEqual(['b'])
+    expect(one.received[1]!.rest).toBeUndefined()
+    publisher.publishChanges(() => ({ upserts: [], removals: [], rest: parts({ error: 'Synthetic' }) }))
+    expect(one.received[2]!.rest?.error).toBe('Synthetic')
+  })
+
   it('keeps every subscriber equal to the snapshots it was built from, checked after every change', () => {
     const publisher = new ThreadChangesPublisher()
     let truth = host([])

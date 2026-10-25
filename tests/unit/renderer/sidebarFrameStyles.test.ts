@@ -34,7 +34,7 @@ const global = rules('styles/global.css')
 // (tests/e2e/sidebar-crossing.spec.ts); these keep the one frame the stylesheets draw it from from drifting back into
 // two: a padded Settings column beside an unpadded Threads sidebar, each with its own widths and foot.
 describe('the sidebar frame in the stylesheets', () => {
-  it('is unpadded, and the foot carries its own inset, hairline and all', () => {
+  it('is unpadded, and the foot carries its own inset and the hairline between its rows', () => {
     const frame = styleOf(sidebar, '.thread-nav')
     expect(frame.get('padding')).toBe('0')
     expect(frame.get('--thread-nav-inset')).toBe('10px')
@@ -42,9 +42,19 @@ describe('the sidebar frame in the stylesheets', () => {
     expect(selectorsOf(sidebar).filter(selector => selector.includes(':not([data-mode])'))).toEqual([])
     const foot = styleOf(chrome, '.thread-nav__foot')
     expect(foot.get('margin')).toBe('auto var(--thread-nav-inset) 0')
-    expect(foot.get('border-top')).toMatch(/^1px solid /u)
-    // The collapsed rail is as wide as the foot, so it takes no inset.
+    // No hairline tops the foot; the switch sits 20px under what is above it.
+    expect(foot.get('border-top')).toBeUndefined()
+    expect(foot.get('padding')).toBe('20px 6px 10px')
+    expect(foot.get('gap')).toBe('6px 2px')
+    // The hairline is its own row between the switch and the page links: with the 6px row gap, 12px from each.
+    const rule = styleOf(chrome, '.thread-nav__foot-rule')
+    expect(rule.get('border-top')).toMatch(/^1px solid /u)
+    expect(rule.get('flex')).toBe('1 0 100%')
+    expect(rule.get('margin')).toBe('6px 0')
+    // The collapsed rail is as wide as the foot, so it takes no inset; its hidden switch leaves the hairline on top, 8px over the links.
     expect(styleOf(sidebar, '.thread-nav__rail .thread-nav__foot').get('margin-inline')).toBe('0')
+    expect(styleOf(sidebar, '.thread-nav__rail .thread-nav__foot').get('padding')).toBe('0 0 8px')
+    expect(styleOf(sidebar, '.thread-nav__rail .thread-nav__foot-rule').get('margin')).toBe('0 0 2px')
   })
 
   it('draws the foot switch once, for every column that wears the foot', () => {

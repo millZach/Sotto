@@ -179,7 +179,10 @@
    in the background never finishes, would leave that room a step behind the composer and the pane with room to scroll. */
 .thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
 /* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
-.thread-workspace__compose > :is(.thread-pane__meta, .thread-followups) { background: var(--tt-canvas); }
+.thread-workspace__compose > .thread-pane__meta { background: var(--tt-canvas); }
+.thread-workspace__compose > .thread-followups { background: var(--followups-surface); }
+/* The queue tucks under the composer card, so the card paints over its open bottom edge. */
+.thread-workspace__compose > .thread-followups + .thread-prompt { z-index: 1; }
 .thread-workspace__compose > .thread-followups { flex: 0 1 auto; }
 /* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
 .thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }

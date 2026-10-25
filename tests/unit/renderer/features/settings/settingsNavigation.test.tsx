@@ -34,7 +34,7 @@ describe('SettingsView', () => {
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
-    const categories = ['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application']
+    const categories = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application']
     for (const name of categories) {
       await selectCategory(name)
       expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
@@ -139,7 +139,7 @@ it('runs the pages in four runs, dictation, threads, connections and the app, an
     await selectCategory('Threads')
     const nav = screen.getByRole('tablist', { name: 'Settings sections' })
     expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application',
+      'Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application',
     ])
     // A divider opens each run after the first.
     expect(within(nav).getAllByRole('tab').filter(tab => tab.hasAttribute('data-run-start')).map(tab => tab.textContent)).toEqual(['Threads', 'Providers', 'Appearance'])

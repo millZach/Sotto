@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { agentAttachmentHandlesSchema, agentAttachmentsSchema, hasRasterImageSignature, isImageAttachment,
   type AgentAttachmentHandle, type AgentHostSnapshot } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { HOST_FILE_PART_BYTES, type HostAttachmentFile, type HostAttachmentFileRequest } from '../../shared/hostProtocol'
 import type { AttachmentStore, StageInline } from './attachmentStore'
 
 export const ATTACHMENT_PREVIEW_RETENTION_MS = 7 * 86_400_000
@@ -37,7 +38,7 @@ export class AttachmentPreviews {
   private enabled: boolean
   private dirty = false
   private readonly store: AtomicJsonStore<Read>
-  constructor(private readonly directory: string, private readonly content: Pick<AttachmentStore, 'read'>,
+  constructor(private readonly directory: string, private readonly content: Pick<AttachmentStore, 'read' | 'readPart'>,
     private readonly historyEnabled: () => boolean = () => true, private readonly now: () => number = Date.now,
     private readonly dormantThreadIds?: ReadonlySet<string>) {
     this.enabled = historyEnabled()
@@ -248,5 +249,25 @@ export class AttachmentPreviews {
     const attachment = entry.attachments.find(item => item.id === attachmentId && isImageAttachment(item.mimeType))
     const bytes = attachment ? await this.content.read(attachment.digest) : null
     return attachment && bytes ? `data:${attachment.mimeType};base64,${bytes.toString('base64')}` : null
+  }
+  /**
+   * One part of a sent attached file the message carries, never an image, at most `HOST_FILE_PART_BYTES` of its bytes,
+   * with what the whole file is so the client can check it once every part is in; null when the message, its preview
+   * entry or the bytes are gone, or for a part past the last. For the iPhone's Quick Look (ADR-0131, October 25
+   * amendment): a file is found by its message, as an image's preview is, so a client reads only what a thread it reads
+   * carries. Only the part's own bytes are read, after the store has checked the whole file once.
+   */
+  async filePart(snapshot: AgentHostSnapshot, request: HostAttachmentFileRequest): Promise<HostAttachmentFile> {
+    const entry = this.live().get(JSON.stringify([request.threadId, request.messageId]))
+    if (!entry) return null
+    const message = snapshot.threads.find(thread => thread.id === request.threadId)?.messages.find(item => item.id === request.messageId)
+    if (!message || !this.permits(message, entry)) return null
+    const handle = entry.attachments.find(item => item.id === request.attachmentId && !isImageAttachment(item.mimeType))
+    if (!handle) return null
+    const { name, mimeType, sizeBytes, digest } = handle, part = request.part
+    const parts = Math.max(1, Math.ceil(sizeBytes / HOST_FILE_PART_BYTES))
+    if (!Number.isInteger(part) || part < 0 || part >= parts) return null
+    const bytes = await this.content.readPart(digest, part * HOST_FILE_PART_BYTES, HOST_FILE_PART_BYTES)
+    return bytes ? { name, mimeType, sizeBytes, digest, part, parts, data: bytes.toString('base64') } : null
   }
 }

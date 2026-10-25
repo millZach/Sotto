@@ -42,8 +42,8 @@ const failedTurnOf = (thread: Pick<AgentThread, 'lastTurn'>): string | undefined
  */
 export class FailuresSeen {
   private shown: ReadonlySet<string> = new Set()
-  /** The threads in the latest list read; until one is read, every saved mark is kept. */
-  private present: ReadonlySet<string> | undefined
+  /** The threads in the latest list read; until one is read, every saved mark is kept. Its own, changed by a change read. */
+  private present: Set<string> | undefined
   /** Each thread in error and the failure it stands in, oldest first: a map keeps the order things were added in. */
   private readonly failures = new Map<string, Failure>()
 
@@ -52,35 +52,75 @@ export class FailuresSeen {
 
   /** Takes the saved marks back at start. Nothing is dropped until a list of threads says which are gone. */
   restore(saved: readonly SavedFailureSeen[]): void {
+    for (const id of this.failures.keys()) this.onMoved?.(id)
     this.failures.clear()
     for (const { threadId, failure, turn, since } of saved) {
       this.failures.delete(threadId); this.failures.set(threadId, { id: failure, turn, seen: true, ...(since === undefined ? {} : { since }) })
+      this.onMoved?.(threadId)
     }
   }
+
+  /**
+   * Told of each thread whose published failure, reason or seen mark may have moved, from any path, so a caller that lists
+   * threads by what changed knows which to list again (#925). Unset, nothing is told.
+   */
+  onMoved: ((threadId: string) => void) | undefined
 
   /** Reads one snapshot of the threads; true when a saved mark was made, changed or dropped. */
   track(snapshot: AgentHostSnapshot): boolean {
     let changed = false
     this.present = new Set(snapshot.threads.map(thread => thread.id))
     const settled = settledIn(snapshot)
-    for (const thread of snapshot.threads) {
-      if (this.dormant?.(thread.id)) continue
-      if (thread.status === 'error') {
-        changed = this.identify(thread) || changed
-        this.recordReason(thread)
-        if (this.shown.has(thread.id) || settled(thread)) changed = this.see(thread) || changed
-        continue
-      }
-      const failure = this.failures.get(thread.id)
-      if (failure === undefined) continue
-      if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) continue
-      this.failures.delete(thread.id)
-      changed = failure.seen || changed
-    }
+    for (const thread of snapshot.threads) changed = this.read(snapshot, thread, settled) || changed
     // A failure nobody has seen is not saved, so one for a thread no longer listed has nothing left to say.
-    for (const [id, failure] of this.failures) if (!failure.seen && !this.present.has(id) && !this.dormant?.(id)) this.failures.delete(id)
+    for (const [id, failure] of this.failures) if (!failure.seen && !this.present.has(id) && !this.dormant?.(id)) this.drop(id)
     this.trim()
     return changed
+  }
+
+  /**
+   * Reads only the threads a change named (#925): `threads`, each as the snapshot now shows it, and `gone`, the threads it
+   * no longer shows, against the last list read, which a whole read (`track`) must have given. Every other thread is as
+   * that read left it, and so are the connection, the providers and the projects `snapshot` carries, so reading it again
+   * would change nothing. An unseen failure is only ever made for a thread listed, so only one of a thread that went can
+   * have nothing left to say. This says what `track` would of the whole list.
+   */
+  trackChanged(snapshot: AgentHostSnapshot, threads: readonly AgentThread[], gone: Iterable<string>): boolean {
+    const present = this.present
+    if (!present) throw new Error('A change of threads is read only after a whole list was.')
+    let changed = false
+    const went: string[] = []
+    for (const id of gone) { present.delete(id); went.push(id) }
+    for (const thread of threads) present.add(thread.id)
+    const settled = settledIn(snapshot)
+    for (const thread of threads) changed = this.read(snapshot, thread, settled) || changed
+    for (const id of went) {
+      const failure = this.failures.get(id)
+      if (failure && !failure.seen && !present.has(id) && !this.dormant?.(id)) this.drop(id)
+    }
+    this.trim()
+    return changed
+  }
+
+  /** One thread read against its failure; true when a saved mark was made, changed or dropped. */
+  private read(snapshot: AgentHostSnapshot, thread: AgentThread, settled: (thread: AgentThread) => boolean): boolean {
+    if (this.dormant?.(thread.id)) return false
+    if (thread.status === 'error') {
+      let changed = this.identify(thread)
+      this.recordReason(thread)
+      if (this.shown.has(thread.id) || settled(thread)) changed = this.see(thread) || changed
+      return changed
+    }
+    const failure = this.failures.get(thread.id)
+    if (failure === undefined) return false
+    if (!snapshot.connected || !isThreadProviderConnected(snapshot, thread)) return false
+    this.drop(thread.id)
+    return failure.seen
+  }
+
+  /** Forgets a thread's failure. */
+  private drop(threadId: string): void {
+    if (this.failures.delete(threadId)) this.onMoved?.(threadId)
   }
 
   /** The threads some client shows now, out of `threads`: each that has failed is seen. True when a mark was made. */
@@ -128,7 +168,9 @@ export class FailuresSeen {
   private recordReason(thread: AgentThread): void {
     const failure = this.failures.get(thread.id)
     const reason = failedTurnReason(thread)
-    if (failure !== undefined && reason !== undefined) failure.reason = reason.slice(0, REASON_MAX)
+    if (failure === undefined || reason === undefined) return
+    const kept = reason.slice(0, REASON_MAX)
+    if (failure.reason !== kept) { failure.reason = kept; this.onMoved?.(thread.id) }
   }
 
   private seeAll(threads: readonly AgentThread[], named: (thread: AgentThread) => boolean, still: (thread: AgentThread) => boolean = () => true): boolean {
@@ -161,6 +203,7 @@ export class FailuresSeen {
     }
     this.failures.delete(thread.id)
     this.failures.set(thread.id, { id: this.newId(), turn, seen: false, since: this.now() })
+    this.onMoved?.(thread.id)
     return known?.seen === true
   }
 
@@ -174,6 +217,7 @@ export class FailuresSeen {
     const failure = this.failures.get(thread.id)
     if (failure === undefined || failure.seen || !failedWithoutRequest(thread)) return false
     failure.seen = true
+    this.onMoved?.(thread.id)
     return true
   }
 
@@ -185,7 +229,7 @@ export class FailuresSeen {
     let count = [...this.failures.keys()].filter(gone).length
     for (const id of this.failures.keys()) {
       if (count <= FAILURES_SEEN_MAX) return
-      if (gone(id)) { this.failures.delete(id); count -= 1 }
+      if (gone(id)) { this.drop(id); count -= 1 }
     }
   }
 }

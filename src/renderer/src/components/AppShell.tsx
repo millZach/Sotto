@@ -201,7 +201,8 @@ export function AppShell({
   children,
 }: AppShellProps): ReactNode {
   const nativeWindowControls = platform === 'darwin'
-  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does.
+  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does. On macOS no mark sits
+  // beside the traffic lights, in either track.
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
@@ -230,7 +231,7 @@ export function AppShell({
     <div className={shellClass} data-platform={platform}>
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
-          {owl ? (
+          {nativeWindowControls ? <span /> : owl ? (
             <div className="app-mark" role="img" aria-label={releaseTrackName('owl')}>
               <SottoMark className="app-mark__tile" />
             </div>

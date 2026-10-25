@@ -125,6 +125,15 @@ export class ThreadMap {
   get(id: string): AgentThread | undefined { return this.nodes.get(id)?.record }
   has(id: string): boolean { return this.nodes.has(id) }
   *ids(): IterableIterator<string> { for (let node = this.first; node; node = node.next) yield node.record.id }
+  /** The first thread's ID, undefined when the map holds none. */
+  get firstId(): string | undefined { return this.first?.record.id }
+  /** The last thread's ID, undefined when the map holds none. */
+  get lastId(): string | undefined { return this.last?.record.id }
+  /** The ID of the thread after `id`: null when `id` is last, undefined when the map does not hold `id`. */
+  nextId(id: string): string | null | undefined {
+    const node = this.nodes.get(id)
+    return node ? node.next?.record.id ?? null : undefined
+  }
   /** Every record in order, in a list of the caller's own. */
   threads(): AgentThread[] {
     const threads: AgentThread[] = []
@@ -244,6 +253,34 @@ export function threadMapDifferences(map: ThreadMap, whole: AgentHostSnapshot): 
   return differences
 }
 
+/**
+ * Placements in the order they apply: each puts its thread just before the thread that follows it once all apply, so a
+ * thread is placed only after the thread it goes before has been, when that one is placed too. A placement's depth is how
+ * many placed threads stand between it and a thread that stays; each is worked out once, walking only to the first thread
+ * whose depth is known, and the placements go out shallowest first. A batch costs what it holds: a provider that connects
+ * with every one of its threads new places them all, and walking each one's chain on its own was quadratic.
+ */
+export function inPlacingOrder(placements: ThreadPlacement[]): ThreadPlacement[] {
+  const byId = new Map(placements.map(placement => [placement.id, placement]))
+  const depths = new Map<string, number>()
+  const levels: ThreadPlacement[][] = []
+  for (const placement of placements) {
+    // The placed threads from this one to the first whose depth is known or that goes before a thread that stays.
+    const chain: ThreadPlacement[] = []
+    let next: ThreadPlacement | undefined = placement
+    while (next && !depths.has(next.id) && chain.length <= byId.size) {
+      chain.push(next)
+      next = next.beforeId === null ? undefined : byId.get(next.beforeId)
+    }
+    let depth = next ? (depths.get(next.id) ?? 0) + 1 : 0
+    for (let at = chain.length - 1; at >= 0; at--, depth++) {
+      depths.set(chain[at]!.id, depth)
+      ;(levels[depth] ??= []).push(chain[at]!)
+    }
+  }
+  return levels.flat()
+}
+
 /** The positions in `values` of one longest strictly increasing run of them, not necessarily next to each other. */
 function longestIncreasing(values: readonly number[]): Set<number> {
   const ends: number[] = [], before = new Array<number>(values.length)
@@ -286,6 +323,18 @@ export function threadChangesBetween(published: ThreadMap | undefined, next: Age
     if (updated[at] !== previous[at]) upserts.push(updated[at]!)
   }
   if (!published) return { whole: true, upserts: records, removals: [], rest: rest! }
+  const order = orderBetween(published, threads)
+  if (!order) return { whole: true, upserts: records, removals: [], rest: rest! }
+  const { removals, placements } = order
+  return { upserts, removals, ...(placements.length ? { placements } : {}), ...(rest !== published.rest ? { rest: rest! } : {}) }
+}
+
+/**
+ * The threads `published` holds that `threads` no longer lists, and the placements that put the rest in `threads`' order,
+ * the way `threadChangesBetween` works them out; undefined when more than half the threads would need a placement, so the
+ * change is better sent whole. Costs a look-up per thread, for a caller that has every thread in hand anyway.
+ */
+export function orderBetween(published: ThreadMap, threads: readonly { readonly id: string }[]): { removals: string[]; placements: ThreadPlacement[] } | undefined {
   const position = new Map<string, number>()
   for (const id of published.ids()) position.set(id, position.size)
   const present = new Set(threads.map(thread => thread.id))
@@ -308,8 +357,8 @@ export function threadChangesBetween(published: ThreadMap | undefined, next: Age
     if (still.has(index)) continue
     placements.push({ id: threads[index]!.id, beforeId: index + 1 < threads.length ? threads[index + 1]!.id : null })
   }
-  if (placements.length * 2 > threads.length) return { whole: true, upserts: records, removals: [], rest: rest! }
-  return { upserts, removals, ...(placements.length ? { placements } : {}), ...(rest !== published.rest ? { rest: rest! } : {}) }
+  if (placements.length * 2 > threads.length) return undefined
+  return { removals, placements }
 }
 
 type Build = (historyFromEvents: boolean, published: ThreadMap | undefined) => ThreadChangeSet
@@ -369,15 +418,26 @@ export class ThreadChangesPublisher implements ActivityChangesSource {
   /**
    * Changes a publisher worked out itself, given what it last published to the form (undefined before the first, when
    * the change must be whole). Records and parts it does not own are copied and owned here, sharing what equals what
-   * was published, so nothing the publisher still holds reaches a subscriber. A publication that changed nothing still
-   * goes out, so a subscriber sees every publish.
+   * was published, so nothing the publisher still holds reaches a subscriber. Outside a whole publication, a record that
+   * equals the one published is left out, unless the same change removes or places that thread, and so is a rest that
+   * equals the published rest, so a publisher may name a
+   * thread it is not sure changed and pay one comparison for it. A publication that changed nothing still goes out, so a
+   * subscriber sees every publish.
    */
   publishChanges(build: Build): void {
     this.publish((historyFromEvents, published) => {
       const set = build(historyFromEvents, published)
-      const upserts = immutableUpdates(set.upserts, set.upserts.map(record => published?.get(record.id)))
+      const previous = set.upserts.map(record => published?.get(record.id))
+      const updated = immutableUpdates(set.upserts, previous)
+      // A thread the same change removes or places keeps its upsert even unchanged: removals apply first, so dropping
+      // it would leave the thread out, and a placement names a thread the map must hold.
+      const kept = set.whole ? undefined : new Set([...set.removals, ...(set.placements ?? []).map(placement => placement.id)])
+      const upserts = kept ? updated.filter((record, index) => record !== previous[index] || kept.has(record.id)) : updated
       const [rest] = set.rest ? immutableUpdates<AgentHostRest>([set.rest], [published?.rest]) : []
-      return { ...set, upserts, ...(rest ? { rest } : {}) }
+      const changes: { -readonly [Key in keyof ThreadChangeSet]: ThreadChangeSet[Key] } = { ...set, upserts }
+      if (rest && (set.whole || rest !== published?.rest)) changes.rest = rest
+      else delete changes.rest
+      return changes
     })
   }
 

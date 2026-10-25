@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { asActivityPublication } from '../../src/main/agents/activitySnapshots'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { NextPrompts } from '../../src/main/agents/nextPrompts'
@@ -10,7 +11,7 @@ import { desktopWindowClient, LocalHostService } from '../../src/main/agents/hos
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../../src/main/agents/requestDraftOwners'
 import { RequestDraftService } from '../../src/main/agents/requestDrafts'
-import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges } from '../../src/main/agents/threadChanges'
+import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges } from '../../src/main/agents/threadChanges'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
@@ -61,6 +62,7 @@ class SendingAdapter extends StreamingAdapter {
     if (!thread) throw new Error('Unknown provider session')
     this.log.add(thread.id, { id: command.messageId, commandId: command.commandId, role: 'user', text: command.text, createdAt: new Date().toISOString() })
     thread.status = 'running'
+    this.mark(thread.id)
     this.publish(false)
     return { accepted: true }
   }
@@ -95,6 +97,14 @@ export interface OwnerScalePipeline {
   readonly question: RequestDraftTarget
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
+  /** The thread records and removals the adapter's thread changes carried since the last reset (#925). */
+  adapterChangeRecords(): number
+  /** The thread records and removals the identity wrapper's thread changes carried since the last reset (#925). */
+  wrapperChangeRecords(): number
+  /** The thread records and removals the provider switch's thread changes carried since the last reset (#925). */
+  switchChangeRecords(): number
+  /** The thread records and removals the workspace's thread changes carried since the last reset (#925). */
+  workspaceChangeRecords(): number
   /** The draft store's look-ups of an answer's thread since the last reset. */
   ownerLookups(): number
   /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
@@ -123,6 +133,17 @@ export interface OwnerScalePipelineOptions {
   verifyThreadChanges?: boolean
   /** Runs the shadows' work, so a test that counts main's work can leave it out. */
   uncounted?: <T>(work: () => T) => T
+  /**
+   * Told the records each publication of a layer's thread changes that main consumes carried (the adapter's, the identity
+   * wrapper's and the provider switch's), the thread records that layer built for an update in place of a whole snapshot
+   * (#925).
+   */
+  touched?: (layer: string, records: number) => void
+  /**
+   * Told each read of a creation's thread ID. Every thread on this computer was made in Sotto, so each has a started
+   * creation the workspace keeps for as long as the thread, newest last, as the owner's do (#925 review).
+   */
+  creationRead?: () => void
 }
 
 export interface ThreadChangesReport {
@@ -133,21 +154,97 @@ export interface ThreadChangesReport {
 }
 
 type ActivityPublisher = { subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void }
+type ChangesPublisher = { subscribeActivityChanges?(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription }
+
+/** The layers whose thread changes main consumes, and the workspace's, which nothing in main consumes until #925's step 5. */
+type ChangesLayer = 'adapter' | 'identity wrapper' | 'provider switch' | 'workspace'
 
 /**
- * The verifying mode at the owner's scale (#925): beside each layer between the adapter and the coordinator, the thread
- * changes the shim works out from that layer's publications, applied to a thread map that rebuilds itself from the
- * layer's whole snapshot after every change and compares. Nothing main runs changes: each layer publishes as it does,
- * and a shadow only reads what it published. A drift is kept for the test rather than thrown into main's path. Until a
- * layer passes on thread changes itself, this checks the shim and the map against every real publication; once one does,
- * its own changes take the shim's place here.
+ * The verifying mode at the owner's scale (#925). Each layer that passes on thread changes is shadowed by a thread map fed
+ * the same publications, which, verifying, rebuilds itself from a whole snapshot of that layer after every change and
+ * compares: the adapter's whole activity view, the identity wrapper's `mapSnapshot` of it (the snapshot path the wrapper's
+ * changes replace), the provider switch's activity snapshot built at the same publish, and the workspace's activity
+ * publication from the same publish. While the switch takes in one of the wrapper's publications, its Claude threads are
+ * also checked against the wrapper's whole snapshot named the way the switch named every thread before it kept a thread
+ * map (`provider switch slot`). The workspace's accepted state and its activity publication are also shadowed by the
+ * shim's changes worked out from them. Nothing main runs changes: a shadow only reads what a layer published, its work is
+ * left out of every count, and a drift is kept for the test rather than thrown into main's path.
  */
 class ShadowThreadMaps {
   private readonly checked: Record<string, number> = {}
   private readonly drift: string[] = []
-  constructor(private readonly on: boolean, private readonly uncounted: <T>(work: () => T) => T) {}
+  /** What each layer's thread changes carried since the last reset: records upserted and threads removed. */
+  readonly carried: Record<ChangesLayer, number> = { adapter: 0, 'identity wrapper': 0, 'provider switch': 0, workspace: 0 }
+  /** Set while the switch takes in a publication of the wrapper's, to the form it was published in. */
+  private fromWrapper: boolean | undefined
+  /** The wrapper's whole snapshot of a form, its `mapSnapshot` of the adapter's whole view, once the wrapper is tapped. */
+  private claudeWhole: ((form: boolean) => AgentHostSnapshot) | undefined
+  constructor(private readonly on: boolean, private readonly uncounted: <T>(work: () => T) => T,
+    private readonly touched: ((layer: string, records: number) => void) | undefined) {}
 
-  /** Shadows what `host`'s activity subscription publishes, from every subscription made after this. */
+  /**
+   * Every subscription made to the adapter's thread changes from now on, which the identity wrapper makes for each form the
+   * switch asks of it, counted and shadowed against the adapter's whole activity view of the form.
+   */
+  tapAdapterChanges(adapter: StreamingAdapter): void {
+    this.tapChanges(adapter, 'adapter', 'adapter changes', form => adapter.activityView(form))
+  }
+
+  /**
+   * Every subscription made to the identity wrapper's thread changes from now on, which the switch makes for each
+   * connection, counted and shadowed against the wrapper's `mapSnapshot` of the adapter's whole view of the form.
+   */
+  tapWrapperChanges(wrapper: SottoThreadHost, adapter: StreamingAdapter): void {
+    const whole = (form: boolean): AgentHostSnapshot => (wrapper as unknown as { mapSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot }).mapSnapshot(adapter.activityView(form))
+    this.claudeWhole = whole
+    this.tapChanges(wrapper, 'identity wrapper', 'identity wrapper changes', whole, (form, deliver) => {
+      this.fromWrapper = form
+      try { deliver() } finally { this.fromWrapper = undefined }
+    })
+  }
+
+  /**
+   * Every subscription made to the provider switch's thread changes from now on, which the workspace makes (#925, step 4),
+   * counted and shadowed against the switch's activity snapshot built at the same publish, which nothing in main reads any
+   * more. Call it before the workspace is made.
+   */
+  tapSwitchChanges(native: ConfiguredProviderHost): void {
+    const whole = (): AgentHostSnapshot => (native as unknown as { aggregate(): AgentHostSnapshot }).aggregate()
+    if (this.on) this.checked['provider switch slot'] = 0
+    this.tapChanges(native, 'provider switch', 'provider switch changes', () => whole(), (_form, deliver) => {
+      const from = this.fromWrapper, claude = this.claudeWhole
+      if (this.on && from !== undefined && claude) this.uncounted(() => this.checkSlot(whole(), claude(from)))
+      deliver()
+    })
+  }
+
+  /**
+   * The workspace's thread changes, which the coordinator and usage read (#925, step 5): this subscribes beside them and
+   * counts what each publication carries, leaving its own work out. Verifying, its map is checked against the workspace's
+   * activity publication from the same publish, which reaches its subscribers first; nothing in main subscribes to that
+   * publication any more, so `verifyPublication` subscribes for the shadows. Call it before anything else subscribes to
+   * the workspace's activity snapshots.
+   */
+  tapWorkspaceChanges(workspace: WorkspaceHost): void {
+    let latest: AgentHostSnapshot | undefined
+    const subscribe = workspace.subscribeActivitySnapshots.bind(workspace)
+    workspace.subscribeActivitySnapshots = listener => subscribe(snapshot => { latest = snapshot; listener(snapshot) })
+    const follow = this.follower('workspace changes', () => latest!)
+    workspace.subscribeActivityChanges(changes => this.uncounted(() => {
+      this.carried.workspace += changes.upserts.length + changes.removals.length
+      follow(changes)
+    }))
+  }
+
+  /**
+   * Verifying, subscribes to the workspace's activity publication, which nothing in main reads since #925's step 5, so the
+   * workspace builds it for the shadows of its thread changes and its publication. Call it after `tap`.
+   */
+  verifyPublication(workspace: WorkspaceHost): void {
+    if (this.on) workspace.subscribeActivitySnapshots(() => undefined)
+  }
+
+  /** Shadows what `host`'s activity subscription publishes, through the shim, from every subscription made after this. */
   tap(host: ActivityPublisher, layer: string): void {
     if (!this.on) return
     const subscribe = host.subscribeActivitySnapshots?.bind(host)
@@ -156,16 +253,69 @@ class ShadowThreadMaps {
     host.subscribeActivitySnapshots = (listener, options) => subscribe(snapshot => { see(snapshot); listener(snapshot) }, options)
   }
 
-  /** Shadows the workspace's state after each accept, with the host stamp. */
+  /**
+   * Shadows the workspace's state after each accept, with the host stamp: one taking in a whole snapshot, and one taking in
+   * only the threads a change named (#925). The state keeps its snapshot across the latter, so the shadow is handed its own.
+   */
   tapAccept(workspace: WorkspaceHost): void {
     if (!this.on) return
-    const inside = workspace as unknown as { accept(snapshot: AgentHostSnapshot): void; state: { snapshot: AgentHostSnapshot } }
-    if (typeof inside.accept !== 'function') throw new Error('WorkspaceHost.accept is gone; shadow the workspace\'s accepted state another way.')
-    const accept = inside.accept.bind(workspace), see = this.shadow('workspace accept')
-    inside.accept = snapshot => { accept(snapshot); see(inside.state.snapshot) }
+    const inside = workspace as unknown as { accept(snapshot: AgentHostSnapshot, fromPublication?: boolean): void; acceptThreads(changes: AgentHostChanges): unknown
+      state: { snapshot: AgentHostSnapshot } }
+    if (typeof inside.accept !== 'function' || typeof inside.acceptThreads !== 'function') throw new Error('WorkspaceHost.accept or acceptThreads is gone; shadow the workspace\'s accepted state another way.')
+    const accept = inside.accept.bind(workspace), acceptThreads = inside.acceptThreads.bind(workspace), see = this.shadow('workspace accept')
+    inside.accept = (snapshot, fromPublication) => { accept(snapshot, fromPublication); see({ ...inside.state.snapshot }) }
+    inside.acceptThreads = changes => { const result = acceptThreads(changes); see({ ...inside.state.snapshot }); return result }
   }
 
   report(): ThreadChangesReport { return { checked: { ...this.checked }, drift: [...this.drift] } }
+  reset(): void { for (const layer of Object.keys(this.carried) as ChangesLayer[]) this.carried[layer] = 0 }
+
+  private tapChanges(host: ChangesPublisher, layer: ChangesLayer, shadowed: string, wholeOf: (form: boolean) => AgentHostSnapshot,
+    around?: (form: boolean, deliver: () => void) => void): void {
+    const subscribe = host.subscribeActivityChanges?.bind(host)
+    if (!subscribe) throw new Error(`The ${layer} publishes no thread changes to shadow.`)
+    host.subscribeActivityChanges = (listener, options) => {
+      const form = options?.historyFromEvents === true
+      const follow = this.follower(shadowed, () => wholeOf(form))
+      return subscribe(changes => {
+        const records = changes.upserts.length + changes.removals.length
+        this.carried[layer] += records
+        if (records) this.touched?.(layer, records)
+        this.uncounted(() => follow(changes))
+        if (around) around(form, () => listener(changes)); else listener(changes)
+      }, options)
+    }
+  }
+
+  /**
+   * A thread map fed one subscriber's publications, checked against `wholeOf` after each when verifying. It never asks for
+   * a resync: it shares its subscription with main's subscriber, and a publication it could not apply is a drift.
+   */
+  private follower(layer: string, wholeOf: () => AgentHostSnapshot): (changes: AgentHostChanges) => void {
+    if (this.on) this.checked[layer] ??= 0
+    const map = new ThreadMap({ wholeOf, verify: this.on })
+    return changes => {
+      try {
+        const applied = map.apply(changes)
+        if (applied === 'applied') { if (this.on) this.checked[layer]!++ }
+        else this.drift.push(`${layer}: a publication was ${applied === 'resync' ? 'missed' : 'out of order'}`)
+      } catch (error) { this.drift.push(`${layer}: ${error instanceof Error ? error.message : String(error)}`) }
+    }
+  }
+
+  /** The switch's Claude threads against the wrapper's whole snapshot, each named as the switch's `aggregate` named it before #925. */
+  private checkSlot(switched: AgentHostSnapshot, wrapped: AgentHostSnapshot): void {
+    this.checked['provider switch slot']!++
+    const model = (id: string): string => publicProviderEntityId('claude', 'model', id)
+    const expected = wrapped.threads.map(thread => ({ ...thread, providerId: 'claude' as const, projectId: thread.projectId, modelId: thread.modelId ? model(thread.modelId) : '',
+      ...(thread.usage ? { usage: { ...thread.usage, modelId: thread.usage.modelId ? model(thread.usage.modelId) : undefined } } : {}) }))
+    const actual = switched.threads.filter(thread => thread.providerId === 'claude')
+    if (actual.length !== expected.length) { this.drift.push(`provider switch slot: ${actual.length} Claude threads where the wrapper published ${expected.length}`); return }
+    for (let index = 0; index < expected.length; index++) {
+      if (actual[index]!.id !== expected[index]!.id) { this.drift.push(`provider switch slot: thread "${actual[index]!.id}" is where the wrapper has "${expected[index]!.id}"`); return }
+      if (!isDeepStrictEqual(actual[index], expected[index])) { this.drift.push(`provider switch slot: thread "${actual[index]!.id}" is unlike the wrapper's`); return }
+    }
+  }
 
   private shadow(layer: string): (snapshot: AgentHostSnapshot) => void {
     this.checked[layer] = 0
@@ -222,22 +372,24 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   for (let index = state.threads.length; index < counts.threads; index++) state.threads.push(thread(`idle-${index}`, index % 10 === 0 ? records(`idle-${index}`, 40) : undefined))
   for (const project of state.projects) await mkdir(project.path, { recursive: true })
   const adapter = new SendingAdapter(state)
-  const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()))
-  shadows.tap(adapter, 'adapter')
+  const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()), options.touched)
+  shadows.tapAdapterChanges(adapter)
   const claude = new SottoThreadHost('claude', adapter, registry)
-  shadows.tap(claude, 'identity wrapper')
+  shadows.tapWrapperChanges(claude, adapter)
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude, codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
       opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek') } })
-  shadows.tap(native, 'provider switch')
+  shadows.tapSwitchChanges(native)
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
   shadows.tapAccept(workspace)
+  shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')
+  shadows.verifyPublication(workspace)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
-  // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
+  // Usage is an Owl feature: it reads every one of the workspace's thread changes, beside the coordinator (runtime.ts).
   const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
   usage?.start()
   // Next prompts are an Owl feature (ADR-0132): they hear each thread start and finish from the coordinator's own pass, as
@@ -247,6 +399,18 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     ...(usage ? { usage } : {}), ...(nextPrompts ? { nextPrompts } : {}) })
   await control.start()
   await control.command({ type: 'connect' })
+  // Every local thread was made here: the workspace keeps each one's started creation, oldest first, so the threads that
+  // stream, the newest, come last. Each read of a creation's thread is told to `creationRead`.
+  {
+    const kept = workspace as unknown as { state: { creations: { threadId: string; projectId: string; commandId: string; phase: string }[]; snapshot: AgentHostSnapshot } }
+    const made = [...kept.state.snapshot.threads].reverse()
+    kept.state.creations = made.map((item, index) => {
+      const creation = { projectId: item.projectId, commandId: `00000000-0000-4000-9000-${index.toString(16).padStart(12, '0')}`, phase: 'started' } as { threadId: string; projectId: string; commandId: string; phase: string }
+      const threadId = item.id
+      Object.defineProperty(creation, 'threadId', { enumerable: true, get: () => { options.creationRead?.(); return threadId } })
+      return creation
+    })
+  }
   const localHostId = control.hostId()!
   const idOf = (session: string): string => registry.bySession('claude', session)!.threadId
   const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
@@ -388,16 +552,21 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       const session = adapter.state.threads.find(item => item.id === openSession)!
       say(session.id, `reply-${revision}`, 'assistant', 'Synthetic reply')
       session.status = 'idle'
+      adapter.mark(session.id)
       adapter.publish(false)
     },
   }
   return {
     track, counts, adapter, control, router, requestDrafts, watcher, streamSessions, openThread, question, actions,
     broadcasts: () => broadcasts,
+    adapterChangeRecords: () => shadows.carried.adapter,
+    wrapperChangeRecords: () => shadows.carried['identity wrapper'],
+    switchChangeRecords: () => shadows.carried['provider switch'],
+    workspaceChangeRecords: () => shadows.carried.workspace,
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
-    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
-    threadChanges: () => shadows.report(),
+    resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0; shadows.reset() },
+    threadChanges: () => { const report = shadows.report(); return { ...report, checked: { ...report.checked, 'coordinator changes': control.verifiedChanges } } },
     stop,
   }
 }
