@@ -1,4 +1,4 @@
-import React, { useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AGENT_DISMISS_FAILURES_MAX, type AgentState } from '../../../shared/agents'
 import { requestDraftQuestions } from '../../../shared/requestDrafts'
 import { Button } from '../components/Button'
@@ -18,12 +18,9 @@ type Failures = ReturnType<typeof unseenFailures>
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 
-/** The next control to take the focus once `from` leaves with the entry it settled: the following queue button, else search. */
-function focusAfter(root: HTMLElement | null, from: HTMLElement): void {
-  const buttons = root ? [...root.querySelectorAll<HTMLElement>('button')] : []
-  const next = buttons[buttons.indexOf(from) + 1]
-    ?? root?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input')
-  if (next) requestAnimationFrame(() => next.focus())
+/** The search field above the queue: where the focus lands when the entry that held it leaves with nowhere next. */
+function searchField(root: HTMLElement | null): HTMLInputElement | null | undefined {
+  return root?.closest('.thread-nav')?.querySelector<HTMLInputElement>('.threads-search input')
 }
 
 /**
@@ -45,18 +42,38 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
   const toggle = useRef<HTMLButtonElement>(null)
   const headingId = useId()
   const watcherOn = useWatcherEnabled()
-  if (queue.entries.length === 0) return null
+  /** The entry holding the focus and where it stood, so its leaving can hand the focus to the entry after it. */
+  const focusedEntry = useRef<{ readonly id: string; readonly index: number } | undefined>(undefined)
   const shown = expanded ? queue.entries : queue.shown
+  const shownIds = queue.shown.map(entry => entry.row.thread.id).join('\0') + (expanded ? '\0expanded' : '')
+  // An entry leaves with the focus in it — settled here, answered in its pane, answered on another client: the
+  // entry that took its place takes the focus, or the foot's toggle, or the search field (ADR-0135). A focus the
+  // user has since moved out of the card is left where it is.
+  useLayoutEffect(() => {
+    const focused = focusedEntry.current
+    if (!focused || shown.some(entry => entry.row.thread.id === focused.id)) return
+    focusedEntry.current = undefined
+    const active = document.activeElement
+    if (active !== null && active !== document.body && !(card.current?.contains(active))) return
+    const next = shown[Math.min(focused.index, shown.length - 1)]
+    const control = next ? [...(card.current?.querySelectorAll<HTMLElement>('[data-entry-id]') ?? [])]
+      .find(item => item.dataset.entryId === next.row.thread.id)?.querySelector<HTMLElement>('button') : undefined
+    ;(control ?? toggle.current ?? searchField(card.current))?.focus()
+    // Entries coming and going are the cue; `shown` itself is re-read on each such change.
+  }, [shownIds])
+  if (queue.entries.length === 0) return null
   const open = (entry: NeedsYouEntry, beside: boolean): void => {
     if (beside && panes.currentThreadId !== null && panes.currentThreadId !== entry.row.thread.id) panes.onOpenBeside(entry.row.thread.id)
     else onOpen(entry.row.thread.id)
   }
-  const dismiss = (named: Failures, from: HTMLElement): void => {
+  const dismiss = (named: Failures, together = false): void => {
     const ids = named.map(item => item.threadId)
     if (ids.some(id => dismissing.has(id))) return
+    // The foot's own button goes with the failures it dismisses; the search field is found while it still stands.
+    const search = together ? searchField(card.current) : undefined
     setDismissing(new Set([...dismissing, ...ids]))
     void command({ type: 'dismiss-failures', failures: named.slice(0, AGENT_DISMISS_FAILURES_MAX) }).then(result => {
-      if (result !== null && !result.error) focusAfter(card.current, from)
+      if (together && result !== null && !result.error) requestAnimationFrame(() => search?.focus())
     }).finally(() => setDismissing(current => new Set([...current].filter(id => !ids.includes(id)))))
   }
   const overflowKinds = [
@@ -64,7 +81,10 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
     queue.overflow.question ? `${queue.overflow.question} answer${queue.overflow.question === 1 ? '' : 's'}` : '',
     queue.overflow.failed ? `${queue.overflow.failed} failed` : '',
   ].filter(Boolean).join(', ')
-  return <section ref={card} className="needs-you" aria-labelledby={headingId} onKeyDown={event => {
+  return <section ref={card} className="needs-you" aria-labelledby={headingId} onFocusCapture={event => {
+    const item = (event.target as HTMLElement).closest<HTMLElement>('[data-entry-id]')
+    if (item?.dataset.entryId) focusedEntry.current = { id: item.dataset.entryId, index: [...item.parentElement!.children].indexOf(item) }
+  }} onKeyDown={event => {
     if (expanded && event.key === 'Escape') { event.preventDefault(); setExpanded(false); toggle.current?.focus() }
   }}>
     <div className="needs-you__head">
@@ -83,7 +103,7 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
         {expanded ? 'Show fewer' : 'Show all'}</Button> : null}
       {failures.length >= 2 ? <Button variant="ghost" aria-label={`Dismiss Needs attention on ${plural(failures.length, 'thread')}`}
         aria-disabled={failures.some(item => dismissing.has(item.threadId)) || undefined}
-        onClick={event => dismiss(failures, event.currentTarget)}>Dismiss {failures.length} failed</Button> : null}
+        onClick={() => dismiss(failures, true)}>Dismiss {failures.length} failed</Button> : null}
     </div> : null}
   </section>
 }
@@ -96,7 +116,7 @@ type EntryProps = {
   readonly dismissing: boolean
   readonly panes: PaneActions
   readonly onOpen: (entry: NeedsYouEntry, beside: boolean) => void
-  readonly onDismiss: (named: Failures, from: HTMLElement) => void
+  readonly onDismiss: (named: Failures) => void
 }
 
 function NeedsYouEntryView({ entry, state, command, watcherOn, dismissing, panes, onOpen, onDismiss }: EntryProps): ReactNode {
@@ -105,7 +125,7 @@ function NeedsYouEntryView({ entry, state, command, watcherOn, dismissing, panes
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const settled = row.settledBy === 'thread' || row.settledBy === 'project'
   const failureId = row.thread.failureId ?? ''
-  return <li className="needs-you__entry" data-kind={entry.kind}>
+  return <li className="needs-you__entry" data-kind={entry.kind} data-entry-id={row.thread.id}>
     <div className="needs-you__top">
       <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
       <button type="button" className="needs-you__title tt-focusable" aria-label={`Open ${title}`} title={title}
@@ -129,7 +149,7 @@ function NeedsYouEntryView({ entry, state, command, watcherOn, dismissing, panes
         {entry.kind === 'failed' && entry.action === 'dismiss' ? <p className="needs-you__ask">{row.thread.failureReason ?? 'The last turn failed.'}</p> : null}
         <div className="needs-you__actions">
           {entry.action === 'dismiss' ? <Button variant="secondary" aria-label={`Dismiss Needs attention on ${title}`}
-            aria-disabled={dismissing || undefined} onClick={event => { if (!dismissing) onDismiss([{ threadId: row.thread.id, failure: failureId }], event.currentTarget) }}>Dismiss</Button> : null}
+            aria-disabled={dismissing || undefined} onClick={() => { if (!dismissing) onDismiss([{ threadId: row.thread.id, failure: failureId }]) }}>Dismiss</Button> : null}
           <Button variant="secondary" aria-label={entry.action === 'dismiss' ? `Open ${title}` : `Open ${title} to answer`} onClick={() => onOpen(entry, false)}>
             {entry.action === 'dismiss' ? 'Open' : 'Open to answer'}</Button>
         </div>
@@ -167,6 +187,17 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
   const inline = entry.action === 'answer' && blocked === null && !locked && saved.save !== 'loading' && saved.save !== 'unsaved'
     && (saved.phase === 'idle' || saved.phase === 'failed') && !drafting
   const send = threadRequestSubmit(command, thread, request, watcherOn)
+  // Pressing a choice unmounts it as the answer sends; the status that replaces it takes the focus (ADR-0135),
+  // and the queue hands it on again when this entry itself leaves.
+  const pressed = useRef(false)
+  const statusBox = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (pressed.current && (saved.phase !== 'idle' || uncertain)) statusBox.current?.focus()
+  }, [saved.phase, uncertain])
+  const submit = (choice: string | null, answer: Parameters<typeof send>[0]): void => {
+    pressed.current = true
+    void store.submit(entryOwner, request.id, choice, () => send(answer))
+  }
   const check = (): void => {
     if (checking) return
     setChecking(true)
@@ -193,12 +224,12 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
       {request.permissionChoices
         ? request.permissionChoices.map(choice => <Button key={choice.id} variant={choice.kind === 'allow-once' ? 'primary' : 'secondary'}
           aria-label={`${choice.label} in ${title}`} aria-pressed={saved.choice === choice.id || undefined}
-          onClick={() => { void store.submit(entryOwner, request.id, choice.id, () => send(permissionAnswer(choice))) }}>{choice.label}</Button>)
+          onClick={() => submit(choice.id, permissionAnswer(choice))}>{choice.label}</Button>)
         : <>
           <Button variant="secondary" aria-label={`Deny in ${title}`} aria-pressed={saved.choice === 'deny' || undefined}
-            onClick={() => { void store.submit(entryOwner, request.id, 'deny', () => send(legacyPermissionAnswer(false))) }}>Deny</Button>
+            onClick={() => submit('deny', legacyPermissionAnswer(false))}>Deny</Button>
           <Button aria-label={`Allow in ${title}`} aria-pressed={saved.choice === 'allow' || undefined}
-            onClick={() => { void store.submit(entryOwner, request.id, 'allow', () => send(legacyPermissionAnswer(true))) }}>Allow</Button>
+            onClick={() => submit('allow', legacyPermissionAnswer(true))}>Allow</Button>
         </>}
     </div> : null}
     {inline && request.kind === 'question' && questions[0] ? <div className="needs-you__actions">
@@ -207,14 +238,14 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
           const selection: QuestionSelection = { optionIds: [option.id], other: false, text: '' }
           store.select(entryOwner, request.id, questions[0]!.id, selection)
           const answer = structuredAnswer(questions, { [questions[0]!.id]: selection })
-          if (answer) void store.submit(entryOwner, request.id, null, () => send(answer))
+          if (answer) submit(null, answer)
         }}>{option.label}</Button>)}
       {!isRequired(questions[0]) ? <Button variant="ghost" aria-label={`Skip question in ${title}`}
-        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) void store.submit(entryOwner, request.id, null, () => send(answer)) }}>Skip question</Button> : null}
+        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) submit(null, answer) }}>Skip question</Button> : null}
     </div> : null}
     {!inline && !locked ? <div className="needs-you__actions">{openButton}</div> : null}
     {hasNoSendableChoice(request) ? <p className="needs-you__note">Sotto has no choice it can send for this request. Answer it in the provider’s app.</p> : null}
-    {status}
-    {saved.saveError && !uncertain ? <p className="needs-you__error" role="alert">{saved.saveError}</p> : null}
+    {status || (saved.saveError && !uncertain) ? <div ref={statusBox} tabIndex={-1} className="needs-you__statusbox">{status}
+      {saved.saveError && !uncertain ? <p className="needs-you__error" role="alert">{saved.saveError}</p> : null}</div> : null}
   </>
 }

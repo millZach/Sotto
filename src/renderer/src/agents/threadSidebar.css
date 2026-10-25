@@ -69,6 +69,8 @@
 .needs-you__note, .needs-you__error, .needs-you__hold { margin: 4px 0 2px 17px; font-size: 12px; line-height: 1.4; }
 .needs-you__note { color: var(--tt-text-muted); }
 .needs-you__error { color: var(--threads-warning-text); }
+.needs-you__statusbox { border-radius: 6px; }
+.needs-you__statusbox:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 1px; }
 .needs-you__hold p { margin: 0 0 6px; color: var(--tt-text-2); }
 .needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 2px solid var(--tt-card-inset); }
 .needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: 11.5px; }

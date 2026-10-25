@@ -28,10 +28,11 @@ const edit = (state: AgentState, id: string, change: (thread: AgentThread) => Ag
 
 function mount(state: AgentState, command = vi.fn<(request: AgentCommand) => Promise<AgentState>>(async () => state)) {
   const onOpen = vi.fn()
-  const view = render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW)}
+  const element = (next: AgentState) => <ThreadSidebar state={next} organization={organizeWorkspace(next, describeThreads(next, NOW), '', next.activeProjectId, false, NOW)}
     command={command} query="" onQuery={vi.fn()} onOpen={onOpen} onNewThread={vi.fn()}
-    currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
-  return { ...view, command, onOpen }
+    currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+  const view = render(element(state))
+  return { ...view, command, onOpen, again: (next: AgentState) => view.rerender(element(next)) }
 }
 const queue = (): HTMLElement => document.querySelector('.needs-you')!
 
@@ -117,6 +118,33 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(5)
     await act(async () => { fireEvent.keyDown(queue(), { key: 'Escape' }) })
     expect(queue().querySelectorAll('.needs-you__entry')).toHaveLength(3)
+  })
+
+  it('hands the focus to the next entry when a dismissed entry leaves', async () => {
+    owl(true)
+    let state = threadsStateFixture()
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1' }))
+    state = edit(state, 'grok-previews', thread => ({ ...thread, status: 'error', failureId: 'f2' }))
+    const { again } = mount(state)
+    const dismiss = within(queue()).getByRole('button', { name: 'Dismiss Needs attention on Streaming WAV stall' })
+    dismiss.focus()
+    await act(async () => { fireEvent.click(dismiss) })
+    await act(async () => { again(edit(state, 'wav-stall', thread => ({ ...thread, failureSeen: true }))) })
+    expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Grok voice previews' })[0])
+  })
+
+  it('keeps the focus in an answered entry, then hands it on when the entry leaves', async () => {
+    owl(true)
+    let state = threadsStateFixture()
+    state = edit(state, 'visual-gate', thread => ({ ...thread, requests: [{ ...thread.requests[0]!, id: 'vg-focus' }] }))
+    state = edit(state, 'wav-stall', thread => ({ ...thread, failureId: 'f1' }))
+    const { again } = mount(state)
+    const allow = within(queue()).getByRole('button', { name: 'Allow in Visual gate flake' })
+    allow.focus()
+    await act(async () => { fireEvent.click(allow) })
+    expect(document.activeElement?.textContent).toContain('Answer sent.')
+    await act(async () => { again(edit(state, 'visual-gate', thread => ({ ...thread, requests: [] }))) })
+    expect(document.activeElement).toBe(within(queue()).getAllByRole('button', { name: 'Open Streaming WAV stall' })[0])
   })
 
   it('holds an unconfirmed answer instead of offering to send it again', () => {
