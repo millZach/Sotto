@@ -12,13 +12,10 @@
 .watched-badge { display: inline-grid; flex: none; place-items: center; color: var(--tt-text-muted); }
 /* In a pane header the logo and the owl sit as one pair, closer than the title's own gap. */
 .thread-workspace__title > .watched-badge { margin-left: -4px; }
-/* Under a watched thread's composer, before anything is sent, with Stop watching; and under Watcher's first composer. */
+/* Under Watcher's first composer: which model and account its first message starts it on. */
 .watched-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
 .watched-note > .watcher-owl { flex: none; }
 .watched-note > span { min-width: 0; }
-.watched-note__stop { flex: none; margin-left: 2px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2); font: inherit;
-  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
-.watched-note__stop:hover { color: var(--tt-text); text-decoration-color: currentColor; }
 
 /* ---------- Watching a thread ---------- */
 /* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.

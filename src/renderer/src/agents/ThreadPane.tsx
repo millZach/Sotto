@@ -32,7 +32,7 @@ import { ornamentPose } from './threadActivityView'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
-import { WatchedNote, WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
+import { WatchHeaderToggle, WatchToast } from '../watcher/WatchControls'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { DelegatedBy, DelegationComposerNote } from './DelegatedWork'
 import { ContinueComposerNote, ContinueNow } from './ContinueThread'
@@ -424,8 +424,6 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
           nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
       <div className="thread-pane__meta">
-        {/* Said before a send, not after: what watching means here, and Stop watching. */}
-        {ownPane ? null : <WatchedNote threadId={thread.id} title={thread.title} />}
         {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
         {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
         {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}
