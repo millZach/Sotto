@@ -121,6 +121,7 @@ export default tseslint.config(
       'artifacts/question-choices/**',
       'artifacts/composer-float/**',
       'artifacts/composer-shrink/**',
+      'artifacts/needs-you-queue/**',
       'artifacts/watcher-column/**',
       'artifacts/composer-slim-steady/**',
       'artifacts/scene-under-column/**',

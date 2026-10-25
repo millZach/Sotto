@@ -1,6 +1,9 @@
+import { i18n } from '@lingui/core'
+import { plural, t } from '@lingui/core/macro'
 import type { IMarker, Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { terminalLineStart, terminalLineText, terminalTextPosition } from './terminalBuffer'
+import { shownCount } from './toolsWords'
 
 const HIGHLIGHT_LIMIT = 1_000
 
@@ -12,31 +15,50 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   bar.className = 'terminal-search'
   bar.hidden = true
   bar.setAttribute('role', 'search')
-  bar.setAttribute('aria-label', 'Search terminal output')
   const input = document.createElement('input')
   input.type = 'text'
-  input.placeholder = 'Find'
   input.spellcheck = false
-  input.setAttribute('aria-label', 'Find in terminal')
   const count = document.createElement('output')
   count.setAttribute('aria-live', 'polite')
-  const button = (label: string, title: string, path: string): HTMLButtonElement => {
+  const button = (path: string): HTMLButtonElement => {
     const control = document.createElement('button')
     control.type = 'button'
-    control.setAttribute('aria-label', label)
-    control.title = title
     control.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}" /></svg>`
     return control
   }
-  const previous = button('Previous match', 'Previous match (Shift+Enter)', 'm18 15-6-6-6 6')
-  const next = button('Next match', 'Next match (Enter)', 'm6 9 6 6 6-6')
-  const close = button('Close search', 'Close search (Escape)', 'M18 6 6 18M6 6l12 12')
+  const previous = button('m18 15-6-6-6 6')
+  const next = button('m6 9 6 6 6-6')
+  const close = button('M18 6 6 18M6 6l12 12')
   bar.append(input, count, previous, next, close)
-  if (onOpenLinks) {
-    const links = button('Open terminal link', 'Open terminal link', 'M15 3h6v6M10 14 21 3M21 14v7H3V3h7')
+  const links = onOpenLinks ? button('M15 3h6v6M10 14 21 3M21 14v7H3V3h7') : null
+  if (links && onOpenLinks) {
     links.addEventListener('click', onOpenLinks)
     bar.insertBefore(links, close)
   }
+  let results: { readonly resultIndex: number; readonly resultCount: number } | null = null
+  /** The count in the interface language. English writes it as it always has, ungrouped: "1000+", "3 of 1000". */
+  const showCount = (): void => {
+    if (!input.value || results === null) { count.textContent = ''; return }
+    const found = results.resultCount, position = shownCount(results.resultIndex + 1)
+    const total = `${shownCount(found)}${found >= HIGHLIGHT_LIMIT ? '+' : ''}`
+    count.textContent = found === 0 ? t`No matches`
+      : results.resultIndex < 0 ? plural(found, { other: `${total} matches` })
+        : t({ message: `${position} of ${total}`, comment: 'Which match of the found ones is selected, as in "3 of 12".' })
+  }
+  const label = (control: HTMLButtonElement, name: string, title: string): void => { control.setAttribute('aria-label', name); control.title = title }
+  /** The bar's words in the interface language: set again whenever the language changes, and each time the bar opens. */
+  const showWords = (): void => {
+    bar.setAttribute('aria-label', t`Search terminal output`)
+    input.placeholder = t({ message: 'Find', comment: 'Placeholder of the field that finds text in a terminal\'s output.' })
+    input.setAttribute('aria-label', t`Find in terminal`)
+    label(previous, t`Previous match`, t`Previous match (Shift+Enter)`)
+    label(next, t`Next match`, t`Next match (Enter)`)
+    label(close, t`Close search`, t`Close search (Escape)`)
+    if (links) label(links, t`Open terminal link`, t`Open terminal link`)
+    showCount()
+  }
+  showWords()
+  const languageChanges = i18n.on('change', showWords)
   let selected: { marker: IMarker; row: number; offset: number; endOffset: number; term: string; line: string } | undefined
   let rebuildHighlights = false
   const rememberSelection = (): void => {
@@ -83,8 +105,8 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
     if (terminal.getSelection().toLowerCase() !== selected.term.toLowerCase()) terminal.clearSelection()
   }
   const resultChanges = addon.onDidChangeResults(result => {
-    const total = `${result.resultCount}${result.resultCount >= HIGHLIGHT_LIMIT ? '+' : ''}`
-    count.textContent = !input.value ? '' : result.resultCount === 0 ? 'No matches' : result.resultIndex < 0 ? `${total} matches` : `${result.resultIndex + 1} of ${total}`
+    results = { resultIndex: result.resultIndex, resultCount: result.resultCount }
+    showCount()
     previous.disabled = next.disabled = result.resultCount === 0
     if (result.resultIndex >= 0) rememberSelection()
   })
@@ -105,6 +127,7 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
       rebuildHighlights = false
       addon.clearDecorations()
       terminal.clearSelection()
+      results = null
       count.textContent = ''
       previous.disabled = next.disabled = true
       return
@@ -140,13 +163,13 @@ export function terminalSearch(terminal: Terminal, element: HTMLElement, resolve
   return {
     mount(): void { element.append(bar) },
     isOpen(): boolean { return !bar.hidden },
-    open(): void { if (bar.hidden) { bar.hidden = false; onVisibilityChange?.(true); find(false, true) } input.focus(); input.select() },
+    open(): void { if (bar.hidden) { bar.hidden = false; showWords(); onVisibilityChange?.(true); find(false, true) } input.focus(); input.select() },
     close(): boolean { if (bar.hidden) return false; hide(); return true },
     // The addon caches by query, not decoration colours. Rebuild highlights when the theme or grid changes.
     refresh(): void { if (!bar.hidden) { addon.clearDecorations(); find(false, true) } },
     refreshTheme(): void {
       if (!bar.hidden && paintedDecorations !== JSON.stringify(decorationColors())) { addon.clearDecorations(); find(false, true) }
     },
-    dispose(): void { resultChanges.dispose(); resizeChanges.dispose(); selected?.marker.dispose(); bar.remove() },
+    dispose(): void { languageChanges(); resultChanges.dispose(); resizeChanges.dispose(); selected?.marker.dispose(); bar.remove() },
   }
 }

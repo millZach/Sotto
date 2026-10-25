@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { FILES_MAX_CONCURRENT_REQUESTS, type FileListing, type FilePath, type FilePreview, type FileWorkspace, type FilesBridge, type FilesError, type FilesResult } from '../../../shared/files'
 
 export type FileEntry = FileListing['entries'][number]
@@ -33,7 +34,7 @@ export type PathAction = 'copyPath' | 'reveal'
 
 const ROOT = ''
 const REQUEST_QUEUE_WAIT_MS = 10_000
-const unavailableBridge: FilesError = { code: 'unavailable', message: 'Files is not available in this window.' }
+const unavailableBridge: FilesError = { code: 'unavailable', get message() { return t`Files is not available in this window.` } }
 
 function freshThread(threadId: string, generation = 0, workspaceChanged = false): ThreadFiles {
   return {
@@ -172,10 +173,10 @@ export class FilesBrowserStore {
   async pathAction(bridge: FilesBridge | undefined, threadId: string, action: PathAction, path: string): Promise<FilesResult<FilePath>> {
     const current = this.threads.get(threadId)
     if (!bridge) return { ok: false, error: unavailableBridge }
-    if (!current?.workspace) return { ok: false, error: { code: 'workspace-unavailable', message: 'Refresh Files first.' } }
+    if (!current?.workspace) return { ok: false, error: { code: 'workspace-unavailable', message: t`Refresh Files first.` } }
     // A thread on a paired host has no reveal: its folder is on that host, so the control is not offered.
     const act = bridge[action]
-    if (!act) return { ok: false, error: { code: 'unavailable', message: 'This folder is on the host machine. Open it there.' } }
+    if (!act) return { ok: false, error: { code: 'unavailable', message: t`This folder is on the host machine. Open it there.` } }
     const { generation, workspace } = current
     const result = await this.call(() => act.call(bridge, { threadId, path, workspaceId: workspace.workspaceId }))
     this.checkWorkspace(bridge, threadId, generation, result)
@@ -290,10 +291,10 @@ export class FilesBrowserStore {
         }, REQUEST_QUEUE_WAIT_MS)
         this.waitingRequests.push(admit)
       })
-      if (!admitted) return { ok: false, error: { code: 'busy', message: 'Files is busy. Try again shortly.' } }
+      if (!admitted) return { ok: false, error: { code: 'busy', message: t`Files is busy. Try again shortly.` } }
     } else this.activeRequests++
     try { return await request() }
-    catch { return { ok: false, error: { code: 'unavailable', message: 'Files could not be reached.' } } }
+    catch { return { ok: false, error: { code: 'unavailable', message: t`Files could not be reached.` } } }
     finally {
       // Hand the completed request's slot to the oldest waiter before admitting another request.
       const next = this.waitingRequests.shift()

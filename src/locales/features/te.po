@@ -17,6 +17,12 @@ msgstr ""
 msgid "{0, plural, one {and # more} other {and # more}}"
 msgstr ""
 
+#. placeholder {0}: model.own.model
+#. placeholder {1}: model.serverName
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{0} on {1}"
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{calm}, nothing wrong. Show every machine"
 msgstr ""
@@ -55,6 +61,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{minutes, plural, one {the last minute} other {the last # minutes}}"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another."
 msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
@@ -153,6 +163,18 @@ msgstr ""
 msgid "delegated by another thread"
 msgstr ""
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: least thinking, {time} s."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: the model’s own thinking, {time} s."
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: thinking off, {time} s."
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "load unknown"
 msgstr ""
@@ -163,6 +185,15 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "may slow down"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measure again"
+msgstr ""
+
+#. placeholder {0}: chosen.name
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measuring {0}. Sotto cleans up a built-in sample on the server, never your dictation."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -177,8 +208,17 @@ msgstr ""
 msgid "More than ten threads are working on this computer. This computer may slow down or use its battery faster. Nothing is stopped or held back."
 msgstr ""
 
+#. placeholder {0}: chosen.name
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "No setting passed the test cleanups on {0}, so Mercury 2 cleans up instead. Change the server, then measure again."
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "not connected"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Not measured yet. Measure again finds the fastest setting for this server."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
@@ -189,12 +229,24 @@ msgstr ""
 msgid "Not your default, {name}. Watcher says why in its reply."
 msgstr ""
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Nothing answered at {server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Read"
 msgstr ""
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
+msgstr ""
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "short on memory"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Sotto could not finish measuring. Nothing was changed. Measure again."
 msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
@@ -207,6 +259,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "System"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
 msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
@@ -243,6 +299,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "unknown"
+msgstr ""
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Your own servers"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx

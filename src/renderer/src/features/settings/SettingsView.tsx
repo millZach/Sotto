@@ -453,7 +453,11 @@ export function SettingsView({
   const nightFallsOn = useOwlFeature('night-falls') && watcherOn
   const creatureToggle = useOwlFeature('creature-toggle')
   const cleanupModelOn = useOwlFeature('cleanup-model')
-  const ownServersOn = useOwnServersBridge() !== undefined
+  const ownServersBridge = useOwnServersBridge()
+  const ownServersOn = ownServersBridge !== undefined
+  // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and the bridge main gives only while it runs.
+  const ownServerCleanupOn = useOwlFeature('own-server-cleanup')
+  const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const notificationsShown = useDesktopNotifications() !== undefined
   const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
@@ -677,7 +681,8 @@ export function SettingsView({
                 <div className="settings-rows">
                   <Toggle setting="ai-formatting" label={t`AI formatting`} checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description={t`Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.`} />
                   <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
-                  {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels} /> : null}
+                  {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels}
+                    {...(ownCleanup ? { ownServers: ownServersBridge, ownCleanup } : {})} /> : null}
                   <div className="settings-input-action">
                     <Field setting="personal-dictionary" label={t`Personal dictionary`} description={llmDictionaryDraft.value.length >= 4000
                       ? t`One word or name per line, so AI cleanup spells them your way. 4,000 characters maximum.`

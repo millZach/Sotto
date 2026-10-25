@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import { EMPTY_SUBAGENT_SUMMARY, SUBAGENT_PAGE_SIZE, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentsBridge } from '../../../shared/subagents'
 
 export interface ThreadSubagents {
@@ -98,7 +99,7 @@ export class SubagentsStore {
       this.publish(threadId, { rows: kept.rows, resetVersion: latest.resetVersion, revision: Math.max(page.revision, latest.revision),
         summary: latest.revision > page.revision ? latest.summary : page.summary, before: kept.before ?? page.before, loading: false, error: null })
     } catch (error) {
-      if (generation === this.generation) this.publish(threadId, { ...this.thread(threadId), loading: false, error: plainRefusal(error) ?? 'Could not load agents. Saved work is unchanged. Try again.' })
+      if (generation === this.generation) this.publish(threadId, { ...this.thread(threadId), loading: false, error: plainRefusal(error) ?? t`Could not load agents. Saved work is unchanged. Try again.` })
     }
   }
 
