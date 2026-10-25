@@ -37,7 +37,6 @@
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-.watch-toggle[aria-pressed='true'] > .watcher-owl { color: var(--tt-accent-text); }
 @container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
@@ -580,3 +579,15 @@
 :root[data-room-transition]::view-transition-new(night-falls-band) { animation: none; }
 :root[data-room-transition] :is(.thread-nav__foot, .watcher-dock__pill) .thread-nav__seg button[data-room='watcher'] { view-transition-name: room-owl; }
 :root[data-room-transition]::view-transition-group(room-owl) { animation-duration: var(--room-owl-ms, var(--room-transition-ms)); animation-delay: var(--room-owl-delay, 0ms); animation-timing-function: linear; animation-fill-mode: both; }
+
+/* The owl's eye holes are lit only on a pressed toggle: there they glow in the theme's accent, with pupils in the colour
+   that reads on the accent, and the owl takes the text colour so the eyes stand out. The glow pulses only where motion
+   is allowed, by the system and by Sotto's own Reduce motion. */
+.watcher-owl__eyes { fill: none; }
+[aria-pressed='true'] > .watcher-owl { color: var(--tt-text); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { fill: var(--tt-accent); filter: drop-shadow(0 0 1.5px var(--tt-accent)); }
+[aria-pressed='true'] > .watcher-owl .watcher-owl__pupil { fill: var(--tt-on-accent); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) [aria-pressed='true'] > .watcher-owl .watcher-owl__eyes { animation: watch-eyes-glow 2.4s ease-in-out infinite; }
+}
+@keyframes watch-eyes-glow { 50% { opacity: .7; } }
