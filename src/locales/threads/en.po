@@ -711,6 +711,10 @@ msgstr "This host is disconnected. Connect again before attaching files. Nothing
 msgid "This model does not read images. Choose a model with image support, or remove {name}."
 msgstr "This model does not read images. Choose a model with image support, or remove {name}."
 
+#: src/renderer/src/agents/delegationWords.ts
+msgid "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
+msgstr "This thread cannot delegate. Only Claude Code, Codex, Grok Build and Muse threads can, outside Watcher, host setup and provider jobs, on this computer or on a machine whose Sotto offers it. {nothing}"
+
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 msgstr "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
