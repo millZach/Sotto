@@ -1817,6 +1817,28 @@ for (const where of ['paired', 'here'] as const) {
   })
 }
 
+it('lets go of a moved branch once reconciling finds the start failed with no thread, after its answer was lost (#1033)', async () => {
+  const f = await fromBranch()
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/sotto'])).stdout.trim()
+  // The branch has arrived on the paired machine. Its start there fails without making a thread, as when the ref is
+  // missing as the worktree is made, and the answer never reaches this computer.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (request, ...rest) => {
+    const [ref, commit] = (await refs()).split(' ')
+    await git('git', ['-C', f.project.path, 'update-ref', '-d', ref!])
+    const answer = await control(request, ...rest)
+    expect(answer).toMatchObject({ status: 'refused', receipt: { deliveryState: 'failed' } })
+    await git('git', ['-C', f.project.path, 'update-ref', ref!, commit!])
+    throw new Error('synthetic-lost-answer')
+  })
+  const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  expect(started).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  expect(await refs()).not.toBe('')
+  // Reconciling reads the failed receipt and a host with no such thread: the branch is let go.
+  await expect.poll(refs, { timeout: 30_000 }).toBe('')
+  vi.restoreAllMocks()
+}, 60_000)
+
 it('lets go of a moved branch when the paired machine answers its start with a definite failure and no thread (#1033)', async () => {
   const f = await fromBranch()
   // The branch has arrived on the paired machine; its answer is a failed receipt for this very start, and it made no thread.
