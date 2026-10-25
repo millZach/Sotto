@@ -1,5 +1,7 @@
 import React, { useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 
 import { findSettings, type SettingEntry } from './settingsPages'
 
@@ -14,16 +16,17 @@ export function SettingsFindField({ query, onQueryChange, onOpenFirst, onEnterRe
   readonly onEnterResults: () => void
   readonly inputRef: React.RefObject<HTMLInputElement | null>
 }): ReactNode {
+  const { t } = useLingui()
   return <div className="threads-search settings-find">
     <Search size={15} strokeWidth={1.8} aria-hidden="true" />
-    <input ref={inputRef} type="search" className="tt-input tt-focusable" placeholder="Find a setting" aria-label="Find a setting"
+    <input ref={inputRef} type="search" className="tt-input tt-focusable" placeholder={t`Find a setting`} aria-label={t`Find a setting`}
       value={query} onChange={event => onQueryChange(event.currentTarget.value)} autoComplete="off" spellCheck={false}
       onKeyDown={event => {
         if (event.key === 'ArrowDown' && query.trim()) { event.preventDefault(); onEnterResults() }
         else if (event.key === 'Enter' && query.trim()) { event.preventDefault(); onOpenFirst() }
         else if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); onQueryChange('') }
       }} />
-    {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label="Clear Find a setting" onClick={() => { onQueryChange(''); inputRef.current?.focus() }}><X size={14} aria-hidden="true" /></button> : null}
+    {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear Find a setting`} onClick={() => { onQueryChange(''); inputRef.current?.focus() }}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }
 
@@ -37,8 +40,11 @@ export function SettingsFindResults({ query, index, pageOf, onOpen, onLeave, lis
   readonly onLeave: (clear: boolean) => void
   readonly listRef: React.RefObject<HTMLUListElement | null>
 }): ReactNode {
+  const { t } = useLingui()
   const statusId = useId()
   const found = findSettings(index, query)
+  const search = query.trim()
+  const count = found.length
   const buttons = useRef<HTMLButtonElement[]>([])
   const move = (event: KeyboardEvent<HTMLButtonElement>, at: number): void => {
     let next: number
@@ -52,10 +58,10 @@ export function SettingsFindResults({ query, index, pageOf, onOpen, onLeave, lis
     buttons.current[next]?.focus()
   }
   return <div className="settings-find__results">
-    <p className="tt-visually-hidden" id={statusId} role="status">{found.length === 0 ? '' : `${found.length} ${found.length === 1 ? 'setting' : 'settings'} found`}</p>
+    <p className="tt-visually-hidden tt-paragraph" id={statusId} role="status">{found.length === 0 ? '' : plural(count, { one: '# setting found', other: '# settings found' })}</p>
     {found.length === 0
-      ? <p className="settings-find__empty">No setting matches “{query.trim()}”.</p>
-      : <ul ref={listRef} aria-label="Settings found">{found.map((entry, at) => <li key={`${entry.section}:${entry.label}`}>
+      ? <p className="settings-find__empty tt-paragraph">{t`No setting matches “${search}”.`}</p>
+      : <ul ref={listRef} aria-label={t`Settings found`}>{found.map((entry, at) => <li key={`${entry.section}:${entry.label}`}>
         <button type="button" className="tt-focusable" ref={element => { if (element) buttons.current[at] = element }}
           onClick={() => onOpen(entry)} onKeyDown={event => move(event, at)}>
           <span>{entry.label}</span><small>{pageOf(entry)}</small>

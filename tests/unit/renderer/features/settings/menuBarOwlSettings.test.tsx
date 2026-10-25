@@ -3,6 +3,8 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { saying } from '../../../../fixtures/renderer/laterWords'
+
 import { AppearanceSettings } from '../../../../../src/renderer/src/features/settings/AppearanceSettings'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../../../src/shared/settings'
 import type { SottoPlatform } from '../../../../../src/shared/platform'
@@ -55,8 +57,8 @@ describe('MenuBarOwlSettings', () => {
   it('saves a body or eye choice with its own text', async () => {
     const { onSave, user } = setup()
     await user.click(screen.getByRole('button', { name: "Use Light as the owl's body color" }))
-    expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlBody: 'light' }, 'Owl body saved.')
+    expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlBody: 'light' }, saying('Owl body saved.'))
     await user.click(screen.getByRole('button', { name: "Use Ice blue as the owl's eye color" }))
-    expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlEyes: 'ice' }, 'Owl eyes saved.')
+    expect(onSave).toHaveBeenLastCalledWith({ menuBarOwlEyes: 'ice' }, saying('Owl eyes saved.'))
   })
 })

@@ -380,7 +380,7 @@ it('stops a server with its whole process tree, so a tool it started does not ou
 
 it.each([
   ['stable, with Muse held', undefined, 'Choose a Codex, Claude Code or Grok Build model for Watcher.'],
-  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build or Muse model for Watcher.'],
+  ['Owl, with nothing held', new Set<ProviderId>(), 'Choose a Codex, Claude Code, Grok Build, Muse or Cursor model for Watcher.'],
 ] as const)('refuses Watcher in words before any OpenCode process starts, naming Watcher’s providers on %s', async (_run, heldProviders, choose) => {
   const f = await opencodeFixture(undefined, undefined, {}, heldProviders ? { heldProviders } : {})
   try {

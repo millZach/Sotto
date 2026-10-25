@@ -153,6 +153,10 @@ describe('branch toolbar logic', () => {
     expect(chordMatches({ key: 'G', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+g', 'win32')).toBe(true)
     expect(chordMatches({ key: 'G', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+g', 'darwin')).toBe(false)
     expect(chordMatches({ key: 'g', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false }, 'mod+shift+g', 'win32')).toBe(false)
+    // Shift spells a digit as its symbol and Option a letter as another character; the physical key still matches.
+    expect(chordMatches({ key: '!', code: 'Digit1', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+1', 'win32')).toBe(true)
+    expect(chordMatches({ key: 'å', code: 'KeyA', ctrlKey: false, shiftKey: false, altKey: true, metaKey: true }, 'mod+alt+a', 'darwin')).toBe(true)
+    expect(chordMatches({ key: '!', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false }, 'mod+shift+1', 'win32')).toBe(false)
   })
 })
 

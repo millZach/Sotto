@@ -33,15 +33,18 @@ const digest = (index: number): string => index.toString(16).padStart(64, '0')
 /**
  * Watcher's past work, added to `record`: `requests` requests, each with two threads that took part, one still
  * participating and one relinquished, and `operations` starts and sends to them, every one long answered. `targets` are
- * the threads that took part, round robin; a thread that streams or is typed in should not be one. The requests are the
- * current Watcher's, or `watcher`'s when the record has none.
+ * the threads that took part, round robin; a thread that streams or is typed in should not be one. With `letGo`, the
+ * thread each request relinquished is one of those in turn instead, which may stream: Watcher let it go, so nothing it
+ * does reaches Watcher, and its row in the room carries that history (#1450). The requests are the current Watcher's, or
+ * `watcher`'s when the record has none.
  */
 export function addWatcherHistory(record: WatcherRecord, targets: readonly WatcherThreadTarget[], counts: Pick<OwnerScaleCounts, 'requests' | 'operations'>,
-  watcher: WatcherThreadTarget | undefined = record.current?.target): void {
+  watcher: WatcherThreadTarget | undefined = record.current?.target, letGo: readonly WatcherThreadTarget[] = []): void {
   if (!watcher) throw new Error('Name the Watcher whose history this is.')
   const requests: WatcherRequest[] = Array.from({ length: counts.requests }, (_, index) => {
     const id = randomUUID()
-    const taking = [targets[(index * 2) % targets.length]!, targets[(index * 2 + 1) % targets.length]!]
+    // The thread each request let go is one of `letGo` in turn, when there are any, so the record is the same size.
+    const taking = [targets[(index * 2) % targets.length]!, letGo.length ? letGo[index % letGo.length]! : targets[(index * 2 + 1) % targets.length]!]
     return { id, watcher, rootUserMessageId: `watcher-prompt-${index}`, state: 'closed', createdAt: AT, closedAt: AT,
       participants: taking.map((target, position) => ({ target, requestId: id, startedBy: 'watcher' as const, generation: 0,
         state: position === 0 ? 'participating' as const : 'relinquished' as const, lastUserMessageId: null, promptCount: 1 })) }

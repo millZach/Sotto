@@ -27,6 +27,8 @@ final class WatcherModelTests: XCTestCase {
     private static let steerFeatures = manageFeatures + ["watcher-phone-steer"]
     private let receiptPause = ReceiptPause()
     private var suites: [String] = []
+    /// The laptop's model catalog in every shell it sends, as JSON, when a test needs Watcher's model in it.
+    private var catalog = ""
     override func tearDown() {
         for suite in suites { UserDefaults().removePersistentDomain(forName: suite) }
         suites = []
@@ -121,7 +123,8 @@ final class WatcherModelTests: XCTestCase {
     private func shell(_ page: String?, mayAnswer: Bool, asking: Bool = true) throws -> JSONValue {
         let watcher = page.map { #","watcher":\#($0)"# } ?? ""
         let requests = asking ? Self.workerRequest : ""
-        return try json(#"{"hostId":"\#(laptop)","clientCapabilities":{"mayAnswer":\#(mayAnswer)},"host":{"hostId":"\#(laptop)","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Fix login test","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(watcher)}"#)
+        let models = catalog.isEmpty ? "" : #""models":\#(catalog),"#
+        return try json(#"{"hostId":"\#(laptop)","clientCapabilities":{"mayAnswer":\#(mayAnswer)},"host":{\#(models)"hostId":"\#(laptop)","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Fix login test","providerId":"claude","status":"running","requests":[\#(requests)]}],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}\#(watcher)}"#)
     }
     private func ok(_ page: String) throws -> JSONValue { try json(#"{"status":"ok","state":\#(page)}"#) }
     /// Forge's shell, when this iPhone is paired with it too: Add Android share sheet, waiting on these requests, and with
@@ -138,7 +141,8 @@ final class WatcherModelTests: XCTestCase {
 
     /// With `forge`, this iPhone is paired with forge too, and forge's thread waits on those requests.
     @MainActor private func fixture(features: [String] = WatcherModelTests.watcherFeatures, mayAnswer: Bool = true, spec: Spec? = Spec(),
-                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:], forge forgeRequests: String? = nil) async throws -> AppModel {
+                                    alerts: FakeAlerts? = nil, switches: [String: Bool] = [:], forge forgeRequests: String? = nil,
+                                    photos: Bool = false) async throws -> AppModel {
         TestKeychain.items = [:]; HostConnection.instances = []; HostConnection.afterGreeting = nil
         HostConnection.failDetail = false; HostConnection.failConnect = false; HostConnection.holdDetail = false
         HostConnection.connectAttempts = 0
@@ -163,7 +167,20 @@ final class WatcherModelTests: XCTestCase {
         }
         // Between receipt reads the model lets other work run, as the real wait does, without waiting, unless a test holds it.
         let pause = receiptPause
-        let model = AppModel(keychain: store, receiptSleep: { _ in await pause.wait() })
+        // With `photos`, a chosen photo is prepared as it is, and staged under the next of `staged-1`, `staged-2`...
+        var staged = 0
+        if photos {
+            HostConnection.stageHandler = { image in
+                staged += 1
+                let name = String(decoding: try JSONEncoder().encode(image["name"]), as: UTF8.self)
+                return try self.json(#"{"id":"staged-\#(staged)","name":\#(name),"mimeType":"image/jpeg","sizeBytes":4,"digest":"\#(String(repeating: "d", count: 64))"}"#)
+            }
+        }
+        let model = photos
+            ? AppModel(keychain: store,
+                       preparePhoto: { _, name in PreparedPhoto(name: name + ".jpg", mimeType: "image/jpeg", base64: "/9j/AA==", byteCount: 4, dimensions: nil, thumbnail: nil) },
+                       receiptSleep: { _ in await pause.wait() }, photoLoadLimit: { try await Task.sleep(nanoseconds: 3_600_000_000_000) })
+            : AppModel(keychain: store, receiptSleep: { _ in await pause.wait() })
         if let alerts {
             let suite = "sotto-watcher-tests-" + UUID().uuidString
             suites.append(suite)
@@ -264,6 +281,9 @@ final class WatcherModelTests: XCTestCase {
         await until { model.watcherTab == WatcherTabState(working: false, needs: 0) }
         XCTAssertEqual(model.watcherTab, WatcherTabState(working: false, needs: 0), "No dot once Watcher is idle, no badge once nothing waits")
         XCTAssertEqual(model.watcherTab.spoken, "")
+        // Fix login test, which Watcher started, still works: it says so on its own row, and lights no dot for Watcher.
+        let started = try XCTUnwrap(model.watcherPage(laptop)?.watchedThreads.first { $0.target.threadId == "t" })
+        XCTAssertEqual(WatcherWords.status(started), "Working")
         // A computer that can't be reached claims neither.
         try push(Spec(ownCard: true, observedAt: "2026-10-11T09:02:00.000Z"))
         await until { model.watcherTab.needs == 1 }
@@ -637,6 +657,85 @@ final class WatcherModelTests: XCTestCase {
     }
 
     // MARK: Asking Watcher
+
+    /// Photos in Watcher's box (Zach's pick A, October 23, 2026): the + and the photos work as in a thread's reply box,
+    /// the photos go with the words or alone, and a message Watcher refuses comes back to the box whole.
+    @MainActor func testPhotosGoToWatcherWithTheWordsOrAloneAndARefusedMessageComesBackWhole() async throws {
+        catalog = #"[{"id":"m","name":"Model","provider":"Codex","ready":true,"supportsImages":true}]"#
+        let model = try await fixture(features: Self.watcherFeatures + ["attachment-staging", WatcherWire.photosFeature],
+                                      spec: Spec(workerCard: false), photos: true)
+        let box = PhotoBox.watcher(hostID: laptop)
+        XCTAssertEqual(model.photoSupport(box), .available)
+        var requests: [JSONValue] = []
+        var reply = "refuse"
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else {
+                // The page read after a lost acknowledgement: the computer has the last draft, and may still deliver it.
+                let last = requests.last?["draftId"].string ?? ""
+                return try self.ok(self.page(Spec(workerCard: false, deliveries: [last: "uncertain"])))
+            }
+            requests.append(request)
+            if reply == "lose" { throw ClientError.uncertain }
+            if reply == "refuse" {
+                return try self.json(#"{"status":"refused","code":"TARGET_CHANGED","message":"Watcher changed. Nothing new was sent.","retryable":true}"#)
+            }
+            return try self.json(#"{"status":"ok","draftId":"\#(request["draftId"].string ?? "")","state":\#(self.page(Spec(workerCard: false)))}"#)
+        }
+        model.attachPhotos(box, from: [PhotoSource(name: "Photo 1") { Data([1, 2, 3]) }])
+        await model.waitForPhotos()
+        XCTAssertEqual(model.photos(box).map(\.staged?.id), ["staged-1"])
+        XCTAssertTrue(model.photos(ThreadRef(hostID: laptop, threadID: "w")).isEmpty, "Watcher's box keeps its own photos")
+        XCTAssertTrue(model.canSendToWatcher(laptop), "A photo alone is a message")
+
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(requests[0]["text"], .string(""))
+        guard case .array(let first) = requests[0]["images"] else { return XCTFail("The message carried no photos") }
+        XCTAssertEqual(first.map { $0["id"] }, [.string("staged-1")])
+        XCTAssertEqual(model.photos(box).count, 1, "Refused, the photo goes back in the box")
+        XCTAssertNil(model.photos(box).first?.staged, "A refused message's photo is staged again before it next goes")
+        XCTAssertEqual(model.feedback, "Watcher changed. Nothing new was sent.")
+        XCTAssertFalse(model.preparingSends.contains(box.id), "The box is unlocked again")
+        XCTAssertNil(model.watcherSendingPhotos[laptop])
+
+        // Lost on its way: the message comes back whole, and sent again it is the same message, under the same draft ID.
+        reply = "lose"
+        model.drafts[box.id] = "What does this screen say?"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests[1]["text"], .string("What does this screen say?"))
+        guard case .array(let second) = requests[1]["images"] else { return XCTFail("The words went without their photo") }
+        XCTAssertEqual(second.map { $0["id"] }, [.string("staged-2")])
+        XCTAssertNotEqual(requests[1]["draftId"], requests[0]["draftId"], "Words with the photo are another message than the photo alone")
+        XCTAssertEqual(model.drafts[box.id], "What does this screen say?")
+        XCTAssertEqual(model.photos(box).map(\.staged?.id), ["staged-2"], "Unconfirmed, the photo comes back as it went")
+
+        reply = "ok"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests[2]["draftId"], requests[1]["draftId"], "The same words and photos go with the same draft ID")
+        XCTAssertEqual(requests[2]["images"], requests[1]["images"])
+        XCTAssertTrue(model.photos(box).isEmpty, "Taken, the photo leaves the box")
+        XCTAssertEqual(model.drafts[box.id], "")
+
+        // Words alone carry no photos, as before.
+        model.drafts[box.id] = "Thanks"
+        await model.sendToWatcher(laptop)
+        XCTAssertEqual(requests[3]["images"], .null)
+        model.phase(.background)
+    }
+
+    @MainActor func testAComputerThatTakesNoPhotosForWatcherKeepsTheChoicesUnavailable() async throws {
+        catalog = #"[{"id":"m","name":"Model","provider":"Codex","ready":true,"supportsImages":true}]"#
+        let model = try await fixture(features: Self.watcherFeatures + ["attachment-staging"], spec: Spec(workerCard: false), photos: true)
+        let box = PhotoBox.watcher(hostID: laptop)
+        XCTAssertEqual(model.photoSupport(box), .needsUpdate)
+        model.attachPhotos(box, from: [PhotoSource(name: "Photo 1") { Data([1, 2, 3]) }])
+        await model.waitForPhotos()
+        XCTAssertTrue(model.photos(box).isEmpty, "Nothing is added to a box that can't send it")
+        XCTAssertTrue(try connection.operations.filter { $0 == "stage-attachment" }.isEmpty)
+        model.phase(.background)
+    }
 
     @MainActor func testTheSameWordsKeepOneDraftIDAndNothingIsResentOnItsOwn() async throws {
         let model = try await fixture(spec: Spec(workerCard: false))

@@ -3,10 +3,12 @@ import { Check, ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
+import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { ProviderMark } from './ProviderMark'
+import { AddOwnServerDialog, OwnServerMenuEntry } from './OwnModelServers'
 import './threadChips.css'
 import './modelPicker.css'
 
@@ -56,13 +58,18 @@ export interface ModelSourceGroup { readonly name: string; readonly models: Agen
 /**
  * A provider's models by model source, or undefined for a provider whose models name none, whose menu stays one list.
  * OpenCode Zen comes first, since every OpenCode folder has it, then the rest in the order the provider lists them. A
- * model without a source among ones that have one goes under the provider's own name.
+ * model without a source among ones that have one goes under the provider's own name. Cursor's groups are its model
+ * makers (ADR-0128), which arrive in Cursor's order, Cursor's own Auto and Composer first, and are kept in it, models too.
  */
 export function modelSources(models: readonly AgentModel[], provider: string): ModelSourceGroup[] | undefined {
   if (!models.some(model => model.source !== undefined)) return undefined
-  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: newestModelsFirst(items) }))
+  const byMaker = makerGrouped(models)
+  return [...groupModels(models, model => model.source ?? provider)].map(([name, items]) => ({ name, models: byMaker ? items : newestModelsFirst(items) }))
     .sort((left, right) => Number(right.name === OPENCODE_ZEN_SOURCE) - Number(left.name === OPENCODE_ZEN_SOURCE))
 }
+
+/** Whether a provider's groups are model makers rather than model sources: Cursor's are (ADR-0128). */
+const makerGrouped = (models: readonly AgentModel[]): boolean => models[0]?.providerId === 'cursor'
 
 /** A model source name longer than this many characters may give way on the chip, down to a floor; a shorter one never does. */
 const LONG_SOURCE = 9
@@ -92,9 +99,11 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * model count, the one holding the chosen model in the accent colour. Choosing one shows its models under a back
  * control; typing searches every source at once, under small source headings. Escape steps back one level at a time:
  * it clears the search, then leaves the source with focus on its row, then closes the menu. The chip names the source
- * before the model, and the source gives way first in a narrow composer.
+ * before the model, and the source gives way first in a narrow composer. With `ownServers`, OpenCode's source list ends
+ * with Your own server…, which closes the menu and opens the Add a server dialog (ADR-0124); closing that hands focus
+ * back to the chip.
  */
-export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy }: {
+export function ModelPicker({ models, modelId, disabled, onChange, note, unavailable = [], continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -105,12 +114,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   readonly label?: string | undefined
   /** Opens the menu as the chip appears, where a press elsewhere asked for it. */
   readonly openOnMount?: boolean | undefined
+  /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
+  readonly ownServers?: OwnServersBridge | undefined
 }): ReactNode {
   const { t } = useLingui()
   // A long-context variant the catalog does not list (`opus[1m]`) shows as its base model's entry, by that name.
   const current = resolveModel(models, modelId)
   const currentEntryId = catalogEntry(models, modelId)?.id
   const [open, setOpen] = useState(openOnMount && !disabled)
+  const [addingServer, setAddingServer] = useState(false)
   const [provider, setProvider] = useState('')
   const [query, setQuery] = useState('')
   /** The model source whose models are showing, and whose provider it is, so another provider's tile starts on its own sources. */
@@ -126,6 +138,8 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const rail = useRef<HTMLDivElement>(null)
   const back = useRef<HTMLButtonElement>(null)
   const dialogId = useId()
+  /** Whether the press now ending began on the backdrop, outside every part of the menu. */
+  const pressedBackdrop = useRef(false)
   const groups = useMemo(() => {
     if (!open) return []
     const result = groupModels(models, model => model.provider)
@@ -135,6 +149,10 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const selectedProvider = groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
   const sources = selectedProvider?.sources
+  const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
+  // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
+  const backToMakers = t`Back to Cursor’s model makers`
+  const makerModels = (maker: string): string => t({ message: `${maker} models in Cursor`, comment: '{maker} is the company that made the models, such as Anthropic.' })
   const sourceWords = query.toLowerCase().split(/\s+/u).filter(Boolean)
   // Across every source at once, matching the source's name too, so "anthropic" finds all of Anthropic's models. Each word
   // matches on its own, so "anthropic sonnet" finds Anthropic's Sonnets though no one name holds both words side by side.
@@ -272,7 +290,11 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
     {open && <dialog ref={dialog} id={dialogId} className="model-picker__dialog" aria-label={t`Choose model`} data-rail={groups.length > 1 || undefined}
       onKeyDown={stepBack}
       onCancel={event => { event.preventDefault(); event.stopPropagation(); setOpen(false) }}
-      onClick={event => { if (event.target === event.currentTarget) setOpen(false); event.stopPropagation() }}>
+      // A click outside closes the menu only when its press began outside too. A press on a provider tile can change the
+      // menu's height, and a menu above its chip moves its top edge, so the release may land beyond the menu; the click
+      // then goes to the dialog itself, and closing on it would close the menu on the tile the user pressed.
+      onPointerDown={event => { pressedBackdrop.current = event.target === event.currentTarget }}
+      onClick={event => { if (event.target === event.currentTarget && pressedBackdrop.current) setOpen(false); pressedBackdrop.current = false; event.stopPropagation() }}>
       {/* One tab stop for the whole rail: the arrows move along it and the tile they land on becomes the list. */}
       {groups.length > 1 && <div ref={rail} className="model-picker__rail" role="tablist" aria-label={t`Model providers`} aria-orientation="vertical"
         onKeyDown={event => moveListboxFocus(event, rail.current)}>
@@ -307,15 +329,15 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
           </div>
           : openSource ? <>
             <div className="model-picker__step">
-              <button ref={back} type="button" aria-label={t`Back to model sources`} title={t`Back to model sources`} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{t`Model sources`}</button>
+              <button ref={back} type="button" aria-label={makers ? backToMakers : t`Back to model sources`} title={makers ? backToMakers : t`Back to model sources`} onClick={leaveSource}><ChevronLeft size={14} aria-hidden="true" />{makers ? t({ message: 'Makers', comment: 'A back control in the model menu that returns to the list of the companies that made Cursor’s models.' }) : t`Model sources`}</button>
               <b>{openSource.name}</b><span>{countModels(openSource.models.length)}</span>
             </div>
-            <div ref={list} role="listbox" aria-label={t({ message: `${openSourceName} models`, comment: '{openSourceName} is a model source, such as OpenCode Zen or Anthropic.' })} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
+            <div ref={list} role="listbox" aria-label={makers ? makerModels(openSource.name) : t({ message: `${openSourceName} models`, comment: '{openSourceName} is a model source, such as OpenCode Zen or Anthropic.' })} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
               {openSource.models.map(option)}
             </div>
           </>
           // One tab stop, as the rail is: the arrows move along it, and Up from the first row goes back to search.
-          : <div ref={list} role="group" aria-label={t({ message: `${providerName} model sources`, comment: '{providerName} is a provider\'s name.' })} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
+          : <div ref={list} role="group" aria-label={makers ? t`Cursor’s model makers` : t({ message: `${providerName} model sources`, comment: '{providerName} is a provider\'s name.' })} className="model-picker__models model-picker__sources" onKeyDown={event => moveListboxFocus(event, list.current, search.current)}>
             {sources.map(source => {
               const modelCount = countModels(source.models.length)
               const sourceName = source.name
@@ -329,9 +351,14 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
                 <span><b>{source.name}</b><small>{about}</small></span><ChevronRight size={14} aria-hidden="true" />
               </button>
             })}
+            {ownServers && selectedProvider?.providerId === 'opencode' ? <OwnServerMenuEntry onPress={() => { setOpen(false); setAddingServer(true) }} /> : null}
           </div>}
-        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note ? <p className="model-picker__note tt-paragraph">{note}</p> : null}
+        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note || selectedProvider?.providerId === 'cursor'
+          ? selectedProvider?.providerId === 'cursor'
+            ? <p className="model-picker__note tt-paragraph">{[t`Every model here runs through Cursor, on your Cursor plan.`, note].filter(Boolean).join(' ')}</p>
+            : <p className="model-picker__note tt-paragraph">{note}</p> : null}
       </div>
     </dialog>}
+    {addingServer && ownServers ? <AddOwnServerDialog bridge={ownServers} fallbackFocus={trigger} confirm onClose={() => setAddingServer(false)} /> : null}
   </div>
 }

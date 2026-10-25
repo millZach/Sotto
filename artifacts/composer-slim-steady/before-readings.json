@@ -1,0 +1,1075 @@
+{
+ "thread-slimming": [
+  {
+   "t": -1,
+   "slim": false,
+   "logHeight": 756,
+   "place": 160.08334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 11,
+   "slim": true,
+   "logHeight": 756,
+   "place": 578.75,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    527.4166870117188,
+    662.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 33,
+   "slim": true,
+   "logHeight": 756,
+   "place": 578.75,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    597.7515258789062,
+    701.7828216552734
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 57,
+   "slim": true,
+   "logHeight": 756,
+   "place": 578.9166870117188,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    689.3595581054688,
+    752.6303939819336
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 75,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    708.7382202148438,
+    763.3840560913086
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 95,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    720.1012573242188,
+    769.6950073242188
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 114,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    727.2421875,
+    773.6588554382324
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 133,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    731.88916015625,
+    776.23291015625
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 172,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    737.9174194335938,
+    779.5840873718262
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 194,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.5,
+    779.90625
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 215,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 237,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 256,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 274,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 292,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 312,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 330,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 349,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 369,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 388,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 407,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 425,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 444,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 462,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 480,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 498,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 517,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 535,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 553,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 570,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 588,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 605,
+   "slim": true,
+   "logHeight": 756,
+   "place": 579,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  }
+ ],
+ "thread-widening": [
+  {
+   "t": -1,
+   "slim": true,
+   "logHeight": 756,
+   "place": 130.08334350585938,
+   "paneScroll": 0,
+   "overhang": 0,
+   "card": [
+    738.6666870117188,
+    780.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 12,
+   "slim": false,
+   "logHeight": 850,
+   "place": -194.58334350585938,
+   "paneScroll": 157,
+   "overhang": 94.41668701171875,
+   "card": [
+    832.6666870117188,
+    874.0000228881836
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 39,
+   "slim": false,
+   "logHeight": 725,
+   "place": -194.58334350585938,
+   "paneScroll": 87,
+   "overhang": -31.05206298828125,
+   "card": [
+    761.9400634765625,
+    834.7421493530273
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 60,
+   "slim": false,
+   "logHeight": 730,
+   "place": -194.58334350585938,
+   "paneScroll": 29,
+   "overhang": -25.5728759765625,
+   "card": [
+    704.5892944335938,
+    802.9122161865234
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 77,
+   "slim": false,
+   "logHeight": 741,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -14.6978759765625,
+   "card": [
+    670.5880126953125,
+    784.035888671875
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 95,
+   "slim": false,
+   "logHeight": 748,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -8.2603759765625,
+   "card": [
+    651.3555297851562,
+    773.3659896850586
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 101,
+   "slim": false,
+   "logHeight": 751,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -5.3125,
+   "card": [
+    639.9925537109375,
+    767.0550537109375
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 115,
+   "slim": false,
+   "logHeight": 752,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -3.5103759765625,
+   "card": [
+    632.811767578125,
+    763.0721893310547
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 134,
+   "slim": false,
+   "logHeight": 754,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -1.5728759765625,
+   "card": [
+    628.181884765625,
+    760.5048065185547
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 153,
+   "slim": false,
+   "logHeight": 755,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -0.89581298828125,
+   "card": [
+    625.203857421875,
+    758.8496551513672
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 171,
+   "slim": false,
+   "logHeight": 755,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -0.73956298828125,
+   "card": [
+    623.302978515625,
+    757.7925720214844
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 189,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": -0.25,
+   "card": [
+    622.1632080078125,
+    757.1632080078125
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 213,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 229,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 245,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 262,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 278,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 293,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 309,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 326,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 343,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 360,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 377,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 394,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 410,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 426,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 442,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 459,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 476,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 492,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 509,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 527,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 543,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 559,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 576,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 593,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  },
+  {
+   "t": 611,
+   "slim": false,
+   "logHeight": 756,
+   "place": -194.58334350585938,
+   "paneScroll": 0,
+   "overhang": 0.41668701171875,
+   "card": [
+    621.4166870117188,
+    756.7500305175781
+   ],
+   "paneBottom": 800,
+   "sceneLayouts": 0,
+   "sceneInk": -1
+  }
+ ],
+ "thread-rest": {
+  "+0/8": {
+   "scrolls": true,
+   "overhang": 0.41668701171875
+  },
+  "+1/8": {
+   "scrolls": false,
+   "overhang": 0.29168701171875
+  },
+  "+2/8": {
+   "scrolls": false,
+   "overhang": 0.16668701171875
+  },
+  "+3/8": {
+   "scrolls": false,
+   "overhang": 0.04168701171875
+  },
+  "+4/8": {
+   "scrolls": false,
+   "overhang": -0.08331298828125
+  },
+  "+5/8": {
+   "scrolls": false,
+   "overhang": -0.20831298828125
+  },
+  "+6/8": {
+   "scrolls": false,
+   "overhang": -0.33331298828125
+  },
+  "+7/8": {
+   "scrolls": false,
+   "overhang": -0.45831298828125
+  }
+ }
+}

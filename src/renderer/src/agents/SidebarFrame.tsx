@@ -7,7 +7,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
-import { appRooms, roomFor, roomsLayout, useRoomSwitch } from '../components/AppShell'
+import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -16,7 +16,6 @@ import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
-import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
@@ -49,17 +48,22 @@ export function SidebarChromeProvider({ updateControl, children }: { readonly up
 
 /**
  * The sidebar's top row: the mark with the wordmark beside it, then whatever controls the column adds. It is the
- * frameless window's drag region, so every control in it is marked no-drag. On macOS the traffic lights take the
- * row's left end and the wordmark gives way to them. A Sotto Owl build shows the mark alone, as a larger tile in
- * the wordmark's place, and names itself.
+ * frameless window's drag region, so every control in it is marked no-drag. On macOS no mark sits beside the
+ * traffic lights at the row's left end; a spacer keeps the controls at its right end. A Sotto Owl build shows
+ * the mark alone, as a larger tile in the wordmark's place, and names itself.
  */
-export function SidebarTop({ children }: { readonly children?: ReactNode }): ReactNode {
+export function SidebarTop({ children, platform }: { readonly children?: ReactNode; readonly platform?: SottoPlatform | undefined }): ReactNode {
+  const app = useOptionalApp()
+  const mac = (platform ?? app?.platform) === 'darwin'
   const owl = useReleaseTrack() === 'owl'
   const { t } = useLingui()
-  return <div className="thread-nav__top">
-    {owl
+  const brand = mac
+    ? <span className="thread-nav__spacer" />
+    : owl
       ? <span className="thread-nav__brand" role="img" aria-label={releaseTrackName('owl')}><SottoMark className="thread-nav__tile" /></span>
-      : <span className="thread-nav__brand" aria-label={t`Sotto application`}><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>}
+      : <span className="thread-nav__brand" aria-label={t`Sotto application`}><SottoMark className="thread-nav__glyph" /><span className="thread-nav__wordmark">Sotto</span></span>
+  return <div className="thread-nav__top">
+    {brand}
     {children}
   </div>
 }
@@ -78,9 +82,9 @@ export function RoomSwitch({ className }: { readonly className: string }): React
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
   if (rooms.length < 2) return null
-  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label={t({ message: 'Page', comment: 'The room switch: which page of the app is open.' })} data-rooms={roomsLayout(rooms)}>
+  return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label={t({ message: 'Page', comment: 'The room switch: which page of the app is open.' })}>
     {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
-      {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}</button>)}
+      <RoomTabFace room={target} /></button>)}
   </div>
 }
 
@@ -107,6 +111,7 @@ export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
   return <div className="thread-nav__foot">
     <RoomSwitch className="thread-nav__seg" />
+    <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
     {updateControl}
   </div>
@@ -201,7 +206,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
     {sky ? <OwlSky /> : null}
-    <SidebarTop>
+    <SidebarTop platform={platform ?? app?.platform}>
       {heading === null ? null : <h1 className="tt-visually-hidden">{heading}</h1>}
       <Button variant="ghost" iconOnly aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
       <Button variant="ghost" iconOnly data-tour="sidebar-new" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} /></Button>
@@ -221,7 +226,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
     {size.collapsed ? <div className="thread-nav__rail">
-      <SottoMark className="thread-nav__glyph" />
+      {mac ? null : <SottoMark className="thread-nav__glyph" />}
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
       {foot ?? <SidebarFoot />}

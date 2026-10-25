@@ -1,7 +1,7 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 
-import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
 import { shownCount } from './interfaceWords'
@@ -36,6 +36,12 @@ export interface ActivityPlacement {
   readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
+  /**
+   * The newest turn of the messages the window holds, drawn or not, ended, and another turn is running: its own lifecycle
+   * completed, failed or stopped, and a lifecycle record of a turn that is not its own says it runs. Only then is the work
+   * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
+   */
+  readonly newestTurnEnded?: true
 }
 
 const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
@@ -171,8 +177,34 @@ export function placeActivities(
   }
   // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
   for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
-  return { after, unshown, before, leading, trailing }
+  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
 }
+
+/**
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
+ * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
+ * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
+ * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
+ * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
+ */
+function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
+  const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
+  const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
+  const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
+  const own = new Set(ids)
+  for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
+  for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
+  const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
+  let ended = false, going = false, another = false
+  for (const [turnId, status] of lifecycles) {
+    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
+    else if (status === 'running') another = true
+  }
+  return ended && !going && another
+}
+
 
 /**
  * The first reply of each turn whose message the conversation leaves out, told by the turn the reply names (`turnMessageId`).
@@ -279,6 +311,16 @@ export function liveTurnId(thread: Pick<AgentThread, 'status' | 'activities' | '
   const turns = (thread.activities ?? []).filter(record => isTurnRecord(record) && record.status === 'running').sort(bySequence)
   return turns.at(-1)?.turnId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? null
 }
+
+/**
+ * A turn's steps: every record its work draws as a row, in the order they were reported. Its lifecycle record says how
+ * the turn went rather than what it did, and a compaction is a boundary drawn across the transcript, so neither counts.
+ */
+export function turnSteps(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity[] {
+  return (thread.activities ?? []).filter(record => record.turnId === turnId && isStep(record)).sort(bySequence)
+}
+export const isStep = (record: AgentActivity): boolean => !isTurnRecord(record) && record.kind !== 'compaction'
+export const stepsLabel = (count: number): string => plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` })
 
 /** The most recent record of the live turn that is still running: the current action. */
 export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity | undefined {

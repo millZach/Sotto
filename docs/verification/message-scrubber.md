@@ -51,9 +51,37 @@ eyes shows on the right only, as Zach picked.
 The ticks and the card take every colour from theme roles in `src/renderer/src/agents/messageScrubber.css`, which
 `themeTokens.test.ts` checks. The card's text is the transcript's own text roles on the elevated surface.
 
+## October 24: every message sent, from the thread's store
+
+The fix for the scrubber cut off on long threads ([ADR-0109, October 24 amendment](../adr/0109-a-column-of-ticks-reaches-every-message-the-user-sent.md)),
+checked on the built app on Owl, on Windows, with `npx playwright test tests/e2e/message-scrubber.spec.ts tests/e2e/watcher-night-scene.spec.ts` (12 passed).
+
+Before the fix, a thread of 60 messages sent, left and opened again, showed 10 ticks: the window's ten turns. Each Show
+earlier messages added twenty more. After it:
+
+- The same thread shows 60 ticks while its window holds ten turns, and the first tick's card reads "Message 1 of 60" with the
+  start of its reply, read from the thread's store.
+- Show earlier messages, and a press on the first tick, never take the scrubber off the page: a watch on the page for any
+  moment without `.message-scrubber` counted none.
+- A press on the first tick loads the window back to it and lands it at the top, marked; Home then Enter from the keyboard
+  lands it with focus.
+- Watcher's conversation, left for Dictate and opened again on its newest ten turns, shows all 60 ticks, and Home then Enter
+  lands on the first message with focus.
+- Jumping to the first message of a thread of 1,000 turns took 1.2 seconds, the window then drawing all 2,000 messages, and
+  of 200 turns 0.3 seconds.
+
+| File | What it shows |
+| --- | --- |
+| `artifacts/message-scrubber/stored-dark-1280x800.png` | 60 ticks with ten turns loaded, the first one's card from the store, dark, 1280x800 |
+
+`tests/perf/threadPrompts.perf.test.ts` reads 2,500 turns' prompts in a median of 44 ms on the development machine, a 2.6 MB
+answer; `tests/perf/scrubberTicks.perf.test.tsx` draws a streamed word with 5,000 ticks in 3.3 ms, writing to no tick.
+
 ## Not checked here
 
 The column is faint at rest on purpose (Zach asked for it to stay faint until hovered), so its resting ticks are below 3:1
 against the canvas; they reach full strength under the pointer or the keyboard. A flight between Watcher's two trees crosses
 behind the room above the column, as it always has, and is not checked against the lane. macOS and Linux were not checked.
+A remote host's store answering the scrubber is checked over the socket in `tests/integration/socketThreadPrompts.test.ts`,
+not with a real host.
 The design captures run on stable, where the column does not show, so no baseline changes.

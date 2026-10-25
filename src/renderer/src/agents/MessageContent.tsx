@@ -6,7 +6,7 @@ import { i18n } from '@lingui/core'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import remarkGfm from 'remark-gfm'
-import type { AgentAttachmentReference } from '../../../shared/agents'
+import { isImageAttachment, type AgentAttachmentReference } from '../../../shared/agents'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { MermaidDiagram } from './diagrams/MermaidDiagram'
 import { isFenceClosed } from '../../../shared/diagramSource'
@@ -18,6 +18,8 @@ import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlig
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { attachmentKind, AttachmentKindIcon, fileTypeLabel } from './attachmentKinds'
+import { formatAttachmentSize } from '../../../shared/attachmentLabels'
 import './rich-messages.css'
 
 export type { AttachmentOrigin } from './attachmentSources'
@@ -105,13 +107,7 @@ async function openWithBridge(url: string): Promise<LinkOpenResult> {
   return open ? open(url) : { ok: false }
 }
 
-export function formatAttachmentSize(bytes: number | undefined): string | null {
-  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return null
-  if (bytes < 1024) return `${Math.round(bytes)} B`
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  const megabytes = bytes / (1024 * 1024)
-  return `${megabytes < 10 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`
-}
+export { formatAttachmentSize }
 
 export function attachmentTypeLabel(mimeType: string | undefined): string | null {
   if (!mimeType) return null
@@ -418,17 +414,19 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
 
 /** The name a tile shows: bidirectional controls dropped, so "gpj.exe" cannot read as "exe.jpg". */
 const attachmentName = (attachment: MessageAttachment): string => attachment.name.replace(BIDI_CONTROLS, '') || i18n._(msg({ message: 'Attachment', comment: 'An attachment with no name.' }))
-const attachmentDetails = (attachment: MessageAttachment): string =>
-  [attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
+const attachmentDetails = (attachment: MessageAttachment, anyFile = false): string =>
+  [anyFile ? fileTypeLabel(attachment.mimeType, attachmentName(attachment)) : attachmentTypeLabel(attachment.mimeType), formatAttachmentSize(attachment.sizeBytes)].filter(Boolean).join(' · ')
 
 /**
  * One attachment. An image that can be shown is a button: a press opens it large, and right-click, Shift+F10 or the
  * ContextMenu key offers Open image and Copy image.
  */
-function AttachmentTile({ attachment, origin, onOpen, onShown }: {
+function AttachmentTile({ attachment, origin, onOpen, onShown, anyFile }: {
   attachment: MessageAttachment; origin?: AttachmentOrigin | undefined; onOpen: (from: HTMLElement) => void
   /** Whether the tile is showing its image, which is what puts it in the viewer. */
   onShown: (id: string, shown: boolean) => void
+  /** Once any file can be attached (ADR-0131), a file's tile names its type and claims no preview it could never have. */
+  anyFile: boolean
 }): ReactNode {
   const { t } = useLingui()
   const { source, awaiting } = useAttachmentSource(attachment, origin)
@@ -440,8 +438,9 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
   const [feedback, copyImage] = useCopyImage()
   const frame = useRef<HTMLButtonElement>(null)
   const name = attachmentName(attachment)
-  const isImage = attachment.mimeType?.startsWith('image/') ?? false
-  const details = attachmentDetails(attachment)
+  // Once any file can be attached, only the four raster types are images: an SVG, a BMP or a HEIC is a file (ADR-0131).
+  const isImage = attachment.mimeType ? anyFile ? isImageAttachment(attachment.mimeType) : attachment.mimeType.startsWith('image/') : false
+  const details = attachmentDetails(attachment, anyFile)
   if (source && !failed) {
     const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
       const rect = frame.current?.getBoundingClientRect()
@@ -472,9 +471,10 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
       {menuAt ? <LinkMenu at={menuAt} label={t`Image: ${name}`} items={menuItems} returnFocus={frame.current} onClose={() => setMenuAt(null)} /> : null}
     </figure>
   }
-  const reason = !attachment.mimeType || awaiting ? null : !isImage ? t`No preview for this file type` : failed ? t`Preview could not be shown` : t`Preview unavailable`
+  const reason = !attachment.mimeType || awaiting ? null : !isImage ? (anyFile ? null : t`No preview for this file type`) : failed ? t`Preview could not be shown` : t`Preview unavailable`
   return <div className="rich-attachment rich-attachment--file" role="listitem">
-    {isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
+    {anyFile && attachment.mimeType && !isImage ? <AttachmentKindIcon kind={attachmentKind(name, attachment.mimeType)} size={16} />
+      : isImage || !attachment.mimeType ? <ImageIcon size={16} aria-hidden="true" /> : <FileText size={16} aria-hidden="true" />}
     <span className="rich-attachment__text">
       <span className="rich-attachment__name" title={name}>{name}</span>
       {(details || reason) && <span className="rich-attachment__meta">{[details, reason].filter(Boolean).join(' · ')}</span>}
@@ -483,8 +483,12 @@ function AttachmentTile({ attachment, origin, onOpen, onShown }: {
 }
 
 /** Submitted images with their name, type and size; metadata alone when no trusted preview exists. */
-export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPreviewsProps): ReactNode {
+export function AttachmentPreviews({ attachments: given, notice, origin }: AttachmentPreviewsProps): ReactNode {
   useInterfaceLanguageState()
+  const anyFile = useOwlFeature('attach-any-file')
+  // Images come first, then every other file (ADR-0131).
+  const attachments = useMemo(() => anyFile ? [...given.filter(item => attachmentKind(item.name, item.mimeType) === 'image' || !item.mimeType),
+    ...given.filter(item => item.mimeType && attachmentKind(item.name, item.mimeType) !== 'image')] : given, [anyFile, given])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const [shown, setShown] = useState<ReadonlySet<string>>(() => new Set())
   const onShown = useCallback((id: string, showing: boolean) => setShown(current => {
@@ -497,10 +501,10 @@ export function AttachmentPreviews({ attachments, notice, origin }: AttachmentPr
   // The viewer steps through the message's images that its tiles are showing; one whose bytes are gone stays out.
   const count = attachments.length
   const images = attachments.filter(attachment => shown.has(attachment.id))
-    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment) }))
+    .map(attachment => ({ id: attachment.id, preview: attachment.preview, name: attachmentName(attachment), details: attachmentDetails(attachment, anyFile) }))
   return <div className="rich-attachments">
     {!!attachments.length && <div className="rich-attachments__list" role="list" aria-label={plural(count, { one: 'Attachment', other: '# attachments' })}>
-      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} onOpen={from => setOpen({ id: attachment.id, from })} />)}
+      {attachments.map(attachment => <AttachmentTile key={attachment.id} attachment={attachment} origin={origin} onShown={onShown} anyFile={anyFile} onOpen={from => setOpen({ id: attachment.id, from })} />)}
     </div>}
     {notice && <p className="rich-attachments__notice" role="note">{notice}</p>}
     {open && images.some(image => image.id === open.id)

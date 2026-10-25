@@ -2,12 +2,16 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot, clonePlainData } from './cloneHostSnapshot'
-import { ActivitySubscribers, cloneActivitySnapshot, immutableModels, isActivityPublication, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
+import { ActivitySubscribers, immutableModels, immutableRecord, immutableUpdates, isImmutableModels, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
-import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
+import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type AgentThread, type ProviderId } from '../../shared/agents'
+import { restOf } from './adapterThreadChanges'
+import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
+  type AgentHostRest, type ThreadChangeSet, type ThreadPlacement } from './threadChanges'
 import { resolveModel } from '../../shared/modelCatalog'
 import { ProviderUnavailable, providerProblemOf } from './providerProblem'
 import { sameSnapshot } from './sameSnapshot'
@@ -30,10 +34,50 @@ export function providerTakesNoSkills(provider: ProviderId): Error {
   return new Error(`${PROVIDER_LABELS[provider]} does not take skills. Your prompt has not been sent; remove the skill from it and send it again.`)
 }
 function folderKey(path: string): string { const key = resolve(path); return process.platform === 'win32' ? key.toLowerCase() : key }
-type Slot = { snapshot: AgentHostSnapshot; status: AgentProviderStatus; wanted: boolean; epoch: number; connecting?: Promise<void> | undefined;
+type Slot = {
+  /** Every part of what the provider last said but its threads, kept by the rules in `acceptView`. */
+  view: AgentHostRest
+  /** The provider's threads as the switch shows them, in its order: its records, owned all the way down and only replaced. */
+  threads: ThreadMap
+  /**
+   * What this connection's activity subscription last published, as the provider's thread changes or as the shim worked
+   * them out from its snapshots. Undefined with no subscription.
+   */
+  incoming?: ThreadMap | undefined
+  /**
+   * `threads` is not what the subscription last published: a read replaced it, or a provider that is not connected
+   * published no threads and the switch kept the ones it had. The next publication then replaces it whole, as each used to.
+   */
+  diverged: boolean
+  /** Per thread: the provider's record last named, and the record the switch named it as. */
+  named: Map<string, { readonly input: AgentThread; readonly output: AgentThread }>
+  /** The view and status the switch's thread changes were last marked for. */
+  marked?: { readonly view: AgentHostRest; readonly status: AgentProviderStatus } | undefined
+  status: AgentProviderStatus; wanted: boolean; epoch: number; connecting?: Promise<void> | undefined;
   unsubscribeSnapshot?: (() => void) | undefined; unsubscribeEvents?: (() => void) | undefined; unsubscribeUsage?: (() => void) | undefined
   /** What this connection's activity subscription asked the provider: to leave its messages out, or not. */
   historyFromEvents?: boolean | undefined }
+
+/** One form's marks for the switch's thread changes: what changed since that form was last published. */
+interface SwitchMarks {
+  /** Everything may have changed: the next publication is worked out from the whole view. */
+  all: boolean
+  /** A part that is not threads changed. */
+  rest: boolean
+  /** The threads that changed, came or went, by the provider that holds or held each. */
+  readonly ids: Map<string, ProviderId>
+  /** Threads that came or moved, so the publication places them. */
+  readonly placed: Set<string>
+}
+
+/** The rest a slot's thread map carries, which nothing reads: the slot keeps its own view. */
+const SLOT_MAP_REST = immutableRecord(restOf(EMPTY_AGENT_HOST))
+
+function slotThreads(records: readonly AgentThread[] = []): ThreadMap {
+  const map = new ThreadMap({ verify: false })
+  map.apply({ sequence: 0, whole: true, upserts: records, removals: [], rest: SLOT_MAP_REST })
+  return map
+}
 
 /** Independent native connections; durable Sotto thread identity selects the transport, never reasoning settings. */
 export class ConfiguredProviderHost implements AgentHost {
@@ -64,13 +108,17 @@ export class ConfiguredProviderHost implements AgentHost {
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   /** Each activity subscriber, and whether it keeps history from the providers' events. */
   private readonly activityListeners = new ActivitySubscribers()
+  /** The switch's thread changes (#925), and whether each of their subscribers keeps history from the providers' events. */
+  private readonly changes = new ThreadChangesPublisher()
+  private readonly changeSubscribers = new Set<{ readonly historyFromEvents: boolean }>()
+  private readonly marks = new Map<boolean, SwitchMarks>([false, true].map(form => [form, { all: true, rest: false, ids: new Map(), placed: new Set() }]))
   private readonly eventListeners = new Set<(event: ThreadHostEvent) => void>()
   private readonly usageListeners = new Set<(record: UsageTokenObservation) => void>()
   /** Thread events from whichever provider owns the thread. Absent when no provider publishes any. */
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
   constructor(private readonly options: {
     hosts: Record<ProviderId, AgentHost>; provider: () => ProviderId
@@ -80,7 +128,7 @@ export class ConfiguredProviderHost implements AgentHost {
   }) {
     if (options.directory) this.registrationStore = new AtomicJsonStore(join(options.directory, 'provider-project-registrations.json'), value => z.array(z.string()).parse(value), () => [])
     for (const id of providerIdSchema.options) {
-      this.slots.set(id, { snapshot: structuredClone(EMPTY_AGENT_HOST), wanted: false, epoch: 0,
+      this.slots.set(id, { view: restOf(structuredClone(EMPTY_AGENT_HOST)), threads: slotThreads(), diverged: false, named: new Map(), wanted: false, epoch: 0,
         status: { id, name: PROVIDER_LABELS[id], version: '', connection: 'disconnected', capabilities: structuredClone(EMPTY_AGENT_HOST.capabilities) } })
     }
     if (providerIdSchema.options.some(id => options.hosts[id].subscribeEvents)) {
@@ -107,11 +155,11 @@ export class ConfiguredProviderHost implements AgentHost {
         catch { /* One provider's unreadable records leave the others' to read. */ }
       }
     }
-    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh) => {
+    if (providerIdSchema.options.some(id => options.hosts[id].readProviderQuota)) this.readProviderQuota = async (providerId, refresh, background) => {
       if (!reportsUsageLimits(providerId)) throw new Error('Usage reads no limits for this provider.')
       const slot = this.slots.get(providerId), epoch = slot?.epoch
       if (slot?.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
-      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh)
+      const quota = await options.hosts[providerId].readProviderQuota?.(providerId, refresh, background)
         ?? unavailableProviderQuota(providerId, 'unsupported')
       if (slot.epoch !== epoch || slot.status.connection !== 'connected') return unavailableProviderQuota(providerId, 'not-connected')
       return { ...quota, windows: quota.windows.map(window => ({ ...window,
@@ -134,7 +182,7 @@ export class ConfiguredProviderHost implements AgentHost {
   /** Capture the restored legacy project scope before UI configuration can change the default. */
   initialize(): Promise<void> {
     this.identityLoad ??= (async () => {
-      if (!this.options.directory) { this.legacyProjectProvider = this.options.provider(); return }
+      if (!this.options.directory) { this.legacyProjectProvider = this.options.provider(); this.renamed(); return }
       const schema = z.object({ legacyProjectProvider: providerIdSchema })
       const store = new AtomicJsonStore(join(this.options.directory, 'provider-project-identity.json'), schema.parse,
         () => ({ legacyProjectProvider: this.options.provider() }))
@@ -143,27 +191,72 @@ export class ConfiguredProviderHost implements AgentHost {
         .catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return { legacyProjectProvider: this.options.provider() }; throw error })
       await store.write(identity)
       this.legacyProjectProvider = identity.legacyProjectProvider
+      this.renamed()
     })().catch(error => { this.identityLoad = undefined; throw error })
     return this.identityLoad
+  }
+  /** Which provider keeps unnamed project IDs is now known, so every thread is named again. */
+  private renamed(): void {
+    for (const slot of this.slots.values()) slot.named.clear()
+    this.markAll()
   }
   private projectId(provider: ProviderId, id: string): string {
     return provider === this.legacyProjectProvider ? id : providerEntityId(provider, 'project', id)
   }
   createProjectId(provider: ProviderId): string { return this.projectId(provider, randomUUID()) }
   /**
-   * `published`: the snapshot is a publication of the provider's activity subscription, already copied for its
-   * subscribers, so the slot keeps it as it is. The switch never writes into what a slot holds; it replaces it.
+   * A whole snapshot a read handed back (a connection, a snapshot, a thread read, a settings change) becomes the
+   * provider's slot, as a publication of its activity subscription would. It is copied once, sharing every record and
+   * part that equals what the slot holds, so the switch never writes into what a provider handed it.
    */
-  private accept(id: ProviderId, snapshot: AgentHostSnapshot, published = false): void {
+  private accept(id: ProviderId, snapshot: AgentHostSnapshot): void {
     const slot = this.slots.get(id)!
-    // A transport disappearing must not discard the identities and recovery material it already supplied.
-    const owned = published ? snapshot : cloneActivitySnapshot(snapshot)
-    slot.snapshot = snapshot.connected ? owned : { ...slot.snapshot, ...owned,
-      threads: owned.threads.length ? owned.threads : slot.snapshot.threads,
-      projects: owned.projects.length ? owned.projects : slot.snapshot.projects,
-      models: owned.models.length ? owned.models : slot.snapshot.models }
-    slot.status = { id, name: PROVIDER_LABELS[id], version: snapshot.version || slot.status.version,
-      capabilities: owned.connected ? owned.capabilities : slot.status.capabilities,
+    const { threads, ...parts } = snapshot
+    const [rest, ...records] = immutableUpdates<unknown>([parts, ...threads], [slot.view, ...threads.map(thread => slot.threads.get(thread.id))]) as [AgentHostRest, ...AgentThread[]]
+    this.acceptView(id, slot, rest)
+    if (rest.connected || records.length) {
+      this.replaceThreads(id, slot, records)
+      // A read of what the subscription last published, as most reads are, leaves the next publication to apply as it is.
+      slot.diverged = !this.followsIncoming(slot)
+    } else if (slot.threads.size) slot.diverged = true
+  }
+  /**
+   * A publication of the provider's activity subscription, already applied to `slot.incoming`. While the slot shows what
+   * the subscription published, the same change applies to the slot, at a cost that follows the change. Otherwise the
+   * slot is replaced with what the subscription holds, as each publication used to replace it whole.
+   */
+  private acceptIncoming(id: ProviderId, slot: Slot, changes: AgentHostChanges): void {
+    const incoming = slot.incoming!
+    const rest = incoming.rest!
+    this.acceptView(id, slot, rest)
+    if (rest.connected || incoming.size) {
+      if (slot.diverged || changes.whole) this.replaceThreads(id, slot, incoming.threads())
+      else this.applyThreads(id, slot, changes)
+      slot.diverged = false
+    } else if (slot.threads.size) slot.diverged = true
+  }
+  /** Whether the slot's threads are the records the subscription last published, in its order. */
+  private followsIncoming(slot: Slot): boolean {
+    const incoming = slot.incoming
+    if (!incoming || incoming.sequence === undefined || incoming.size !== slot.threads.size) return false
+    const ids = incoming.ids()
+    for (const id of slot.threads.ids()) {
+      const next = ids.next()
+      if (next.done || next.value !== id || incoming.get(id) !== slot.threads.get(id)) return false
+    }
+    return true
+  }
+  /**
+   * The parts of a provider's snapshot that are not its threads, and the provider's status. A transport disappearing must
+   * not discard the identities and recovery material it already supplied: a provider that is not connected keeps its
+   * projects and models when it names none, as `accept` and `acceptIncoming` keep its threads.
+   */
+  private acceptView(id: ProviderId, slot: Slot, snapshot: AgentHostRest): void {
+    slot.view = snapshot.connected ? snapshot : { ...slot.view, ...snapshot,
+      projects: snapshot.projects.length ? snapshot.projects : slot.view.projects,
+      models: snapshot.models.length ? snapshot.models : slot.view.models }
+    const status: AgentProviderStatus = { id, name: PROVIDER_LABELS[id], version: snapshot.version || slot.status.version,
+      capabilities: snapshot.connected ? snapshot.capabilities : slot.status.capabilities,
       connection: snapshot.connected ? 'connected' : snapshot.error ? 'error' : slot.connecting ? 'connecting' : 'disconnected',
       ...(snapshot.verifiedVersion ? { verifiedVersion: snapshot.verifiedVersion } : {}),
       ...(snapshot.connected && snapshot.sandboxDisabled !== undefined ? { sandboxDisabled: snapshot.sandboxDisabled } : {}),
@@ -172,9 +265,42 @@ export class ConfiguredProviderHost implements AgentHost {
       ...(!snapshot.connected && snapshot.error && snapshot.problem ? { problem: snapshot.problem } : {}),
       ...(!snapshot.connected && snapshot.error && snapshot.problem === 'too-old' && snapshot.requiredVersion ? { requiredVersion: snapshot.requiredVersion } : {}),
       ...(snapshot.connected && snapshot.account ? { account: snapshot.account } : {}) }
+    // A status that says the same is kept as it is, so an update that changed no status marks no change to it.
+    if (!sameSnapshot(status, slot.status)) slot.status = status
   }
-  /** A slot's snapshot as no longer connected. It may be a provider's publication, which is never written into. */
-  private markDisconnected(slot: Slot): void { slot.snapshot = { ...slot.snapshot, connected: false } }
+  /** The slot's threads become `records`, owned, marking what changed for the switch's thread changes. Costs every thread. */
+  private replaceThreads(id: ProviderId, slot: Slot, records: readonly AgentThread[]): void {
+    const held = slot.threads
+    const present = new Set(records.map(record => record.id))
+    const kept: string[] = []
+    for (const thread of held.ids()) {
+      if (present.has(thread)) kept.push(thread)
+      else { this.mark(id, thread); slot.named.delete(thread) }
+    }
+    let at = 0, moved = false
+    for (const record of records) {
+      if (!held.has(record.id)) { this.mark(id, record.id, true); continue }
+      if (kept[at++] !== record.id) moved = true
+      // A read and the subscription build their own records for one state, so an equal record is no change.
+      const before = held.get(record.id)
+      if (before !== record && !isDeepStrictEqual(before, record)) this.mark(id, record.id)
+    }
+    // Threads the slot kept changed order, which is rarer than anything else here: the next publication is worked out whole.
+    if (moved) this.markAll()
+    slot.threads = slotThreads(records)
+  }
+  /** One change the subscription published, applied to a slot that shows what it published before, marking what it changed. */
+  private applyThreads(id: ProviderId, slot: Slot, changes: AgentHostChanges): void {
+    const held = slot.threads
+    const removed = new Set<string>()
+    for (const thread of changes.removals) if (held.has(thread)) { removed.add(thread); this.mark(id, thread); slot.named.delete(thread) }
+    // A thread that came, or went and came back in the same change, goes last, so it is placed.
+    for (const record of changes.upserts) this.mark(id, record.id, !held.has(record.id) || removed.has(record.id))
+    for (const placement of changes.placements ?? []) this.mark(id, placement.id, true)
+    held.apply({ sequence: held.sequence! + 1, upserts: changes.upserts, removals: changes.removals, ...(changes.placements ? { placements: changes.placements } : {}) })
+  }
+  /** A slot's view as no longer connected. It may be a provider's publication, which is never written into. */
+  private markDisconnected(slot: Slot): void { slot.view = { ...slot.view, connected: false } }
   private failed(id: ProviderId, error: unknown): void {
     const slot = this.slots.get(id)!
     const named = providerProblemOf(error)
@@ -184,8 +310,16 @@ export class ConfiguredProviderHost implements AgentHost {
       ...(named?.problem === 'too-old' && named.requiredVersion ? { requiredVersion: named.requiredVersion } : {}) }
     this.markDisconnected(slot)
   }
-  private aggregate(): AgentHostSnapshot {
-    const providers = [...this.slots.values()].map(slot => clonePlainData(slot.status))
+  /**
+   * Every provider's snapshot as one, provider by provider. Each thread is the record the switch named for it (`named`),
+   * so the snapshot costs a reference per thread rather than a new record. `threads: false` leaves the threads out, for a
+   * caller that reads only the catalog, the projects or the connection.
+   */
+  private aggregate(threads?: true): AgentHostSnapshot
+  private aggregate(threads: false): AgentHostRest
+  private aggregate(threads = true): AgentHostSnapshot | AgentHostRest {
+    // One copy of every provider's status, not one per provider, so a new provider adds no copy to each publish.
+    const providers = clonePlainData([...this.slots.values()].map(slot => slot.status))
     const capabilities = { ...EMPTY_AGENT_HOST.capabilities }
     for (const provider of providers.filter(provider => provider.connection === 'connected')) {
       for (const key of Object.keys(provider.capabilities) as (keyof AgentCapabilities)[]) if (provider.capabilities[key]) capabilities[key] = true
@@ -196,16 +330,14 @@ export class ConfiguredProviderHost implements AgentHost {
     const parts: AgentModel[][] = []
     for (const [provider, slot] of this.slots) {
       parts.push(this.slotModels(provider, slot))
-      result.projects.push(...slot.snapshot.projects.map(project => ({ ...project, providerId: provider, id: this.projectId(provider, project.id) })))
-      result.threads.push(...slot.snapshot.threads.map(thread => ({ ...thread, providerId: provider,
-        projectId: this.projectId(provider, thread.projectId), modelId: thread.modelId ? providerEntityId(provider, 'model', thread.modelId) : '',
-        ...(thread.usage ? { usage: { ...thread.usage, modelId: thread.usage.modelId ? providerEntityId(provider, 'model', thread.usage.modelId) : undefined } } : {}) })))
+      result.projects.push(...slot.view.projects.map(project => ({ ...project, providerId: provider, id: this.projectId(provider, project.id) })))
+      if (threads) for (const record of slot.threads.threads()) result.threads.push(this.named(provider, slot, record))
     }
     // One catalog for every publish until a provider's own catalog or connection changes, so the layers to the window
     // share it rather than copy it (#917).
     // A host whose adapter does not certify its catalog hands over a new one each time; freezing that would only add work.
     const held = this.aggregateModels
-    const certified = [...this.slots.values()].every(slot => !slot.snapshot.models.length || isImmutableModels(slot.snapshot.models))
+    const certified = [...this.slots.values()].every(slot => !slot.view.models.length || isImmutableModels(slot.view.models))
     result.models = held && held.parts.length === parts.length && held.parts.every((part, index) => part === parts[index]) ? held.models
       : certified ? immutableModels(parts.flat()) : parts.flat()
     this.aggregateModels = { parts, models: result.models }
@@ -213,27 +345,115 @@ export class ConfiguredProviderHost implements AgentHost {
       const error = providers.find(provider => provider.error)?.error
       if (error) result.error = error
     }
-    return result
+    if (threads) return result
+    const rest: Partial<AgentHostSnapshot> = result
+    delete rest.threads
+    return rest as AgentHostRest
+  }
+  /**
+   * A provider's thread as the switch names it: its provider, and its project and model IDs public. The record named for
+   * the same provider record before is handed back as it is, so a thread that did not change keeps its record through
+   * every publication and every snapshot.
+   */
+  private named(provider: ProviderId, slot: Slot, record: AgentThread): AgentThread {
+    const held = slot.named.get(record.id)
+    if (held?.input === record) return held.output
+    const usage = record.usage ? ownBuiltRecord({ ...record.usage, modelId: record.usage.modelId ? providerEntityId(provider, 'model', record.usage.modelId) : undefined }) : undefined
+    const output = ownBuiltRecord({ ...record, providerId: provider,
+      projectId: this.projectId(provider, record.projectId), modelId: record.modelId ? providerEntityId(provider, 'model', record.modelId) : '',
+      ...(usage ? { usage } : {}) })
+    slot.named.set(record.id, { input: record, output })
+    return output
   }
   /** A provider's models as the switch names them, rebuilt only when its catalog or its connection changes. */
-  private slotModels(provider: ProviderId, slot: { snapshot: AgentHostSnapshot; status: AgentProviderStatus }): AgentModel[] {
+  private slotModels(provider: ProviderId, slot: { view: AgentHostRest; status: AgentProviderStatus }): AgentModel[] {
     const connected = slot.status.connection === 'connected'
     const held = this.namedModels.get(provider)
-    if (held && held.source === slot.snapshot.models && held.connected === connected) return held.models
-    const models = slot.snapshot.models.map(model => ({ ...model, providerId: provider,
+    if (held && held.source === slot.view.models && held.connected === connected) return held.models
+    const models = slot.view.models.map(model => ({ ...model, providerId: provider,
       id: providerEntityId(provider, 'model', model.id), ready: model.ready && connected }))
-    this.namedModels.set(provider, { source: slot.snapshot.models, connected, models })
+    this.namedModels.set(provider, { source: slot.view.models, connected, models })
     return models
+  }
+  /** This thread of this provider changed, came or went; `placed`: it came or moved, so the publication places it. */
+  private mark(provider: ProviderId, id: string, placed = false): void {
+    if (!this.changes.size) return
+    for (const marks of this.marks.values()) {
+      if (marks.all) continue
+      marks.ids.set(id, provider)
+      if (placed) marks.placed.add(id)
+    }
+  }
+  /** Anything may have changed: the next publication of each form is worked out from the whole view. */
+  private markAll(): void {
+    for (const marks of this.marks.values()) { marks.all = true; marks.ids.clear(); marks.placed.clear() }
+  }
+  /**
+   * What the switch's thread changes carry for one form since it was last published, built when its publisher builds it:
+   * a publication asked for while another is being delivered builds afterwards, and carries every mark made by then.
+   * Each marked thread is upserted as the switch names it, or removed, and a thread that came or moved is placed just
+   * before the thread that follows it in the switch's order, provider by provider: a new thread of one provider lands
+   * before the next provider's first thread. A first publication, and one after `markAll`, is worked out from the whole
+   * view by the shim, which costs a comparison per thread.
+   */
+  private switchChanges(historyFromEvents: boolean, published: ThreadMap | undefined): ThreadChangeSet {
+    const marks = this.marks.get(historyFromEvents)!
+    const all = marks.all, rest = marks.rest, ids = [...marks.ids], placed = new Set(marks.placed)
+    marks.all = false; marks.rest = false; marks.ids.clear(); marks.placed.clear()
+    if (!published || all) return threadChangesBetween(published, this.aggregate())
+    const upserts: AgentThread[] = [], removals: string[] = [], placing: { id: string; provider: ProviderId }[] = []
+    const upserted = new Set<string>()
+    for (const [id, provider] of ids) {
+      const slot = this.slots.get(provider)!
+      const record = slot.threads.get(id)
+      if (record) {
+        upserts.push(this.named(provider, slot, record)); upserted.add(id)
+        if (!published.has(id) || placed.has(id)) placing.push({ id, provider })
+      } else if (published.has(id)) removals.push(id)
+    }
+    const placements: ThreadPlacement[] = []
+    for (const { id, provider } of placing) {
+      const beforeId = this.slots.get(provider)!.threads.nextId(id) ?? this.firstThreadAfter(provider)
+      // A thread the marks missed would be placed before one the subscriber does not hold; the whole view says it right.
+      if (beforeId !== null && !upserted.has(beforeId) && !published.has(beforeId)) return threadChangesBetween(published, this.aggregate())
+      placements.push({ id, beforeId })
+    }
+    return { upserts, removals, ...(placements.length ? { placements: inPlacingOrder(placements) } : {}), ...(rest ? { rest: this.aggregate(false) } : {}) }
+  }
+  /** The first thread of the first provider after `provider` that has any, or null when none has. */
+  private firstThreadAfter(provider: ProviderId): string | null {
+    let after = false
+    for (const [id, slot] of this.slots) {
+      if (after && slot.threads.firstId !== undefined) return slot.threads.firstId
+      if (id === provider) after = true
+    }
+    return null
+  }
+  /** Whether a provider's view or status changed since the switch's thread changes were last marked for it. */
+  private markRest(): void {
+    let changed = false
+    for (const slot of this.slots.values()) {
+      if (slot.marked?.view === slot.view && slot.marked.status === slot.status) continue
+      slot.marked = { view: slot.view, status: slot.status }
+      changed = true
+    }
+    if (changed && this.changes.size) for (const marks of this.marks.values()) marks.rest = true
   }
   /**
    * The aggregate is built afresh for each publish over what the slots hold, which is replaced and never edited, so the
-   * activity subscribers share it as it is. An ordinary subscriber still gets a copy of its own.
+   * activity subscribers share it as it is. An ordinary subscriber still gets a copy of its own. The thread changes go out
+   * from the same publish, carrying what was marked since the last.
    */
   private publish(): void {
-    if (!this.listeners.size && !this.activityListeners.size) return
-    const snapshot = this.aggregate()
-    for (const listener of this.listeners) listener(cloneHostSnapshot(snapshot))
-    this.activityListeners.publish(() => snapshot, true)
+    if (!this.listeners.size && !this.activityListeners.size && !this.changes.size) return
+    if (this.listeners.size || this.activityListeners.size) {
+      const snapshot = this.aggregate()
+      for (const listener of this.listeners) listener(cloneHostSnapshot(snapshot))
+      this.activityListeners.publish(() => snapshot, true)
+    }
+    if (!this.changes.size) return
+    this.markRest()
+    this.changes.publishChanges((historyFromEvents, published) => this.switchChanges(historyFromEvents, published))
   }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
     const requested = (provider ? [provider] : this.options.enabledProviders?.() ?? [this.options.provider()]).map(id => ({ id, epoch: this.slots.get(id)!.epoch }))
@@ -277,14 +497,37 @@ export class ConfiguredProviderHost implements AgentHost {
     slot.connecting = pending
     return pending
   }
-  /** One provider's activity for this connection, asking it to leave its messages out only when nothing here reads them. */
+  /**
+   * One provider's activity for this connection, asking it to leave its messages out only when nothing here reads them.
+   * It comes as the provider's thread changes (#925), or, from a host that publishes none, as its activity snapshots,
+   * which the shim turns into changes by comparing each thread with the record it last published.
+   */
   private watchActivity(id: ProviderId, slot: Slot, epoch: number): void {
     const historyFromEvents = this.historyFromEvents(id)
     slot.unsubscribeSnapshot?.()
     slot.historyFromEvents = historyFromEvents
-    slot.unsubscribeSnapshot = subscribeActivitySnapshots(this.options.hosts[id], snapshot => {
-      if (!slot.wanted || slot.epoch !== epoch) return
-      this.accept(id, snapshot, isActivityPublication(snapshot))
+    // Each subscription numbers its own publications from a whole one, so it starts a map of its own.
+    const incoming = new ThreadMap({ verify: false })
+    slot.incoming = incoming
+    const host = this.options.hosts[id]
+    const current = (): boolean => slot.wanted && slot.epoch === epoch && slot.incoming === incoming
+    if (host.subscribeActivityChanges) {
+      const subscription = host.subscribeActivityChanges(changes => {
+        if (!current()) return
+        const applied = incoming.apply(changes)
+        if (applied === 'resync') subscription.resync()
+        if (applied !== 'applied') return
+        this.acceptIncoming(id, slot, changes)
+        this.publish()
+      }, { historyFromEvents })
+      slot.unsubscribeSnapshot = subscription
+      return
+    }
+    slot.unsubscribeSnapshot = subscribeActivitySnapshots(host, snapshot => {
+      if (!current()) return
+      const changes: AgentHostChanges = { ...threadChangesBetween(incoming.sequence === undefined ? undefined : incoming, snapshot), sequence: (incoming.sequence ?? 0) + 1 }
+      incoming.apply(changes)
+      this.acceptIncoming(id, slot, changes)
       this.publish()
     }, { historyFromEvents })
   }
@@ -321,7 +564,7 @@ export class ConfiguredProviderHost implements AgentHost {
       if (!parsed.success) throw new Error('This thread belongs to a retired provider. Its session cannot be moved to another provider.')
       return parsed.data
     }
-    const candidates = [...this.slots].filter(([, slot]) => slot.snapshot.threads.some(thread => thread.id === threadId)).map(([id]) => id)
+    const candidates = [...this.slots].filter(([, slot]) => slot.threads.has(threadId)).map(([id]) => id)
     if (candidates.length !== 1) throw new Error('This thread is not known to Sotto. Refresh and select it again.')
     return candidates[0]!
   }
@@ -352,10 +595,10 @@ export class ConfiguredProviderHost implements AgentHost {
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
     const whole = await this.whole(id, read?.historyFromEvents === true)
     if (slot.epoch !== epoch) throw new Error('This thread provider disconnected while reading the thread.')
-    const before = { snapshot: slot.snapshot, status: slot.status }
+    const before = { view: slot.view, threads: read?.beforeSend ? slot.threads.threads() : [], status: slot.status }
     this.accept(id, whole ?? snapshot)
     // A read before a send that changed nothing publishes nothing (#765): every send makes one.
-    if (!read?.beforeSend || !sameSnapshot(before.snapshot, slot.snapshot) || !sameSnapshot(before.status, slot.status)) this.publish()
+    if (!read?.beforeSend || !sameSnapshot(before.view, slot.view) || !sameSnapshot(before.threads, slot.threads.threads()) || !sameSnapshot(before.status, slot.status)) this.publish()
     return cloneHostSnapshot(this.aggregate())
   }
   rollbackCapability(threadId: string) {
@@ -377,7 +620,7 @@ export class ConfiguredProviderHost implements AgentHost {
     const provider = this.owner(request.source.threadId); this.requireConnected(provider)
     const host = this.options.hosts[provider]
     if (!host.forkThread) throw new Error(`${PROVIDER_LABELS[provider]} has no fork of its own, so nothing was made.`)
-    const model = resolveModel(this.aggregate().models, this.resolveModelId(request.modelId))
+    const model = resolveModel(this.aggregate(false).models, this.resolveModelId(request.modelId))
     if (!model?.ready || model.providerId !== provider) throw new Error(`Choose a ready ${PROVIDER_LABELS[provider]} model: a fork stays with its source’s provider. Nothing was made.`)
     return host.forkThread({ ...request, modelId: nativeEntityId(provider, 'model', model.id) })
   }
@@ -416,15 +659,15 @@ export class ConfiguredProviderHost implements AgentHost {
       return dispatch(id, { ...command, projectId: nativeId })
     }
     if (command.type === 'create-thread') {
-      const model = resolveModel(this.aggregate().models, this.resolveModelId(command.modelId))
+      const model = resolveModel(this.aggregate(false).models, this.resolveModelId(command.modelId))
       if (!model?.providerId || !model.ready) throw new Error('Choose an available model and provider.')
       const id = model.providerId; this.requireConnected(id)
       if (!this.slots.get(id)!.status.capabilities.threads) throw new Error('This provider cannot create threads.')
-      const project = this.aggregate().projects.find(project => project.id === this.resolveProjectId(command.projectId))
+      const project = this.aggregate(false).projects.find(project => project.id === this.resolveProjectId(command.projectId))
         ?? (command.project?.id === command.projectId ? command.project : undefined)
       if (!project) throw new Error('Choose an available project.')
       const slot = this.slots.get(id)!; const epoch = slot.epoch
-      let target = slot.snapshot.projects.find(candidate => folderKey(candidate.path) === folderKey(project.path))
+      let target = slot.view.projects.find(candidate => folderKey(candidate.path) === folderKey(project.path))
       const projectId = createHash('sha256').update(JSON.stringify([id, folderKey(project.path)])).digest('hex')
       this.registrationLoad ??= (async () => {
         const saved = this.options.directory ? await readFile(join(this.options.directory, 'provider-project-registrations.json'), 'utf8')
@@ -440,7 +683,7 @@ export class ConfiguredProviderHost implements AgentHost {
           const snapshot = await this.options.hosts[id].snapshot()
           if (slot.epoch !== epoch) throw new Error('The provider disconnected while checking this project.')
           this.accept(id, snapshot)
-          target = slot.snapshot.projects.find(candidate => candidate.id === projectId || folderKey(candidate.path) === folderKey(project.path))
+          target = slot.view.projects.find(candidate => candidate.id === projectId || folderKey(candidate.path) === folderKey(project.path))
           if (!target) throw new Error('The provider has not confirmed the earlier project registration. Refresh its connection before retrying; it will not be registered twice.')
         } else {
           this.registrations.add(key)
@@ -456,7 +699,7 @@ export class ConfiguredProviderHost implements AgentHost {
           const snapshot = await this.options.hosts[id].snapshot()
           if (slot.epoch !== epoch) throw new Error('The provider disconnected while registering this project.')
           this.accept(id, snapshot)
-          target = slot.snapshot.projects.find(candidate => candidate.id === projectId || folderKey(candidate.path) === folderKey(project.path))
+          target = slot.view.projects.find(candidate => candidate.id === projectId || folderKey(candidate.path) === folderKey(project.path))
           // The thread itself has never been dispatched. Preserve only the registration intent for recovery.
           if (!target) throw new Error('The provider has not confirmed this project registration. Refresh its connection before retrying; your thread has not been created.')
         }
@@ -501,7 +744,7 @@ export class ConfiguredProviderHost implements AgentHost {
       if (!id || this.slots.get(id)!.status.connection !== 'connected') return
       return this.options.hosts[id].startThreadSession?.(threadId)
     }
-    const model = resolveModel(this.aggregate().models, this.resolveModelId(draft.modelId))
+    const model = resolveModel(this.aggregate(false).models, this.resolveModelId(draft.modelId))
     if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return
     return this.options.hosts[model.providerId].startThreadSession?.(threadId, { ...draft, modelId: nativeEntityId(model.providerId, 'model', model.id) })
   }
@@ -532,9 +775,28 @@ export class ConfiguredProviderHost implements AgentHost {
     const off = this.activityListeners.add(listener, options); this.reconsider()
     return () => { off(); this.reconsider() }
   }
-  /** A provider's own messages are left out of what it publishes here only when it publishes events, every
+  /**
+   * The same publications as thread changes (ADR-0016, #925): every provider's threads as the switch names them,
+   * provider by provider, from the same publish as the activity snapshots.
+   */
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    const subscriber = { historyFromEvents: options?.historyFromEvents === true }
+    this.changeSubscribers.add(subscriber)
+    const subscription = this.changes.subscribe(listener, options)
+    this.reconsider()
+    const off = (() => {
+      if (!this.changeSubscribers.delete(subscriber)) return
+      subscription()
+      this.reconsider()
+    }) as ActivityChangesSubscription
+    off.resync = () => subscription.resync()
+    return off
+  }
+  /** A provider's own messages are left out of what it publishes here only when it publishes events, every activity
    * subscriber keeps history from the events this switch forwards, and none reads the ordinary subscription. */
   private historyFromEvents(id: ProviderId): boolean {
-    return this.listeners.size === 0 && this.activityListeners.everyAsked() && typeof this.options.hosts[id].subscribeEvents === 'function'
+    const activity = this.activityListeners.size + this.changeSubscribers.size > 0
+      && (!this.activityListeners.size || this.activityListeners.everyAsked()) && [...this.changeSubscribers].every(subscriber => subscriber.historyFromEvents)
+    return this.listeners.size === 0 && activity && typeof this.options.hosts[id].subscribeEvents === 'function'
   }
 }

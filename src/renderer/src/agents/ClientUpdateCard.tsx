@@ -92,7 +92,11 @@ export function ClientUpdateCard(): ReactNode {
     const under = single.state === 'updating' ? t`Your threads keep working.`
       : single.state === 'failed' ? t`Nothing was changed.`
       : single.state === 'unchanged' && published ? t({ message: `${published} is published.`, comment: '{published} is a version number.' }) : undefined
-    const details = single.state === 'updated' || single.state === 'updating' ? undefined : single.state === 'failed'
+    const to = published ?? t`the published version`
+    const details = single.state === 'updated' || single.state === 'updating' ? undefined
+      : single.state === 'failed' && single.failure === 'not-listed'
+        ? t`mise does not list ${name} ${to} yet, even with its cache cleared, so Sotto did not install it. ${installed} is still installed. Try again later.`
+      : single.state === 'failed'
       ? error
         ? t({ message: `The installer said: ${error}. Another app may be using ${name}. Close it, then try again.`, comment: '{error} is what the installer said; {name} is a provider\'s name.' })
         : t({ message: `The installer reported a failure. Another app may be using ${name}. Close it, then try again.`, comment: '{name} is a provider\'s name.' })
@@ -128,6 +132,10 @@ export function ClientUpdateCard(): ReactNode {
     : behindCount ? plural(behindCount, { one: `# of ${{ total: shownCount(total) }} clients has a newer version`, other: `# of ${{ total: shownCount(total) }} clients have a newer version` })
     : undefined
   const installCount = installable.length
+  const notListed = (update: ProviderClientUpdate): string => {
+    const to = update.published ?? t`the published version`
+    return t`mise does not list ${to} yet`
+  }
   const checkedAt = shown.map(update => update.checkedAt).sort().at(-1) ?? new Date().toISOString()
 
   return <div className="client-updates" ref={card} role="status" aria-live="polite" aria-label={heading}>
@@ -144,6 +152,7 @@ export function ClientUpdateCard(): ReactNode {
           <small>
             {update.state === 'updated' ? t({ message: `Now ${installed}`, comment: '{installed} is a version number.' })
               : update.state === 'unchanged' ? update.error ?? t({ message: `Still ${installed}. Try again.`, comment: '{installed} is a version number.' })
+              : update.state === 'failed' && update.failure === 'not-listed' ? <span className="tt-paragraph">{notListed(update)}</span>
               : update.state === 'failed' ? (update.error ?? t`The installer reported a failure`)
               : update.behind ? `${update.installed} → ${update.published ?? ''}`
               : update.installed}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { Mark } from '../../components/marks'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphone'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
@@ -69,7 +70,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
     const size = formatBytes(session.buildBytes)
     const price = CLOUD_IPHONE_PRICE_PER_MINUTE_USD.toFixed(2)
     const secondsLeft = left === null ? 0 : Math.max(0, Math.ceil(left / 1000))
-    return <section className="agent-request" aria-label={t`Cloud iPhone request for ${threadTitle}`}>
+    return <section className="agent-request" aria-label={t`Cloud iPhone request for ${threadTitle}`}><Mark name="request" />
       <div className="agent-request__head"><strong><Trans>{threadTitle} wants to start a cloud iPhone.</Trans></strong></div>
       {session.description ? <p className="agent-request__text">{session.description}</p> : null}
       <p className="agent-request__text tt-paragraph"><Trans comment="{price} is US dollars a minute; run.cloud is the service's name.">Uploads <code dir="ltr">{buildPath}</code> ({size}) to run.cloud and starts an iPhone simulator. About ${price} a minute. {ph({ monthMinutes: shownCount(monthMinutes) })} of {ph({ capMinutes: shownCount(capMinutes) })} minutes used this month.</Trans></p>
@@ -84,7 +85,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
 
   if (session.status === 'starting') {
     const buildPath = session.buildPath
-    return <section className="agent-request" aria-label={t`Starting the cloud iPhone`}>
+    return <section className="agent-request" aria-label={t`Starting the cloud iPhone`}><Mark name="request" />
       <div className="agent-request__head"><strong><Trans>Starting the cloud iPhone…</Trans></strong></div>
       <p className="agent-request__status tt-paragraph" role="status"><Trans>Uploading {buildPath} to run.cloud and starting the simulator.</Trans></p>
     </section>
@@ -94,7 +95,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
     const couldNot = t`${threadTitle} could not start a cloud iPhone.`
     const text = session.problem ?? couldNot
     const mentionsSettings = /settings/iu.test(text)
-    return <section className="agent-request" aria-label={t`Cloud iPhone problem`}>
+    return <section className="agent-request" aria-label={t`Cloud iPhone problem`}><Mark name="request" />
       <div className="agent-request__head"><strong>{couldNot}</strong></div>
       <p className="agent-request__error tt-paragraph" role="status">{text}</p>
       {mentionsSettings ? <div className="agent-request__actions">

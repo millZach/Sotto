@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from 'vitest'
-import { createRoomCompletion } from '../../fixtures/watcherRoomCompletion'
+import { createRoomCompletion, sameShownRoom } from '../../fixtures/watcherRoomCompletion'
+import type { WatcherRoomState } from '../../../src/shared/watcherRoom'
 
 afterEach(() => vi.useRealTimers())
 
@@ -45,4 +46,12 @@ it('rejects a pending completion when the CPU read throws and removes the waiter
   expect(vi.getTimerCount()).toBe(0)
   page.receive({}, 3)
   expect(cpu).toHaveBeenCalledTimes(1)
+})
+
+it('compares the room the page holds with the latest room main built apart from when and which build it was (#1450)', () => {
+  const room = (notice: string, second: number, sequence: number): WatcherRoomState => ({ current: null, currentOptions: null, history: [], requests: [],
+    watchedThreads: [], receipts: [], recoveryNotice: notice, observedAt: `2026-10-23T00:00:0${second}.000Z`, sequence })
+  // A later build that changed nothing sends nothing, so the page holds the build before it.
+  expect(sameShownRoom(room('same', 1, 7), room('same', 2, 8))).toBe(true)
+  expect(sameShownRoom(room('same', 1, 7), room('changed', 1, 7))).toBe(false)
 })

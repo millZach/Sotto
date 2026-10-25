@@ -1,14 +1,21 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { ArrowUp, Laptop, ListPlus, MessageSquare, Quote, Server, Sparkles, Square, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { capabilitiesForThread, hostForThread, isThreadBusy, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
+import type { NextPrompt } from '../../../shared/nextPrompt'
+import { useOptionalApp } from '../state/AppContext'
+import { chordClaimed } from './branchToolbar.logic'
+import { claimedThreadChord, threadChordLabel, threadChordPressed } from './threadShortcuts'
+import { NextList, nextOptionId, nextRows, type NextRow } from './NextList'
+import { DICTATING, ghostRest, nextPromptStore, useNextPrompt, withNextText } from './nextPrompts'
+import { capabilitiesForThread, hostForThread, isThreadBusy, lastUserMessageIdOf, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { continueProviderRefusal, continueThreadRefusal, type ContinueStart } from '../../../shared/continueThread'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
 import type { AgentConnection } from './AgentContext'
 import { composerEnterIntent, isCompositionKey, readComposerKey, runComposerMenuKey } from './composerKeys'
+
 import { browseFolder, fileLimitReached, insertFile, retainFileReferences, sameFileReferences, type FileEntry } from './composerFiles'
 import { composerFilesBridge, FilePicker, fileOptionId, useFilePicker } from './FilePicker'
 import { insertSkill, sameSkillReferences, skillLimitReached, skillSigils } from './composerSkills'
@@ -16,8 +23,11 @@ import { ProviderMark } from './ProviderMark'
 import { requestMode } from './requests/requestAnswers'
 import { answeredChoices, OWN_WORDS } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
-import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewComment, type ReviewCommentStore } from './reviewComments'
+import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComments, type ReviewCommentStore } from './reviewComments'
+import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
+import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
+import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
@@ -46,6 +56,14 @@ import './reviewComments.css'
 type Command = AgentConnection['command']
 
 export const THREAD_PROMPT_ID = 'thread-workspace-prompt'
+
+const NO_QUOTES: readonly ReplyQuote[] = []
+
+/** Under an answer: what waits on the composer goes with the next prompt instead. */
+function heldNote(comments: boolean, quotes: boolean): string {
+  return comments && quotes ? t`These comments and quotes go with your next prompt, not this answer.`
+    : comments ? t`These comments go with your next prompt, not this answer.` : t`These quotes go with your next prompt, not this answer.`
+}
 
 /**
  * A thread with a prompt still on its way cannot take another: a new send would only reconcile the earlier one.
@@ -96,7 +114,7 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
     const result = await command(mode === 'queue' ? { type: 'queue-followup', ...payload } : mode === 'steer' ? { type: 'steer', ...payload } : { type: 'manual-send', ...payload })
     // Exact queue ownership wins an unrelated shell error, even before its publication reaches the draft store.
     const error = result === null ? UNCONFIRMED_SUBMISSION[mode]
-      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error
+      : mode === 'queue' && queuedRevision(result, threadId, draft.draftId) ? null : result.error === null ? null : attachmentRefusal(result.error)
     store.resolve(threadId, draft.draftId, error)
     return result === null ? null : error === null
   } catch {
@@ -139,7 +157,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * offers it back if the provider refused it. While a turn runs, Enter queues; Steer now is the separate,
  * explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, watcher = false }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -156,6 +174,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly onExplainedError?: ((error: string | null) => void) | undefined
   /** Review comments written in Changes that go with this thread's next prompt; the window's own unless a test passes one. */
   readonly reviewComments?: ReviewCommentStore
+  /** Words quoted from the agent's replies that go with this thread's next prompt (ADR-0129); the window's own unless a test passes one. */
+  readonly replyQuotes?: ReplyQuoteStore
   /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
 }): ReactNode {
@@ -166,6 +186,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watchActions = useWatchActions()
   const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
   const comments = useReviewComments(reviewComments, threadId)
+  // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
+  const quoting = useOwlFeature('reply-quote')
+  const heldQuotes = useReplyQuotes(replyQuotes, threadId)
+  const quotes = quoting ? heldQuotes : NO_QUOTES
   const submissions = useSubmissions(store)
   // Screenshots still being read for this draft hold Send, even ones pasted before the user left the thread and came back.
   const readingImages = useScreenshotReads(store, threadId).pending > 0
@@ -220,9 +244,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
   const agent = watcher ? 'Watcher' : provider
   const placeholder = continuing !== undefined ? t`What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? t`This thread is archived.` : permission ? permissionsOnlyInProvider(row) ? t`Waiting on the request above.` : permissionInstruction() : answering ? t`Write your answer…` : working ? (row.thread.compaction?.status === 'running' ? t`Compacting the context. Write a follow-up to queue it.` : t`${agent} is working. Write a follow-up to queue it.`) : watcher ? t`Ask about your threads, or say what to start or send` : started ? t`What should ${provider} do next?` : t`What would you like to do next?`
-  // Review comments ride with the next prompt, not with an answer to a question.
+  // Review comments and reply quotes ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
-  const content = hasContent || carried.length > 0
+  const carriedQuotes = answering ? NO_QUOTES : quotes
+  const content = hasContent || carried.length > 0 || carriedQuotes.length > 0
   const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
@@ -246,21 +271,40 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   }
 
   /**
+   * Writes what rides with the prompt into its own text, quotes first, then the user's message, then the review
+   * comments, so every provider reads the same message, the transcript shows what was sent, and a refused prompt
+   * comes back to the composer with them written out.
+   */
+  const withCarried = (text: string): string => carried.length === 0 && carriedQuotes.length === 0 ? text
+    : composeReviewMessage(composeQuotedMessage(text, carriedQuotes), carried)
+  const writeCarried = (): void => {
+    const draftText = store.draft(threadId).text, text = withCarried(draftText)
+    if (text !== draftText) store.edit(threadId, { text })
+  }
+  /** What rode with the prompt has gone with it, so its chips come off. */
+  const sentCarried = (): void => {
+    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    if (carriedQuotes.length > 0) replyQuotes.sent(threadId, carriedQuotes.map(quote => quote.id))
+  }
+
+  /**
    * Sends the continuation: main makes the new thread and sends it the handover with this draft's words as one message.
    * Refused, the draft stays here with why in the strip; sent, the draft empties and the new thread opens.
    */
   const continueSend = async (choice: ContinueChoice): Promise<void> => {
     const bridge = window.sotto?.continueThread
     if (bridge === undefined) return
-    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
+    // What rides with it goes into the request, not the draft, until the new thread has started: a refusal leaves the
+    // draft and the chips as they were, so continuing again carries each once.
     const written = store.draft(threadId)
-    if (written.text.trim() === '') { continueStore.update(threadId, { error: msg({ message: `Write what ${{ continueTarget: continueTargetWords }} should do next. It goes with the handover.` }) }); return }
+    const text = withCarried(written.text)
+    if (text.trim() === '') { continueStore.update(threadId, { error: msg({ message: `Write what ${{ continueTarget: continueTargetWords }} should do next. It goes with the handover.` }) }); return }
     continueStore.update(threadId, { sending: true, error: null })
     let result: ContinueStart
     try {
       result = await bridge.start({ threadId, newThreadId: choice.newThreadId, modelId: choice.modelId,
         ...(choice.reasoningEffort ? { reasoningEffort: choice.reasoningEffort } : {}), ...(choice.runtimeMode ? { runtimeMode: choice.runtimeMode } : {}),
-        ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text: written.text,
+        ...(choice.providerMode ? { providerMode: choice.providerMode } : {}), workingCopy: choice.workingCopy, draftId: crypto.randomUUID(), text,
         ...(written.attachments.length ? { attachments: [...written.attachments] } : {}), ...(written.files?.length ? { files: [...written.files] } : {}) })
     } catch {
       // Main's answer was lost, so whether the new thread started is unknown. A retry names the same new thread, which main
@@ -273,11 +317,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     // Only the words that went are cleared: anything written while main started the thread stays.
     const now = store.draft(threadId)
     if (now.text === written.text && now.attachments === written.attachments && now.files === written.files) store.edit(threadId, { text: '', attachments: [], skills: [], files: [] })
-    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+    sentCarried()
     void command({ type: 'select-thread', threadId: result.threadId })
   }
-  const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send'): void => {
-    if (mode === 'steer' ? !canSteer : !canSend) return
+  /** `written`: the text was put in the draft by this press (a Next answer), so the draft read at render is not yet it. */
+  const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send', written = false): void => {
+    if (mode === 'steer' ? !canSteer : !(canSend || written && reason === null && !readingImages && !answerState.sending)) return
     if (continuing !== undefined) { if (mode === 'send') void continueSend(continuing); return }
     // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
     const input = field.current
@@ -308,21 +353,22 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           () => failed(t`Sotto could not confirm this answer.`))
       return
     }
-    // The comments become part of the prompt's own text, so every provider reads the same message, the transcript
-    // shows what was sent, and a refused prompt comes back to the composer with them written out.
-    if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
+    writeCarried()
     onSend()
+    // What was suggested next is over once main takes this (ADR-0132); a refused send keeps it.
+    const sentAfter = lastUserMessageIdOf(row.thread) ?? ''
     // Watch pressed on a new thread's composer puts it under a standing watch once main has taken its first send.
     const first = row.thread.nativeSessionStarted === false
     void sendThreadRevision(store, row, command, submittedAt, mode, undefined, handover !== null && mode === 'send' ? handover.prepare : undefined)
-      .then(sent => watchAfterSend(threadId, sent, mode, first, watchActions))
-    if (carried.length > 0) reviewComments.sent(threadId, carried.map(comment => comment.id))
+      .then(sent => { if (sent === true) nextPromptStore.sent(threadId, sentAfter); return watchAfterSend(threadId, sent, mode, first, watchActions) })
+    sentCarried()
   }
   /** A removed chip hands focus to the next one, or back to the prompt after the last. */
-  const removeComment = (comment: ReviewComment, button: HTMLElement): void => {
-    const buttons = [...(button.closest('.review-chips')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
+  const removeChip = (button: HTMLElement, remove: () => void): void => {
+    // Quotes and comments are two rows of chips; focus moves through both, as one.
+    const buttons = [...(button.closest('form')?.querySelectorAll<HTMLElement>('.review-chip__remove') ?? [])]
     const next = buttons[buttons.indexOf(button) + 1] ?? buttons[buttons.indexOf(button) - 1]
-    reviewComments.remove(threadId, comment.id)
+    remove()
     if (next) next.focus(); else field.current?.focus()
   }
 
@@ -347,19 +393,106 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const hostLabel = hostName === undefined ? t`Runs on this computer` : t`Runs on ${hostName}`
   const fieldLabel = answering ? t`Your answer` : watcher ? t`Watcher message` : t`Prompt`
 
+  // The next prompt (ADR-0132; Owl only): offered while the thread is at rest and the user's to write to, for the turn
+  // that just ended, and gone the moment anything is sent, queued or asked.
+  const app = useOptionalApp()
+  const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false && !watcher
+  const nextEntry = useNextPrompt(nextOn ? threadId : null)
+  const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''
+  const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === nextAnchor && !working && !answering
+    && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && row.connected && !sendInFlight && !localAdmissions
+    && followupsFor(state, threadId).length === 0 && !isThreadClosed(row.thread) ? nextEntry.prompt : null
+  const dictating = DICTATING.has(app?.dictation?.status ?? 'idle')
+  // Tab, Up and the digits answer only where the dictation hotkey does not already mean them.
+  const hotkey = app?.settings?.hotkey, platform = app?.platform ?? 'win32'
+  const nextKeysFree = { tab: chordClaimed('tab', hotkey, platform), up: chordClaimed('up', hotkey, platform),
+    digit: (digit: string) => chordClaimed(digit, hotkey, platform) }
+  // Stop's chord (Settings › Keyboard, ADR-0133): this pane's Stop button from the keyboard, only where Stop itself could be pressed.
+  const stopChord = claimedThreadChord(app?.settings, 'stop-turn', platform)
+  useEffect(() => {
+    if (watcher || !focused || !canStop || stopChord === null) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (!threadChordPressed(event, stopChord, platform)) return
+      event.preventDefault()
+      void command({ type: 'interrupt', threadId })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [watcher, focused, canStop, stopChord, platform, command, threadId])
+  // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
+  const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number; readonly from: 'prompt' | 'button' } | null>(null)
+  const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
+  const setNextList = (value: { readonly index: number; readonly from: 'prompt' | 'button' } | null): void => { setNextListState(value === null ? null : { ...value, threadId }) }
+  const nextOpen = nextList !== null
+  // Escape in the prompt puts the ghost away for this turn, so Tab moves focus as it always does.
+  const [ghostDismissed, setGhostDismissed] = useState<string | null>(null)
+  const ghostAway = ghostDismissed === `${threadId}\n${nextAnchor}`
+  const nextButton = useRef<HTMLButtonElement>(null)
+  const nextListId = `${composerId}-next`
+  const closeNext = (returnFocus: boolean): void => {
+    const from = nextList?.from
+    setNextList(null)
+    if (returnFocus && from === 'button') nextButton.current?.focus()
+  }
+  /** A row chosen: an answer sends at once into an empty prompt, anything else is written into the prompt for the user to send. */
+  const chooseNext = (choice: NextRow): void => {
+    setNextList(null)
+    const current = store.draft(threadId)
+    if (choice.kind === 'answer' && !hasDraftContent(current)) {
+      edit({ text: choice.text })
+      send(performance.now(), undefined, true)
+      return
+    }
+    const text = withNextText(current.text, choice.text)
+    caretAfterInsert.current = text.length
+    edit({ text })
+    field.current?.focus()
+  }
+  /** The next prompt's keys, offered after the skills and files lists have had theirs. True when one was taken. */
+  const nextKey = (event: KeyboardEvent<HTMLElement>, ghostShown: boolean): boolean => {
+    if (next === null || isCompositionKey({ isComposing: event.nativeEvent.isComposing, keyCode: event.keyCode }) || event.altKey || event.ctrlKey || event.metaKey) return false
+    const rows = nextRows(next)
+    const take = (choice: NextRow | undefined): boolean => {
+      if (choice === undefined) return false
+      event.preventDefault()
+      chooseNext(choice)
+      return true
+    }
+    if (nextOpen) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        setNextList({ ...nextList, index: (nextList.index + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length })
+        return true
+      }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNext(true); return true }
+      if (event.key === 'Enter' && !event.shiftKey) return take(rows[nextList.index])
+      if (/^[1-4]$/u.test(event.key) && !event.shiftKey && nextKeysFree.digit(event.key)) return take(rows.find(item => item.kind === 'suggestion' && item.key === event.key))
+      if (event.key === 'Tab' && !event.shiftKey && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
+      return false
+    }
+    if (event.key === 'Escape' && ghostShown) { event.preventDefault(); event.stopPropagation(); setGhostDismissed(`${threadId}\n${nextAnchor}`); return true }
+    if (event.key === 'Tab' && !event.shiftKey && ghostShown && nextKeysFree.tab) return take(rows.find(item => item.kind === 'ghost'))
+    if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0, from: 'prompt' }); return true }
+    return false
+  }
+
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
       onRetryAdmission={draftId => { void sendThreadRevision(store, row, command, performance.now(), 'queue', draftId) }} />
     {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
     <form className="thread-prompt" data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
-      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current() } }}>
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       {ornament}
+      {next !== null && nextList !== null ? <NextList prompt={next} listId={nextListId} activeIndex={nextList.index} sends={!hasContent}
+        onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
-        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} watcher={watcher}
+        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} attachable={!answering && !permission} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
+        next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
+        dictating={dictating || ghostAway} nextKey={nextKey}
         fieldLabel={fieldLabel} edit={edit} onSend={() => send(performance.now())}>
         {comments.length > 0 ? <ul className="review-chips" aria-label={t`Review comments`}>
           {comments.map(comment => {
@@ -368,11 +501,22 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
               <MessageSquare size={13} aria-hidden="true" className="review-chip__icon" />
               <span className="review-chip__label">{label}</span><span className="tt-visually-hidden">: {comment.text}</span>
               <button type="button" className="review-chip__remove tt-focusable" aria-label={t`Remove comment on ${label}`} title={t`Remove comment`}
-                onClick={event => removeComment(comment, event.currentTarget)}><X size={13} aria-hidden="true" /></button>
+                onClick={event => removeChip(event.currentTarget, () => reviewComments.remove(threadId, comment.id))}><X size={13} aria-hidden="true" /></button>
             </li>
           })}
         </ul> : null}
-        {comments.length > 0 && answering ? <p className="review-chips__note tt-paragraph"><Trans>These comments go with your next prompt, not this answer.</Trans></p> : null}
+        {quotes.length > 0 ? <ul className="review-chips" aria-label={t`Quotes from replies`}>
+          {quotes.map(quote => {
+            const label = replyQuoteLabel(quote.text)
+            return <li key={quote.id} className="review-chip" title={quote.text}>
+            <Quote size={13} aria-hidden="true" className="review-chip__icon" />
+            <span className="review-chip__label">{label}</span><span className="tt-visually-hidden">: {quote.text}</span>
+            <button type="button" className="review-chip__remove tt-focusable" aria-label={t`Remove quote ${label}`} title={t`Remove quote`}
+              onClick={event => removeChip(event.currentTarget, () => replyQuotes.remove(threadId, quote.id))}><X size={13} aria-hidden="true" /></button>
+          </li>
+          })}
+        </ul> : null}
+        {answering && (comments.length > 0 || quotes.length > 0) ? <p className="review-chips__note tt-paragraph">{heldNote(comments.length > 0, quotes.length > 0)}</p> : null}
         <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{fieldLabel}</label>
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
@@ -389,13 +533,18 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
                 disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
+          {next !== null ? <button ref={nextButton} type="button" className="thread-chip next-prompt__open tt-focusable" aria-haspopup="listbox" aria-expanded={nextOpen}
+            aria-controls={nextOpen ? nextListId : undefined} title={nextKeysFree.up ? t`Suggested next prompts (Up in an empty prompt)` : t`Suggested next prompts`}
+            onMouseDown={event => event.preventDefault()}
+            onClick={() => { if (nextOpen) closeNext(false); else { setNextList({ index: 0, from: 'button' }); field.current?.focus() } }}>
+            <Sparkles size={14} aria-hidden="true" /><span>{t({ message: 'Next', context: 'suggested prompts', comment: 'Opens the list of suggested next prompts.' })}</span></button> : null}
           {status}
         </div>
         <div className="thread-prompt__actions">
           {running && capabilities.steer === true
             ? <Button variant="ghost" className="thread-prompt__steer" disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` : reason ?? undefined} onClick={() => send(performance.now(), 'steer')}><Trans>Steer now</Trans></Button>
             : null}
-          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} title={stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
+          {working ? <Button iconOnly className="thread-prompt__stop" data-beside={content || undefined} aria-label={stopName} aria-keyshortcuts={!watcher && stopChord ? threadChordLabel(stopChord, platform).keys : undefined} title={!watcher && stopChord ? `${stopName} ${threadChordLabel(stopChord, platform).suffix}` : stopName} disabled={!canStop} onClick={() => void command({ type: 'interrupt', threadId })}><Square size={11} fill="currentColor" aria-hidden="true" /></Button> : null}
           {/* With nothing to send, Stop holds the send button's place; typed text brings the send back to the end, so Enter's button is never Stop. */}
           {/* One disc: an arrow sends, a list-plus queues. The full name stays in the label and title, so Queue prompt is never called Send. */}
           {continuing !== undefined
@@ -446,8 +595,8 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
 }
 
 /** The small, immediate typing path, including the menus that follow its caret. */
-function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported, watcher,
-  field, caretAfterInsert, leavePickers, onMenuChange, fieldLabel, edit, onSend, children }: {
+function ThreadComposerEditor({ row, state, command, store, composerId, editable, answering, placeholder, supported, attachable, watcher,
+  field, caretAfterInsert, leavePickers, onMenuChange, fieldLabel, next = null, nextOpen = false, nextListId, nextActiveId, dictating = false, nextKey, edit, onSend, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -457,6 +606,8 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly answering: boolean
   readonly placeholder: string
   readonly supported: boolean
+  /** Whether the draft takes attachments at all, whatever the model reads: once any file can be attached (ADR-0131). */
+  readonly attachable: boolean
   /** Watcher's composer offers no native skills. */
   readonly watcher: boolean
   readonly field: RefObject<PromptEditorElement | null>
@@ -465,12 +616,22 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   readonly onMenuChange: (open: boolean) => void
   /** The prompt's accessible name: "Your answer", "Watcher message" or "Prompt", in the interface language. */
   readonly fieldLabel: string
+  /** The next prompt on offer (ADR-0132), its list's state and its keys; absent, the composer is as it was. */
+  readonly next?: NextPrompt | null
+  readonly nextOpen?: boolean
+  readonly nextListId?: string
+  readonly nextActiveId?: string | undefined
+  readonly dictating?: boolean
+  readonly nextKey?: (event: KeyboardEvent<HTMLElement>, ghostShown: boolean) => boolean
   readonly edit: (patch: Parameters<ThreadDraftStore['edit']>[1]) => void
   readonly onSend: () => void
   readonly children: ReactNode
 }): ReactNode {
+  const { t } = useLingui()
   const threadId = row.thread.id
   const { draft } = useThreadComposer(store, threadId)
+  const ghostText = next?.ghost ?? ''
+  const anyFile = useOwlFeature('attach-any-file')
   const screenshotReads = useScreenshotReadPort(store, threadId, row.model?.supportsImages === true)
   const capabilities = capabilitiesForThread(state.host, row.thread)
   const skills = capabilities.skills === true && !watcher
@@ -487,6 +648,9 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
   const listId = `${composerId}-skills`
   const fileListId = `${composerId}-files`
   const statusId = `${composerId}-status`
+  // The ghost steps aside while dictation writes, while a list is open and once the text has left the next prompt behind.
+  const ghost = next !== null && !dictating && !nextOpen && !menuOpen ? ghostRest(next.ghost, draft.text) : null
+  const ghostId = `${composerId}-ghost`
 
   useLayoutEffect(() => {
     const caret = caretAfterInsert.current
@@ -533,17 +697,19 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
     <SkillPicker model={picker} listId={listId} provider={row.provider} selected={draft.skills} onSelect={skill => selectSkill(picker.options.indexOf(skill))} />
     <FilePicker model={files} listId={fileListId} selected={draft.files} onSelect={(entry: FileEntry) => selectFile(files.options.indexOf(entry))} />
     {children}
+    {ghost !== null && next !== null ? <span className="tt-visually-hidden" id={ghostId}>{t({ message: `Suggested next prompt: ${ghostText}. Press Tab to take it, or Up for more.`, comment: '{ghostText} is the suggested prompt.' })}</span> : null}
     {/* Screenshots still being staged when the user moves to another thread join this thread's draft as it is then. */}
-    <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={supported}
+    <ScreenshotInput key={threadId} target={threadId} attachments={draft.attachments} disabled={!editable} supported={anyFile ? attachable : supported}
+      imagesSupported={row.model?.supportsImages === true}
       reads={screenshotReads} onChange={attachments => edit({ attachments })}>
       <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={composerId} text={draft.text} skills={draft.skills} sigils={sigils} catalog={picker.catalog}
-        label={fieldLabel} editable={editable}
-        aria-describedby={statusId}
-        aria-autocomplete={menus ? 'list' : undefined}
-        aria-controls={picker.open && picker.options.length ? listId : files.open && files.options.length ? fileListId : undefined}
-        aria-expanded={menus ? menuOpen : undefined}
+        label={fieldLabel} editable={editable} ghost={ghost}
+        aria-describedby={ghost !== null ? `${statusId} ${ghostId}` : statusId}
+        aria-autocomplete={menus || next !== null ? 'list' : undefined}
+        aria-controls={picker.open && picker.options.length ? listId : files.open && files.options.length ? fileListId : nextOpen ? nextListId : undefined}
+        aria-expanded={menus || next !== null ? menuOpen || nextOpen : undefined}
         aria-activedescendant={picker.open && picker.activeIndex !== null ? skillOptionId(listId, picker.activeIndex)
-          : files.open && files.activeIndex !== null ? fileOptionId(fileListId, files.activeIndex) : undefined}
+          : files.open && files.activeIndex !== null ? fileOptionId(fileListId, files.activeIndex) : nextOpen ? nextActiveId : undefined}
         placeholder={placeholder}
         onChange={(text, pills) => {
           if (!editable) return
@@ -558,6 +724,7 @@ function ThreadComposerEditor({ row, state, command, store, composerId, editable
           // Only one of the two can be open, since a token starts with one sigil; both answer keys alike.
           if (runComposerMenuKey(event, key, { open: picker.open, optionCount: picker.options.length, activeIndex: picker.activeIndex, move: picker.move, close: picker.close, select: selectSkill })) return
           if (runComposerMenuKey(event, key, { open: files.open, optionCount: files.options.length, activeIndex: files.activeIndex, move: files.move, close: files.close, select: selectFile })) return
+          if (!menuOpen && nextKey?.(event, ghost !== null)) return
           if (key.key === 'Enter' && key.menuOpen && !isCompositionKey(key) && !key.shiftKey && !key.altKey) { event.preventDefault(); return }
           if (composerEnterIntent(key) !== 'send') return
           // Enter never inserts a stray newline, even when sending is blocked.

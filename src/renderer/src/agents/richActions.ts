@@ -33,9 +33,16 @@ const PLAIN_TEXT_BREAK = 'p, li, h1, h2, h3, h4, h5, h6, tr, pre, blockquote, .r
  * same in the window and in tests.
  */
 export function renderedPlainText(root: Element): string {
+  return renderedPlainLines(root).trim()
+}
+
+/** The plain-text form without the trim, so a first line keeps its indentation. */
+export function renderedPlainLines(root: Element): string {
   const walk = (node: Node, into: string[], pre: boolean): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       const value = node.nodeValue ?? ''
+      // The line break Markdown leaves between two blocks is layout, not a space: the blocks end their own lines.
+      if (!pre && value.trim() === '' && value.includes('\n') && [node.previousSibling, node.nextSibling].some(next => next instanceof Element && next.matches(PLAIN_TEXT_BREAK))) return
       into.push(pre ? value : value.replace(/\s+/gu, ' '))
       return
     }
@@ -54,7 +61,7 @@ export function renderedPlainText(root: Element): string {
   }
   const parts: string[] = []
   for (const child of root.childNodes) walk(child, parts, false)
-  return parts.join('').replace(/[ \t]+\n/gu, '\n').replace(/\n{3,}/gu, '\n\n').trim()
+  return parts.join('').replace(/[ \t]+\n/gu, '\n').replace(/\n{3,}/gu, '\n\n')
 }
 
 export async function writeClipboard(text: string): Promise<void> {

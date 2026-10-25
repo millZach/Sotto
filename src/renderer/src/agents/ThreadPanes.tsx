@@ -1,10 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
+import { Marked, useMark } from '../components/marks'
 import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
 import { useOptionalApp } from '../state/AppContext'
-import { chordClaimed } from './branchToolbar.logic'
+import { chordMatches } from './branchToolbar.logic'
+import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
 import {
   DIVIDER_WIDTH, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, PANE_DRAG_TYPE, RESIZE_STEP, THREAD_DRAG_TYPE,
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
@@ -229,7 +231,11 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const app = useOptionalApp()
   const { t } = useLingui()
   const label = givenLabel ?? t`Thread panes`
-  const zoomShortcut = chordClaimed('ctrl+shift+m', app?.settings?.hotkey, app?.platform ?? 'win32')
+  const panePlatform = app?.platform ?? 'win32'
+  // Zoom and Close pane answer to Settings › Keyboard (ADR-0133); Zoom's default is now `mod+shift+m` on every
+  // platform, where it was Ctrl+Shift+M even on a Mac — off a Mac the same keys, by the mod pattern's own rule.
+  const zoomChord = claimedThreadChord(app?.settings, 'zoom-pane', panePlatform)
+  const closeChord = claimedThreadChord(app?.settings, 'close-pane', panePlatform)
   const [container, width, height] = useSize(measuredWidth, measuredHeight)
   const area = useRef<HTMLDivElement>(null)
   const [moving, setMoving] = useState<string | null>(null)
@@ -241,6 +247,8 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const fits = fitsArea(layout, width, height)
   const narrow = split && !fits
   const single = split && (narrow || layout.zoomed)
+  // Two panes stand side by side: the host update pill shrinks to its mark and keeps the last pane's title its room.
+  useMark('side-by-side', split && !single)
   const shownId = focusedId !== null && paneIds.includes(focusedId) ? focusedId : paneIds[0] ?? null
   useLayoutEffect(() => { onVisiblePaneIdsChange?.(single ? shownId === null ? [] : [shownId] : paneIds) }, [single, shownId, paneIds, onVisiblePaneIdsChange])
   const shape = paneShape(layout)
@@ -298,11 +306,18 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
     change(movePane(layout, index, next), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
-    // Ctrl+Shift+M zooms the focused pane or returns to the arrangement.
-    if (!zoomShortcut || !split || event.key.toLowerCase() !== 'm' || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
-    if (narrow && !layout.zoomed) return
-    event.preventDefault()
-    if (shownId !== null) toggleZoom(shownId)
+    if (!split || event.defaultPrevented || event.repeat) return
+    // Zoom pane zooms the focused pane or returns to the arrangement; Close pane closes it, as its button does.
+    if (zoomChord !== null && chordMatches(event, zoomChord, panePlatform)) {
+      if (narrow && !layout.zoomed) return
+      event.preventDefault()
+      if (shownId !== null) toggleZoom(shownId)
+      return
+    }
+    if (closeChord !== null && chordMatches(event, closeChord, panePlatform) && shownId !== null) {
+      event.preventDefault()
+      onClosePane(shownId)
+    }
   }
 
   const sidebarDrop = (label: string, target: DropTarget, style?: CSSProperties, key?: string, name?: string): ReactNode =>
@@ -385,15 +400,16 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
         const zooms = !narrow || layout.zoomed
         const name = title(id)
-        return <React.Fragment key={id}><section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
-          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined}
+        const controls = (arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1
+        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} data-controls={split ? controls : undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
           {/* The layout controls come first, like the header they sit in, so tabbing leaves a pane from its composer. */}
-          {split ? <div className="thread-pane__controls" data-count={(arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1}>
+          {split ? <div className="thread-pane__controls" data-count={controls}>
             {arranges
               ? <button type="button" className="thread-pane__control tt-focusable" data-pane-chrome aria-pressed={layout.arrangement === 'row'}
                 aria-label={t`Single row`} title={layout.arrangement === 'row' ? t`Arrange in a grid` : t`Arrange in a single row`}
@@ -412,18 +428,18 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
               onDragEnd={() => { window.clearTimeout(moveStart.current); setMoving(null) }}>
               <GripVertical size={16} aria-hidden="true" />
             </button> : null}
-            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomShortcut ? 'Control+Shift+M' : undefined}
-              aria-label={layout.zoomed ? t`Show all panes` : t({ message: `Zoom ${name} pane`, comment: '{name} is a thread\'s title.' })} title={`${layout.zoomed ? t`Show all panes` : t`Zoom pane`}${zoomShortcut ? ' (Ctrl+Shift+M)' : ''}`}
+            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomChord ? threadChordLabel(zoomChord, panePlatform).keys : undefined}
+              aria-label={layout.zoomed ? t`Show all panes` : t({ message: `Zoom ${name} pane`, comment: '{name} is a thread\'s title.' })} title={`${layout.zoomed ? t`Show all panes` : t`Zoom pane`}${zoomChord ? ` ${threadChordLabel(zoomChord, panePlatform).suffix}` : ''}`}
               onClick={() => toggleZoom(id)}>
               {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
             </button> : null}
-            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={t({ message: `Close ${name} pane`, comment: '{name} is a thread\'s title.' })} title={t`Close pane`}
+            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={t({ message: `Close ${name} pane`, comment: '{name} is a thread\'s title.' })} aria-keyshortcuts={closeChord ? threadChordLabel(closeChord, panePlatform).keys : undefined} title={closeChord ? `${t`Close pane`} ${threadChordLabel(closeChord, panePlatform).suffix}` : t`Close pane`}
               onClick={() => onClosePane(id)}>
               <X size={16} aria-hidden="true" />
             </button>
           </div> : null}
           {renderPane(id)}
-        </section>
+        </section>}</Marked>
         {dividersAfter.get(index)}</React.Fragment>
       })}
     </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type FocusEvent, type ReactNode } from 'react'
+import { useMark } from '../../components/marks'
 import { FileText } from 'lucide-react'
 
 import { blockedPercent, freezeLength, mainFreezeNoticeVisible, type MainActivityBridge, type MainActivityState } from '../../../../shared/mainActivity'
@@ -29,6 +30,7 @@ function MainFreezeNoticeView({ bridge, frame }: { readonly bridge: MainActivity
   const state = useMainActivity(open, bridge)
   const noticeSetting = useOptionalApp()?.settings?.mainFreezeNotice ?? true
   const visible = mainFreezeNoticeVisible(state, noticeSetting)
+  useMark('main-freeze', visible && state !== null)
   // Nothing left to show: the popover goes with the pill.
   useEffect(() => { if (!visible) setOpen(false) }, [visible])
   if (!visible || state === null) return null

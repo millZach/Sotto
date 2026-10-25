@@ -15,6 +15,7 @@ import { moveListboxFocus } from './listboxKeys'
 import { writeClipboard } from './richActions'
 import { isCompositionKey } from './composerKeys'
 import { branchLabel, branchLabelIsRef, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
+import { chosenThreadChord } from './threadShortcuts'
 import type { ThreadRow } from './threadFacts'
 import { threadHostName } from './HostBadge'
 import { leftToRight, shownWords, wordsOf, type LaterWords } from './interfaceWords'
@@ -137,7 +138,10 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
     if (!focused || !toolbarApplies(thread)) return
     const onKey = (event: KeyboardEvent): void => {
       if (document.querySelector('dialog[open], [role="dialog"]')) return
-      const claims = (chord: string): boolean => chordClaimed(chord, hotkey, platform) && chordMatches(event, chord, platform)
+      const claims = (id: typeof TOOLBAR_SHORTCUTS[keyof typeof TOOLBAR_SHORTCUTS]): boolean => {
+        const chord = chosenThreadChord(app?.settings, id)
+        return chord !== null && chordClaimed(chord, hotkey, platform) && chordMatches(event, chord, platform)
+      }
       if (claims(TOOLBAR_SHORTCUTS.branch)) { event.preventDefault(); setWorkspaceOpen(false); setBranchOpen(true); return }
       if (claims(TOOLBAR_SHORTCUTS.workspace) && !locked) { event.preventDefault(); setBranchOpen(false); setWorkspaceOpen(true); workspaceTrigger.current?.focus(); return }
       if (claims(TOOLBAR_SHORTCUTS.previous) && !locked && previous && busy === null) { event.preventDefault(); void chooseWorkspace(previous.choice) }

@@ -1,4 +1,5 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -6,6 +7,7 @@ import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
+import { MessageContent } from '../MessageContent'
 import { linkPlace, webLinks } from './messageLinks'
 import { useWebLinkRouter } from '../../tools/webLinks'
 import { shownCount, shownWords, type LaterWords } from '../interfaceWords'
@@ -40,8 +42,9 @@ export interface AgentRequestCardProps {
 }
 
 /**
- * One pending question or approval, answered here and nowhere else. It shows exactly the choices the provider
- * offered, sends one answer for this request's own ID, and holds instead of resending when delivery is unknown.
+ * One pending question or approval, answered through the one store every surface sends by (ADR-0135). It shows
+ * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
+ * resending when delivery is unknown — the sidebar's Needs you entries answer by the same store and no other path.
  */
 export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
@@ -60,6 +63,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const rows = messageLinks.filter(url => !linked.has(url) && !servedAsPage(url, pages))
   const permission = mode === 'permission'
   const docked = placement === 'composer' && !permission
+  // The pane wears a question open in its composer, and a request card standing in its transcript.
+  useMark('question-open', docked && !collapsed)
+  useMark('request', !docked)
   const nativeUncertain = request.delivery === 'uncertain'
   const uncertain = nativeUncertain || entry.phase === 'unconfirmed'
   const locked = uncertain || entry.phase === 'sending' || entry.phase === 'sent'
@@ -74,12 +80,15 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
     setChecking(true)
     void store.release(entryOwner, request.id, onCheck).finally(() => setChecking(false))
   }
-  const summary = permission ? permissionSummary(request) : null
+  const plan = permission ? cursorPlan(request) : null
+  const summary = permission && !plan ? permissionSummary(request) : null
   const questions = request.questions ?? []
   const answer = mode === 'structured' ? structuredAnswer(questions, entry.selections) : null
   const remaining = questions.filter(question => blocksSending(question, entry.selections[question.id])).length
   const touched = questions.some(question => answerProgress(question, entry.selections[question.id]) !== 'empty')
   const needsProvider = questions.some(question => isRequired(question) && isUnavailable(question))
+  // Every question optional and none answered: sending is skipping, so the button says so (Cursor's questions, ADR-0128).
+  const skipping = mode === 'structured' && questions.length > 0 && !touched && questions.every(question => !isRequired(question))
   const legacySelection = entry.selections[request.id] ?? EMPTY_SELECTION
   const legacyChoice = request.options.find(option => legacySelection.optionIds.includes(option.id))
 
@@ -107,7 +116,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         toggle.current?.focus()
       }
     }}>
-    <span className="tt-visually-hidden">{permission ? t`Permission request for ${ownerTitle}` : t`Question from ${ownerTitle}`}</span>
+    <span className="tt-visually-hidden">{plan ? t`Plan from ${ownerTitle}` : permission ? t`Permission request for ${ownerTitle}` : t`Question from ${ownerTitle}`}</span>
     {docked ? <div className="agent-request__toggle-row">
       {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questionCount > 1 ? plural(questionCount, { one: '# question waiting', other: '# questions waiting' }) : questions[0]?.question ?? request.text}</span> : null}
       <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? t`Show question` : t`Collapse question`}
@@ -116,7 +125,18 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       </button>
     </div> : null}
     <div id={`${baseId}-body`} className="agent-request__body" hidden={docked && collapsed}>
-      {summary ? <>
+      {plan ? <>
+        <div className="agent-request__head"><strong id={titleId}>{t({ message: 'Plan', comment: 'The heading of a card that shows a plan Cursor made and waits for the user to accept.' })}</strong><span className="agent-request__tag">Cursor</span></div>
+        <p className="agent-request__text tt-paragraph"><Trans>Cursor made a plan and waits for you before it starts.</Trans></p>
+        {/* A long plan scrolls here, so it takes a stop in the keyboard order for the arrows to scroll it. */}
+        <div className="agent-request__plan tt-focusable" role="region" aria-label={t`Cursor’s plan`} tabIndex={0}>
+          {plan.title ? <p className="agent-request__plan-title">{plan.title}</p> : null}
+          {plan.overview ? <p className="agent-request__plan-overview"><LinkedText text={plan.overview} /></p> : null}
+          {plan.steps ? <div className="agent-request__plan-steps"><MessageContent text={plan.steps} /></div> : null}
+        </div>
+        <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} names={{ 'accept-plan': t`Accept Cursor’s plan`, 'reject-plan': t`Reject Cursor’s plan` }}
+          labels={{ 'accept-plan': t`Accept plan`, 'reject-plan': t({ message: 'Reject', comment: 'Rejects a plan the coding agent proposed.' }) }} />
+      </> : summary ? <>
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
@@ -139,8 +159,9 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
-            : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
-          <Button type="submit" disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…` : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
+            : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
+          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…`
+            : skipping ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>
       </form> : <>
         <div className="agent-request__head"><strong id={titleId}><Trans>Question</Trans></strong></div>
@@ -168,9 +189,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   </section>
 }
 
-function PermissionActions({ request, disabled, pressed, onChoose }: {
+function PermissionActions({ request, disabled, pressed, onChoose, names, labels }: {
   readonly request: AgentRequest; readonly disabled: boolean; readonly pressed: string | null
   readonly onChoose: (choice: string, answer: RequestAnswer) => void
+  /** Each choice's accessible name by its ID, where its label alone would not say what a press does. */
+  readonly names?: Readonly<Record<string, string>>
+  /** Each choice's shown label by its ID, where Sotto wrote the choice and so translates it; a provider's own labels show as sent. */
+  readonly labels?: Readonly<Record<string, string>>
 }): ReactNode {
   const { t } = useLingui()
   const choices = request.permissionChoices
@@ -178,13 +203,13 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
   if (choices && choices.length === 0) return <p className="agent-request__fallback tt-paragraph"><Trans>Sotto has no choice it can send for this request. Answer it in the provider’s app.</Trans></p>
   if (choices) {
     const described = choices.filter(choice => choice.description)
-    // The provider's order is kept; the single-use approval is the one emphasized action.
-    const primary = choices.find(choice => choice.kind === 'allow-once')?.id
+    // The provider's order is kept; the single-use approval, or a plan's acceptance, is the one emphasized action.
+    const primary = choices.find(choice => choice.kind === 'allow-once')?.id ?? (names ? choices[0]?.id : undefined)
     return <>
       <div className="agent-request__actions">
         {choices.map(choice => <Button key={choice.id} variant={choice.id === primary ? 'primary' : 'secondary'} disabled={disabled}
-          aria-pressed={pressed === choice.id || undefined} data-choice-kind={choice.kind}
-          onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{choice.label}</Button>)}
+          aria-label={names?.[choice.id]} aria-pressed={pressed === choice.id || undefined} data-choice-kind={choice.kind}
+          onClick={() => onChoose(choice.id, permissionAnswer(choice))}>{labels?.[choice.id] ?? choice.label}</Button>)}
       </div>
       {described.length > 0 ? <dl className="agent-request__choices">{described.map(choice => <div key={choice.id}><dt>{choice.label}</dt><dd><LinkedText text={choice.description!} /></dd></div>)}</dl> : null}
     </>
@@ -193,6 +218,21 @@ function PermissionActions({ request, disabled, pressed, onChoose }: {
     <Button variant="secondary" disabled={disabled} aria-pressed={pressed === 'deny' || undefined} onClick={() => onChoose('deny', legacyPermissionAnswer(false))}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
     <Button disabled={disabled} aria-pressed={pressed === 'allow' || undefined} onClick={() => onChoose('allow', legacyPermissionAnswer(true))}>{t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })}</Button>
   </div>
+}
+
+/** The tool Cursor's plans arrive as (main's `CURSOR_PLAN_TOOL`, ADR-0128): a request to accept or reject a plan. */
+const CURSOR_PLAN_TOOL = 'cursor/create_plan'
+
+/**
+ * A Cursor plan's parts, or null for any other permission. Main sends them typed in the request's context: the plan's
+ * name, its overview and its steps in Markdown. A plan without them, from a host older than that, shows its text whole.
+ */
+export function cursorPlan(request: AgentRequest): { readonly title?: string; readonly overview?: string; readonly steps?: string } | null {
+  if (request.kind !== 'permission' || request.context?.toolName !== CURSOR_PLAN_TOOL) return null
+  const plan = request.context.plan
+  if (!plan) return { steps: request.text }
+  const title = plan.name?.trim(), overview = plan.overview?.trim(), steps = plan.steps?.trim()
+  return { ...(title ? { title } : {}), ...(overview ? { overview } : {}), ...(steps ? { steps } : {}) }
 }
 
 /** Only a recommendation present in the provider's label is called one. IDs and answers stay untouched. */

@@ -34,14 +34,14 @@ public enum RemoteCommands {
     }
 }
 public enum Commands {
-    /// A reply: its words, its staged photos, or both. Photos go by handle, within the host's limits.
-    public static func prompt(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
-        try reply("manual-send", threadID: threadID, text: text, draftID: draftID, images: images)
+    /// A reply: its words, its staged photos and files, or any of them. Photos and files go by handle, within the host's limits.
+    public static func prompt(threadID: String, text: String, draftID: String, images: [StagedImage] = [], files: [StagedFile] = []) throws -> JSONValue {
+        try reply("manual-send", threadID: threadID, text: text, draftID: draftID, images: images, files: files)
     }
     /// A reply put in the thread's follow-up queue, to go when the running turn ends. The same words and photos as a
     /// reply, within the same limits.
-    public static func queue(threadID: String, text: String, draftID: String, images: [StagedImage] = []) throws -> JSONValue {
-        try reply("queue-followup", threadID: threadID, text: text, draftID: draftID, images: images)
+    public static func queue(threadID: String, text: String, draftID: String, images: [StagedImage] = [], files: [StagedFile] = []) throws -> JSONValue {
+        try reply("queue-followup", threadID: threadID, text: text, draftID: draftID, images: images, files: files)
     }
     /// A queued message sent into the running turn now, rather than after it.
     public static func steerFollowup(threadID: String, itemID: String) throws -> JSONValue {
@@ -65,13 +65,16 @@ public enum Commands {
         guard UUID(uuidString: itemID) != nil else { throw ClientError.invalidRequest }
         return try RemoteCommands.checked(.object(["type": .string(type), "threadId": .string(threadID), "itemId": .string(itemID)]))
     }
-    private static func reply(_ type: String, threadID: String, text: String, draftID: String, images: [StagedImage]) throws -> JSONValue {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty, text.utf16.count <= 100_000,
-              UUID(uuidString: draftID) != nil, images.count <= PhotoLimits.count, images.allSatisfy(\.valid),
-              Set(images.map(\.id)).count == images.count,
-              images.reduce(0, { $0 + $1.sizeBytes }) <= PhotoLimits.bytesTogether else { throw ClientError.invalidRequest }
+    /// Photos and files together: eight at most, photos 20 MiB between them and everything 50 MiB (ADR-0131).
+    private static func reply(_ type: String, threadID: String, text: String, draftID: String, images: [StagedImage], files: [StagedFile]) throws -> JSONValue {
+        let ids = images.map(\.id) + files.map(\.id)
+        let imageBytes = images.reduce(0, { $0 + $1.sizeBytes })
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !ids.isEmpty, text.utf16.count <= 100_000,
+              UUID(uuidString: draftID) != nil, ids.count <= PhotoLimits.count, images.allSatisfy(\.valid), files.allSatisfy(\.valid),
+              Set(ids).count == ids.count, imageBytes <= PhotoLimits.bytesTogether,
+              files.reduce(imageBytes, { $0 + $1.sizeBytes }) <= FileLimits.bytesTogether else { throw ClientError.invalidRequest }
         var fields: [String: JSONValue] = ["type": .string(type), "threadId": .string(threadID), "text": .string(text), "draftId": .string(draftID)]
-        if !images.isEmpty { fields["attachments"] = .array(images.map(\.wire)) }
+        if !ids.isEmpty { fields["attachments"] = .array(images.map(\.wire) + files.map(\.wire)) }
         return try RemoteCommands.checked(.object(fields))
     }
     public static func interrupt(threadID: String) throws -> JSONValue {
