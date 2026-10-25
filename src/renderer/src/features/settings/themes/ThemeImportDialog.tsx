@@ -11,9 +11,10 @@
 
 import React, { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { Download, ExternalLink, PackagePlus, Plus, RefreshCw, Search, X } from 'lucide-react'
-import { i18n, type MessageDescriptor } from '@lingui/core'
+import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownCompactCount, shownCount, shownDecimal } from '../../../state/interfaceNumbers'
 
 import { MAX_THEME_FILE_BYTES, OPEN_VSX_SORTS, type OpenVsxThemeExtension, type OpenVsxThemeSort } from '../../../../../shared/themes/bridge'
 import { parseJsonc } from '../../../../../shared/themes/jsonc'
@@ -40,15 +41,11 @@ const SORT_LABELS: Readonly<Record<OpenVsxThemeSort, MessageDescriptor>> = {
 // Theme names people search for, not words.
 const SUGGESTED_SEARCHES = ['Dracula', 'Catppuccin', 'Nord', 'Tokyo Night']
 const SEARCH_DEBOUNCE_MS = 350
-/** A download count the way the interface language writes a short number: 1.2K, 3M. */
-const downloadsIn = (count: number): string => new Intl.NumberFormat(i18n.locale, { notation: 'compact', maximumFractionDigits: 1 }).format(count)
-
-/** A file size with its number written in the interface language. The units stay as written. */
+/** A file size with its number written in the interface language, English ungrouped as before. The units stay as written. */
 function formatBytes(bytes: number): string {
-  const number = (value: number, digits: number): string => new Intl.NumberFormat(i18n.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value)
-  if (bytes >= 1024 * 1024) return `${number(bytes / (1024 * 1024), 1)} MB`
-  if (bytes >= 1024) return `${number(Math.round(bytes / 1024), 0)} KB`
-  return `${number(bytes, 0)} bytes`
+  if (bytes >= 1024 * 1024) return `${shownDecimal(bytes / (1024 * 1024), 1)} MB`
+  if (bytes >= 1024) return `${shownCount(Math.round(bytes / 1024))} KB`
+  return `${shownCount(bytes)} bytes`
 }
 
 /** The message for a file too large to be a theme, else null. The size is checked before any byte is read. */
@@ -162,8 +159,8 @@ export function ThemeImportDialog({ writer, onClose, onNotice }: ThemeImportDial
           failures.push({ file: fileName, reason: wordsOf(cause, msg`not a theme file`) })
         }
       }
-      const fileCount = files.length
-      if (fileCount > 40) failures.push(msg`${plural(fileCount, { other: 'Only the first 40 of # files were read.' })}`)
+      const fileCount = files.length, filesShown = shownCount(fileCount)
+      if (fileCount > 40) failures.push(msg`${plural(fileCount, { other: `Only the first 40 of ${filesShown} files were read.` })}`)
       if (id !== request.current) return
       const themes = pairVsCodeThemes(resolveThemeLabelCollisions(parsed))
       let conflicting: ThemeDefinition[] = []
@@ -503,7 +500,8 @@ function OpenVsxSearch({ writer, onInstalled }: { readonly writer: ThemeLibraryW
                   const busy = installing === extension.id
                   const extensionName = extension.displayName
                   const downloadCount = extension.downloadCount
-                  const downloads = downloadsIn(downloadCount)
+                  // A short number, 1.2K: in English the computer's own short form, as it always was.
+                  const downloads = shownCompactCount(downloadCount)
                   const label = busy
                     ? installedAlready ? t`Updating ${extensionName}` : t`Installing ${extensionName}`
                     : installedAlready ? t`Update ${extensionName}` : t`Install ${extensionName}`

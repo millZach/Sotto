@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
+import { shownCount } from '../../state/interfaceNumbers'
 import type { HostDevice, TailscaleSummary } from '../../../../shared/hostDevices'
 import './hostDevices.css'
 
@@ -15,8 +16,9 @@ export function timeAgo(iso: string, now: number): string {
   if (minutes < 60) return plural(minutes, { one: '# minute ago', other: '# minutes ago' })
   const hours = Math.floor(minutes / 60)
   if (minutes < 24 * 60) return plural(hours, { one: '# hour ago', other: '# hours ago' })
-  const days = Math.floor(minutes / (24 * 60))
-  return plural(days, { one: '# day ago', other: '# days ago' })
+  // Days can pass 999, so the count is written ungrouped in English, as it always was.
+  const days = Math.floor(minutes / (24 * 60)), shownDays = shownCount(days)
+  return plural(days, { one: `${shownDays} day ago`, other: `${shownDays} days ago` })
 }
 
 /** Why a device is listed under "Can't use now", or undefined when it can be added. */

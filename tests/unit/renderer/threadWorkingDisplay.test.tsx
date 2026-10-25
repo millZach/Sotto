@@ -47,14 +47,16 @@ describe('a turn that has reported nothing yet', () => {
     const word = liveRow.querySelector('.thread-activity-live__word')!
     expect(word.textContent).toBe('Combing the desert')
     expect(word).toHaveAttribute('aria-hidden', 'true')
-    // No clock on the line: how long the turn took is said once it ends.
-    expect(liveRow).toHaveTextContent(/^Combing the desertWorking$/)
+    // Beside the words, how long the turn has been working.
+    expect(liveRow).toHaveTextContent(/^Combing the desertWorking12s$/)
 
     const seen = new Set<string>([word.textContent!])
     for (let step = 0; step < 6; step++) {
       const before = word.textContent
       act(() => { vi.advanceTimersByTime(3_800) })
       expect(word.textContent).not.toBe(before)
+      // The light's lit copy follows the word.
+      expect(word).toHaveAttribute('data-word', word.textContent!)
       seen.add(word.textContent!)
     }
     expect(seen.size).toBeGreaterThan(2)

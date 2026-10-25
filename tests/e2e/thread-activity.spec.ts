@@ -136,19 +136,31 @@ test('a running turn folds its steps under the glowing working words, opens them
     const live = log.getByTestId('thread-activity-live')
     const line = live.getByRole('button', { name: /^Working, \d+ steps so far$/ })
     await expect(line).toHaveAttribute('aria-expanded', 'false')
-    // The words carry the wait: no clock, no step named on the line, and no live rows until it opens.
+    // The words carry the wait beside the turn's clock: no step named on the line, and no live rows until it opens.
     await expect(live.locator('.thread-activity-live__word')).toBeVisible()
     await expect(live).not.toContainText('npm test')
-    await expect(live.locator('[data-elapsed]')).toHaveCount(0)
+    const clock = live.locator('.thread-activity-live__clock [data-elapsed]')
+    await expect(clock).toBeVisible()
+    const started = await clock.textContent()
+    await expect.poll(() => clock.textContent(), { timeout: 3_000 }).not.toBe(started)
     await expect(log.locator('.thread-activity[data-live]')).toHaveCount(0)
-    // A band of accent light crosses the words, and the dot steps aside for it.
-    await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'thread-activity-glow')
+    // A band of the accent, at its most vivid, lights the letters as it crosses them, and the dot steps aside for it.
+    const glow = (property: 'animationName' | 'color'): Promise<string> =>
+      live.locator('.thread-activity-live__word').evaluate((element, name) => getComputedStyle(element, '::after')[name], property)
+    await expect.poll(() => glow('animationName')).toBe('thread-activity-glow')
+    expect(await glow('color')).not.toBe(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element).color))
     await expect(live.locator('.thread-activity-live__line > .thread-activity__pulse')).toBeHidden()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     for (const mode of ['dark', 'light'] as const) {
       await theme(page, mode)
       await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
       await page.screenshot({ path: resolve(shots, `live-1280-${mode}.png`) })
+      // The light held mid-word, so the evidence shows how strongly it lights the letters.
+      const held = await page.evaluate(() => document.getAnimations().filter(animation => (animation as CSSAnimation).animationName === 'thread-activity-glow')
+        .map(animation => { animation.pause(); animation.currentTime = 1_550; return true }).length)
+      expect(held).toBe(1)
+      await live.screenshot({ path: resolve(shots, `live-glow-held-${mode}.png`), scale: 'device' })
+      await page.evaluate(() => { for (const animation of document.getAnimations()) if ((animation as CSSAnimation).animationName === 'thread-activity-glow') animation.play() })
     }
 
     await line.focus()
@@ -178,6 +190,7 @@ test('a running turn folds its steps under the glowing working words, opens them
     await show(page, 'disconnected')
     await expect(live).toContainText('Last seen working')
     await expect(live.locator('.thread-activity-live__word')).toHaveCount(0)
+    await expect(live.locator('.thread-activity-live__clock')).toHaveCount(0)
     await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
     const seen = live.getByRole('button', { name: /^Last seen working, \d+ steps so far$/ })
     if (await seen.getAttribute('aria-expanded') === 'false') await seen.click()
@@ -236,6 +249,7 @@ test('the shipped minimum width and reduced motion keep rows readable without si
     await expect(live.locator('.thread-activity__pulse')).toHaveCSS('animation-name', 'none')
     await expect(live.locator('.thread-activity__pulse')).toBeVisible()
     await expect(live.locator('.thread-activity-live__word')).toHaveCSS('animation-name', 'none')
+    expect(await live.locator('.thread-activity-live__word').evaluate(element => getComputedStyle(element, '::after').content)).toBe('none')
     await transcript(page).evaluate(element => { element.scrollTop = element.scrollHeight })
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     await page.screenshot({ path: resolve(shots, 'live-820-reduced-motion-light.png') })

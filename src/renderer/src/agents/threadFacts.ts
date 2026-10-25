@@ -95,7 +95,7 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', cursor: 'Cu', other: provider.trim().charAt(0).toLocaleUpperCase() }
+  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', cursor: 'Cu', deepseek: 'DS', other: provider.trim().charAt(0).toLocaleUpperCase() }
   const glyph = glyphs[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }

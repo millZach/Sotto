@@ -169,6 +169,8 @@ function WorkingWord(): ReactNode {
       if (!node) return
       current = (current + 1 + Math.floor(Math.random() * (WORKING_WORDS.length - 1))) % WORKING_WORDS.length
       node.textContent = i18n._(WORKING_WORDS[current]!)
+      // The light crossing the words draws a lit copy of them, which reads the word from here.
+      node.dataset.word = i18n._(WORKING_WORDS[current]!)
       const still = document.documentElement.dataset.reducedMotion === 'on' || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false)
       if (!still) node.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: 'ease-out' })
     }, WORD_MS)
@@ -176,7 +178,7 @@ function WorkingWord(): ReactNode {
   }, [])
   // The word is decoration over one unchanging fact, so assistive tech hears that fact once instead of every change.
   return <>
-    <span ref={ref} className="thread-activity-live__word" aria-hidden="true">{t(WORKING_WORDS[0]!)}</span>
+    <span ref={ref} className="thread-activity-live__word" data-word={t(WORKING_WORDS[0]!)} aria-hidden="true">{t(WORKING_WORDS[0]!)}</span>
     <span className="tt-visually-hidden">{t({ message: 'Working', comment: 'A turn that is running.' })}</span>
   </>
 }
@@ -424,8 +426,8 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
 }
 
 /**
- * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, and
- * the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
+ * One line at the end of a running turn: the working words, with a slow light crossing them while the agent works, how
+ * long the turn has run, and the turn's steps folded under them. A press opens the steps, newest last, and Escape folds them again (Zach's pick,
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
@@ -484,9 +486,13 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
     return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} steps={disclosure} />
   }
+  // The clock beside the words counts from when the turn began, or from Send while the prompt is on its way. It ticks
+  // only while the provider is connected, as every clock in the transcript does.
+  const startedAt = turn?.startedAt ?? sendingSince
   const words = <>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
+    {connected && startedAt ? <span className="thread-activity-live__clock"><Elapsed startedAt={startedAt} /></span> : null}
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>

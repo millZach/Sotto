@@ -2759,6 +2759,22 @@ msgstr "Cursor’s plan"
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
 msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+msgstr "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+msgstr "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+msgstr "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+msgstr "DeepSeek Harness threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek Harness does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
+
 #. A badge on a Git ref: the repository's default branch.
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "default"
@@ -5471,6 +5487,10 @@ msgid "Renamed"
 msgstr "Renamed"
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 msgstr "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 
@@ -5885,6 +5905,7 @@ msgid "Show {earlier} earlier"
 msgstr "Show {earlier} earlier"
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
+#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
 msgstr "Show {file} in {manager}"
@@ -5945,6 +5966,7 @@ msgstr "Show fewer waiting threads"
 msgid "Show here"
 msgstr "Show here"
 
+#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show in {manager}: {file}"
@@ -6310,6 +6332,10 @@ msgstr "Sotto restarted before the brief was sent. Nothing was sent."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
 msgstr "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
+msgstr "Sotto runs DeepSeek Harness with its own folder, on the models of your own model servers below. The DeepSeek Harness you run yourself stays as it is."
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
@@ -7284,6 +7310,10 @@ msgstr "Threads on this server send your code and messages to it, so whoever run
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Threads with Cursor"
 msgstr "Threads with Cursor"
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Threads with DeepSeek Harness"
+msgstr "Threads with DeepSeek Harness"
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Threads with Muse"

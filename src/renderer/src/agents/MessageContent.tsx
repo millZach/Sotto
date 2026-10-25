@@ -253,12 +253,33 @@ const heading = (level: 3 | 4 | 5 | 6, rank: number) => function Heading({ child
   return <Tag className={`rich-heading rich-heading--${rank}`}>{children}</Tag>
 }
 
+// Inline code inside a link stays plain, so a press does one thing.
+const InsideLink = createContext(false)
+
+/**
+ * Inline code that is a whole home, drive or absolute path shows that file when pressed, as a file link does. A
+ * `/`-rooted path needs two parts, so a slash command such as `/review` stays code.
+ */
+function InlineCode({ children }: { children?: ReactNode }): ReactNode {
+  const { reveal } = useContext(LinkContext)
+  const insideLink = useContext(InsideLink)
+  const text = typeof children === 'string' ? children.trim() : ''
+  const file = reveal && !insideLink && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) ? localFilePath(text) : null
+  const { t } = useLingui()
+  if (!file || !reveal) return <code>{children}</code>
+  const manager = fileManager()
+  return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</code>
+}
+
 // Every URL-bearing element is rendered by a component below, which vets it before it reaches the DOM.
 const urlTransform: UrlTransform = (url, key, node) =>
   (node.tagName === 'a' && key === 'href') || (node.tagName === 'img' && key === 'src') ? url : defaultUrlTransform(url)
 
 const components: Components = {
-  a: ({ href, title, children }) => <MarkdownLink href={href} title={title}>{children}</MarkdownLink>,
+  a: ({ href, title, children }) => <InsideLink.Provider value><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLink.Provider>,
+  code: ({ children }) => <InlineCode>{children}</InlineCode>,
   img: ({ src, alt }) => <BlockedImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
   pre: ({ node }) => {
     const code = node?.children.find((child): child is Element => child.type === 'element' && child.tagName === 'code')

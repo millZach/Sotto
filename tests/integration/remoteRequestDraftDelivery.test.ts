@@ -26,7 +26,7 @@ afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.spl
 async function fixture(provider: ProviderId, onPushError?: (message: string) => void) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-remote-answer-'))
   cleanups.push(async () => { if (dirname(root) === tmpdir() && root.includes('sotto-remote-answer-')) await rm(root, { recursive: true, force: true }) })
-  const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost() }
+  const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(), deepseek: new E2EAgentHost() }
   const native = providers[provider]
   const startHost = () => startHeadlessHost({ dataDirectory: join(root, 'host'), port: 0,
     providers, reasoner: e2eAgentReasoner })

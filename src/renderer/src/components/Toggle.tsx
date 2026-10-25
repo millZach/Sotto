@@ -30,7 +30,7 @@ export function Toggle({ label, checked, onCheckedChange, disabled = false, desc
         {description === undefined ? null : (
           <span
             id={descriptionId}
-            className="tt-field__description"
+            className="tt-field__description tt-paragraph"
           >{description}</span>
         )}
       </span>
