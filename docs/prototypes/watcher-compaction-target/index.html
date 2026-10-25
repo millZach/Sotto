@@ -1,0 +1,202 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway, round 2. Four slider designs for "Compact Watcher at" in Settings > Watcher, switchable with
+     ?variant=A|B|C|D and ?theme=dark|light. Every design is a real <input type="range"> underneath, so the keyboard
+     and screen readers work the same in all four. Colours are Sotto's default palette. Nothing here saves.
+     Zach picked C on October 24, 2026, after rejecting round 1 (three layouts on Sotto's existing slider look). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: Compact Watcher at, round 2</title>
+<style>
+  :root[data-theme='dark'] {
+    --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265);
+    --overlay: oklch(0.215 0.008 265); --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 265);
+    --muted: oklch(0.72 0.014 265); --border: oklch(0.305 0.02 265); --track: oklch(0.255 0.014 265);
+    --accent: oklch(0.714403 0.104089 183.092); --accent-fg: oklch(0.16 0.012 190); --accent-soft: oklch(0.42 0.06 186);
+    --selected: oklch(0.26 0.03 190); --level: oklch(0.36 0.02 265); color-scheme: dark;
+  }
+  :root[data-theme='light'] {
+    --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85);
+    --overlay: oklch(1 0 0); --text: oklch(0.235 0.014 75); --text-2: oklch(0.33 0.014 75);
+    --muted: oklch(0.5 0.014 75); --border: oklch(0.86 0.012 80); --track: oklch(0.91 0.008 80);
+    --accent: oklch(0.53 0.095 186); --accent-fg: oklch(0.99 0.003 85); --accent-soft: oklch(0.8 0.06 186);
+    --selected: oklch(0.895 0.028 188); --level: oklch(0.82 0.012 80); color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 14px/1.45 Figtree, system-ui, sans-serif; }
+  .strip { height: 34px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; color: var(--muted); font-size: 12px; gap: 10px; }
+  .strip button { font: inherit; color: var(--text-2); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+  .shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: calc(100vh - 34px); }
+  nav { border-right: 1px solid var(--border); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; }
+  nav a { padding: 6px 10px; border-radius: 6px; color: var(--text-2); font-size: 13.5px; }
+  nav a.on { background: var(--selected); color: var(--text); font-weight: 500; }
+  nav hr { border: 0; border-top: 1px solid var(--border); margin: 8px 6px; }
+  main { padding: 26px 32px 120px; max-width: 860px; }
+  h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .sub { margin: 4px 0 0; color: var(--muted); }
+  .group { margin-top: 26px; }
+  .group h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 2px; color: var(--text-2); font-size: 14px; font-weight: 600; }
+  .group h3 svg { color: var(--muted); }
+  .rows { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .row { padding: 14px 16px; }
+  .toggle-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; align-items: center; }
+  .label { font-weight: 500; display: block; }
+  .desc { margin: 2px 0 0; color: var(--muted); font-size: 13px; max-width: 62ch; }
+  .switch { width: 36px; height: 20px; border-radius: 10px; background: var(--accent); position: relative; }
+  .switch::after { content: ''; position: absolute; right: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--accent-fg); }
+  .note { margin-top: 28px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-size: 13px; }
+
+  /* Shared: the real range input lies over each drawing, invisible, so pointer and keyboard drive it. */
+  .dial { position: relative; margin-top: 14px; }
+  .dial input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; appearance: none; }
+  .dial input::-webkit-slider-thumb { appearance: none; width: var(--hit, 20px); height: 40px; }
+  .dial input::-moz-range-thumb { width: var(--hit, 20px); height: 40px; border: 0; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* A: notched rail, the value rides in the thumb. */
+  .a { --hit: 60px; height: 44px; }
+  .a .rail { position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 3px; background: var(--track); }
+  .a .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
+  .a .notches { position: absolute; left: 30px; right: 30px; top: 50%; height: 0; }
+  .a .notches i { position: absolute; top: -1.5px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--muted); opacity: .6; }
+  .a .notches i.under { background: var(--accent-fg); }
+  .a .pill { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 60px; height: 28px; border-radius: 14px; background: var(--overlay);
+    border: 1.5px solid var(--accent); color: var(--text); font-weight: 600; font-size: 13px; display: grid; place-items: center; box-shadow: 0 1px 3px rgb(0 0 0 / .25); pointer-events: none; }
+  .a:has(input:focus-visible) .pill { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .a-ends { position: relative; height: 18px; margin: 2px 30px 0; color: var(--muted); font-size: 12px; }
+  .a-ends span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+
+  /* B: a level meter. Taller bars are a longer conversation. */
+  .b-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .b-value { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .b-value small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .b { --hit: 22px; height: 46px; display: flex; align-items: flex-end; gap: 4px; }
+  .b span { flex: 1; border-radius: 2px; background: var(--level); transition: background .12s; }
+  .b span.on { background: var(--accent); }
+  .b span.default { box-shadow: inset 0 -3px 0 var(--text-2); }
+  .b:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 4px; }
+  .b-ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  /* C: Watcher's conversation as a bar, with the compaction point as a line you move. */
+  .c { --hit: 24px; height: 58px; }
+  .c .tank { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; border-radius: 6px; background: var(--track); overflow: hidden; }
+  .c .size { position: absolute; left: 0; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, var(--level) 0 5px, transparent 5px 9px); }
+  .c .size.past { background: repeating-linear-gradient(135deg, var(--accent-soft) 0 5px, transparent 5px 9px); }
+  .c .line { position: absolute; bottom: 0; height: 30px; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; }
+  .c .flag { position: absolute; bottom: 30px; transform: translateX(-50%); padding: 2px 8px; border-radius: 5px; background: var(--accent); color: var(--accent-fg);
+    font-size: 12.5px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+  .c:has(input:focus-visible) .flag { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .c-foot { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; margin-top: 6px; gap: 12px; }
+
+  /* D: a big number you step, with a fine line under it you can drag. */
+  .d-box { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+  .d-box button { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border); background: var(--raised); color: var(--text); font: 500 18px/1 Figtree, system-ui, sans-serif; cursor: pointer; }
+  .d-box button:disabled { opacity: .4; cursor: default; }
+  .d-box button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .d-mid { flex: 1; min-width: 0; text-align: center; }
+  .d-value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; }
+  .d-value small { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+  .d { --hit: 16px; height: 18px; margin-top: 8px; }
+  .d .rail { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: var(--track); border-radius: 1px; }
+  .d .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 1px; }
+  .d .dot { position: absolute; top: 9px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); transform: translate(-50%, -50%); pointer-events: none; }
+  .d:has(input:focus-visible) .dot { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .proto-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px; border-radius: 999px; background: #111; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.35); font: 500 13px system-ui, sans-serif; z-index: 10; max-width: calc(100vw - 20px); }
+  .proto-bar button { width: 34px; height: 34px; border-radius: 50%; border: 0; background: #2a2a2a; color: #fff; font-size: 16px; cursor: pointer; flex: none; }
+  .proto-bar span { padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 620px) {
+    .shell { grid-template-columns: 1fr; }
+    nav { display: none; }
+    main { padding: 20px 16px 120px; }
+    .b { gap: 3px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .b span { transition: none; } }
+</style>
+</head>
+<body>
+<div class="strip">Sotto settings <span style="flex:1"></span><button id="theme" type="button">Light</button></div>
+<div class="shell">
+  <nav aria-label="Settings pages">
+    <a>Dictation</a><a>Cleanup</a><hr><a>Threads</a><a>Git &amp; worktrees</a><a class="on">Watcher</a><hr><a>Providers</a><a>Hosts &amp; phones</a><a>Cloud iPhone</a><hr><a>Appearance</a><a>Application</a>
+  </nav>
+  <main>
+    <h2>Watcher</h2>
+    <p class="sub">How Watcher looks after threads</p>
+    <section class="group">
+      <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>Watched threads</h3>
+      <div class="rows">
+        <div class="row toggle-row"><div><span class="label">Settle finished threads</span><p class="desc">Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.</p></div><span class="switch" aria-hidden="true"></span></div>
+      </div>
+    </section>
+    <section class="group">
+      <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg>Compaction</h3>
+      <div class="rows"><div class="row" id="slot"></div></div>
+    </section>
+    <p class="note" id="explain"></p>
+  </main>
+</div>
+<div class="proto-bar" role="group" aria-label="Prototype variants">
+  <button type="button" id="prev" aria-label="Previous variant">&#8592;</button>
+  <span id="which"></span>
+  <button type="button" id="next" aria-label="Next variant">&#8594;</button>
+</div>
+<script>
+const MIN = 200_000, MAX = 1_000_000, STEP = 50_000, DEFAULT = 400_000, NOW = 312_000
+const STOPS = (MAX - MIN) / STEP + 1
+const words = n => n >= 1_000_000 ? '1M' : `${n / 1000}k`
+const frac = n => (n - MIN) / (MAX - MIN)
+const DESC = 'Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word.'
+const range = (v, extra = '') => `<input id="s" type="range" min="${MIN}" max="${MAX}" step="${STEP}" value="${v}" aria-describedby="sd${extra}" aria-valuetext="${words(v)} tokens">`
+const head = `<label class="label" for="s">Compact Watcher at</label><p class="desc" id="sd">${DESC}</p>`
+const VARIANTS = {
+  A: { name: 'Notched rail, value in the thumb', explain: 'A: a rail with a notch at every 50k. The value rides in the thumb as you drag; 200k, 400k (default) and 1M sit under the rail.',
+    html: v => {
+      const f = frac(v), notches = Array.from({ length: STOPS }, (_, i) => `<i class="${i / (STOPS - 1) < f ? 'under' : ''}" style="left:${(i / (STOPS - 1)) * 100}%"></i>`).join('')
+      return `${head}<div class="dial a"><div class="rail"><div class="fill" style="width:calc(30px + (100% - 60px) * ${f})"></div></div><div class="notches">${notches}</div>
+        <div class="pill num" style="left:calc(30px + (100% - 60px) * ${f})">${words(v)}</div>${range(v)}</div>
+        <div class="a-ends num"><span style="left:0">200k</span><span style="left:${frac(DEFAULT) * 100}%">400k default</span><span style="left:100%">1M</span></div>` } },
+  B: { name: 'Level meter', explain: 'B: seventeen bars, one per 50k step, growing taller as the conversation gets longer. Lit bars are how much Watcher keeps before it compacts. The default bar has a line at its foot.',
+    html: v => {
+      const bars = Array.from({ length: STOPS }, (_, i) => { const n = MIN + i * STEP; return `<span class="${n <= v ? 'on' : ''} ${n === DEFAULT ? 'default' : ''}" style="height:${10 + (i / (STOPS - 1)) * 36}px"></span>` }).join('')
+      return `<div class="b-head"><label class="label" for="s">Compact Watcher at</label><span class="b-value num">${words(v)}<small>tokens</small></span></div><p class="desc" id="sd">${DESC}</p>
+        <div class="dial b">${bars}${range(v)}</div><div class="b-ends num"><span>200k</span><span>1M</span></div>` } },
+  C: { name: 'Watcher\'s conversation, with the line you move', explain: 'C: the bar is Watcher\'s conversation now (312k here, hatched). The teal line is where it compacts; drag it. Below 312k, the hatching turns teal: it compacts at its next rest.',
+    html: v => {
+      const past = NOW > v
+      return `${head}<div class="dial c"><div class="tank"><div class="size ${past ? 'past' : ''}" style="width:${frac(NOW) * 100}%"></div></div>
+        <div class="line" style="left:calc(12px + (100% - 24px) * ${frac(v)})"></div><div class="flag num" style="left:clamp(48px, calc(12px + (100% - 24px) * ${frac(v)}), calc(100% - 48px))">${words(v)}</div>${range(v, ' sn')}</div>
+        <div class="c-foot num" id="sn"><span>${past ? `Watcher is at ${words(NOW)}: it compacts at its next rest.` : `Watcher is at ${words(NOW)}.`}</span><span style="white-space:nowrap">200k to 1M</span></div>` } },
+  D: { name: 'Big number, minus and plus', explain: 'D: the number is the main thing. Minus and plus move it 50k; the fine line under it drags. Arrow keys work on the line.',
+    html: v => `${head}<div class="d-box"><button type="button" id="minus" aria-label="Compact Watcher 50k sooner" ${v <= MIN ? 'disabled' : ''}>&minus;</button>
+        <div class="d-mid"><div class="d-value num">${words(v)}<small>tokens</small></div>
+        <div class="dial d"><div class="rail"><div class="fill" style="width:${frac(v) * 100}%"></div></div><div class="dot" style="left:calc(8px + (100% - 16px) * ${frac(v)})"></div>${range(v)}</div></div>
+        <button type="button" id="plus" aria-label="Compact Watcher 50k later" ${v >= MAX ? 'disabled' : ''}>+</button></div>` },
+}
+const keys = Object.keys(VARIANTS), params = new URLSearchParams(location.search)
+let variant = keys.includes(params.get('variant')) ? params.get('variant') : 'A'
+let theme = params.get('theme') === 'light' ? 'light' : 'dark', value = DEFAULT
+function render(focus) {
+  document.documentElement.dataset.theme = theme
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark'
+  const v = VARIANTS[variant]
+  document.getElementById('slot').innerHTML = v.html(value)
+  document.getElementById('explain').textContent = v.explain
+  document.getElementById('which').textContent = `${variant}: ${v.name}`
+  const s = document.getElementById('s')
+  s.addEventListener('input', () => { value = Number(s.value); render('s') })
+  document.getElementById('minus')?.addEventListener('click', () => { value = Math.max(MIN, value - STEP); render('minus') })
+  document.getElementById('plus')?.addEventListener('click', () => { value = Math.min(MAX, value + STEP); render('plus') })
+  if (focus) document.getElementById(focus)?.focus({ preventScroll: true })
+  history.replaceState(null, '', `?variant=${variant}&theme=${theme}`)
+}
+const cycle = d => { variant = keys[(keys.indexOf(variant) + d + keys.length) % keys.length]; render() }
+document.getElementById('prev').onclick = () => cycle(-1)
+document.getElementById('next').onclick = () => cycle(1)
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render() }
+addEventListener('keydown', e => { if (e.target.closest('input,textarea,[contenteditable],button')) return; if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1) })
+render()
+</script>
+</body>
+</html>
