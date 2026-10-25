@@ -1,16 +1,23 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Quote } from 'lucide-react'
+import { ShortcutKey } from '../components/ShortcutKey'
 import { useOptionalApp } from '../state/AppContext'
-import { chordClaimed, chordMatches } from './branchToolbar.logic'
+import { chordMatches } from './branchToolbar.logic'
 import { chordBelongsElsewhere } from '../tools/changesShortcut'
 import { MAX_REPLY_QUOTES, quoteFromSelection, replyQuoteStore, useReplyQuotes, type ReplyQuoteStore } from './replyQuotes'
+import { acceleratorForChord, claimedThreadChord, threadChordLabel } from './threadShortcuts'
 import './replyQuotes.css'
-
-/** The chord that adds a selection to the prompt, unless the dictation hotkey already means it. */
-export const REPLY_QUOTE_SHORTCUT = 'mod+shift+a'
 
 /** The gap between the selection and the button, and the button and the transcript's edges. */
 const GAP_PX = 8
+
+/**
+ * Whether a button meant to stand `height` above something whose top is at `anchorTop` would be cut off by the top of
+ * the scrolling frame it sits in, so it should stand below instead. Shared with Run on a reply's commands (ADR-0139).
+ */
+export function flipsBelow(anchorTop: number, height: number, frameTop: number, gap = GAP_PX): boolean {
+  return anchorTop - height - gap < frameTop + gap
+}
 
 /**
  * Add to prompt, over words the user selected in one of the agent's replies (ADR-0129). It stands above the selection,
@@ -27,7 +34,8 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
 }): ReactNode {
   const app = useOptionalApp()
   const platform = app?.platform ?? 'win32'
-  const chord = chordClaimed(REPLY_QUOTE_SHORTCUT, app?.settings?.hotkey, platform) ? REPLY_QUOTE_SHORTCUT : null
+  // The chord that adds a selection to the prompt (Settings › Keyboard, ADR-0133), unless the dictation hotkey already means it.
+  const chord = claimedThreadChord(app?.settings, 'add-selection', platform)
   // Subscribed so the button hears when the prompt fills or empties.
   useReplyQuotes(store, threadId)
   const full = store.full(threadId)
@@ -56,7 +64,7 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
     if (outside) return
     const width = element.offsetWidth, height = element.offsetHeight
     const above = rect.top - height - GAP_PX
-    const top = above < frame.top + GAP_PX ? Math.min(rect.bottom + GAP_PX, frame.bottom - height - GAP_PX) : above
+    const top = flipsBelow(rect.top, height, frame.top) ? Math.min(rect.bottom + GAP_PX, frame.bottom - height - GAP_PX) : above
     const left = Math.max(GAP_PX, Math.min(rect.left + rect.width / 2 - width / 2 - origin.left, origin.width - width - GAP_PX))
     element.style.top = `${top - origin.top}px`
     element.style.left = `${left}px`
@@ -130,7 +138,7 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
   }, [dismiss, scroller])
 
   if (pending === null) return null
-  const keys = chord === null ? undefined : platform === 'darwin' ? 'Meta+Shift+A' : 'Control+Shift+A'
+  const keys = chord === null ? undefined : threadChordLabel(chord, platform).keys
   const fullNote = `A message carries at most ${MAX_REPLY_QUOTES} quotes. Send it or remove one first.`
   return <div ref={pop} className="reply-quote-pop">
     {full ? <p className="reply-quote-pop__note">{fullNote}</p>
@@ -138,7 +146,7 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
         // Pressing must not end the selection before the press has read it.
         onMouseDown={event => event.preventDefault()} onClick={() => add(pending)}>
         <Quote size={14} aria-hidden="true" /><span>Add to prompt</span>
-        {chord === null ? null : <kbd aria-hidden="true">{platform === 'darwin' ? '⌘⇧A' : 'Ctrl+Shift+A'}</kbd>}
+        {chord === null ? null : <ShortcutKey accelerator={acceleratorForChord(chord, platform)} platform={platform} />}
       </button>}
   </div>
 }, (before, after) => before.threadId === after.threadId && before.scroller === after.scroller && before.store === after.store)

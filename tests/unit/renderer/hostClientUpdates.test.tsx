@@ -19,7 +19,7 @@ const connected = (id: ProviderId, version: string): AgentProviderStatus => ({ i
 const PROVIDERS: AgentProviderStatus[] = [connected('claude', '2.1.281'), connected('codex', '0.155.1'), connected('grok', '1.0.41'),
   { id: 'devin', name: 'devin', version: '', connection: 'error', problem: 'not-installed', capabilities }]
 const reading = (id: ProviderId, patch: Partial<ProviderClientUpdate> = {}): ProviderClientUpdate => ({
-  id, installed: { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41', devin: '', muse: '', opencode: '', cursor: '' }[id], published: { claude: '2.1.284', codex: '0.158.0', grok: '1.0.43', devin: '', muse: '', opencode: '', cursor: '' }[id],
+  id, installed: { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41', devin: '', muse: '', opencode: '', cursor: '', deepseek: '' }[id], published: { claude: '2.1.284', codex: '0.158.0', grok: '1.0.43', devin: '', muse: '', opencode: '', cursor: '', deepseek: '' }[id],
   behind: true, channel: 'mise', command: `mise upgrade ${id === 'grok' ? 'npm:@xai-official/grok' : id}`, canInstall: true, checkedAt: '2026-09-29T12:00:00.000Z', state: 'idle',
   steps: id === 'grok' ? 2 : 1, ...patch,
 })

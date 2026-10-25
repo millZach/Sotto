@@ -1,8 +1,8 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { Check, CircleAlert, Gauge, History, KeyRound } from 'lucide-react'
-import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownCount } from '../../state/interfaceNumbers'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphone'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
@@ -86,9 +86,9 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
   const monthMinutes = status?.monthMinutes ?? 0
   const capMinutes = status?.capMinutes ?? monthlyCap
   const meterPercent = capMinutes > 0 ? Math.min(100, Math.round((monthMinutes / capMinutes) * 100)) : 0
-  // Both numbers in the interface language: `#` is the cap, and the minutes used are formatted the same way.
-  const usedMinutes = new Intl.NumberFormat(i18n.locale).format(monthMinutes)
-  const used = plural(capMinutes, { other: `${usedMinutes} of # minutes` })
+  // Both numbers in the interface language, English ungrouped as before ("1234 of 2000 minutes"); the cap picks the plural.
+  const usedMinutes = shownCount(monthMinutes), allowance = shownCount(capMinutes)
+  const used = plural(capMinutes, { other: `${usedMinutes} of ${allowance} minutes` })
   const price = `$${CLOUD_IPHONE_PRICE_PER_MINUTE_USD.toFixed(2)}`
   const month = status ? monthName(status.month) : ''
 
@@ -130,8 +130,8 @@ export function CloudIphoneSettings({ settings, onUpdateSettings, bridge = bridg
 
     <SettingsGroup title={t`Recent sessions`} icon={History}>
       {status && status.recent.length > 0
-        ? <ul className="cloud-iphone-recent">{status.recent.map(item => { const minutes = item.minutes; return <li key={`${item.threadId}-${item.startedAt}`}>
-          <span>{item.threadTitle}</span><span>{dateWords(item.startedAt)}</span><span>{plural(minutes, { other: '# min' })}</span></li> })}</ul>
+        ? <ul className="cloud-iphone-recent">{status.recent.map(item => { const minutes = item.minutes, sessionMinutes = shownCount(minutes); return <li key={`${item.threadId}-${item.startedAt}`}>
+          <span>{item.threadTitle}</span><span>{dateWords(item.startedAt)}</span><span>{plural(minutes, { other: `${sessionMinutes} min` })}</span></li> })}</ul>
         : <p className="cloud-iphone-recent__empty tt-paragraph"><Trans>No sessions yet.</Trans></p>}
     </SettingsGroup>
   </div>

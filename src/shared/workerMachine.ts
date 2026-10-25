@@ -36,10 +36,11 @@ export type NewWorkersStart = z.infer<typeof newWorkersStartSchema>
 
 /**
  * Where a start was placed, as its receipt records it: the machine, by host ID and name, whether that is somewhere other
- * than where new workers start, and Sotto's sentence saying why when it placed it itself (a default machine not connected).
+ * than where new workers start and, when it is, that machine's name (`defaultName`, absent when it is no longer saved), and
+ * Sotto's sentence saying why when it placed it itself (a default machine not connected).
  */
 export const workerPlacementReceiptSchema = z.object({ hostId: z.string().min(1).max(512), name: z.string().min(1).max(200),
-  awayFromDefault: z.boolean(), note: z.string().min(1).max(2_000).optional() }).strict()
+  awayFromDefault: z.boolean(), defaultName: z.string().min(1).max(200).optional(), note: z.string().min(1).max(2_000).optional() }).strict()
 export type WorkerPlacementReceipt = z.infer<typeof workerPlacementReceiptSchema>
 
 /**

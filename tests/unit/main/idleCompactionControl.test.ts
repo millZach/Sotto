@@ -25,6 +25,8 @@ class Host implements AgentHost {
   state!: AgentHostSnapshot
   listeners = new Set<(s: AgentHostSnapshot) => void>()
   attempts: AgentHostCommand[] = []
+  /** The guard each command reached the provider with, as the Claude adapter asks it once its CLI is up. */
+  guards = new Map<AgentHostCommand, () => void>()
   async connect() { this.state ??= await new E2EAgentHost().connect(); this.state.connected = true; this.state.capabilities.compact = true; return this.snapshot() }
   async snapshot() { return structuredClone(this.state) }
   subscribe(fn: (s: AgentHostSnapshot) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
@@ -34,6 +36,10 @@ class Host implements AgentHost {
     this.attempts.push(c)
     if (c.type === 'compact-thread') this.update(c.threadId, { compaction: { commandId: c.commandId, status: 'completed' } })
     return { accepted: true }
+  }
+  async executeFromWatcher(c: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
+    this.guards.set(c, guard)
+    return this.execute(c)
   }
 }
 async function fixture() {
@@ -72,6 +78,18 @@ describe('idle compaction through the coordinator', () => {
     await expect(f.control.compactIdleThread('workshop', () => { if (++calls > 1) throw new Error('This thread is no longer idle.') })).rejects.toThrow('no longer idle')
     expect(compactions(f.host)).toEqual([])
     expect(f.control.shell().error).toBeNull()
+  })
+
+  it('hands its guard to the provider, which asks it again once its CLI is up, and the user’s own compaction none', async () => {
+    const f = await fixture()
+    let moved = false
+    await f.control.compactIdleThread('workshop', () => { if (moved) throw new Error('This thread is no longer idle.') })
+    const idle = compactions(f.host)[0]!
+    expect(f.host.guards.get(idle)).toBeTypeOf('function')
+    moved = true
+    expect(() => f.host.guards.get(idle)!()).toThrow('no longer idle')
+    await f.control.command({ type: 'compact-thread', threadId: 'workshop' })
+    expect(f.host.guards.has(compactions(f.host)[1]!)).toBe(false)
   })
 
   it('reads the host without copying it', async () => {

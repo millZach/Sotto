@@ -322,6 +322,18 @@ msgstr "Cursor’s plan"
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
 msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+msgstr "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+msgstr "DeepSeek Harness edits, runs commands and uses the network inside the workspace sandbox without asking. It asks before anything crosses that boundary."
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+msgstr "DeepSeek Harness runs commands and edits files without asking, in the project and outside it."
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr "Done"
@@ -540,6 +552,35 @@ msgstr "Removing…"
 msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 msgstr "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 
+#. Runs a code block's shell command in a new terminal.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run"
+msgstr "Run"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again"
+msgstr "Run again"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again in terminal"
+msgstr "Run again in terminal"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again: {command}"
+msgstr "Run again: {command}"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in a new terminal drawer shell"
+msgstr "Run in a new terminal drawer shell"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in terminal"
+msgstr "Run in terminal"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in terminal: {command}"
+msgstr "Run in terminal: {command}"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Runs with OpenCode"
 msgstr "Runs with OpenCode"
@@ -586,10 +627,6 @@ msgid "Something answered at {host}, but not as an OpenAI-compatible server. Not
 msgstr "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
-msgid "Sotto compacted this idle thread before its cache expired."
-msgstr "Sotto compacted this idle thread before its cache expired."
-
-#: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto could not compact this idle thread. Its full history is kept."
 msgstr "Sotto could not compact this idle thread. Its full history is kept."
 
@@ -632,6 +669,18 @@ msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothi
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Starting Cursor’s sign-in…"
 msgstr "Starting Cursor’s sign-in…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting in terminal…"
+msgstr "Starting in terminal…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting…"
+msgstr "Starting…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting…: {command}"
+msgstr "Starting…: {command}"
 
 #. {name} is the user’s own model server, such as Sparks.
 #: src/renderer/src/agents/ownServerTurnWords.ts

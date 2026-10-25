@@ -47,18 +47,19 @@ describe('a turn that has reported nothing yet', () => {
     const word = liveRow.querySelector('.thread-activity-live__word')!
     expect(word.textContent).toBe('Combing the desert')
     expect(word).toHaveAttribute('aria-hidden', 'true')
-    expect(liveRow).toHaveTextContent('Working for 12s')
+    // Beside the words, how long the turn has been working.
+    expect(liveRow).toHaveTextContent(/^Combing the desertWorking12s$/)
 
     const seen = new Set<string>([word.textContent!])
     for (let step = 0; step < 6; step++) {
       const before = word.textContent
       act(() => { vi.advanceTimersByTime(3_800) })
       expect(word.textContent).not.toBe(before)
+      // The light's lit copy follows the word.
+      expect(word).toHaveAttribute('data-word', word.textContent!)
       seen.add(word.textContent!)
     }
     expect(seen.size).toBeGreaterThan(2)
-    // The clock keeps its own time while the words change.
-    expect(liveRow).toHaveTextContent('for 34s')
   })
 
   it('says the thread is compacting, not working, while its compaction runs', () => {
@@ -72,14 +73,27 @@ describe('a turn that has reported nothing yet', () => {
     expect(within(unsure).getByTestId('thread-activity-live')).not.toHaveTextContent('Compacting context')
   })
 
-  it('names the current action instead of a word once the provider reports one', () => {
-    vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
+  it('keeps a turn’s steps one press away while its context compacts part-way', () => {
+    const { transcript } = mount(stateWith({ status: 'running', compaction: { commandId: 'compact-1', status: 'running' }, activities: [
+      ...waiting(), activity({ id: 'test', command: 'npm test', durationMs: 3_000 }),
+    ] }))
+    const liveRow = within(transcript).getByTestId('thread-activity-live')
+    expect(liveRow).toHaveTextContent('Compacting context')
+    const steps = within(liveRow).getByRole('button', { name: '1 step' })
+    fireEvent.click(steps)
+    expect(within(transcript).getByRole('button', { name: 'npm test, completed in 3.0s' })).toBeVisible()
+    fireEvent.keyDown(steps, { key: 'Escape' })
+    expect(steps).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('keeps its words once the provider reports a step, and folds the step under them', () => {
     const { transcript } = mount(stateWith({ status: 'running', activities: [
       ...waiting(), activity({ id: 'test', command: 'npm test', status: 'running', startedAt: iso(-3_000) }),
     ] }))
     const liveRow = within(transcript).getByTestId('thread-activity-live')
-    expect(liveRow.querySelector('.thread-activity-live__word')).toBeNull()
-    expect(liveRow).toHaveTextContent('Working for 12snpm test')
+    expect(liveRow.querySelector('.thread-activity-live__word')).toHaveTextContent('Combing the desert')
+    expect(liveRow).not.toHaveTextContent('npm test')
+    expect(within(liveRow).getByRole('button', { name: 'Working, 1 step so far' })).toHaveAttribute('aria-expanded', 'false')
   })
 })
 
@@ -95,7 +109,7 @@ describe('what a finished turn changed', () => {
     ] }))
     // The count is readable without opening the turn's work.
     const summary = within(transcript).getByRole('button', { name: 'Changed 2 files' })
-    expect(within(transcript).getByRole('button', { name: 'Worked for 30s' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(transcript).getByRole('button', { name: 'Worked for 30s · 3 steps' })).toHaveAttribute('aria-expanded', 'false')
 
     fireEvent.click(summary)
     const files = within(transcript).getByRole('list', { name: 'Changed 2 files' })

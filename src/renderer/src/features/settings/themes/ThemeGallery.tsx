@@ -10,6 +10,7 @@ import { Check, Copy, Download, Moon, Paintbrush, PenLine, Plus, Sun, Trash2 } f
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
+import { shownCount } from '../../../state/interfaceNumbers'
 
 import {
   BUILT_IN_THEMES,
@@ -121,7 +122,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
         : (() => {
             const collection = removal.theme.collection?.label ?? removal.theme.label
             const name = removal.theme.label
-            const count = removeIds.length
+            const count = removeIds.length, selected = shownCount(count)
             return (
             <ConfirmationDialog
               title={removal.collection.length > 1
@@ -150,7 +151,7 @@ export function ThemeGallery({ shown, resolved, system, onChooseMode, onSelect, 
                     </>
                   )
                 : t`You can bring it back anytime by importing its JSON file.`}
-              confirmLabel={removal.collection.length > 1 ? count > 0 ? plural(count, { other: 'Remove selected (#)' }) : t`Remove selected` : t`Remove theme`}
+              confirmLabel={removal.collection.length > 1 ? count > 0 ? plural(count, { other: `Remove selected (${selected})` }) : t`Remove selected` : t`Remove theme`}
               cancelLabel={t`Cancel`}
               confirmDisabled={removeIds.length === 0}
               failureMessage={t`The theme could not be removed. Your themes are unchanged.`}

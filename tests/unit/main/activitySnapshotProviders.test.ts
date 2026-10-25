@@ -49,7 +49,7 @@ it('keeps certified activity identity through Sotto IDs and provider aggregation
   const codex = new SharedProvider()
   codex.state.threads[0]!.activities = [activity('First')]
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -65,7 +65,8 @@ it('keeps certified activity identity through Sotto IDs and provider aggregation
   const firstActivities = first.activities!
   expect(first.id).not.toBe('session-workshop')
   expect(Object.isFrozen(firstActivities[0]!.changes![0])).toBe(true)
-  first.title = 'Subscriber edit'
+  // The switch's records are frozen and shared from one publication to the next (#925), so a subscriber cannot write into one.
+  expect(() => { first.title = 'Subscriber edit' }).toThrow(TypeError)
   publicSnapshots.at(-1)!.threads.find(thread => thread.providerId === 'codex')!.activities![0]!.output = 'Public edit'
 
   codex.emitActivity()
@@ -86,7 +87,7 @@ it('copies mutable legacy activity on each arrival, including edits within one a
   const legacy = new MutableLegacyProvider()
   legacy.state.threads[0]!.activities = [activity('First')]
   const host = new ConfiguredProviderHost({
-    hosts: { codex: legacy, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() },
+    hosts: { codex: legacy, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'],
   })
   cleanup.push(async () => { host.disconnect(); await rm(root, { recursive: true, force: true }) })
@@ -138,7 +139,7 @@ async function askedSwitch(claude: AskedProvider) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-activity-asked-'))
   const registry = new ThreadRegistry(root)
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new FakeProviderHost(), claude: new SottoThreadHost('claude', claude, registry), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() },
+    hosts: { codex: new FakeProviderHost(), claude: new SottoThreadHost('claude', claude, registry), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() },
     provider: () => 'claude', enabledProviders: () => ['claude'],
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -206,7 +207,7 @@ async function switched(codex: FakeProviderHost) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-activity-provider-'))
   const registry = new ThreadRegistry(root)
   const host = new ConfiguredProviderHost({
-    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost() },
+    hosts: { codex: new SottoThreadHost('codex', codex, registry), claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() },
     provider: () => 'codex', enabledProviders: () => ['codex'], threadProvider: id => registry.byThread(id)?.provider,
   })
   cleanup.push(async () => { host.disconnect(); await registry.flush(); await rm(root, { recursive: true, force: true }) })
@@ -233,9 +234,16 @@ it('publishes one certified catalog through the switch until a provider changes 
   expect(third.map(model => model.id)).toEqual([providerEntityId('codex', 'model', 'fake:model'), providerEntityId('codex', 'model', 'fake:second')])
 })
 
-it('freezes no catalog an adapter did not certify (#917)', async () => {
+// A host with no thread changes reaches the switch through the shim, which owns its catalog once and keeps it while the
+// host hands over an equal one (#925). Freezing that catalog adds no work to a publication, where freezing a new one on
+// every publication would (#917), so the switch shares it as it shares a certified one.
+it('shares one catalog an adapter did not certify until it changes (#917, #925)', async () => {
   const codex = new SharedProvider()
   const shared = await switched(codex)
+  codex.emitActivity(); codex.emitActivity()
+  const [first, second] = shared.slice(-2).map(snapshot => snapshot.models)
+  expect(second).toBe(first)
+  codex.state.models = [...codex.state.models, { id: 'fake:second', provider: 'Fake', name: 'Second model', ready: true }]
   codex.emitActivity()
-  expect(Object.isFrozen(shared.at(-1)!.models)).toBe(false)
+  expect(shared.at(-1)!.models.map(model => model.id)).toEqual([providerEntityId('codex', 'model', 'fake:model'), providerEntityId('codex', 'model', 'fake:second')])
 })

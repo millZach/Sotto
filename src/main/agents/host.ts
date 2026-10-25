@@ -1,3 +1,4 @@
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -423,6 +424,12 @@ export interface AgentHost {
    * A subscriber that keeps history from `subscribeEvents` says so in `options`, and then a host that
    * publishes events carries every thread with its summary and no messages, held or not (ADR-0016, #322). */
   subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void
+  /**
+   * The same publications as thread changes (ADR-0016, #925): a whole first publication, then the threads that changed
+   * and the threads that went, numbered, from the same view and the same emit as `subscribeActivitySnapshots`. Every
+   * provider adapter offers it beside its activity snapshots; the layers above still read the snapshots until they move.
+   */
+  subscribeActivityChanges?(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription
   /**
    * Every change to what a thread said, as it happens. An adapter that implements this publishes each
    * change once through its own append path, and its snapshots then carry the messages only for the

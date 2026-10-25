@@ -126,7 +126,7 @@ export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
  * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
  * one offers only OpenCode Zen's free models, which no role names as a default.
  */
-const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor'])
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor', 'deepseek'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))

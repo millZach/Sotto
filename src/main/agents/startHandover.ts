@@ -46,15 +46,18 @@ function shownThread(thread: AgentThread, from: AgentThread['providerId']): Agen
  * Threads that began from another as everything user-facing shows them: the first message that went with a handover is
  * the user's words, with the handover beside them, from the provider it came from. Only the message the thread's record
  * names is looked at, and only its recorded characters, checked against their digest, come off. A snapshot with no such
- * thread is handed back as it is.
+ * thread is handed back as it is. `origin` finds the thread one began from, for a snapshot that holds only the threads
+ * that changed (#925); without it, the snapshot's own threads are looked in.
  */
-export function startHandoversShown(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+export function startHandoversShown(snapshot: AgentHostSnapshot, origin?: (threadId: string) => AgentThread | undefined): AgentHostSnapshot {
   const cached = shownLists.get(snapshot.threads)
   if (cached) return cached === snapshot.threads ? snapshot : { ...snapshot, threads: cached as AgentThread[] }
   if (!snapshot.threads.some(thread => thread.startedFrom?.handover?.sent !== undefined)) { shownLists.set(snapshot.threads, snapshot.threads); return snapshot }
+  const from = origin ?? ((threadId: string) => snapshot.threads.find(item => item.id === threadId))
   let changed = false
   const threads = snapshot.threads.map(thread => {
-    const shown = shownThread(thread, snapshot.threads.find(item => item.id === thread.startedFrom?.threadId)?.providerId ?? thread.providerId)
+    const begun = thread.startedFrom?.threadId
+    const shown = shownThread(thread, (begun === undefined ? undefined : from(begun))?.providerId ?? thread.providerId)
     if (shown !== thread) changed = true
     return shown
   })

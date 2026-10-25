@@ -4,9 +4,18 @@
 import { expect, it } from 'vitest'
 import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
+import type { WatcherKeptItem } from '../../../src/shared/watcher'
 
 const target = (threadId: string) => ({ hostId: '11111111-1111-4111-8111-111111111111', threadId })
-const nothing = { decisions: [], rules: [], issues: [] }
+const NOW = Date.parse('2026-10-24T12:00:00.000Z')
+const DAY = 24 * 60 * 60 * 1_000
+/** Kept lines from their words, IDs given in list order as Sotto gives them, each touched `ago` before NOW. */
+function kept(words: { decisions?: string[]; rules?: string[]; issues?: string[] }, ago = 0) {
+  const touchedAt = new Date(NOW - ago).toISOString()
+  const lines = (letter: string, texts: string[] = []): WatcherKeptItem[] => texts.map((text, at) => ({ id: `${letter}${at + 1}`, text, touchedAt }))
+  return { decisions: lines('d', words.decisions), rules: lines('r', words.rules), issues: lines('i', words.issues) }
+}
+const nothing = kept({})
 
 it('queues open pull requests that are not drafts and whose checks passed, oldest pass first', () => {
   const queue = watcherMergeQueue([
@@ -55,39 +64,52 @@ const pullRequests = [
 ]
 
 it('flags a kept note that names a settled or unwatched thread, by title or ID, or a merged or closed pull request', () => {
-  const stale = watcherStaleNotes({
+  const stale = watcherStaleNotes(kept({
     decisions: ['Merge #40 once CI is green?', 'Ask about PR 41 and pull request #42', 'Merge https://github.com/o/r/pull/40/files after review'],
     rules: ['Leave the release notes draft alone', 'Thread 22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb needs a look', 'Keep the Login timeout fix moving'],
     issues: ['#43 Watcher keeps stale notes', '#9999 not a pull request Sotto knows', 'Fix the new thread button',
       // Two links with one number name two pull requests: the merged one flags, whichever comes first.
       'Compare https://github.com/o/s/pull/43 with https://github.com/o/r/pull/43', 'Look at fix ci again'],
-  }, threads, pullRequests)
+  }), threads, pullRequests, NOW)
   expect(stale).toEqual([
-    { list: 'decisions', index: 0, reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'decisions', index: 1, reasons: ['Names pull request #41, which is closed.'] },
-    { list: 'decisions', index: 2, reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'rules', index: 0, reasons: ['Names the thread “Release notes draft”, which is settled.'] },
-    { list: 'rules', index: 1, reasons: ['Names the thread “Flaky e2e hunt”, which Watcher does not watch.'] },
-    { list: 'issues', index: 3, reasons: ['Names pull request #43, which is merged.'] },
-    { list: 'issues', index: 4, reasons: ['Names the thread “Fix CI”, which is settled.'] },
+    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.'] },
+    { list: 'decisions', id: 'd2', reasons: ['Names pull request #41, which is closed.'] },
+    { list: 'decisions', id: 'd3', reasons: ['Names pull request #40, which is merged.'] },
+    { list: 'rules', id: 'r1', reasons: ['Names the thread “Release notes draft”, which is settled.'] },
+    { list: 'rules', id: 'r2', reasons: ['Names the thread “Flaky e2e hunt”, which Watcher does not watch.'] },
+    { list: 'issues', id: 'i4', reasons: ['Names pull request #43, which is merged.'] },
+    { list: 'issues', id: 'i5', reasons: ['Names the thread “Fix CI”, which is settled.'] },
   ])
 })
 
 it('reads `owner/repo#N` in its own repository, and a bare number in the issues list as the issue’s own', () => {
-  expect(watcherStaleNotes({
+  expect(watcherStaleNotes(kept({
     decisions: ['Merge o/r#40 once CI is green?', 'Filed o/x#40 about the crash'],
     rules: [],
     // Issue numbers are written as pull request numbers are: only "PR 40" or a link names a pull request here.
     issues: ['#40 Watcher keeps stale notes', 'o/other#40 crash on start', 'PR 40 follow-up'],
-  }, [], pullRequests)).toEqual([
-    { list: 'decisions', index: 0, reasons: ['Names pull request #40, which is merged.'] },
-    { list: 'issues', index: 2, reasons: ['Names pull request #40, which is merged.'] },
+  }), [], pullRequests, NOW)).toEqual([
+    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.'] },
+    { list: 'issues', id: 'i3', reasons: ['Names pull request #40, which is merged.'] },
   ])
 })
 
 it('flags nothing when the kept notes name only what is live, or nothing at all', () => {
-  expect(watcherStaleNotes(nothing, threads, pullRequests)).toEqual([])
-  expect(watcherStaleNotes({ ...nothing, rules: ['Full test suites run in CI, not on the laptop.', 'Release notes drafting waits for Zach'] }, threads, pullRequests)).toEqual([])
+  expect(watcherStaleNotes(nothing, threads, pullRequests, NOW)).toEqual([])
+  expect(watcherStaleNotes(kept({ rules: ['Full test suites run in CI, not on the laptop.', 'Release notes drafting waits for Zach'] }), threads, pullRequests, NOW)).toEqual([])
+})
+
+// October 24, 2026: a line nobody has added or edited in a few days may be done, so it is flagged for review.
+it('flags an open line not added or edited for three days, beside anything else it names, and never a closed one', () => {
+  const old = kept({ decisions: ['Merge #40 once CI is green?', 'Ask Zach which icon he wants'], rules: ['Suites run in CI.'] }, 3 * DAY + 60_000)
+  old.rules[0] = { ...old.rules[0]!, closedAt: new Date(NOW - DAY / 2).toISOString() }
+  const review = 'Not added or edited for 3 days. If it is done, close it; if it still stands, edit it, with the same words if they still fit; if it is wrong, drop it.'
+  expect(watcherStaleNotes(old, threads, pullRequests, NOW)).toEqual([
+    { list: 'decisions', id: 'd1', reasons: ['Names pull request #40, which is merged.', review] },
+    { list: 'decisions', id: 'd2', reasons: [review] },
+  ])
+  // Touched under three days ago: nothing to review yet.
+  expect(watcherStaleNotes(kept({ decisions: ['Ask Zach which icon he wants'] }, 3 * DAY - 60_000), threads, pullRequests, NOW)).toEqual([])
 })
 
 it('keeps since when a pull request’s checks first passed, through later reads, and starts again on a new commit', () => {

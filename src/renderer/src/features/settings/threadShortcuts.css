@@ -1,0 +1,17 @@
+/* Settings › Keyboard (ADR-0133): rows reuse Dictation's shortcut classes; only what they lack lives here. */
+.thread-shortcuts__lead { color: var(--tt-text-muted); max-width: 640px; margin: 0 0 12px; }
+.thread-shortcuts__filter { width: min(420px, 100%); margin-bottom: 4px; }
+.thread-shortcuts__notice { color: var(--tt-text-muted); font-size: 12.5px; margin: 8px 0 0; }
+.thread-shortcuts__dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--tt-accent);
+  flex: none;
+  align-self: center;
+}
+.settings-rows .thread-shortcuts__none { color: var(--tt-text-muted); font-size: 12.5px; border: 1px dashed var(--tt-hairline); background: transparent; }
+.thread-shortcuts__locked { cursor: default; }
+.thread-shortcuts__foot {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  margin-top: 16px; color: var(--tt-text-muted); font-size: 12.5px;
+}
+.thread-shortcuts__foot .dictation-shortcuts__add:disabled { opacity: 0.5; cursor: default; background: transparent; color: var(--tt-text-muted); }

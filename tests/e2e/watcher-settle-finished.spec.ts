@@ -1,6 +1,6 @@
 /**
  * Settle finished threads, in Settings under Watcher, on the Owl track: the toggle sits first, under Watched threads, on by
- * default, above worker roles under their own heading (Zach's pick A on October 20, 2026). It works from the keyboard and
+ * default, above Compaction and worker roles under their own headings (Zach's pick A on October 20, 2026). It works from the keyboard and
  * saves as it changes, and nothing clips at any size, in dark or light.
  *
  *   npm run build && npx playwright test tests/e2e/watcher-settle-finished.spec.ts
@@ -38,9 +38,9 @@ test('Settle finished threads leads Settings under Watcher, on by default, and s
       const panel = page.locator('#settings-watcher')
       await expect(panel.getByRole('heading', { name: 'Watched threads' })).toBeVisible()
       await expect(panel.getByRole('heading', { name: 'Worker roles' })).toBeVisible()
-      // The toggle comes before worker roles, as the eye reads the section.
+      // The toggle comes before Compaction and worker roles, as the eye reads the section.
       const order = await panel.evaluate(element => [...element.querySelectorAll('h3')].map(heading => heading.textContent?.trim()))
-      expect(order.slice(0, 2)).toEqual(['Watched threads', 'Worker roles'])
+      expect(order.slice(0, 3)).toEqual(['Watched threads', 'Compaction', 'Worker roles'])
       const toggle = panel.getByRole('switch', { name: /Settle finished threads/u })
       await expect(toggle).toBeChecked()
       expect(await saved(page)).toBe(true)

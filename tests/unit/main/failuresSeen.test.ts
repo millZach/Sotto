@@ -243,6 +243,19 @@ describe('a failed thread a client has seen', () => {
     const same = thread('b')
     expect(seen.publish(same)).toBe(same)
   })
+
+  it('publishes when the failure was named as failureSince, and nothing otherwise (ADR-0135)', () => {
+    const at = Date.parse('2026-10-24T10:00:00.000Z')
+    const seen = new FailuresSeen([], undefined, () => 'f1', () => at)
+    seen.track(snapshot([failed('a')]))
+    expect(seen.publish(thread('a'))).toMatchObject({ failureId: 'f1', failureSince: '2026-10-24T10:00:00.000Z' })
+    const stamped = seen.publish(thread('a'))
+    expect(seen.publish(stamped)).toBe(stamped)
+    // A failure named before the moment was kept publishes no stamp rather than inventing one.
+    const restored = new FailuresSeen([{ threadId: 'a', failure: 'f1' }])
+    expect(restored.publish(thread('a'))).not.toHaveProperty('failureSince')
+    expect(seen.publish({ ...thread('b'), failureSince: '2020-01-01T00:00:00.000Z' })).toEqual(thread('b'))
+  })
 })
 
 describe('a settled failed thread (#1279)', () => {

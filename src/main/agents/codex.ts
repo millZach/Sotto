@@ -4,6 +4,8 @@ import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer
 import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
+import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { randomUUID } from 'node:crypto'
 import { NativeUsage } from './nativeUsage'
 import { scanCodexHistory } from './usageHistory/codexHistory'
@@ -268,6 +270,7 @@ export class CodexAppServerHost implements AgentHost {
         this.activity.turn(thread, { ...thread.lastTurn, error: { message: reason } }, true)
       }
       thread.status = 'error'; thread.requestNotice = reason
+      this.changed(id)
     }
     this.emit()
   }
@@ -326,7 +329,7 @@ export class CodexAppServerHost implements AgentHost {
   private readonly providerSessionIds = new Map<string, string>()
   private readonly threads = new Map<string, AgentThread>()
   /** The threads whose provider session is resumed on their own app-server now. */
-  private readonly live = new OpenSessions(id => this.threads.get(id))
+  private readonly live = new OpenSessions(id => this.threads.get(id), id => this.threadChanges.mark(id))
   /** Threads whose turns have been read on this connection; history is read once per open. */
   private readonly histories = new Set<string>()
   /** Watched set: the threads the coordinator asked for. Their sessions are resumed eagerly, never reaped. */
@@ -356,9 +359,16 @@ export class CodexAppServerHost implements AgentHost {
   private readonly settingsConfirmations = new Map<string, { desired: Alias['pendingSettings']; settle: (confirmed: boolean) => void }>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
+  /** Thread changes (ADR-0016, #925), published beside the activity snapshots from the same view. */
+  private readonly threadChanges = new AdapterThreadChanges({
+    view: historyFromEvents => this.activitySnapshot(historyFromEvents),
+    thread: (id, historyFromEvents) => this.activityThread(id, historyFromEvents),
+    rest: () => { certifyActivityView(this.state, []); return restOf(this.state) },
+  })
   private readonly publisher = new ProviderSnapshotPublisher(() => {
     for (const listener of this.listeners) listener(this.current())
     this.activityListeners.publish(historyFromEvents => this.activitySnapshot(historyFromEvents))
+    this.threadChanges.publish()
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly unconfirmedDispatchSessionIds = new Set<string>()
   private readonly creating = new Set<string>()
@@ -385,7 +395,7 @@ export class CodexAppServerHost implements AgentHost {
   private watcher: CodexSessionLogWatcher | undefined
   private readonly pendingLogMessages = new Map<string, AgentMessage[]>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
-  private readonly log = new ThreadMessageLog()
+  private readonly log = new ThreadMessageLog(id => this.threadChanges.mark(id))
   /** What the host's event store already holds, so a resumed thread appends only its unseen tail. */
   private history: ThreadHistorySource | undefined
   private stopping: Promise<void> = Promise.resolve()
@@ -464,7 +474,7 @@ export class CodexAppServerHost implements AgentHost {
     // An idle app-server is let go gently: its input closes and it has the request deadline to finish writing.
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
     const thread = this.threads.get(id)
-    if (thread) this.activity.runtimeEnded(thread)
+    if (thread) { this.activity.runtimeEnded(thread); this.changed(id) }
   }
   /**
    * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
@@ -669,7 +679,7 @@ export class CodexAppServerHost implements AgentHost {
     if (this.runtimes.get(id) !== runtime) return
     this.runtimes.delete(id); this.live.delete(id); this.outdated.delete(id); this.reaper.forget(id); this.log.release(id)
     const lost = this.threads.get(id)
-    if (lost) this.activity.runtimeEnded(lost)
+    if (lost) { this.activity.runtimeEnded(lost); this.changed(id) }
     // What it asked can no longer be answered.
     for (const [key, pending] of [...this.requests]) if (pending.server === runtime.server) this.removeRequest(key)
     this.settingsConfirmations.get(id)?.settle(false)
@@ -689,6 +699,7 @@ export class CodexAppServerHost implements AgentHost {
         this.activity.turn(thread, { id: turnId, status: 'failed', error: { message: SESSION_ENDED } }, true)
       }
     }
+    this.changed(id)
     this.emit()
   }
   /**
@@ -756,7 +767,7 @@ export class CodexAppServerHost implements AgentHost {
     for (const alias of Object.values(this.aliases)) if (alias.kind !== 'personal' && alias.compaction?.status === 'running') alias.compaction = { ...alias.compaction, status: 'uncertain', error: 'Native compaction was interrupted by disconnection. Reconnecting observes its result without retrying.' }
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) if (alias.kind !== 'personal') this.providerSessionIds.set(alias.codexThreadId, id)
-    this.threads.clear(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.readsBeforeSend.clear(); this.turnsListSupported = true
+    this.threads.clear(); this.threadChanges.markAll(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.readsBeforeSend.clear(); this.turnsListSupported = true
     this.activity = new CodexActivityProjection(); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs, onMessage: (id, message) => {
@@ -880,6 +891,7 @@ export class CodexAppServerHost implements AgentHost {
     thread.manualCompactionSupported = true
     thread.usage = this.usage.get(id)
     if (alias.historyEpoch) thread.historyEpoch = alias.historyEpoch
+    this.changed(id)
     return thread
   }
   private sessionId(codexThreadId: string): string | undefined { return this.providerSessionIds.get(codexThreadId) }
@@ -900,6 +912,20 @@ export class CodexAppServerHost implements AgentHost {
     return { ...this.state, threads: [...this.threads.values()]
       .filter((thread): thread is AgentThread => 'projectId' in thread).map(thread => this.log.activityThread(thread, historyFromEvents)) }
   }
+  /** One thread as `activitySnapshot` lists it, for the thread changes of the threads marked changed. */
+  private activityThread(id: string, historyFromEvents: boolean): AgentThread | undefined {
+    const thread = this.threads.get(id)
+    if (!thread || !('projectId' in thread)) return undefined
+    certifyActivityView(this.state, [thread])
+    return this.log.activityThread(thread, historyFromEvents)
+  }
+  /**
+   * This thread's state changed (ADR-0016, #925): its next thread changes carry it. `ensureThread`, which nearly every
+   * path that writes into a thread takes it from, marks it, and the paths that write after a publication may have gone
+   * mark it again once they have. One that writes into every thread marks them all. What goes through the message log
+   * and the open-session set is marked by them.
+   */
+  private changed(id: string): void { this.threadChanges.mark(id) }
   private async projectInstructions(cwd: string, id?: string): Promise<string> {
     // A thread's developerInstructions replaces Codex's configured value. Resolve
     // its own trusted config layers first, and retain only the field we append to.
@@ -920,6 +946,9 @@ export class CodexAppServerHost implements AgentHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
+  }
+  subscribeActivityChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    return this.threadChanges.subscribeActivityChanges(listener, options)
   }
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void { return this.log.subscribeEvents(listener) }
   useThreadHistory(source: ThreadHistorySource): void { this.history = source }
@@ -1257,6 +1286,10 @@ export class CodexAppServerHost implements AgentHost {
   }
   private applyItem(id: string, item: z.infer<typeof itemSchema>, turnId?: string, createdAt?: string,
     lifecycle: { phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; afterMessageId?: string | undefined; terminal?: boolean | undefined } = { phase: 'history' }): void {
+    try { this.applyItemTo(id, item, turnId, createdAt, lifecycle) } finally { this.changed(id) }
+  }
+  private applyItemTo(id: string, item: z.infer<typeof itemSchema>, turnId: string | undefined, createdAt: string | undefined,
+    lifecycle: { phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; afterMessageId?: string | undefined; terminal?: boolean | undefined }): void {
     if (turnId && this.aliases[id]!.rewoundTurnIds.includes(turnId)) return
     const thread = this.ensureThread(id)
     if (turnId) this.activity.item(thread, item, { ...lifecycle, turnId, afterMessageId: lifecycle.afterMessageId ?? this.log.lastMessageId(id) })
@@ -1356,6 +1389,7 @@ export class CodexAppServerHost implements AgentHost {
         this.runningTurns.delete(id); thread.status = turn.status === 'failed' ? 'error' : 'idle'
       }
     }
+    this.changed(id)
   }
   private applyThread(id: string, thread: z.infer<typeof threadSchema>, completeHistory = false): void {
     if (thread.id !== this.aliases[id]!.codexThreadId) throw new Error('Codex returned a different provider session.')
@@ -1392,6 +1426,7 @@ export class CodexAppServerHost implements AgentHost {
       this.runningTurns.delete(id)
       if (thread.turns.at(-1)?.status !== 'failed') this.ensureThread(id).status = 'idle'
     }
+    this.changed(id)
   }
   private async applySettings(id: string, value: unknown): Promise<void> {
     const alias = this.aliases[id]!
@@ -1948,7 +1983,7 @@ export class CodexAppServerHost implements AgentHost {
     const params = parsed.data; const id = this.sessionId(params.threadId)
     if (!id) {
       const owner = this.activity.childNotification(params.threadId, frame.method!, params)
-      if (owner) { this.touch(owner.id); this.emit(true) }
+      if (owner) { this.touch(owner.id); this.changed(owner.id); this.emit(true) }
       return
     }
     this.touch(id); this.reaper.touch(id)
@@ -1998,6 +2033,7 @@ export class CodexAppServerHost implements AgentHost {
       }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(heldKey(server, params.requestId))
+    this.changed(id)
     this.emit(frame.method !== 'turn/started' && frame.method !== 'turn/completed'
       && frame.method !== 'error' && frame.method !== 'serverRequest/resolved')
     // Saved after the frame's effect is shown, and never waited for here: the next frame is not held behind a
@@ -2025,6 +2061,7 @@ export class CodexAppServerHost implements AgentHost {
     const pending = this.requests.get(id)
     if (!pending) return
     this.requests.delete(id); this.ensureThread(pending.sessionId).requests = this.ensureThread(pending.sessionId).requests.filter(r => r.id !== id)
+    this.changed(pending.sessionId)
   }
   /** Answer a request on the app-server that asked it. */
   private async respond(pending: HeldRequest, result: unknown): Promise<void> {
@@ -2050,6 +2087,7 @@ export class CodexAppServerHost implements AgentHost {
     this.settingsConfirmations.clear()
     this.requests.clear(); this.inFlightRequestIds.clear()
     for (const thread of this.threads.values()) thread.requests = []
+    this.threadChanges.markAll()
   }
   disconnect(): void { this.shutdown(true) }
   private shutdown(publish: boolean): void {

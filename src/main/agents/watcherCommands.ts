@@ -18,6 +18,12 @@ export interface WatcherCommandOrigin {
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>
 export interface WatcherControlHooks {
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void
+  /**
+   * An answer to a card on this computer's thread is going, from the user or from Sotto sending a prototype's question
+   * back, so the card's closing says who answered (October 24, 2026). Never the answer's words. The undo is called when the
+   * answer did not go.
+   */
+  requestAnswering?(threadId: string, requestId: string, by: 'user' | 'sotto'): () => void
   beforeDispatch(command: AgentHostCommand, draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand
   /** A provider accepted the persisted action, or could have written it. Never called for an unsaved intent. */
   dispatched?(command: AgentHostCommand): void

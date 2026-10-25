@@ -28,7 +28,7 @@ export function MenuBarOwlSettings({ body, eyes, onChoose }: {
   return (
     <div className="menu-bar-owl" data-setting="menu-bar-owl">
       <h3 className="theme-settings__subheading"><Trans>Menu bar owl</Trans></h3>
-      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The owl perched on a branch in your menu bar.</Trans></p>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon.</Trans></p>
       <SwatchGroup
         title={t({ message: 'Body', comment: "The menu bar owl's body, whose color the swatches below choose" })}
         choiceLabel={(label, active) => active ? t`Use ${label} as the owl's body color, currently active` : t`Use ${label} as the owl's body color`}

@@ -3,9 +3,9 @@ public struct LivenessProgress: Sendable {
     private var silentRounds = 0
     private var requestDeadlines: [String: Double] = [:]
     public init() {}
-    /// Reads that can carry a whole thread, and an image going either way, get two minutes on a slow link.
+    /// Reads that can carry a whole thread, and an image or a part of a file going either way, get two minutes on a slow link.
     public static func requestTimeout(operation: String) -> Double {
-        ["detail", "observe", "stage-attachment", "preview"].contains(operation) ? 120 : 30
+        ["detail", "observe", "stage-attachment", "preview", "stage-file-part", "attachment-file"].contains(operation) ? 120 : 30
     }
     public mutating func beginRequest(id: String, operation: String, now: Double) {
         requestDeadlines[id] = now + Self.requestTimeout(operation: operation)
