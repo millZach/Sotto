@@ -22,6 +22,9 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
 export type ReducedMotion = 'system' | 'on'
+/** Night falls' two looks (ADR-0119, decision 6): the shipped band, or a line of stars. */
+export type RoomTransitionLook = 'band' | 'stars'
+export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -179,6 +182,11 @@ export interface AppSettings {
    * system overrides it for that start. Read when a start or a delegation is placed.
    */
   newWorkerMachine: WorkerMachineSetting
+  /**
+   * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
+   * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
+   */
+  compactIdleThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -226,6 +234,8 @@ export interface AppSettings {
   roomTransition: boolean
   /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
   roomTransitionSpeed: number
+  /** How that transition looks: `band`, a band of flickering text characters, or `stars`, a line of stars with a faint trail (ADR-0119, decision 6). */
+  roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
@@ -296,6 +306,11 @@ export interface AppSettings {
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /**
+   * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
+   * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
+   */
+  nextPromptSuggestions: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
@@ -377,9 +392,11 @@ const fieldSchemas = {
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
+  compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
   roomTransitionSpeed: z.number().min(0.5).max(2),
+  roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
@@ -418,6 +435,7 @@ const fieldSchemas = {
   llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
   llmMode: z.enum(LLM_MODES),
   threadTitles: z.boolean(),
+  nextPromptSuggestions: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
@@ -476,9 +494,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
+  compactIdleThreads: true,
   reducedMotion: 'system',
   roomTransition: true,
   roomTransitionSpeed: 1,
+  roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
   pressShortcuts: [],
@@ -513,6 +533,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  nextPromptSuggestions: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
@@ -636,9 +657,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
+    compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),
     roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
+    roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
@@ -675,6 +698,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmModel: parseField(persisted, 'llmModel', defaults),
     llmMode: parseField(persisted, 'llmMode', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),

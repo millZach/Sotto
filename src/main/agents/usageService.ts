@@ -3,7 +3,7 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId, USAGE_LIMIT_PROVIDERS,
+  isUsageProviderId, USAGE_HISTORY_BATCH_MAX, USAGE_LIMIT_PROVIDERS,
   type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsagePromptIdentity, type UsageProviderId,
@@ -30,7 +30,7 @@ export interface UsagePromptRecorder {
   discardPrompt(threadId: string, messageId: string): void
 }
 
-type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokens' | 'submitPrompt' | 'acceptSubmittedPrompt' |
+type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokenBatch' | 'submitPrompt' | 'acceptSubmittedPrompt' |
   'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
   & Partial<Omit<UsageHistoryStore, 'metadata'>>
 interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
@@ -41,10 +41,15 @@ export class UsageService implements UsagePromptRecorder {
   private readonly tokens = new Map<string, UsageTokenObservation>()
   private readonly prompts = new Map<string, PromptWrite>()
   private readonly quotas = new Map<UsageLimitProviderId, UsageQuotaRead>()
+  /** Where in the order refreshes began the newest refresh to answer for each provider began. */
+  private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
+  private quotaStarts = 0
   private readonly visited = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
   private readonly refreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
+  /** Refreshes Usage made on its own, which may be answered from a recent reading, so Read again never joins one. */
+  private readonly backgroundRefreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private readonly reading = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private history: UsageHistoryImporter | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -92,7 +97,7 @@ export class UsageService implements UsagePromptRecorder {
   private startHistory(): void {
     const host = this.options.host
     if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return
-    if (!this.store.observeTokenBatch || !this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
+    if (!this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
     this.history = new UsageHistoryImporter({
       source: {
         ...(host.scanUsageHistory ? { scanUsageHistory: (sink, signal) => host.scanUsageHistory!(sink, signal) } : {}),
@@ -154,8 +159,9 @@ export class UsageService implements UsagePromptRecorder {
       persistence: this.failed || this.lost ? 'failed' : 'saved' })
   }
 
-  async refresh(providerIds?: readonly UsageProviderId[]): Promise<UsageLocalHostRead> {
-    const quotas = await this.readQuotas(providerIds, true)
+  /** `background` is a refresh Usage made on its own when it opened; Read again leaves it out and always reads afresh. */
+  async refresh(providerIds?: readonly UsageProviderId[], background = false): Promise<UsageLocalHostRead> {
+    const quotas = await this.readQuotas(providerIds, true, background)
     return { status: 'ready', quotas, persistence: this.failed || this.lost ? 'failed' : 'saved' }
   }
 
@@ -179,7 +185,17 @@ export class UsageService implements UsagePromptRecorder {
     clearTimeout(this.timer); this.timer = undefined
     if (!this.open()) { this.schedule(RETRY_MS); return }
     try {
-      for (const [key, record] of this.tokens) { this.store.observeTokens(record); this.tokens.delete(key) }
+      // A few bounded transactions rather than one per record: a start-up backlog of thousands held main for seconds.
+      // A batch that fails rolls back whole and stays buffered, with everything after it, for the retry.
+      while (this.tokens.size) {
+        const keys: string[] = [], records: UsageTokenObservation[] = []
+        for (const [key, record] of this.tokens) {
+          if (keys.length === USAGE_HISTORY_BATCH_MAX) break
+          keys.push(key); records.push(record)
+        }
+        this.store.observeTokenBatch(records, { revision: 'per-record' })
+        for (const key of keys) this.tokens.delete(key)
+      }
       for (const [key, write] of this.prompts) {
         if (write.submission) this.store.submitPrompt(write.submission)
         if (write.action === 'accept') this.store.acceptSubmittedPrompt(...parsePromptKey(key))
@@ -278,24 +294,34 @@ export class UsageService implements UsagePromptRecorder {
     }
   }
 
-  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
+  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean, background = false): Promise<UsageQuotaRead[]> {
     const selected = LIMIT_PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
     return Promise.all(selected.map(async providerId => {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')
       if (!this.options.host.readProviderQuota) return unavailableProviderQuota(providerId, 'unsupported')
       const read = async (): Promise<UsageQuotaRead> => {
+        // A refresh that began after this one and has already answered is newer news, and stands over this one (#1456).
+        // A read of the last reading takes no place in that order: it answers at once with whatever the provider holds.
+        const start = refresh ? ++this.quotaStarts : 0
+        const newer = (): UsageQuotaRead | undefined => refresh && (this.quotaStarted.get(providerId) ?? 0) > start ? this.quotas.get(providerId) : undefined
         try {
-          const quota = usageQuotaReadSchema.parse(await this.options.host.readProviderQuota!(providerId, refresh))
+          const host = this.options.host
+          const quota = usageQuotaReadSchema.parse(await (background ? host.readProviderQuota!(providerId, true, true) : host.readProviderQuota!(providerId, refresh)))
           if (quota.providerId !== providerId) throw new Error('Usage provider does not match')
+          const standing = newer()
+          if (standing) return standing
           this.quotas.set(providerId, quota)
+          if (refresh) this.quotaStarted.set(providerId, start)
           return quota
         } catch {
+          const standing = newer()
+          if (standing) return standing
           const previous = this.quotas.get(providerId)
           return { ...(previous ?? unavailableProviderQuota(providerId, 'read-failed')), status: 'error', reason: 'read-failed' }
         }
       }
-      const inFlight = refresh ? this.refreshing : this.reading
-      const existing = inFlight.get(providerId)
+      const inFlight = !refresh ? this.reading : background ? this.backgroundRefreshing : this.refreshing
+      const existing = (background ? this.refreshing.get(providerId) : undefined) ?? inFlight.get(providerId)
       if (existing) return refresh ? existing : this.waitForQuota(providerId, existing)
       const pending = read().finally(() => { inFlight.delete(providerId) })
       inFlight.set(providerId, pending)

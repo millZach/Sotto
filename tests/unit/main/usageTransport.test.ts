@@ -176,6 +176,35 @@ describe('Usage transport boundary', () => {
     await client.usageRefresh(['muse'])
     expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['muse'] }, undefined, undefined, 15000)
   })
+  it('marks a refresh Usage made on its own only for a host that takes it, and never Read again (#1456)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const remote = connection(REMOTE)
+    router.add(remote)
+    try {
+      await router.usageRefresh({ hostIds: [REMOTE], providerIds: ['grok'], background: true })
+      expect(remote.service.usageRefresh).toHaveBeenLastCalledWith(['grok'], true)
+      await router.usageRefresh({ hostIds: [REMOTE], providerIds: ['grok'] })
+      expect(remote.service.usageRefresh).toHaveBeenLastCalledWith(['grok'])
+    } finally { router.dispose() }
+    const client = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired' }), call = vi.fn(async () => result)
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history', 'usage-muse-opencode'], call })
+    // An older host's strict schema refuses the field, so it is left off and that host reads afresh.
+    await client.usageRefresh(['grok'], true)
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['grok'] }, undefined, undefined, 15000)
+    Object.assign(client, { features: ['usage-dashboard', 'usage-history', 'usage-muse-opencode', 'usage-background-refresh'] })
+    await client.usageRefresh(['grok'], true)
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['grok'], background: true }, undefined, undefined, 15000)
+    await client.usageRefresh(['grok'])
+    expect(call).toHaveBeenLastCalledWith({ op: 'usage-refresh', providerIds: ['grok'] }, undefined, undefined, 15000)
+    const state = emptyDesktopState(LOCAL)
+    const control = { get: () => state, shell: () => state, threadDetail: () => null, subscribe: () => () => undefined, commandShell: vi.fn(async () => state) }
+    const usage: HostUsageReads = { read: vi.fn(async () => result), refresh: vi.fn(async () => result), clear: vi.fn(async () => ({ status: 'stale' as const, metadata })) }
+    const local = new LocalHostService({ control, usage })
+    await local.usageRefresh(['grok'], true)
+    expect(usage.refresh).toHaveBeenLastCalledWith(['grok'], true)
+    await local.usageRefresh(['grok'])
+    expect(usage.refresh).toHaveBeenLastCalledWith(['grok'])
+  })
   it('adds strict optional v1 operations without changing old operations', () => {
     const base = { v: 1, id: 'request', session: 'authenticated' }
     expect(hostRequestSchema.safeParse({ ...base, op: 'shell' }).success).toBe(true)

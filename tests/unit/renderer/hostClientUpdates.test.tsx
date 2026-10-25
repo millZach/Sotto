@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostProviders } from '../../../src/renderer/src/features/settings/HostProviders'
 import { resetAcknowledgedClientUpdates } from '../../../src/renderer/src/features/settings/HostClientUpdates'
-import { chipText, failedShort, hostClientUpdatesView, popoverStatus } from '../../../src/renderer/src/features/settings/hostClientUpdateWords'
+import { chipText, failedLong, failedShort, hostClientUpdatesView, popoverStatus } from '../../../src/renderer/src/features/settings/hostClientUpdateWords'
 import type { AgentProviderStatus, ClientUpdateRun, ProviderClientUpdate, ProviderId } from '../../../src/shared/agents'
 import type { HostsBridge, HostStatus } from '../../../src/shared/hosts'
 
@@ -19,7 +19,7 @@ const connected = (id: ProviderId, version: string): AgentProviderStatus => ({ i
 const PROVIDERS: AgentProviderStatus[] = [connected('claude', '2.1.281'), connected('codex', '0.155.1'), connected('grok', '1.0.41'),
   { id: 'devin', name: 'devin', version: '', connection: 'error', problem: 'not-installed', capabilities }]
 const reading = (id: ProviderId, patch: Partial<ProviderClientUpdate> = {}): ProviderClientUpdate => ({
-  id, installed: { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41', devin: '', muse: '', opencode: '' }[id], published: { claude: '2.1.284', codex: '0.158.0', grok: '1.0.43', devin: '', muse: '', opencode: '' }[id],
+  id, installed: { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41', devin: '', muse: '', opencode: '', cursor: '' }[id], published: { claude: '2.1.284', codex: '0.158.0', grok: '1.0.43', devin: '', muse: '', opencode: '', cursor: '' }[id],
   behind: true, channel: 'mise', command: `mise upgrade ${id === 'grok' ? 'npm:@xai-official/grok' : id}`, canInstall: true, checkedAt: '2026-09-29T12:00:00.000Z', state: 'idle',
   steps: id === 'grok' ? 2 : 1, ...patch,
 })
@@ -66,6 +66,11 @@ describe('the words', () => {
   it('keeps a failed tile to one line, the owner’s words', () => {
     expect(failedShort(reading('codex', { state: 'failed', failure: 'download' }), 'forge')).toBe('The download dropped partway. 0.155.1 is still installed.')
     expect(failedShort(reading('grok', { state: 'failed', failure: 'install-step', step: 2 }), 'forge')).toBe('The install step did not finish, so forge still starts 1.0.41.')
+    expect(failedShort(reading('claude', { state: 'failed', failure: 'not-listed', step: 1 }), 'forge')).toBe('mise does not list 2.1.284 yet. 2.1.281 is still installed.')
+  })
+
+  it('says under Details that mise’s list did not have the version, that nothing changed, and to try again later', () => {
+    expect(failedLong(reading('claude', { state: 'failed', failure: 'not-listed', step: 1 }), 'forge')).toBe('mise on forge does not list Claude Code 2.1.284 yet, even with its cache cleared, so Sotto did not install it. Nothing was changed: 2.1.281 is still installed, and your threads kept working. Try again later.')
   })
 })
 

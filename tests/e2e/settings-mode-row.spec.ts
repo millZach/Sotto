@@ -26,10 +26,8 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
           const row = sidebar.querySelector<HTMLElement>('.thread-nav__seg')!
           const buttons = [...row.querySelectorAll('button')]
           const labels = buttons.map(button => {
-            const range = document.createRange(); range.selectNodeContents(button)
-            const text = range.getBoundingClientRect(), box = button.getBoundingClientRect()
-            return { name: button.textContent, width: box.width, font: getComputedStyle(button).fontSize,
-              fits: text.left >= box.left && text.right <= box.right }
+            const box = button.getBoundingClientRect()
+            return { name: button.getAttribute('aria-label'), height: box.height, fits: box.left >= frame.left && box.right <= frame.right }
           })
           const controls = [...sidebar.querySelectorAll<HTMLElement>('.thread-nav__foot button, .thread-nav__foot a')]
           return { left: frame.left, right: frame.right, rowRight: row.getBoundingClientRect().right, labels,
@@ -41,9 +39,8 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
         geometry.push({ width, height, appearance, ...bounds })
         expect(bounds.rowRight).toBeLessThanOrEqual(bounds.right)
         expect(bounds.clipped).toBe(0)
-        expect(bounds.labels.map(label => label.name)).toEqual(['Dictate', 'Threads'])
-        expect(bounds.labels.every(label => label.fits && label.font === '14px')).toBe(true)
-        expect(Math.max(...bounds.labels.map(label => label.width)) - Math.min(...bounds.labels.map(label => label.width))).toBeLessThan(1)
+        expect(bounds.labels.map(label => label.name)).toEqual(['Dictate', 'Watcher', 'Threads'])
+        expect(bounds.labels.every(label => label.fits && label.height === 32)).toBe(true)
         await page.screenshot({ path: join(evidence, `settings-two-${width}-${appearance}.png`) })
       }
     }
@@ -54,7 +51,7 @@ test('Settings mode row fits and keeps keyboard navigation', async () => {
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await modes.getByRole('tab', { name: 'Dictate', exact: true }).focus()
     await page.keyboard.press('ArrowRight')
-    await expect(modes.getByRole('tab', { name: 'Threads', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(modes.getByRole('tab', { name: 'Watcher', exact: true })).toHaveAttribute('aria-selected', 'true')
   } finally {
     await writeFile(join(evidence, 'geometry.json'), JSON.stringify(geometry, null, 2))
     await closeSotto(launched)

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { AgentMessage, AgentRequest } from '../../../src/shared/agents'
 import {
-  nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberMarks, scrubberShown, swell, tickPlaces,
+  joinedMarks, nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberMarks, scrubberShown, storedMarks, swell, tickPlaces,
   SCRUBBER_LANE_PX, SWELL_SIGMA_PX,
 } from '../../../src/renderer/src/agents/messageScrubberMarks'
 
@@ -28,6 +28,20 @@ describe('the ticks', () => {
       user('u2', 'Merge it.'),
     ], new Set(['brief']))
     expect(marks.map(mark => [mark.messageId, mark.reply?.id])).toEqual([['u1', 'r1'], ['u2', undefined]])
+  })
+
+  it('puts the store’s prompts above the window’s, leaving a brief out and a prompt the window has loaded to the window', () => {
+    const stored = storedMarks([
+      { id: 'u0', createdAt: at, text: 'Why does the pill flicker?', attachments: 2, reply: { id: 'r0', text: 'Both hosts write in one frame. Should I batch the writes?' } },
+      { id: 'brief', createdAt: at, text: 'Review this diff.', reply: { id: 'rb', text: 'Two findings.' } },
+      { id: 'u1', createdAt: at, text: 'Debounce it.' },
+    ], new Set(['brief']))
+    expect(stored.map(mark => [mark.messageId, mark.index, mark.attachments, mark.reply?.id, mark.newest])).toEqual([['u0', -1, 2, 'r0', false], ['u1', -1, 0, undefined, false]])
+    expect(scrubberAfter(stored[0]!, [])).toEqual({ kind: 'asked', question: 'Should I batch the writes?', choices: [], more: 0 })
+    const window = scrubberMarks([user('u1', 'Debounce it.'), reply('r1', 'Done.'), user('u2', 'And the iPhone?')])
+    expect(joinedMarks(stored, window).map(mark => [mark.messageId, mark.index])).toEqual([['u0', -1], ['u1', 0], ['u2', 2]])
+    expect(joinedMarks([], window)).toBe(window)
+    expect(joinedMarks(stored, [])).toBe(stored)
   })
 
   it('leaves the newest message sent without the open question when a wake-up came after it', () => {

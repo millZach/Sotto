@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { EFFORT_COLORS, EFFORT_COLOR_LABELS, type EffortColor } from '../../../../../shared/settings'
 
@@ -13,14 +14,16 @@ export function EffortColorChoice({ value, onChoose }: {
   readonly value: EffortColor
   readonly onChoose: (color: EffortColor) => void
 }): ReactNode {
+  const { t } = useLingui()
   const headingId = useId()
   return (
     <div className="effort-colors">
-      <h3 className="theme-settings__subheading" id={headingId}>Effort color</h3>
-      <p className="theme-settings__assignment-hint">The color a thread’s effort control turns at its highest level.</p>
-      <div className="effort-colors__grid" role="group" aria-labelledby={headingId}>
+      <h3 className="theme-settings__subheading" id={headingId}><Trans>Effort color</Trans></h3>
+      <p className="theme-settings__assignment-hint tt-paragraph"><Trans>The color a thread’s effort control turns at its highest level.</Trans></p>
+      <div className="effort-colors__grid" role="group" data-setting="effort-color" aria-labelledby={headingId}>
         {EFFORT_COLORS.map(id => {
           const active = id === value
+          const color = EFFORT_COLOR_LABELS[id]
           return (
             <button
               key={id}
@@ -28,7 +31,7 @@ export function EffortColorChoice({ value, onChoose }: {
               className="effort-color tt-focusable"
               data-effort-color={id}
               aria-pressed={active}
-              aria-label={`Use ${EFFORT_COLOR_LABELS[id]} as the effort color${active ? ', currently active' : ''}`}
+              aria-label={active ? t`Use ${color} as the effort color, currently active` : t`Use ${color} as the effort color`}
               onClick={() => onChoose(id)}
             >
               <span className="effort-color__pill" aria-hidden="true">
@@ -56,6 +59,7 @@ export function EffortColorSample({ effortColor, still }: {
   readonly effortColor: EffortColor
   readonly still: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const [arriving, setArriving] = useState(false)
   const [run, setRun] = useState(0)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -75,28 +79,30 @@ export function EffortColorSample({ effortColor, still }: {
     seen.current = effortColor
   }, [effortColor])
   useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current) }, [])
-  const letters = Array.from('Max', (letter, index) => <span key={index} style={{ '--effort-letter': index } as CSSProperties}>{letter}</span>)
+  // The sample is the effort card a thread shows, so its words are the card's own.
+  const max = t({ message: 'Max', comment: 'The highest reasoning effort level, as the effort card names it' })
+  const letters = Array.from(max, (letter, index) => <span key={index} style={{ '--effort-letter': index } as CSSProperties}>{letter}</span>)
   return (
     <div className="effort-sample" data-arriving={arriving} data-still={still}>
       <div className="effort-sample__head">
-        <span>Effort at its highest level</span>
-        <button type="button" className="effort-sample__replay tt-focusable" onClick={play} disabled={still}>Play again</button>
+        <span><Trans>Effort at its highest level</Trans></span>
+        <button type="button" className="effort-sample__replay tt-focusable" onClick={play} disabled={still}><Trans>Play again</Trans></button>
       </div>
       <div className="effort-sample__scene" key={run} aria-hidden="true">
         <div className="effort-sample__card">
-          <div className="effort-sample__card-head"><p className="effort-sample__word">{letters}</p><span>Default</span></div>
-          <p className="effort-sample__line">Everything the model has. Slowest, costliest.</p>
+          <div className="effort-sample__card-head"><p className="effort-sample__word">{letters}</p><span>{t({ message: 'Default', comment: 'Marks the model\'s default effort level on the effort card' })}</span></div>
+          <p className="effort-sample__line tt-paragraph"><Trans>Everything the model has. Slowest, costliest.</Trans></p>
           <div className="effort-sample__track">
             <div className="effort-sample__pill"><div className="effort-sample__fill" />{STOPS.map(stop => <i key={stop} style={{ '--effort-stop': stop } as CSSProperties} />)}</div>
             <b className="effort-sample__thumb" />
           </div>
-          <div className="effort-sample__ends"><span>Faster</span><span>More thorough</span></div>
+          <div className="effort-sample__ends"><span><Trans>Faster</Trans></span><span><Trans>More thorough</Trans></span></div>
           <div className="effort-sample__wash" />
         </div>
         <div className="effort-sample__composer">
           <div className="effort-sample__wash" />
           <i className="effort-sample__text" />
-          <div className="effort-sample__chips"><span>Model</span><span data-effort-top="true">Max</span><span>Auto</span></div>
+          <div className="effort-sample__chips"><span>{t({ message: 'Model', comment: 'A composer chip standing for the model' })}</span><span data-effort-top="true">{max}</span><span>{t({ message: 'Auto', comment: 'A composer chip: the Auto permission' })}</span></div>
         </div>
       </div>
     </div>

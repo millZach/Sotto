@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AppearanceSettings } from '../../../src/renderer/src/features/settings/AppearanceSettings'
 import { CreatureChoice } from '../../../src/renderer/src/features/settings/themes/CreatureChoice'
+import type { LaterWords } from '../../../src/renderer/src/features/settings/laterWords'
+import { saying } from '../../fixtures/renderer/laterWords'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
 import { useCreatureShown } from '../../../src/renderer/src/state/creature'
 
@@ -69,7 +71,7 @@ describe('creature choice', () => {
 describe('appearance settings creature', () => {
   function renderSettings(initial: Partial<AppSettings>) {
     const settings: AppSettings = { ...DEFAULT_SETTINGS, ...initial }
-    const save = vi.fn<(patch: SettingsPatch, text?: string) => Promise<boolean>>(async () => true)
+    const save = vi.fn<(patch: SettingsPatch, text?: LaterWords) => Promise<boolean>>(async () => true)
     render(<AppearanceSettings settings={settings} platform="win32" onSave={save} getSettings={() => settings} />)
     return { save }
   }
@@ -78,7 +80,7 @@ describe('appearance settings creature', () => {
     const user = userEvent.setup()
     const { save } = renderSettings({})
     await user.click(screen.getByRole('button', { name: 'Use Claude bot as the creature' }))
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ creature: 'claude' }, 'Creature saved.'))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ creature: 'claude' }, saying('Creature saved.')))
   })
 
   it('shows the saved creature pressed', () => {
@@ -91,12 +93,12 @@ describe('appearance settings creature', () => {
 describe('creature switch', () => {
   it('turns the creature off and on, and hides the choice while it is off', async () => {
     const user = userEvent.setup()
-    const save = vi.fn<(patch: SettingsPatch, text?: string) => Promise<boolean>>(async () => true)
+    const save = vi.fn<(patch: SettingsPatch, text?: LaterWords) => Promise<boolean>>(async () => true)
     const settings: AppSettings = { ...DEFAULT_SETTINGS, showCreature: false }
     render(<AppearanceSettings settings={settings} platform="win32" onSave={save} getSettings={() => settings} />)
     expect(screen.queryByRole('group', { name: 'Creature' })).toBeNull()
     await user.click(screen.getByRole('switch', { name: 'Show the creature' }))
-    await waitFor(() => expect(save).toHaveBeenCalledWith({ showCreature: true }, 'Creature shown.'))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ showCreature: true }, saying('Creature shown.')))
   })
 
   it('shows no switch and the whole choice where the switch is held to Owl, whatever was saved', () => {
