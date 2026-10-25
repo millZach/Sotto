@@ -241,6 +241,24 @@ function threadPullRequests(thread: AgentThread): { number: number; url: string;
 }
 const withSince = (checksPassedAt: string | undefined) => checksPassedAt === undefined ? {} : { checksPassedAt }
 /** One row of read_state's pages: the watched thread, merge queue item and pending settle at the same place in each list. */
+/**
+ * Each card once, by the thread that holds it and its ID. A watched thread that a watched thread above it delegated to
+ * lists its own cards, and so does each watched thread above it: the card is told as news of the topmost one (#1190), so
+ * it is listed there alone, as a card of a thread it delegated to.
+ */
+function onceEach(waiting: readonly WatcherWaitingOnUser[]): WatcherWaitingOnUser[] {
+  const holder = (item: WatcherWaitingOnUser, threadId = item.delegatedThreadId ?? item.target.threadId) => JSON.stringify([item.target.hostId, threadId])
+  // The threads some watched thread above them delegated to: neither their own cards nor those below them are theirs to list.
+  const below = new Set(waiting.flatMap(item => item.delegatedThreadId === undefined ? [] : [holder(item)]))
+  const listed = new Set<string>()
+  return waiting.filter(item => {
+    if (below.has(holder(item, item.target.threadId))) return false
+    const card = JSON.stringify([holder(item), item.requestCardId ?? item.waitsFor])
+    if (listed.has(card)) return false
+    listed.add(card)
+    return true
+  })
+}
 interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined; readonly settle: WatcherPendingSettle | undefined
   readonly waiting: WatcherWaitingOnUser | undefined }
 
@@ -1188,7 +1206,7 @@ export class WatcherService implements WatcherControlHooks {
         ...delegated.flatMap(child => child.requests.map(request => card(request, child.id))),
         ...owned?.prototypeReady ? [{ target, title, waitsFor: 'prototype-review' as const }] : [])
     }
-    return { watching, waiting }
+    return { watching, waiting: onceEach(waiting) }
   }
   /**
    * read_state's watched threads (#1274), each with its open pull requests as Sotto last read them and what the merge queue

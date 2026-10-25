@@ -2228,6 +2228,29 @@ it('works out what waits on the user from live data at each read: open cards, a 
   expect(texts(after.kept.decisions)).toEqual(['Zach still has to answer the question on the parser thread'])
 })
 
+it('lists a card once when the thread holding it is watched and a watched thread above it delegated to it', async () => {
+  const f = await fixture()
+  const top = await f.call('start_thread', f.start()), middle = await f.call('start_thread', f.start()), below = await f.call('start_thread', f.start())
+  if (top.status !== 'ok' || !('target' in top) || middle.status !== 'ok' || !('target' in middle) || below.status !== 'ok' || !('target' in below)) throw new Error('start refused')
+  // Watched all three: top delegated to middle and middle to below, as the news tells their cards, as news of top.
+  const real = f.control.watcherSnapshot.bind(f.control)
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, threads: snapshot.threads.map(thread => thread.id === middle.target.threadId
+      ? { ...thread, delegatedBy: top.target.threadId, requests: [{ id: 'middle-card', kind: 'permission' as const, text: 'synthetic', options: [] }] }
+      : thread.id === below.target.threadId
+        ? { ...thread, delegatedBy: middle.target.threadId, requests: [{ id: 'below-card', kind: 'question' as const, text: 'synthetic', options: [] }] } : thread) }
+  })
+  const expected = [
+    { target: top.target, title: expect.any(String), waitsFor: 'permission', requestCardId: 'middle-card', delegatedThreadId: middle.target.threadId },
+    { target: top.target, title: expect.any(String), waitsFor: 'question', requestCardId: 'below-card', delegatedThreadId: below.target.threadId },
+  ]
+  const read = watcherToolSchemas.read_state.output.parse(await f.call('read_state', {}))
+  if (read.status !== 'ok') throw new Error('read refused')
+  expect(read.waitingOnUser).toEqual(expected)
+  expect(f.service.state().state?.waitingOnUser).toEqual(expected)
+})
+
 it('pages what waits on the user with the watched threads, a hundred to a page, leaving none out', async () => {
   const f = await fixture()
   const started = await f.call('start_thread', f.start())
