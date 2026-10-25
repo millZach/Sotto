@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSy
 import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, hostForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
-import { isThreadArchived, isThreadClosed } from '../../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
@@ -261,7 +261,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const watched = useWatchedThread(thread.id) && !ownPane
   const closed = isThreadClosed(thread)
   const rowConnected = row.connected
-  const ornamentAllowed = rowConnected && !closed && thread.status !== 'error' && thread.requests.length === 0
+  const ornamentAllowed = threadOrnamentAllowed(thread, rowConnected)
   const liveMonitors = ornamentAllowed ? thread.monitoring ?? [] : []
   const liveWork = ornamentAllowed ? thread.backgroundWork ?? [] : []
   const liveCommands = liveWork.filter(task => task.type === 'command')

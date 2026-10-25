@@ -5,7 +5,9 @@ import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { DelegationWorldProvider, delegationsByTurn, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
+import { DelegationWorldProvider, delegationsByTurn, stillWorkingAgents, type DelegationWorld } from '../../../src/renderer/src/agents/DelegatedWork'
+import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
+import { threadOrnamentAllowed } from '../../../src/shared/threadActivity'
 import { DelegationStore } from '../../../src/renderer/src/agents/delegations'
 import { delegatedKind, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationDuration, pendingRequestOf, delegationRefusalLine, delegationWaitLine, stopLabel, stopLine, userTurnRunning, workingDelegatedThreads } from '../../../src/renderer/src/agents/delegationWords'
 import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
@@ -412,6 +414,67 @@ describe('delegated work in the delegating thread', () => {
     // Closed again, what still works stands under the reply again.
     fireEvent.click(fold)
     expect(screen.getByRole('region', { name: 'Still working after this reply' })).toBeInTheDocument()
+  })
+
+  it('stands the provider\'s own agents still running under the last finished reply, beside its open delegations, until each ends', () => {
+    const turns: AgentMessage[] = [
+      { id: 'first', role: 'user', text: 'Look into the flake.', createdAt: at(20) },
+      { id: 'first-reply', role: 'assistant', text: 'Looked.', createdAt: at(19) },
+      { id: 'ask', role: 'user', text: 'Fix it and have it checked.', createdAt: at(10) },
+      { id: 'step', role: 'assistant', text: 'Sending agents out.', createdAt: at(9) },
+      { id: 'final', role: 'assistant', text: 'Muse is checking the fix; my agents are still reading.', createdAt: at(6) },
+    ]
+    const threads = [thread('muse-plan', 'Check the fix', { providerId: 'muse', status: 'running' })]
+    const made = [view({ anchorMessageId: 'ask', thread: 'muse-plan', work: 'code-review', outcome: 'working', wait: { seconds: 0, startedAt: at(6) } })]
+    const task = (type: AgentBackgroundWork['type'], label: string): AgentBackgroundWork => ({ id: crypto.randomUUID(), type, label, startedAt: at(6) })
+    const work = [task('subagent', 'Read the capture code'), task('workflow', 'Workflow'), task('command', 'npm run watch')]
+    const list = (agents: readonly AgentBackgroundWork[] | undefined, running = false): React.ReactElement => <DelegationWorldProvider world={world(vi.fn(), threads)}>
+      <MessageList messages={turns} provider="Claude Code" running={running} placement={placeActivities(turns, turns, [])} context={context}
+        delegations={delegationsByTurn(made, turns)} backgroundWork={stillWorkingAgents(agents, true)} /></DelegationWorldProvider>
+    const rows = (root: HTMLElement): (string | null)[] => within(root).getAllByRole('listitem').map(row => row.getAttribute('aria-label'))
+    const { rerender } = render(list(work))
+    // One heading over the open delegation and the agents, in that order; the command is the ornament's alone, and a
+    // workflow with no label of its own is not named twice.
+    const still = screen.getByRole('region', { name: 'Still working after this reply' })
+    expect(rows(still)).toEqual(['Muse review: Check the fix, Working', 'Subagent: Read the capture code, Working', 'Workflow, Working'])
+    expect(within(still).getAllByRole('list')).toHaveLength(1)
+    expect(still).not.toHaveTextContent('npm run watch')
+    // An agent row is not a delegated thread: it opens nothing.
+    expect(within(within(still).getByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).queryByRole('button')).toBeNull()
+    expect(document.querySelector('[data-message-id="final"]')!.compareDocumentPosition(still) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getAllByRole('region', { name: 'Still working after this reply' })).toHaveLength(1)
+    // Open, the fold holds the turn's work, so nothing stands under the reply; closed again, the rows are back.
+    const fold = screen.getByRole('button', { name: /^Worked for/u })
+    fireEvent.click(fold)
+    expect(screen.queryByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).toBeNull()
+    fireEvent.click(fold)
+    expect(screen.getByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).toBeInTheDocument()
+    // Each row goes when its task ends; the delegation still working keeps the heading.
+    rerender(list([work[1]!]))
+    expect(rows(screen.getByRole('region', { name: 'Still working after this reply' }))).toEqual(['Muse review: Check the fix, Working', 'Workflow, Working'])
+    rerender(list([]))
+    expect(rows(screen.getByRole('region', { name: 'Still working after this reply' }))).toEqual(['Muse review: Check the fix, Working'])
+    // While the newest turn runs, its reply is not finished, and the composer's ornament says what still works.
+    rerender(list(work, true))
+    expect(screen.queryByRole('listitem', { name: 'Subagent: Read the capture code, Working' })).toBeNull()
+  })
+
+  it('stands background agents under a reply with nothing to fold, and only where the composer\'s ornament may show them', () => {
+    const turns: AgentMessage[] = [{ id: 'ask', role: 'user', text: 'Start the review agents.', createdAt: at(10) }, { id: 'reply', role: 'assistant', text: 'Started.', createdAt: at(9) }]
+    const agents = [{ id: crypto.randomUUID(), type: 'teammate' as const, label: 'Check the docs' }, { id: crypto.randomUUID(), type: 'remote-agent' as const, label: 'Run on forge' }]
+    render(<MessageList messages={turns} provider="Claude Code" running={false} placement={placeActivities(turns, turns, [])} context={context} backgroundWork={stillWorkingAgents(agents, true)} />)
+    const still = screen.getByRole('region', { name: 'Still working after this reply' })
+    expect(within(still).getAllByRole('listitem').map(row => row.getAttribute('aria-label'))).toEqual(['Teammate: Check the docs, Working', 'Remote agent: Run on forge, Working'])
+    // Commands alone, or a thread whose ornament is held back, give no rows at all.
+    expect(stillWorkingAgents([{ id: crypto.randomUUID(), type: 'command', label: 'npm run watch' }], true)).toBeUndefined()
+    expect(stillWorkingAgents(agents, false)).toBeUndefined()
+    expect(stillWorkingAgents(undefined, true)).toBeUndefined()
+    const open = { status: 'idle' as const, requests: [] as AgentThread['requests'] }
+    expect(threadOrnamentAllowed(open, true)).toBe(true)
+    expect(threadOrnamentAllowed(open, false)).toBe(false)
+    expect(threadOrnamentAllowed({ ...open, status: 'error' }, true)).toBe(false)
+    expect(threadOrnamentAllowed({ ...open, archivedAt: at(1) }, true)).toBe(false)
+    expect(threadOrnamentAllowed({ ...open, requests: [{ id: 'q', kind: 'question', text: 'Which?', options: [] }] }, true)).toBe(false)
   })
 
   it('goes in a wake-up\'s turn when the call was made there, and last when its turn is not shown unless it is older than what is', () => {
