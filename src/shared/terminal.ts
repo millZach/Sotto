@@ -22,7 +22,7 @@ const terminalCapacitySchema = z.object({ count: z.number().int().nonnegative(),
 export const terminalPlaceSchema = z.enum(['tools', 'drawer'])
 export type TerminalPlace = z.infer<typeof terminalPlaceSchema>
 export const terminalSizeSchema = z.object({ cols: z.number().int().min(2).max(500), rows: z.number().int().min(1).max(300) })
-/** A command from a reply that main types into the new shell as it starts (ADR-0137); only a drawer shell takes one. */
+/** A command from a reply that main types into the new shell as it starts (ADR-0139); only a drawer shell takes one. */
 export const terminalRunSchema = z.string().min(1).max(16384).refine(text => !hasForbiddenControl(text))
 export const terminalCreateSchema = toolTargetSchema.extend({ cols: terminalSizeSchema.shape.cols.optional(), rows: terminalSizeSchema.shape.rows.optional(), place: terminalPlaceSchema.optional(), run: terminalRunSchema.optional() })
 export const terminalListRequestSchema = toolListRequestSchema.extend({ place: terminalPlaceSchema.optional() })

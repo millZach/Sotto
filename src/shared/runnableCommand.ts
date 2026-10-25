@@ -1,5 +1,5 @@
 /**
- * Which code in a reply is a runnable command (ADR-0137), and the bytes a drawer shell receives for it. Pure, so the
+ * Which code in a reply is a runnable command (ADR-0139), and the bytes a drawer shell receives for it. Pure, so the
  * window, preload and main read the same rule. What runs is the text the user sees, never an attribute.
  */
 

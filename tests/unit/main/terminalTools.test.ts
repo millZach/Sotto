@@ -325,7 +325,7 @@ describe('persistent terminal service', () => {
     expect(unwrap(await restored.list(f.target)).sessions).toEqual([])
     expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([replacement.session.id])
   })
-  it('types a reply\'s command into a new drawer shell once it goes quiet, and names the tab after its first line (ADR-0137)', async () => {
+  it('types a reply\'s command into a new drawer shell once it goes quiet, and names the tab after its first line (ADR-0139)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     cleanup.push(async () => { vi.useRealTimers() })
     const f = await fixture({ runCommandEnabled: true })

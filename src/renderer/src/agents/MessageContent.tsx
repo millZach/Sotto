@@ -36,7 +36,7 @@ export interface MessageContentProps {
   readonly streaming?: boolean
   /** Opens a vetted absolute http:, https: or mailto: URL. Defaults to the surrounding link router: a thread's browser setting, else the system browser. */
   readonly onOpenLink?: (url: string) => Promise<LinkOpenResult> | LinkOpenResult
-  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0137). */
+  /** An agent's reply: its commands offer Run when the surrounding thread pane can run them (ADR-0139). */
   readonly commands?: boolean
 }
 
@@ -229,7 +229,7 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
 export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
   code: string; language: string | undefined
   readonly cut?: CodeBlockCut | undefined
-  /** Offers Run beside Copy when the block holds shell input (ADR-0137). */
+  /** Offers Run beside Copy when the block holds shell input (ADR-0139). */
   readonly run?: RunCommand | undefined
   /** Opens scrolled to its end, and keeps the same lines in view as the code above them grows, as command output does. */
   readonly anchorEnd?: boolean | undefined
@@ -338,7 +338,7 @@ const InsideLink = createContext(false)
 /**
  * Inline code that is a whole home, drive or absolute path shows that file when pressed, as a file link does. A
  * `/`-rooted path needs two parts, so a slash command such as `/review` stays code. Otherwise a span that reads as a
- * shell command offers Run (ADR-0137); a lone path stays a file link, so a press still does one thing.
+ * shell command offers Run (ADR-0139); a lone path stays a file link, so a press still does one thing.
  */
 function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
   const { reveal } = useContext(LinkContext)

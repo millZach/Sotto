@@ -67,7 +67,7 @@ function sessionNames(sessions: readonly TerminalSession[]): Map<string, string>
   }))
 }
 
-/** A long tab name, such as a command a reply ran (ADR-0137), keeps its start and its end; the tab's title holds all of it. */
+/** A long tab name, such as a command a reply ran (ADR-0139), keeps its start and its end; the tab's title holds all of it. */
 export function middleCut(name: string, limit = 20): string {
   const characters = [...name]
   if (characters.length <= limit) return name
@@ -92,7 +92,7 @@ export function TerminalSurface({ threadId, store, bridge, viewFactory, viewFail
   const screenId = `terminal-screen${idSuffix}`
   const chrome = chromeTitle === null ? null : <ToolsChrome title={chromeTitle} />
   // A pane drawer starts its first shell on its own; it never shows "Start terminal" while that is on its way. A shell
-  // already starting (a reply's Run, ADR-0137) or one that just failed to start, whose notice says why, starts none.
+  // already starting (a reply's Run, ADR-0139) or one that just failed to start, whose notice says why, starts none.
   useEffect(() => {
     if (!autoStart || autoStarted.current || !terminals || terminals.status !== 'ready' || terminals.sessions.length > 0 || terminals.busy || terminals.notice || !bridge || sessionCount >= TERMINAL_SESSIONS_MAX) return
     autoStarted.current = true

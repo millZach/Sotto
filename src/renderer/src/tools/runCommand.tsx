@@ -6,7 +6,7 @@ import { drawerHeight, drawerShellSize } from './PaneTerminalDrawer'
 import { paneTerminalChromeStore, paneTerminalStore, type PaneTerminalChromeStore } from './paneTerminalStore'
 import { windowTerminalBridge, type TerminalStore } from './terminalStore'
 
-/** Runs a reply's command in a new shell in its pane's Terminal drawer (ADR-0137); true once the shell started with it. */
+/** Runs a reply's command in a new shell in its pane's Terminal drawer (ADR-0139); true once the shell started with it. */
 export type RunCommand = (command: string) => Promise<boolean>
 
 /** The pane's runner, or undefined where nothing may run: the feature off, a paired host's thread, outside a thread pane. */

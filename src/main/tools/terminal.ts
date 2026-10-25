@@ -26,7 +26,7 @@ export interface TerminalDependencies {
   executableExists?: (path: string) => Promise<boolean>
   /** Prevents a new shell from starting while the desktop removes its checkout. */
   acquireStart?: (workspace: FileWorkspace) => Promise<() => void>
-  /** Whether a drawer shell may start with a command from a reply (ADR-0137, an Owl feature), read once at start. */
+  /** Whether a drawer shell may start with a command from a reply (ADR-0139, an Owl feature), read once at start. */
   runCommandEnabled?: boolean
 }
 interface PendingRun { output(): void; arm(): void; cancel(): void }

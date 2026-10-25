@@ -383,7 +383,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {ownPane && watcherBody != null ? <div className="thread-transcript">
       {watcherBody}
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
-    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0137; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
+    </div> : <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
