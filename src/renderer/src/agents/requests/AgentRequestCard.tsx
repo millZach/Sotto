@@ -1,7 +1,7 @@
 import React, { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useMark } from '../../components/marks'
 import { AppWindow, ArrowUpRight, ChevronDown, ChevronUp, Link2, Link2Off } from 'lucide-react'
-import { plural } from '@lingui/core/macro'
+import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest, QuestionPage } from '../../../../shared/agents'
 import { requestDraftQuestions, type RequestDraftOwner } from '../../../../shared/requestDrafts'
@@ -10,6 +10,9 @@ import { LinkedText } from './LinkedText'
 import { MessageContent } from '../MessageContent'
 import { linkPlace, webLinks } from './messageLinks'
 import { useWebLinkRouter } from '../../tools/webLinks'
+import { shownWords, type LaterWords } from '../interfaceWords'
+import { shownCount } from '../../state/interfaceNumbers'
+import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
@@ -91,17 +94,18 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
   const legacyChoice = request.options.find(option => legacySelection.optionIds.includes(option.id))
 
   const status = nativeUncertain
-    ? <div className="agent-request__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
-      {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button> : null}</div>
+    ? <div className="agent-request__hold" role="status"><p className="tt-paragraph"><Trans>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</Trans></p>
+      {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
     : entry.phase === 'unconfirmed'
-      ? <div className="agent-request__hold" role="status"><p>{entry.save === 'unsaved' && entry.error ? entry.error
-        : 'Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.'}</p>
-        {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button> : null}</div>
-      : entry.phase === 'failed' ? <p className="agent-request__error" role="alert">{entry.error}</p>
-        : entry.phase === 'sending' ? <p className="agent-request__status" role="status">Sending…</p>
-          : entry.phase === 'sent' ? <p className="agent-request__status" role="status">Answer sent.</p>
-            : blocked !== null ? <p className="agent-request__status">{blocked}</p> : null
+      ? <div className="agent-request__hold" role="status"><p className="tt-paragraph">{entry.save === 'unsaved' && entry.error ? entry.error
+        : t`Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.`}</p>
+        {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
+      : entry.phase === 'failed' ? <p className="agent-request__error tt-paragraph" role="alert">{entry.error}</p>
+        : entry.phase === 'sending' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Sending…</Trans></p>
+          : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Answer sent.</Trans></p>
+            : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
+  const questionCount = questions.length
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
     data-placement={docked ? 'composer' : undefined} data-collapsed={docked && collapsed || undefined}
     aria-labelledby={docked && collapsed ? `${baseId}-collapsed` : titleId} aria-busy={entry.phase === 'sending' || undefined}
@@ -113,10 +117,10 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         toggle.current?.focus()
       }
     }}>
-    <span className="tt-visually-hidden">{plan ? t`Plan from ${ownerTitle}` : permission ? `Permission request for ${ownerTitle}` : `Question from ${ownerTitle}`}</span>
+    <span className="tt-visually-hidden">{plan ? t`Plan from ${ownerTitle}` : permission ? t`Permission request for ${ownerTitle}` : t`Question from ${ownerTitle}`}</span>
     {docked ? <div className="agent-request__toggle-row">
-      {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questions.length > 1 ? `${questions.length} questions waiting` : questions[0]?.question ?? request.text}</span> : null}
-      <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? 'Show question' : 'Collapse question'}
+      {collapsed ? <span id={`${baseId}-collapsed`} className="agent-request__collapsed-title">{questionCount > 1 ? plural(questionCount, { one: '# question waiting', other: '# questions waiting' }) : questions[0]?.question ?? request.text}</span> : null}
+      <button ref={toggle} type="button" className="agent-request__toggle tt-focusable" aria-label={collapsed ? t`Show question` : t`Collapse question`}
         aria-expanded={!collapsed} aria-controls={`${baseId}-body`} onClick={() => setCollapsed(value => !value)}>
         {collapsed ? <ChevronUp size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
       </button>
@@ -137,7 +141,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         <div className="agent-request__head"><strong id={titleId}>{summary.title}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         {summary.command ? <pre className="agent-request__command"><code>{summary.command}</code></pre> : null}
-        {summary.cwd ? <p className="agent-request__cwd">in <code>{summary.cwd}</code></p> : null}
+        {summary.cwd ? <InFolder cwd={summary.cwd} /> : null}
         {summary.details ? <pre className="agent-request__details">{summary.details}</pre> : null}
         <PermissionActions request={request} disabled={disabled} pressed={entry.choice} onChoose={send} />
       </> : mode === 'structured' ? <form className="agent-request__form" noValidate onKeyDown={event => {
@@ -147,7 +151,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
         event.preventDefault()
         if (answer) send(null, answer)
       }}>
-        <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{questions.length === 1 ? 'Question' : `${questions.length} questions`}</strong>
+        <div className={`agent-request__head${docked && questions.length === 1 ? ' tt-visually-hidden' : ''}`}><strong id={titleId}>{plural(questionCount, { one: 'Question', other: '# questions' })}</strong>
           {request.context?.toolName ? <span className="agent-request__tag">{request.context.toolName}</span> : null}</div>
         <FormContext request={request} />
         {questions.map((question, index) => <QuestionField key={question.id} name={`${baseId}-q${index}`} question={question} links={index === 0 ? rows : []} pages={index === 0 ? pages : []} owner={{ threadId: ownerId, requestId: request.id }}
@@ -155,13 +159,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           selection={entry.selections[question.id] ?? EMPTY_SELECTION} disabled={disabled}
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
-          <span className="agent-request__count" aria-live="polite">{needsProvider ? 'Finish this form in the provider’s app.'
-            : skipping ? t`Choose an answer, or skip` : remaining === 0 ? 'Ready to send' : touched ? `${remaining} left to answer` : 'Choose an answer'}</span>
-          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? 'Sending…'
-            : skipping ? t`${plural(questions.length, { one: 'Skip question', other: 'Skip questions' })}` : questions.length === 1 ? 'Send answer' : 'Send answers'}</Button>
+          <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
+            : skipping ? t`Choose an answer, or skip` : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
+          <Button type="submit" variant={skipping ? 'secondary' : 'primary'} disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…`
+            : skipping ? plural(questionCount, { one: 'Skip question', other: 'Skip questions' }) : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>
       </form> : <>
-        <div className="agent-request__head"><strong id={titleId}>Question</strong></div>
+        <div className="agent-request__head"><strong id={titleId}><Trans>Question</Trans></strong></div>
         <p className="agent-request__text"><LinkedText text={request.text} /></p>
         <MessageLinks links={rows} pages={pages} owner={{ threadId: ownerId, requestId: request.id }} linkMissing={request.linkMissing === true} />
         {mode === 'legacy-options' ? <>
@@ -174,14 +178,14 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
             </label>)}</div>
           </fieldset>
           <div className="agent-request__footer"><Button disabled={disabled || entry.save === 'unsaved' || !legacyChoice}
-            onClick={() => { if (legacyChoice) send(legacyChoice.id, { answer: legacyChoice.id }) }}>Send answer</Button></div>
-        </> : <div className="agent-request__actions">{onWriteAnswer ? <Button variant="secondary" disabled={locked} onClick={onWriteAnswer}>Write an answer</Button> : null}</div>}
+            onClick={() => { if (legacyChoice) send(legacyChoice.id, { answer: legacyChoice.id }) }}><Trans>Send answer</Trans></Button></div>
+        </> : <div className="agent-request__actions">{onWriteAnswer ? <Button variant="secondary" disabled={locked} onClick={onWriteAnswer}><Trans>Write an answer</Trans></Button> : null}</div>}
       </>}
       {status}
       {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
-        {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}>Save again</Button> : null}</div>
-        : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? 'Loading saved answer…'
-          : entry.save === 'saving' ? 'Saving answer…' : entry.revision > 0 ? 'Answer draft saved.' : ''}</span> : null}
+        {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}><Trans>Save again</Trans></Button> : null}</div>
+        : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? t`Loading saved answer…`
+          : entry.save === 'saving' ? t`Saving answer…` : entry.revision > 0 ? t`Answer draft saved.` : ''}</span> : null}
     </div>
   </section>
 }
@@ -194,9 +198,10 @@ function PermissionActions({ request, disabled, pressed, onChoose, names, labels
   /** Each choice's shown label by its ID, where Sotto wrote the choice and so translates it; a provider's own labels show as sent. */
   readonly labels?: Readonly<Record<string, string>>
 }): ReactNode {
+  const { t } = useLingui()
   const choices = request.permissionChoices
   // Only absent choices mean a legacy Allow/Deny request. An empty list is the provider offering nothing Sotto can send.
-  if (choices && choices.length === 0) return <p className="agent-request__fallback">Sotto has no choice it can send for this request. Answer it in the provider’s app.</p>
+  if (choices && choices.length === 0) return <p className="agent-request__fallback tt-paragraph"><Trans>Sotto has no choice it can send for this request. Answer it in the provider’s app.</Trans></p>
   if (choices) {
     const described = choices.filter(choice => choice.description)
     // The provider's order is kept; the single-use approval, or a plan's acceptance, is the one emphasized action.
@@ -211,8 +216,8 @@ function PermissionActions({ request, disabled, pressed, onChoose, names, labels
     </>
   }
   return <div className="agent-request__actions">
-    <Button variant="secondary" disabled={disabled} aria-pressed={pressed === 'deny' || undefined} onClick={() => onChoose('deny', legacyPermissionAnswer(false))}>Deny</Button>
-    <Button disabled={disabled} aria-pressed={pressed === 'allow' || undefined} onClick={() => onChoose('allow', legacyPermissionAnswer(true))}>Allow</Button>
+    <Button variant="secondary" disabled={disabled} aria-pressed={pressed === 'deny' || undefined} onClick={() => onChoose('deny', legacyPermissionAnswer(false))}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
+    <Button disabled={disabled} aria-pressed={pressed === 'allow' || undefined} onClick={() => onChoose('allow', legacyPermissionAnswer(true))}>{t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })}</Button>
   </div>
 }
 
@@ -235,7 +240,7 @@ export function cursorPlan(request: AgentRequest): { readonly title?: string; re
 function OptionLabel({ label }: { readonly label: string }): ReactNode {
   const recommendation = /\s*\(recommended\)\s*$/iu.exec(label)
   return <span className="agent-request__label"><LinkedText text={recommendation ? label.slice(0, recommendation.index) : label} />
-    {recommendation ? <> <span className="agent-request__recommended">(recommended)</span></> : null}</span>
+    {recommendation ? <> <span className="agent-request__recommended"><Trans comment="Marks the choice the agent recommends.">(recommended)</Trans></span></> : null}</span>
 }
 
 /**
@@ -265,29 +270,31 @@ export interface PageOwner { readonly threadId: string; readonly requestId?: str
 
 /** What a row says when its page could not be opened. */
 const PAGE_OPEN_FAILURES = {
-  gone: 'That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now.',
-  unavailable: 'Sotto could not open that page. Nothing else changed. Try again.',
+  gone: msg`That page is no longer there. The file was moved or deleted, or the question was answered. Nothing else changed. Ask the agent where the page is now.`,
+  unavailable: msg`Sotto could not open that page. Nothing else changed. Try again.`,
 } as const
 
 /** What a row says when its page opened in Sotto's browser and nothing here can show that browser. */
-const PAGE_OPENED_UNSEEN = 'Opened in Sotto’s browser. Open Tools > Browser in this thread to see it.'
+const PAGE_OPENED_UNSEEN = msg`Opened in Sotto’s browser. Open Tools > Browser in this thread to see it.`
 
 /** What stands where Open the prototype would be on a question whose prototype names no page that opens (ADR-0108). */
-export const LINK_MISSING = 'No working link. This question is about a prototype, and no page it names opens.'
+export const LINK_MISSING = msg`No working link. This question is about a prototype, and no page it names opens.`
 
 /**
  * Opens one of an owner's pages through main, by its token, never by path or address (ADR-0085). `failure` says how the
  * latest press went, in plain words, until the next press; a slow earlier press cannot overwrite it.
  */
 export function usePageOpener(owner: PageOwner | undefined): { readonly open: (page: QuestionPage) => void; readonly failure: string | null } {
-  const [failure, setFailure] = useState<string | null>(null)
+  // Subscribed to the language: Sotto's words are kept as messages and read when shown; main's come as written.
+  useInterfaceLanguageState()
+  const [failure, setFailure] = useState<LaterWords | null>(null)
   const latest = useRef(0)
   const router = useWebLinkRouter()
   const open = (page: QuestionPage): void => {
     if (!owner) return
     const press = ++latest.current
     setFailure(null)
-    const settle = (said: string | null): void => { if (press === latest.current) setFailure(said) }
+    const settle = (said: LaterWords | null): void => { if (press === latest.current) setFailure(said) }
     const input = owner.requestId === undefined ? { threadId: owner.threadId, token: page.token } : { threadId: owner.threadId, requestId: owner.requestId, token: page.token }
     void (window.sotto?.openQuestionPage?.(input) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
       .then(result => {
@@ -297,7 +304,7 @@ export function usePageOpener(owner: PageOwner | undefined): { readonly open: (p
         settle((router.show ? router.show(result.page).message : PAGE_OPENED_UNSEEN) ?? null)
       }, () => settle(PAGE_OPEN_FAILURES.unavailable))
   }
-  return { open, failure }
+  return { open, failure: shownWords(failure) }
 }
 
 /**
@@ -314,32 +321,33 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
   /** The group's name, where it is not a question's. */
   readonly label?: string | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const { open, failure } = usePageOpener(owner)
   // Not a button and not a link: there is nothing to open, so it takes no stop in the keyboard order.
   // Said even beside a loopback page's row: a page that did not answer is still offered (ADR-0085), but it is no working link.
   const missing = linkMissing
-    ? <p className="agent-request__no-link"><Link2Off size={16} aria-hidden="true" /><span>{LINK_MISSING}</span></p> : null
+    ? <p className="agent-request__no-link tt-paragraph"><Link2Off size={16} aria-hidden="true" /><span>{t(LINK_MISSING)}</span></p> : null
   if (links.length === 0 && pages.length === 0) return missing
-  return <>{missing}<div className="agent-request__link-rows" role="group" aria-label={label ?? (pages.length ? 'Pages and links for this question' : 'Links from the message above')}>
+  return <>{missing}<div className="agent-request__link-rows" role="group" aria-label={label ?? (pages.length ? t`Pages and links for this question` : t`Links from the message above`)}>
     {/* A link rather than a button: the question's fieldset disables its buttons while the choices cannot be used. */}
-    {owner ? pages.map(page => <a key={page.token} role="link" tabIndex={0} className="agent-request__link-row tt-focusable" title={page.name} aria-label={`Open the prototype, ${page.name}`}
+    {owner ? pages.map(page => <a key={page.token} role="link" tabIndex={0} className="agent-request__link-row tt-focusable" title={page.name} aria-label={t`Open the prototype, ${{ name: page.name }}`}
       onClick={event => { event.preventDefault(); event.stopPropagation(); open(page) }}
       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); open(page) } }}>
       <AppWindow size={16} aria-hidden="true" />
-      <span><strong>Open the prototype</strong><small>{page.name}</small></span>
+      <span><strong><Trans>Open the prototype</Trans></strong><small>{page.name}</small></span>
       <ArrowUpRight size={16} aria-hidden="true" />
     </a>) : null}
     {links.map(url => {
       const place = linkPlace(url)
-      return <a key={url} className="agent-request__link-row tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={url} aria-label={`Open the link, ${place}`}
+      return <a key={url} className="agent-request__link-row tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={url} aria-label={t`Open the link, ${place}`}
         onClick={event => { event.preventDefault(); event.stopPropagation(); void window.sotto?.openExternalLink?.(url) }}
         onAuxClick={event => event.preventDefault()}>
         <Link2 size={16} aria-hidden="true" />
-        <span><strong>Open the link</strong><small>{place}</small></span>
+        <span><strong><Trans>Open the link</Trans></strong><small>{place}</small></span>
         <ArrowUpRight size={16} aria-hidden="true" />
       </a>
     })}
-    {failure ? <p className="agent-request__link-failure" role="status">{failure}</p> : null}
+    {failure ? <p className="agent-request__link-failure tt-paragraph" role="status">{failure}</p> : null}
   </div></>
 }
 
@@ -354,6 +362,7 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
   /** No page opens for this question's prototype (ADR-0108): the first question's, when a form has several. */
   readonly linkMissing?: boolean
 }): ReactNode {
+  const { t } = useLingui()
   const type = question.multiSelect ? 'checkbox' : 'radio'
   const onlyText = textOnly(question)
   const optional = !isRequired(question)
@@ -365,16 +374,17 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
     onChange(EMPTY_SELECTION)
   }
   const textId = `${name}-text`
+  const prompt = question.question
   return <fieldset ref={field} className="agent-request__question" disabled={disabled}>
     <legend>{question.header ? <span className="agent-request__tag">{question.header}</span> : null}<span className="agent-request__prompt"><LinkedText text={question.question} /></span>
-      {optional ? <span className="agent-request__optional">Optional</span> : null}</legend>
+      {optional ? <span className="agent-request__optional"><Trans comment="Marks a question that need not be answered.">Optional</Trans></span> : null}</legend>
     <MessageLinks links={links} pages={pages} owner={owner} linkMissing={linkMissing} />
     {isUnavailable(question) ? <p className="agent-request__unavailable" data-required={!optional || undefined}>{question.unavailableReason}</p> : <>
-      {question.multiSelect && !onlyText ? <span className="agent-request__note">Choose any that apply.</span> : null}
+      {question.multiSelect && !onlyText ? <span className="agent-request__note"><Trans>Choose any that apply.</Trans></span> : null}
       {onlyText ? question.allowFreeText
         ? <textarea id={textId} className="agent-request__input" rows={2} aria-label={question.header ?? question.question} value={selection.text}
-          placeholder="Type your answer…" onChange={event => onChange({ ...selection, text: event.target.value })} />
-        : <p className="agent-request__note">This question has no choices Sotto can show.</p>
+          placeholder={t`Type your answer…`} onChange={event => onChange({ ...selection, text: event.target.value })} />
+        : <p className="agent-request__note tt-paragraph"><Trans>This question has no choices Sotto can show.</Trans></p>
         : <div className="agent-request__options">
           {question.options.map(option => {
             const checked = selection.optionIds.includes(option.id)
@@ -389,12 +399,12 @@ function QuestionField({ name, question, selection, disabled, onChange, links = 
           {question.allowFreeText ? <div className="agent-request__option agent-request__option--other" data-checked={selection.other || undefined}>
             <input id={`${name}-other`} type={type} name={name} value="" checked={selection.other}
               onChange={event => onChange(pickOther(question, selection, event.target.checked))} />
-            <span><label className="agent-request__label" htmlFor={`${name}-other`}>Write my own answer</label>
-              <textarea id={textId} className="agent-request__input" rows={2} aria-label={`Other answer to: ${question.question}`} value={selection.text}
-                placeholder="Type your answer…" onChange={event => onChange({ ...pickOther(question, selection, true), text: event.target.value })} /></span>
+            <span><label className="agent-request__label" htmlFor={`${name}-other`}><Trans>Write my own answer</Trans></label>
+              <textarea id={textId} className="agent-request__input" rows={2} aria-label={t`Other answer to: ${prompt}`} value={selection.text}
+                placeholder={t`Type your answer…`} onChange={event => onChange({ ...pickOther(question, selection, true), text: event.target.value })} /></span>
           </div> : null}
         </div>}
-      {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={`Clear choice for ${question.question}`} onClick={clear}>Clear choice</button> : null}
+      {clearable ? <button type="button" className="agent-request__clear tt-focusable" aria-label={t`Clear choice for ${prompt}`} onClick={clear}><Trans>Clear choice</Trans></button> : null}
     </>}
   </fieldset>
 }
@@ -408,9 +418,14 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
   return <>
     {explanation ? <p className="agent-request__text"><LinkedText text={explanation} /></p> : null}
     {context?.command ? <pre className="agent-request__command"><code>{context.command}</code></pre> : null}
-    {context?.cwd ? <p className="agent-request__cwd">in <code>{context.cwd}</code></p> : null}
+    {context?.cwd ? <InFolder cwd={context.cwd} /> : null}
     {details ? <pre className="agent-request__details">{details}</pre> : null}
   </>
+}
+
+/** The folder a command or form acts in. */
+function InFolder({ cwd }: { readonly cwd: string }): ReactNode {
+  return <p className="agent-request__cwd"><Trans comment="Followed by the folder a command runs in.">in <code dir="ltr">{cwd}</code></Trans></p>
 }
 
 const collapse = (value: string): string => value.replace(/\s+/gu, ' ').trim()

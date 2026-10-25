@@ -1,3 +1,4 @@
+import { CONNECT_FAILURES, WordedError } from './hostFailureWords'
 import { execFile } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -126,7 +127,7 @@ export class AskpassBroker {
         try {
           await compile(compiler, ['/nologo', '/target:exe', '/reference:System.Web.Extensions.dll', `/out:${program}`, source], { windowsHide: true, timeout: 60_000 })
         } catch {
-          throw new Error('Sotto could not start its SSH helper. Nothing was saved. Check Windows .NET Framework 4, then reconnect.')
+          throw new WordedError(CONNECT_FAILURES.sshHelper())
         }
       } else {
         const script = join(directory, 'askpass.cjs')

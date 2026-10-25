@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey } from '../../shared/clientIdentity'
 import { NEXT_PROMPT_READ, nextPromptEntriesSchema, type NextPromptEntry } from '../../shared/nextPrompt'
@@ -16,7 +17,7 @@ export function registerNextPromptIpc(ipc: IpcMainAdapter, nextPrompts: { list()
   hostId: () => string | undefined, senders: () => readonly TrustedIpcSender[]): () => void {
   if (!nextPrompts) return () => undefined
   ipc.handle(NEXT_PROMPT_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Read next prompts from the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Read next prompts from the main Sotto window.`)
     z.tuple([]).parse(args)
     const id = hostId()
     return nextPromptEntriesSchema.parse(nextPrompts.list().map(entry => windowNextPrompt(id, entry)))

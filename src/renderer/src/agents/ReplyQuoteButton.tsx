@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Quote } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import { ShortcutKey } from '../components/ShortcutKey'
 import { useOptionalApp } from '../state/AppContext'
 import { chordMatches } from './branchToolbar.logic'
@@ -32,6 +33,7 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
   /** The window's own unless a test passes one. */
   readonly store?: ReplyQuoteStore
 }): ReactNode {
+  const { t } = useLingui()
   const app = useOptionalApp()
   const platform = app?.platform ?? 'win32'
   // The chord that adds a selection to the prompt (Settings › Keyboard, ADR-0133), unless the dictation hotkey already means it.
@@ -138,14 +140,15 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
   }, [dismiss, scroller])
 
   if (pending === null) return null
+  const most = MAX_REPLY_QUOTES
   const keys = chord === null ? undefined : threadChordLabel(chord, platform).keys
-  const fullNote = `A message carries at most ${MAX_REPLY_QUOTES} quotes. Send it or remove one first.`
+  const fullNote = t`A message carries at most ${most} quotes. Send it or remove one first.`
   return <div ref={pop} className="reply-quote-pop">
-    {full ? <p className="reply-quote-pop__note">{fullNote}</p>
-      : <button type="button" className="reply-quote-pop__add tt-focusable" aria-label="Add to prompt" title="Add to prompt" aria-keyshortcuts={keys}
+    {full ? <p className="reply-quote-pop__note tt-paragraph">{fullNote}</p>
+      : <button type="button" className="reply-quote-pop__add tt-focusable" aria-label={t`Add to prompt`} title={t`Add to prompt`} aria-keyshortcuts={keys}
         // Pressing must not end the selection before the press has read it.
         onMouseDown={event => event.preventDefault()} onClick={() => add(pending)}>
-        <Quote size={14} aria-hidden="true" /><span>Add to prompt</span>
+        <Quote size={14} aria-hidden="true" /><span>{t`Add to prompt`}</span>
         {chord === null ? null : <ShortcutKey accelerator={acceleratorForChord(chord, platform)} platform={platform} />}
       </button>}
   </div>

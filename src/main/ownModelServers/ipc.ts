@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
   addResultSchema, checkResultSchema, OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST,
@@ -23,13 +24,13 @@ export function registerOwnServersIpc(ipc: IpcMainAdapter, calls: OwnServersCall
   if (!calls) return () => undefined
   const handle = <T>(channel: string, schema: z.ZodType<T>, run: (request: unknown) => Promise<T>, failed: () => unknown): void => {
     ipc.handle(channel, async (event, ...args) => {
-      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Manage your own model servers from the main Sotto window.')
+      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Manage your own model servers from the main Sotto window.`)
       let answer: unknown
       try { answer = await run(args[0]) } catch { answer = failed() }
       return schema.parse(answer)
     })
   }
-  handle(OWN_SERVERS_LIST, ownServerListSchema, () => calls.list(), () => { throw new Error(OWN_SERVERS_UNREAD) })
+  handle(OWN_SERVERS_LIST, ownServerListSchema, () => calls.list(), () => { throw new Error(t`Sotto could not read your own model servers.`) })
   handle(OWN_SERVERS_CHECK, checkResultSchema, request => calls.check(request), () => FAILED)
   handle(OWN_SERVERS_ADD, addResultSchema, request => calls.add(request), () => FAILED)
   handle(OWN_SERVERS_CHECK_SAVED, checkResultSchema, request => calls.checkSaved(request), () => FAILED)

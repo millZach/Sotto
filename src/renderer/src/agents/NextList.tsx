@@ -1,5 +1,8 @@
 import React, { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { ArrowRight, Check, CircleHelp, Flag, type LucideIcon } from 'lucide-react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { NextPrompt, NextPromptIntent } from '../../../shared/nextPrompt'
 import './nextPrompt.css'
 
@@ -13,11 +16,11 @@ export interface NextRow {
   readonly intent?: NextPromptIntent
 }
 
-const INTENTS: Record<NextPromptIntent, { readonly name: string; readonly icon: LucideIcon }> = {
-  continue: { name: 'Continue', icon: ArrowRight },
-  verify: { name: 'Verify', icon: Check },
-  challenge: { name: 'Challenge', icon: CircleHelp },
-  wrap: { name: 'Wrap up', icon: Flag },
+const INTENTS: Record<NextPromptIntent, { readonly name: MessageDescriptor; readonly icon: LucideIcon }> = {
+  continue: { name: msg({ message: 'Continue', comment: 'A kind of suggested next prompt: carry on with the work.' }), icon: ArrowRight },
+  verify: { name: msg({ message: 'Verify', comment: 'A kind of suggested next prompt: check the work.' }), icon: Check },
+  challenge: { name: msg({ message: 'Challenge', comment: 'A kind of suggested next prompt: question the work.' }), icon: CircleHelp },
+  wrap: { name: msg({ message: 'Wrap up', comment: 'A kind of suggested next prompt: finish the work.' }), icon: Flag },
 }
 
 /** The list's rows in the order they are shown: answers first, then the next prompt, then the four suggestions. */
@@ -44,15 +47,17 @@ export function NextList({ prompt, listId, activeIndex, sends, onHighlight, onCh
   readonly onHighlight: (index: number) => void
   readonly onChoose: (row: NextRow) => void
 }): ReactNode {
+  const { t } = useLingui()
   const list = useRef<HTMLUListElement>(null)
   const rows = nextRows(prompt)
   useLayoutEffect(() => {
     list.current?.querySelector<HTMLElement>(`#${CSS.escape(nextOptionId(listId, activeIndex))}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [activeIndex, listId])
   const active = rows[activeIndex]
+  const suggestions = prompt.suggestions.length
   return <div className="composer-picker next-list" data-kind="next">
-    {prompt.headline ? <p className="next-list__headline" id={`${listId}-headline`}>{prompt.headline}</p> : null}
-    <ul ref={list} className="composer-picker__list next-list__rows" role="listbox" id={listId} aria-label="Next prompts"
+    {prompt.headline ? <p className="next-list__headline tt-paragraph" id={`${listId}-headline`}>{prompt.headline}</p> : null}
+    <ul ref={list} className="composer-picker__list next-list__rows" role="listbox" id={listId} aria-label={t`Next prompts`}
       aria-describedby={prompt.headline ? `${listId}-headline` : undefined}>
       {rows.map((row, index) => {
         const intent = row.intent ? INTENTS[row.intent] : undefined
@@ -63,8 +68,8 @@ export function NextList({ prompt, listId, activeIndex, sends, onHighlight, onCh
           <span className="next-list__key" aria-hidden="true">{row.key}</span>
           <span className="next-list__label">
             {Icon ? <Icon size={13} aria-hidden="true" /> : null}
-            {intent ? <span className="tt-visually-hidden">{intent.name}: </span> : null}
-            {row.kind === 'answer' ? <span className="tt-visually-hidden">{sends ? 'Send answer: ' : 'Answer: '}</span> : null}
+            {intent ? <span className="tt-visually-hidden">{t({ message: `${{ intentName: t(intent.name) }}: `, comment: 'Read before a suggested next prompt: its kind, such as Verify.' })}</span> : null}
+            {row.kind === 'answer' ? <span className="tt-visually-hidden">{sends ? t({ message: 'Send answer: ', comment: 'Read before an answer to the agent\'s question that sends at once.' }) : t({ message: 'Answer: ', comment: 'Read before an answer to the agent\'s question.' })}</span> : null}
             {row.label}
           </span>
           {row.kind === 'ghost' ? null : <span className="next-list__text">{row.text}</span>}
@@ -73,10 +78,10 @@ export function NextList({ prompt, listId, activeIndex, sends, onHighlight, onCh
     </ul>
     <div className="composer-picker__foot next-list__foot">
       <span className="composer-picker__notes">
-        <span>↑ ↓ choose</span>
-        <span>{active?.kind === 'answer' && sends ? 'Enter sends this answer' : 'Enter puts it in the prompt'}</span>
-        {prompt.suggestions.length > 0 ? <span>{prompt.suggestions.length === 1 ? '1 picks it' : `1–${prompt.suggestions.length} pick`}</span> : null}
-        <span>Escape closes</span>
+        <span>{t({ message: '↑ ↓ choose', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span>
+        <span>{active?.kind === 'answer' && sends ? t`Enter sends this answer` : t`Enter puts it in the prompt`}</span>
+        {suggestions > 0 ? <span>{suggestions === 1 ? t({ message: '1 picks it', comment: 'A keyboard hint: the 1 key picks the suggestion.' }) : t({ message: `1–${suggestions} pick`, comment: 'A keyboard hint: the number keys pick a suggestion; {suggestions} is how many there are.' })}</span> : null}
+        <span>{t({ message: 'Escape closes', comment: 'A keyboard hint: Escape closes the list.' })}</span>
       </span>
     </div>
   </div>

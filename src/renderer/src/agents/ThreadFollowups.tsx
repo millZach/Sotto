@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
+import { msg, ph, plural, t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { capabilitiesForThread, isThreadBusy, PROVIDER_LABELS, type AgentFollowup, type AgentState } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { Button } from '../components/Button'
@@ -13,6 +15,8 @@ import { isWakeUpFollowup } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
+import { wordsOf } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 type Command = AgentConnection['command']
 
@@ -22,8 +26,7 @@ export function followupsFor(state: AgentState, threadId: string): AgentFollowup
 }
 
 /** How a queued item is said in one line: Sotto's wake-up by whose it is, the user's own by what it says. */
-const WAKE_UP_NAME = 'Wake-up from Sotto'
-const itemWords = (item: AgentFollowup): string => isWakeUpFollowup(item) ? WAKE_UP_NAME : item.text || item.attachments.map(image => image.name).join(', ')
+const itemWords = (item: AgentFollowup): string => isWakeUpFollowup(item) ? t`Wake-up from Sotto` : item.text || item.attachments.map(image => image.name).join(', ')
 
 /** A focus move that follows a change made in this window alone, with no reply from main to wait for. */
 const shownNow = (): boolean => true
@@ -33,9 +36,13 @@ function followupEditable(item: AgentFollowup): boolean {
   return item.status === 'queued' || item.status === 'paused' || item.status === 'failed'
 }
 
-const STATUS_LABELS: Record<AgentFollowup['status'], string> = {
-  queued: 'Queued', dispatching: 'Sending', uncertain: 'Unconfirmed', failed: 'Not sent', paused: 'Paused',
-}
+const STATUS_LABELS: Readonly<Record<AgentFollowup['status'], string>> = wordsOf({
+  queued: msg({ message: 'Queued', comment: 'A queued message\'s state: waiting its turn.' }),
+  dispatching: msg({ message: 'Sending', comment: 'A queued message\'s state: on its way to the provider.' }),
+  uncertain: msg({ message: 'Unconfirmed', comment: 'A queued message\'s state: Sotto does not know whether it arrived.' }),
+  failed: msg({ message: 'Not sent', comment: 'A queued message\'s state.' }),
+  paused: msg({ message: 'Paused', comment: 'A queued message\'s state: the queue is paused.' }),
+})
 
 /** Below the default 720px window: minimum-size windows and large display scaling, where the composer and transcript need the height first. */
 const SHORT_WINDOW = '(max-height: 680px)'
@@ -72,6 +79,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
   readonly onSave: (text: string, skills: readonly AgentSkillReference[]) => void
   readonly onClose: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const [text, setText] = useState(item.text)
   const [skills, setSkills] = useState<readonly AgentSkillReference[]>(item.skills ?? [])
   const dialog = useRef<HTMLDialogElement>(null)
@@ -87,7 +95,7 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
     if (input) setPromptSelection(input, item.text.length)
     return () => { element?.close?.() }
   }, [])
-  const locked = current === undefined ? 'This message has left the queue.' : followupEditable(current) ? null : 'Sotto has started sending this message, so it can’t be changed.'
+  const locked = current === undefined ? t`This message has left the queue.` : followupEditable(current) ? null : t`Sotto has started sending this message, so it can’t be changed.`
   const empty = text.trim() === '' && item.attachments.length === 0
   const canSave = locked === null && !saving && !empty
   const save = (): void => { if (canSave) onSave(text, skills) }
@@ -98,8 +106,8 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
       event.preventDefault(); event.stopPropagation()
       if (!saving) onClose()
     }}>
-    <h2 id={titleId}>Edit queued message</h2>
-    <PromptEditor fieldRef={field} label="Edit queued message" aria-describedby={hintId} text={text} skills={skills}
+    <h2 id={titleId}><Trans>Edit queued message</Trans></h2>
+    <PromptEditor fieldRef={field} label={t`Edit queued message`} aria-describedby={hintId} text={text} skills={skills}
       sigils={skillSigils(providerId)} catalog={catalog} editable={!saving} onChange={(value, pills) => { setText(value); setSkills(pills) }}
       onKeyDown={event => {
         if (composerEnterIntent(readComposerKey(event, false)) !== 'send') return
@@ -107,12 +115,12 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
         save()
       }} />
     <div className="followup-editor__foot">
-      {error ? <p className="followup-editor__note" data-tone="warning" id={hintId} role="alert">{error}</p>
-        : locked ? <p className="followup-editor__note" data-tone="warning" id={hintId} role="status">{locked}</p>
-          : <p className="followup-editor__note" id={hintId}>{saving ? 'Saving…' : 'Enter to save · Shift+Enter for a new line'}</p>}
+      {error ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="alert">{error}</p>
+        : locked ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="status">{locked}</p>
+          : <p className="followup-editor__note tt-paragraph" id={hintId}>{saving ? t`Saving…` : t`Enter to save · Shift+Enter for a new line`}</p>}
       <div className="followup-editor__actions">
-        <Button variant="secondary" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button onClick={save} disabled={!canSave}>Save</Button>
+        <Button variant="secondary" onClick={onClose} disabled={saving}><Trans>Cancel</Trans></Button>
+        <Button onClick={save} disabled={!canSave}><Trans>Save</Trans></Button>
       </div>
     </div>
   </dialog>
@@ -126,19 +134,24 @@ function AdmissionRow({ submission, state, restored, replaces, onRetry, onRestor
   readonly replaces: boolean
   readonly onRetry: () => void; readonly onRestore: () => void; readonly onDismiss: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const status = submissionStatus(submission, state).status
   // No answer from main is not a refusal: the queue may own it, and asking again cannot add it twice.
   const unconfirmed = status === 'uncertain'
   const failed = status === 'failed' || unconfirmed
+  const error = submission.error ?? UNCONFIRMED_SUBMISSION.queue
+  const detail = restored ? t({ message: `${error} It is back in the composer.`, comment: '{error} says why the prompt was not queued; "It" is the prompt.' })
+    : !unconfirmed && replaces ? t({ message: `${error} Restoring it replaces the draft in the composer.`, comment: '{error} says why the prompt was not queued.' })
+      : error
   return <li className="thread-followup" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : 'admitting'}>
     <p className="thread-followup__text">{submission.text || submission.attachments.map(item => item.name).join(', ')}</p>
-    <span className="thread-followup__state" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : undefined} role="status">{failed ? (unconfirmed ? 'Unconfirmed' : 'Not queued') : 'Queuing…'}</span>
+    <span className="thread-followup__state" data-status={failed ? (unconfirmed ? 'uncertain' : 'failed') : undefined} role="status">{failed ? (unconfirmed ? t({ message: 'Unconfirmed', comment: 'A queued message\'s state: Sotto does not know whether it arrived.' }) : t`Not queued`) : t`Queuing…`}</span>
     {failed ? <div className="thread-followup__detail">
-      <span>{submission.error ?? UNCONFIRMED_SUBMISSION.queue}{restored ? ' It is back in the composer.' : !unconfirmed && replaces ? ' Restoring it replaces the draft in the composer.' : ''}</span>
+      <span>{detail}</span>
       <span className="thread-followup__actions">
-        <Button variant="secondary" onClick={onRetry}>Try again</Button>
-        {!restored && !unconfirmed ? <Button variant="secondary" onClick={onRestore}>Restore prompt</Button> : null}
-        <Button variant="ghost" onClick={onDismiss}>Dismiss</Button>
+        <Button variant="secondary" onClick={onRetry}><Trans>Try again</Trans></Button>
+        {!restored && !unconfirmed ? <Button variant="secondary" onClick={onRestore}><Trans>Restore prompt</Trans></Button> : null}
+        <Button variant="ghost" onClick={onDismiss}><Trans>Dismiss</Trans></Button>
       </span>
     </div> : null}
   </li>
@@ -158,6 +171,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   /** Queue that submitted revision again; the queue ignores a revision it already owns. */
   readonly onRetryAdmission: (draftId: string) => void
 }): ReactNode {
+  const { t } = useLingui()
   const threadId = row.thread.id
   const items = followupsFor(state, threadId)
   const { draft } = useThreadComposer(store, threadId)
@@ -250,10 +264,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const queuePaused = paused.length > 0 && !visible.some(item => item.status === 'queued')
   const pauseNote = queuePaused && paused.every(item => item.error === paused[0]!.error) ? paused[0]!.error : undefined
   // A Watcher stop holds the queue for the user's review (ADR-0073); the pause names who made it.
-  const pausedBy = queuePaused && paused.every(item => item.pausedBy === 'watcher') ? 'Paused by Watcher' : 'Paused'
+  const pausedBy = queuePaused && paused.every(item => item.pausedBy === 'watcher') ? t`Paused by Watcher` : t({ message: 'Paused', comment: 'A queued message\'s state: the queue is paused.' })
   // When the list sends, said beside its count while a turn runs and something waits for it to end.
-  const sendsWhen = row.thread.status === 'running' && !queuePaused && row.providerId !== undefined && visible.some(item => item.status === 'queued')
-    ? `sends when ${PROVIDER_LABELS[row.providerId]} finishes` : null
+  const runningProvider = row.providerId === undefined ? undefined : PROVIDER_LABELS[row.providerId]
+  const sendsWhen = row.thread.status === 'running' && !queuePaused && runningProvider !== undefined && visible.some(item => item.status === 'queued')
+    ? t({ message: `sends when ${runningProvider} finishes`, comment: 'Beside "Queued" and its count: when the queue sends.' }) : null
   const tool = (itemId: string, name: string): HTMLElement | null | undefined =>
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')
@@ -274,14 +289,14 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     if (to < 0 || to > lastMovable || isWakeUpFollowup(item) || busy?.itemId === item.id && busy.error === null) return
     ;[order[from], order[to]] = [order[to]!, order[from]!]
     run(item.id, { type: 'reorder-followups', threadId, itemIds: order },
-      next => followupsFor(next, threadId).map(candidate => candidate.id).join(' ') === order.join(' '), 'Sotto could not confirm the new order. Check the queue before changing it again.',
+      next => followupsFor(next, threadId).map(candidate => candidate.id).join(' ') === order.join(' '), t`Sotto could not confirm the new order. Check the queue before changing it again.`,
       // At the end of the list the pressed arrow has nowhere to go; the other one keeps the item in hand.
       shown => { refocus.current = { target: () => to === 0 || to === lastMovable ? tool(item.id, offset < 0 ? 'down' : 'up') : tool(item.id, offset < 0 ? 'up' : 'down'), shown } })
   }
   const remove = (item: AgentFollowup): void => {
     const index = visible.indexOf(item)
     run(item.id, { type: 'remove-followup', threadId, itemId: item.id },
-      next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id), 'Sotto could not confirm this was removed. Check the queue before trying again.',
+      next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id), t`Sotto could not confirm this was removed. Check the queue before trying again.`,
       shown => {
         const rest = visible.filter(candidate => candidate.id !== item.id && followupEditable(candidate))
         const neighbour = rest.find(candidate => visible.indexOf(candidate) > index) ?? rest.at(-1)
@@ -301,70 +316,74 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const listedAdmissions = expanded ? admissions : admissions.filter(item => ['failed', 'uncertain'].includes(submissionStatus(item, state).status))
   const next = visible[0] ? itemWords(visible[0]) : admissions[0]?.text
   const added = arrival !== null && visible.some(item => item.id === arrival.id) ? arrival : null
-  return <section ref={section} className="thread-followups" aria-label="Queued messages" data-expanded={expanded || undefined}>
+  const count = visible.length
+  const addedText = added?.text ?? ''
+  return <section ref={section} className="thread-followups" aria-label={t`Queued messages`} data-expanded={expanded || undefined}>
     <div ref={measureTop} className="thread-followups__top">
     <header className="thread-followups__head">
       <button type="button" className="thread-followups__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => setOpened(!expanded)}>
         {expanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
         {/* Only what the queue owns is counted; a submission it has not taken yet is not queued. */}
-        <span className="thread-followups__label">{visible.length > 0 ? <>Queued <span className="thread-followups__count">{visible.length}</span></> : 'Queue'}</span>
-        {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">Added</span>{added.text}</span>
-          : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">Next</span>{next}</span> : null}
+        <span className="thread-followups__label">{count > 0 ? <Trans comment="The queue's heading with how many messages wait in it.">Queued <span className="thread-followups__count">{ph({ count: shownCount(count) })}</span></Trans> : t({ message: 'Queue', comment: 'The follow-up queue\'s heading when it holds nothing yet.' })}</span>
+        {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">{t({ message: 'Added', context: 'queued message', comment: 'Before the message just added to the queue.' })}</span>{added.text}</span>
+          : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">{t({ message: 'Next', context: 'queued message', comment: 'Before the message the queue sends next.' })}</span>{next}</span> : null}
       </button>
       {expanded && sendsWhen ? <span className="thread-followups__when"><span aria-hidden="true">· </span>{sendsWhen}</span> : null}
       {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />{pausedBy}</span>
-        : !expanded && admissions.some(item => !item.resolved) ? <span className="thread-followup__state" role="status">Queuing…</span>
-          : !expanded && visible.some(item => item.status === 'dispatching') ? <span className="thread-followup__state" data-status="dispatching"><i aria-hidden="true" />Sending</span> : null}
+        : !expanded && admissions.some(item => !item.resolved) ? <span className="thread-followup__state" role="status">{t`Queuing…`}</span>
+          : !expanded && visible.some(item => item.status === 'dispatching') ? <span className="thread-followup__state" data-status="dispatching"><i aria-hidden="true" />{STATUS_LABELS.dispatching}</span> : null}
       {resumable ? <Button variant="secondary" disabled={!row.connected} onClick={() => {
         setQueueError(null)
-        const failed = 'Sotto could not confirm the queue resumed.'
+        const failed = t`Sotto could not confirm the queue resumed.`
         const resumed = (next: AgentState): boolean => !followupsFor(next, threadId).some(candidate => candidate.status === 'paused' || candidate.status === 'failed')
         void command({ type: 'resume-followups', threadId }).then(result => {
           const error = confirmation(result, resumed, failed)
           setQueueError(error)
           if (error === null) refocus.current = { target: toggle, shown: resumed }
         }, () => setQueueError(failed))
-      }}>Resume queue</Button> : null}
+      }}><Trans>Resume queue</Trans></Button> : null}
     </header>
-    <span className="tt-visually-hidden" role="status">{added ? `Queued: ${added.text}` : ''}</span>
-    {pauseNote ? <p className="thread-followups__note">{pauseNote}</p> : null}
-    {queueError ? <p className="thread-followups__error" role="alert">{queueError}</p> : null}
+    <span className="tt-visually-hidden" role="status">{added ? t`Queued: ${addedText}` : ''}</span>
+    {pauseNote ? <p className="thread-followups__note tt-paragraph">{pauseNote}</p> : null}
+    {queueError ? <p className="thread-followups__error tt-paragraph" role="alert">{queueError}</p> : null}
     </div>
     {listed.length > 0 || listedAdmissions.length > 0 ? <ol id={listId} className="thread-followups__list">
       {listed.map(item => {
         const index = items.indexOf(item)
+        const position = index + 1
+        const images = item.attachments.length
         const editable = followupEditable(item)
         const wakeUp = isWakeUpFollowup(item)
         const itemBusy = busy?.itemId === item.id && busy.error === null
         const itemError = busy?.itemId === item.id && editing?.id !== item.id ? busy.error : null
         const unconfirmed = item.status === 'uncertain'
-        const note = unconfirmed ? `Sotto will not send it twice.${row.connected ? '' : ' Reconnect to check it.'}` : item.error === pauseNote && item.status === 'paused' ? undefined : item.error
+        const note = unconfirmed ? (row.connected ? t`Sotto will not send it twice.` : t`Sotto will not send it twice. Reconnect to check it.`) : item.error === pauseNote && item.status === 'paused' ? undefined : item.error
         // A busy or end-of-list control stays focusable (aria-disabled): disabling the focused button would drop focus to the page.
         const off = (blocked: boolean): { readonly 'aria-disabled'?: true } => blocked ? { 'aria-disabled': true } : {}
         return <li key={item.id} className="thread-followup" data-status={item.status} data-followup={item.id} data-wake-up={wakeUp || undefined} data-arriving={arrival?.id === item.id || undefined}>
-          <p className="thread-followup__text" title={item.text}>{wakeUp ? <span className="thread-followup__sotto"><SottoMark className="thread-followup__mark" />Sotto · Wake-up</span> : null}{item.text}{item.attachments.length ? <span className="thread-followup__extra"> · {item.attachments.length === 1 ? '1 image' : `${item.attachments.length} images`}</span> : null}</p>
+          <p className="thread-followup__text" title={item.text}>{wakeUp ? <span className="thread-followup__sotto"><SottoMark className="thread-followup__mark" />{t`Sotto · Wake-up`}</span> : null}{item.text}{images ? <span className="thread-followup__extra"> · {plural(images, { one: '# image', other: '# images' })}</span> : null}</p>
           {item.status === 'queued' || item.status === 'paused' && queuePaused ? null : <span className="thread-followup__state" data-status={item.status}><i aria-hidden="true" />{STATUS_LABELS[item.status]}</span>}
           {editable && wakeUp ? <span className="thread-followup__tools">
             {/* Sotto's own item: removed as the user's are, never edited, moved or steered. Babysitting goes on either way. */}
-            <Button variant="ghost" iconOnly data-tool="remove" aria-label="Remove the wake-up from the queue" title="Remove the wake-up. Babysitting goes on." {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
+            <Button variant="ghost" iconOnly data-tool="remove" aria-label={t`Remove the wake-up from the queue`} title={t`Remove the wake-up. Babysitting goes on.`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
           </span> : editable ? <span className="thread-followup__tools">
             {steerVisible && item.status === 'queued' ? <Button variant="ghost" className="thread-followup__steer" data-tool="steer" {...off(!canSteer || itemBusy)} onClick={() => {
               if (!canSteer || itemBusy) return
               run(item.id, { type: 'steer-followup', threadId, itemId: item.id },
                 next => !followupsFor(next, threadId).some(candidate => candidate.id === item.id),
-                'Sotto could not confirm this steer. Check the message before trying again.',
+                t`Sotto could not confirm this steer. Check the message before trying again.`,
                 shown => { refocus.current = { target: toggle, shown } })
-            }}><ArrowRight size={14} aria-hidden="true" />Steer now</Button> : null}
+            }}><ArrowRight size={14} aria-hidden="true" /><Trans>Steer now</Trans></Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
-              <Button variant="ghost" iconOnly data-tool="up" aria-label={`Move queued message ${index + 1} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
-              <Button variant="ghost" iconOnly data-tool="down" aria-label={`Move queued message ${index + 1} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
+              <Button variant="ghost" iconOnly data-tool="up" aria-label={t`Move queued message ${{ position: shownCount(position) }} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
+              <Button variant="ghost" iconOnly data-tool="down" aria-label={t`Move queued message ${{ position: shownCount(position) }} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
             </> : null}
-            <Button variant="ghost" iconOnly data-tool="edit" aria-label={`Edit queued message ${index + 1}`} {...off(itemBusy)} onClick={() => { if (itemBusy) return; setBusy(null); setEditing(item) }}><Pencil size={15} /></Button>
-            <Button variant="ghost" iconOnly data-tool="remove" aria-label={`Remove queued message ${index + 1}`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
+            <Button variant="ghost" iconOnly data-tool="edit" aria-label={t`Edit queued message ${{ position: shownCount(position) }}`} {...off(itemBusy)} onClick={() => { if (itemBusy) return; setBusy(null); setEditing(item) }}><Pencil size={15} /></Button>
+            <Button variant="ghost" iconOnly data-tool="remove" aria-label={t`Remove queued message ${{ position: shownCount(position) }}`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
           </span> : null}
           {note || itemError || unconfirmed ? <div className="thread-followup__detail">
             <span>{itemError ?? note}</span>
-            {unconfirmed && row.connected ? <span className="thread-followup__actions"><Button variant="secondary" onClick={() => void command({ type: 'refresh', ...provider })}>Check again</Button></span> : null}
+            {unconfirmed && row.connected ? <span className="thread-followup__actions"><Button variant="secondary" onClick={() => void command({ type: 'refresh', ...provider })}><Trans>Check again</Trans></Button></span> : null}
           </div> : null}
         </li>
       })}
@@ -375,7 +394,7 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
     {editing ? <FollowupEditor key={editing.id} item={editing} current={items.find(item => item.id === editing.id)} providerId={row.providerId} catalog={catalog}
       saving={busy?.itemId === editing.id && busy.error === null} error={busy?.itemId === editing.id ? busy.error : null} onClose={() => closeEditor()}
       onSave={(text, skills) => run(editing.id, { type: 'edit-followup', threadId, itemId: editing.id, text, attachments: [...editing.attachments], skills: [...skills], ...(editing.files?.length ? { files: retainFileReferences(text, editing.files) } : {}) },
-        next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), 'Sotto could not confirm this edit. Check the queue before editing again.', closeEditor)} />
+        next => followupsFor(next, threadId).some(candidate => candidate.id === editing.id && candidate.text === text), t`Sotto could not confirm this edit. Check the queue before editing again.`, closeEditor)} />
       : null}
   </section>
 }

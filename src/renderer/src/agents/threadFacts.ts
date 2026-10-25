@@ -1,3 +1,5 @@
+import { t } from '@lingui/core/macro'
+
 import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentRequest, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
 import { hasNoSendableChoice, isUnavailable, permissionSummary, requestMode, textOnly } from './requests/requestAnswers'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -171,50 +173,58 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
   let waitingFor: ThreadRow['waitingFor'] = null
   if (closed) {
     state_ = 'done'
-    stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
-    sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
+    stateLabel = Number.isFinite(parse(thread.archivedAt)) ? t({ message: 'Archived', comment: 'A thread row\'s state.' }) : t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' })
+    sentence = lastAssistant?.text ?? t`This thread is closed. Its history is still available.`
   } else if (decision !== undefined || failureUnseen(thread)) {
     // A failed turn a client has shown, or the user dismissed, is no longer news: it reads Done below (ADR-0092).
     state_ = 'needs'
     // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
     const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
     waitingFor = kinds.includes('permission') ? 'approval' : kinds.includes('question') ? 'question' : null
-    stateLabel = waitingFor === 'approval' ? 'Needs your approval' : waitingFor === 'question' ? 'Needs your answer'
-      : thread.status === 'error' && decision === undefined ? 'Needs attention' : 'Waiting on you'
+    stateLabel = waitingFor === 'approval' ? t`Needs your approval` : waitingFor === 'question' ? t`Needs your answer`
+      : thread.status === 'error' && decision === undefined ? t`Needs attention` : t`Waiting on you`
     sentence = decision !== undefined
       ? (lastAssistant?.text ?? decision.text)
-      : (lastAssistant?.text ?? 'The agent reported an error. Open the transcript to see what happened.')
+      : (lastAssistant?.text ?? t`The agent reported an error. Open the transcript to see what happened.`)
   } else if (thread.compaction?.status === 'running') {
     // Compaction keeps the thread running without the agent working, so the row says which of the two it is.
     state_ = 'working'
-    stateLabel = 'Compacting context'
-    sentence = 'Compacting the context. Nothing can be sent until it finishes.'
+    stateLabel = t`Compacting context`
+    sentence = t`Compacting the context. Nothing can be sent until it finishes.`
   } else if (thread.status === 'running') {
     state_ = 'working'
-    stateLabel = 'Working'
+    stateLabel = t({ message: 'Working', comment: 'A thread row\'s state: its agent is working.' })
     if (lastAssistant !== undefined && (lastUser === undefined || parse(lastAssistant.createdAt) >= parse(lastUser.createdAt))) sentence = lastAssistant.text
-    else if (lastUser !== undefined) { sentence = `Working on “${lastUser.text}”.`; sentenceFromUser = true }
-    else sentence = 'Working on your prompt.'
+    else if (lastUser !== undefined) {
+      const prompt = lastUser.text
+      sentence = t({ message: `Working on “${prompt}”.`, comment: '{prompt} is your last message to the thread.' })
+      sentenceFromUser = true
+    } else sentence = t`Working on your prompt.`
   } else if (thread.backgroundWork?.length) {
     // The turn has ended but work it started is still running, so the thread has not reported back yet.
     // Agents work; a command on its own is waited on, the word the composer's creature uses for it.
     state_ = 'working'
-    stateLabel = thread.backgroundWork.some(task => task.type !== 'command') ? 'Working' : 'Waiting'
-    sentence = lastAssistant?.text ?? 'Working in the background.'
+    stateLabel = thread.backgroundWork.some(task => task.type !== 'command')
+      ? t({ message: 'Working', comment: 'A thread row\'s state: its agent is working.' })
+      : t({ message: 'Waiting', comment: 'A thread row\'s state: a command it started is still running.' })
+    sentence = lastAssistant?.text ?? t`Working in the background.`
   } else {
     state_ = 'done'
-    stateLabel = 'Done'
+    stateLabel = t({ message: 'Done', context: 'thread state', comment: 'A thread row\'s state: its turn has finished.' })
     if (lastAssistant !== undefined) sentence = lastAssistant.text
-    else if (thread.status === 'error') sentence = 'The last turn failed. Open the thread to see why.'
-    else if (lastUser !== undefined) { sentence = `Waiting to start on “${lastUser.text}”.`; sentenceFromUser = true }
-    else sentence = 'Ready for your next prompt.'
+    else if (thread.status === 'error') sentence = t`The last turn failed. Open the thread to see why.`
+    else if (lastUser !== undefined) {
+      const prompt = lastUser.text
+      sentence = t({ message: `Waiting to start on “${prompt}”.`, comment: '{prompt} is your last message to the thread.' })
+      sentenceFromUser = true
+    } else sentence = t`Ready for your next prompt.`
   }
 
   // The card never repeats the sentence: it shows your latest prompt, or nothing.
   const lastUserAt = parse(lastUser?.createdAt)
   const lastMessage: ThreadLastMessage | undefined = lastUser === undefined || sentenceFromUser ? undefined : {
     // Babysitting's wake-ups are Sotto's, by the record of who sent them, never by their text.
-    who: thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : 'You',
+    who: thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : t({ message: 'You', comment: 'Who sent a thread\'s last message.' }),
     at: Number.isFinite(lastUserAt) ? lastUserAt : activityAt,
     text: lastUser.text,
   }
@@ -252,14 +262,19 @@ export function unseenFailures(threads: readonly AgentThread[]): { readonly thre
 export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): {
   readonly text: string; readonly finished: boolean; readonly babysitting: boolean; readonly prototype: boolean; readonly background: boolean
 } {
-  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
-  const prototype = row.thread.prototypeReady !== undefined && label === 'Done'
-  const finished = !prototype && row.thread.finishedUnread === true && label === 'Done'
-  const babysitting = !prototype && !finished && label === 'Done' ? babysittingWord(row.thread) : undefined
+  const label = row.settledBy === 'provider' ? row.stateLabel
+    : row.state === 'done' && row.settledBy !== null ? t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }) : row.stateLabel
+  // A row says Done exactly when it is done and neither settled nor closed: its state says so, whatever language its words are in.
+  const done = row.state === 'done' && row.settledBy === null
+  const prototype = row.thread.prototypeReady !== undefined && done
+  const finished = !prototype && row.thread.finishedUnread === true && done
+  const babysitting = !prototype && !finished && done ? babysittingWord(row.thread) : undefined
   // A monitoring task alone says Monitoring, the creature's readout word for it; babysitting names its pull request.
-  const monitoring = !prototype && !finished && label === 'Done' && (row.thread.monitoring?.length ?? 0) > 0
+  const monitoring = !prototype && !finished && done && (row.thread.monitoring?.length ?? 0) > 0
   const background = babysitting !== undefined || monitoring
-  return { text: prototype ? 'Prototype ready' : finished ? 'Just finished' : babysitting ?? (monitoring ? 'Monitoring' : label), finished, babysitting: babysitting !== undefined, prototype, background }
+  return { text: prototype ? t`Prototype ready` : finished ? t`Just finished`
+    : babysitting ?? (monitoring ? t({ message: 'Monitoring', comment: 'A thread row\'s state: a task its agent started is being watched.' }) : label),
+  finished, babysitting: babysitting !== undefined, prototype, background }
 }
 
 /**
@@ -299,8 +314,8 @@ export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadG
   const unsettled = sorted.filter(row => row.settledBy === null)
   const settled = sorted.filter(row => row.settledBy !== null)
   const groups: ThreadGroup[] = []
-  if (unsettled.length > 0) groups.push({ id: 'unsettled', label: 'Unsettled', tone: 'plain', rows: unsettled })
-  if (settled.length > 0) groups.push({ id: 'settled', label: 'Settled', tone: 'plain', rows: settled })
+  if (unsettled.length > 0) groups.push({ id: 'unsettled', label: t`Unsettled`, tone: 'plain', rows: unsettled })
+  if (settled.length > 0) groups.push({ id: 'settled', label: t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }), tone: 'plain', rows: settled })
   return groups
 }
 
@@ -501,7 +516,7 @@ export function describeNeedsYou(rows: readonly ThreadRow[], now: number): Needs
 function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
   const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
   return {
-    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted,
+    id, project, title: project?.title ?? rows[0]?.provider ?? t`Project`, settled, rows: sorted,
     working: rows.filter(row => row.state === 'working').length,
     needs: rows.filter(row => row.state === 'needs').length,
     activityAt: rows.reduce((latest, row) => Number.isFinite(row.activityAt) && (!Number.isFinite(latest) || row.activityAt > latest) ? row.activityAt : latest, Number.NaN),
