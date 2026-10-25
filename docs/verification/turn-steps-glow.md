@@ -1,6 +1,6 @@
 # A running turn's steps under its glowing working words: verification
 
-October 24, 2026. `feat/turn-steps-glow`, on Windows 11 with the built app (`npm run build`) and the thread activity fixture, which mounts the real Threads page with a stubbed agent connection. It covers [ADR-0133](../adr/0133-a-running-turns-steps-fold-under-its-working-words.md), Zach's pick of variant A of `docs/prototypes/turn-steps-glow-prototype.html`, and the iPhone's half in ADR-0051's October 24 amendment.
+October 24, 2026. `feat/turn-steps-glow`, on Windows 11 with the built app (`npm run build`) and the thread activity fixture, which mounts the real Threads page with a stubbed agent connection. It covers [ADR-0134](../adr/0134-a-running-turns-steps-fold-under-its-working-words.md), Zach's pick of variant A of `docs/prototypes/turn-steps-glow-prototype.html`, and the iPhone's half in ADR-0051's October 24 amendment.
 
 ## How it was run
 
