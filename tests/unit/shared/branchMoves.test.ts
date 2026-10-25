@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchNameSchema, branchStartWords, hostBranchMoveRequestSchema, incomingRef } from '../../../src/shared/branchMoves'
+import { BRANCH_BUNDLE_CHUNK_BYTES, BRANCH_BUNDLE_MAX_BYTES, branchMoveWords, branchNameSchema, branchStartWords, hostBranchMoveRequestSchema, incomingRef } from '../../../src/shared/branchMoves'
 import { hostRequestSchema } from '../../../src/shared/hostProtocol'
 
 describe('branch move requests (ADR-0105 decision 8)', () => {
@@ -31,6 +31,10 @@ describe('a worker started from a thread’s branch (#1033)', () => {
     expect(branchStartWords('forge', 'feat/x', { untracked: ['a', 'b', 'c'], untrackedCount: 3 })).toBe('Started on forge from feat/x with your uncommitted changes (3 untracked files).')
     expect(branchStartWords('This computer', 'feat/x', { untracked: ['a'], untrackedCount: 1 })).toBe('Started on This computer from feat/x with your uncommitted changes (1 untracked file).')
     expect(branchStartWords('forge', 'feat/x', { untracked: [], untrackedCount: 0 })).toBe('Started on forge from feat/x with your uncommitted changes.')
+  })
+
+  it('refuses a check whose submodule has changes of its own in Zach’s words', () => {
+    expect(branchMoveWords.submoduleChanges).toBe('A submodule in this thread has uncommitted changes, and a check can\'t carry them. Commit them inside the submodule first, then start again. Nothing was started.')
   })
 
   it('asks for a snapshot or a same-machine copy only in the shapes it names', () => {
