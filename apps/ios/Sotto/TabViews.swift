@@ -163,7 +163,7 @@ struct ThreadsView: View {
         return HStack(spacing: Space.s3) {
             Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                (trying ? Text("Checking \(computer.name)…") : Text("Can’t reach \(computer.name)."))
+                (trying ? Text("Checking \(computer.name)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(computer.name).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
                     .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
                 if !trying {
                     Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
@@ -371,14 +371,14 @@ private struct ThreadCounts: View {
                 Light(tone: working > 0 ? .accent : .off, breathing: working > 0)
                 HStack(spacing: 4) {
                     Text("\(working)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Text("working", comment: "After the number of threads at work, such as 3 working.")
+                    Text(String(localized: "thread-count.working", defaultValue: "working", comment: "After the number of threads at work, such as 3 working."))
                 }
             }
             HStack(spacing: Space.s2) {
                 Light(tone: needs > 0 ? .warning : .off)
                 HStack(spacing: 4) {
                     Text("\(needs)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    (needs == 1 ? Text("needs you", comment: "After the number 1: one request waits on the user.")
+                    (needs == 1 ? Text(String(localized: "request-count.needs-you", defaultValue: "needs you", comment: "After the number 1: one request waits on the user."))
                         : Text("need you", comment: "After a number other than 1: that many requests wait on the user."))
                 }
             }

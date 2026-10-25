@@ -6,7 +6,7 @@
  * and its language's plural forms. Run the same check by hand with `node apps/ios/Scripts/check-strings.mjs`.
  */
 import { describe, expect, it } from 'vitest'
-import { check, lexSwift, samePlaceholders, scanFile, specifierFor } from '../../../apps/ios/Scripts/check-strings.mjs'
+import { check, checkSymbols, lexSwift, samePlaceholders, scanFile, specifierFor, symbolOf } from '../../../apps/ios/Scripts/check-strings.mjs'
 
 describe('the iPhone string catalogs', () => {
   it('hold every key the Swift code localizes, in every language', () => {
@@ -43,9 +43,15 @@ describe('reading Swift', () => {
     expect(problems).toEqual([])
   })
 
-  it('wants a default value to carry its key\'s placeholders', () => {
-    const { problems } = scanFile('Sotto/X.swift', 'let s = String(localized: "row.count", defaultValue: "\\(n) rows")\n')
-    expect(problems[0]).toContain('same placeholders')
+  it('reads the placeholders of a key of its own from its default value', () => {
+    const { keys, problems } = scanFile('Sotto/X.swift', 'let s = String(localized: "row.count", defaultValue: "\\(n) rows")\n')
+    expect(keys.map(k => [k.key, k.english, k.expressions])).toEqual([['row.count', '%lld rows', ['%lld ← n']]])
+    expect(problems).toEqual([])
+  })
+
+  it('wants a key of its own to be plain text, since Swift takes it as a StaticString', () => {
+    const { problems } = scanFile('Sotto/X.swift', 'let s = String(localized: "row.\\(n)", defaultValue: "\\(n) rows")\n')
+    expect(problems[0]).toContain("can't be interpolated")
   })
 
   it('asks SottoCore for its own bundle', () => {
@@ -62,6 +68,33 @@ describe('reading Swift', () => {
     expect(specifierFor('threads.count')).toBe('%lld')
     expect(specifierFor('n - 1')).toBe('%lld')
     expect(specifierFor('model.name(hostID)')).toBe('%@')
+  })
+})
+
+describe('generated symbols', () => {
+  const catalog = keys => ({ strings: Object.fromEntries(keys.map(key => [key, {}])) })
+
+  it('finds keys Xcode would give the same symbol, which fails the build', () => {
+    const problems = checkSymbols(catalog(['Merged', 'merged', 'Needs you', 'needs you', 'Sending', 'Sending…',
+      'Remove %@', 'Remove %@?', '%@ on %@ · %@', '%@, %@ on %@']), 'X')
+    expect(problems.map(p => p.slice(0, p.indexOf(':')))).toEqual(['X "merged"', 'X "needs you"', 'X "Sending…"',
+      'X "Remove %@?"', 'X "%@, %@ on %@"'])
+    expect(problems[0]).toContain('the same symbol as "Merged"')
+  })
+
+  it('lets a property and a function, or functions of other arguments, share a name', () => {
+    expect(checkSymbols(catalog(['Editing', 'Editing %@', '%@ MB', '%lld MB', 'Working, %@ so far',
+      'Working: %@, %@ so far', 'agent-row.open', 'Open']), 'X')).toEqual([])
+  })
+
+  it('wants a key with letters or digits to name its symbol', () => {
+    expect(checkSymbols(catalog(['%@ · %@']), 'X')[0]).toContain('no letters or digits')
+  })
+
+  it('reads a symbol as its words in any case, without placeholders, and its argument types', () => {
+    expect(symbolOf('Can’t reach %@.')).toEqual({ name: 'cantreach', signature: 'cantreach(String)' })
+    expect(symbolOf('%1$@ has %2$lld')).toEqual({ name: 'has', signature: 'has(String, Int)' })
+    expect(symbolOf('Needs you')).toEqual({ name: 'needsyou', signature: 'needsyou' })
   })
 })
 

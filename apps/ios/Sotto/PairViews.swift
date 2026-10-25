@@ -121,7 +121,7 @@ struct CodeStep: View {
             }.scrollDismissesKeyboard(.interactively)
             Button(model.working ? String(localized: "Pairing…", comment: "This iPhone is pairing with a computer.") : String(localized: "Pair", comment: "Pairs this iPhone with the computer using the code."), action: pair).buttonStyle(ActionStyle(wide: true))
                 .disabled(model.working || code.count != PairingCode.length)
-                .accessibilityLabel(model.working ? String(localized: "Pairing", comment: "This iPhone is pairing with a computer.") : String(localized: "Pair with \(found.name)", comment: "%@ is the computer’s name."))
+                .accessibilityLabel(model.working ? String(localized: "pair-button.pairing", defaultValue: "Pairing", comment: "This iPhone is pairing with a computer.") : String(localized: "Pair with \(found.name)", comment: "%@ is the computer’s name."))
                 .padding(.horizontal, 24).padding(.bottom, 12)
         }
         .onAppear { focused = true }

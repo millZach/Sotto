@@ -376,7 +376,7 @@ enum WatcherWords {
     static func delivery(_ receipt: WatcherPage.Receipt) -> String? {
         switch receipt.deliveryState {
         case "queued": return String(localized: "Waiting to go", comment: "Where Watcher's action stands: queued")
-        case "dispatching": return String(localized: "Sending", comment: "Where Watcher's action stands: on its way")
+        case "dispatching": return String(localized: "watcher-action.sending", defaultValue: "Sending", comment: "Where Watcher's action stands: on its way")
         case "failed": return String(localized: "Didn’t reach it", comment: "Where Watcher's action stands: it didn't reach the thread")
         case "uncertain": return String(localized: "Not confirmed", comment: "Where Watcher's action stands: the computer didn't confirm it")
         default: return nil
@@ -664,6 +664,6 @@ enum WatchedWords {
     static let paused = String(localized: "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String {
-        watched ? ", " + String(localized: "watched by Watcher", comment: "Added for VoiceOver after a thread's title and where it runs") : ""
+        watched ? ", " + String(localized: "thread-label.watched-by-watcher", defaultValue: "watched by Watcher", comment: "Added for VoiceOver after a thread's title and where it runs") : ""
     }
 }

@@ -112,7 +112,7 @@ private struct ThreadStatePill: View {
         case .needsAnswer, .asked: return String(localized: "Needs you", comment: "A thread's state in its bar: it waits on the user")
         case .working: return String(localized: "Working", comment: "A thread's state in its bar")
         case .waiting: return String(localized: "Waiting", comment: "A thread's state in its bar")
-        case .compacting: return String(localized: "Compacting", comment: "A thread's state in its bar: its context is being compacted")
+        case .compacting: return String(localized: "thread-state.compacting", defaultValue: "Compacting", comment: "A thread's state in its bar: its context is being compacted")
         case .failed: return String(localized: "Failed", comment: "A thread's state in its bar")
         case .done: return String(localized: "Done", comment: "A thread's state in its bar")
         }
@@ -649,13 +649,23 @@ private struct GitChipRow: View {
                 }
                 .buttonStyle(PressStyle())
                 .fixedSize()
-                .accessibilityLabel(sheet.rollup.map { String(localized: "Show pull request \(String(pullRequest.number)), \(pullRequest.stateWord). Checks: \($0)", comment: "The first %@ is the pull request's number, the second its state, the third its checks' roll-up") } ?? String(localized: "Show pull request \(String(pullRequest.number)), \(pullRequest.stateWord)", comment: "The first %@ is the pull request's number, the second its state"))
+                .accessibilityLabel(Self.spokenPullRequest(pullRequest, rollup: sheet.rollup))
                 .accessibilityIdentifier("pull-request-chip")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             plain
         }
+    }
+
+    /// The pull request chip as VoiceOver reads it, with the checks' roll-up once its sheet has read them.
+    private static func spokenPullRequest(_ pullRequest: GitChips.PullRequest, rollup: String?) -> String {
+        let number: String = String(pullRequest.number)
+        let state: String = pullRequest.stateWord
+        guard let rollup else {
+            return String(localized: "Show pull request \(number), \(state)", comment: "The first %@ is the pull request's number, the second its state")
+        }
+        return String(localized: "Show pull request \(number), \(state). Checks: \(rollup)", comment: "The first %@ is the pull request's number, the second its state, the third its checks' roll-up")
     }
 
     @ViewBuilder private var branchAndChanges: some View {
@@ -2126,7 +2136,7 @@ struct RequestSheet: View {
             Text("It runs in", comment: "Starts a sentence split over three lines: “It runs in”, then a folder's path, then “on <computer>.”").font(.sotto(.small)).foregroundStyle(Palette.muted)
             Text(verbatim: cwd).font(.system(.footnote, design: .monospaced)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("on \(computer).", comment: "Ends the sentence “It runs in <folder> on <computer>.”, under the folder's path; %@ is the computer's name").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(String(localized: "thread-folder.on-computer", defaultValue: "on \(computer).", comment: "Ends the sentence “It runs in <folder> on <computer>.”, under the folder's path; %@ is the computer's name")).font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .padding(.top, Space.s4)
         .accessibilityElement(children: .combine)

@@ -220,7 +220,7 @@ private struct ComputerDetails: View {
         }
         // A computer that gave up waits for its Reconnect; pulling leaves it alone, as it does on the lists.
         .refreshable { if model.status(hostID) != .unreachable { await model.connect(hostID) } }
-        .confirmationDialog("Remove \(computer.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+        .confirmationDialog(String(localized: "computer-remove.title", defaultValue: "Remove \(computer.name)?", comment: "Asks before removing a computer from this iPhone. %@ is the computer's name"), isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove from this iPhone", role: .destructive) { Task { await model.remove(hostID) } }
         } message: {
             Text("This iPhone stops showing its threads. If \(computer.name) can’t be reached, remove this iPhone there too: in Settings › Hosts & phones, or for a computer without a screen, with Phones on its row in Settings › Hosts & phones on your main computer.")

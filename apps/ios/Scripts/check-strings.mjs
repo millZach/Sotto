@@ -13,7 +13,13 @@
 //
 // English is the key, except for a word that means two things in Sotto (Open, Closed, Working): there the code gives
 // its own key and the English as `String(localized: "agent-row.open", defaultValue: "Open", comment: …)`, so each
-// meaning gets its own translation, and the catalog's English must equal the default value.
+// meaning gets its own translation, and the catalog's English must equal the default value. A key of its own is a
+// StaticString, so its values are interpolated into the default value: `String(localized: "computer-row.cant-reach",
+// defaultValue: "Can’t reach \(name).")`.
+//
+// Xcode generates a Swift symbol for each key and fails the build when two in one catalog would share one: keys that
+// differ only in case or punctuation, such as "Merged" and "merged" or "Sending" and "Sending…". The in-sentence or
+// rarer one gets a key of its own in the same way.
 //
 // Swift turns an interpolated String into %@ and an Int into %lld. This script cannot type-check, so it reads the
 // expression: counts (`.count`, `count`, `n`, arithmetic on a number and the names in INTEGER_NAMES) are %lld and
@@ -245,20 +251,19 @@ export function scanFile(path, source) {
         const commentLiteral = starts.get(literal.end + m.index + m[0].length)
         if (commentLiteral) comment = commentLiteral.segments.map(s => s.text ?? '').join('')
       }
-      let english
+      let english, valueSegments = literal.segments
       const d = /defaultValue:\s*(?=")/.exec(call)
       if (d) {
         if (!localized) problems.push(`${where}: only String(localized:) takes a defaultValue`)
+        // With a defaultValue the key is a StaticString, so it can't be interpolated: the values go in the default.
+        if (literal.segments.some(s => s.expr !== undefined)) problems.push(`${where}: a key of its own can't be interpolated; put the values in its defaultValue`)
         const defaultLiteral = starts.get(literal.end + d.index + d[0].length)
-        if (defaultLiteral) english = keyOf(defaultLiteral, masked)
-        if (english !== undefined && placeholders(english).map(p => p[1]).join() !== placeholders(key).map(p => p[1]).join()) {
-          problems.push(`${where}: "${key}" and its defaultValue must carry the same placeholders`)
-        }
+        if (defaultLiteral) { english = keyOf(defaultLiteral, masked); valueSegments = defaultLiteral.segments }
       }
       if (localized && core && !/bundle:\s*\.module/.test(call)) problems.push(`${where}: SottoCore's String(localized:) needs bundle: .module`)
       if (localized && !core && /bundle:/.test(call)) problems.push(`${where}: the app's strings come from the main bundle; drop bundle:`)
       if (keyCall && core) problems.push(`${where}: SottoCore has no SwiftUI keys`)
-      keys.push({ key, comment, english, where, expressions: literal.segments.filter(s => s.expr !== undefined).map(s => `${specifierFor(s.expr, name => declaredType(masked, s.at, name))} ← ${s.expr}`) })
+      keys.push({ key, comment, english, where, expressions: valueSegments.filter(s => s.expr !== undefined).map(s => `${specifierFor(s.expr, name => declaredType(masked, s.at, name))} ← ${s.expr}`) })
       continue
     }
     if (!hasLetters(text) || /comment:\s*$/.test(lead)) continue
@@ -355,7 +360,7 @@ export function checkCatalog(catalog, name, defaults = new Map()) {
     const englishPlural = english.variations?.plural
     if (englishPlural) {
       if (!englishPlural.one || !englishPlural.other) problems.push(`${name} "${key}": English plural needs one and other`)
-      const counts = placeholders(key)
+      const counts = placeholders(defaults.get(key) ?? key)
       if (counts.length !== 1 || counts[0][1] !== 'lld') problems.push(`${name} "${key}": a counted string has exactly one %lld and nothing else`)
     } else if (unitValue(english) !== (defaults.get(key) ?? key)) {
       problems.push(defaults.has(key) ? `${name} "${key}": English must equal its defaultValue, ${defaults.get(key)}` : `${name} "${key}": English must equal its key`)
@@ -365,6 +370,33 @@ export function checkCatalog(catalog, name, defaults = new Map()) {
       if (JSON.stringify(entry.localizations[mirror]) !== JSON.stringify(entry.localizations[source])) problems.push(`${name} "${key}": ${mirror} must match ${source}`)
     }
     for (const locale of Object.keys(entry.localizations)) if (locale !== 'en' && !LOCALES.includes(locale)) problems.push(`${name} "${key}": ${locale} is not an interface language`)
+  }
+  return problems
+}
+
+const ARGUMENT_TYPES = { lld: 'Int', ld: 'Int', llu: 'Int', lu: 'Int', d: 'Int', i: 'Int', u: 'Int', '@': 'String', lf: 'Double', f: 'Double' }
+
+/** The Swift symbol Xcode makes for a catalog key when it generates String Catalog symbols, as far as two can
+ * collide: its letters and digits in any case, without its placeholders, and the types of the arguments they become.
+ * A key with no placeholders is a static property, and one with placeholders a function, which may share its name
+ * with a property or with a function of other arguments ("Editing" and "Editing %@", "%@ MB" and "%lld MB"). */
+export function symbolOf(key) {
+  const name = key.replace(/%(?:\d+\$)?(?:lld|ld|llu|lu|d|i|u|@|lf|f)/g, ' ').replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase()
+  const types = placeholders(key).map(p => ARGUMENT_TYPES[p[1]])
+  return { name, signature: types.length ? `${name}(${types.join(', ')})` : name }
+}
+
+/** Keys in one catalog that Xcode would give the same symbol, which fails the build: "Merged" and "merged",
+ * "Sending" and "Sending…", "Remove %@" and "Remove %@?". Give one of them a key of its own, with its English as
+ * the defaultValue. */
+export function checkSymbols(catalog, name) {
+  const problems = [], seen = new Map()
+  for (const key of Object.keys(catalog.strings ?? {})) {
+    const { name: symbol, signature } = symbolOf(key)
+    if (!symbol) { problems.push(`${name} "${key}": has no letters or digits to name its symbol; give it a key of its own`); continue }
+    const other = seen.get(signature)
+    if (other === undefined) seen.set(signature, key)
+    else problems.push(`${name} "${key}": Xcode would generate the same symbol as "${other}"; give one a key of its own, with its English as defaultValue`)
   }
   return problems
 }
@@ -393,6 +425,7 @@ export function check(root = IOS) {
     const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'))
     const defaults = new Map([...used[name]].filter(([, u]) => u.english !== undefined).map(([key, u]) => [key, u.english]))
     problems.push(...checkCatalog(catalog, path, defaults))
+    problems.push(...checkSymbols(catalog, path))
     for (const key of used[name].keys()) if (!catalog.strings[key]) problems.push(`${path}: missing "${key}" (${used[name].get(key).where[0]})`)
     for (const key of Object.keys(catalog.strings)) if (!used[name].has(key)) problems.push(`${path}: "${key}" is no longer used; remove it`)
   }
@@ -423,7 +456,7 @@ function main() {
     return
   }
   if (args[0] === '--interpolations') {
-    for (const keys of Object.values(used)) for (const { key, expressions, where } of keys.values()) if (expressions.length) console.log(`${key}\n    ${expressions.map(e => `${specifierFor(e)} ← ${e}`).join('\n    ')}\n    ${where[0]}`)
+    for (const keys of Object.values(used)) for (const { key, expressions, where } of keys.values()) if (expressions.length) console.log(`${key}\n    ${expressions.join('\n    ')}\n    ${where[0]}`)
     return
   }
   if (args[0] === '--prose') { for (const line of prose) console.log(line); return }

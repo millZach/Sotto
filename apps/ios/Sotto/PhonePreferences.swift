@@ -44,7 +44,7 @@ enum PhoneTextSize: String, CaseIterable {
     var title: String {
         switch self {
         case .smaller: return String(localized: "Smaller", comment: "Text size step, one below the iPhone's own size.")
-        case .standard: return String(localized: "Default", comment: "Text size step: the iPhone's own size.")
+        case .standard: return String(localized: "text-size.default", defaultValue: "Default", comment: "Text size step: the iPhone's own size.")
         case .large: return String(localized: "Large", comment: "Text size step, one above the iPhone's own size.")
         case .larger: return String(localized: "Larger", comment: "Text size step, two above the iPhone's own size.")
         case .largest: return String(localized: "Largest", comment: "Text size step, three above the iPhone's own size.")

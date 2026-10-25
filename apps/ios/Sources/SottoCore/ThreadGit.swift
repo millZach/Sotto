@@ -17,8 +17,8 @@ public struct GitChips: Equatable, Sendable {
         public var stateWord: String {
             switch state {
             case "draft": return String(localized: "draft", bundle: .module, comment: "A pull request's state on its chip, as in #721 draft")
-            case "merged": return String(localized: "merged", bundle: .module, comment: "A pull request's state on its chip, as in #721 merged")
-            case "closed": return String(localized: "closed", bundle: .module, comment: "A pull request's state on its chip, as in #721 closed")
+            case "merged": return String(localized: "pull-request-chip.merged", defaultValue: "merged", bundle: .module, comment: "A pull request's state on its chip, as in #721 merged")
+            case "closed": return String(localized: "pull-request-chip.closed", defaultValue: "closed", bundle: .module, comment: "A pull request's state on its chip, as in #721 closed")
             default: return String(localized: "open", bundle: .module, comment: "A pull request's state on its chip, as in #721 open")
             }
         }

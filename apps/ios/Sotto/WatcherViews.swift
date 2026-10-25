@@ -83,7 +83,7 @@ struct WatcherView: View {
     private func stopMessage(_ preview: WatcherStopPreview) -> String {
         let threads = preview.targets.map { target -> String in
             let computer = model.computerName(target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
-            return String(localized: "\(target.title), \(AgentNames.name(target.provider)) on \(computer)",
+            return String(localized: "watcher-stop.thread", defaultValue: "\(target.title), \(AgentNames.name(target.provider)) on \(computer)",
                           comment: "The first %@ is a thread's title, the second the provider's name, such as Claude Code, the third the computer's name")
         }
         return ([String(localized: "Threads you started or took over keep going, and so does Watcher."), ""] + threads).joined(separator: "\n")
@@ -1408,7 +1408,7 @@ private struct WatcherDock: View {
             }
             .buttonStyle(PressStyle())
             .disabled(!canSend)
-            .accessibilityLabel(preparing ? String(localized: "Sending to Watcher") : label)
+            .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
             .accessibilityIdentifier("watcher-send")
         }
         .padding(6)
