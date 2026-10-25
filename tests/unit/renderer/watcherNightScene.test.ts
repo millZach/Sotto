@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  addRipple, along, boxDistance, heldRoom, inLane, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
+  addRipple, along, boxDistance, heldRoom, inLane, owlLayer, CELL, COLUMN_BLEND, COLUMN_GAP, COLUMN_QUIET, columnCeiling, columnFactor, frameDelay, frameDue, frameSleep, gridFor, IDLE_CHECK_MS, inMargin, isLightSurface, layoutScene, liveRipples, LIGHT_ACCENT_BOOST,
   glassOpacity, LIGHT_INK_BOOST, MAX_RIPPLES, MOVING_MS, nextPlace, over, OWL_GAP, OWL_STAY, owlAt, owlRoom, placeStars, planFlight, quietAt, RIPPLE_LIFE, rippleAt, rippleReach, sceneInk, wordContrast, WORD_CONTRAST,
   starStrength, stayAt, STILL_RIPPLE_LIFE, TREES_MIN_MARGIN, twinkleStep, type SceneLayout, type SceneMeasure, type WatcherOwlState,
 } from '../../../src/renderer/src/watcher/nightScene'
@@ -480,5 +480,24 @@ describe('the night scene while the composer is slim (ADR-0125)', () => {
   it('takes the room as it is before the composer has been seen full, and has none without a composer', () => {
     expect(heldRoom(slim, null)).toBe(slim)
     expect(heldRoom(null, full)).toBeNull()
+  })
+})
+
+describe('an owl over the column (the user’s pick A, October 25, 2026)', () => {
+  const measure = room(1280, 800, { words: [{ x: 300, y: 690, w: 120, h: 17 }] })
+  const lane = { x: measure.composer.x - 44, y: measure.header, w: 44, h: measure.composer.y - 8 - measure.header }
+  const layout = layoutScene({ ...measure, lane })
+  const y = measure.header + 120
+
+  it('is drawn over everything in the margins, and behind the words over the column and the scrubber’s lane', () => {
+    expect(owlLayer(layout, 20, y)).toBe('over')
+    expect(owlLayer(layout, layout.column.right + 40, y)).toBe('over')
+    expect(owlLayer(layout, (layout.column.left + layout.column.right) / 2, y)).toBe('behind')
+    expect(owlLayer(layout, lane.x + 10, y)).toBe('behind')
+  })
+
+  it('is drawn nowhere in the header band or around the words that stand still', () => {
+    expect(owlLayer(layout, 20, measure.header - 2)).toBeNull()
+    expect(owlLayer(layout, 310, 695)).toBeNull()
   })
 })
