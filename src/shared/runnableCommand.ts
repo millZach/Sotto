@@ -8,16 +8,19 @@ export const RUNNABLE_LANGUAGES: ReadonlySet<string> = new Set(['bash', 'sh', 'z
 
 // Every control character but newline: an ESC sequence or a carriage return could make the shell run something
 // other than what the reply shows, and a tab typed into an interactive shell asks it to complete the word instead.
-// Bidirectional controls can reorder what the eye reads.
+// Bidirectional controls can reorder what the eye reads, and invisible format characters (a zero-width space) or a
+// line or paragraph separator make the bytes differ from what is drawn.
 // eslint-disable-next-line no-control-regex -- Matching control characters is the point.
-const FORBIDDEN = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]|\p{Bidi_Control}/u
+const FORBIDDEN = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]|\p{Bidi_Control}|\p{Cf}|\p{Zl}|\p{Zp}/u
 
 /** Whether the text holds a character that could make what runs differ from what is shown. */
 export function hasForbiddenControl(text: string): boolean { return FORBIDDEN.test(text) }
 
-const PROMPT = /^[$>] /u
+// Prompts in the order they are tried: `> ` is also how npm and yarn print a script's name, so it counts as a prompt
+// only in a block where no line has the shell's own prompt.
+const PROMPTS = [/^\$ /u, /^> /u]
 // PowerShell's own prompt: `PS> ` or `PS C:\work> `.
-const POWERSHELL_PROMPT = /^(?:[$>] |PS(?: [^>\n]*)?> )/u
+const POWERSHELL_PROMPTS = [/^(?:\$ |PS(?: [^>\n]*)?> )/u, /^> /u]
 const POWERSHELL = new Set(['powershell', 'pwsh', 'ps1'])
 /** Languages that name a transcript rather than a script: without a prompt line they hold only output. */
 const TRANSCRIPTS = new Set(['console', 'terminal'])
@@ -38,8 +41,8 @@ export function runnableBlock(code: string, language: string | undefined): strin
   if (!lang || !RUNNABLE_LANGUAGES.has(lang) || hasForbiddenControl(code)) return null
   let lines = code.split('\n')
   // A block with prompts is a transcript: only its prompted lines run, without the prompt; the rest is output.
-  const prompt = POWERSHELL.has(lang) ? POWERSHELL_PROMPT : PROMPT
-  if (lines.some(line => prompt.test(line))) lines = lines.filter(line => prompt.test(line)).map(line => line.replace(prompt, ''))
+  const prompt = (POWERSHELL.has(lang) ? POWERSHELL_PROMPTS : PROMPTS).find(candidate => lines.some(line => candidate.test(line)))
+  if (prompt) lines = lines.filter(line => prompt.test(line)).map(line => line.replace(prompt, ''))
   else if (TRANSCRIPTS.has(lang)) return null
   const command = lines.join('\n').replace(/^\s*\n/u, '').trimEnd()
   return command.trim() ? command : null

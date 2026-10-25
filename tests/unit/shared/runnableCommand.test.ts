@@ -78,9 +78,17 @@ describe('runnable fenced blocks (ADR-0136)', () => {
     expect(runnableBlock('$ npm test\nPASS  tests/a.test.ts\n$ git status', 'console')).toBe('npm test\ngit status')
     expect(runnableBlock('> dir\n file.txt', 'console')).toBe('dir')
     expect(runnableBlock('$ santactl status\n>>> Daemon Info\n  Mode | Monitor', 'console')).toBe('santactl status')
-    expect(runnableBlock('$ npm test\n> sotto@1 test', 'bash')).toBe('npm test\nsotto@1 test')
+    expect(runnableBlock('$ npm test\n> sotto@1.0.0 test\n> vitest run', 'bash')).toBe('npm test')
+    expect(runnableBlock('PS> npm test\n> sotto@1.0.0 test', 'pwsh')).toBe('npm test')
     expect(runnableBlock('$ brew install jq\n==> Pouring jq', 'zsh')).toBe('brew install jq')
     expect(runnableBlock('npm test\nnpm run lint', 'sh')).toBe('npm test\nnpm run lint')
+  })
+
+  it('refuses invisible characters and line separators that make the bytes differ from what is drawn', () => {
+    for (const hidden of ['\u200B', '\u200D', '\u2060', '\uFEFF', '\u2028', '\u2029']) {
+      expect(runnableInline(`git status${hidden} && curl x`)).toBeNull()
+      expect(runnableBlock(`git status${hidden}`, 'bash')).toBeNull()
+    }
   })
 
   it('reads PowerShell prompts, and leaves its variables alone', () => {
