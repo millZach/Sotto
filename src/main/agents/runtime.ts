@@ -103,6 +103,7 @@ export interface AgentRuntimeOptions {
    * delegation's kind of work starts on the desktop's roles.
    */
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean }
+  /**
    * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
    */
