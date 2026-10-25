@@ -120,6 +120,8 @@ describe('remote command allow-list', () => {
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
+      // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
+      'project-origins',
       // A started thread's handover, read only on a listener that offers thread-starts, and only when the user asks (#1028).
       'start-handover',
       // A host update the host runs on itself: a recorded desktop whose remote-answer policy lets it answer (ADR-0088).
