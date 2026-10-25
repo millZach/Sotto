@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
 import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
-import type { BranchMoveFolders } from '../../src/main/agents/branchMoves'
+import { DesktopBranchMoves, type BranchMoveFolders } from '../../src/main/agents/branchMoves'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { BRANCH_TRANSFERS_MAX, branchMoveWords, incomingRef } from '../../src/shared/branchMoves'
 import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
@@ -238,5 +238,26 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
         await expect.poll(() => readdir(machines.data('forge').stagingDirectory).catch(() => [])).toEqual([])
       }
     }
+  })
+  it('ends a same-host copy the desktop gave up on, so a late landing creates no ref (#1033)', async () => {
+    const moveId = randomUUID()
+    const reading = gate(args => args[0] === 'rev-list')
+    const host = forge(gated(reading)), peer = connection()
+    let copying: Promise<unknown> | undefined
+    // The desktop's request for the copy times out while forge is still reading; the connection stays open.
+    const desktop = new DesktopBranchMoves({ bundles: new BranchBundles(machines.data('laptop')), hostName: () => 'forge',
+      folders: { threadFolder: () => undefined, projectFolder: () => undefined },
+      host: () => ({ supportsBranchMoves: true, branchMove: async request => {
+        if (request.action !== 'copy') return host.handle(request, peer.owner, peer.gone)
+        copying = host.handle(request, peer.owner, peer.gone)
+        await reading.reached
+        throw new Error('synthetic-request-timeout')
+      } }) })
+    expect(await desktop.onHost({ hostId: 'forge-id', threadId: 'forge-thread', projectId: 'forge-project', moveId }))
+      .toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+    reading.release()
+    expect(await copying).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+    expect(host.staged).toBe(0)
   })
 })
