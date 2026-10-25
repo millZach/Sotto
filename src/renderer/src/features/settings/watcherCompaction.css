@@ -1,0 +1,94 @@
+/*
+ * Compact Watcher at (WatcherCompactionSetting.tsx): Watcher's conversation as a bar, and the line where it compacts.
+ * The range input lies over the drawing, invisible, so the pointer and the keyboard drive the real slider. Its thumb is
+ * 24px wide, so the line travels from 12px in at 200k to 12px in from the end at 1M, and the drawing follows that.
+ */
+.settings-rows .tt-field.watcher-compaction { display: block; }
+.watcher-compaction .tt-field__description { margin: 2px 0 0; max-width: 68ch; }
+
+.watcher-compaction__dial {
+  --watcher-compaction-x: calc(12px + (100% - 24px) * var(--watcher-compaction-at));
+  position: relative;
+  height: 60px;
+  margin-top: 14px;
+}
+
+.watcher-compaction__bar {
+  position: absolute;
+  inset: auto 0 0;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tt-text) 7%, transparent);
+}
+
+.watcher-compaction__size {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(12px + (100% - 24px) * var(--watcher-compaction-size));
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--tt-text-muted) 45%, transparent) 0 5px, transparent 5px 9px);
+}
+
+/* Past the point: it compacts at its next rest. */
+.watcher-compaction__size[data-past] {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--tt-accent) 55%, transparent) 0 5px, transparent 5px 9px);
+}
+
+.watcher-compaction__line {
+  position: absolute;
+  bottom: 0;
+  left: var(--watcher-compaction-x);
+  width: 2px;
+  height: 31px;
+  margin-left: -1px;
+  background: var(--tt-accent);
+  pointer-events: none;
+}
+
+.watcher-compaction__flag {
+  position: absolute;
+  bottom: 31px;
+  left: clamp(26px, var(--watcher-compaction-x), calc(100% - 26px));
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: var(--tt-accent);
+  color: var(--tt-on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.watcher-compaction__dial:has(.watcher-compaction__input:focus-visible) .watcher-compaction__flag {
+  outline: 3px solid var(--tt-focus-ring);
+  outline-offset: 2px;
+}
+
+.watcher-compaction__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: none;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.watcher-compaction__input::-webkit-slider-thumb { width: 24px; height: 60px; appearance: none; }
+
+.watcher-compaction__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 6px 0 0;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.watcher-compaction__range { flex: none; white-space: nowrap; }

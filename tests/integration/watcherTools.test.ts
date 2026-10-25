@@ -30,13 +30,13 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true) {
+async function fixture(history = true, options: { compactAt?: () => number } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
   const service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control,
-    historyEnabled: () => history })
+    historyEnabled: () => history, ...options })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   // The window passes the room update on unparsed (#1336), so every room this Watcher publishes must be what the parse gives.
@@ -2267,6 +2267,68 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
+})
+
+/** Watcher's thread as the snapshot shows it, with compaction on offer and nothing queued, as the compaction tests need it. */
+function compactableWatcher(f: Awaited<ReturnType<typeof fixture>>, tokens: number) {
+  const real = f.control.watcherSnapshot.bind(f.control)
+  const at = { watcher: { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
+    usage: { contextUsed: tokens, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } as Partial<AgentThread> }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
+      ...snapshot.providers ? { providers: snapshot.providers.map(provider => ({ ...provider, capabilities: { ...provider.capabilities, compact: true } })) } : {},
+      threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, ...at.watcher } : thread) }
+  })
+  vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
+  const queued = vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
+  const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
+  return { at, queued, command, compactions: () => command.mock.calls.filter(([sent]) => sent.type === 'compact-thread').length,
+    nudge: () => f.control.commandShell({ type: 'refresh', provider: 'codex' }),
+    sent: () => f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: 'synthetic news', wakeUp: true }, undefined),
+    tokens: (contextUsed: number, minute: number) => ({ ...at.watcher.usage!, contextUsed, contextUpdatedAt: `2026-10-19T10:${String(minute).padStart(2, '0')}:00.000Z` }) }
+}
+
+it('compacts Watcher at the point chosen in Settings, read at every look, and reads that point back in its state', async () => {
+  let point = 250_000
+  const f = await fixture(true, { compactAt: () => point })
+  const w = compactableWatcher(f, 300_000)
+  await w.nudge(); await w.nudge()
+  expect(w.compactions()).toBe(1)
+  expect(f.service.state().context).toMatchObject({ tokens: 300_000, compactAt: 250_000 })
+  expect(await f.call('read_state', {})).toMatchObject({ status: 'ok', compactAtTokens: 250_000 })
+  w.at.watcher = { ...w.at.watcher, compaction: { commandId: 'synthetic-compaction', status: 'completed' }, usage: w.tokens(40_000, 2) }
+  await w.nudge()
+  // Raised past where Watcher's next turn leaves it: nothing to do.
+  point = 600_000
+  w.sent()
+  w.at.watcher = { ...w.at.watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: w.tokens(500_000, 4) }
+  await w.nudge(); await w.nudge()
+  expect(w.compactions()).toBe(1)
+  expect(f.service.state().context).toMatchObject({ tokens: 500_000, compactAt: 600_000 })
+  expect(await f.call('read_state', {})).toMatchObject({ compactAtTokens: 600_000 })
+  // Lowered below Watcher's size: it compacts at its next rest, as it would have passing the point.
+  point = 450_000
+  f.service.settingsChanged()
+  expect(w.compactions()).toBe(2)
+  expect(f.service.state().context).toMatchObject({ compactAt: 450_000 })
+})
+
+it('says Watcher rests for idle compaction only for its own thread, with no news queued, and owes it its state after one', async () => {
+  const f = await fixture()
+  const w = compactableWatcher(f, 180_000)
+  await w.nudge()
+  expect(f.service.stateNote()).toBeUndefined()
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(true)
+  expect(f.service.restsForIdleCompaction('synthetic-other-thread')).toBe(false)
+  w.queued.mockReturnValue(true)
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(false)
+  w.queued.mockReturnValue(false)
+  // Sotto's idle compaction finished: Watcher's next turn is told to read its state back.
+  w.at.watcher = { ...w.at.watcher, compaction: { commandId: 'synthetic-idle-compaction', status: 'completed', idle: true }, usage: w.tokens(30_000, 55) }
+  await w.nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  expect(w.compactions()).toBe(0)
 })
 
 it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {

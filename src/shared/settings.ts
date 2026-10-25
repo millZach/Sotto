@@ -26,6 +26,11 @@ export type ReducedMotion = 'system' | 'on'
 export type RoomTransitionLook = 'band' | 'stars'
 export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
 /**
+ * Compact Watcher at, in tokens: the slider's ends, its step and where it starts. Watcher's conversation is compacted at
+ * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026.
+ */
+export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 400_000 } as const
+/**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
  */
@@ -176,6 +181,11 @@ export interface AppSettings {
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
    */
   watcherSettlesFinishedThreads: boolean
+  /**
+   * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
+   * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
+   */
+  watcherCompactAtTokens: number
   /**
    * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
    * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
@@ -391,6 +401,7 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   watcherSettlesFinishedThreads: z.boolean(),
+  watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
   roomTransition: z.boolean(),
@@ -493,6 +504,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   workerRoles: {},
   watcherSettlesFinishedThreads: true,
+  watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   compactIdleThreads: true,
   reducedMotion: 'system',
   roomTransition: true,
@@ -657,6 +669,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
     compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
     roomTransition: parseField(persisted, 'roomTransition', defaults),

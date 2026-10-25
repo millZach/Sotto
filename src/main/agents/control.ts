@@ -4418,7 +4418,10 @@ export class AgentControl {
           if (this.idleCompactions.has(command)) this.watcherOrigins.get(command)?.guard()
         }
         validate()
-        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId, ...(this.idleCompactions.has(command) ? { idle: true } : {}) }, turn, validate)
+        // Idle compaction's guard goes to the provider too, which asks it once more after its CLI is up (ADR-0127).
+        const idleGuard = this.idleCompactions.has(command) ? this.watcherOrigins.get(command)?.guard : undefined
+        await this.dispatch({ type: 'compact-thread', commandId: randomUUID(), threadId: command.threadId, ...(this.idleCompactions.has(command) ? { idle: true } : {}) }, turn, validate,
+          undefined, undefined, undefined, undefined, idleGuard)
         return
       }
       case 'answer': {
