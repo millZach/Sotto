@@ -200,8 +200,6 @@ export const WATCHER_KEPT_CLOSED_MAX = 30
 export const WATCHER_KEPT_CLOSED_MS = 24 * 60 * 60 * 1_000
 /** How long an open line may go without being added or edited before read_state flags it for review. */
 export const WATCHER_KEPT_UNTOUCHED_MS = 3 * 24 * 60 * 60 * 1_000
-/** Watcher's conversation is compacted once it passes this many tokens, when it next rests (#1189, Zach's pick). */
-export const WATCHER_COMPACT_AT_TOKENS = 400_000
 export const WATCHER_KEPT_LISTS = ['decisions', 'rules', 'issues'] as const
 export type WatcherKeptList = typeof WATCHER_KEPT_LISTS[number]
 const keptText = z.string().trim().min(1).max(WATCHER_KEPT_ITEM_MAX)

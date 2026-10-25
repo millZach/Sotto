@@ -30,13 +30,13 @@ const SHORT_BATCH = { quietMs: 2_000, maxMs: 5_000 }
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(history = true) {
+async function fixture(history = true, options: { compactAt?: () => number } = {}) {
   const workspace = await workspaceFixture(undefined, { history })
   cleanups.push(workspace.remove)
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => history, watcherEnabled: true } })
   const service = new WatcherService({ ordinaryBatch: SHORT_BATCH, directory: f.root, host: workspace.host, control: f.control,
-    historyEnabled: () => history })
+    historyEnabled: () => history, ...options })
   const tools = new WatcherToolServer(service)
   workspace.host.useWatcherTools(tools)
   // The window passes the room update on unparsed (#1336), so every room this Watcher publishes must be what the parse gives.
@@ -2022,8 +2022,10 @@ function pullRequestNews(f: Awaited<ReturnType<typeof fixture>>, threadId: strin
   const url = 'https://github.com/synthetic/project/pull/5'
   const links = [{ url, number: 5, title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }]
   // The workspace's record holds a thread's links, so a later snapshot keeps them; the coordinator's copy shows them now.
-  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
-  record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  // Marked as the workspace marks every thread it changes (#925), so its next publication reads the record again.
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+  host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+  host.touch(threadId)
   showLinks(f, threadId, links)
   return { url, read: { url, head: 'synthetic-head', observedAt: new Date().toISOString(), availability: 'available' as const, checks: 'failed' as const, checkCount: 1 } }
 }
@@ -2155,8 +2157,9 @@ it('gives the merge queue and each watched thread’s open pull requests from li
   const pr = (number: number, state: 'open' | 'merged', draft = false) => ({ url: `https://github.com/synthetic/project/pull/${number}`, number,
     title: 'Synthetic pull request', state, draft, source: 'linked' as const, linkedAt: new Date().toISOString() })
   const link = (threadId: string, links: ReturnType<typeof pr>[]) => {
-    const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } } }).state.snapshot
-    record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: typeof links }[] } }; touch(id: string): void }
+    host.state.snapshot.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
     showLinks(f, threadId, links)
   }
   link(first.target.threadId, [pr(5, 'open'), pr(6, 'open', true)])
@@ -2268,11 +2271,13 @@ it('pages the merge queue with the watched threads, a hundred to a page, leaving
     if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
     targets.push(started.target.threadId)
   }
-  const record = (f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } } }).state.snapshot
+  const host = f.workspace.host as unknown as { state: { snapshot: { threads: { id: string; pullRequests?: unknown[] }[] } }; touch(id: string): void }
+  const record = host.state.snapshot
   targets.forEach((threadId, at) => {
     const links = Array.from({ length: 20 }, (_, index) => ({ url: `https://github.com/synthetic/project/pull/${at * 20 + index + 1}`, number: at * 20 + index + 1,
       title: 'Synthetic pull request', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: new Date().toISOString() }))
     record.threads.find(thread => thread.id === threadId)!.pullRequests = structuredClone(links)
+    host.touch(threadId)
     showLinks(f, threadId, links)
   })
   for (let number = 1; number <= 120; number++) f.service.pullRequestObserved({ url: `https://github.com/synthetic/project/pull/${number}`, head: `synthetic-head-${number}`,
@@ -2349,6 +2354,68 @@ it('compacts Watcher once its conversation passes 400K tokens while it rests, an
   watcher = { ...watcher, lastTurn: { id: 'synthetic-turn-3', status: 'completed' }, usage: { ...watcher.usage!, contextUpdatedAt: '2026-10-19T10:06:00.000Z' } }
   await nudge(); await nudge()
   expect(command.mock.calls.filter(([sent]) => sent.type === 'compact-thread')).toHaveLength(3)
+})
+
+/** Watcher's thread as the snapshot shows it, with compaction on offer and nothing queued, as the compaction tests need it. */
+function compactableWatcher(f: Awaited<ReturnType<typeof fixture>>, tokens: number) {
+  const real = f.control.watcherSnapshot.bind(f.control)
+  const at = { watcher: { status: 'idle', requests: [], lastTurn: { id: 'synthetic-turn-1', status: 'completed' },
+    usage: { contextUsed: tokens, contextUpdatedAt: '2026-10-19T10:00:00.000Z', rateVersions: [], partial: false, updatedAt: '2026-10-19T10:00:00.000Z' } } as Partial<AgentThread> }
+  vi.spyOn(f.control, 'watcherSnapshot').mockImplementation(() => {
+    const snapshot = real()
+    return { ...snapshot, capabilities: { ...snapshot.capabilities, compact: true },
+      ...snapshot.providers ? { providers: snapshot.providers.map(provider => ({ ...provider, capabilities: { ...provider.capabilities, compact: true } })) } : {},
+      threads: snapshot.threads.map(thread => thread.id === f.id ? { ...thread, ...at.watcher } : thread) }
+  })
+  vi.spyOn(f.control, 'hasPendingThreadWork').mockReturnValue(false)
+  const queued = vi.spyOn(f.control, 'watcherWakeUpQueued').mockReturnValue(false)
+  const command = vi.spyOn(f.control, 'command').mockResolvedValue(f.control.shell())
+  return { at, queued, command, compactions: () => command.mock.calls.filter(([sent]) => sent.type === 'compact-thread').length,
+    nudge: () => f.control.commandShell({ type: 'refresh', provider: 'codex' }),
+    sent: () => f.service.beforeDispatch({ type: 'send', commandId: randomUUID(), threadId: f.id, messageId: randomUUID(), text: 'synthetic news', wakeUp: true }, undefined),
+    tokens: (contextUsed: number, minute: number) => ({ ...at.watcher.usage!, contextUsed, contextUpdatedAt: `2026-10-19T10:${String(minute).padStart(2, '0')}:00.000Z` }) }
+}
+
+it('compacts Watcher at the point chosen in Settings, read at every look, and reads that point back in its state', async () => {
+  let point = 250_000
+  const f = await fixture(true, { compactAt: () => point })
+  const w = compactableWatcher(f, 300_000)
+  await w.nudge(); await w.nudge()
+  expect(w.compactions()).toBe(1)
+  expect(f.service.state().context).toMatchObject({ tokens: 300_000, compactAt: 250_000 })
+  expect(await f.call('read_state', {})).toMatchObject({ status: 'ok', compactAtTokens: 250_000 })
+  w.at.watcher = { ...w.at.watcher, compaction: { commandId: 'synthetic-compaction', status: 'completed' }, usage: w.tokens(40_000, 2) }
+  await w.nudge()
+  // Raised past where Watcher's next turn leaves it: nothing to do.
+  point = 600_000
+  w.sent()
+  w.at.watcher = { ...w.at.watcher, lastTurn: { id: 'synthetic-turn-2', status: 'completed' }, usage: w.tokens(500_000, 4) }
+  await w.nudge(); await w.nudge()
+  expect(w.compactions()).toBe(1)
+  expect(f.service.state().context).toMatchObject({ tokens: 500_000, compactAt: 600_000 })
+  expect(await f.call('read_state', {})).toMatchObject({ compactAtTokens: 600_000 })
+  // Lowered below Watcher's size: it compacts at its next rest, as it would have passing the point.
+  point = 450_000
+  f.service.settingsChanged()
+  expect(w.compactions()).toBe(2)
+  expect(f.service.state().context).toMatchObject({ compactAt: 450_000 })
+})
+
+it('says Watcher rests for idle compaction only for its own thread, with no news queued, and owes it its state after one', async () => {
+  const f = await fixture()
+  const w = compactableWatcher(f, 180_000)
+  await w.nudge()
+  expect(f.service.stateNote()).toBeUndefined()
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(true)
+  expect(f.service.restsForIdleCompaction('synthetic-other-thread')).toBe(false)
+  w.queued.mockReturnValue(true)
+  expect(f.service.restsForIdleCompaction(f.id)).toBe(false)
+  w.queued.mockReturnValue(false)
+  // Sotto's idle compaction finished: Watcher's next turn is told to read its state back.
+  w.at.watcher = { ...w.at.watcher, compaction: { commandId: 'synthetic-idle-compaction', status: 'completed', idle: true }, usage: w.tokens(30_000, 55) }
+  await w.nudge()
+  expect(f.service.stateNote()).toContain('call read_state')
+  expect(w.compactions()).toBe(0)
 })
 
 it('tells Watcher to read its state after its context drops by more than half, as when Muse compacts', async () => {

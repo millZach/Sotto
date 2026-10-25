@@ -2,6 +2,7 @@ import { HostsSettings } from './HostsSettings'
 import { PhonesSettings } from './PhonesSettings'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
+import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
 import { useRevisionDraft } from './useRevisionDraft'
 import { shownWords, type LaterWords } from './laterWords'
 import { SettingsFindField, SettingsFindResults } from './SettingsFind'
@@ -10,7 +11,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -45,6 +46,7 @@ import { Select } from '../../components/Select'
 import { SegmentedControl } from '../../components/SegmentedControl'
 import { Toggle } from '../../components/Toggle'
 import { NightFallsSettings } from './NightFallsSettings'
+import { WatcherCompactionSetting } from './WatcherCompactionSetting'
 import { SettingsGroup } from './SettingsGroup'
 import { NotificationSettings } from './NotificationSettings'
 import { useDesktopNotifications } from '../../state/desktopNotifications'
@@ -123,6 +125,7 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-capture': Mic,
   'settings-formatting': Sparkles,
   'settings-agents': MessagesSquare,
+  'settings-keyboard': Keyboard,
   'settings-git': GitBranch,
   // Watcher, an Owl feature: shown only while the Owl list turns it on. Worker roles (#1041) inside it follow their own.
   'settings-watcher': WatcherNavIcon,
@@ -529,7 +532,7 @@ export function SettingsView({
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
         <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
-          <SidebarTop />
+          <SidebarTop platform={platform} />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}><Trans comment="The Settings page's heading, at the top of its rail.">Settings</Trans></h1>
           <SettingsFindField query={findQuery} onQueryChange={setFindQuery} inputRef={findInputRef}
@@ -720,6 +723,11 @@ export function SettingsView({
                 </SettingsGroup>
               </Card>
 
+              <Card className="settings-section" id="settings-keyboard" {...panelProps('settings-keyboard')}>
+                <div className="settings-section__heading"><h2><Trans>Keyboard</Trans></h2><p className="tt-paragraph"><Trans>Every shortcut in Sotto, in one place</Trans></p></div>
+                <ThreadShortcutsSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings} onOpenDictation={() => selectSection('settings-capture')} />
+              </Card>
+
               <Card className="settings-section" id="settings-git" {...panelProps('settings-git')}>
                 <div className="settings-section__heading"><h2><Trans>Git &amp; worktrees</Trans></h2><p className="tt-paragraph"><Trans>Worktrees, commits, pull requests, Changes &amp; fetching</Trans></p></div>
                 <GitSettings settings={settings} onSave={save} />
@@ -730,6 +738,9 @@ export function SettingsView({
                 <SettingsGroup title={t`Watched threads`} icon={Eye}>
                   <Toggle setting="watcher-settles" label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
                     description={t`Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.`} />
+                </SettingsGroup>
+                <SettingsGroup title={t`Compaction`} icon={Shrink}>
+                  <WatcherCompactionSetting value={settings.watcherCompactAtTokens} onSave={save} />
                 </SettingsGroup>
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}

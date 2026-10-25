@@ -219,9 +219,9 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect.poll(async () => (await boxes(page)).map(box => box.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links', 'grok-previews'].map(key))
     await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
 
-    // Zoom one pane and return to the same arrangement.
+    // Zoom one pane and return to the same arrangement. Zoom follows the mod pattern (ADR-0133): Cmd on a Mac.
     await prompt('footer-links').focus()
-    await page.keyboard.press('Control+Shift+M')
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+M' : 'Control+Shift+M')
     await expect(panes).toHaveAttribute('data-zoomed')
     await expect(tabs.getByRole('tab', { name: 'Footer links' })).toHaveAttribute('aria-selected', 'true')
     await expect(prompt('footer-links')).toBeFocused()

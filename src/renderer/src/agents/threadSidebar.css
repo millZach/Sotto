@@ -20,15 +20,15 @@
   .thread-nav--mac .thread-nav__top { padding-right: 5px; }
 }
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
-   down). On macOS the traffic lights take the left end of the row, and the narrowest expanded width does not hold
-   the wordmark beside the actions: the mark stands alone. */
+   down). On macOS the traffic lights take the left end of the row and no mark sits beside them: a spacer stands
+   in the brand's place and keeps the actions at the row's right end. */
 .thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
+.thread-nav__spacer { flex: 1 1 auto; min-width: 0; }
 .thread-nav__glyph { flex: none; width: 18px; height: 18px; }
 /* Sotto Owl: the mark alone as the brand, larger, in the room the wordmark leaves. */
 .thread-nav__tile { flex: none; width: 24px; height: 24px; }
 .thread-nav__brand:has(.thread-nav__tile) { min-width: 24px; }
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav--mac .thread-nav__wordmark { display: none; }
 .thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
 
@@ -223,7 +223,9 @@
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
-.thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 8px 0; }
+/* The rail hides the switch, so the foot's hairline is its first row: it tops the foot, 8px over the page links. */
+.thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
+.thread-nav__rail .thread-nav__foot-rule { margin: 0 0 2px; }
 .thread-nav .thread-nav__rail .thread-nav__seg { display: none; }
 .thread-nav__rail .thread-nav__pages { flex-direction: column; }
 .thread-nav .thread-nav__rail .update-control { margin: 0; }
