@@ -16,7 +16,7 @@ import { initializeGitRepository } from '../../fixtures/gitRepository'
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart' | 'projectFolder'> = {}) {
+async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart' | 'projectFolder' | 'runCommandEnabled'> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminal-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const other = join(directory, 'other'); await mkdir(other)
@@ -323,6 +323,41 @@ describe('persistent terminal service', () => {
     expect(replacement.session.place).toBe('drawer')
     expect(unwrap(await restored.list(f.target)).sessions).toEqual([])
     expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([replacement.session.id])
+  })
+  it('types a reply\'s command into a new drawer shell as it spawns, and names the tab after its first line (ADR-0136)', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'npm run typecheck' }))
+    expect(vi.mocked(f.processes[0]!.pty.write).mock.calls).toEqual([['npm run typecheck\r']])
+    expect(created.session).toMatchObject({ place: 'drawer', title: 'npm run typecheck', status: 'running' })
+    const block = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `santactl status\nosqueryi --version${' x'.repeat(200)}` }))
+    expect(vi.mocked(f.processes[1]!.pty.write).mock.calls).toEqual([[`santactl status\rosqueryi --version${' x'.repeat(200)}\r`]])
+    expect(block.session.title).toBe('santactl status')
+    const long = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `echo ${'y'.repeat(400)}` }))
+    expect(long.session.title).toHaveLength(256)
+    // The saved record and the published session carry the same title, so a reload names the tab the same way.
+    expect(f.events.some(event => event.type === 'session' && event.session.id === created.session.id && event.session.title === 'npm run typecheck')).toBe(true)
+  })
+  it.each([
+    ['a Tools shell', { runCommandEnabled: true }, { place: 'tools' as const }],
+    ['a request with no place', { runCommandEnabled: true }, {}],
+    ['the feature off', { runCommandEnabled: false }, { place: 'drawer' as const }],
+    ['the feature unset', {}, { place: 'drawer' as const }],
+  ])('refuses a command for %s without starting a shell', async (_name, options, request) => {
+    const f = await fixture(options)
+    expect(await f.service.create({ ...f.target, ...request, run: 'git status' })).toEqual({ ok: false, error: { code: 'invalid-request', message: 'This tool request is invalid. Refresh the tools panel.' } })
+    expect(f.spawn).not.toHaveBeenCalled()
+    expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+  })
+  it('refuses a command carrying control characters', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    for (const run of ['git status\r', 'echo \u001b[2J', '']) expect(await f.service.create({ ...f.target, place: 'drawer', run })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(f.spawn).not.toHaveBeenCalled()
+  })
+  it('refuses a command at the shared limit with the usual words, typing nothing', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    for (let index = 0; index < 32; index++) unwrap(await f.service.create(f.target))
+    expect(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' })).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('share 32 terminals') } })
+    expect(f.spawn).toHaveBeenCalledTimes(32)
   })
   it('reads an older record with no place as a Tools shell', async () => {
     const f = await fixture()

@@ -9,7 +9,8 @@ import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, termi
 import { saveTerminalImage, terminalImageInput } from '../terminals/clipboard'
 import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { ToolOperations, fail, parse, workspace } from './common'
+import { INVALID_REQUEST, ToolOperations, fail, parse, workspace } from './common'
+import { terminalInputFor } from '../../shared/runnableCommand'
 import { TerminalShell } from '../terminals/shell'
 import { CheckoutSendRefusal } from '../agents/checkoutMutations'
 
@@ -25,6 +26,8 @@ export interface TerminalDependencies {
   executableExists?: (path: string) => Promise<boolean>
   /** Prevents a new shell from starting while the desktop removes its checkout. */
   acquireStart?: (workspace: FileWorkspace) => Promise<() => void>
+  /** Whether a drawer shell may start with a command from a reply (ADR-0136, an Owl feature), read once at start. */
+  runCommandEnabled?: boolean
 }
 interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[] }
 
@@ -77,11 +80,13 @@ export class TerminalService extends ToolOperations {
   }) }
   create(payload: unknown) { return this.run(async () => {
     const request = parse(terminalCreateSchema, payload)
+    // A command runs only in a new drawer shell, and only while the feature is on; the command itself is never logged.
+    if (request.run !== undefined && (request.place !== 'drawer' || !this.dependencies.runCommandEnabled)) return fail('invalid-request', INVALID_REQUEST)
     await this.ready
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools'))
+    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools', undefined, request.run))
   }) }
-  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal): Promise<LiveTerminal> {
+  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal, run?: string): Promise<LiveTerminal> {
     // Reserve synchronously before importing/spawning so concurrent create calls respect limits.
     if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
     if (!replacing && this.sessions.size >= TERMINAL_SESSIONS_MAX) return fail('busy', TERMINAL_LIMIT_MESSAGE)
@@ -139,6 +144,12 @@ export class TerminalService extends ToolOperations {
         this.publish(record)
         void this.save().catch(() => { record.session.status = 'unavailable'; this.publish(record) })
       }))
+      // Typed in the same tick the shell spawned, after output is followed, so no echo is missed and no window
+      // replay can drop it. The shell's own line editor holds it until its prompt is ready. The tab names the command.
+      if (run !== undefined) {
+        record.session.title = run.split('\n')[0]!.slice(0, 256)
+        pty.write(terminalInputFor(run))
+      }
       await this.save()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
       this.publish(record)
