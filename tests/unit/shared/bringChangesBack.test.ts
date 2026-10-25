@@ -67,7 +67,7 @@ describe('a worker started from a thread’s branch (#1033) brings its commits b
   const MOVE = '9d1c3f0e-5b8e-4d4a-8a77-1f0d2f6c4b1a', LAPTOP = '11111111-1111-4111-8111-111111111111', FORGE = '22222222-2222-4222-8222-222222222222'
   // The computer the window runs on, which started the worker; it is neither the parent's machine nor the child's here.
   const DESKTOP = '33333333-3333-4333-8333-333333333333', OTHER_DESKTOP = '44444444-4444-4444-8444-444444444444'
-  const moved = (madeFrom: { thread: string; host?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x-2', git: status('feat/x-2'),
+  const moved = (madeFrom: { thread: string; host?: string; by?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x-2', git: status('feat/x-2'),
     incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom })
 
   it('reads the branch a move carried from its incoming ref', () => {
@@ -96,7 +96,7 @@ describe('a worker started from a thread’s branch (#1033) brings its commits b
   })
 
   it('offers a child on another machine whose branch has the parent’s name, and not one in the same repository', () => {
-    const sameName = (madeFrom: { thread: string; host?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x', git: status('feat/x'),
+    const sameName = (madeFrom: { thread: string; host?: string; by?: string }): AgentWorktree => fresh({ baseBranch: undefined, branch: 'feat/x', git: status('feat/x'),
       incomingRef: `refs/sotto/incoming/${MOVE}/feat/x`, madeFrom })
     const child = thread(hostEntityKey(FORGE, 'child'), sameName({ thread: 'parent', host: LAPTOP, by: DESKTOP }))
     expect(bringBackTarget(child, [thread(hostEntityKey(LAPTOP, 'parent'), shared('feat/x')), child], DESKTOP))
