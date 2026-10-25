@@ -5252,7 +5252,7 @@ msgid "The one on {host} is too old."
 msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
-msgid "The owl perched on a branch in your menu bar."
+msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
