@@ -1,7 +1,9 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { MainCheckoutBridge, MainCheckoutChanges, ProjectMainCheckout } from '../../../shared/mainCheckout'
-import { behindWords, blockWords, showLabel } from './mainCheckoutLine.logic'
+import { behindWords, blockWords, CHANGE_KIND_WORDS, showLabel } from './mainCheckoutLine.logic'
+import { shownLocalCount } from '../state/interfaceNumbers'
 
 /**
  * Keep main up to date's line under a project's name (ADR-0140, variant A of the mock-up): why the default branch was
@@ -14,6 +16,7 @@ export function MainCheckoutLine({ line, title, bridge = window.sotto?.mainCheck
   readonly title: string
   readonly bridge?: MainCheckoutBridge | undefined
 }): ReactNode {
+  const { t, i18n } = useLingui()
   const listId = useId()
   const toggle = useRef<HTMLButtonElement>(null)
   const [changes, setChanges] = useState<MainCheckoutChanges | null>(null)
@@ -27,30 +30,34 @@ export function MainCheckoutLine({ line, title, bridge = window.sotto?.mainCheck
   const show = (): void => {
     if (open) { setOpen(false); return }
     setOpen(true); setFailed(null)
-    void bridge.changes(line.projectId).then(setChanges, () => { setChanges(null); setFailed('Sotto could not read the changes. Open the folder to look.') })
+    void bridge.changes(line.projectId).then(setChanges, () => { setChanges(null); setFailed(t`Sotto could not read the changes. Open the folder to look.`) })
   }
-  const openFolder = (): void => { void bridge.command({ type: 'open-folder', projectId: line.projectId }).catch(() => setFailed('Sotto could not open that folder.')) }
+  const openFolder = (): void => { void bridge.command({ type: 'open-folder', projectId: line.projectId }).catch(() => setFailed(t`Sotto could not open that folder.`)) }
   const label = showLabel(line)
-  const rows = block ? changes?.items ?? [] : deps?.map(text => ({ kind: 'changed', text })) ?? []
+  const branch = line.branch
+  const rows = block ? (changes?.items ?? []).map(item => ({ kind: i18n._(CHANGE_KIND_WORDS[item.kind]), text: item.text }))
+    : deps?.map(text => ({ kind: t({ message: 'changed', comment: 'A lockfile the update changed' }), text })) ?? []
+  const hide = t({ message: 'Hide', comment: 'Hides the list under a project' })
+  const more = changes ? shownLocalCount(changes.more) : ''
   return <div className="thread-folder__main" onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); close() } }}>
     {block ? <p className="thread-folder__main-line">
       <span className="thread-folder__main-behind">{behindWords(line)}</span> · {block}
       {label ? <> · <button ref={toggle} type="button" className="thread-folder__main-press tt-focusable" aria-expanded={open} aria-controls={listId}
-        aria-label={`${open ? 'Hide' : label} in ${title}`} onClick={show}>{open ? 'Hide' : label}</button></> : null}
+        aria-label={open ? t`Hide the list in ${title}` : t({ message: `${label} in ${title}`, comment: '{label} is Show changes or Show commits; {title} is the project.' })} onClick={show}>{open ? hide : label}</button></> : null}
     </p> : <p className="thread-folder__main-line">
-      <span className="thread-folder__main-updated">Updated {line.branch}</span> · dependencies changed, run install ·{' '}
+      <span className="thread-folder__main-updated">{t({ message: `Updated ${branch}`, comment: '{branch} is a Git branch name, such as main.' })}</span> · {t`dependencies changed, run install`} ·{' '}
       <button ref={toggle} type="button" className="thread-folder__main-press tt-focusable" aria-expanded={open} aria-controls={listId}
-        aria-label={`${open ? 'Hide' : 'What changed'} in ${title}`} onClick={() => setOpen(!open)}>{open ? 'Hide' : 'What changed'}</button>
-      <button type="button" className="thread-folder__main-dismiss tt-focusable" aria-label={`Dismiss dependencies changed in ${title}`}
+        aria-label={open ? t`Hide the list in ${title}` : t`What changed in ${title}`} onClick={() => setOpen(!open)}>{open ? hide : t`What changed`}</button>
+      <button type="button" className="thread-folder__main-dismiss tt-focusable" aria-label={t`Dismiss dependencies changed in ${title}`}
         onClick={() => { void bridge.command({ type: 'dismiss-dependencies', projectId: line.projectId }).catch(() => undefined) }}><X size={13} aria-hidden="true" /></button>
     </p>}
     {open ? <div id={listId} className="thread-folder__main-list">
       {failed ? <p className="thread-folder__main-failed" role="status">{failed}</p> : null}
-      {rows.length ? <ul aria-label={block ? 'What blocks the update' : 'What changed'}>
+      {rows.length ? <ul aria-label={block ? t`What blocks the update` : t`What changed`}>
         {rows.map(row => <li key={`${row.kind}\0${row.text}`}><span className="thread-folder__main-kind">{row.kind}</span><span className="thread-folder__main-path">{row.text}</span></li>)}
       </ul> : null}
-      {block && changes && changes.more > 0 ? <p className="thread-folder__main-more">and {changes.more.toLocaleString()} more</p> : null}
-      {block ? <button type="button" className="thread-folder__main-press tt-focusable" aria-label={`Open the ${title} folder`} onClick={openFolder}>Open folder</button> : null}
+      {block && changes && changes.more > 0 ? <p className="thread-folder__main-more">{t`and ${more} more`}</p> : null}
+      {block ? <button type="button" className="thread-folder__main-press tt-focusable" aria-label={t`Open the ${title} folder`} onClick={openFolder}>{t`Open folder`}</button> : null}
     </div> : null}
   </div>
 }

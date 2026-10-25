@@ -132,6 +132,11 @@ describe('HostSetup', () => {
     const [request] = f.setup.requests().get('thread-1')!
     expect(request).toMatchObject({ kind: 'permission', text: expect.stringMatching(/^Add forge as a host\?/u), permissionChoices: [{ id: 'add', label: 'Add forge', kind: 'allow-once' }, { id: 'decline', kind: 'deny' }] })
     expect(request!.id.startsWith('sotto:')).toBe(true)
+    // Read on every publication while it waits: worded once, the same answer each time, worded again on a language change.
+    expect(f.setup.requests()).toBe(f.setup.requests())
+    const told = f.onRequests.mock.calls.length
+    f.setup.languageChanged()
+    expect(f.onRequests.mock.calls.length).toBe(told + 1)
     expect(f.onRequests).toHaveBeenCalled()
     expect(f.setup.state()?.waiting).toBe('add')
     expect(f.hosts.add).not.toHaveBeenCalled()

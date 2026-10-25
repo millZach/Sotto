@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { lstat, readdir, readFile, mkdir, rename, open, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 
+import { t } from '@lingui/core/macro'
+
 /** Refuse links and special files before writing a user's configuration. */
 export async function plainPath(path: string): Promise<void> {
   const ancestors: string[] = []
@@ -16,7 +18,7 @@ export async function plainPath(path: string): Promise<void> {
     })
     if (!stat) break
     if (stat.isSymbolicLink() || (!stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1))) {
-      throw new Error('Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again.')
+      throw new Error(t`Sotto found a linked or special configuration file. It was left alone. Use a regular file, then try again.`)
     }
   }
 }
@@ -39,7 +41,7 @@ export async function treeDigest(path: string): Promise<string | null> {
     throw error
   })
   if (!stat) return null
-  if (!stat.isDirectory()) throw new Error('The plugin folder is not a folder. Sotto left it alone.')
+  if (!stat.isDirectory()) throw new Error(t`The plugin folder is not a folder. Sotto left it alone.`)
   const entries: string[] = []
   const visit = async (folder: string, relative: string): Promise<void> => {
     for (const name of (await readdir(folder)).sort()) {

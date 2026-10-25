@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import { Bot, GitFork, Laptop, Search, Server, Sparkle, type LucideIcon } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
 import { DELEGATION_WORK_TITLES, type DelegatedView, type DelegationView } from '../../../shared/delegation'
@@ -46,6 +48,7 @@ export function DelegationWorldProvider({ world, children }: { readonly world: D
 
 /** The outcome's ring and word, coloured by the outcome: what "Delegated by" shows of the newest brief. */
 function Outcome({ view }: { readonly view: DelegatedView }): ReactNode {
+  useInterfaceLanguageState()
   return <span className="delegation-outcome" data-outcome={view.outcome}>
     <span className="delegation-ring" data-outcome={view.outcome} aria-hidden="true" />{DELEGATION_OUTCOME_WORDS[view.outcome]}
   </span>
@@ -66,7 +69,8 @@ function RowLine({ view, state, id, world, request }: { readonly view: Delegatio
     return () => window.clearInterval(timer)
   }, [ticking])
   const listed = view.thread !== undefined && world.thread(view.thread) !== undefined
-  return <p id={id} className="delegated-work__line">{delegatedLine(view, state, world.now ?? now, request, listed)}</p>
+  useInterfaceLanguageState()
+  return <p id={id} className="delegated-work__line tt-paragraph">{delegatedLine(view, state, world.now ?? now, request, listed)}</p>
 }
 
 /**
@@ -76,6 +80,7 @@ function RowLine({ view, state, id, world, request }: { readonly view: Delegatio
  * on you for, or why Sotto refused it. A refused one links nowhere: nothing was started, and nothing was sent.
  */
 export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): ReactNode {
+  const { t } = useLingui()
   const world = useContext(DelegationWorldContext)
   const lineId = useId(), metaId = useId()
   if (world === null) return null
@@ -88,15 +93,18 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   const refused = view.outcome === 'refused'
   const name = thread?.title ?? DELEGATION_WORK_TITLES[view.work]
   const kindWord = delegatedKindWord(kind, view.work)
-  const label = `${refused ? `${kindWord}, ${view.action === 'send' && thread ? `not sent to ${thread.title}` : 'not delegated'}` : `${kindWord}: ${name}`}, ${state.word}`
-  const machine = thread ? world.hostName(thread) : 'This computer'
+  const stateWord = state.word, threadTitle = thread?.title ?? ''
+  const label = refused
+    ? view.action === 'send' && thread ? t`${kindWord}, not sent to ${threadTitle}, ${stateWord}` : t`${kindWord}, not delegated, ${stateWord}`
+    : t`${kindWord}: ${name}, ${stateWord}`
+  const machine = thread ? world.hostName(thread) : t({ message: 'This computer', comment: 'The computer Sotto runs on, named among the hosts that run threads.' })
   const Machine = thread?.remoteHost ? Server : Laptop
   return <li className="delegated-work__row" data-outcome={view.outcome} data-state={state.id} aria-label={label}>
     <Glyph size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
       <span className="delegated-work__kind">{kindWord}</span>
-      {refused ? <span className="delegated-work__refused">{view.action === 'send' && thread ? <>Not sent to {thread.title}</> : 'Not delegated'}</span>
-        : thread ? <button type="button" className="delegation-link tt-focusable" aria-label={`Open ${thread.title}`} aria-describedby={`${metaId} ${lineId}`} title={thread.title}
+      {refused ? <span className="delegated-work__refused">{view.action === 'send' && thread ? <Trans>Not sent to {threadTitle}</Trans> : t`Not delegated`}</span>
+        : thread ? <button type="button" className="delegation-link tt-focusable" aria-label={t`Open ${threadTitle}`} aria-describedby={`${metaId} ${lineId}`} title={thread.title}
           onClick={() => world.open(thread.id)}>{thread.title}</button>
           : <span>{name}</span>}
     </span>
@@ -113,13 +121,15 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
 }
 
 /** The rows of one turn, in the order the delegating thread made them: in its Worked for fold, or under its reply when nothing folds. */
-export function DelegatedWork({ views, label = 'Delegated work' }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
+export function DelegatedWork({ views, label }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
+  const { t } = useLingui()
   if (!views?.length) return null
-  return <ul className="delegated-work" aria-label={label ?? undefined}>{views.map(view => <DelegatedWorkRow key={view.id} view={view} />)}</ul>
+  return <ul className="delegated-work" aria-label={label === undefined ? t`Delegated work` : label ?? undefined}>{views.map(view => <DelegatedWorkRow key={view.id} view={view} />)}</ul>
 }
 
 /** The turn's delegated work in a few words after its Worked for line, so a closed fold still says what it holds. */
 export function DelegatedWorkSummary({ views }: { readonly views: readonly DelegationView[] | undefined }): ReactNode {
+  useInterfaceLanguageState()
   const world = useContext(DelegationWorldContext)
   if (!views?.length || world === null) return null
   const words = delegatedSummary(views, view => view.thread === undefined ? undefined : world.thread(view.thread))
@@ -141,17 +151,21 @@ export function stillWorkingAgents(work: readonly AgentBackgroundWork[] | undefi
  * thread, so it opens nothing, and it goes when the provider says it ended.
  */
 function BackgroundWorkRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
+  const { t } = useLingui()
   const kindWord = BACKGROUND_WORK_LABELS[work.type]
   // A task the provider gave no label is labelled with its kind; the word is not said twice.
   const label = work.label === kindWord ? undefined : work.label
-  return <li className="delegated-work__row" data-outcome="working" data-state="working" data-background={work.type} aria-label={`${label === undefined ? kindWord : `${kindWord}: ${label}`}, Working`}>
+  const name = label === undefined
+    ? t({ message: `${kindWord}, Working`, comment: '{kindWord} is the kind of a provider\'s background agent, such as Subagent; Working is its state.' })
+    : t({ message: `${kindWord}: ${label}, Working`, comment: '{kindWord} is the kind of a provider\'s background agent; {label} is the provider\'s label for it.' })
+  return <li className="delegated-work__row" data-outcome="working" data-state="working" data-background={work.type} aria-label={name}>
     <Bot size={14} aria-hidden="true" className="delegated-work__glyph" />
     <span className="delegated-work__name">
       <span className="delegated-work__kind">{kindWord}</span>
       {label === undefined ? null : <span title={label}>{label}</span>}
     </span>
     <span className="delegated-work__state" data-state="working">
-      <span className="delegation-ring" data-outcome="working" data-state="working" aria-hidden="true" />Working
+      <span className="delegation-ring" data-outcome="working" data-state="working" aria-hidden="true" />{t({ message: 'Working', comment: 'A provider\'s background agent\'s state: it is running.' })}
     </span>
   </li>
 }
@@ -167,7 +181,7 @@ export function StillWorking({ views, work }: { readonly views: readonly Delegat
   const headingId = useId()
   if (!open.length && !work?.length) return null
   return <section className="delegated-work-still" aria-labelledby={headingId}>
-    <p id={headingId} className="delegated-work-still__heading">Still working after this reply</p>
+    <p id={headingId} className="delegated-work-still__heading"><Trans>Still working after this reply</Trans></p>
     <ul className="delegated-work">
       {open.map(view => <DelegatedWorkRow key={view.id} view={view} />)}
       {work?.map(task => <BackgroundWorkRow key={task.id} work={task} />)}
@@ -207,17 +221,20 @@ export function delegationsByTurn(views: readonly DelegationView[], messages: re
  * (#1029, design A). Nothing for a thread no other thread started, and nothing while the Owl list keeps delegation off.
  */
 export function DelegatedBy({ thread, state, command }: { readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command'] }): ReactNode {
+  const { t } = useLingui()
   const enabled = useDelegationsEnabled()
   const newest = useNewestBrief(thread)
   const parentId = enabled ? thread.delegatedBy : undefined
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
+  const parentTitle = parent?.title ?? ''
+  const openLabel = t`Open ${parentTitle}, the thread that delegated to this one`
   return <div className="delegated-by">
     <GitFork size={14} aria-hidden="true" />
-    <span>Delegated by {parent
-      ? <button type="button" className="delegation-link tt-focusable" aria-label={`Open ${parent.title}, the thread that delegated to this one`} title={parent.title}
-        onClick={() => void command({ type: 'select-thread', threadId: parent.id })}>{parent.title}</button>
-      : <span className="delegated-by__gone">a thread that is no longer listed</span>}</span>
+    <span>{parent
+      ? <Trans>Delegated by <button type="button" className="delegation-link tt-focusable" aria-label={openLabel} title={parentTitle}
+        onClick={() => void command({ type: 'select-thread', threadId: parent.id })}>{parentTitle}</button></Trans>
+      : <Trans>Delegated by <span className="delegated-by__gone">a thread that is no longer listed</span></Trans>}</span>
     {newest ? <><span aria-hidden="true">·</span><Outcome view={newest} /></> : null}
   </div>
 }
@@ -228,15 +245,16 @@ export function DelegatedBy({ thread, state, command }: { readonly thread: Agent
  * user's own turn there, which the thread that delegated waits out, or that thread's brief still being worked on.
  */
 export function DelegationComposerNote({ thread, state }: { readonly thread: AgentThread; readonly state: AgentState }): ReactNode {
+  const { t } = useLingui()
   const enabled = useDelegationsEnabled()
   const received = useDelegations(thread.delegatedBy === undefined ? undefined : thread.id).received
   const parentId = enabled ? thread.delegatedBy : undefined
   // Stop shows while the thread works, as the composer decides it; what it also stops is main's rule, a turn still running.
   const working = enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
   if (!enabled) return null
-  if (working) return <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
+  if (working) return <p className="delegation-note tt-paragraph"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
-  const note = delegatedNote(parent?.title ?? 'The thread that delegated', received.at(-1), userTurnRunning(thread, received), isThreadTurnRunning(thread))
-  return note === undefined ? null : <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{note}</span></p>
+  const note = delegatedNote(parent?.title ?? t`The thread that delegated`, received.at(-1), userTurnRunning(thread, received), isThreadTurnRunning(thread))
+  return note === undefined ? null : <p className="delegation-note tt-paragraph"><GitFork size={13} aria-hidden="true" /><span>{note}</span></p>
 }

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import type { z } from 'zod'
 import { CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_IN_WORDS, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema } from '../../shared/cursorSignIn'
@@ -14,7 +15,7 @@ export function registerCursorSignInIpc(ipc: IpcMainAdapter, signIn: CursorSignI
   if (!signIn) return () => undefined
   const handle = <T>(channel: string, schema: z.ZodType<T>, refused: unknown, run: (request: unknown) => Promise<unknown>): void => {
     ipc.handle(channel, async (event, ...args) => {
-      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Sign Cursor in from the main Sotto window.')
+      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Sign Cursor in from the main Sotto window.`)
       let answer: unknown
       try { answer = await run(args[0]) } catch { answer = refused }
       return schema.parse(answer)

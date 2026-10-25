@@ -1,4 +1,7 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n } from '@lingui/core'
+import { plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { AGENT_DISMISS_FAILURES_MAX, type AgentState } from '../../../shared/agents'
 import { requestDraftQuestions } from '../../../shared/requestDrafts'
 import { Button } from '../components/Button'
@@ -12,11 +15,10 @@ import {
   requestAnswerOwnerKey, requestAnswerStore, structuredAnswer, useRequestEntry, type QuestionSelection,
 } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadRequestSubmit } from './requests/threadRequests'
+import { shownCount } from '../state/interfaceNumbers'
 
 type Command = AgentConnection['command']
 type Failures = ReturnType<typeof unseenFailures>
-
-const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 /** The search field above the queue: where the focus lands when the entry that held it leaves with nowhere next. */
 function searchField(root: HTMLElement | null): HTMLInputElement | null | undefined {
@@ -36,6 +38,7 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
   readonly panes: PaneActions
   readonly onOpen: (threadId: string) => void
 }): ReactNode {
+  const { t } = useLingui()
   const [expanded, setExpanded] = useState(false)
   const [dismissing, setDismissing] = useState<ReadonlySet<string>>(new Set())
   const card = useRef<HTMLElement>(null)
@@ -76,11 +79,14 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
       if (together && result !== null && !result.error) requestAnimationFrame(() => search?.focus())
     }).finally(() => setDismissing(current => new Set([...current].filter(id => !ids.includes(id)))))
   }
-  const overflowKinds = [
-    queue.overflow.approval ? `${queue.overflow.approval} approval${queue.overflow.approval === 1 ? '' : 's'}` : '',
-    queue.overflow.question ? `${queue.overflow.question} answer${queue.overflow.question === 1 ? '' : 's'}` : '',
-    queue.overflow.failed ? `${queue.overflow.failed} failed` : '',
-  ].filter(Boolean).join(', ')
+  const { approval, question, failed } = queue.overflow
+  // Each kind is a whole phrase, joined the interface language's way.
+  const overflowKinds = new Intl.ListFormat(i18n.locale, { type: 'unit', style: 'short' }).format([
+    approval ? plural(approval, { one: `${{ approvals: shownCount(approval) }} approval`, other: `${{ approvals: shownCount(approval) }} approvals` }) : '',
+    question ? plural(question, { one: `${{ answers: shownCount(question) }} answer`, other: `${{ answers: shownCount(question) }} answers` }) : '',
+    failed ? t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many threads whose last turn failed wait beyond those shown.' }) : '',
+  ].filter(Boolean))
+  const more = shownCount(queue.overflow.total), oldest = queue.oldestBlockingWait, failedThreads = failures.length, failedCount = shownCount(failedThreads)
   return <section ref={card} className="needs-you" aria-labelledby={headingId} onFocusCapture={event => {
     const item = (event.target as HTMLElement).closest<HTMLElement>('[data-entry-id]')
     if (item?.dataset.entryId) focusedEntry.current = { id: item.dataset.entryId, index: [...item.parentElement!.children].indexOf(item) }
@@ -88,22 +94,22 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
     if (expanded && event.key === 'Escape') { event.preventDefault(); setExpanded(false); toggle.current?.focus() }
   }}>
     <div className="needs-you__head">
-      <h2 id={headingId} className="needs-you__heading">Needs you</h2>
-      <span className="needs-you__count">{queue.entries.length}</span>
-      {queue.oldestBlockingWait ? <span className="needs-you__oldest">oldest {queue.oldestBlockingWait}</span> : null}
+      <h2 id={headingId} className="needs-you__heading"><Trans comment="The heading over the threads that wait on the user.">Needs you</Trans></h2>
+      <span className="needs-you__count">{shownCount(queue.entries.length)}</span>
+      {oldest ? <span className="needs-you__oldest">{t({ message: `oldest ${oldest}`, comment: '{oldest} is how long the longest wait has lasted, such as 4 min.' })}</span> : null}
     </div>
     <ul className="needs-you__entries">
       {shown.map(entry => <NeedsYouEntryView key={entry.row.thread.id} entry={entry} state={state} command={command}
         watcherOn={watcherOn} dismissing={dismissing.has(entry.row.thread.id)} onOpen={open} onDismiss={dismiss} panes={panes} />)}
     </ul>
     {queue.overflow.total > 0 || failures.length >= 2 ? <div className="needs-you__foot">
-      {queue.overflow.total > 0 && !expanded ? <span className="needs-you__overflow">+ {queue.overflow.total} more waiting ({overflowKinds})</span> : null}
+      {queue.overflow.total > 0 && !expanded ? <span className="needs-you__overflow">{t({ message: `+ ${more} more waiting (${overflowKinds})`, comment: '{more} is how many more threads wait; {overflowKinds} says what for, such as 2 approvals, 1 answer.' })}</span> : null}
       {queue.overflow.total > 0 ? <Button ref={toggle} variant="ghost" aria-expanded={expanded}
-        aria-label={expanded ? 'Show fewer waiting threads' : 'Show all waiting threads'} onClick={() => setExpanded(value => !value)}>
-        {expanded ? 'Show fewer' : 'Show all'}</Button> : null}
-      {failures.length >= 2 ? <Button variant="ghost" aria-label={`Dismiss Needs attention on ${plural(failures.length, 'thread')}`}
+        aria-label={expanded ? t`Show fewer waiting threads` : t`Show all waiting threads`} onClick={() => setExpanded(value => !value)}>
+        {expanded ? t`Show fewer` : t`Show all`}</Button> : null}
+      {failures.length >= 2 ? <Button variant="ghost" aria-label={plural(failedThreads, { one: `Dismiss Needs attention on ${{ threads: failedCount }} thread`, other: `Dismiss Needs attention on ${{ threads: failedCount }} threads` })}
         aria-disabled={failures.some(item => dismissing.has(item.threadId)) || undefined}
-        onClick={() => dismiss(failures, true)}>Dismiss {failures.length} failed</Button> : null}
+        onClick={() => dismiss(failures, true)}>{t({ message: `Dismiss ${failedCount} failed`, comment: '{failedCount} is how many threads whose last turn failed.' })}</Button> : null}
     </div> : null}
   </section>
 }
@@ -120,15 +126,17 @@ type EntryProps = {
 }
 
 function NeedsYouEntryView({ entry, state, command, watcherOn, dismissing, panes, onOpen, onDismiss }: EntryProps): ReactNode {
+  const { t } = useLingui()
   const { row } = entry
   const title = row.thread.title
   const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
   const settled = row.settledBy === 'thread' || row.settledBy === 'project'
   const failureId = row.thread.failureId ?? ''
+  const waitingIn = row.waitingIn
   return <li className="needs-you__entry" data-kind={entry.kind} data-entry-id={row.thread.id}>
     <div className="needs-you__top">
       <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-disconnected={row.connected ? undefined : true} aria-hidden="true" />
-      <button type="button" className="needs-you__title tt-focusable" aria-label={`Open ${title}`} title={title}
+      <button type="button" className="needs-you__title tt-focusable" aria-label={t`Open ${title}`} title={title}
         aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined}
         onClick={event => onOpen(entry, event.ctrlKey || event.metaKey)}
         onKeyDown={event => { if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); onOpen(entry, true) } }}>
@@ -138,20 +146,20 @@ function NeedsYouEntryView({ entry, state, command, watcherOn, dismissing, panes
     </div>
     <p className="needs-you__meta">
       <span className="needs-you__status">{row.stateLabel}</span>
-      {row.waitingIn ? <span>Waiting in {row.waitingIn}</span> : null}
+      {waitingIn ? <span><Trans comment="{waitingIn} is where the thread waits, such as the name of the thread it delegated to.">Waiting in {waitingIn}</Trans></span> : null}
       {row.project ? <span>{row.project.title}</span> : null}
       {row.thread.hostLabel ? <span>{row.thread.hostLabel}</span> : null}
-      {settled ? <span className="needs-you__tag">Settled</span> : null}
+      {settled ? <span className="needs-you__tag">{t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' })}</span> : null}
     </p>
     {entry.request !== undefined
       ? <RequestActions entry={entry} state={state} command={command} watcherOn={watcherOn} onOpen={() => onOpen(entry, false)} />
       : <>
-        {entry.kind === 'failed' && entry.action === 'dismiss' ? <p className="needs-you__ask">{row.thread.failureReason ?? 'The last turn failed.'}</p> : null}
+        {entry.kind === 'failed' && entry.action === 'dismiss' ? <p className="needs-you__ask tt-paragraph">{row.thread.failureReason ?? t`The last turn failed.`}</p> : null}
         <div className="needs-you__actions">
-          {entry.action === 'dismiss' ? <Button variant="secondary" aria-label={`Dismiss Needs attention on ${title}`}
-            aria-disabled={dismissing || undefined} onClick={() => { if (!dismissing) onDismiss([{ threadId: row.thread.id, failure: failureId }]) }}>Dismiss</Button> : null}
-          <Button variant="secondary" aria-label={entry.action === 'dismiss' ? `Open ${title}` : `Open ${title} to answer`} onClick={() => onOpen(entry, false)}>
-            {entry.action === 'dismiss' ? 'Open' : 'Open to answer'}</Button>
+          {entry.action === 'dismiss' ? <Button variant="secondary" aria-label={t`Dismiss Needs attention on ${title}`}
+            aria-disabled={dismissing || undefined} onClick={() => { if (!dismissing) onDismiss([{ threadId: row.thread.id, failure: failureId }]) }}><Trans>Dismiss</Trans></Button> : null}
+          <Button variant="secondary" aria-label={entry.action === 'dismiss' ? t`Open ${title}` : t`Open ${title} to answer`} onClick={() => onOpen(entry, false)}>
+            {entry.action === 'dismiss' ? t({ message: 'Open', comment: 'Opens the thread.' }) : t`Open to answer`}</Button>
         </div>
       </>}
   </li>
@@ -166,6 +174,7 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
   readonly entry: NeedsYouEntry; readonly state: AgentState; readonly command: Command
   readonly watcherOn: boolean; readonly onOpen: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const { row, request } = entry
   const thread = row.thread
   const title = thread.title
@@ -203,49 +212,50 @@ function RequestActions({ entry, state, command, watcherOn, onOpen }: {
     setChecking(true)
     void store.release(entryOwner, request.id, () => threadRequestCheck(command, thread.id)).finally(() => setChecking(false))
   }
+  const cwd = request.kind === 'permission' ? permissionSummary(request).cwd : undefined
   const ask = request.kind === 'permission'
     ? permissionSummary(request).command ?? permissionSummary(request).title
     : questions[0]?.question ?? request.text
   const status = nativeUncertain
-    ? <div className="needs-you__hold" role="status"><p>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</p>
-      <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button></div>
+    ? <div className="needs-you__hold" role="status"><p className="tt-paragraph"><Trans>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</Trans></p>
+      <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button></div>
     : saved.phase === 'unconfirmed'
-      ? <div className="needs-you__hold" role="status"><p>{saved.save === 'unsaved' && saved.error ? saved.error
-        : 'Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.'}</p>
-        <Button variant="secondary" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check again'}</Button></div>
-      : saved.phase === 'failed' ? <p className="needs-you__error" role="alert">{saved.error}</p>
-        : saved.phase === 'sending' ? <p className="needs-you__note" role="status">Sending…</p>
-          : saved.phase === 'sent' ? <p className="needs-you__note" role="status">Answer sent.</p>
-            : blocked !== null ? <p className="needs-you__note">{blocked}</p> : null
-  const openButton = <Button variant="secondary" aria-label={`Open ${title} to answer`} onClick={onOpen}>Open to answer</Button>
+      ? <div className="needs-you__hold" role="status"><p className="tt-paragraph">{saved.save === 'unsaved' && saved.error ? saved.error
+        : t`Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.`}</p>
+        <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button></div>
+      : saved.phase === 'failed' ? <p className="needs-you__error tt-paragraph" role="alert">{saved.error}</p>
+        : saved.phase === 'sending' ? <p className="needs-you__note" role="status">{t`Sending…`}</p>
+          : saved.phase === 'sent' ? <p className="needs-you__note" role="status">{t`Answer sent.`}</p>
+            : blocked !== null ? <p className="needs-you__note tt-paragraph">{blocked}</p> : null
+  const openButton = <Button variant="secondary" aria-label={t`Open ${title} to answer`} onClick={onOpen}>{t`Open to answer`}</Button>
   return <>
-    <p className="needs-you__ask">{ask}{request.kind === 'permission' && permissionSummary(request).cwd ? <> in <code>{permissionSummary(request).cwd}</code></> : null}</p>
+    <p className="needs-you__ask">{ask}{cwd ? <> <Trans comment="Followed by the folder a command runs in.">in <code dir="ltr">{cwd}</code></Trans></> : null}</p>
     {inline && request.kind === 'permission' ? <div className="needs-you__actions">
       {request.permissionChoices
         ? request.permissionChoices.map(choice => <Button key={choice.id} variant={choice.kind === 'allow-once' ? 'primary' : 'secondary'}
-          aria-label={`${choice.label} in ${title}`} aria-pressed={saved.choice === choice.id || undefined}
+          aria-label={t({ message: `${{ choice: choice.label }} in ${title}`, comment: '{choice} is the provider\'s words for an answer, such as Allow once; {title} is a thread\'s title.' })} aria-pressed={saved.choice === choice.id || undefined}
           onClick={() => submit(choice.id, permissionAnswer(choice))}>{choice.label}</Button>)
         : <>
-          <Button variant="secondary" aria-label={`Deny in ${title}`} aria-pressed={saved.choice === 'deny' || undefined}
-            onClick={() => submit('deny', legacyPermissionAnswer(false))}>Deny</Button>
-          <Button aria-label={`Allow in ${title}`} aria-pressed={saved.choice === 'allow' || undefined}
-            onClick={() => submit('allow', legacyPermissionAnswer(true))}>Allow</Button>
+          <Button variant="secondary" aria-label={t`Deny in ${title}`} aria-pressed={saved.choice === 'deny' || undefined}
+            onClick={() => submit('deny', legacyPermissionAnswer(false))}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
+          <Button aria-label={t`Allow in ${title}`} aria-pressed={saved.choice === 'allow' || undefined}
+            onClick={() => submit('allow', legacyPermissionAnswer(true))}>{t({ message: 'Allow', comment: 'Answers an agent’s permission request.' })}</Button>
         </>}
     </div> : null}
     {inline && request.kind === 'question' && questions[0] ? <div className="needs-you__actions">
-      {questions[0].options.map(option => <Button key={option.id} variant="secondary" aria-label={`Answer ${option.label} in ${title}`}
+      {questions[0].options.map(option => <Button key={option.id} variant="secondary" aria-label={t({ message: `Answer ${{ option: option.label }} in ${title}`, comment: '{option} is the agent\'s words for an answer; {title} is a thread\'s title.' })}
         onClick={() => {
           const selection: QuestionSelection = { optionIds: [option.id], other: false, text: '' }
           store.select(entryOwner, request.id, questions[0]!.id, selection)
           const answer = structuredAnswer(questions, { [questions[0]!.id]: selection })
           if (answer) submit(null, answer)
         }}>{option.label}</Button>)}
-      {!isRequired(questions[0]) ? <Button variant="ghost" aria-label={`Skip question in ${title}`}
-        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) submit(null, answer) }}>Skip question</Button> : null}
+      {!isRequired(questions[0]) ? <Button variant="ghost" aria-label={t`Skip question in ${title}`}
+        onClick={() => { const answer = structuredAnswer(questions, {}); if (answer) submit(null, answer) }}>{t`Skip question`}</Button> : null}
     </div> : null}
     {!inline && !locked ? <div className="needs-you__actions">{openButton}</div> : null}
-    {hasNoSendableChoice(request) ? <p className="needs-you__note">Sotto has no choice it can send for this request. Answer it in the provider’s app.</p> : null}
+    {hasNoSendableChoice(request) ? <p className="needs-you__note tt-paragraph">{t`Sotto has no choice it can send for this request. Answer it in the provider’s app.`}</p> : null}
     {status || (saved.saveError && !uncertain) ? <div ref={statusBox} tabIndex={-1} className="needs-you__statusbox">{status}
-      {saved.saveError && !uncertain ? <p className="needs-you__error" role="alert">{saved.saveError}</p> : null}</div> : null}
+      {saved.saveError && !uncertain ? <p className="needs-you__error tt-paragraph" role="alert">{saved.saveError}</p> : null}</div> : null}
   </>
 }
