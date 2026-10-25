@@ -88,11 +88,6 @@ export interface PaneActions {
   readonly restoreShortcut?: ThreadChordLabel | undefined
 }
 
-/**
- * One thread in the sidebar. Memoised: with the state and the rows derived from it structurally shared, a
- * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
- * cheap to compare — no object or array is built for it here.
- */
 /** The status ring a row and its rail tile share; a Done thread something will still wake shows an hourglass (variant d). */
 function StatusRing({ row, finished, background }: { readonly row: ThreadRow; readonly finished: boolean; readonly background: boolean }): ReactNode {
   return <span className="thread-nav__ring" data-state={row.state} data-waiting={row.waitingFor ?? undefined} data-unseen={finished || undefined}
@@ -101,6 +96,11 @@ function StatusRing({ row, finished, background }: { readonly row: ThreadRow; re
   </span>
 }
 
+/**
+ * One thread in the sidebar. Memoised: with the state and the rows derived from it structurally shared, a
+ * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
+ * cheap to compare — no object or array is built for it here.
+ */
 const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
   /** This thread's own lane is running a command. Another thread's work leaves this row's actions live. */
