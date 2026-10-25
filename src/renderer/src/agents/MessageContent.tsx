@@ -125,8 +125,6 @@ interface LinkActions {
   readonly reveal?: ((path: string) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
-/** Inside a link, inline code stays plain: a Run button cannot sit inside something that is itself pressed. */
-const InsideLinkContext = createContext(false)
 /** The Markdown being rendered, so a fenced diagram can tell whether its closing fence has arrived. */
 const MarkdownSourceContext = createContext<{ text: string; streaming: boolean }>({ text: '', streaming: false })
 
@@ -226,14 +224,6 @@ function RunnableInline({ command, run, children }: { readonly command: string; 
     <code>{children}</code>
     {state === 'ran' ? <span className="run-command__ran" aria-hidden="true"><Check size={12} /></span> : null}
   </span>
-}
-
-function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
-  const run = useRunCommand()
-  const insideLink = useContext(InsideLinkContext)
-  // What runs is the span's own text, the same characters the reply shows.
-  const command = run && !insideLink ? runnableInline(hastText(node)) : null
-  return run && command !== null ? <RunnableInline command={command} run={run}>{children}</RunnableInline> : <code>{children}</code>
 }
 
 export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEnd = false, run }: {
@@ -342,12 +332,35 @@ const heading = (level: 3 | 4 | 5 | 6, rank: number) => function Heading({ child
   return <Tag className={`rich-heading rich-heading--${rank}`}>{children}</Tag>
 }
 
+// Inline code inside a link stays plain, so a press does one thing.
+const InsideLink = createContext(false)
+
+/**
+ * Inline code that is a whole home, drive or absolute path shows that file when pressed, as a file link does. A
+ * `/`-rooted path needs two parts, so a slash command such as `/review` stays code. Otherwise a span that reads as a
+ * shell command offers Run (ADR-0137); a lone path stays a file link, so a press still does one thing.
+ */
+function InlineCode({ node, children }: { node?: Element | undefined; children?: ReactNode }): ReactNode {
+  const { reveal } = useContext(LinkContext)
+  const run = useRunCommand()
+  const insideLink = useContext(InsideLink)
+  const text = typeof children === 'string' ? children.trim() : ''
+  const file = reveal && !insideLink && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) ? localFilePath(text) : null
+  // What runs is the span's own text, the same characters the reply shows.
+  const command = !file && run && !insideLink ? runnableInline(hastText(node)) : null
+  if (run && command !== null) return <RunnableInline command={command} run={run}>{children}</RunnableInline>
+  if (!file || !reveal) return <code>{children}</code>
+  return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={`Show in ${fileManager()}: ${file}`}
+    aria-label={`Show ${file} in ${fileManager()}`}
+    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</code>
+}
+
 // Every URL-bearing element is rendered by a component below, which vets it before it reaches the DOM.
 const urlTransform: UrlTransform = (url, key, node) =>
   (node.tagName === 'a' && key === 'href') || (node.tagName === 'img' && key === 'src') ? url : defaultUrlTransform(url)
 
 const components: Components = {
-  a: ({ href, title, children }) => <InsideLinkContext.Provider value={true}><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLinkContext.Provider>,
+  a: ({ href, title, children }) => <InsideLink.Provider value={true}><MarkdownLink href={href} title={title}>{children}</MarkdownLink></InsideLink.Provider>,
   // Also called for a fenced block's own <code>, which `pre` below then ignores: that text always ends in the newline
   // Markdown adds to fenced code, so `runnableInline` refuses it and only inline spans offer Run.
   code: ({ node, children }) => <InlineCode node={node}>{children}</InlineCode>,
