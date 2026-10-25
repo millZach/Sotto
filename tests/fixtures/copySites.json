@@ -94,6 +94,9 @@
   "src/main/agents/sottoRequests.ts": {
     "structuredClone(": 1
   },
+  "src/main/agents/threadChanges.ts": {
+    "cloneHostSnapshot(": 1
+  },
   "src/main/agents/threadMessageLog.ts": {
     "structuredClone(": 1
   },

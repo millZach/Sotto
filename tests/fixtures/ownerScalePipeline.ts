@@ -10,6 +10,7 @@ import { desktopWindowClient, LocalHostService } from '../../src/main/agents/hos
 import { ConfiguredProviderHost } from '../../src/main/agents/providerSwitch'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../../src/main/agents/requestDraftOwners'
 import { RequestDraftService } from '../../src/main/agents/requestDrafts'
+import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges } from '../../src/main/agents/threadChanges'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
@@ -99,6 +100,11 @@ export interface OwnerScalePipeline {
   /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
   watcherRoomRecords(): number
   resetCounts(): void
+  /**
+   * With thread changes verified: for each layer, how many of its publications the shadow map applied and checked, and
+   * every way a map came to differ from that layer's whole snapshot. Empty when not verified.
+   */
+  threadChanges(): ThreadChangesReport
   /** The user's actions, as the window sends them to main. */
   readonly actions: {
     saveAnswerDraft(): Promise<void>
@@ -107,6 +113,80 @@ export interface OwnerScalePipeline {
     send(): Promise<void>
   }
   stop(): Promise<void>
+}
+
+export interface OwnerScalePipelineOptions {
+  /**
+   * Shadow every layer between the adapter and the coordinator with a thread map fed its thread changes, checked against
+   * the layer's whole snapshot after every change (#925). Defaults to `SOTTO_VERIFY_THREAD_CHANGES=1`.
+   */
+  verifyThreadChanges?: boolean
+  /** Runs the shadows' work, so a test that counts main's work can leave it out. */
+  uncounted?: <T>(work: () => T) => T
+}
+
+export interface ThreadChangesReport {
+  /** Publications each layer's shadow map applied and checked. */
+  readonly checked: Readonly<Record<string, number>>
+  /** Every difference found, named by layer. */
+  readonly drift: readonly string[]
+}
+
+type ActivityPublisher = { subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void }
+
+/**
+ * The verifying mode at the owner's scale (#925): beside each layer between the adapter and the coordinator, the thread
+ * changes the shim works out from that layer's publications, applied to a thread map that rebuilds itself from the
+ * layer's whole snapshot after every change and compares. Nothing main runs changes: each layer publishes as it does,
+ * and a shadow only reads what it published. A drift is kept for the test rather than thrown into main's path. Until a
+ * layer passes on thread changes itself, this checks the shim and the map against every real publication; once one does,
+ * its own changes take the shim's place here.
+ */
+class ShadowThreadMaps {
+  private readonly checked: Record<string, number> = {}
+  private readonly drift: string[] = []
+  constructor(private readonly on: boolean, private readonly uncounted: <T>(work: () => T) => T) {}
+
+  /** Shadows what `host`'s activity subscription publishes, from every subscription made after this. */
+  tap(host: ActivityPublisher, layer: string): void {
+    if (!this.on) return
+    const subscribe = host.subscribeActivitySnapshots?.bind(host)
+    if (!subscribe) throw new Error(`The ${layer} has no activity subscription to shadow.`)
+    const see = this.shadow(layer)
+    host.subscribeActivitySnapshots = (listener, options) => subscribe(snapshot => { see(snapshot); listener(snapshot) }, options)
+  }
+
+  /** Shadows the workspace's state after each accept, with the host stamp. */
+  tapAccept(workspace: WorkspaceHost): void {
+    if (!this.on) return
+    const inside = workspace as unknown as { accept(snapshot: AgentHostSnapshot): void; state: { snapshot: AgentHostSnapshot } }
+    if (typeof inside.accept !== 'function') throw new Error('WorkspaceHost.accept is gone; shadow the workspace\'s accepted state another way.')
+    const accept = inside.accept.bind(workspace), see = this.shadow('workspace accept')
+    inside.accept = snapshot => { accept(snapshot); see(inside.state.snapshot) }
+  }
+
+  report(): ThreadChangesReport { return { checked: { ...this.checked }, drift: [...this.drift] } }
+
+  private shadow(layer: string): (snapshot: AgentHostSnapshot) => void {
+    this.checked[layer] = 0
+    let latest: AgentHostSnapshot | undefined
+    const publisher = new ThreadChangesPublisher()
+    const map = new ThreadMap({ wholeOf: () => latest!, verify: true })
+    const subscription = publisher.subscribe(changes => {
+      try {
+        const applied = map.apply(changes)
+        if (applied === 'applied') this.checked[layer]!++
+        else this.drift.push(`${layer}: a publication was ${applied === 'resync' ? 'missed' : 'out of order'}`)
+        if (applied === 'resync') subscription.resync()
+      } catch (error) { this.drift.push(`${layer}: ${error instanceof Error ? error.message : String(error)}`) }
+    })
+    return snapshot => this.uncounted(() => {
+      // Every subscriber of a layer is handed the same publication.
+      if (snapshot === latest) return
+      latest = snapshot
+      publisher.publishSnapshots(() => snapshot)
+    })
+  }
 }
 
 /**
@@ -118,7 +198,8 @@ export interface OwnerScalePipeline {
  * threads and the history apart (`ownerScaleCounts`), and `streams` threads are ready to stream. Every payload is
  * generated, and every thread list the adapter and the remote host publish is counted (`threadVisits.ts`).
  */
-export async function ownerScalePipeline(root: string, scale: OwnerScale, streams: number, track: OwnerScaleTrack = 'owl'): Promise<OwnerScalePipeline> {
+export async function ownerScalePipeline(root: string, scale: OwnerScale, streams: number, track: OwnerScaleTrack = 'owl',
+  options: OwnerScalePipelineOptions = {}): Promise<OwnerScalePipeline> {
   const owl = track === 'owl'
   // As `heldProvidersOf` answers on each track: Owl holds nothing, stable holds every provider of an Owl feature.
   const held: HeldProviders = owl ? new Set() : new Set(['muse', 'opencode'])
@@ -141,12 +222,19 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   for (let index = state.threads.length; index < counts.threads; index++) state.threads.push(thread(`idle-${index}`, index % 10 === 0 ? records(`idle-${index}`, 40) : undefined))
   for (const project of state.projects) await mkdir(project.path, { recursive: true })
   const adapter = new SendingAdapter(state)
+  const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()))
+  shadows.tap(adapter, 'adapter')
+  const claude = new SottoThreadHost('claude', adapter, registry)
+  shadows.tap(claude, 'identity wrapper')
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
-    hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
+    hosts: { claude, codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
       // A held provider's adapter is never built: its stand-in starts nothing, as the runtime's does.
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
       opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor') } })
+  shadows.tap(native, 'provider switch')
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl)
+  shadows.tapAccept(workspace)
+  shadows.tap(workspace, 'workspace publication')
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   // Usage is an Owl feature: it reads every activity publication of the workspace, beside the coordinator (runtime.ts).
@@ -309,6 +397,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
     resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0 },
+    threadChanges: () => shadows.report(),
     stop,
   }
 }
