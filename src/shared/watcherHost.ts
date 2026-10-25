@@ -56,6 +56,12 @@ export interface WatcherRemoteHosts {
   roomThreads?(hostId: string, threadIds: readonly string[]): WatcherRoomThreadInput[] | undefined
   projection?(hostId: string, master: WatcherIdentity): WatcherHostProjection | undefined
   subscribe(listener: (hostId?: string, force?: boolean) => void): () => void
+  /**
+   * Tells `listener` when the user's answer to a card on a connected host's thread goes from this computer, so Watcher's
+   * news of the card closing says the user answered it. Never the answer's words. The listener's undo is called when the
+   * answer did not go.
+   */
+  answering?(listener: (hostId: string, threadId: string, requestId: string) => () => void): () => void
   /** A connected host's machine facts and running threads, or undefined when it does not report them (#1031). */
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
   /**

@@ -37,6 +37,11 @@ function contextFacts(context: RoomContext | null, provider: string | null) {
 }
 
 /** One group of Watcher's state: its label, how many, and its items, or "None". */
+/** What one item waits on the user for, in the panel's words. */
+function waitingWords(item: RoomKept['waitingOnUser'][number]): string {
+  const what = item.waitsFor === 'question' ? 'Question' : item.waitsFor === 'permission' ? 'Permission request' : 'Prototype to review'
+  return item.delegatedThreadId === undefined ? what : `${what} in a thread it delegated to`
+}
 function StateGroup({ label, items }: { readonly label: string; readonly items: readonly ReactNode[] }): ReactNode {
   return <section className="watcher-context__group">
     <h4>{items.length > 0 ? `${label}, ${items.length}` : label}</h4>
@@ -105,7 +110,14 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
     <React.Fragment key={`${thread.target.hostId}/${thread.target.threadId}`}>
       <span className="watcher-context__title">{thread.title}</span><span className="watcher-context__aside">{thread.waitsOn}</span>
     </React.Fragment>)
+  // What waits on the user, as Sotto works it out live: never Watcher's own notes (October 24, 2026, Zach's pick A).
+  const waiting: readonly ReactNode[] = (kept?.waitingOnUser ?? []).map((item, index) =>
+    <React.Fragment key={`${item.target.hostId}/${item.target.threadId}/${item.requestCardId ?? item.waitsFor}/${index}`}>
+      <span className="watcher-context__title">{item.title}</span><span className="watcher-context__aside">{waitingWords(item)}</span>
+    </React.Fragment>)
   const groups: RoomKept['kept'] = kept?.kept ?? { decisions: [], rules: [], issues: [], updatedAt: null }
+  // Watcher's open lines: a closed line is done, and stays only for Watcher to read until Sotto clears it.
+  const openLines = (lines: RoomKept['kept']['decisions']): readonly ReactNode[] => lines.flatMap(line => line.closedAt === undefined ? [line.text] : [])
 
   // Escape answers on the tile as well as in the panel: Shift+Tab back to the tile leaves the panel open.
   return <div className="watcher-context" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close() } }}>
@@ -139,13 +151,14 @@ export function WatcherContextTile({ room }: { readonly room: WatcherRoom }): Re
       </div>
       {error ? <p className="watcher-context__error" role="alert">{error}</p> : null}
       <div className="watcher-context__state">
-        <h3>Watcher’s state, kept through compaction</h3>
+        <h3>Watcher’s state</h3>
         <div className="watcher-context__groups">
           <StateGroup label="Watching" items={watching} />
+          <StateGroup label="Waiting on you" items={waiting} />
           {state?.state?.unread ? <p className="watcher-context__said" role="status">Sotto could not read the decisions, rules and issues Watcher kept. Nothing kept was lost. Sotto reads them again when Watcher next asks for them.</p> : <>
-            <StateGroup label="Waiting on you" items={groups.decisions} />
-            <StateGroup label="Your rules" items={groups.rules} />
-            <StateGroup label="Issues filed" items={groups.issues} />
+            <StateGroup label="Decisions it noted" items={openLines(groups.decisions)} />
+            <StateGroup label="Your rules" items={openLines(groups.rules)} />
+            <StateGroup label="Issues filed" items={openLines(groups.issues)} />
           </>}
         </div>
       </div>

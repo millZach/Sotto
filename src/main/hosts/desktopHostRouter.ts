@@ -163,6 +163,8 @@ export class DesktopHostRouter {
   /** Saved host identities keep an offline computer visible when it has no live thread connection. */
   private usageSavedHostIds: readonly string[] = []
   private readonly watcherListeners = new Set<(hostId?: string, force?: boolean) => void>()
+  /** Watcher, told when the user's answer to a host's card goes from here, so its news says the user answered it. */
+  private readonly answerListeners = new Set<(hostId: string, threadId: string, requestId: string) => () => void>()
   watcherHosts(): WatcherRemoteHosts {
     const allowed = () => { if (this.options.watcherEnabled !== true) throw new Error(WATCHER_DISABLED) }
     const connection = (id: string) => {
@@ -222,6 +224,7 @@ export class DesktopHostRouter {
         })
       },
       subscribe: listener => { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) },
+      answering: listener => { this.answerListeners.add(listener); return () => this.answerListeners.delete(listener) },
       settle: async (id, threadId) => {
         const result = await connection(id).service.command({ type: 'settle-thread', threadId }, desktopWindowClient())
         if (result.error) throw new Error('Watcher could not settle this thread.')
@@ -1147,6 +1150,8 @@ export class DesktopHostRouter {
     let repeatedUnsupportedCompose = false
     // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
     let inPlace: string | undefined
+    // Watcher hears that the user answered a host's card, never what they answered; an answer that did not go is undone.
+    const unmark = connection.kind === 'remote' && command.type === 'answer' ? [...this.answerListeners].map(listener => listener(connection.hostId, command.threadId, command.requestId)) : []
     try {
       let decisionId: string | undefined
       let answerTarget: HostAnswerTarget | undefined
@@ -1181,6 +1186,7 @@ export class DesktopHostRouter {
           ? { answer: { hostId: connection.hostId, decisionId, target: answerTarget } } : {}) }
       }
     } catch (error) {
+      for (const undo of unmark) undo()
       if (windowRead(command) && droppedConnection(error)) return this.shell()
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
@@ -1192,6 +1198,7 @@ export class DesktopHostRouter {
     } finally {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
+    if (refused) for (const undo of unmark) undo()
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
     const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
