@@ -53,25 +53,39 @@ public struct StagedImage: Decodable, Equatable, Sendable {
     }
 }
 
-/// Whether the reply box of a thread can take photos, and if not, why.
+/// Whether a reply box can take photos, and if not, why: a thread's, or Watcher's.
 public enum PhotoSupport: Equatable, Sendable {
-    case available, offline, needsUpdate, modelCannot, modelUnknown
+    case available, offline, needsUpdate, modelCannot, modelUnknown, noWatcher
     /// `features` are the ones the computer listed when it connected; a computer without
     /// `attachment-staging` is a Sotto from before photos could be sent to it.
     public init(online: Bool, thread: ThreadSummary?, host: HostSnapshot?, features: [String]) {
         guard online else { self = .offline; return }
         guard features.contains("attachment-staging") else { self = .needsUpdate; return }
-        guard let model = CatalogEntry.model(host?.models ?? [], id: thread?.modelId) else { self = .modelUnknown; return }
+        self.init(model: thread?.modelId, host: host)
+    }
+    /// Watcher's box, by the model Watcher runs on. A computer that stages photos but doesn't list
+    /// `watcher-phone-photos` is a Sotto from before photos could be sent to Watcher.
+    public init(online: Bool, watcher: WatcherPhoneState.Current?, host: HostSnapshot?, features: [String]) {
+        guard online else { self = .offline; return }
+        guard features.contains("attachment-staging"), features.contains(WatcherWire.photosFeature) else { self = .needsUpdate; return }
+        guard let watcher else { self = .noWatcher; return }
+        self.init(model: watcher.modelId, host: host)
+    }
+    private init(model id: String?, host: HostSnapshot?) {
+        guard let model = CatalogEntry.model(host?.models ?? [], id: id) else { self = .modelUnknown; return }
         self = model.supportsImages == true ? .available : .modelCannot
     }
-    /// Why the photo control does nothing, in words, or nil when it works.
-    public func reason(computer: String) -> String? {
+    /// Why the photo control does nothing, in words, or nil when it works. `watcher`: the words are about Watcher's box.
+    public func reason(computer: String, watcher: Bool = false) -> String? {
         switch self {
         case .available: return nil
         case .offline: return "Reconnect to \(computer) to attach photos."
-        case .needsUpdate: return "Update Sotto on \(computer) to send photos from this iPhone."
-        case .modelCannot: return "This thread’s model can’t take photos. Change the model on \(computer) to attach them."
-        case .modelUnknown: return "\(computer) hasn’t said whether this thread’s model takes photos. Reconnect and try again."
+        case .needsUpdate: return watcher ? "Update Sotto on \(computer) to send photos to Watcher from this iPhone."
+            : "Update Sotto on \(computer) to send photos from this iPhone."
+        case .modelCannot: return watcher ? "Watcher’s model can’t take photos. Change Watcher’s model on \(computer) to attach them."
+            : "This thread’s model can’t take photos. Change the model on \(computer) to attach them."
+        case .modelUnknown: return "\(computer) hasn’t said whether \(watcher ? "Watcher’s" : "this thread’s") model takes photos. Reconnect and try again."
+        case .noWatcher: return "Watcher isn’t running on \(computer). Start it there to attach photos."
         }
     }
 }

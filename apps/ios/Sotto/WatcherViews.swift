@@ -401,6 +401,8 @@ private struct WatcherConversationPane: View {
     /// The reader is on a card (`WatcherFollow.held`), as the scroll anchor needs it. Changed only where that is decided,
     /// never as the page scrolls, and read only on iOS 18 and later.
     @State private var holdingCard = false
+    /// A message's photos, open full screen.
+    @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
     /// A waiting card's place on the page, to scroll it whole above the box.
@@ -409,6 +411,9 @@ private struct WatcherConversationPane: View {
     var body: some View {
         let page = model.watcherPage(hostID)
         let sending = model.watcherSending[hostID]
+        let sendingPhotos = model.watcherSendingPhotos[hostID] ?? []
+        // The photos of Watcher's messages are its thread's, read through Watcher's page.
+        let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
         let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
         // While a card waits on the user, the bar stays where it is (#1288).
@@ -426,14 +431,14 @@ private struct WatcherConversationPane: View {
                             ForEach(items) { item in
                                 Group {
                                     switch item {
-                                    case .message(let message): WatcherMessage(message: message).equatable()
+                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
                                     case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
                                     case .ownChange(let change): WatcherOwnChangeLine(change: change)
                                     }
                                 }
                                 .id(item.id)
                             }
-                            if let sending { SendingBubble(text: sending).id(Self.sendingID) }
+                            if let sending { SendingBubble(text: sending, photos: sendingPhotos).id(Self.sendingID) }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(reader { follow.newest = $0.maxY })
@@ -519,6 +524,7 @@ private struct WatcherConversationPane: View {
             // the layout while it is away. It stays until no card waits (#1288).
             .onChange(of: pinned, initial: true) { _, waits in if waits { slideBar(false) } }
         }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -694,18 +700,35 @@ private struct WatcherConversationPane: View {
 /// owl, its name and the time. Drawn again only when the message changes, not each time Watcher's page moves.
 private struct WatcherMessage: View, Equatable {
     let message: Message
+    /// Watcher's thread, whose photos these are; nil while the page names no Watcher.
+    let ref: ThreadRef?
+    let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
-    static func == (a: Self, b: Self) -> Bool { a.message == b.message }
+    /// Opening a photo is the same action for every message.
+    static func == (a: Self, b: Self) -> Bool { a.message == b.message && a.ref == b.ref }
     var body: some View {
         if message.role == "user" {
-            MarkdownText(text: message.text).equatable()
-                .foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.dense(Space.s3, density))
-                .background(Palette.bubble, in: bubble)
-                .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.leading, 48)
+            // The user's photos stand on their own above their words, as in a thread and in Messages.
+            let photos: [Attachment] = ref == nil ? [] : (message.attachments ?? []).filter(\.hasPreview)
+            VStack(alignment: .trailing, spacing: Space.s1) {
+                if let ref { SentPhotoButtons(ref: ref, messageID: message.id, photos: photos, open: open) }
+                if !message.text.isEmpty || photos.count != (message.attachments ?? []).count {
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        if !message.text.isEmpty { MarkdownText(text: message.text).equatable() }
+                        // A photo Sotto keeps no copy of is named, and so is a file, as in a thread (ADR-0131).
+                        ForEach((message.attachments ?? []).filter { photo in !photos.contains { $0.id == photo.id } }) { attachment in
+                            Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo").font(.sotto(.small))
+                        }
+                    }
+                    .foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4)
+                    .padding(.vertical, Space.dense(Space.s3, density))
+                    .background(Palette.bubble, in: bubble)
+                    .overlay(bubble.stroke(Palette.accent.opacity(0.12), lineWidth: 1))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 48)
         } else {
             VStack(alignment: .leading, spacing: Space.s2) {
                 HStack(spacing: Space.s2) {
@@ -730,11 +753,36 @@ private struct WatcherMessage: View, Equatable {
 /// Words on their way to Watcher.
 private struct SendingBubble: View {
     let text: String
+    let photos: [DraftPhoto]
+    private static let shown = 4
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
-            Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
-                .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            if !photos.isEmpty {
+                // At most four, then how many more, so eight fit the narrowest iPhone.
+                HStack(spacing: 6) {
+                    ForEach(photos.prefix(Self.shown)) { photo in
+                        Group {
+                            if let thumbnail = photo.prepared?.thumbnail { Image(decorative: thumbnail, scale: 1).resizable().scaledToFill() }
+                            else { Rectangle().fill(Palette.surface) }
+                        }
+                        .frame(width: 60, height: 60)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .opacity(0.6)
+                    }
+                    if photos.count > Self.shown {
+                        Text("+\(photos.count - Self.shown)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.muted)
+                            .frame(width: 60, height: 60)
+                            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                }
+                .accessibilityElement()
+                .accessibilityLabel(photos.count == 1 ? "1 photo" : "\(photos.count) photos")
+            }
+            if !text.isEmpty {
+                Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                    .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
             HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Sending to Watcher…") }
                 .font(.sotto(.caption)).foregroundStyle(Palette.muted)
                 .accessibilityElement(children: .combine)
@@ -759,7 +807,7 @@ private struct WatcherFollowupLine: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(WatcherWords.followup(item.status)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                Text(item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
+                Text(item.text.isEmpty ? "Photos" : item.text).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.tail)
                 if let note = WatcherWords.followupNote(item.status, page: page, computer: model.name(hostID)) {
                     Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                 }
@@ -774,7 +822,7 @@ private struct WatcherFollowupLine: View {
                     .contentShape(Rectangle())
                     .buttonStyle(PressStyle())
                     .disabled(!model.canRemoveWatcherFollowup(item, on: hostID))
-                    .accessibilityLabel("Remove “\(item.text)” from the queue")
+                    .accessibilityLabel(item.text.isEmpty ? "Remove these photos from the queue" : "Remove “\(item.text)” from the queue")
                     .accessibilityIdentifier("watcher-followup-remove")
             }
         }
@@ -801,7 +849,7 @@ private struct SetAsideCard: View {
             }
             Button("Put it back in the box") { model.restoreWatcherWords(words, on: hostID) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
-                .disabled(!(model.drafts[model.watcherDraftKey(hostID)] ?? "").isEmpty)
+                .disabled(!model.canRestoreWatcherWords(on: hostID))
                 .accessibilityHint("Once the box is empty")
         }
         .card()
@@ -1264,7 +1312,11 @@ private struct WatcherDock: View {
     }
 
     private var field: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let box = PhotoBox.watcher(hostID: hostID)
+        let photos = model.photos(box)
+        // Locked from the press of a message with photos until Watcher answers, so nothing typed meanwhile joins it.
+        let preparing = model.preparingSends.contains(box.id)
+        let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
@@ -1275,26 +1327,39 @@ private struct WatcherDock: View {
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = queueing ? "Queue for after this turn" : steering ? "Steer into Watcher’s turn" : "Send to Watcher"
         return HStack(alignment: .bottom, spacing: Space.s2) {
-            TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
-                .font(.sotto(.body))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(1...6)
-                .focused($focused)
-                .padding(.vertical, 11)
-                .padding(.leading, Space.s3)
-                .accessibilityLabel("Ask Watcher")
-                .accessibilityIdentifier("watcher-reply")
+            AttachPhotosButton(box: box)
+            // Photos wait inside the box, above the words, as in a thread's reply box.
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if !photos.isEmpty { DraftPhotoStrip(box: box).padding(.top, Space.s1) }
+                if let notice = model.photoNotices[box.id] {
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+                TextField("Ask Watcher", text: draft, prompt: Text(working ? "Ask Watcher while it works" : "Ask Watcher").foregroundStyle(Palette.placeholder), axis: .vertical)
+                    .font(.sotto(.body))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1...6)
+                    .focused($focused)
+                    .padding(.vertical, 11)
+                    .accessibilityLabel("Ask Watcher")
+                    .accessibilityIdentifier("watcher-reply")
+                    .disabled(preparing)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
             Button { willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                Image(systemName: symbol).font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .foregroundStyle(canSend ? Palette.onAccent : Palette.muted)
-                    .background(canSend ? Palette.accent : Palette.fillSoft, in: Circle())
-                    .contentShape(Circle())
+                Group {
+                    if preparing { ProgressView().tint(Palette.onAccent) }
+                    else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
+                }
+                .frame(width: 44, height: 44)
+                .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+                .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+                .contentShape(Circle())
             }
             .buttonStyle(PressStyle())
             .disabled(!canSend)
-            .accessibilityLabel(label)
+            .accessibilityLabel(preparing ? "Sending to Watcher" : label)
             .accessibilityIdentifier("watcher-send")
         }
         .padding(6)
