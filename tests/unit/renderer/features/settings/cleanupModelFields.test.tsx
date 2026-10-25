@@ -148,6 +148,22 @@ describe('CleanupModelFields', () => {
     expect(screen.queryByRole('button', { name: 'Measure again' })).toBeNull()
   })
 
+  it('does not call the choice gone when the servers could not be read, and reads them again on every open', async () => {
+    const user = userEvent.setup()
+    const { ownServers, ownCleanup } = ownBridges()
+    ownServers.list.mockRejectedValueOnce(new Error('unreadable'))
+    render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: SPARKS_CHOICE }} onSave={vi.fn()}
+      onListModels={vi.fn(async () => ({ ok: true as const, complete: true, models: MODELS }))} ownServers={ownServers} ownCleanup={ownCleanup} />)
+    expect(await screen.findByText(/Not measured yet/u)).toBeVisible()
+    expect(screen.queryByText(/no longer in Your own model servers/u)).toBeNull()
+    const box = screen.getByRole('combobox', { name: 'Cleanup model' })
+    await user.click(box)
+    expect(await screen.findByRole('option', { name: /DeepSeek V4.1 Flash/u })).toBeVisible()
+    await user.keyboard('{Escape}')
+    await user.click(box)
+    await waitFor(() => expect(ownServers.list).toHaveBeenCalledTimes(3))
+  })
+
   it('ignores a saved own model while the feature is off', () => {
     render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'default', llmOwnModel: SPARKS_CHOICE }} onSave={vi.fn()} onListModels={vi.fn()} />)
     expect(screen.getByRole('combobox', { name: 'Cleanup model' })).toHaveValue('Default')

@@ -97,6 +97,24 @@ describe('requestOwnCleanup', () => {
       .resolves.toEqual({ text: null, reason: 'unfinished' })
   })
 
+  it('takes off thinking whose opening tag the chat template sent itself', () => {
+    expect(withoutThinking(`The user wants a cleanup.</think>\n\n${SAMPLE_CLEANED}`)).toBe(SAMPLE_CLEANED)
+    expect(withoutThinking(SAMPLE_CLEANED)).toBe(SAMPLE_CLEANED)
+  })
+
+  it('tells an answer that is not JSON from no answer at all', async () => {
+    await expect(requestOwnCleanup({ fetchFn: async () => new Response('<html>proxy</html>', { status: 200 }), target: TARGET, thinking: 'plain', text: MEASURE_SAMPLE, dictionary: '', signal: AbortSignal.timeout(1_000) }))
+      .resolves.toEqual({ text: null, reason: 'not-json' })
+    await expect(measureOwnCleanup({ fetchFn: async () => new Response('<html>proxy</html>', { status: 200 }), target: TARGET }))
+      .resolves.toEqual({ status: 'measured', tuning: { status: 'none-passed' } })
+  })
+
+  it('reads no more of an answer than the server check would', async () => {
+    const huge = new Response('x', { status: 200, headers: { 'content-length': String(64 * 1024 * 1024) } })
+    await expect(requestOwnCleanup({ fetchFn: async () => huge, target: TARGET, thinking: 'plain', text: MEASURE_SAMPLE, dictionary: '', signal: AbortSignal.timeout(1_000) }))
+      .resolves.toEqual({ text: null, reason: 'oversized' })
+  })
+
   it('counts an answer cut off at the limit as unfinished', async () => {
     await expect(requestOwnCleanup({ fetchFn: async () => reply(SAMPLE_CLEANED, 'length'), target: TARGET, thinking: 'least', text: MEASURE_SAMPLE, dictionary: '', signal: AbortSignal.timeout(1_000) }))
       .resolves.toEqual({ text: null, reason: 'unfinished' })

@@ -157,10 +157,12 @@ export class TranscriptPolishService {
     )
     const deadline =
       this.now() + Math.max(settings.llmTimeoutMs, CLEANUP_MODELS.minTimeoutMs) + lengthBudget
-    const own = this.dependencies.ownServer !== undefined && settings.llmOwnModel !== null
+    const ownServer = this.dependencies.ownServer
+    const ownChoice = settings.llmOwnModel
+    const own = ownServer !== undefined && ownChoice !== null
     const first = this.primaryModel(settings)
     const primary = own
-      ? await this.ownAttempt(settings, text, deadline - reserve)
+      ? await this.ownAttempt(settings, () => ownServer(ownChoice), text, deadline - reserve)
       : await this.attempt(settings, first, text, deadline - reserve)
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
@@ -202,21 +204,24 @@ export class TranscriptPolishService {
    * measured time before Mercury 2 takes over. A server not yet measured is given the same share of the deadline as any
    * chosen model; one where no setting passed, one removed or one added with a key goes straight to Mercury 2.
    */
-  private async ownAttempt(settings: AppSettings, text: string, primaryDeadline: number): Promise<AttemptOutcome> {
+  private async ownAttempt(
+    settings: AppSettings,
+    resolve: () => Promise<OwnCleanupResolution>,
+    text: string,
+    primaryDeadline: number,
+  ): Promise<AttemptOutcome> {
     // The diagnostic names the kind of attempt only: a server's name, address and models are never written down (ADR-0124).
     const model = OWN_SERVER_DIAGNOSTIC
-    const choice = settings.llmOwnModel
     let resolved: OwnCleanupResolution
     try {
-      if (choice === null || this.dependencies.ownServer === undefined) return { text: null, reason: 'own-gone', model }
-      resolved = await this.dependencies.ownServer(choice)
+      resolved = await resolve()
     } catch {
       return { text: null, reason: 'own-unread', model }
     }
     if (resolved.status !== 'ready') return { text: null, reason: `own-${resolved.status}`, model }
     if (resolved.tuning?.status === 'none-passed') return { text: null, reason: 'own-none-passed', model }
     const tuned = ownServerBudgetMs(resolved.tuning, countWords(text))
-    const budget = Math.min(primaryDeadline, tuned === undefined ? primaryDeadline : this.now() + tuned) - this.now()
+    const budget = Math.min(primaryDeadline - this.now(), tuned ?? Infinity)
     if (budget <= 0) return { text: null, reason: 'skipped', model }
     const outcome = await requestOwnCleanup({
       fetchFn: this.fetchFn,

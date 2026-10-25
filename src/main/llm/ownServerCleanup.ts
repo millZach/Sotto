@@ -5,6 +5,7 @@ import {
   type OwnCleanupChoice, type OwnCleanupMeasured, type OwnCleanupMeasureResult, type OwnCleanupThinking, type OwnCleanupTuning,
 } from '../../shared/ownServerCleanup'
 import { countWords } from '../../shared/textRepair'
+import { readBoundedText } from '../ownModelServers/check'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { assessOutput, readCleanupChoice } from './cleanupOutput'
 import { buildPolishSystemPrompt, buildPolishUserPrompt } from './prompt'
@@ -66,11 +67,15 @@ function thinkingFields(thinking: OwnCleanupThinking): Record<string, unknown> {
   }
 }
 
-/** The reply's text with a leading `<think>` block taken off, as servers without a reasoning parser send it; null when it never closes. */
+/**
+ * The reply's text with its thinking taken off, as servers without a reasoning parser send it: everything up to the first
+ * `</think>`, since a chat template that opens the block itself (DeepSeek R1's, some Qwen ones) sends only the closing tag.
+ * Null when a `<think>` block never closes.
+ */
 export function withoutThinking(content: string): string | null {
-  if (!content.startsWith('<think>')) return content
   const end = content.indexOf('</think>')
-  return end === -1 ? null : content.slice(end + '</think>'.length).trim()
+  if (end !== -1) return content.slice(end + '</think>'.length).trim()
+  return content.startsWith('<think>') ? null : content
 }
 
 export interface OwnCleanupTarget {
@@ -81,7 +86,7 @@ export interface OwnCleanupTarget {
 
 export interface OwnCleanupOutcome {
   readonly text: string | null
-  /** 'ok', 'timeout', 'network', 'http-<status>', 'unfinished', 'empty', 'rejected', 'rejected-shrink'. */
+  /** 'ok', 'timeout', 'network', 'http-<status>', 'oversized', 'not-json', 'unfinished', 'empty', 'rejected', 'rejected-shrink'. */
   readonly reason: string
 }
 
@@ -118,7 +123,13 @@ export async function requestOwnCleanup(options: {
       await response.body?.cancel().catch(() => undefined)
       return { text: null, reason: `http-${response.status}` }
     }
-    const choice = readCleanupChoice(await response.json())
+    // Read with the same bound as the server check (ADR-0124), so a server sending far more is cut off, not held in main.
+    const body = await readBoundedText(response)
+    if (body === null) return { text: null, reason: 'oversized' }
+    let payload: unknown
+    // A server that answered with something other than JSON did answer; it is not a network failure.
+    try { payload = JSON.parse(body) } catch { return { text: null, reason: 'not-json' } }
+    const choice = readCleanupChoice(payload)
     if (choice?.finished === false) return { text: null, reason: 'unfinished' }
     const raw = choice?.content ?? null
     if (raw === null) return { text: null, reason: 'empty' }

@@ -7,11 +7,6 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: sv\n"
 
-#. placeholder {0}: chosen.name
-#: src/renderer/src/components/CleanupModelFields.tsx
-msgid "{0} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another."
-msgstr ""
-
 #. placeholder {0}: model.own.model
 #. placeholder {1}: model.serverName
 #: src/renderer/src/components/CleanupModelFields.tsx

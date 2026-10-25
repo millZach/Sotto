@@ -101,25 +101,27 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
     return openRouter[0] === DEFAULT ? [DEFAULT, ...own, ...openRouter.slice(1)] : [...own, ...openRouter]
   }, [models, servers, ownOn, query])
 
-  // The saved servers and measures are read from main, on this computer, never from a server.
+  // The saved servers and measures are read from main, on this computer, never from a server. A list that could not be
+  // read stays unread rather than empty, so a saved choice is not called gone; opening the list reads it again.
   useEffect(() => {
     if (!ownServers || !ownCleanup) return
     let live = true
-    void ownServers.list().then(list => { if (live) setServers(list) }, () => { if (live) setServers([]) })
+    void ownServers.list().then(list => { if (live) setServers(list) }, () => undefined)
     void ownCleanup.measured().then(list => { if (live) setMeasured(list) }, () => undefined)
     return () => { live = false }
-  }, [ownOn, ownServers, ownCleanup])
+  }, [ownServers, ownCleanup])
 
   const measure = async (choice: OwnCleanupChoice): Promise<void> => {
     if (!ownCleanup) return
     const current = measureRequest.current += 1
     setMeasuring({ state: 'measuring' })
     const result = await ownCleanup.measure(choice).catch((): OwnCleanupMeasureResult => ({ status: 'failed' }))
-    if (current !== measureRequest.current) return
+    // Main saved what it found even when another pick came since, so the list keeps it; only the status is the newest's.
     if (result.status === 'measured') {
       setMeasured(list => [...list.filter(item => item.server !== choice.server || item.model !== choice.model), { ...choice, tuning: result.tuning }])
-      setMeasuring({ state: 'idle' })
-    } else setMeasuring({ state: 'refused', reason: result.status })
+    }
+    if (current !== measureRequest.current) return
+    setMeasuring(result.status === 'measured' ? { state: 'idle' } : { state: 'refused', reason: result.status })
   }
 
   const load = async (): Promise<void> => {
@@ -138,7 +140,8 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
     setQuery(typed)
     setActive(0)
     if (open) return
-    if (ownServers && ownCleanup && servers === null) void ownServers.list().then(setServers, () => setServers([]))
+    // Settings keeps its pages mounted, so the servers are read again on every open: one added in Providers since shows.
+    if (ownOn) void ownServers.list().then(setServers, () => undefined)
     // Open upward when the window has more room above the box than below it, as at the minimum size.
     const box = input.current?.getBoundingClientRect()
     setAbove(box !== undefined && innerHeight - box.bottom < 240 && box.top > innerHeight - box.bottom)
@@ -228,8 +231,8 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
       <CircleAlert size={16} aria-hidden="true" />{failure ?? 'OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.'}
     </p>}
     {ownChoice === null ? null : <OwnModelStatus
-      words={ownGone ? { error: true, text: t`That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another.` }
-        : ownKeyed ? { error: true, text: t`${chosen.name} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another.` }
+      words={ownGone ? { error: true, text: goneWords() }
+        : ownKeyed ? { error: true, text: keyedWords() }
         : measuring.state === 'measuring' ? { error: false, text: t`Measuring ${chosen.name}. Sotto cleans up a built-in sample on the server, never your dictation.` }
         : measuring.state === 'refused' ? { error: true, text: measureRefusal(measuring.reason) }
         : tuning === undefined ? { error: false, text: t`Not measured yet. Measure again finds the fastest setting for this server.` }
@@ -256,13 +259,19 @@ export function CleanupModelFields({ settings, onSave, onListModels, ownServers,
       case 'least': return t`Fastest: least thinking, ${time} s.`
     }
   }
+  function goneWords(): string {
+    return t`That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another.`
+  }
+  function keyedWords(): string {
+    const model = chosen.name
+    return t`${model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another.`
+  }
   function measureRefusal(reason: Exclude<OwnCleanupMeasureResult['status'], 'measured'>): string {
     const server = ownServer?.name ?? ''
-    const model = chosen.name
     switch (reason) {
       case 'unreachable': return t`Nothing answered at ${server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again.`
-      case 'keyed': return t`${model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another.`
-      case 'not-found': return t`That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another.`
+      case 'keyed': return keyedWords()
+      case 'not-found': return goneWords()
       case 'failed': return t`Sotto could not finish measuring. Nothing was changed. Measure again.`
     }
   }
