@@ -3100,21 +3100,22 @@ export class WatcherService implements WatcherControlHooks {
         // Admission named the model of every start it let through, by role or by name.
         const modelId = create.modelId
         if (!modelId) throw new Error('model-missing')
-        const landed = await this.moveForStart(operation, create)
-        // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
         // Only with Work across machines on: a move named while it is off, by any path, starts nothing.
         if (create.fromMove && this.options.crossMachine !== true) refuse('INVALID_INPUT', 'This call has invalid or oversized arguments. Use the offered tool schema.')
-        const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove } : await this.resolveCopies(create)
-        const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
-        const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
-        const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
-          origin.guard()
-          this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
-            this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
-          this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
-        } }
+        const landed = await this.moveForStart(operation, create)
         let created: Awaited<ReturnType<AgentControl['commandFromWatcher']>>
         try {
+          // Read inside the try: a permission that no longer fits once the branch has landed lets go of its ref too.
+          // A start from a moved branch gets a new worktree made from it, on this machine as on a paired host (#1033).
+          const choices = create.fromMove ? { workingCopy: 'independent' as const, startFromMove: create.fromMove } : await this.resolveCopies(create)
+          const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
+          const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
+          const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
+            origin.guard()
+            this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
+              this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
+            this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
+          } }
           created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
             projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId,
             ...(create.reasoningEffort ? { reasoningEffort: create.reasoningEffort } : {}),

@@ -1813,6 +1813,25 @@ for (const where of ['paired', 'here'] as const) {
   })
 }
 
+it('lets go of a moved branch when its permission is refused after the branch arrived, on This computer (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch arrives, then the start's permission no longer fits, as when the user narrows New threads start with.
+  const move = DesktopBranchMoves.prototype.forStart
+  const watcher = f.watcher as unknown as { permission: (...args: unknown[]) => unknown }
+  const forStart = vi.spyOn(DesktopBranchMoves.prototype, 'forStart').mockImplementation(async function (this: DesktopBranchMoves, input) {
+    const moved = await move.call(this, input)
+    expect(moved.type).toBe('moved')
+    vi.spyOn(watcher, 'permission').mockImplementationOnce(() => { throw new Error('synthetic-permission-narrowed') })
+    return moved
+  })
+  try {
+    const started = await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused' })
+    expect(forStart).toHaveBeenCalledTimes(1)
+    await expect.poll(async () => (await git('git', ['-C', f.local.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { forStart.mockRestore(); vi.restoreAllMocks() }
+})
+
 it('warns when starts the paired machine answered before its list holds them leave more than ten working there (#1032)', async () => {
   const f = await acrossMachines(), hostId = f.pairing.hostId
   // The paired machine's list as this computer holds it: nine threads working, and none of the starts below yet.
