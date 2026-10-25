@@ -6,10 +6,11 @@
 /** Fence languages that hold shell input. */
 export const RUNNABLE_LANGUAGES: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'shell', 'console', 'terminal', 'powershell', 'pwsh', 'ps1', 'cmd'])
 
-// Every control character but newline and tab: an ESC sequence or a carriage return could make the shell run
-// something other than what the reply shows. Bidirectional controls can reorder what the eye reads.
+// Every control character but newline: an ESC sequence or a carriage return could make the shell run something
+// other than what the reply shows, and a tab typed into an interactive shell asks it to complete the word instead.
+// Bidirectional controls can reorder what the eye reads.
 // eslint-disable-next-line no-control-regex -- Matching control characters is the point.
-const FORBIDDEN = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]|\p{Bidi_Control}/u
+const FORBIDDEN = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]|\p{Bidi_Control}/u
 
 /** Whether the text holds a character that could make what runs differ from what is shown. */
 export function hasForbiddenControl(text: string): boolean { return FORBIDDEN.test(text) }

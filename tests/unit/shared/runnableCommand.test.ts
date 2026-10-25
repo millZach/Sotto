@@ -24,6 +24,7 @@ describe('runnable inline code (ADR-0136)', () => {
     ['foo(bar) baz', false],
     ['git status\nrm -rf /', false],
     ['git status\r', false],
+    ['git\tstatus', false],
     // A fenced block's own <code> reaches the inline handler too, always ending in a newline.
     ['git status\n', false],
     ['echo \u001b[31mred', false],
@@ -49,7 +50,7 @@ describe('runnable fenced blocks (ADR-0136)', () => {
 
   it('sends a multi-line block verbatim, dropping only blank lines around it', () => {
     expect(runnableBlock('\nsantactl status\nosqueryi --version\n\n', 'zsh')).toBe('santactl status\nosqueryi --version')
-    expect(runnableBlock('if true; then\n\techo yes\nfi', 'bash')).toBe('if true; then\n\techo yes\nfi')
+    expect(runnableBlock('if true; then\n  echo yes\nfi', 'bash')).toBe('if true; then\n  echo yes\nfi')
   })
 
   it('strips console prompts and drops output lines when a line has a prompt', () => {
@@ -60,11 +61,14 @@ describe('runnable fenced blocks (ADR-0136)', () => {
     expect(runnableBlock('$ npm test', 'bash')).toBe('$ npm test')
   })
 
-  it('refuses control characters other than newline and tab, and empty blocks', () => {
+  it('refuses control characters other than newline, tabs and empty blocks', () => {
+    // A tab typed into an interactive shell completes a word rather than spacing one.
+    expect(runnableBlock('if true; then\n\techo yes\nfi', 'bash')).toBeNull()
     expect(runnableBlock('echo hi\r\nrm -rf ~', 'bash')).toBeNull()
     expect(runnableBlock('printf \u001b]0;x\u0007', 'sh')).toBeNull()
     expect(runnableBlock('  \n ', 'bash')).toBeNull()
-    expect(hasForbiddenControl('a\tb\nc')).toBe(false)
+    expect(hasForbiddenControl('a b\nc')).toBe(false)
+    expect(hasForbiddenControl('a\tb')).toBe(true)
   })
 
   it('types each line with Enter, and one more at the end', () => {
