@@ -10,7 +10,8 @@ import { LinkedText } from './LinkedText'
 import { MessageContent } from '../MessageContent'
 import { linkPlace, webLinks } from './messageLinks'
 import { useWebLinkRouter } from '../../tools/webLinks'
-import { shownCount, shownWords, type LaterWords } from '../interfaceWords'
+import { shownWords, type LaterWords } from '../interfaceWords'
+import { shownCount } from '../../state/interfaceNumbers'
 import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,

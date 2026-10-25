@@ -15,7 +15,7 @@ import {
   requestAnswerOwnerKey, requestAnswerStore, structuredAnswer, useRequestEntry, type QuestionSelection,
 } from './requests/requestAnswers'
 import { threadRequestBlocked, threadRequestCheck, threadRequestOwner, threadRequestSubmit } from './requests/threadRequests'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 type Command = AgentConnection['command']
 type Failures = ReturnType<typeof unseenFailures>

@@ -8,7 +8,7 @@ import type { HostsBridge } from '../../../shared/hosts'
 import { HOST_UPDATE_STEPS, type HostUpdateAction, type HostUpdatePhase, type HostUpdateState, type HostUpdateStep } from '../../../shared/hostUpdates'
 import { Button } from '../components/Button'
 import { useTransientFlag, writeClipboard } from './richActions'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './hostUpdates.css'
 
 /** How long a finished update's note stays before it goes by itself, unless the pointer or focus is on it. */

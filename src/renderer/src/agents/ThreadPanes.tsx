@@ -12,7 +12,7 @@ import {
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
   type AxisPlacement, type DividerPlacement, type SplitLayout,
 } from './splitLayout'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './splitWorkspace.css'
 
 export type DropTarget = { readonly kind: 'side'; readonly side: 'start' | 'end' } | { readonly kind: 'pane'; readonly index: number } | { readonly kind: 'add' } | { readonly kind: 'open' }

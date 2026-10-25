@@ -13,7 +13,7 @@ import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
 import { EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, BOTTOM_ROWS, sandPath, TOP_ROWS } from './hourglass'
 import { usePixelLoop } from './pixelLoop'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
 
 /** The body every pose shares, so both read as the same creature. Ears, tail and belly never animate. */

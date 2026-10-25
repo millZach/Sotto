@@ -15,7 +15,8 @@ import { isWakeUpFollowup } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
-import { shownCount, wordsOf } from './interfaceWords'
+import { wordsOf } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 type Command = AgentConnection['command']
 

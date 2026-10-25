@@ -3,7 +3,8 @@ import { ph, plural, t } from '@lingui/core/macro'
 import type { GitActionProgress, GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
-import { leftToRight, shownCount } from './interfaceWords'
+import { leftToRight } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * T3 Code's Git action, decided from the status alone (ADR-0027): what the button says, what a press

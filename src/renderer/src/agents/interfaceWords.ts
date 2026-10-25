@@ -1,6 +1,6 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 
-import { INTERFACE_LANGUAGES, INTERFACE_PSEUDO_LANGUAGES, SOURCE_INTERFACE_LANGUAGE } from '../../../shared/interfaceLanguages'
+import { INTERFACE_LANGUAGES, INTERFACE_PSEUDO_LANGUAGES } from '../../../shared/interfaceLanguages'
 
 /**
  * A table of words kept at module level, each read in the interface language when it is read (ADR-0123). Its messages
@@ -25,14 +25,6 @@ const RIGHT_TO_LEFT: ReadonlySet<string> = new Set([...INTERFACE_LANGUAGES, ...I
  */
 export function leftToRight(text: string): string {
   return RIGHT_TO_LEFT.has(i18n.locale) ? `⁦${text}⁩` : text
-}
-
-/**
- * A count for a message's placeholder, in the interface language's own digits and grouping (ADR-0123). English keeps
- * the plain digits Sotto has always written, "1200 files", so its words are unchanged; a plural's `#` would group them.
- */
-export function shownCount(value: number): string {
-  return i18n.locale === SOURCE_INTERFACE_LANGUAGE ? String(value) : i18n.number(value)
 }
 
 /**

@@ -4,7 +4,7 @@ import { msg, plural, t } from '@lingui/core/macro'
 import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:

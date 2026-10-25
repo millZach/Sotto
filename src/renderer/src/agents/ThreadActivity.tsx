@@ -15,7 +15,7 @@ import {
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import './activity.css'

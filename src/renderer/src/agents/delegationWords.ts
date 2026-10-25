@@ -3,7 +3,8 @@ import { msg, plural, t } from '@lingui/core/macro'
 import { lastUserMessageIdOf, type AgentRequest, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_WORK_TITLES, type DelegatedView, type DelegationOutcome, type DelegationView, type DelegationWork, type RefusedView } from '../../../shared/delegation'
 import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActivity'
-import { leftToRight, shownCount, wordsOf } from './interfaceWords'
+import { leftToRight, wordsOf } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import { clockLabel } from './threadFacts'
 
 /**

@@ -6,7 +6,7 @@ import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphon
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from '../../tools/cloudIphoneStore'
-import { shownCount } from '../interfaceWords'
+import { shownCount } from '../../state/interfaceNumbers'
 import './requests.css'
 
 /** "41 MB", "1.2 GB": the build's size in the units a person reads, not bytes. */

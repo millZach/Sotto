@@ -14,7 +14,8 @@ import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
-import { leftToRight, shownCount, shownWords, type LaterWords } from './interfaceWords'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './gitActionButton.css'
 
 type Command = AgentConnection['command']

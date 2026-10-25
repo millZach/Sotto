@@ -50,7 +50,8 @@ import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, scroll
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
-import { shownCount, shownWords, type LaterWords } from './interfaceWords'
+import { shownWords, type LaterWords } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import { compactionOf, isStep, liveTurnId, newsWorkLabel, placeActivities, splitTurns, stepsLabel, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']

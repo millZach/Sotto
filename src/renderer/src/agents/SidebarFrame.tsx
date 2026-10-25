@@ -20,7 +20,7 @@ import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own

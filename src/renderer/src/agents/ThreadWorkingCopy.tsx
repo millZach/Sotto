@@ -10,7 +10,8 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
-import { leftToRight, shownCount, shownWords, type LaterWords } from './interfaceWords'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
+import { shownCount, shownLocalCount } from '../state/interfaceNumbers'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
@@ -229,7 +230,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
         <ul className="working-copy__ignored">{listedPaths.map(path => {
           const repository = preview.repositories.find(item => item.path === path)
           const item = preview.items.find(item => item.path === path)
-          const kilobytes = item ? i18n.number(Math.max(1, Math.ceil(item.bytes / 1024))) : ''
+          const kilobytes = item ? shownLocalCount(Math.max(1, Math.ceil(item.bytes / 1024))) : ''
           const files = item?.fileCount ?? 0
           const size = !item ? t({ message: 'Ignored', comment: 'A file Git ignores.' })
             : path.endsWith('/') ? plural(files, { one: `${kilobytes} KB, ${{ fileCount: shownCount(files) }} file, ignored`, other: `${kilobytes} KB, ${{ fileCount: shownCount(files) }} files, ignored` })

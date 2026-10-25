@@ -1,6 +1,6 @@
 import React, { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './visualStepper.css'
 
 export interface VisualStepperProps {

@@ -12,7 +12,7 @@ import { assertDiagramSafe, DiagramRefusal } from './diagramSafety'
 import type { LaterWords } from '../interfaceWords'
 import { diagramStepCss } from './diagramSteps'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
-import { shownCount } from '../interfaceWords'
+import { shownCount } from '../../state/interfaceNumbers'
 
 export type DiagramRenderResult =
   | {

@@ -10,7 +10,7 @@ import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useCopyImage } from './richActions'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './diagrams/diagrams.css'
 
 export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'preview'>> {

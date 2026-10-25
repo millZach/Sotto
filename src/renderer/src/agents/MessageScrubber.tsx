@@ -5,7 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
 import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark, type ScrubberMessage } from './messageScrubberMarks'
-import { shownCount } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './messageScrubber.css'
 
 /** How close the pointer must come to a tick to reach it. */

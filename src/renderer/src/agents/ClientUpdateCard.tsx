@@ -6,7 +6,8 @@ import { PROVIDER_LABELS, type ProviderClientUpdate, type ProviderId } from '../
 import { Button } from '../components/Button'
 import { useOptionalAgents } from './AgentContext'
 import { ProviderMark } from './ProviderMark'
-import { shownCount, shownWords, type LaterWords } from './interfaceWords'
+import { shownWords, type LaterWords } from './interfaceWords'
+import { shownCount } from '../state/interfaceNumbers'
 import './clientUpdates.css'
 
 function sinceLabel(iso: string): string {
