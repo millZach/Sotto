@@ -31874,385 +31874,385 @@
         }
       }
     },
-    "Babysit pull request #%lld" : {
+    "Babysit pull request #%@" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "متابعة طلب السحب #%lld"
+            "value" : "متابعة طلب السحب #%@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "পুল রিকোয়েস্ট #%lld বেবিসিট করুন"
+            "value" : "পুল রিকোয়েস্ট #%@ বেবিসিট করুন"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hlídat pull request #%lld"
+            "value" : "Hlídat pull request #%@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Babysit pull request #%lld"
+            "value" : "Babysit pull request #%@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull Request #%lld betreuen"
+            "value" : "Pull Request #%@ betreuen"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Επίβλεψη του pull request #%lld"
+            "value" : "Επίβλεψη του pull request #%@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Babysit pull request #%lld"
+            "value" : "Babysit pull request #%@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidar el pull request #%lld"
+            "value" : "Cuidar el pull request #%@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidar el pull request #%lld"
+            "value" : "Cuidar el pull request #%@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidar el pull request #%lld"
+            "value" : "Cuidar el pull request #%@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vahdi pull requestia #%lld"
+            "value" : "Vahdi pull requestia #%@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veiller sur la pull request #%lld"
+            "value" : "Veiller sur la pull request #%@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट #%lld की देखरेख करें"
+            "value" : "पुल रिक्वेस्ट #%@ की देखरेख करें"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld pull request felügyelete"
+            "value" : "#%@ pull request felügyelete"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sorveglia pull request #%lld"
+            "value" : "Sorveglia pull request #%@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プルリクエスト #%lld を監視"
+            "value" : "プルリクエスト #%@ を監視"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट #%lld ची काळजी घ्या"
+            "value" : "पुल रिक्वेस्ट #%@ ची काळजी घ्या"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pass på pull request #%lld"
+            "value" : "Pass på pull request #%@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Babysit pull request #%lld"
+            "value" : "Babysit pull request #%@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pilnuj pull requesta #%lld"
+            "value" : "Pilnuj pull requesta #%@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acompanhar pull request #%lld"
+            "value" : "Acompanhar pull request #%@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acompanhar o pull request #%lld"
+            "value" : "Acompanhar o pull request #%@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supraveghează pull request-ul #%lld"
+            "value" : "Supraveghează pull request-ul #%@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Barnvakta pull request #%lld"
+            "value" : "Barnvakta pull request #%@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "புல் ரிக்வெஸ்ட் #%lld ஐக் கண்காணி"
+            "value" : "புல் ரிக்வெஸ்ட் #%@ ஐக் கண்காணி"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "పుల్ రిక్వెస్ట్ #%lldకు కాపలా కాయండి"
+            "value" : "పుల్ రిక్వెస్ట్ #%@కు కాపలా కాయండి"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld numaralı pull request’i gözet"
+            "value" : "#%@ numaralı pull request’i gözet"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Наглядати за pull request #%lld"
+            "value" : "Наглядати за pull request #%@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "پُل ریکویسٹ #%lld بےبی سِٹ کریں"
+            "value" : "پُل ریکویسٹ #%@ بےبی سِٹ کریں"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "看管拉取请求 #%lld"
+            "value" : "看管拉取请求 #%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "看管拉取要求 #%lld"
+            "value" : "看管拉取要求 #%@"
           }
         }
       }
     },
-    "Babysitting #%lld" : {
-      "comment" : "%lld is the pull request’s number.",
+    "Babysitting #%@" : {
+      "comment" : "%@ is the pull request’s number.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جارٍ متابعة #%lld"
+            "value" : "جارٍ متابعة #%@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld বেবিসিট করা হচ্ছে"
+            "value" : "#%@ বেবিসিট করা হচ্ছে"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hlídání #%lld"
+            "value" : "Hlídání #%@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Babysitter #%lld"
+            "value" : "Babysitter #%@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld wird betreut"
+            "value" : "#%@ wird betreut"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Επίβλεψη του #%lld"
+            "value" : "Επίβλεψη του #%@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Babysitting #%lld"
+            "value" : "Babysitting #%@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidando #%lld"
+            "value" : "Cuidando #%@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidando #%lld"
+            "value" : "Cuidando #%@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cuidando #%lld"
+            "value" : "Cuidando #%@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vahditaan #%lld"
+            "value" : "Vahditaan #%@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veille sur #%lld"
+            "value" : "Veille sur #%@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld की देखरेख जारी"
+            "value" : "#%@ की देखरेख जारी"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld felügyelve"
+            "value" : "#%@ felügyelve"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sorveglianza di #%lld"
+            "value" : "Sorveglianza di #%@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld を監視中"
+            "value" : "#%@ を監視中"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ची काळजी घेतली जात आहे"
+            "value" : "#%@ ची काळजी घेतली जात आहे"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Passer på #%lld"
+            "value" : "Passer på #%@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld wordt gebabysit"
+            "value" : "#%@ wordt gebabysit"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pilnowanie #%lld"
+            "value" : "Pilnowanie #%@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acompanhando #%lld"
+            "value" : "Acompanhando #%@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A acompanhar #%lld"
+            "value" : "A acompanhar #%@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se supraveghează #%lld"
+            "value" : "Se supraveghează #%@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Barnvaktar #%lld"
+            "value" : "Barnvaktar #%@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ஐக் கண்காணிக்கிறது"
+            "value" : "#%@ ஐக் கண்காணிக்கிறது"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lldకు కాపలా కాస్తోంది"
+            "value" : "#%@కు కాపలా కాస్తోంది"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld gözetiliyor"
+            "value" : "#%@ gözetiliyor"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нагляд за #%lld"
+            "value" : "Нагляд за #%@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld کی بےبی سِٹنگ ہو رہی ہے"
+            "value" : "#%@ کی بےبی سِٹنگ ہو رہی ہے"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在看管 #%lld"
+            "value" : "正在看管 #%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在看管 #%lld"
+            "value" : "正在看管 #%@"
           }
         }
       }
@@ -50244,194 +50244,194 @@
         }
       }
     },
-    "Failed (%lld)" : {
-      "comment" : "A step's outcome; %lld is the exit code it failed with",
+    "Failed (%@)" : {
+      "comment" : "A step's outcome; %@ is the exit code it failed with, as the command gave it",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فشل (%lld)"
+            "value" : "فشل (%@)"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ব্যর্থ (%lld)"
+            "value" : "ব্যর্থ (%@)"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selhalo (%lld)"
+            "value" : "Selhalo (%@)"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mislykkedes (%lld)"
+            "value" : "Mislykkedes (%@)"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fehlgeschlagen (%lld)"
+            "value" : "Fehlgeschlagen (%@)"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Απέτυχε (%lld)"
+            "value" : "Απέτυχε (%@)"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Failed (%lld)"
+            "value" : "Failed (%@)"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ha fallado (%lld)"
+            "value" : "Ha fallado (%@)"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falló (%lld)"
+            "value" : "Falló (%@)"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falló (%lld)"
+            "value" : "Falló (%@)"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Epäonnistui (%lld)"
+            "value" : "Epäonnistui (%@)"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Échec (%lld)"
+            "value" : "Échec (%@)"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "विफल (%lld)"
+            "value" : "विफल (%@)"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sikertelen (%lld)"
+            "value" : "Sikertelen (%@)"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Non riuscito (%lld)"
+            "value" : "Non riuscito (%@)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "失敗（%lld）"
+            "value" : "失敗（%@）"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "अयशस्वी (%lld)"
+            "value" : "अयशस्वी (%@)"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mislyktes (%lld)"
+            "value" : "Mislyktes (%@)"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mislukt (%lld)"
+            "value" : "Mislukt (%@)"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Błąd (%lld)"
+            "value" : "Błąd (%@)"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falhou (%lld)"
+            "value" : "Falhou (%@)"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Falhou (%lld)"
+            "value" : "Falhou (%@)"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eșuat (%lld)"
+            "value" : "Eșuat (%@)"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Misslyckades (%lld)"
+            "value" : "Misslyckades (%@)"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "தோல்வியடைந்தது (%lld)"
+            "value" : "தோல்வியடைந்தது (%@)"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "విఫలమైంది (%lld)"
+            "value" : "విఫలమైంది (%@)"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Başarısız (%lld)"
+            "value" : "Başarısız (%@)"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Помилка (%lld)"
+            "value" : "Помилка (%@)"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ناکام (%lld)"
+            "value" : "ناکام (%@)"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "失败（%lld）"
+            "value" : "失败（%@）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "失敗（%lld）"
+            "value" : "失敗（%@）"
           }
         }
       }
@@ -71376,193 +71376,193 @@
         }
       }
     },
-    "Open #%lld on GitHub" : {
+    "Open #%@ on GitHub" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فتح #%lld على GitHub"
+            "value" : "فتح #%@ على GitHub"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub-এ #%lld খুলুন"
+            "value" : "GitHub-এ #%@ খুলুন"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otevřít #%lld na GitHubu"
+            "value" : "Otevřít #%@ na GitHubu"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åbn #%lld på GitHub"
+            "value" : "Åbn #%@ på GitHub"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld auf GitHub öffnen"
+            "value" : "#%@ auf GitHub öffnen"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Άνοιγμα του #%lld στο GitHub"
+            "value" : "Άνοιγμα του #%@ στο GitHub"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open #%lld on GitHub"
+            "value" : "Open #%@ on GitHub"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir #%lld en GitHub"
+            "value" : "Abrir #%@ en GitHub"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir #%lld en GitHub"
+            "value" : "Abrir #%@ en GitHub"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir #%lld en GitHub"
+            "value" : "Abrir #%@ en GitHub"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avaa #%lld GitHubissa"
+            "value" : "Avaa #%@ GitHubissa"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvrir #%lld sur GitHub"
+            "value" : "Ouvrir #%@ sur GitHub"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub पर #%lld खोलें"
+            "value" : "GitHub पर #%@ खोलें"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld megnyitása a GitHubon"
+            "value" : "#%@ megnyitása a GitHubon"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apri #%lld su GitHub"
+            "value" : "Apri #%@ su GitHub"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub で #%lld を開く"
+            "value" : "GitHub で #%@ を開く"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub वर #%lld उघडा"
+            "value" : "GitHub वर #%@ उघडा"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åpne #%lld på GitHub"
+            "value" : "Åpne #%@ på GitHub"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Open #%lld op GitHub"
+            "value" : "Open #%@ op GitHub"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otwórz #%lld w GitHubie"
+            "value" : "Otwórz #%@ w GitHubie"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir #%lld no GitHub"
+            "value" : "Abrir #%@ no GitHub"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir #%lld no GitHub"
+            "value" : "Abrir #%@ no GitHub"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deschide #%lld pe GitHub"
+            "value" : "Deschide #%@ pe GitHub"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öppna #%lld på GitHub"
+            "value" : "Öppna #%@ på GitHub"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub இல் #%lld ஐத் திற"
+            "value" : "GitHub இல் #%@ ஐத் திற"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHubలో #%lldను తెరవండి"
+            "value" : "GitHubలో #%@ను తెరవండి"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub’da aç: #%lld"
+            "value" : "GitHub’da aç: #%@"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Відкрити #%lld на GitHub"
+            "value" : "Відкрити #%@ на GitHub"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub پر #%lld کھولیں"
+            "value" : "GitHub پر #%@ کھولیں"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 GitHub 上打开 #%lld"
+            "value" : "在 GitHub 上打开 #%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 GitHub 上打開 #%lld"
+            "value" : "在 GitHub 上打開 #%@"
           }
         }
       }
@@ -80940,193 +80940,193 @@
         }
       }
     },
-    "Reading #%lld from GitHub…" : {
+    "Reading #%@ from GitHub…" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جارٍ قراءة #%lld من GitHub…"
+            "value" : "جارٍ قراءة #%@ من GitHub…"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub থেকে #%lld পড়া হচ্ছে…"
+            "value" : "GitHub থেকে #%@ পড়া হচ্ছে…"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Načítání #%lld z GitHubu…"
+            "value" : "Načítání #%@ z GitHubu…"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Læser #%lld fra GitHub…"
+            "value" : "Læser #%@ fra GitHub…"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld wird von GitHub gelesen …"
+            "value" : "#%@ wird von GitHub gelesen …"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ανάγνωση του #%lld από το GitHub…"
+            "value" : "Ανάγνωση του #%@ από το GitHub…"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reading #%lld from GitHub…"
+            "value" : "Reading #%@ from GitHub…"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leyendo #%lld desde GitHub…"
+            "value" : "Leyendo #%@ desde GitHub…"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leyendo #%lld desde GitHub…"
+            "value" : "Leyendo #%@ desde GitHub…"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leyendo #%lld desde GitHub…"
+            "value" : "Leyendo #%@ desde GitHub…"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Luetaan #%lld GitHubista…"
+            "value" : "Luetaan #%@ GitHubista…"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lecture de #%lld depuis GitHub…"
+            "value" : "Lecture de #%@ depuis GitHub…"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub से #%lld पढ़ी जा रही है…"
+            "value" : "GitHub से #%@ पढ़ी जा रही है…"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld beolvasása a GitHubról…"
+            "value" : "#%@ beolvasása a GitHubról…"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lettura di #%lld da GitHub…"
+            "value" : "Lettura di #%@ da GitHub…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub から #%lld を読み込み中…"
+            "value" : "GitHub から #%@ を読み込み中…"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub वरून #%lld वाचत आहे…"
+            "value" : "GitHub वरून #%@ वाचत आहे…"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Leser #%lld fra GitHub…"
+            "value" : "Leser #%@ fra GitHub…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld lezen van GitHub…"
+            "value" : "#%@ lezen van GitHub…"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Odczytywanie #%lld z GitHuba…"
+            "value" : "Odczytywanie #%@ z GitHuba…"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lendo #%lld do GitHub…"
+            "value" : "Lendo #%@ do GitHub…"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A ler #%lld do GitHub…"
+            "value" : "A ler #%@ do GitHub…"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se citește #%lld de pe GitHub…"
+            "value" : "Se citește #%@ de pe GitHub…"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Läser #%lld från GitHub…"
+            "value" : "Läser #%@ från GitHub…"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub இலிருந்து #%lld ஐப் படிக்கிறது…"
+            "value" : "GitHub இலிருந்து #%@ ஐப் படிக்கிறது…"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub నుండి #%lldను చదువుతోంది…"
+            "value" : "GitHub నుండి #%@ను చదువుతోంది…"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub’dan #%lld okunuyor…"
+            "value" : "GitHub’dan #%@ okunuyor…"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Читання #%lld з GitHub…"
+            "value" : "Читання #%@ з GitHub…"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "GitHub سے #%lld پڑھی جا رہی ہے…"
+            "value" : "GitHub سے #%@ پڑھی جا رہی ہے…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在从 GitHub 读取 #%lld…"
+            "value" : "正在从 GitHub 读取 #%@…"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在從 GitHub 讀取 #%lld…"
+            "value" : "正在從 GitHub 讀取 #%@…"
           }
         }
       }
@@ -97248,386 +97248,386 @@
         }
       }
     },
-    "Show pull request %lld, %@" : {
-      "comment" : "%lld is the pull request's number, %@ its state",
+    "Show pull request %@, %@" : {
+      "comment" : "The first %@ is the pull request's number, the second its state",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إظهار طلب السحب %lld، %@"
+            "value" : "إظهار طلب السحب %@، %@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "পুল রিকোয়েস্ট %lld দেখান, %@"
+            "value" : "পুল রিকোয়েস্ট %@ দেখান, %@"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zobrazit pull request %lld, %@"
+            "value" : "Zobrazit pull request %@, %@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vis pull request %lld, %@"
+            "value" : "Vis pull request %@, %@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull Request %lld zeigen, %@"
+            "value" : "Pull Request %@ zeigen, %@"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Εμφάνιση pull request %lld, %@"
+            "value" : "Εμφάνιση pull request %@, %@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show pull request %lld, %@"
+            "value" : "Show pull request %@, %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@"
+            "value" : "Mostrar el pull request %@, %@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@"
+            "value" : "Mostrar el pull request %@, %@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@"
+            "value" : "Mostrar el pull request %@, %@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Näytä pull request %lld, %@"
+            "value" : "Näytä pull request %@, %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher la pull request %lld, %@"
+            "value" : "Afficher la pull request %@, %@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld दिखाएँ, %@"
+            "value" : "पुल रिक्वेस्ट %@ दिखाएँ, %@"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld pull request megjelenítése, %@"
+            "value" : "#%@ pull request megjelenítése, %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostra pull request %lld, %@"
+            "value" : "Mostra pull request %@, %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プルリクエスト %lld を表示、%@"
+            "value" : "プルリクエスト %@ を表示、%@"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld दाखवा, %@"
+            "value" : "पुल रिक्वेस्ट %@ दाखवा, %@"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vis pull request %lld, %@"
+            "value" : "Vis pull request %@, %@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toon pull request %1$lld, %2$@"
+            "value" : "Toon pull request %1$@, %2$@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pokaż pull request %lld, %@"
+            "value" : "Pokaż pull request %@, %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar pull request %lld, %@"
+            "value" : "Mostrar pull request %@, %@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar o pull request %lld, %@"
+            "value" : "Mostrar o pull request %@, %@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afișează pull request-ul %lld, %@"
+            "value" : "Afișează pull request-ul %@, %@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Visa pull request %lld, %@"
+            "value" : "Visa pull request %@, %@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "புல் ரிக்வெஸ்ட் %lld ஐக் காட்டு, %@"
+            "value" : "புல் ரிக்வெஸ்ட் %@ ஐக் காட்டு, %@"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "పుల్ రిక్వెస్ట్ %lldను చూపండి, %@"
+            "value" : "పుల్ రిక్వెస్ట్ %@ను చూపండి, %@"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld numaralı pull request’i göster, %@"
+            "value" : "%@ numaralı pull request’i göster, %@"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показати pull request %lld, %@"
+            "value" : "Показати pull request %@, %@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "پُل ریکویسٹ %lld دکھائیں، %@"
+            "value" : "پُل ریکویسٹ %@ دکھائیں، %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示拉取请求 %lld，%@"
+            "value" : "显示拉取请求 %@，%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示拉取要求 %lld，%@"
+            "value" : "顯示拉取要求 %@，%@"
           }
         }
       }
     },
-    "Show pull request %lld, %@. Checks: %@" : {
-      "comment" : "%lld is the pull request's number, the first %@ its state, the second its checks' roll-up",
+    "Show pull request %@, %@. Checks: %@" : {
+      "comment" : "The first %@ is the pull request's number, the second its state, the third its checks' roll-up",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إظهار طلب السحب %lld، %@. الفحوصات: %@"
+            "value" : "إظهار طلب السحب %@، %@. الفحوصات: %@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "পুল রিকোয়েস্ট %lld দেখান, %@। চেক: %@"
+            "value" : "পুল রিকোয়েস্ট %@ দেখান, %@। চেক: %@"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zobrazit pull request %lld, %@. Kontroly: %@"
+            "value" : "Zobrazit pull request %@, %@. Kontroly: %@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vis pull request %lld, %@. Tjek: %@"
+            "value" : "Vis pull request %@, %@. Tjek: %@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull Request %lld zeigen, %@. Checks: %@"
+            "value" : "Pull Request %@ zeigen, %@. Checks: %@"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Εμφάνιση pull request %lld, %@. Έλεγχοι: %@"
+            "value" : "Εμφάνιση pull request %@, %@. Έλεγχοι: %@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show pull request %lld, %@. Checks: %@"
+            "value" : "Show pull request %@, %@. Checks: %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@. Comprobaciones: %@"
+            "value" : "Mostrar el pull request %@, %@. Comprobaciones: %@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@. Comprobaciones: %@"
+            "value" : "Mostrar el pull request %@, %@. Comprobaciones: %@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar el pull request %lld, %@. Comprobaciones: %@"
+            "value" : "Mostrar el pull request %@, %@. Comprobaciones: %@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Näytä pull request %lld, %@. Tarkistukset: %@"
+            "value" : "Näytä pull request %@, %@. Tarkistukset: %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher la pull request %lld, %@. Vérifications : %@"
+            "value" : "Afficher la pull request %@, %@. Vérifications : %@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld दिखाएँ, %@। चेक: %@"
+            "value" : "पुल रिक्वेस्ट %@ दिखाएँ, %@। चेक: %@"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld pull request megjelenítése, %@. Ellenőrzések: %@"
+            "value" : "#%@ pull request megjelenítése, %@. Ellenőrzések: %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostra pull request %lld, %@. Controlli: %@"
+            "value" : "Mostra pull request %@, %@. Controlli: %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プルリクエスト %lld を表示、%@。チェック：%@"
+            "value" : "プルリクエスト %@ を表示、%@。チェック：%@"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld दाखवा, %@. चेक: %@"
+            "value" : "पुल रिक्वेस्ट %@ दाखवा, %@. चेक: %@"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vis pull request %lld, %@. Sjekker: %@"
+            "value" : "Vis pull request %@, %@. Sjekker: %@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toon pull request %1$lld, %2$@. Checks: %3$@"
+            "value" : "Toon pull request %1$@, %2$@. Checks: %3$@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pokaż pull request %lld, %@. Kontrole: %@"
+            "value" : "Pokaż pull request %@, %@. Kontrole: %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar pull request %lld, %@. Verificações: %@"
+            "value" : "Mostrar pull request %@, %@. Verificações: %@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar o pull request %lld, %@. Verificações: %@"
+            "value" : "Mostrar o pull request %@, %@. Verificações: %@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afișează pull request-ul %lld, %@. Verificări: %@"
+            "value" : "Afișează pull request-ul %@, %@. Verificări: %@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Visa pull request %lld, %@. Kontroller: %@"
+            "value" : "Visa pull request %@, %@. Kontroller: %@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "புல் ரிக்வெஸ்ட் %lld ஐக் காட்டு, %@. செக்குகள்: %@"
+            "value" : "புல் ரிக்வெஸ்ட் %@ ஐக் காட்டு, %@. செக்குகள்: %@"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "పుల్ రిక్వెస్ట్ %lldను చూపండి, %@. చెక్‌లు: %@"
+            "value" : "పుల్ రిక్వెస్ట్ %@ను చూపండి, %@. చెక్‌లు: %@"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld numaralı pull request’i göster, %@. Kontroller: %@"
+            "value" : "%@ numaralı pull request’i göster, %@. Kontroller: %@"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показати pull request %lld, %@. Перевірки: %@"
+            "value" : "Показати pull request %@, %@. Перевірки: %@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "پُل ریکویسٹ %lld دکھائیں، %@۔ چیکس: %@"
+            "value" : "پُل ریکویسٹ %@ دکھائیں، %@۔ چیکس: %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示拉取请求 %lld，%@。检查：%@"
+            "value" : "显示拉取请求 %@，%@。检查：%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "顯示拉取要求 %lld，%@。檢查：%@"
+            "value" : "顯示拉取要求 %@，%@。檢查：%@"
           }
         }
       }
@@ -105250,193 +105250,193 @@
         }
       }
     },
-    "Stop babysitting #%lld" : {
+    "Stop babysitting #%@" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إيقاف متابعة #%lld"
+            "value" : "إيقاف متابعة #%@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld বেবিসিটিং বন্ধ করুন"
+            "value" : "#%@ বেবিসিটিং বন্ধ করুন"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Přestat hlídat #%lld"
+            "value" : "Přestat hlídat #%@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop babysitting af #%lld"
+            "value" : "Stop babysitting af #%@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Betreuung von #%lld beenden"
+            "value" : "Betreuung von #%@ beenden"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Διακοπή επίβλεψης του #%lld"
+            "value" : "Διακοπή επίβλεψης του #%@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop babysitting #%lld"
+            "value" : "Stop babysitting #%@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dejar de cuidar #%lld"
+            "value" : "Dejar de cuidar #%@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dejar de cuidar #%lld"
+            "value" : "Dejar de cuidar #%@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dejar de cuidar #%lld"
+            "value" : "Dejar de cuidar #%@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lopeta pull requestin #%lld vahtiminen"
+            "value" : "Lopeta pull requestin #%@ vahtiminen"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Arrêter la veille de #%lld"
+            "value" : "Arrêter la veille de #%@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld की देखरेख बंद करें"
+            "value" : "#%@ की देखरेख बंद करें"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld felügyeletének leállítása"
+            "value" : "#%@ felügyeletének leállítása"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Interrompi sorveglianza di #%lld"
+            "value" : "Interrompi sorveglianza di #%@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld の監視を停止"
+            "value" : "#%@ の監視を停止"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ची काळजी घेणे थांबवा"
+            "value" : "#%@ ची काळजी घेणे थांबवा"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Slutt å passe på #%lld"
+            "value" : "Slutt å passe på #%@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop met babysitten van #%lld"
+            "value" : "Stop met babysitten van #%@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Przestań pilnować #%lld"
+            "value" : "Przestań pilnować #%@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Parar de acompanhar #%lld"
+            "value" : "Parar de acompanhar #%@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Parar o acompanhamento de #%lld"
+            "value" : "Parar o acompanhamento de #%@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oprește supravegherea #%lld"
+            "value" : "Oprește supravegherea #%@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluta barnvakta #%lld"
+            "value" : "Sluta barnvakta #%@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ஐக் கண்காணிப்பதை நிறுத்து"
+            "value" : "#%@ ஐக் கண்காணிப்பதை நிறுத்து"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lldకు కాపలా ఆపండి"
+            "value" : "#%@కు కాపలా ఆపండి"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld için gözetmeyi durdur"
+            "value" : "#%@ için gözetmeyi durdur"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Припинити нагляд за #%lld"
+            "value" : "Припинити нагляд за #%@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld کی بےبی سِٹنگ بند کریں"
+            "value" : "#%@ کی بےبی سِٹنگ بند کریں"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止看管 #%lld"
+            "value" : "停止看管 #%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "停止看管 #%lld"
+            "value" : "停止看管 #%@"
           }
         }
       }
@@ -108468,194 +108468,194 @@
         }
       }
     },
-    "Stopped babysitting #%lld" : {
-      "comment" : "%lld is the pull request’s number.",
+    "Stopped babysitting #%@" : {
+      "comment" : "%@ is the pull request’s number.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "توقفت متابعة #%lld"
+            "value" : "توقفت متابعة #%@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld বেবিসিটিং বন্ধ হয়েছে"
+            "value" : "#%@ বেবিসিটিং বন্ধ হয়েছে"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hlídání #%lld ukončeno"
+            "value" : "Hlídání #%@ ukončeno"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stoppede babysitting af #%lld"
+            "value" : "Stoppede babysitting af #%@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Betreuung von #%lld beendet"
+            "value" : "Betreuung von #%@ beendet"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Η επίβλεψη του #%lld σταμάτησε"
+            "value" : "Η επίβλεψη του #%@ σταμάτησε"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stopped babysitting #%lld"
+            "value" : "Stopped babysitting #%@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ha dejado de cuidar #%lld"
+            "value" : "Se ha dejado de cuidar #%@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se dejó de cuidar #%lld"
+            "value" : "Se dejó de cuidar #%@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se dejó de cuidar #%lld"
+            "value" : "Se dejó de cuidar #%@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull requestin #%lld vahtiminen lopetettiin"
+            "value" : "Pull requestin #%@ vahtiminen lopetettiin"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Veille sur #%lld arrêtée"
+            "value" : "Veille sur #%@ arrêtée"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld की देखरेख बंद की गई"
+            "value" : "#%@ की देखरेख बंद की गई"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld felügyelete leállítva"
+            "value" : "#%@ felügyelete leállítva"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sorveglianza di #%lld interrotta"
+            "value" : "Sorveglianza di #%@ interrotta"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld の監視を停止しました"
+            "value" : "#%@ の監視を停止しました"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ची काळजी घेणे थांबवले"
+            "value" : "#%@ ची काळजी घेणे थांबवले"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttet å passe på #%lld"
+            "value" : "Sluttet å passe på #%@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gestopt met babysitten van #%lld"
+            "value" : "Gestopt met babysitten van #%@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono pilnowanie #%lld"
+            "value" : "Zakończono pilnowanie #%@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Parou de acompanhar #%lld"
+            "value" : "Parou de acompanhar #%@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acompanhamento de #%lld parado"
+            "value" : "Acompanhamento de #%@ parado"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supravegherea #%lld s-a oprit"
+            "value" : "Supravegherea #%@ s-a oprit"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Slutade barnvakta #%lld"
+            "value" : "Slutade barnvakta #%@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ஐக் கண்காணிப்பது நிறுத்தப்பட்டது"
+            "value" : "#%@ ஐக் கண்காணிப்பது நிறுத்தப்பட்டது"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lldకు కాపలా ఆపింది"
+            "value" : "#%@కు కాపలా ఆపింది"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld için gözetim durduruldu"
+            "value" : "#%@ için gözetim durduruldu"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Нагляд за #%lld припинено"
+            "value" : "Нагляд за #%@ припинено"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld کی بےبی سِٹنگ بند ہو گئی"
+            "value" : "#%@ کی بےبی سِٹنگ بند ہو گئی"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已停止看管 #%lld"
+            "value" : "已停止看管 #%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已停止看管 #%lld"
+            "value" : "已停止看管 #%@"
           }
         }
       }

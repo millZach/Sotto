@@ -634,7 +634,7 @@ private struct GitChipRow: View {
                 Button(action: open) {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                        Text("#\(pullRequest.number) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
+                        Text("#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                         if let dot = sheet.dot { ChecksDot(tone: dot) }
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
@@ -649,7 +649,7 @@ private struct GitChipRow: View {
                 }
                 .buttonStyle(PressStyle())
                 .fixedSize()
-                .accessibilityLabel(sheet.rollup.map { String(localized: "Show pull request \(pullRequest.number), \(pullRequest.stateWord). Checks: \($0)", comment: "%lld is the pull request's number, the first %@ its state, the second its checks' roll-up") } ?? String(localized: "Show pull request \(pullRequest.number), \(pullRequest.stateWord)", comment: "%lld is the pull request's number, %@ its state"))
+                .accessibilityLabel(sheet.rollup.map { String(localized: "Show pull request \(String(pullRequest.number)), \(pullRequest.stateWord). Checks: \($0)", comment: "The first %@ is the pull request's number, the second its state, the third its checks' roll-up") } ?? String(localized: "Show pull request \(String(pullRequest.number)), \(pullRequest.stateWord)", comment: "The first %@ is the pull request's number, the second its state"))
                 .accessibilityIdentifier("pull-request-chip")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -685,7 +685,7 @@ private struct GitChipRow: View {
             if let pullRequest = chips.pullRequest {
                 GitChip {
                     Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                    Text("#\(pullRequest.number) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
+                    Text("#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                 }
                 .fixedSize()
             }
@@ -1526,7 +1526,7 @@ private struct StepLine: View {
     }
 
     private var metaWords: String? {
-        if record.status == "failed" { return record.exitCode.map { code in String(localized: "Failed (\(code))", comment: "A step's outcome; %lld is the exit code it failed with") } ?? String(localized: "Failed", comment: "A step's outcome") }
+        if record.status == "failed" { return record.exitCode.map { code in String(localized: "Failed (\(String(code)))", comment: "A step's outcome; %@ is the exit code it failed with, as the command gave it") } ?? String(localized: "Failed", comment: "A step's outcome") }
         if record.status == "interrupted" { return String(localized: "Stopped", comment: "A step's outcome: it was interrupted") }
         return Words.duration(record.durationMs)
     }

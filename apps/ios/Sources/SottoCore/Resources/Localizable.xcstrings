@@ -31586,386 +31586,386 @@
         }
       }
     },
-    "Ended after #%lld merged." : {
-      "comment" : "Why babysitting ended; %lld is the pull request's number",
+    "Ended after #%@ merged." : {
+      "comment" : "Why babysitting ended; %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت بعد دمج #%lld."
+            "value" : "انتهت بعد دمج #%@."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld মার্জ হওয়ার পর শেষ হয়েছে।"
+            "value" : "#%@ মার্জ হওয়ার পর শেষ হয়েছে।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno po sloučení #%lld."
+            "value" : "Ukončeno po sloučení #%@."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede, efter at #%lld blev flettet."
+            "value" : "Sluttede, efter at #%@ blev flettet."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beendet, nachdem #%lld gemergt wurde."
+            "value" : "Beendet, nachdem #%@ gemergt wurde."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε αφού συγχωνεύθηκε το #%lld."
+            "value" : "Τελείωσε αφού συγχωνεύθηκε το #%@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended after #%lld merged."
+            "value" : "Ended after #%@ merged."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se fusionara #%lld."
+            "value" : "Terminó después de que se fusionara #%@."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se fusionara #%lld."
+            "value" : "Terminó después de que se fusionara #%@."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se fusionara #%lld."
+            "value" : "Terminó después de que se fusionara #%@."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi, kun #%lld oli yhdistetty."
+            "value" : "Päättyi, kun #%@ oli yhdistetty."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée après la fusion de #%lld."
+            "value" : "Terminée après la fusion de #%@."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld के मर्ज होने के बाद खत्म हुई।"
+            "value" : "#%@ के मर्ज होने के बाद खत्म हुई।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért, miután a(z) #%lld egyesült."
+            "value" : "Véget ért, miután a(z) #%@ egyesült."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata dopo l’unione di #%lld."
+            "value" : "Terminata dopo l’unione di #%@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld がマージされたため終了しました。"
+            "value" : "#%@ がマージされたため終了しました。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld मर्ज झाल्यानंतर संपले."
+            "value" : "#%@ मर्ज झाल्यानंतर संपले."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet etter at #%lld ble merget."
+            "value" : "Avsluttet etter at #%@ ble merget."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd nadat #%lld is gemerged."
+            "value" : "Beëindigd nadat #%@ is gemerged."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono po scaleniu #%lld."
+            "value" : "Zakończono po scaleniu #%@."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou depois que o #%lld foi mesclado."
+            "value" : "Terminou depois que o #%@ foi mesclado."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou depois de #%lld ser integrado."
+            "value" : "Terminou depois de #%@ ser integrado."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat după ce #%lld s-a îmbinat."
+            "value" : "Încheiat după ce #%@ s-a îmbinat."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades efter att #%lld slogs ihop."
+            "value" : "Avslutades efter att #%@ slogs ihop."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld மெர்ஜ் ஆன பிறகு முடிந்தது."
+            "value" : "#%@ மெர்ஜ் ஆன பிறகு முடிந்தது."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld మెర్జ్ అయిన తర్వాత ముగిసింది."
+            "value" : "#%@ మెర్జ్ అయిన తర్వాత ముగిసింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi: #%lld birleşti."
+            "value" : "Sona erdi: #%@ birleşti."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено після злиття #%lld."
+            "value" : "Завершено після злиття #%@."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld کے مرج ہونے کے بعد ختم ہوئی۔"
+            "value" : "#%@ کے مرج ہونے کے بعد ختم ہوئی۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已结束，因为 #%lld 已合并。"
+            "value" : "已结束，因为 #%@ 已合并。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已結束，因為 #%lld 已合併。"
+            "value" : "已結束，因為 #%@ 已合併。"
           }
         }
       }
     },
-    "Ended after #%lld was closed." : {
-      "comment" : "Why babysitting ended; %lld is the pull request's number",
+    "Ended after #%@ was closed." : {
+      "comment" : "Why babysitting ended; %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت بعد إغلاق #%lld."
+            "value" : "انتهت بعد إغلاق #%@."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld বন্ধ হওয়ার পর শেষ হয়েছে।"
+            "value" : "#%@ বন্ধ হওয়ার পর শেষ হয়েছে।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno po zavření #%lld."
+            "value" : "Ukončeno po zavření #%@."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede, efter at #%lld blev lukket."
+            "value" : "Sluttede, efter at #%@ blev lukket."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beendet, nachdem #%lld geschlossen wurde."
+            "value" : "Beendet, nachdem #%@ geschlossen wurde."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε αφού έκλεισε το #%lld."
+            "value" : "Τελείωσε αφού έκλεισε το #%@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended after #%lld was closed."
+            "value" : "Ended after #%@ was closed."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se cerrara #%lld."
+            "value" : "Terminó después de que se cerrara #%@."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se cerrara #%lld."
+            "value" : "Terminó después de que se cerrara #%@."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó después de que se cerrara #%lld."
+            "value" : "Terminó después de que se cerrara #%@."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi, kun #%lld oli suljettu."
+            "value" : "Päättyi, kun #%@ oli suljettu."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée après la fermeture de #%lld."
+            "value" : "Terminée après la fermeture de #%@."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld के बंद होने के बाद खत्म हुई।"
+            "value" : "#%@ के बंद होने के बाद खत्म हुई।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért, miután a(z) #%lld lezárult."
+            "value" : "Véget ért, miután a(z) #%@ lezárult."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata dopo la chiusura di #%lld."
+            "value" : "Terminata dopo la chiusura di #%@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld がクローズされたため終了しました。"
+            "value" : "#%@ がクローズされたため終了しました。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld बंद झाल्यानंतर संपले."
+            "value" : "#%@ बंद झाल्यानंतर संपले."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet etter at #%lld ble lukket."
+            "value" : "Avsluttet etter at #%@ ble lukket."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd nadat #%lld is gesloten."
+            "value" : "Beëindigd nadat #%@ is gesloten."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono po zamknięciu #%lld."
+            "value" : "Zakończono po zamknięciu #%@."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou depois que o #%lld foi fechado."
+            "value" : "Terminou depois que o #%@ foi fechado."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou depois de #%lld ser fechado."
+            "value" : "Terminou depois de #%@ ser fechado."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat după ce #%lld a fost închis."
+            "value" : "Încheiat după ce #%@ a fost închis."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades efter att #%lld stängdes."
+            "value" : "Avslutades efter att #%@ stängdes."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld மூடப்பட்ட பிறகு முடிந்தது."
+            "value" : "#%@ மூடப்பட்ட பிறகு முடிந்தது."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld మూసివేయబడిన తర్వాత ముగిసింది."
+            "value" : "#%@ మూసివేయబడిన తర్వాత ముగిసింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi: #%lld kapatıldı."
+            "value" : "Sona erdi: #%@ kapatıldı."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено після закриття #%lld."
+            "value" : "Завершено після закриття #%@."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld کے بند ہونے کے بعد ختم ہوئی۔"
+            "value" : "#%@ کے بند ہونے کے بعد ختم ہوئی۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已结束，因为 #%lld 已关闭。"
+            "value" : "已结束，因为 #%@ 已关闭。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已結束，因為 #%lld 已關閉。"
+            "value" : "已結束，因為 #%@ 已關閉。"
           }
         }
       }
@@ -32161,386 +32161,386 @@
         }
       }
     },
-    "Ended at %@, after #%lld merged." : {
-      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number",
+    "Ended at %@, after #%@ merged." : {
+      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت في %@، بعد دمج #%lld."
+            "value" : "انتهت في %@، بعد دمج #%@."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld মার্জ হওয়ার পর %1$@-এ শেষ হয়েছে।"
+            "value" : "#%2$@ মার্জ হওয়ার পর %1$@-এ শেষ হয়েছে।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno v %@, po sloučení #%lld."
+            "value" : "Ukončeno v %@, po sloučení #%@."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede kl. %@, efter at #%lld blev flettet."
+            "value" : "Sluttede kl. %@, efter at #%@ blev flettet."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um %@ beendet, nachdem #%lld gemergt wurde."
+            "value" : "Um %@ beendet, nachdem #%@ gemergt wurde."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε στις %@, αφού συγχωνεύθηκε το #%lld."
+            "value" : "Τελείωσε στις %@, αφού συγχωνεύθηκε το #%@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended at %@, after #%lld merged."
+            "value" : "Ended at %@, after #%@ merged."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se fusionara #%lld."
+            "value" : "Terminó a las %@, después de que se fusionara #%@."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se fusionara #%lld."
+            "value" : "Terminó a las %@, después de que se fusionara #%@."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se fusionara #%lld."
+            "value" : "Terminó a las %@, después de que se fusionara #%@."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi kello %@, kun #%lld oli yhdistetty."
+            "value" : "Päättyi kello %@, kun #%@ oli yhdistetty."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée à %@, après la fusion de #%lld."
+            "value" : "Terminée à %@, après la fusion de #%@."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld के मर्ज होने के बाद, %1$@ पर खत्म हुई।"
+            "value" : "#%2$@ के मर्ज होने के बाद, %1$@ पर खत्म हुई।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért %@-kor, miután a(z) #%lld egyesült."
+            "value" : "Véget ért %@-kor, miután a(z) #%@ egyesült."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata alle %@, dopo l’unione di #%lld."
+            "value" : "Terminata alle %@, dopo l’unione di #%@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld がマージされたため、%1$@ に終了しました。"
+            "value" : "#%2$@ がマージされたため、%1$@ に終了しました。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld मर्ज झाल्यानंतर, %1$@ ला संपले."
+            "value" : "#%2$@ मर्ज झाल्यानंतर, %1$@ ला संपले."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet kl. %@, etter at #%lld ble merget."
+            "value" : "Avsluttet kl. %@, etter at #%@ ble merget."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd om %@, nadat #%lld is gemerged."
+            "value" : "Beëindigd om %@, nadat #%@ is gemerged."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono o %@, po scaleniu #%lld."
+            "value" : "Zakończono o %@, po scaleniu #%@."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@, depois que o #%lld foi mesclado."
+            "value" : "Terminou às %@, depois que o #%@ foi mesclado."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@, depois de #%lld ser integrado."
+            "value" : "Terminou às %@, depois de #%@ ser integrado."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat la %@, după ce #%lld s-a îmbinat."
+            "value" : "Încheiat la %@, după ce #%@ s-a îmbinat."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades kl. %@, efter att #%lld slogs ihop."
+            "value" : "Avslutades kl. %@, efter att #%@ slogs ihop."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld மெர்ஜ் ஆன பிறகு, %1$@ மணிக்கு முடிந்தது."
+            "value" : "#%2$@ மெர்ஜ் ஆன பிறகு, %1$@ மணிக்கு முடிந்தது."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld మెర్జ్ అయిన తర్వాత, %1$@కు ముగిసింది."
+            "value" : "#%2$@ మెర్జ్ అయిన తర్వాత, %1$@కు ముగిసింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi (%@): #%lld birleşti."
+            "value" : "Sona erdi (%@): #%@ birleşti."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено о %@, після злиття #%lld."
+            "value" : "Завершено о %@, після злиття #%@."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld کے مرج ہونے کے بعد %1$@ پر ختم ہوئی۔"
+            "value" : "#%2$@ کے مرج ہونے کے بعد %1$@ پر ختم ہوئی۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "于 %@ 结束，因为 #%lld 已合并。"
+            "value" : "于 %@ 结束，因为 #%@ 已合并。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "於 %@ 結束，因為 #%lld 已合併。"
+            "value" : "於 %@ 結束，因為 #%@ 已合併。"
           }
         }
       }
     },
-    "Ended at %@, after #%lld was closed." : {
-      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number",
+    "Ended at %@, after #%@ was closed." : {
+      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت في %@، بعد إغلاق #%lld."
+            "value" : "انتهت في %@، بعد إغلاق #%@."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld বন্ধ হওয়ার পর %1$@-এ শেষ হয়েছে।"
+            "value" : "#%2$@ বন্ধ হওয়ার পর %1$@-এ শেষ হয়েছে।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno v %@, po zavření #%lld."
+            "value" : "Ukončeno v %@, po zavření #%@."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede kl. %@, efter at #%lld blev lukket."
+            "value" : "Sluttede kl. %@, efter at #%@ blev lukket."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um %@ beendet, nachdem #%lld geschlossen wurde."
+            "value" : "Um %@ beendet, nachdem #%@ geschlossen wurde."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε στις %@, αφού έκλεισε το #%lld."
+            "value" : "Τελείωσε στις %@, αφού έκλεισε το #%@."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended at %@, after #%lld was closed."
+            "value" : "Ended at %@, after #%@ was closed."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se cerrara #%lld."
+            "value" : "Terminó a las %@, después de que se cerrara #%@."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se cerrara #%lld."
+            "value" : "Terminó a las %@, después de que se cerrara #%@."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@, después de que se cerrara #%lld."
+            "value" : "Terminó a las %@, después de que se cerrara #%@."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi kello %@, kun #%lld oli suljettu."
+            "value" : "Päättyi kello %@, kun #%@ oli suljettu."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée à %@, après la fermeture de #%lld."
+            "value" : "Terminée à %@, après la fermeture de #%@."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld के बंद होने के बाद, %1$@ पर खत्म हुई।"
+            "value" : "#%2$@ के बंद होने के बाद, %1$@ पर खत्म हुई।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért %@-kor, miután a(z) #%lld lezárult."
+            "value" : "Véget ért %@-kor, miután a(z) #%@ lezárult."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata alle %@, dopo la chiusura di #%lld."
+            "value" : "Terminata alle %@, dopo la chiusura di #%@."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld がクローズされたため、%1$@ に終了しました。"
+            "value" : "#%2$@ がクローズされたため、%1$@ に終了しました。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld बंद झाल्यानंतर, %1$@ ला संपले."
+            "value" : "#%2$@ बंद झाल्यानंतर, %1$@ ला संपले."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet kl. %@, etter at #%lld ble lukket."
+            "value" : "Avsluttet kl. %@, etter at #%@ ble lukket."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd om %@, nadat #%lld is gesloten."
+            "value" : "Beëindigd om %@, nadat #%@ is gesloten."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono o %@, po zamknięciu #%lld."
+            "value" : "Zakończono o %@, po zamknięciu #%@."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@, depois que o #%lld foi fechado."
+            "value" : "Terminou às %@, depois que o #%@ foi fechado."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@, depois de #%lld ser fechado."
+            "value" : "Terminou às %@, depois de #%@ ser fechado."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat la %@, după ce #%lld a fost închis."
+            "value" : "Încheiat la %@, după ce #%@ a fost închis."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades kl. %@, efter att #%lld stängdes."
+            "value" : "Avslutades kl. %@, efter att #%@ stängdes."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld மூடப்பட்ட பிறகு, %1$@ மணிக்கு முடிந்தது."
+            "value" : "#%2$@ மூடப்பட்ட பிறகு, %1$@ மணிக்கு முடிந்தது."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld మూసివేయబడిన తర్వాత, %1$@కు ముగిసింది."
+            "value" : "#%2$@ మూసివేయబడిన తర్వాత, %1$@కు ముగిసింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi (%@): #%lld kapatıldı."
+            "value" : "Sona erdi (%@): #%@ kapatıldı."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено о %@, після закриття #%lld."
+            "value" : "Завершено о %@, після закриття #%@."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%2$lld کے بند ہونے کے بعد %1$@ پر ختم ہوئی۔"
+            "value" : "#%2$@ کے بند ہونے کے بعد %1$@ پر ختم ہوئی۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "于 %@ 结束，因为 #%lld 已关闭。"
+            "value" : "于 %@ 结束，因为 #%@ 已关闭。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "於 %@ 結束，因為 #%lld 已關閉。"
+            "value" : "於 %@ 結束，因為 #%@ 已關閉。"
           }
         }
       }
@@ -33121,194 +33121,194 @@
         }
       }
     },
-    "Ended at %@. Sotto could not read #%lld from GitHub for about 16 minutes." : {
-      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number",
+    "Ended at %@. Sotto could not read #%@ from GitHub for about 16 minutes." : {
+      "comment" : "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت في %@. تعذّر على Sotto قراءة #%lld من GitHub لنحو 16 دقيقة."
+            "value" : "انتهت في %@. تعذّر على Sotto قراءة #%@ من GitHub لنحو 16 دقيقة."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@-এ শেষ হয়েছে। Sotto প্রায় ১৬ মিনিট ধরে GitHub থেকে #%lld পড়তে পারেনি।"
+            "value" : "%@-এ শেষ হয়েছে। Sotto প্রায় ১৬ মিনিট ধরে GitHub থেকে #%@ পড়তে পারেনি।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno v %@. Asi 16 minut se nepodařilo načíst #%lld z GitHubu."
+            "value" : "Ukončeno v %@. Asi 16 minut se nepodařilo načíst #%@ z GitHubu."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede kl. %@. Sotto kunne ikke læse #%lld fra GitHub i omkring 16 minutter."
+            "value" : "Sluttede kl. %@. Sotto kunne ikke læse #%@ fra GitHub i omkring 16 minutter."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um %@ beendet. Sotto konnte #%lld etwa 16 Minuten lang nicht von GitHub lesen."
+            "value" : "Um %@ beendet. Sotto konnte #%@ etwa 16 Minuten lang nicht von GitHub lesen."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε στις %@. Το Sotto δεν μπορούσε να διαβάσει το #%lld από το GitHub για περίπου 16 λεπτά."
+            "value" : "Τελείωσε στις %@. Το Sotto δεν μπορούσε να διαβάσει το #%@ από το GitHub για περίπου 16 λεπτά."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended at %@. Sotto could not read #%lld from GitHub for about 16 minutes."
+            "value" : "Ended at %@. Sotto could not read #%@ from GitHub for about 16 minutes."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó a las %@. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó a las %@. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó a las %@. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó a las %@. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi kello %@. Sotto ei voinut lukea pull requestia #%lld GitHubista noin 16 minuuttiin."
+            "value" : "Päättyi kello %@. Sotto ei voinut lukea pull requestia #%@ GitHubista noin 16 minuuttiin."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée à %@. Sotto n’a pas pu lire #%lld depuis GitHub pendant environ 16 minutes."
+            "value" : "Terminée à %@. Sotto n’a pas pu lire #%@ depuis GitHub pendant environ 16 minutes."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ पर खत्म हुई। Sotto लगभग 16 मिनट तक GitHub से #%lld नहीं पढ़ सका।"
+            "value" : "%@ पर खत्म हुई। Sotto लगभग 16 मिनट तक GitHub से #%@ नहीं पढ़ सका।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért %@-kor. A Sotto körülbelül 16 percig nem tudta beolvasni a(z) #%lld pull requestet a GitHubról."
+            "value" : "Véget ért %@-kor. A Sotto körülbelül 16 percig nem tudta beolvasni a(z) #%@ pull requestet a GitHubról."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata alle %@. Sotto non è riuscito a leggere #%lld da GitHub per circa 16 minuti."
+            "value" : "Terminata alle %@. Sotto non è riuscito a leggere #%@ da GitHub per circa 16 minuti."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ に終了しました。Sotto が約 16 分間 GitHub から #%2$lld を読み込めませんでした。"
+            "value" : "%1$@ に終了しました。Sotto が約 16 分間 GitHub から #%2$@ を読み込めませんでした。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ ला संपले. Sotto सुमारे 16 मिनिटे GitHub वरून #%lld वाचू शकले नाही."
+            "value" : "%@ ला संपले. Sotto सुमारे 16 मिनिटे GitHub वरून #%@ वाचू शकले नाही."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet kl. %@. Sotto kunne ikke lese #%lld fra GitHub på omtrent 16 minutter."
+            "value" : "Avsluttet kl. %@. Sotto kunne ikke lese #%@ fra GitHub på omtrent 16 minutter."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd om %@. Sotto kon #%lld ongeveer 16 minuten lang niet van GitHub lezen."
+            "value" : "Beëindigd om %@. Sotto kon #%@ ongeveer 16 minuten lang niet van GitHub lezen."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono o %@. Przez około 16 minut nie udało się odczytać #%lld z GitHuba."
+            "value" : "Zakończono o %@. Przez około 16 minut nie udało się odczytać #%@ z GitHuba."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@. O Sotto não conseguiu ler o #%lld do GitHub por cerca de 16 minutos."
+            "value" : "Terminou às %@. O Sotto não conseguiu ler o #%@ do GitHub por cerca de 16 minutos."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou às %@. O Sotto não conseguiu ler #%lld do GitHub durante cerca de 16 minutos."
+            "value" : "Terminou às %@. O Sotto não conseguiu ler #%@ do GitHub durante cerca de 16 minutos."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat la %@. Sotto nu a putut citi #%lld de pe GitHub timp de aproximativ 16 minute."
+            "value" : "Încheiat la %@. Sotto nu a putut citi #%@ de pe GitHub timp de aproximativ 16 minute."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades kl. %@. Sotto kunde inte läsa #%lld från GitHub på ungefär 16 minuter."
+            "value" : "Avslutades kl. %@. Sotto kunde inte läsa #%@ från GitHub på ungefär 16 minuter."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ மணிக்கு முடிந்தது. சுமார் 16 நிமிடங்களாக Sotto ஆல் GitHub இலிருந்து #%lld ஐப் படிக்க முடியவில்லை."
+            "value" : "%@ மணிக்கு முடிந்தது. சுமார் 16 நிமிடங்களாக Sotto ஆல் GitHub இலிருந்து #%@ ஐப் படிக்க முடியவில்லை."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@కు ముగిసింది. Sotto సుమారు 16 నిమిషాల పాటు GitHub నుండి #%lldను చదవలేకపోయింది."
+            "value" : "%@కు ముగిసింది. Sotto సుమారు 16 నిమిషాల పాటు GitHub నుండి #%@ను చదవలేకపోయింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi (%@). Sotto, #%lld numaralı pull request’i yaklaşık 16 dakika boyunca GitHub’dan okuyamadı."
+            "value" : "Sona erdi (%@). Sotto, #%@ numaralı pull request’i yaklaşık 16 dakika boyunca GitHub’dan okuyamadı."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено о %@. Sotto не вдавалося прочитати #%lld з GitHub близько 16 хвилин."
+            "value" : "Завершено о %@. Sotto не вдавалося прочитати #%@ з GitHub близько 16 хвилин."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ پر ختم ہوئی۔ Sotto تقریباً 16 منٹ تک GitHub سے #%lld نہیں پڑھ سکا۔"
+            "value" : "%@ پر ختم ہوئی۔ Sotto تقریباً 16 منٹ تک GitHub سے #%@ نہیں پڑھ سکا۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "于 %@ 结束。Sotto 约有 16 分钟无法从 GitHub 读取 #%lld。"
+            "value" : "于 %@ 结束。Sotto 约有 16 分钟无法从 GitHub 读取 #%@。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "於 %@ 結束。Sotto 約有 16 分鐘無法從 GitHub 讀取 #%lld。"
+            "value" : "於 %@ 結束。Sotto 約有 16 分鐘無法從 GitHub 讀取 #%@。"
           }
         }
       }
@@ -33697,194 +33697,194 @@
         }
       }
     },
-    "Ended. Sotto could not read #%lld from GitHub for about 16 minutes." : {
-      "comment" : "Why babysitting ended; %lld is the pull request's number",
+    "Ended. Sotto could not read #%@ from GitHub for about 16 minutes." : {
+      "comment" : "Why babysitting ended; %@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "انتهت. تعذّر على Sotto قراءة #%lld من GitHub لنحو 16 دقيقة."
+            "value" : "انتهت. تعذّر على Sotto قراءة #%@ من GitHub لنحو 16 دقيقة."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "শেষ হয়েছে। Sotto প্রায় ১৬ মিনিট ধরে GitHub থেকে #%lld পড়তে পারেনি।"
+            "value" : "শেষ হয়েছে। Sotto প্রায় ১৬ মিনিট ধরে GitHub থেকে #%@ পড়তে পারেনি।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ukončeno. Asi 16 minut se nepodařilo načíst #%lld z GitHubu."
+            "value" : "Ukončeno. Asi 16 minut se nepodařilo načíst #%@ z GitHubu."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sluttede. Sotto kunne ikke læse #%lld fra GitHub i omkring 16 minutter."
+            "value" : "Sluttede. Sotto kunne ikke læse #%@ fra GitHub i omkring 16 minutter."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beendet. Sotto konnte #%lld etwa 16 Minuten lang nicht von GitHub lesen."
+            "value" : "Beendet. Sotto konnte #%@ etwa 16 Minuten lang nicht von GitHub lesen."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Τελείωσε. Το Sotto δεν μπορούσε να διαβάσει το #%lld από το GitHub για περίπου 16 λεπτά."
+            "value" : "Τελείωσε. Το Sotto δεν μπορούσε να διαβάσει το #%@ από το GitHub για περίπου 16 λεπτά."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ended. Sotto could not read #%lld from GitHub for about 16 minutes."
+            "value" : "Ended. Sotto could not read #%@ from GitHub for about 16 minutes."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminó. Sotto no pudo leer #%lld desde GitHub durante unos 16 minutos."
+            "value" : "Terminó. Sotto no pudo leer #%@ desde GitHub durante unos 16 minutos."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Päättyi. Sotto ei voinut lukea pull requestia #%lld GitHubista noin 16 minuuttiin."
+            "value" : "Päättyi. Sotto ei voinut lukea pull requestia #%@ GitHubista noin 16 minuuttiin."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminée. Sotto n’a pas pu lire #%lld depuis GitHub pendant environ 16 minutes."
+            "value" : "Terminée. Sotto n’a pas pu lire #%@ depuis GitHub pendant environ 16 minutes."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "खत्म हुई। Sotto लगभग 16 मिनट तक GitHub से #%lld नहीं पढ़ सका।"
+            "value" : "खत्म हुई। Sotto लगभग 16 मिनट तक GitHub से #%@ नहीं पढ़ सका।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Véget ért. A Sotto körülbelül 16 percig nem tudta beolvasni a(z) #%lld pull requestet a GitHubról."
+            "value" : "Véget ért. A Sotto körülbelül 16 percig nem tudta beolvasni a(z) #%@ pull requestet a GitHubról."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminata. Sotto non è riuscito a leggere #%lld da GitHub per circa 16 minuti."
+            "value" : "Terminata. Sotto non è riuscito a leggere #%@ da GitHub per circa 16 minuti."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "終了しました。Sotto が約 16 分間 GitHub から #%lld を読み込めませんでした。"
+            "value" : "終了しました。Sotto が約 16 分間 GitHub から #%@ を読み込めませんでした。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "संपले. Sotto सुमारे 16 मिनिटे GitHub वरून #%lld वाचू शकले नाही."
+            "value" : "संपले. Sotto सुमारे 16 मिनिटे GitHub वरून #%@ वाचू शकले नाही."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avsluttet. Sotto kunne ikke lese #%lld fra GitHub på omtrent 16 minutter."
+            "value" : "Avsluttet. Sotto kunne ikke lese #%@ fra GitHub på omtrent 16 minutter."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Beëindigd. Sotto kon #%lld ongeveer 16 minuten lang niet van GitHub lezen."
+            "value" : "Beëindigd. Sotto kon #%@ ongeveer 16 minuten lang niet van GitHub lezen."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Zakończono. Przez około 16 minut nie udało się odczytać #%lld z GitHuba."
+            "value" : "Zakończono. Przez około 16 minut nie udało się odczytać #%@ z GitHuba."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou. O Sotto não conseguiu ler o #%lld do GitHub por cerca de 16 minutos."
+            "value" : "Terminou. O Sotto não conseguiu ler o #%@ do GitHub por cerca de 16 minutos."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Terminou. O Sotto não conseguiu ler #%lld do GitHub durante cerca de 16 minutos."
+            "value" : "Terminou. O Sotto não conseguiu ler #%@ do GitHub durante cerca de 16 minutos."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Încheiat. Sotto nu a putut citi #%lld de pe GitHub timp de aproximativ 16 minute."
+            "value" : "Încheiat. Sotto nu a putut citi #%@ de pe GitHub timp de aproximativ 16 minute."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avslutades. Sotto kunde inte läsa #%lld från GitHub på ungefär 16 minuter."
+            "value" : "Avslutades. Sotto kunde inte läsa #%@ från GitHub på ungefär 16 minuter."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "முடிந்தது. சுமார் 16 நிமிடங்களாக Sotto ஆல் GitHub இலிருந்து #%lld ஐப் படிக்க முடியவில்லை."
+            "value" : "முடிந்தது. சுமார் 16 நிமிடங்களாக Sotto ஆல் GitHub இலிருந்து #%@ ஐப் படிக்க முடியவில்லை."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ముగిసింది. Sotto సుమారు 16 నిమిషాల పాటు GitHub నుండి #%lldను చదవలేకపోయింది."
+            "value" : "ముగిసింది. Sotto సుమారు 16 నిమిషాల పాటు GitHub నుండి #%@ను చదవలేకపోయింది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sona erdi. Sotto, #%lld numaralı pull request’i yaklaşık 16 dakika boyunca GitHub’dan okuyamadı."
+            "value" : "Sona erdi. Sotto, #%@ numaralı pull request’i yaklaşık 16 dakika boyunca GitHub’dan okuyamadı."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Завершено. Sotto не вдавалося прочитати #%lld з GitHub близько 16 хвилин."
+            "value" : "Завершено. Sotto не вдавалося прочитати #%@ з GitHub близько 16 хвилин."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ختم ہوئی۔ Sotto تقریباً 16 منٹ تک GitHub سے #%lld نہیں پڑھ سکا۔"
+            "value" : "ختم ہوئی۔ Sotto تقریباً 16 منٹ تک GitHub سے #%@ نہیں پڑھ سکا۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已结束。Sotto 约有 16 分钟无法从 GitHub 读取 #%lld。"
+            "value" : "已结束。Sotto 约有 16 分钟无法从 GitHub 读取 #%@。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已結束。Sotto 約有 16 分鐘無法從 GitHub 讀取 #%lld。"
+            "value" : "已結束。Sotto 約有 16 分鐘無法從 GitHub 讀取 #%@。"
           }
         }
       }
@@ -42509,194 +42509,194 @@
         }
       }
     },
-    "Pull request %lld, %@" : {
-      "comment" : "%lld is the pull request's number, %@ its state, such as open or draft",
+    "Pull request %@, %@" : {
+      "comment" : "The first %@ is the pull request's number, the second its state, such as open or draft",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "طلب السحب %lld، %@"
+            "value" : "طلب السحب %@، %@"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "পুল রিকোয়েস্ট %lld, %@"
+            "value" : "পুল রিকোয়েস্ট %@, %@"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull Request %lld, %@"
+            "value" : "Pull Request %@, %@"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld, %@"
+            "value" : "पुल रिक्वेस्ट %@, %@"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld pull request, %@"
+            "value" : "#%@ pull request, %@"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "プルリクエスト %lld、%@"
+            "value" : "プルリクエスト %@、%@"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "पुल रिक्वेस्ट %lld, %@"
+            "value" : "पुल रिक्वेस्ट %@, %@"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "புல் ரிக்வெஸ்ட் %lld, %@"
+            "value" : "புல் ரிக்வெஸ்ட் %@, %@"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "పుల్ రిక్వెస్ట్ %lld, %@"
+            "value" : "పుల్ రిక్వెస్ట్ %@, %@"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pull request %lld, %@"
+            "value" : "Pull request %@, %@"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "پُل ریکویسٹ %lld، %@"
+            "value" : "پُل ریکویسٹ %@، %@"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拉取请求 %lld，%@"
+            "value" : "拉取请求 %@，%@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拉取要求 %lld，%@"
+            "value" : "拉取要求 %@，%@"
           }
         }
       }
@@ -47187,194 +47187,194 @@
         }
       }
     },
-    "Sotto sends this thread a wake-up when #%lld needs it." : {
-      "comment" : "%lld is the pull request's number",
+    "Sotto sends this thread a wake-up when #%@ needs it." : {
+      "comment" : "%@ is the pull request's number",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يرسل Sotto رسالة إيقاظ إلى هذه المحادثة عندما يحتاج إليها #%lld."
+            "value" : "يرسل Sotto رسالة إيقاظ إلى هذه المحادثة عندما يحتاج إليها #%@."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld-এর দরকার হলে Sotto এই থ্রেডে একটি ওয়েক-আপ বার্তা পাঠায়।"
+            "value" : "#%@-এর দরকার হলে Sotto এই থ্রেডে একটি ওয়েক-আপ বার্তা পাঠায়।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto pošle tomuto vláknu probuzení, až ho bude #%lld potřebovat."
+            "value" : "Sotto pošle tomuto vláknu probuzení, až ho bude #%@ potřebovat."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto sender denne tråd en vækning, når #%lld har brug for den."
+            "value" : "Sotto sender denne tråd en vækning, når #%@ har brug for den."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto sendet diesem Thread einen Weckruf, wenn #%lld ihn braucht."
+            "value" : "Sotto sendet diesem Thread einen Weckruf, wenn #%@ ihn braucht."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Το Sotto στέλνει σε αυτό το νήμα μια αφύπνιση όταν το #%lld το χρειάζεται."
+            "value" : "Το Sotto στέλνει σε αυτό το νήμα μια αφύπνιση όταν το #%@ το χρειάζεται."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto sends this thread a wake-up when #%lld needs it."
+            "value" : "Sotto sends this thread a wake-up when #%@ needs it."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto envía un aviso a este hilo cuando #%lld lo necesite."
+            "value" : "Sotto envía un aviso a este hilo cuando #%@ lo necesite."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto envía un aviso a este hilo cuando #%lld lo necesite."
+            "value" : "Sotto envía un aviso a este hilo cuando #%@ lo necesite."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto envía un aviso a este hilo cuando #%lld lo necesite."
+            "value" : "Sotto envía un aviso a este hilo cuando #%@ lo necesite."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto lähettää tälle ketjulle herätyksen, kun #%lld tarvitsee sitä."
+            "value" : "Sotto lähettää tälle ketjulle herätyksen, kun #%@ tarvitsee sitä."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto envoie un réveil à ce fil quand #%lld a besoin de lui."
+            "value" : "Sotto envoie un réveil à ce fil quand #%@ a besoin de lui."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "जब #%lld को ज़रूरत होगी, Sotto इस थ्रेड को वेक-अप भेजेगा।"
+            "value" : "जब #%@ को ज़रूरत होगी, Sotto इस थ्रेड को वेक-अप भेजेगा।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A Sotto ébresztőt küld ennek a szálnak, amikor a(z) #%lld pull requestnek szüksége van rá."
+            "value" : "A Sotto ébresztőt küld ennek a szálnak, amikor a(z) #%@ pull requestnek szüksége van rá."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto invia una sveglia a questo thread quando #%lld ne ha bisogno."
+            "value" : "Sotto invia una sveglia a questo thread quando #%@ ne ha bisogno."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld で対応が必要になると、Sotto がこのスレッドにウェイクアップを送信します。"
+            "value" : "#%@ で対応が必要になると、Sotto がこのスレッドにウェイクアップを送信します。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld ला गरज असेल तेव्हा Sotto या थ्रेडला वेक-अप पाठवते."
+            "value" : "#%@ ला गरज असेल तेव्हा Sotto या थ्रेडला वेक-अप पाठवते."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto sender denne tråden en vekking når #%lld trenger den."
+            "value" : "Sotto sender denne tråden en vekking når #%@ trenger den."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto stuurt deze thread een wekbericht als #%lld hem nodig heeft."
+            "value" : "Sotto stuurt deze thread een wekbericht als #%@ hem nodig heeft."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto wyśle temu wątkowi pobudkę, gdy #%lld będzie go potrzebować."
+            "value" : "Sotto wyśle temu wątkowi pobudkę, gdy #%@ będzie go potrzebować."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Sotto envia a esta conversa uma mensagem de despertar quando o #%lld precisar dela."
+            "value" : "O Sotto envia a esta conversa uma mensagem de despertar quando o #%@ precisar dela."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "O Sotto envia a esta conversa uma mensagem de despertar quando #%lld precisar dela."
+            "value" : "O Sotto envia a esta conversa uma mensagem de despertar quando #%@ precisar dela."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto îi trimite acestui fir o trezire când #%lld are nevoie."
+            "value" : "Sotto îi trimite acestui fir o trezire când #%@ are nevoie."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto skickar en väckning till den här tråden när #%lld behöver den."
+            "value" : "Sotto skickar en väckning till den här tråden när #%@ behöver den."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld க்குத் தேவைப்படும்போது Sotto இந்த த்ரெட்டுக்கு எழுப்பும் செய்தியை அனுப்பும்."
+            "value" : "#%@ க்குத் தேவைப்படும்போது Sotto இந்த த்ரெட்டுக்கு எழுப்பும் செய்தியை அனுப்பும்."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lldకు అవసరమైనప్పుడు Sotto ఈ థ్రెడ్‌కు మేల్కొలుపు పంపుతుంది."
+            "value" : "#%@కు అవసరమైనప్పుడు Sotto ఈ థ్రెడ్‌కు మేల్కొలుపు పంపుతుంది."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld gerektirdiğinde Sotto bu sohbete bir uyandırma gönderir."
+            "value" : "#%@ gerektirdiğinde Sotto bu sohbete bir uyandırma gönderir."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sotto надішле цьому треду пробудження, коли #%lld цього потребуватиме."
+            "value" : "Sotto надішле цьому треду пробудження, коли #%@ цього потребуватиме."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "جب #%lld کو ضرورت ہو تو Sotto اس تھریڈ کو ویک اپ پیغام بھیجتا ہے۔"
+            "value" : "جب #%@ کو ضرورت ہو تو Sotto اس تھریڈ کو ویک اپ پیغام بھیجتا ہے۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld 需要处理时，Sotto 会向此会话发送唤醒消息。"
+            "value" : "#%@ 需要处理时，Sotto 会向此会话发送唤醒消息。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "#%lld 需要處理時，Sotto 會傳送喚醒訊息給此對話。"
+            "value" : "#%@ 需要處理時，Sotto 會傳送喚醒訊息給此對話。"
           }
         }
       }

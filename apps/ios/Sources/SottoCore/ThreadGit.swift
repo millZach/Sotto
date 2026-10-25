@@ -78,8 +78,8 @@ public struct GitChips: Equatable, Sendable {
                                 comment: "A thread's changes for VoiceOver, such as 7 files changed, 212 lines added, 48 removed"))
         }
         if includingPullRequest, let pullRequest {
-            parts.append(String(localized: "Pull request \(pullRequest.number), \(pullRequest.stateWord)", bundle: .module,
-                                comment: "%lld is the pull request's number, %@ its state, such as open or draft"))
+            parts.append(String(localized: "Pull request \(String(pullRequest.number)), \(pullRequest.stateWord)", bundle: .module,
+                                comment: "The first %@ is the pull request's number, the second its state, such as open or draft"))
         }
         return parts.joined(separator: ". ")
     }

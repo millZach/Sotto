@@ -62,7 +62,7 @@ struct PullRequestSheet: View {
                     Image(systemName: "arrow.up.right.square").font(.system(size: 16, weight: .semibold))
                 }
                 .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel("Open #\(number) on GitHub")
+                .accessibilityLabel("Open #\(String(number)) on GitHub")
                 .accessibilityHint("Opens it in Safari.")
                 .accessibilityIdentifier("pull-request-github")
             }
@@ -115,7 +115,7 @@ struct PullRequestSheet: View {
         case .reading:
             VStack(spacing: Space.s3) {
                 ProgressView()
-                Text("Reading #\(number) from GitHub…").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Text("Reading #\(String(number)) from GitHub…").font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .combine)
@@ -252,7 +252,7 @@ private struct PullRequestBody: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
                 StatePill(state: detail.shownState)
-                Text("#\(detail.number)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
             }
             .accessibilityElement(children: .combine)
             Text(verbatim: detail.title)
@@ -677,7 +677,7 @@ private struct BabysitDock: View {
                 Button { press(false) } label: { (waiting ? Text("Stopping…") : Text("Stop babysitting")).frame(maxWidth: .infinity) }
                     .buttonStyle(PillButtonStyle(kind: .soft, wide: true))
                     .disabled(waiting || !model.canChangeBabysitting(ref))
-                    .accessibilityLabel("Stop babysitting #\(detail.number)")
+                    .accessibilityLabel("Stop babysitting #\(String(detail.number))")
                     .accessibilityIdentifier("stop-babysitting")
             case .offered(let words):
                 line(icon: "alarm", tone: .quiet, title: nil, words: words)
@@ -690,7 +690,7 @@ private struct BabysitDock: View {
                 }
                 .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
                 .disabled(waiting || !model.canChangeBabysitting(ref))
-                .accessibilityLabel("Babysit pull request #\(detail.number)")
+                .accessibilityLabel("Babysit pull request #\(String(detail.number))")
                 .accessibilityIdentifier("babysit-pull-request")
             case .finished(let title, let words):
                 line(icon: "alarm", tone: .quiet, title: title, words: words)
@@ -727,7 +727,7 @@ private struct BabysitDock: View {
             let key = PullRequests.key(detail.url)
             let now = model.babysitting(ref).current.contains { PullRequests.key($0.url) == key }
             // Said only once the computer's thread agrees; a refusal shows above as feedback instead.
-            if now == on { toast = on ? String(localized: "Babysitting #\(detail.number)", comment: "%lld is the pull request’s number.") : String(localized: "Stopped babysitting #\(detail.number)", comment: "%lld is the pull request’s number.") }
+            if now == on { toast = on ? String(localized: "Babysitting #\(String(detail.number))", comment: "%@ is the pull request’s number.") : String(localized: "Stopped babysitting #\(String(detail.number))", comment: "%@ is the pull request’s number.") }
         }
     }
 }

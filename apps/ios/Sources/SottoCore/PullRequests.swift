@@ -450,8 +450,8 @@ public enum PullRequests {
             let title = since.map {
                 String(localized: "Babysitting since \($0)", bundle: .module, comment: "%@ is when babysitting started, such as 2:02 PM or Oct 7, 2:02 PM")
             } ?? String(localized: "Babysitting", bundle: .module, comment: "Sotto is watching this thread's pull request for it")
-            let wakes = String(localized: "Sotto sends this thread a wake-up when #\(detail.number) needs it.", bundle: .module,
-                               comment: "%lld is the pull request's number")
+            let wakes = String(localized: "Sotto sends this thread a wake-up when #\(String(detail.number)) needs it.", bundle: .module,
+                               comment: "%@ is the pull request's number")
             return .babysitting(title: title, detail: who + " " + wakes)
         }
         let last = ended.first { wanted != nil && Self.key($0.url) == wanted }
@@ -468,19 +468,20 @@ public enum PullRequests {
     /// Why babysitting ended, as the desktop's surface says it. The time is when babysitting ended, never the merge's.
     public static func endedWords(_ ended: ThreadBabysitEnded, now: Date = Date(), clock: (Date) -> String = PullRequests.clock) -> String {
         let when = Stamp.date(ended.endedAt).map { at(clock, $0, now: now) }
-        let number = ended.number
+        // As text: a locale would group a number of four digits, #1,287.
+        let number: String = String(ended.number)
         // Each reason is one sentence with the time and one without, so every language words both whole.
         switch ended.reason {
         case "merged":
             return when.map {
                 String(localized: "Ended at \($0), after #\(number) merged.", bundle: .module,
-                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
-            } ?? String(localized: "Ended after #\(number) merged.", bundle: .module, comment: "Why babysitting ended; %lld is the pull request's number")
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number")
+            } ?? String(localized: "Ended after #\(number) merged.", bundle: .module, comment: "Why babysitting ended; %@ is the pull request's number")
         case "closed":
             return when.map {
                 String(localized: "Ended at \($0), after #\(number) was closed.", bundle: .module,
-                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
-            } ?? String(localized: "Ended after #\(number) was closed.", bundle: .module, comment: "Why babysitting ended; %lld is the pull request's number")
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number")
+            } ?? String(localized: "Ended after #\(number) was closed.", bundle: .module, comment: "Why babysitting ended; %@ is the pull request's number")
         case "comment-limit":
             return when.map {
                 String(localized: "Ended at \($0), after ten wake-ups in a row brought only comments.", bundle: .module,
@@ -489,9 +490,9 @@ public enum PullRequests {
         case "unreadable":
             return when.map {
                 String(localized: "Ended at \($0). Sotto could not read #\(number) from GitHub for about 16 minutes.", bundle: .module,
-                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and the second %@ is the pull request's number")
             } ?? String(localized: "Ended. Sotto could not read #\(number) from GitHub for about 16 minutes.", bundle: .module,
-                        comment: "Why babysitting ended; %lld is the pull request's number")
+                        comment: "Why babysitting ended; %@ is the pull request's number")
         case "switched-off":
             return when.map {
                 String(localized: "Ended at \($0), when Let agents babysit pull requests was turned off in Settings.", bundle: .module,
