@@ -9,6 +9,7 @@ import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
 import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
+import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
 import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
@@ -422,6 +423,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
   const folderPeek = useOwlFeature('folder-peek')
+  const { collapsed } = useSidebarSize()
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings
@@ -452,7 +454,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
         event.preventDefault()
-        void settle(row.thread, row.project)
+        // The collapsed rail keeps showing the focused thread even once settled, so move on to the top open one.
+        const next = collapsed ? openRows.find(item => item.thread.id !== row.thread.id) : undefined
+        void settle(row.thread, row.project).then(settled => { if (settled && next) onOpen(next.thread.id) })
         return
       }
       if (press(restoreChord)) {
@@ -484,7 +488,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutsLive, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
+  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
