@@ -494,6 +494,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   const asking = view.host.threads.find(item => item.id === idOf('asking-0'))!
   const question: RequestDraftTarget = { kind: 'thread', ownerId: asking.id, providerId: requestDraftProvider(view.host, asking, view.provider), requestId: 'question-1', questions: QUESTIONS }
   try {
+    // Threads delegated from the last idle thread, which no one watches, as the owner's delegations leave them (ADR-0081).
+    // Watcher reads none of them: only threads under a watched thread are its news (#925 step 5).
+    const delegating = state.threads.at(-1)!.id
+    for (const item of state.threads.slice(-1 - counts.delegations, -1)) await workspace.setDelegatedBy(idOf(item.id), idOf(delegating))
     // The threads that took part in Watcher's requests: this computer's idle threads and the remote host's. The threads
     // that stream took part too and were let go, as a thread Watcher has long driven was (#1450). The first threads are watched.
     const watched = [...streamIds, ...localIds].slice(0, counts.watches)
