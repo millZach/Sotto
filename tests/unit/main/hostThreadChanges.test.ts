@@ -144,7 +144,7 @@ describe('the Sotto identity wrapper\'s thread changes', () => {
         return off
       },
     })
-    const send = (changes: Omit<AgentHostChanges, 'sequence' | 'rest'> & { rest?: AgentHostChanges['rest'] }) => {
+    const send = (changes: Omit<AgentHostChanges, 'sequence' | 'rest'>) => {
       const numbered: AgentHostChanges = { ...changes, ...(changes.whole ? { rest } : {}), sequence: ++sequence }
       for (const listener of [...listeners]) listener(numbered)
     }
@@ -266,7 +266,7 @@ describe('the provider switch\'s thread changes', () => {
     const kept = sotto('claude', 'a1'), dropped = [sotto('claude', 'a2'), sotto('claude', 'a3')]
     claude.state.connected = false; claude.state.threads.splice(1); claude.emit()
     expect([...one.last().removals].sort()).toEqual([...dropped].sort())
-    expect(one.last().rest?.providers.find(provider => provider.id === 'claude')?.connection).not.toBe('connected')
+    expect(one.last().rest?.providers?.find(provider => provider.id === 'claude')?.connection).not.toBe('connected')
     expect(one.map.has(kept)).toBe(true)
     // One that names none keeps what it had, as its snapshot does.
     claude.state.threads.splice(0); claude.emit()
@@ -280,10 +280,10 @@ describe('the provider switch\'s thread changes', () => {
     codex.emit(); claude.emit()
     host.disconnect('claude')
     expect(one.last()).toMatchObject({ upserts: [], removals: [] })
-    expect(one.last().rest?.providers.find(provider => provider.id === 'claude')?.connection).toBe('disconnected')
+    expect(one.last().rest?.providers?.find(provider => provider.id === 'claude')?.connection).toBe('disconnected')
     expect(one.map.has(sotto('claude', 'a1'))).toBe(true)
     await host.connect('claude')
-    expect(one.last().rest?.providers.find(provider => provider.id === 'claude')?.connection).toBe('connected')
+    expect(one.last().rest?.providers?.find(provider => provider.id === 'claude')?.connection).toBe('connected')
   })
 
   it('keeps a read\'s threads until the next publication replaces them, as its snapshot does', async () => {
