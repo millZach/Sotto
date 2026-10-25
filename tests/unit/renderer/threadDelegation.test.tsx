@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -106,6 +107,12 @@ describe('delegation words', () => {
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'restarted' }), now)).toBe('Sotto restarted while it worked. Nothing was resent. Open it to see where it got to.')
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'unconfirmed' }), now)).toBe('Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it.')
     expect(delegationWaitLine(view({ outcome: 'unknown', unknownWhy: 'gone' }), now)).toBe('Its thread is gone from Sotto, so nothing more will come of it.')
+  })
+
+  it('words a delegation no machine could take as a message of the threads catalog (#1032, ADR-0123)', () => {
+    const line = 'The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}'
+    expect(delegationRefusalLine({ action: 'start', refusal: 'MACHINE_UNAVAILABLE' })).toBe(line.replace('{nothing}', 'Nothing was started.'))
+    expect(readFileSync('src/locales/threads/en.po', 'utf8')).toContain(`msgid "${line}"`)
   })
 
   it('says why Sotto refused a delegation, that nothing was started or sent, and what would let it through', () => {
