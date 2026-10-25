@@ -64,6 +64,23 @@ describe('the attachment store with attached files (ADR-0131)', () => {
     expect(await restarted.read(image.digest)).toEqual(PIXEL_PNG)
   })
 
+  it('keeps content as the image it became when a crash left both its image and its file copy', async () => {
+    for (const indexedAs of ['image/png', 'application/octet-stream']) {
+      const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+      const file = await store.stage({ name: 'data.bin', mimeType: 'application/octet-stream', bytes: PIXEL_PNG })
+      // A crash inside keepAsImage: the image's file is written, the index may or may not say so, and the .bin stays.
+      await writeFile(join(root, 'attachments', `${file.digest}.png`), PIXEL_PNG)
+      const saved = await index(root)
+      await writeFile(join(root, 'attachments', 'index.json'), JSON.stringify({ ...saved, entries: saved.entries.map(entry => ({ ...entry, mimeType: indexedAs })) }))
+      const restarted = new AttachmentStore(root, { acceptsFiles: true }); await restarted.load()
+      expect(restarted.mimeType(file.digest)).toBe('image/png')
+      expect(restarted.keeps({ ...file, mimeType: 'image/png' })).toBe(true)
+      expect(restarted.keeps(file)).toBe(true)
+      expect((await readdir(join(root, 'attachments'))).filter(name => name !== 'index.json')).toEqual([`${file.digest}.png`])
+      expect(await restarted.read(file.digest)).toEqual(PIXEL_PNG)
+    }
+  })
+
   it('still refuses an image handle whose type the kept content does not have', async () => {
     const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
     const image = await store.stage({ name: 'shot.png', mimeType: 'image/png', bytes: PIXEL_PNG })

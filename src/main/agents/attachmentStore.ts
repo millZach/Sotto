@@ -116,7 +116,10 @@ export class AttachmentStore {
       const saved = await this.index.peek()
       const indexed = new Map(saved.entries.map(entry => [entry.digest, entry]))
       const now = this.now()
-      for (const name of names) {
+      // An image's file before a file's of the same digest: a crash inside `keepAsImage` leaves both, and the image's,
+      // written only after its signature was checked, is what that content is kept as. The `.bin` then goes as a copy.
+      const ordered = [...names].sort((a, b) => Number(a.endsWith(`.${FILE_EXTENSION}`)) - Number(b.endsWith(`.${FILE_EXTENSION}`)))
+      for (const name of ordered) {
         if (name === INDEX_FILE) continue
         const match = CONTENT_FILE.exec(name)
         const entry = match ? indexed.get(match[1]!) : undefined
