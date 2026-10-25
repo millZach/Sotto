@@ -28,6 +28,10 @@ import {
   addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
+import {
+  OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, ownCleanupChoiceSchema, ownCleanupMeasuredListSchema,
+  ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
+} from '../shared/ownServerCleanup'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
@@ -367,6 +371,8 @@ export function createSottoBridge(
   ownServersEnabled = false,
   /** Next prompts after a finished turn (ADR-0132): only while the `next-prompt` Owl feature is on and this computer runs threads. */
   nextPromptEnabled = false,
+  /** AI cleanup on the user's own model servers (ADR-0136): only while its Owl feature runs, with the two it builds on. */
+  ownServerCleanupEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -439,6 +445,10 @@ export function createSottoBridge(
       add: request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
       checkSaved: request => invokeParsed(renderer, OWN_SERVERS_CHECK_SAVED, checkResultSchema, checkSavedRequestSchema.parse(request)),
       remove: request => invokeParsed(renderer, OWN_SERVERS_REMOVE, removeResultSchema, removeRequestSchema.parse(request)),
+    }) } : {}),
+    ...(ownServerCleanupEnabled ? { ownServerCleanup: Object.freeze<OwnServerCleanupBridge>({
+      measure: choice => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURE, ownCleanupMeasureResultSchema, ownCleanupChoiceSchema.parse(choice)),
+      measured: () => invokeParsed(renderer, OWN_SERVER_CLEANUP_MEASURED, ownCleanupMeasuredListSchema),
     }) } : {}),
     ...(mainActivityEnabled ? { mainActivity: Object.freeze<MainActivityBridge>({
       read: () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
@@ -706,7 +716,8 @@ export function exposeRendererBridge(
       arguments_.includes(DELEGATION_RENDERER_ARGUMENT), arguments_.includes(CONTINUE_RENDERER_ARGUMENT), arguments_.includes(OPENCODE_RENDERER_ARGUMENT),
       arguments_.includes(OPENCODE_HOSTS_RENDERER_ARGUMENT), arguments_.includes(MAIN_ACTIVITY_RENDERER_ARGUMENT), arguments_.includes(DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT),
       arguments_.includes(CURSOR_RENDERER_ARGUMENT),
-      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT)))
+      parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
+      arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

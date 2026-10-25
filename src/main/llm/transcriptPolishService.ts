@@ -1,10 +1,14 @@
 import type { TranscriptPolishAsrContext, TranscriptPolishResult } from '../../shared/contracts'
+import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { AppSettings } from '../../shared/settings'
 import { collapseRepeatedPhrases, countWords } from '../../shared/textRepair'
 import { assessOutput, readCleanupChoice } from './cleanupOutput'
+import { ownServerBudgetMs, requestOwnCleanup, type OwnCleanupResolution } from './ownServerCleanup'
 import { buildPolishSystemPrompt, buildPolishUserPrompt } from './prompt'
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+/** What the diagnostic records as the first model when it ran on the user's own server. */
+export const OWN_SERVER_DIAGNOSTIC = 'own-server'
 
 interface ModelSpec {
   readonly id: string
@@ -103,6 +107,11 @@ export interface TranscriptPolishServiceDependencies {
    * choice is kept but ignored, and Haiku 5.5 cleans up as ADR-0069 says.
    */
   readonly chosenModel?: boolean
+  /**
+   * The user's own model servers as a cleanup model (ADR-0136): present only while that Owl feature runs. It says where
+   * a saved choice cleans up, or why it cannot, in which case Mercury 2 does. Absent, `llmOwnModel` is kept and ignored.
+   */
+  readonly ownServer?: (choice: OwnCleanupChoice) => Promise<OwnCleanupResolution>
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
   /** Local observability for silent formatting failures; must never throw into polish. */
@@ -148,8 +157,13 @@ export class TranscriptPolishService {
     )
     const deadline =
       this.now() + Math.max(settings.llmTimeoutMs, CLEANUP_MODELS.minTimeoutMs) + lengthBudget
+    const ownServer = this.dependencies.ownServer
+    const ownChoice = settings.llmOwnModel
+    const own = ownServer !== undefined && ownChoice !== null
     const first = this.primaryModel(settings)
-    const primary = await this.attempt(settings, first, text, deadline - reserve)
+    const primary = own
+      ? await this.ownAttempt(settings, () => ownServer(ownChoice), text, deadline - reserve)
+      : await this.attempt(settings, first, text, deadline - reserve)
     if (primary.text !== null) {
       return this.report(text, asr, { text: primary.text, applied: true }, primary)
     }
@@ -157,8 +171,9 @@ export class TranscriptPolishService {
     if (deadline - this.now() < MIN_FALLBACK_BUDGET_MS) {
       return this.report(text, asr, raw, primary)
     }
-    // A user who chose Mercury 2 itself gets Haiku as the backup rather than the same model twice.
-    const backup = first.id.split(':')[0] === CLEANUP_MODELS.fallback.id ? CLEANUP_MODELS.primary : CLEANUP_MODELS.fallback
+    // A user who chose Mercury 2 itself gets Haiku as the backup rather than the same model twice. Mode never applies
+    // to a model on the user's own server, and its backup is always Mercury 2.
+    const backup = !own && first.id.split(':')[0] === CLEANUP_MODELS.fallback.id ? CLEANUP_MODELS.primary : CLEANUP_MODELS.fallback
     const fallback = await this.attempt(settings, backup, text, deadline)
     return this.report(
       text,
@@ -182,6 +197,41 @@ export class TranscriptPolishService {
     // A slug may already carry a variant (`:free`, which OpenRouter stacks with these); a routing one is replaced.
     const slug = model.id.replace(/:(?:nitro|floor)$/u, '')
     return settings.llmMode === 'default' ? { ...model, id: slug } : { ...model, id: `${slug}:${settings.llmMode}` }
+  }
+
+  /**
+   * A cleanup on the user's own server (ADR-0136), with the thinking setting Measure found fastest and three times its
+   * measured time before Mercury 2 takes over. A server not yet measured is given the same share of the deadline as any
+   * chosen model; one where no setting passed, one removed or one added with a key goes straight to Mercury 2.
+   */
+  private async ownAttempt(
+    settings: AppSettings,
+    resolve: () => Promise<OwnCleanupResolution>,
+    text: string,
+    primaryDeadline: number,
+  ): Promise<AttemptOutcome> {
+    // The diagnostic names the kind of attempt only: a server's name, address and models are never written down (ADR-0124).
+    const model = OWN_SERVER_DIAGNOSTIC
+    let resolved: OwnCleanupResolution
+    try {
+      resolved = await resolve()
+    } catch {
+      return { text: null, reason: 'own-unread', model }
+    }
+    if (resolved.status !== 'ready') return { text: null, reason: `own-${resolved.status}`, model }
+    if (resolved.tuning?.status === 'none-passed') return { text: null, reason: 'own-none-passed', model }
+    const tuned = ownServerBudgetMs(resolved.tuning, countWords(text))
+    const budget = Math.min(primaryDeadline - this.now(), tuned ?? Infinity)
+    if (budget <= 0) return { text: null, reason: 'skipped', model }
+    const outcome = await requestOwnCleanup({
+      fetchFn: this.fetchFn,
+      target: resolved.target,
+      thinking: resolved.tuning?.thinking ?? 'plain',
+      text,
+      dictionary: settings.llmDictionary,
+      signal: AbortSignal.timeout(budget),
+    })
+    return { ...outcome, model, ...(outcome.reason === 'rejected-shrink' ? { rejectedShrink: true } : {}) }
   }
 
   private report(
