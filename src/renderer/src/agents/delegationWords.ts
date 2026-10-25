@@ -262,10 +262,11 @@ export function delegatedSummary(views: readonly DelegationView[], threadOf: (vi
     if (view.outcome === 'failed') failed++
     if (view.outcome === 'unknown') unknown++
   }
+  const work = kinds.work, reviews = kinds.review, museReviews = kinds['muse-review']
   return [
-    kinds.work && plural(kinds.work, { one: '# delegated thread', other: '# delegated threads' }),
-    kinds.review && plural(kinds.review, { one: '# review', other: '# reviews' }),
-    kinds['muse-review'] && plural(kinds['muse-review'], { one: 'Muse review', other: '# Muse reviews' }),
+    work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
+    reviews && plural(reviews, { one: '# review', other: '# reviews' }),
+    museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' }),
     asking && plural(asking, { one: '# needs you', other: '# need you' }),
     failed && t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many delegated threads failed.' }),
     unknown && t({ message: `${{ unknownCount: shownCount(unknown) }} unknown`, comment: 'How many delegated threads have an unknown outcome.' }),

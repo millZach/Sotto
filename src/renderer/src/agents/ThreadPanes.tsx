@@ -51,7 +51,7 @@ export interface ThreadPanesProps {
   readonly measuredHeight?: number | undefined
 }
 
-const paneDomId = (threadId: string): string => `thread-pane-${threadId}`
+export const paneDomId = (threadId: string): string => `thread-pane-${threadId}`
 const tabDomId = (threadId: string): string => `thread-pane-tab-${threadId}`
 /** Clicking or focusing these acts on the layout, not on the pane's thread, so it does not move the selection. */
 const CHROME = '[data-pane-chrome]'

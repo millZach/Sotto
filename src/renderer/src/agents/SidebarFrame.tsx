@@ -73,9 +73,10 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
  * them while its gate is on and without Dictate while dictation is off (ADR-0107); left with one room it is not
  * drawn. It lights the room of the open page and answers the keyboard as every switch does
  * (`useRoomSwitch`): one Tab stop, arrow keys, Home and End, and focus handed to the lit tab of the switch the opened
- * page draws. The sidebar foot and Watcher's floating switch both draw this one.
+ * page draws. The sidebar foot and Watcher's floating switch both draw this one; the foot draws it `iconOnly`, its
+ * lit tile showing no name, so every tile there carries its name as a tooltip.
  */
-export function RoomSwitch({ className }: { readonly className: string }): ReactNode {
+export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
   const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
   const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
@@ -83,8 +84,13 @@ export function RoomSwitch({ className }: { readonly className: string }): React
   const { t } = useLingui()
   if (rooms.length < 2) return null
   return <div ref={roomSwitch.ref} className={className} role="tablist" aria-label={t({ message: 'Page', comment: 'The room switch: which page of the app is open.' })}>
-    {rooms.map((target, index) => <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...roomSwitch.tab(target, index)}>
-      <RoomTabFace room={target} /></button>)}
+    {rooms.map((target, index) => {
+      const tab = roomSwitch.tab(target, index)
+      // Where the lit tile shows no name (the sidebar foot), every tile names itself on hover, the lit one too.
+      return <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...tab}
+        title={iconOnly ? target.label : tab.title}>
+        <RoomTabFace room={target} named={!iconOnly} /></button>
+    })}
   </div>
 }
 
@@ -104,13 +110,14 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
 }
 
 /**
- * The sidebar's foot: the room switch, the other pages as icon links, and the update control. A page that carries
- * the sidebar, or a column that wears its frame, has no app footer under it, so this is the only way off the page.
+ * The sidebar's foot, one row of icons: the room switch, a hairline, the other pages as icon links, and the update
+ * control at the far end. A page that carries the sidebar, or a column that wears its frame, has no app footer
+ * under it, so this is the only way off the page.
  */
 export function SidebarFoot(): ReactNode {
   const { updateControl } = useContext(SidebarChromeContext)
   return <div className="thread-nav__foot">
-    <RoomSwitch className="thread-nav__seg" />
+    <RoomSwitch className="thread-nav__seg" iconOnly />
     <span className="thread-nav__foot-rule" aria-hidden="true" />
     <PageLinks className="thread-nav__pages" linkClassName="thread-nav__page" />
     {updateControl}

@@ -86,7 +86,7 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
     question ? plural(question, { one: `${{ answers: shownCount(question) }} answer`, other: `${{ answers: shownCount(question) }} answers` }) : '',
     failed ? t({ message: `${{ failedCount: shownCount(failed) }} failed`, comment: 'How many threads whose last turn failed wait beyond those shown.' }) : '',
   ].filter(Boolean))
-  const more = shownCount(queue.overflow.total), oldest = queue.oldestBlockingWait, failedCount = shownCount(failures.length)
+  const more = shownCount(queue.overflow.total), oldest = queue.oldestBlockingWait, failedThreads = failures.length, failedCount = shownCount(failedThreads)
   return <section ref={card} className="needs-you" aria-labelledby={headingId} onFocusCapture={event => {
     const item = (event.target as HTMLElement).closest<HTMLElement>('[data-entry-id]')
     if (item?.dataset.entryId) focusedEntry.current = { id: item.dataset.entryId, index: [...item.parentElement!.children].indexOf(item) }
@@ -107,7 +107,7 @@ export function NeedsYouQueue({ queue, state, command, failures, panes, onOpen }
       {queue.overflow.total > 0 ? <Button ref={toggle} variant="ghost" aria-expanded={expanded}
         aria-label={expanded ? t`Show fewer waiting threads` : t`Show all waiting threads`} onClick={() => setExpanded(value => !value)}>
         {expanded ? t`Show fewer` : t`Show all`}</Button> : null}
-      {failures.length >= 2 ? <Button variant="ghost" aria-label={plural(failures.length, { one: `Dismiss Needs attention on ${{ threads: failedCount }} thread`, other: `Dismiss Needs attention on ${{ threads: failedCount }} threads` })}
+      {failures.length >= 2 ? <Button variant="ghost" aria-label={plural(failedThreads, { one: `Dismiss Needs attention on ${{ threads: failedCount }} thread`, other: `Dismiss Needs attention on ${{ threads: failedCount }} threads` })}
         aria-disabled={failures.some(item => dismissing.has(item.threadId)) || undefined}
         onClick={() => dismiss(failures, true)}>{t({ message: `Dismiss ${failedCount} failed`, comment: '{failedCount} is how many threads whose last turn failed.' })}</Button> : null}
     </div> : null}

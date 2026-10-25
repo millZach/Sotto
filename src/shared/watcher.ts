@@ -300,7 +300,9 @@ export const watcherToolSchemas = {
         status: z.enum(['running', 'completed', 'failed', 'interrupted', 'unknown']), title: shortText, startedAt: time.optional(), completedAt: time.optional() }).strict()).max(100),
       evidence: z.array(watcherEvidenceSchema).max(100), pullRequests: z.array(watcherPullRequestSummarySchema).max(50).optional(),
       historyEpoch: id, firstPosition: counter.nullable(), lastPosition: counter.nullable(),
-      nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time })),
+      nextPosition: counter.nullable(), truncated: z.boolean(), earlierAvailable: z.boolean(), observedAt: time,
+      // The desktop's alone (#1552): this read gave Watcher nothing its last read of the thread had not, since that time.
+      unchangedSince: time.optional() })),
   },
   start_thread: {
     // A start names its worker role, its model, or both (#1041). Main fills the rest from the role before admission, and

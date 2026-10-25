@@ -2883,6 +2883,14 @@ msgstr "The browser opens HTTP and HTTPS pages only."
 msgid "The clipboard image could not be read."
 msgstr "The clipboard image could not be read."
 
+#: src/renderer/src/tools/terminalStore.ts
+msgid "The command did not run."
+msgstr "The command did not run."
+
+#: src/renderer/src/tools/terminalStore.ts
+msgid "The command did not run. Sotto could not reach this thread’s terminals. Try again."
+msgstr "The command did not run. Sotto could not reach this thread’s terminals. Try again."
+
 #: src/renderer/src/tools/BrowserSurface.tsx
 msgid "The draft for this thread is not available."
 msgstr "The draft for this thread is not available."
