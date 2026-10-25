@@ -1,9 +1,10 @@
 // @vitest-environment node
 // #1033 over ADR-0081: a delegating thread starts a new thread from its own branch, in a worktree of its own, and a test
 // run carries its uncommitted work as a snapshot. Delegated threads start on This computer for now (#1316).
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { branchMoveWords } from '../../src/shared/branchMoves'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { delegationFixture } from '../fixtures/delegationFixture'
@@ -65,4 +66,46 @@ it('takes from_my_branch and test_run only for a new thread in a worktree of its
   expect(await off.start()).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await off.start({ from_my_branch: undefined, test_run: true })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(git(off.folder, 'for-each-ref', 'refs/sotto')).toBe('')
+})
+
+it('finds a retry without walking the record, however many delegations it holds (#1033, AGENTS.md scaling rule)', async () => {
+  const f = await fixture()
+  f.ok(await f.start())
+  // Every read of the record's entries before the branch is copied counts against the preflight; with an index by
+  // retry key there are none, whatever the record holds.
+  const service = f.service as unknown as { entries: unknown[]; options: { branchMoves: { forStart: (...args: unknown[]) => Promise<unknown> } } }
+  let reads = 0, counting = true
+  service.entries = new Proxy(service.entries, { get(target, key, receiver) { if (counting && typeof key === 'string' && /^\d+$/u.test(key)) reads++; return Reflect.get(target, key, receiver) } })
+  const forStart = service.options.branchMoves.forStart.bind(service.options.branchMoves)
+  service.options.branchMoves.forStart = async (...args: unknown[]) => { counting = false; return forStart(...args) }
+  f.ok(await f.start({ retry_key: randomUUID() }))
+  expect(counting).toBe(false)
+  expect(reads).toBe(0)
+})
+
+it('lets go of the branch a racing retry landed, so one start leaves one incoming ref (#1033)', async () => {
+  const f = await fixture()
+  const retryKey = randomUUID()
+  // Both calls copy the branch before either is admitted; admission takes the first and answers the second as its retry.
+  const answers = await Promise.all([f.start({ retry_key: retryKey }), f.start({ retry_key: retryKey })])
+  expect(answers.map(answer => answer.status)).toEqual(['ok', 'ok'])
+  expect(new Set(answers.map(answer => (answer as ReturnType<typeof f.ok>).delegation.id)).size).toBe(1)
+  await f.worktreeOf((answers[0] as ReturnType<typeof f.ok>).delegation.thread)
+  await expect.poll(() => git(f.folder, 'for-each-ref', '--format=%(refname)', 'refs/sotto').split('\n').filter(Boolean).length).toBe(1)
+})
+
+it('lets go of the branch and says nothing of a start when the new thread could not be made (#1033)', async () => {
+  const f = await fixture()
+  const command = f.control.commandFromDelegation.bind(f.control)
+  const failing = vi.spyOn(f.control, 'commandFromDelegation').mockImplementation(async (request, ...rest) => {
+    if (request.type !== 'create-thread') return command(request, ...rest)
+    const answer = await command({ ...request, projectId: 'synthetic-missing-project' }, ...rest)
+    expect(answer.error).not.toBeNull()
+    return answer
+  })
+  try {
+    const answer = await f.start()
+    expect(answer).not.toHaveProperty('startedFrom')
+    expect(git(f.folder, 'for-each-ref', 'refs/sotto')).toBe('')
+  } finally { failing.mockRestore() }
 })

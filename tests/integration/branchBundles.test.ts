@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -105,6 +105,33 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
       expect(JSON.parse(records).moves[moveId]).toBeUndefined()
     }
     expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+  })
+
+  it('records nothing for a bundle whose one ref names a blob, so a retry with a real commit still lands', async () => {
+    const forge = new BranchBundles(machines.data('forge')), moveId = randomUUID()
+    // A bundle Git verifies, with the expected outgoing ref, but naming a blob only the laptop had.
+    await writeFile(join(machines.laptop, 'loose.txt'), 'not a commit\n')
+    const blob = git(machines.laptop, 'hash-object', '-w', 'loose.txt')
+    git(machines.laptop, 'update-ref', `refs/sotto/outgoing/${moveId}`, blob)
+    const path = join(machines.root, 'blob.bundle')
+    git(machines.laptop, 'bundle', 'create', '--quiet', path, `refs/sotto/outgoing/${moveId}`)
+    git(machines.laptop, 'update-ref', '-d', `refs/sotto/outgoing/${moveId}`)
+    git(machines.laptop, 'clean', '-qf')
+    const bytes = await readFile(path)
+    const blobbed = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit: blob, size: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex') }))
+    expect(await blobbed.write(0, bytes)).toBe(true)
+    expect(await forge.finish(blobbed)).toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+    const records = await readFile(machines.data('forge').recordsPath, 'utf8').catch(() => '{"moves":{}}')
+    expect(JSON.parse(records).moves[moveId]).toBeUndefined()
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+    // The retry carries a real commit for the same move, and nothing that arrived before stands in its way.
+    const commit = await featureBranch(), laptop = new BranchBundles(machines.data('laptop'))
+    const prepared = sending(await laptop.prepare({ repository: machines.laptop, moveId, commit, bases: [] }))
+    const retry = incoming(await forge.receive({ repository: machines.forge, moveId, branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 }))
+    await carry(laptop, prepared, retry)
+    expect(await forge.finish(retry)).toMatchObject({ type: 'moved', moveId, commit })
+    expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'feature/login'))).toBe(commit)
   })
 
   it('refuses uncommitted work and a working copy on no branch, and moves nothing', async () => {
@@ -286,6 +313,22 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     // The parent's own uncommitted work beside a clean submodule still goes as a snapshot.
     await writeFile(join(machines.laptop, 'app.txt'), 'edited in the parent')
     expect(await laptop.snapshotOf(machines.laptop)).toMatchObject({ branch: 'main', snapshot: { untrackedCount: 0 } })
+    expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
+  })
+
+  it('still sees a changed submodule when the repository tells Git to ignore it', async () => {
+    const library = join(machines.root, 'library')
+    git(machines.root, 'init', '-q', library)
+    await commitFile(library, 'lib.txt', 'one')
+    git(machines.laptop, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', library, 'lib')
+    git(machines.laptop, 'commit', '-q', '-m', 'Add the library')
+    const laptop = new BranchBundles(machines.data('laptop'))
+    await writeFile(join(machines.laptop, 'lib', 'lib.txt'), 'edited in the submodule')
+    for (const ignore of ['dirty', 'all']) {
+      git(machines.laptop, 'config', 'submodule.lib.ignore', ignore)
+      expect(await laptop.snapshotOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.submoduleChanges })
+      expect(await laptop.branchOf(machines.laptop), ignore).toEqual({ type: 'refused', reason: 'uncommitted', message: branchMoveWords.uncommitted })
+    }
     expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
   })
 })

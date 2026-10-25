@@ -266,6 +266,8 @@ function listed<T>(index: Map<string, T[]>, key: string): T[] {
   if (!list) { list = []; index.set(key, list) }
   return list
 }
+/** The key `byRetryKey` files a record under: its delegating thread and retry key. */
+const retryIndex = (callerId: string, retryKey: string): string => `${callerId}\n${retryKey}`
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread starts threads and sends them briefs, under rules main
@@ -284,13 +286,15 @@ export class DelegationService {
    */
   private readonly byDelegating = new Map<string, DelegationRecord[]>()
   private readonly byDelegated = new Map<string, DelegationRecord[]>()
+  /** Each record by its delegating thread and retry key, so a retry is found without walking the user's history. */
+  private readonly byRetryKey = new Map<string, DelegationRecord>()
   private refusalEntries: RefusedDelegation[] = []
   /** Each delegating thread's refusals, oldest first as in `refusalEntries`. */
   private readonly refusedBy = new Map<string, RefusedDelegation[]>()
   private get records(): readonly DelegationRecord[] { return this.entries }
   private set records(records: DelegationRecord[]) {
     this.entries = records
-    this.byDelegating.clear(); this.byDelegated.clear()
+    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear()
     for (const record of records) this.indexed(record)
   }
   private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
@@ -416,16 +420,20 @@ export class DelegationService {
     try { admitted = await this.transaction(() => this.admit(threadId, input)) }
     catch (error) {
       // A start refused here never runs, so the branch landed for it is let go.
-      if (branch) await this.options.branchMoves?.forgetHere({ projectId: branch.projectId, moveId: branch.moveId }).catch(() => undefined)
+      await this.letGo(branch)
       return error instanceof Refusal ? await this.refused(threadId, input, error.result)
         : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start this delegation. Nothing was started.')
     }
     const record = admitted.record
-    if (admitted.retry) return this.result(record)
+    // A call that raced the first one with the same retry key copied a branch of its own, which no thread will use.
+    if (admitted.retry) { await this.letGo(branch); return this.result(record) }
     const start = admitted.start && branch ? { ...admitted.start, workingCopy: 'independent' as const, startFromMove: branch.moveId } : admitted.start
     this.calling.add(record.id)
     try {
       await this.execute(record, input.brief, start)
+      // A new thread that could not be made owns no branch, and nothing started from it.
+      const made = !admitted.start || this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)
+      if (!made) await this.letGo(branch)
       // Nothing is held back at any count (#1183); past ten working threads on this computer a start's reply says so. The
       // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
       // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
@@ -443,7 +451,7 @@ export class DelegationService {
       }
       const answer = await this.result(this.record(record.id)!)
       return { ...answer, ...admitted.role ? { role: admitted.role } : {}, ...admitted.start && placed ? { placement: placed } : {},
-        ...admitted.start && branch ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
+        ...admitted.start && branch && made ? { startedFrom: branch.receipt } : {}, ...warning ? { warning } : {} }
     } finally { this.calling.delete(record.id); this.touched(record) }
   }
 
@@ -620,7 +628,7 @@ export class DelegationService {
     // A caller that may not delegate is refused by admission, under its own rule; a retry reads the first call's result.
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key)) return undefined
     if (!asks) {
       const away = workerMachineHostId(machines.setting())
       if (away === undefined || away === local) return undefined
@@ -652,7 +660,7 @@ export class DelegationService {
     if (input.working_copy === 'shared') return delegationRefusal('INVALID_INPUT', 'A thread started from your branch gets a worktree of its own. Leave working_copy out. Nothing was started.')
     const caller = this.snapshot().threads.find(thread => thread.id === threadId), local = this.options.control.hostId()
     if (!caller || !local || !this.admits(threadId)) return undefined
-    if (input.retry_key && this.records.some(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)) return undefined
+    if (this.retried(caller.id, input.retry_key)) return undefined
     const moveId = randomUUID()
     let moved: Awaited<ReturnType<DesktopBranchMoves['forStart']>>
     try { moved = await moves.forStart({ from: { hostId: local, threadId: caller.id }, to: { hostId: local, projectId: caller.projectId }, here: local, moveId, snapshot: input.test_run === true }) }
@@ -711,6 +719,15 @@ export class DelegationService {
   private indexed(record: DelegationRecord): void {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
+    if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
+  }
+  /** Lets go of the incoming ref a branch copy landed for a start that will not use it. Best effort. */
+  private async letGo(branch: { readonly moveId: string; readonly projectId: string } | undefined): Promise<void> {
+    if (branch) await this.options.branchMoves?.forgetHere({ projectId: branch.projectId, moveId: branch.moveId }).catch(() => undefined)
+  }
+  /** The delegation `callerId` already made under `retryKey`, if any. */
+  private retried(callerId: string, retryKey: string | undefined): DelegationRecord | undefined {
+    return retryKey ? this.byRetryKey.get(retryIndex(callerId, retryKey)) : undefined
   }
   private owned(callerId: string, delegationId: string): DelegationRecord {
     const record = this.record(delegationId)
@@ -854,7 +871,7 @@ export class DelegationService {
     const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
     const inputDigest = digest(input)
     if (input.retry_key) {
-      const retry = this.records.find(record => record.delegatingThreadId === caller.id && record.retryKey === input.retry_key)
+      const retry = this.retried(caller.id, input.retry_key)
       if (retry) {
         if (retry.inputDigest !== inputDigest) refuse('RETRY_KEY_CONFLICT', 'This retry key belongs to another delegation. Nothing was started.')
         return { record: retry, retry: true }

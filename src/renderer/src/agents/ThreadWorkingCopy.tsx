@@ -7,6 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { folderKey } from './NewThreadDialog'
+import { worktreeErrorWords } from './movedWorktreeWords'
 import './workingCopy.css'
 
 /** Older threads carry no working-copy metadata and keep the folder they already use. */
@@ -48,7 +49,7 @@ export function describeWorkingCopy(thread: WorkingCopyThread, project: Pick<Age
   }
   const common = { mode: worktree.mode, branch: worktree.branch, repositoryRoot: worktree.repositoryRoot, dirty: worktree.dirty, reclaimed: Boolean(worktree.reclaimedAt) }
   if (worktree.status === 'pending') return { ...common, status: 'pending', directory: undefined, label: worktree.mode === 'shared' ? 'Project folder' : 'New worktree' }
-  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktree.error }
+  if (worktree.status === 'error') return { ...common, status: 'error', directory: undefined, label: 'Worktree not ready', error: worktreeErrorWords(worktree.error) }
   const directory = resolve()
   const label = worktree.branch ?? (worktree.repositoryRoot ? 'Detached HEAD' : directory ? folderLabel(directory, project) : 'Working folder')
   return { ...common, status: 'ready', directory, label }

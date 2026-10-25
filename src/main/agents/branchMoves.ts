@@ -215,7 +215,13 @@ export class DesktopBranchMoves {
     try {
       return answer(branchCopyAnswerSchema, await connection.host.branchMove({ action: 'copy', moveId, threadId: input.threadId, projectId: input.projectId,
         ...input.snapshot ? { snapshot: true } : {} }))
-    } catch { return branchMoveRefusal('cut-off', branchMoveWords.cutOff) }
+    } catch {
+      // A request that timed out leaves the connection open and the copy perhaps still running there. `end` fences it, so
+      // no ref of it is created once that answers; `forget` then removes one a copy landed before the end arrived.
+      const cut = await this.ended(connection.host, moveId, branchMoveRefusal('cut-off', branchMoveWords.cutOff))
+      await connection.host.branchMove({ action: 'forget', moveId, projectId: input.projectId }).catch(() => undefined)
+      return cut
+    }
   }
 
   /** Lands a thread's branch on this computer in a project on this computer, for a worker started here from it. */

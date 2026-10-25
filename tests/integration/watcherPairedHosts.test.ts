@@ -1817,6 +1817,40 @@ for (const where of ['paired', 'here'] as const) {
   })
 }
 
+it('lets go of a moved branch when the paired machine answers its start with a definite failure and no thread (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch has arrived on the paired machine; its answer is a failed receipt for this very start, and it made no thread.
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async request => {
+    const { operation } = request
+    return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Synthetic failure. Nothing was started.', retryable: false,
+      receipt: { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'failed', receiptId: operation.receiptId, cardId: operation.cardId } }
+  })
+  try {
+    const started = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', receipt: { deliveryState: 'failed' } })
+    await expect.poll(async () => (await git('git', ['-C', f.project.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { vi.restoreAllMocks() }
+})
+
+it('lets go of a moved branch when its permission is refused after the branch arrived, on This computer (#1033)', async () => {
+  const f = await fromBranch()
+  // The branch arrives, then the start's permission no longer fits, as when the user narrows New threads start with.
+  const move = DesktopBranchMoves.prototype.forStart
+  const watcher = f.watcher as unknown as { permission: (...args: unknown[]) => unknown }
+  const forStart = vi.spyOn(DesktopBranchMoves.prototype, 'forStart').mockImplementation(async function (this: DesktopBranchMoves, input) {
+    const moved = await move.call(this, input)
+    expect(moved.type).toBe('moved')
+    vi.spyOn(watcher, 'permission').mockImplementationOnce(() => { throw new Error('synthetic-permission-narrowed') })
+    return moved
+  })
+  try {
+    const started = await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+    expect(started).toMatchObject({ status: 'refused' })
+    expect(forStart).toHaveBeenCalledTimes(1)
+    await expect.poll(async () => (await git('git', ['-C', f.local.path, 'for-each-ref', 'refs/sotto'])).stdout.trim()).toBe('')
+  } finally { forStart.mockRestore(); vi.restoreAllMocks() }
+})
+
 it('warns when starts the paired machine answered before its list holds them leave more than ten working there (#1032)', async () => {
   const f = await acrossMachines(), hostId = f.pairing.hostId
   // The paired machine's list as this computer holds it: nine threads working, and none of the starts below yet.
@@ -2002,4 +2036,19 @@ it('refuses a machine or system while Work across machines is off, and lists no 
   const listed = await f.call('list_machines', {})
   expect(listed).not.toHaveProperty('newWorkersStart')
   expect(await f.call('start_thread', f.start())).not.toHaveProperty('placement')
+})
+
+it('refuses a start that names a move on a Stable host, even from a desktop that sends one (#1033)', async () => {
+  const f = await master()
+  // A desktop that puts a move in the start it sends, with the digest made to match, as only Owl's Watcher would.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (request, ...rest) => {
+    if (request.call.name !== 'start_thread') return control(request, ...rest)
+    const input = watcherToolSchemas.start_thread.input.parse({ ...request.call.input, workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })
+    const operation = { ...request.operation, digest: createHash('sha256').update(JSON.stringify(['start_thread', input])).digest('hex') }
+    return control({ ...request, operation, call: { name: 'start_thread', input } } as WatcherHostControl, ...rest)
+  })
+  const started = await f.call('start_thread', { ...f.start(), title: 'Synthetic moved start' })
+  expect(started).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  expect(f.socket.shell().host.threads.some(thread => thread.title === 'Synthetic moved start')).toBe(false)
 })

@@ -2,10 +2,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HostBranchMoves } from '../../src/host/branchMoves'
-import { BranchBundles, type PreparedBundle } from '../../src/main/agents/branchBundles'
-import type { BranchMoveFolders } from '../../src/main/agents/branchMoves'
+import { BranchBundles, IncomingBundle, type PreparedBundle } from '../../src/main/agents/branchBundles'
+import { DesktopBranchMoves, type BranchMoveFolders } from '../../src/main/agents/branchMoves'
 import { runGitStatusCommand, type RunGitCommand } from '../../src/main/agents/gitStatus'
 import { BRANCH_TRANSFERS_MAX, branchMoveWords, incomingRef } from '../../src/shared/branchMoves'
 import { commitFile, git, twoMachines } from '../fixtures/branchRepositories'
@@ -97,6 +97,37 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
       git(machines.laptop, 'switch', '-q', 'main')
       git(machines.laptop, 'branch', '-q', '-D', 'feature/login')
     }
+  })
+
+  it('drops only its own attempt when a refused chunk finishes after end and a retry on a new connection', async () => {
+    const moveId = randomUUID()
+    const { laptop, prepared, commit } = await laptopBundle(moveId)
+    const host = forge(), old = connection(), fresh = connection()
+    const begin = { action: 'receive-begin', moveId, projectId: 'forge-project', branch: 'feature/login', commit, size: prepared.size, sha256: prepared.sha256 } as const
+    expect(await host.handle(begin, old.owner, old.gone)).toEqual({ type: 'receiving' })
+    // The old connection's chunk is out of order, and its write is held until the move has ended and been retried.
+    let reach!: () => void, release!: () => void
+    const reached = new Promise<void>(resolve => { reach = resolve }), released = new Promise<void>(resolve => { release = resolve })
+    const write = IncomingBundle.prototype.write
+    const spy = vi.spyOn(IncomingBundle.prototype, 'write').mockImplementation(async function (this: IncomingBundle, offset, bytes) {
+      if (offset === 1) { reach(); await released }
+      return write.call(this, offset, bytes)
+    })
+    try {
+      const chunk = (await laptop.readChunk(prepared.path, 0)).toString('base64')
+      const stale = host.handle({ action: 'receive-chunk', moveId, offset: 1, data: chunk }, old.owner, old.gone)
+      await reached
+      expect(await host.handle({ action: 'end', moveId }, old.owner, old.gone)).toBeNull()
+      expect(await host.handle(begin, fresh.owner, fresh.gone)).toEqual({ type: 'receiving' })
+      release()
+      expect(await stale).toEqual({ type: 'refused', reason: 'not-whole', message: branchMoveWords.notWhole })
+      // The retry keeps its place and its staged file, and lands.
+      expect(host.staged).toBe(1)
+      expect(await readdir(machines.data('forge').stagingDirectory)).toHaveLength(1)
+      expect(await host.handle({ action: 'receive-chunk', moveId, offset: 0, data: chunk }, fresh.owner, fresh.gone)).toEqual({ type: 'received', bytes: prepared.size })
+      expect(await host.handle({ action: 'receive-finish', moveId }, fresh.owner, fresh.gone)).toMatchObject({ type: 'moved', moveId, commit })
+      expect(git(machines.forge, 'rev-parse', incomingRef(moveId, 'feature/login'))).toBe(commit)
+    } finally { spy.mockRestore(); await laptop.discard(prepared) }
   })
 
   it('lets an attempt left by a dropped connection clean up only its own, not the retry on the new connection', async () => {
@@ -207,5 +238,26 @@ describe('a host’s side of branch moves (ADR-0105 decision 8)', () => {
         await expect.poll(() => readdir(machines.data('forge').stagingDirectory).catch(() => [])).toEqual([])
       }
     }
+  })
+  it('ends a same-host copy the desktop gave up on, so a late landing creates no ref (#1033)', async () => {
+    const moveId = randomUUID()
+    const reading = gate(args => args[0] === 'rev-list')
+    const host = forge(gated(reading)), peer = connection()
+    let copying: Promise<unknown> | undefined
+    // The desktop's request for the copy times out while forge is still reading; the connection stays open.
+    const desktop = new DesktopBranchMoves({ bundles: new BranchBundles(machines.data('laptop')), hostName: () => 'forge',
+      folders: { threadFolder: () => undefined, projectFolder: () => undefined },
+      host: () => ({ supportsBranchMoves: true, branchMove: async request => {
+        if (request.action !== 'copy') return host.handle(request, peer.owner, peer.gone)
+        copying = host.handle(request, peer.owner, peer.gone)
+        await reading.reached
+        throw new Error('synthetic-request-timeout')
+      } }) })
+    expect(await desktop.onHost({ hostId: 'forge-id', threadId: 'forge-thread', projectId: 'forge-project', moveId }))
+      .toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+    reading.release()
+    expect(await copying).toEqual({ type: 'refused', reason: 'cut-off', message: branchMoveWords.cutOff })
+    expect(git(machines.forge, 'for-each-ref', 'refs/sotto')).toBe('')
+    expect(host.staged).toBe(0)
   })
 })
