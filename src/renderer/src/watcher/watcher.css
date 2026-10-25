@@ -228,6 +228,68 @@
   .watcher-glance__why { display: none; }
 }
 
+/* ---------- The machines line (#1032) ---------- */
+/* Zach's pick D "Names": one plain line under the header, set as the needs-you line is, always there while Work across
+   machines is on. Each name is an underlined text button; a problem only adds words after its machine's count, in the
+   needs-you line's warning ink. Names and counts never change colour, and nothing is a pill, chip or meter (ADR-0110).
+   A narrow room wraps between machines, never inside one, and below 600px keeps only the machines with a problem. */
+.watcher-glance:has(+ .watcher-machines) { padding-bottom: 2px; box-shadow: none; }
+.watcher-glance + .watcher-machines { padding-top: 0; }
+.watcher-machines { position: relative; z-index: 6; flex: none; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline);
+  color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+/* A machine's name and count stay together on one line. A long saved name gives way to an ellipsis, short enough to
+   leave its count room on the line (the button's name and title keep it whole); a problem's words may wrap, between
+   words. Lines break between machines, at the separators, before anywhere else. */
+.watcher-machines__machine { white-space: nowrap; }
+.watcher-machines__sep { padding: 0 7px; }
+.watcher-machines__name, .watcher-machines__more { display: inline; max-width: 260px; padding: 0; line-height: inherit; vertical-align: baseline; border: 0; border-radius: 3px; background: transparent;
+  color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent);
+  text-underline-offset: 3px; cursor: pointer; }
+.watcher-machines__more { color: var(--tt-text-2); }
+.watcher-machines__name { display: inline-flex; max-width: min(260px, calc(100% - 12em)); vertical-align: top; }
+.watcher-machines__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.watcher-machines__words { white-space: normal; }
+.watcher-machines__name:hover, .watcher-machines__name[aria-expanded='true'], .watcher-machines__more:hover { text-decoration-color: currentColor; }
+.watcher-machines__words { color: var(--watcher-needs-ink); }
+.watcher-machines__narrow { display: none; }
+@container thread-pane (width < 600px) {
+  .watcher-machines:not([data-all]) .watcher-machines__wide { display: none; }
+  .watcher-machines:not([data-all]) .watcher-machines__narrow { display: inline; }
+}
+@media (max-width: 980px) { .watcher-machines { margin: 0 18px; } }
+/* In a short window the line's height comes out of the handover's words, so the composer stays above the floating switch. */
+@media (max-height: 620px) { .watcher-pane:has(> .watcher-machines) .watcher-handover__text { max-height: min(200px, 21vh); } }
+
+/* A machine's panel: under its name, over the conversation, as the All threads list sits over the room. */
+.watcher-machine-panel { position: absolute; z-index: 30; display: flex; flex-direction: column; width: min(340px, 100%); padding: 14px; border: 1px solid var(--tt-border-faint); border-radius: 12px; background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-overlay); color: var(--tt-text); font-size: 13px; line-height: 1.5; white-space: normal; outline: none; }
+.watcher-machine-panel:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.watcher-machine-panel h2 { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; margin: 0 0 6px; padding-right: 28px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.watcher-machine-panel h2 > svg { flex: none; color: var(--tt-text-2); }
+.watcher-machine-panel h2 > span { min-width: 0; overflow-wrap: anywhere; }
+/* What does not fit the room under the name scrolls here, between the heading and the foot, which stay in reach. */
+.watcher-machine-panel__body { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.watcher-machine-panel__body > :last-child { margin-bottom: 0; }
+.watcher-machine-panel__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
+.watcher-machine-panel__close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.watcher-machine-panel__close:hover { background: var(--tt-hover); color: var(--tt-text); }
+.watcher-machine-panel p { margin: 0 0 8px; color: var(--tt-text-2); }
+.watcher-machine-panel dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin: 4px 0 10px; }
+.watcher-machine-panel dt { color: var(--tt-text-muted); }
+.watcher-machine-panel dd { margin: 0; color: var(--tt-text); font-variant-numeric: tabular-nums; }
+.watcher-machine-panel :is(dd, p)[data-warn] { color: var(--watcher-needs-ink); }
+.watcher-machine-panel__count b { color: var(--tt-text); font-weight: 600; }
+.watcher-machine-panel ul { display: grid; gap: 2px; margin: 0 0 10px; padding: 0; list-style: none; }
+.watcher-machine-panel li { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; column-gap: 9px; padding: 3px 0; }
+.watcher-machine-panel li > .watcher-row__ring { width: 9px; height: 9px; }
+.watcher-machine-panel__title { min-width: 0; overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
+.watcher-machine-panel__who { grid-column: 2; color: var(--tt-text-muted); font-size: 12px; }
+.watcher-machine-panel__wait { display: block; width: 9px; height: 9px; border: 1.5px dotted var(--tt-text-2); border-radius: 50%; }
+.watcher-machine-panel__foot { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.watcher-machine-panel__link { padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500; text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.watcher-machine-panel__link:hover { text-decoration-color: currentColor; }
+
 /* ---------- The floating switch ---------- */
 /* History, Settings and Help, the switch, and the update control, in a pill centred in the band under the room. */
 /* At rest the pill shrinks to a small tab with an up arrow (Drake's pick on October 23, 2026, variant B of
@@ -464,6 +526,8 @@
 .receipt-outcome:is([data-tone='ready'], [data-tone='landing']) { color: var(--watcher-ready-ink); }
 .receipt-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin: 0; padding-left: 23px; color: var(--tt-text-muted); font-size: 12.5px; }
 .receipt-card__meta > :not(:first-child)::before { margin: 0 7px; content: '·'; }
+/* Why a start went where it did (#1032): Sotto's words, under the card's facts. */
+.receipt-card__placement { margin: 3px 0 0; padding-left: 23px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
 .receipt-card__provider, .receipt-card__machine { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .receipt-card__provider .thread-nav__mark { width: 12px; height: 12px; }
 .receipt-card__machine[data-kind='remote'] > svg { color: var(--tt-accent-text); }

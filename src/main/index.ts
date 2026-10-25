@@ -191,7 +191,7 @@ import {
 import { APP_ID, APP_NAME } from '../shared/constants'
 import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
-import { WATCHER_CHANGED, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
+import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import type { DictationCommand } from '../shared/contracts'
@@ -812,6 +812,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
+        ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
@@ -1124,6 +1125,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   const terminalService = new TerminalService({ files, directory: userDataPath,
     projectFolder: projectId => agentControl.projects().find(project => project.id === projectId)?.path,
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
+    runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
   const phoneAccess = new PhoneAccess({ directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
@@ -1991,7 +1993,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => windows.getTrustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, windowRead: agentStateBroadcaster.windowRead, workingCopyOptions: projectId => { const key = parseHostEntityKey(projectId); if (key && key.hostId !== agentControl.hostId()) throw new Error('Working-copy choices are on the host machine. Use the existing project folder or create its worktree there.'); return agentHost.workingCopyOptions(key?.id ?? projectId) } })
       // An E2E run never leaves the app for System Settings.
       const systemSettingsOpener = e2eConfiguration === null ? createSystemSettingsOpener(platform, url => shell.openExternal(url)) : null
-      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+      const desktopWatcher = createWatcherRoomDesktop({ watcherEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'], machinesEnabled: crossMachineEnabled,
         watcher: localRuntime?.watcher, send: state => windows.sendToMain(WATCHER_CHANGED, state) })
       const cleanup = registerIpc(ipcMain, {
         ...(desktopWatcher ? { watcher: desktopWatcher.bridge } : {}),

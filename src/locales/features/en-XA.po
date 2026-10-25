@@ -16,6 +16,16 @@ msgstr ""
 msgid "“{reason}”"
 msgstr ""
 
+#. placeholder {0}: entry.starting
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
+msgstr ""
+
+#. placeholder {0}: working.length - NAMED
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{0, plural, one {and # more} other {and # more}}"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
@@ -38,6 +48,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{cachedTokens} of {inputTokens} input tokens were read from cache. They count as input, not on top of it."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{calm}, nothing wrong. Show every machine"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -88,6 +102,14 @@ msgstr ""
 msgid "{count, plural, one {{shown} prompt in this range} other {{shown} prompts in this range}}"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{count, plural, one {# more} other {# more}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{count, plural, one {Stop # thread} other {Stop # threads}}"
 msgstr ""
@@ -106,6 +128,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{count, plural, one {Watcher changed {files} file itself.} other {Watcher changed {files} files itself.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
@@ -181,6 +207,22 @@ msgstr ""
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "{first} and {second}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} available. Short on memory"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{free} of {all} available. Short on memory"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -282,6 +324,14 @@ msgstr ""
 msgid "{lower} window"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{machines, plural, one {# machine} other {# machines}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{minutes, plural, one {the last minute} other {the last # minutes}}"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "{model} from {provider}"
 msgstr ""
@@ -311,6 +361,10 @@ msgstr ""
 msgid "{more} more need you. Show all threads"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} {tail}"
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{name} did not update. Nothing was changed. Settings → Hosts & phones shows what the installer said on {host}."
 msgstr ""
@@ -323,8 +377,24 @@ msgstr ""
 msgid "{name} didn't report any limits."
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name} hasn't reported its limits on {host} yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. Connect it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name} is not connected. It is where new workers start, so until it connects they start on this computer, and Watcher says so. Connect it in Settings, under Hosts & phones."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -341,6 +411,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name} reports when this resets, not how much is used."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name} runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -395,6 +469,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{name}'s limits haven't been read on {host} yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "{name}’s load and what runs there"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -473,8 +555,28 @@ msgstr ""
 msgid "{seconds, plural, one {# second} other {# seconds}}"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{seconds, plural, one {the last second} other {the last # seconds}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "{settledCount, plural, one {Settled, # thread} other {Settled, # threads}}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{share} busy over {span}. Busy"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show {name}’s load and what runs there."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{shown}. Show this computer’s load and what runs there."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
@@ -487,6 +589,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{sottoShare} in Sotto"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{starting, plural, one {# starting} other {# starting}}"
 msgstr ""
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
@@ -598,6 +704,10 @@ msgstr ""
 msgid "{working, plural, one {# thread on {name} is working. It updates once they finish.} other {# threads on {name} are working. It updates once they finish.}}"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "{working, plural, one {# working} other {# working}}"
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{working, plural, one {Installs {ready}. # working thread here stops and resumes after.} other {Installs {ready}. # working threads here stop and resume after.}}"
 msgstr ""
@@ -644,6 +754,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherPicture.tsx
 msgid "#{number} {step}, {title}. Show details"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "<0>{count}</0>. New workers start here."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
@@ -1003,6 +1117,10 @@ msgstr ""
 msgid "Busiest: <0>{busiestDays} around {busiestHour}</0>, {busiestPrompts} in this range"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "busy"
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "By model"
 msgstr ""
@@ -1082,6 +1200,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Change it any time, or make your own theme, in Settings › Appearance."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Change where new workers start"
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -1249,12 +1371,20 @@ msgstr ""
 msgid "Close"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close {name}’s panel"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherPicture.tsx
 msgid "Close details"
 msgstr ""
 
 #: src/renderer/src/components/WindowControls.tsx
 msgid "Close Sotto to tray"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Close this computer’s panel"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
@@ -1516,6 +1646,14 @@ msgstr ""
 msgid "Could not stop"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Counted, so the next start sees it"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "CPU"
+msgstr ""
+
 #. Colour scheme
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "Dark"
@@ -1549,6 +1687,14 @@ msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by {parent}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "delegated by another thread"
 msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -2410,6 +2556,10 @@ msgstr ""
 msgid "Listening. Say something."
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "load unknown"
+msgstr ""
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Loading models…"
 msgstr ""
@@ -2437,6 +2587,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Lowest: {lowestName}, {lowestWindow}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Machines and what works on each"
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -2492,6 +2646,10 @@ msgstr ""
 msgid "Maximize Sotto"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "may slow down"
+msgstr ""
+
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Measure again"
 msgstr ""
@@ -2502,6 +2660,7 @@ msgstr ""
 
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "Memory"
 msgstr ""
 
@@ -2650,6 +2809,14 @@ msgstr ""
 #. The streak calendar legend: more words
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "More"
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on {name}. It may slow down. Nothing is stopped or held back."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "More than ten threads are working on this computer. This computer may slow down or use its battery faster. Nothing is stopped or held back."
 msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -2907,6 +3074,7 @@ msgid "Not confirmed yet"
 msgstr ""
 
 #: src/renderer/src/features/starting/StartingScreen.tsx
+#: src/renderer/src/watcher/machineWords.ts
 msgid "not connected"
 msgstr ""
 
@@ -2993,6 +3161,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 msgid "Not working now"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default machine. Watcher says why in its reply."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherReceipts.tsx
+msgid "Not your default, {name}. Watcher says why in its reply."
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
@@ -3636,6 +3812,10 @@ msgstr ""
 msgid "Ranking is incomplete. There are more models than Usage lists, so the models drawn may not be those with the most tokens. Other counts the rest."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Read"
+msgstr ""
+
 #. Usage, inside a sentence after a middle dot
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "read {hours} h ago"
@@ -4165,6 +4345,10 @@ msgstr ""
 msgid "Shift-click opens a thread in Threads. <0>Esc</0> closes."
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "short on memory"
+msgstr ""
+
 #: src/renderer/src/features/memory/questions.ts
 msgid "Short or detailed replies, spoken summaries, progress updates, and when to interrupt you."
 msgstr ""
@@ -4432,6 +4616,10 @@ msgstr ""
 msgid "Sotto could not reach Watcher. Nothing was stopped. Try again."
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read {name}’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
+msgstr ""
+
 #: src/renderer/src/App.tsx
 msgid "Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings."
 msgstr ""
@@ -4458,6 +4646,10 @@ msgstr ""
 
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Unlock your keyring and reopen Sotto, or enter the key again in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "Sotto could not read this computer’s load just now. Watcher treats it as unknown, never idle. It reads again when you open this."
 msgstr ""
 
 #: src/renderer/src/watcher/watcherRoom.tsx
@@ -4912,6 +5104,10 @@ msgstr ""
 msgid "Superseded"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "System"
+msgstr ""
+
 #: src/renderer/src/platformCopy.ts
 msgid "System default"
 msgstr ""
@@ -5011,6 +5207,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "The last conversation is in Watcher history on the Threads page."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats {name}’s load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "The last reading is {ago}, older than a minute, so Watcher treats this computer’s load as unknown, not idle."
 msgstr ""
 
 #: src/renderer/src/platformCopy.ts
@@ -5136,13 +5340,34 @@ msgstr ""
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/features/usage/UsageView.tsx
 #: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/machineWords.ts
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "This computer"
 msgstr ""
 
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report how busy its processors are, so Watcher treats its load as unknown, not idle."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "This computer’s load and what runs there"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
+msgstr ""
+
+#: src/renderer/src/watcher/machineWords.ts
+msgid "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -5416,6 +5641,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Undo: watch {title} again"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "unknown"
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -6066,6 +6295,10 @@ msgstr ""
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Your text is still here"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "your thread"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx

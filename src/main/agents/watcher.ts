@@ -17,13 +17,13 @@ import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, WATCHER_STATE_COMPUTED_MAX, watcherToolSchemas,
   type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
-  type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
+  MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
 import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, WATCHER_MERGE_TURNS_KEPT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   type WatcherMergeTurn, type WatcherMergeTurnsRead,
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
-  type WatcherPrepareStopAllResult, type WatcherStopAllResult } from '../../shared/watcherRoom'
+  type WatcherPrepareStopAllResult, type WatcherStopAllResult, type WatcherMachine } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { AgentControl, HostThreadsChange, HostThreadsView, WatcherDraft } from './control'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
@@ -53,14 +53,13 @@ import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMess
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
-const MACHINE_FACTS_OLDER = 'This machine’s host does not report what kind of machine it is. Update Sotto on it to see.'
-const MACHINE_FACTS_UNREAD = 'This machine’s facts could not be read just now. Nothing was changed. Ask again.'
-const MACHINE_NOT_CONNECTED = 'This machine is not connected. Connect it from the Threads page to see its facts.'
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
 /** A read leaves room for the unchanged mark (#1552), so a read at the bound can still be marked. */
 const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
 /** Whether two targets name the same thread: what equal keys say, without building either key. */
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget) => left.hostId === right.hostId && left.threadId === right.threadId
+/** A read of every machine, as list_machines lists them before it adds where new workers start (#1032). */
+type MachinesListed = { readonly status: 'ok'; readonly machines: readonly WatcherMachine[]; readonly observedAt: string }
 type Participant = WatcherRecord['requests'][number]['participants'][number]
 /**
  * What one Watcher record says about each of this host's threads, in record order. The record is replaced on every change
@@ -405,6 +404,12 @@ export class WatcherService implements WatcherControlHooks {
   private roomKeyed: RoomKeys | undefined
   /** Every recorded operation's request and retry key, for the record they were read from (`recorded`). */
   private retryKeyed: { readonly record: Readonly<WatcherRecord>; readonly keys: ReadonlySet<string> } | undefined
+  /**
+   * The threads Watcher started, by target key (`startedByWatcher`), and how far into the operations it has read: their
+   * count and the last one's ID, so a record whose operations only grew is read from where it left off, and one with the
+   * same operations, whatever else changed, is not read at all.
+   */
+  private startedKeyed: { keys: Set<string>; operations: number; lastOperationId: string | undefined } | undefined
   private roomReceipted: RoomReceipts | undefined
   /** The number of the last room built: each build takes the next, so the window can tell which is newer (#1450). */
   private roomSequence = 0
@@ -1179,6 +1184,47 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** A machine's name as this computer saved it, for a sentence that names it (#1032). */
   machineName(hostId: string): string | undefined { return this.remote?.hosts().find(host => host.hostId === hostId)?.name?.trim() || undefined }
+  /**
+   * The machines as they were last read, by Watcher's list_machines or anyone's read, with where new workers start now;
+   * null before any read (#1032). An iPhone's page shows these between reads, which happen only when Watcher places work
+   * or the user opens a machine's numbers.
+   */
+  lastMachines(): (MachinesListed & { newWorkersStart?: NewWorkersStart }) | null {
+    return this.machinesListed === null ? null : this.withNewWorkersStart(this.machinesListed)
+  }
+  /** Each machine this computer has paired with, by the name it was saved under, and whether it is connected now. */
+  pairedMachines(): { hostId: string; name: string; connected: boolean }[] {
+    return (this.remote?.hosts() ?? []).filter(host => host.hostId !== this.hostId())
+      .map(host => ({ hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', connected: host.connected }))
+  }
+  /**
+   * Whether Watcher started this thread (#1032), for an iPhone's machines line, at a cost that does not grow with Watcher's
+   * history. A participant is marked started by Watcher only by a start operation on its target, or by copying that mark
+   * from another participant on the same target, so the set changes only when a start is recorded. The record is replaced
+   * on every change, so the index is kept across records: one with the same operations, whatever else changed, reads
+   * nothing; one whose operations only grew reads the new ones; any other is read whole again (`indexWatcherStarts`).
+   */
+  startedByWatcher(hostId: string, threadId: string): boolean {
+    const record = this.view(), operations = record.operations, known = this.startedKeyed
+    const lastOperationId = operations.at(-1)?.id
+    if (known === undefined || operations.length < known.operations || known.operations > 0 && operations[known.operations - 1]?.id !== known.lastOperationId) {
+      this.startedKeyed = this.indexWatcherStarts(record)
+    } else if (operations.length > known.operations) {
+      for (let index = known.operations; index < operations.length; index++) if (operations[index]!.action === 'start') known.keys.add(key(operations[index]!.target))
+      known.operations = operations.length
+      known.lastOperationId = lastOperationId
+    }
+    return this.startedKeyed!.keys.has(key({ hostId, threadId }))
+  }
+  /** Every thread Watcher started, read from the whole record: once, and again only when its operations were rewritten. */
+  private indexWatcherStarts(record: Readonly<WatcherRecord>): { keys: Set<string>; operations: number; lastOperationId: string | undefined } {
+    const keys = new Set<string>()
+    for (const request of record.requests) for (const participant of request.participants) if (participant.startedBy === 'watcher') keys.add(key(participant.target))
+    for (const operation of record.operations) if (operation.action === 'start') keys.add(key(operation.target))
+    return { keys, operations: record.operations.length, lastOperationId: record.operations.at(-1)?.id }
+  }
+  /** A machine's own thread list, read in place: This computer's, or a paired machine's as it last sent it. */
+  machineThreads(hostId: string): readonly AgentThread[] { return this.owningSnapshot(hostId)?.threads ?? [] }
   /** The machines as Watcher's list_machines gives them, for a delegating thread's own list (#1032). */
   async machines(): Promise<unknown> {
     try { return this.withNewWorkersStart(await this.listMachines()) } catch (error) { if (error instanceof Refusal) return error.result; throw error }
@@ -1333,7 +1379,12 @@ export class WatcherService implements WatcherControlHooks {
       // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
       creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
-      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record) }
+      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record),
+      // Where this run's starts were placed (#1032), from memory as the receipts' `placement` is; none while the feature is off.
+      ...this.placements.size ? { receiptPlacements: record.operations.flatMap(operation => {
+        const placement = this.placements.get(operation.id)
+        return placement ? [{ operationId: operation.id, placement }] : []
+      }) } : {} }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
@@ -4079,6 +4130,8 @@ ${operation.draftId}`)
    * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
+  /** The last machines read (#1032), kept for an iPhone's page between reads. */
+  private machinesListed: MachinesListed | null = null
   private async listMachines() {
     // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
     // wherever the facts do, or where a host does not send them.
@@ -4117,7 +4170,9 @@ ${operation.draftId}`)
       return { hostId: host.hostId, name: host.name?.trim().slice(0, 200) || 'Paired machine', thisComputer: false, connected,
         ...connected ? facts : notConnected }
     }))
-    return { status: 'ok', machines: [local, ...remotes], observedAt: now() }
+    const listed = { status: 'ok' as const, machines: [local, ...remotes], observedAt: now() }
+    this.machinesListed = listed
+    return listed
   }
   private async listWorkingCopies(input: WatcherToolInput<'list_working_copies'>) {
     if (input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher working-copy choices are not available yet.')

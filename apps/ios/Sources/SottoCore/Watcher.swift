@@ -26,6 +26,9 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     /// The user's own follow-ups waiting in Watcher's queue, first in line first: what goes next, after Watcher's turn.
     /// Nil from a computer that doesn't take a steer from this iPhone (#1229).
     public let followups: [Followup]?
+    /// Each machine and what works on it, for the machines line (#1032). Nil from a computer without Work across machines,
+    /// or for an iPhone that did not accept `watcher-phone-machines`.
+    public let machines: WatcherMachines?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
     /// One follow-up waiting for Watcher: its queue item, the draft it went with, its words, and `queued`, `dispatching`,
     /// `uncertain`, `failed` or `paused`.
@@ -182,10 +185,10 @@ public enum WatcherWire {
     /// through `preview`: Watcher's thread is never one of this iPhone's own to read (October 23, 2026).
     public static let photosFeature = "watcher-phone-photos"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
-    /// with it: its Remove recovers its outcome from the same receipt.
+    /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature)]) }
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature)]) }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {

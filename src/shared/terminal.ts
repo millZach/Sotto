@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { fileWorkspaceSchema } from './files'
+import { hasForbiddenControl } from './runnableCommand'
 import { toolListRequestSchema, toolTargetSchema, type ToolsResult } from './tools'
 
 export const TERMINAL_CHANNEL = 'sotto:terminal:'
@@ -21,7 +22,9 @@ const terminalCapacitySchema = z.object({ count: z.number().int().nonnegative(),
 export const terminalPlaceSchema = z.enum(['tools', 'drawer'])
 export type TerminalPlace = z.infer<typeof terminalPlaceSchema>
 export const terminalSizeSchema = z.object({ cols: z.number().int().min(2).max(500), rows: z.number().int().min(1).max(300) })
-export const terminalCreateSchema = toolTargetSchema.extend({ cols: terminalSizeSchema.shape.cols.optional(), rows: terminalSizeSchema.shape.rows.optional(), place: terminalPlaceSchema.optional() })
+/** A command from a reply that main types into the new shell as it starts (ADR-0139); only a drawer shell takes one. */
+export const terminalRunSchema = z.string().min(1).max(16384).refine(text => !hasForbiddenControl(text))
+export const terminalCreateSchema = toolTargetSchema.extend({ cols: terminalSizeSchema.shape.cols.optional(), rows: terminalSizeSchema.shape.rows.optional(), place: terminalPlaceSchema.optional(), run: terminalRunSchema.optional() })
 export const terminalListRequestSchema = toolListRequestSchema.extend({ place: terminalPlaceSchema.optional() })
 export const terminalRequestSchema = toolTargetSchema.extend({ sessionId: z.string().uuid() })
 export const terminalWriteSchema = terminalRequestSchema.extend({ data: z.string().min(1).max(65536) })

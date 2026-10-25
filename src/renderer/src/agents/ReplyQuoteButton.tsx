@@ -12,6 +12,14 @@ import './replyQuotes.css'
 const GAP_PX = 8
 
 /**
+ * Whether a button meant to stand `height` above something whose top is at `anchorTop` would be cut off by the top of
+ * the scrolling frame it sits in, so it should stand below instead. Shared with Run on a reply's commands (ADR-0139).
+ */
+export function flipsBelow(anchorTop: number, height: number, frameTop: number, gap = GAP_PX): boolean {
+  return anchorTop - height - gap < frameTop + gap
+}
+
+/**
  * Add to prompt, over words the user selected in one of the agent's replies (ADR-0129). It stands above the selection,
  * or under it where the top of the transcript would cut it off, and follows it as the transcript scrolls. A press puts
  * the words on this thread's composer as a quote and hands focus to the composer; Escape puts the button away.
@@ -56,7 +64,7 @@ export const ReplyQuoteButton = memo(function ReplyQuoteButton({ threadId, scrol
     if (outside) return
     const width = element.offsetWidth, height = element.offsetHeight
     const above = rect.top - height - GAP_PX
-    const top = above < frame.top + GAP_PX ? Math.min(rect.bottom + GAP_PX, frame.bottom - height - GAP_PX) : above
+    const top = flipsBelow(rect.top, height, frame.top) ? Math.min(rect.bottom + GAP_PX, frame.bottom - height - GAP_PX) : above
     const left = Math.max(GAP_PX, Math.min(rect.left + rect.width / 2 - width / 2 - origin.left, origin.width - width - GAP_PX))
     element.style.top = `${top - origin.top}px`
     element.style.left = `${left}px`
