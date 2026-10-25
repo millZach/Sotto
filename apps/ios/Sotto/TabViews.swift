@@ -77,7 +77,7 @@ struct ThreadsView: View {
     // MARK: Top of the sheet
 
     private var heading: some View {
-        PageHeading("Threads") {
+        PageHeading(String(localized: "Threads")) {
             Button { creating = true } label: { Image(systemName: "plus") }
                 .buttonStyle(GlassCircleStyle())
                 .accessibilityLabel("New thread")
@@ -163,24 +163,26 @@ struct ThreadsView: View {
         return HStack(spacing: Space.s3) {
             Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(trying ? "Checking \(computer.name)…" : "Can’t reach \(computer.name).")
+                (trying ? Text("Checking \(computer.name)…") : Text("Can’t reach \(computer.name)."))
                     .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
                 if !trying {
                     Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        .paragraphDirection()
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
             Button { Task { await model.connect(computer.hostID) } } label: {
                 if trying {
-                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying") }
+                    HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
                 } else {
                     Text("Try again")
                 }
             }
             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
             .disabled(trying)
-            .accessibilityLabel(trying ? "Trying to reach \(computer.name)" : "Try reaching \(computer.name) again")
+            .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
+                                : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))
         }
         .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
         .background {
@@ -203,13 +205,14 @@ struct ThreadsView: View {
         let unread = Set((recent + settled).filter { groups.isUnreadFinish($0) }.map { $0.id })
         let watched = model.watchedThreadIDs
         if needs.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty {
-            Text(groups.searching ? "No matching threads." : model.anyConnecting ? "Reading threads…" : "No threads here yet. Tap New thread to start one.")
+            (groups.searching ? Text("No matching threads.") : model.anyConnecting ? Text("Reading threads…") : Text("No threads here yet. Tap New thread to start one."))
                 .font(.sotto(.body)).foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, Space.s7)
+                .paragraphDirection()
         }
         if !needs.isEmpty {
-            SectionHeading("Needs you", count: needs.count, light: .warning)
+            SectionHeading(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), count: needs.count, light: .warning)
             VStack(spacing: Space.s3) {
                 ForEach(Array(needs.enumerated()), id: \.element.row.id) { index, item in
                     RequestCard(row: item.row, asking: item.asking, request: item.request, answer: sent[item.row.id]) { choice, busy, done in
@@ -220,18 +223,18 @@ struct ThreadsView: View {
             }
         }
         if !working.isEmpty {
-            SectionHeading("Working now", count: working.count, light: .accent)
+            SectionHeading(String(localized: "Working now"), count: working.count, light: .accent)
             VStack(spacing: Space.s3) {
                 ForEach(working) { row in WorkingCard(row: row) }
             }
         }
         if !recent.isEmpty {
-            SectionHeading("Recent", count: recent.count)
+            SectionHeading(String(localized: "Recent", comment: "The heading over threads that finished lately."), count: recent.count)
             ThreadRowList(rows: recent, unread: unread, watched: watched)
         }
         if !settled.isEmpty {
             if groups.searching {
-                SectionHeading("Settled", count: settled.count)
+                SectionHeading(String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: settled.count)
             } else {
                 settledToggle(settled.count)
             }
@@ -242,12 +245,13 @@ struct ThreadsView: View {
     }
 
     private func settledToggle(_ count: Int) -> some View {
-        Button { settledExpanded.toggle() } label: {
+        let threads = count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
+        return Button { settledExpanded.toggle() } label: {
             HStack(spacing: Space.s2) {
                 Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
                     .rotationEffect(.degrees(settledExpanded ? 90 : 0))
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: settledExpanded)
-                Text("Settled")
+                Text("Settled", comment: "The heading over threads the user has put aside.")
                 Spacer()
                 Text("\(count)").fontWeight(.regular)
             }
@@ -259,8 +263,9 @@ struct ThreadsView: View {
         .buttonStyle(PressStyle())
         .padding(.top, Space.s6)
         .accessibilityIdentifier("settled-threads")
-        .accessibilityLabel(settledExpanded ? "Hide settled threads" : "Show settled threads")
-        .accessibilityValue("\(count) threads, \(settledExpanded ? "expanded" : "collapsed")")
+        .accessibilityLabel(settledExpanded ? String(localized: "Hide settled threads") : String(localized: "Show settled threads"))
+        .accessibilityValue(settledExpanded ? String(localized: "\(threads), expanded", comment: "%@ is how many settled threads there are, such as 3 threads.")
+                            : String(localized: "\(threads), collapsed", comment: "%@ is how many settled threads there are, such as 3 threads."))
     }
 
     /// The live requests, with any card that was just answered here kept in its place until it leaves.
@@ -352,7 +357,7 @@ private struct ComputerMenu: View {
     }
     private var title: String {
         if case .only(let id) = model.show { return model.name(id) }
-        return "All computers"
+        return String(localized: "All computers")
     }
 }
 
@@ -366,14 +371,15 @@ private struct ThreadCounts: View {
                 Light(tone: working > 0 ? .accent : .off, breathing: working > 0)
                 HStack(spacing: 4) {
                     Text("\(working)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Text("working")
+                    Text("working", comment: "After the number of threads at work, such as 3 working.")
                 }
             }
             HStack(spacing: Space.s2) {
                 Light(tone: needs > 0 ? .warning : .off)
                 HStack(spacing: 4) {
                     Text("\(needs)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Text(needs == 1 ? "needs you" : "need you")
+                    (needs == 1 ? Text("needs you", comment: "After the number 1: one request waits on the user.")
+                        : Text("need you", comment: "After a number other than 1: that many requests wait on the user."))
                 }
             }
         }
@@ -381,8 +387,14 @@ private struct ThreadCounts: View {
         .foregroundStyle(Palette.muted)
         .lineLimit(1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(working) working, \(needs) \(needs == 1 ? "needs" : "need") you")
+        .accessibilityLabel(String(localized: "\(workingWords), \(needsWords)", comment: "First %@ is how many threads are working, such as 3 working; second is how many requests need the user, such as 1 needs you."))
         .accessibilityIdentifier("thread-counts")
+    }
+    private var workingWords: String {
+        working == 1 ? String(localized: "1 working") : String(localized: "\(working) working")
+    }
+    private var needsWords: String {
+        needs == 1 ? String(localized: "1 needs you") : String(localized: "\(needs) need you")
     }
 }
 
@@ -438,22 +450,48 @@ private struct RequestCard: View {
     /// Whether the computer confirmed the answer this card sent; otherwise its request left without one.
     private var answerConfirmed: Bool { answer?.confirmed == true }
     private var isPermission: Bool { request.kind == "permission" }
-    private var tag: String { isPermission ? "Permission" : "Question" }
+    private var tag: String {
+        isPermission ? String(localized: "Permission", comment: "The tag on a card whose thread asks the user for a permission.")
+            : String(localized: "Question", comment: "The tag on a card whose thread asks the user a question.")
+    }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
     /// The delegated thread the request waits in, when it is not the row's own.
     private var delegated: Bool { asking.ref != row.ref }
     private var place: String {
-        let base = "\(Words.provider(row.thread.providerId)) on \(row.computer)"
-        return delegated ? base + " · Waiting in \(asking.thread.title)" : base
+        let provider = Words.provider(row.thread.providerId)
+        if delegated {
+            return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
+                          comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
+        }
+        return String(localized: "\(provider) on \(row.computer)", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
     }
     private var openLabel: String {
-        "\(row.thread.title). \(tag) from \(Words.provider(row.thread.providerId)) on \(row.computer)"
-            + (delegated ? ", waiting in \(asking.thread.title)" : "")
-            + WatchedWords.spoken(model.watchedByWatcher(row.ref)) + ": \(ask)"
+        let provider = Words.provider(row.thread.providerId)
+        let title = row.thread.title
+        var label: String
+        if delegated {
+            label = isPermission
+                ? String(localized: "\(title). Permission from \(provider) on \(row.computer), waiting in \(asking.thread.title)",
+                         comment: "First %@ is the thread's title; second is the agent's name, such as Codex; third is the computer's name; fourth is the delegated thread the request waits in.")
+                : String(localized: "\(title). Question from \(provider) on \(row.computer), waiting in \(asking.thread.title)",
+                         comment: "First %@ is the thread's title; second is the agent's name, such as Codex; third is the computer's name; fourth is the delegated thread the request waits in.")
+        } else {
+            label = isPermission
+                ? String(localized: "\(title). Permission from \(provider) on \(row.computer)",
+                         comment: "First %@ is the thread's title; second is the agent's name, such as Codex; third is the computer's name.")
+                : String(localized: "\(title). Question from \(provider) on \(row.computer)",
+                         comment: "First %@ is the thread's title; second is the agent's name, such as Codex; third is the computer's name.")
+        }
+        if model.watchedByWatcher(row.ref) {
+            label = String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.")
+        }
+        return String(localized: "\(label): \(ask)", comment: "First %@ is the thread's title and where it runs; second is the question or permission, in the agent's own words.")
     }
     private var reviewWords: String {
-        if asking.thread.requests.count > 1 { return "Review \(asking.thread.requests.count) requests" }
-        return isPermission ? "Review permission" : "Review question"
+        if asking.thread.requests.count > 1 {
+            return String(localized: "Review \(asking.thread.requests.count) requests", comment: "%lld is how many requests wait in the thread, always more than one.")
+        }
+        return isPermission ? String(localized: "Review permission") : String(localized: "Review question")
     }
 
     private var summary: some View {
@@ -468,17 +506,17 @@ private struct RequestCard: View {
                 }
             }
             .frame(minHeight: 18)
-            Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+            Text(verbatim: row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
             PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
                       text: place)
                 .padding(.top, Space.s1)
-            Text(ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
+            Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s3)
             if let command = request.context?.command, !command.isEmpty {
-                Text(command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
+                Text(verbatim: command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
                     .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.code, in: RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
@@ -486,7 +524,8 @@ private struct RequestCard: View {
                     .padding(.top, Space.s2)
             }
             if asking.thread.requests.count > 1 {
-                Text(asking.thread.requests.count == 2 ? "1 more request in this thread" : "\(asking.thread.requests.count - 1) more requests in this thread")
+                (asking.thread.requests.count == 2 ? Text("1 more request in this thread")
+                    : Text("\(asking.thread.requests.count - 1) more requests in this thread"))
                     .font(.sotto(.caption)).foregroundStyle(Palette.muted)
                     .padding(.top, Space.s2)
             }
@@ -504,7 +543,7 @@ private struct RequestCard: View {
             HStack(spacing: Space.s2) {
                 Spacer(minLength: 0)
                 ProgressView().controlSize(.small)
-                Text(answer?.busy ?? "Sending…")
+                Text(answer?.busy ?? String(localized: "Sending…"))
             }
             .font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
             .frame(minHeight: 44)
@@ -513,13 +552,14 @@ private struct RequestCard: View {
             HStack(spacing: Space.s2) {
                 Spacer(minLength: 0)
                 if answerConfirmed { Image(systemName: "checkmark").accessibilityHidden(true) }
-                Text(answerConfirmed ? (answer?.done ?? "Answered") : "No longer waiting")
+                (answerConfirmed ? Text(answer?.done ?? String(localized: "Answered", comment: "A card's answer reached the thread's computer."))
+                    : Text("No longer waiting", comment: "A card's request left without the computer confirming the answer."))
             }
             .font(.sotto(.small, .semibold)).foregroundStyle(answerConfirmed ? Palette.accentText : Palette.muted)
             .frame(minHeight: 44)
             .accessibilityElement(children: .combine)
         case .unconfirmed:
-            reviewOnly("Not confirmed yet. Check the thread before answering again.")
+            reviewOnly(String(localized: "Not confirmed yet. Check the thread before answering again."))
         case .idle:
             idleActions
         }
@@ -528,9 +568,9 @@ private struct RequestCard: View {
     @ViewBuilder private var idleActions: some View {
         let ready = model.canAnswer(request, in: asking.ref) && !model.answering(asking.ref.hostID)
         if !request.supported {
-            reviewOnly("Answer this one in the thread.")
+            reviewOnly(String(localized: "Answer this one in the thread."))
         } else if !model.mayAnswer(asking.ref.hostID) {
-            reviewOnly("This iPhone can’t answer on \(row.computer) yet.")
+            reviewOnly(String(localized: "This iPhone can’t answer on \(row.computer) yet.", comment: "%@ is the computer's name."))
         } else if isPermission {
             permissionActions(enabled: ready)
         } else if let options = request.oneTapOptions {
@@ -544,6 +584,7 @@ private struct RequestCard: View {
         HStack(spacing: Space.s3) {
             if let note {
                 Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             Spacer(minLength: 0)
             NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(reviewWords) }
@@ -552,9 +593,9 @@ private struct RequestCard: View {
     }
 
     private func questionActions(_ options: [RequestOption], enabled: Bool) -> some View {
-        let ownWords = request.questions?.first?.allowFreeText == true ? "Write your own" : reviewWords
+        let ownWords = request.questions?.first?.allowFreeText == true ? String(localized: "Write your own") : reviewWords
         return OneTapQuestion(options: options, enabled: enabled, picked: picked) { option in
-            send(option, "Sending…", "Answered")
+            send(option, String(localized: "Sending…"), String(localized: "Answered", comment: "A card's answer reached the thread's computer."))
         } more: {
             NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(ownWords) }
                 .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
@@ -578,12 +619,13 @@ private struct RequestCard: View {
         }
     }
 
-    private var moreWords: String { request.cardPermissionChoices == nil && request.permissionChoices != nil ? reviewWords : "More choices" }
+    private var moreWords: String { request.cardPermissionChoices == nil && request.permissionChoices != nil ? reviewWords : String(localized: "More choices") }
 
     /// Deny, then Allow once, on the computer's own words. A request with no choices of its own takes Allow and Deny.
     private func permissionButtons(enabled: Bool) -> some View {
         CardPermissionButtons(request: request, enabled: enabled) { choice, allows in
-            send(choice, allows ? "Allowing…" : "Denying…", allows ? "Allowed" : "Denied")
+            send(choice, allows ? String(localized: "Allowing…") : String(localized: "Denying…"),
+                 allows ? String(localized: "Allowed", comment: "A permission the user allowed from a card.") : String(localized: "Denied", comment: "A permission the user denied from a card."))
         }
     }
 }
@@ -611,7 +653,7 @@ struct OneTapQuestion<More: View>: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             FlowLayout(spacing: Space.s2) {
                 ForEach(options) { option in
-                    Button { picked = picked == option.id ? nil : option.id } label: { Text(option.label) }
+                    Button { picked = picked == option.id ? nil : option.id } label: { Text(verbatim: option.label) }
                         .buttonStyle(ChipStyle(selected: picked == option.id))
                         .accessibilityAddTraits(picked == option.id ? .isSelected : [])
                 }
@@ -678,7 +720,7 @@ private struct WorkingCard: View {
                     }
                 }
                 .frame(minHeight: 18)
-                Text(row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+                Text(verbatim: row.thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, Space.s2)
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
@@ -694,14 +736,24 @@ private struct WorkingCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel("\(row.thread.title), \(state.words), \(place)" + WatchedWords.spoken(model.watchedByWatcher(row.ref)))
+        .accessibilityLabel(spokenLabel)
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
     private var place: String {
-        let base = "\(Words.provider(row.thread.providerId)) on \(row.computer)"
-        guard let project = row.project else { return base }
-        return base + " · " + project
+        let provider = Words.provider(row.thread.providerId)
+        guard let project = row.project else {
+            return String(localized: "\(provider) on \(row.computer)", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
+        }
+        return String(localized: "\(provider) on \(row.computer) · \(project)",
+                      comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the project's name.")
+    }
+    /// The card as VoiceOver reads it.
+    private var spokenLabel: String {
+        let label = "\(row.thread.title), \(state.words), \(place)"
+        return model.watchedByWatcher(row.ref)
+            ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.")
+            : label
     }
     /// The step running now when this iPhone holds the thread's detail; otherwise what the state says. The list
     /// a computer shares carries no steps.
@@ -709,10 +761,11 @@ private struct WorkingCard: View {
         if let detail = model.detail(for: row.ref), let step = detail.activities?.last(where: { $0.status == "running" }) {
             return [step.title, step.subject].compactMap { $0 }.joined(separator: " ")
         }
-        if state == .compacting { return "Making room in the thread’s context." }
-        if state == .waiting { return "A background command is still running." }
-        if row.thread.status != "running", !(row.thread.backgroundWork ?? []).isEmpty { return "Background agents are still working." }
-        return "\(Words.provider(row.thread.providerId)) is working on \(row.computer)."
+        if state == .compacting { return String(localized: "Making room in the thread’s context.") }
+        if state == .waiting { return String(localized: "A background command is still running.") }
+        if row.thread.status != "running", !(row.thread.backgroundWork ?? []).isEmpty { return String(localized: "Background agents are still working.") }
+        let provider = Words.provider(row.thread.providerId)
+        return String(localized: "\(provider) is working on \(row.computer).", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
     }
 }
 
@@ -753,7 +806,7 @@ private struct ThreadRow: View {
             HStack(alignment: .top, spacing: Space.s3) {
                 Light(tone: unread ? .accent : failed ? .danger : .off).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
+                    Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                               tone: failed ? Palette.dangerText : Palette.muted)
@@ -770,20 +823,24 @@ private struct ThreadRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .accessibilityLabel(label + WatchedWords.spoken(watched))
+        .accessibilityLabel(watched ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : label)
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
     /// What the row says under its title: just finished, can't be reached, failed, or where it lives.
     private var line: String {
-        if unread { return "Just finished · \(row.computer)" }
+        if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
         if !row.reachable { return "\(row.status.words) · \(row.computer)" }
         if failed { return "\(state.words) · \(row.computer)" }
         return Words.place(row)
     }
     /// The row as VoiceOver reads it; a thread that finished out of sight says so right after its name.
     private var label: String {
-        if unread { return "\(row.thread.title), just finished, not opened yet, \(Words.place(row))" }
+        if unread {
+            let place = Words.place(row)
+            return String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",
+                          comment: "First %@ is the thread's title; second is where it runs: its agent, project and computer.")
+        }
         if !row.reachable { return "\(row.thread.title), \(row.status.words), \(Words.place(row))" }
         if failed { return "\(row.thread.title), \(state.words), \(Words.place(row))" }
         return "\(row.thread.title), \(Words.place(row))"

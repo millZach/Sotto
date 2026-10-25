@@ -31,7 +31,7 @@ struct ThreadView: View {
             open = request
         }
         .background(Palette.canvas)
-        .navigationTitle(thread?.title ?? "Thread")
+        .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) { barTitle }
@@ -60,7 +60,7 @@ struct ThreadView: View {
     }
 
     private var barTitle: some View {
-        Text(thread?.title ?? "Thread")
+        Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
             .font(.sotto(.body, .semibold))
             .foregroundStyle(Palette.ink)
             .lineLimit(1)
@@ -104,17 +104,17 @@ private struct ThreadStatePill: View {
         .background(background, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(reachable ? state.words : "Can’t reach this computer")
+        .accessibilityLabel(reachable ? state.words : String(localized: "Can’t reach this computer"))
     }
     private var word: String {
-        guard reachable else { return "Can’t reach it" }
+        guard reachable else { return String(localized: "Can’t reach it", comment: "A thread's state in its bar: its computer can't be reached") }
         switch state {
-        case .needsAnswer, .asked: return "Needs you"
-        case .working: return "Working"
-        case .waiting: return "Waiting"
-        case .compacting: return "Compacting"
-        case .failed: return "Failed"
-        case .done: return "Done"
+        case .needsAnswer, .asked: return String(localized: "Needs you", comment: "A thread's state in its bar: it waits on the user")
+        case .working: return String(localized: "Working", comment: "A thread's state in its bar")
+        case .waiting: return String(localized: "Waiting", comment: "A thread's state in its bar")
+        case .compacting: return String(localized: "Compacting", comment: "A thread's state in its bar: its context is being compacted")
+        case .failed: return String(localized: "Failed", comment: "A thread's state in its bar")
+        case .done: return String(localized: "Done", comment: "A thread's state in its bar")
         }
     }
     private var foreground: ThemeRole {
@@ -161,8 +161,8 @@ private struct WatchToggle: View {
         .buttonStyle(PressStyle())
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
-        .accessibilityValue(watched ? "On" : "Off")
-        .accessibilityHint(watched ? "Stops Watcher watching this thread" : "Watcher keeps this thread going until you stop it")
+        .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))
+        .accessibilityHint(watched ? String(localized: "Stops Watcher watching this thread") : String(localized: "Watcher keeps this thread going until you stop it"))
         .accessibilityIdentifier("thread-watch")
     }
 }
@@ -179,7 +179,7 @@ private struct ThreadMenu: View {
         Menu {
             Button { Task { await model.compact(ref) } } label: {
                 Text("Compact context")
-                Text(held ?? "Summarize earlier messages to free room")
+                Text(held ?? String(localized: "Summarize earlier messages to free room"))
             }
             .disabled(held != nil)
         } label: {
@@ -397,14 +397,16 @@ private struct Conversation: View {
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Space.s7)
+                        .paragraphDirection()
                 }
                 ForEach(rows) { row in
                     rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
                 }
             } else if model.detailProblem == nil || !online {
-                Text(model.status(ref.hostID) == .unreachable ? "Reconnect to read this thread." : "Reading this thread…")
+                (model.status(ref.hostID) == .unreachable ? Text("Reconnect to read this thread.") : Text("Reading this thread…"))
                     .font(.sotto(.body)).foregroundStyle(Palette.muted)
                     .padding(.vertical, Space.s6)
+                    .paragraphDirection()
             }
             ForEach(pending) { item in
                 UnconfirmedRow(item: item, text: model.submitted[item.id], photos: model.submittedPhotos[item.id] ?? [],
@@ -557,9 +559,9 @@ private struct ThreadHero: View, Equatable {
     var body: some View {
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
-            Text(thread?.title ?? "Thread")
+            Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
                 .font(.sotto(.display, .bold))
-                .tracking(-0.6)
+                .headingTracking(-0.6)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -591,7 +593,7 @@ private struct ThreadHero: View, Equatable {
 
     /// Where it runs: the agent, the computer and the project.
     private var place: String {
-        let base = "\(Words.provider(thread?.providerId)) on \(model.name(ref.hostID))"
+        let base = String(localized: "\(Words.provider(thread?.providerId)) on \(model.name(ref.hostID))", comment: "Where a thread runs: the first %@ is the agent's name, the second the computer's name")
         let project = model.lists.first(where: { $0.hostID == ref.hostID })?.projects.first(where: { $0.id == thread?.projectId })?.title
         guard let project else { return base }
         return base + " · " + project
@@ -631,7 +633,7 @@ private struct GitChipRow: View {
                 Button(action: open) {
                     HStack(spacing: 5) {
                         Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                        Text("#\(pullRequest.number) \(pullRequest.state)")
+                        Text("#\(pullRequest.number) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                         if let dot = sheet.dot { ChecksDot(tone: dot) }
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
                     }
@@ -646,7 +648,7 @@ private struct GitChipRow: View {
                 }
                 .buttonStyle(PressStyle())
                 .fixedSize()
-                .accessibilityLabel("Show pull request \(pullRequest.number), \(pullRequest.state)" + (sheet.rollup.map { ". Checks: \($0)" } ?? ""))
+                .accessibilityLabel(sheet.rollup.map { String(localized: "Show pull request \(pullRequest.number), \(pullRequest.stateWord). Checks: \($0)", comment: "%lld is the pull request's number, the first %@ its state, the second its checks' roll-up") } ?? String(localized: "Show pull request \(pullRequest.number), \(pullRequest.stateWord)", comment: "%lld is the pull request's number, %@ its state"))
                 .accessibilityIdentifier("pull-request-chip")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -659,7 +661,7 @@ private struct GitChipRow: View {
         if let branch = chips.branch {
             GitChip {
                 Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
-                Text(branch)
+                Text(verbatim: branch)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(Palette.ink)
                     .truncationMode(.middle)
@@ -669,7 +671,7 @@ private struct GitChipRow: View {
             GitChip {
                 Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
                 Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
-                Text(changes.files == 1 ? "1 file" : "\(changes.files) files")
+                (changes.files == 1 ? Text("1 file") : Text("\(changes.files) files"))
             }
             .fixedSize()
         }
@@ -682,7 +684,7 @@ private struct GitChipRow: View {
             if let pullRequest = chips.pullRequest {
                 GitChip {
                     Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
-                    Text("#\(pullRequest.number) \(pullRequest.state)")
+                    Text("#\(pullRequest.number) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                 }
                 .fixedSize()
             }
@@ -728,7 +730,7 @@ private struct MessageView: View, Equatable {
         } else if message.role == "assistant" {
             assistantMessage
         } else {
-            Text(message.text).font(.sotto(.small)).foregroundStyle(Palette.muted).frame(maxWidth: .infinity)
+            Text(verbatim: message.text).font(.sotto(.small)).foregroundStyle(Palette.muted).frame(maxWidth: .infinity)
         }
     }
 
@@ -1067,10 +1069,10 @@ private struct CodeBlockView: View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
-                Text(language ?? "code").font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                Text(language ?? String(localized: "code", comment: "Label over a code block whose language is not named")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
                 Spacer(minLength: Space.s2)
                 Button { copy() } label: {
-                    Text(copied ? "Copied" : "Copy")
+                    (copied ? Text("Copied", comment: "A code block's copy control, just after a press") : Text("Copy", comment: "A code block's copy control"))
                         .font(.sotto(.caption, .semibold))
                         .foregroundStyle(Palette.accentText)
                         .padding(.horizontal, Space.s3)
@@ -1078,7 +1080,7 @@ private struct CodeBlockView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
-                .accessibilityLabel(copied ? "Copied" : "Copy this code")
+                .accessibilityLabel(copied ? String(localized: "Copied", comment: "A code block's copy control, just after a press") : String(localized: "Copy this code"))
             }
             .padding(.leading, Space.s3)
             .padding(.trailing, Space.s1)
@@ -1293,7 +1295,7 @@ private struct LiveStepWords: View {
                 .lineLimit(1)
                 .layoutPriority(1)
             if let subject = live.subject {
-                Text(subject)
+                Text(verbatim: subject)
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -1358,7 +1360,7 @@ private struct StepLine: View {
     var body: some View {
         HStack(spacing: 7) {
             mark.frame(width: 16, height: 16)
-            Text(record.title)
+            Text(verbatim: record.title)
                 .font(.sotto(.caption, .semibold))
                 .foregroundStyle(verbStyle)
                 .lineLimit(1)
@@ -1410,8 +1412,8 @@ private struct StepLine: View {
     }
 
     private var metaWords: String? {
-        if record.status == "failed" { return record.exitCode.map { "Failed (\($0))" } ?? "Failed" }
-        if record.status == "interrupted" { return "Stopped" }
+        if record.status == "failed" { return record.exitCode.map { code in String(localized: "Failed (\(code))", comment: "A step's outcome; %lld is the exit code it failed with") } ?? String(localized: "Failed", comment: "A step's outcome") }
+        if record.status == "interrupted" { return String(localized: "Stopped", comment: "A step's outcome: it was interrupted") }
         return Words.duration(record.durationMs)
     }
 
@@ -1422,7 +1424,12 @@ private struct StepLine: View {
         }
         guard let changes = record.changes, let first = changes.first else { return nil }
         let name = first.path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map { String($0) } ?? first.path
-        return changes.count == 1 ? name : "\(name) and \(changes.count - 1) more"
+        guard changes.count > 1 else { return name }
+        let others = changes.count - 1
+        let more = others == 1
+            ? String(localized: "1 more", comment: "How many other files a step changed, after the first file's name")
+            : String(localized: "\(others) more", comment: "How many other files a step changed, after the first file's name")
+        return String(localized: "\(Interface.isolated(name)) and \(more)", comment: "The first %@ is the name of a file a step changed, the second how many more it changed, such as “2 more”")
     }
 
     private var icon: String {
@@ -1473,7 +1480,7 @@ private struct UnconfirmedRow: View {
                 }
             }
             if let text, !text.isEmpty {
-                Text(text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
+                Text(verbatim: text).font(.sotto(.body)).foregroundStyle(Palette.bubbleInk)
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                     .background(Palette.bubble.opacity(0.6), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.leading, 48)
@@ -1488,7 +1495,7 @@ private struct UnconfirmedRow: View {
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "exclamationmark.triangle").accessibilityHidden(true)
-                    Text(words.unconfirmed).fixedSize(horizontal: false, vertical: true)
+                    Text(words.unconfirmed).fixedSize(horizontal: false, vertical: true).paragraphDirection()
                 }
                 .font(.sotto(.small)).foregroundStyle(Palette.warningText)
                 HStack(spacing: Space.s2) {
@@ -1504,15 +1511,15 @@ private struct UnconfirmedRow: View {
     /// What the row says for its kind: on its way, and unconfirmed.
     private var words: (sending: String, unconfirmed: String) {
         switch item.kind {
-        case "answer", "watcher-answer": return ("Sending your answer…", "Your answer isn’t confirmed. Check the thread before you answer again.")
-        case "interrupt": return ("Stopping…", "Stop isn’t confirmed. Check whether the thread is still working.")
-        case "queue": return ("Queuing…", "Queuing isn’t confirmed. Check the thread’s queue before you send it again.")
-        case "steer": return ("Steering…", "Steer isn’t confirmed. Check the thread before you steer again.")
-        case "remove": return ("Removing…", "Removing isn’t confirmed. Check the thread’s queue before you remove it again.")
-        case "compact": return ("Compacting…", "Compacting isn’t confirmed. Check the thread before you compact it again.")
-        case "babysit": return ("Starting babysitting…", "Babysitting isn’t confirmed. Check the pull request before you press it again.")
-        case "stop-babysitting": return ("Stopping babysitting…", "Stopping babysitting isn’t confirmed. Check the pull request before you press it again.")
-        default: return ("Sending…", "Not confirmed. Check the thread before you send it again.")
+        case "answer", "watcher-answer": return (String(localized: "Sending your answer…"), String(localized: "Your answer isn’t confirmed. Check the thread before you answer again."))
+        case "interrupt": return (String(localized: "Stopping…", comment: "A stop on its way to the thread's computer"), String(localized: "Stop isn’t confirmed. Check whether the thread is still working."))
+        case "queue": return (String(localized: "Queuing…", comment: "A reply on its way to the thread's queue"), String(localized: "Queuing isn’t confirmed. Check the thread’s queue before you send it again."))
+        case "steer": return (String(localized: "Steering…", comment: "A queued message being sent into the running turn"), String(localized: "Steer isn’t confirmed. Check the thread before you steer again."))
+        case "remove": return (String(localized: "Removing…", comment: "A queued message being taken out of the queue"), String(localized: "Removing isn’t confirmed. Check the thread’s queue before you remove it again."))
+        case "compact": return (String(localized: "Compacting…", comment: "A request to compact the thread's context on its way"), String(localized: "Compacting isn’t confirmed. Check the thread before you compact it again."))
+        case "babysit": return (String(localized: "Starting babysitting…", comment: "A request to babysit a pull request on its way"), String(localized: "Babysitting isn’t confirmed. Check the pull request before you press it again."))
+        case "stop-babysitting": return (String(localized: "Stopping babysitting…", comment: "A request to stop babysitting a pull request on its way"), String(localized: "Stopping babysitting isn’t confirmed. Check the pull request before you press it again."))
+        default: return (String(localized: "Sending…", comment: "A reply on its way to the thread's computer"), String(localized: "Not confirmed. Check the thread before you send it again."))
         }
     }
 }
@@ -1529,10 +1536,10 @@ private struct FailedReplyCard: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             Text("Your reply wasn’t sent").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             if !text.isEmpty {
-                Text(text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+                Text(verbatim: text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
             }
             if !photos.isEmpty {
-                Text(photos.count == 1 ? "With 1 photo" : "With \(photos.count) photos").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                (photos.count == 1 ? Text("With 1 photo") : Text("With \(photos.count) photos")).font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
             Button("Put it back in the reply box") { model.restoreReply(ref) }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
@@ -1582,7 +1589,7 @@ private struct ReplyDock: View, Equatable {
     private func watchedLine(_ words: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             WatcherOwlMark(size: 13).accessibilityHidden(true)
-            Text(words).fixedSize(horizontal: false, vertical: true)
+            Text(words).fixedSize(horizontal: false, vertical: true).paragraphDirection()
         }
         .font(.sotto(.small))
         .foregroundStyle(Palette.muted)
@@ -1596,7 +1603,7 @@ private struct ReplyDock: View, Equatable {
 
     private func problemNote(_ problem: String) -> some View {
         HStack(spacing: Space.s3) {
-            Text(problem).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+            Text(problem).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true).paragraphDirection()
             Spacer(minLength: Space.s2)
             Button("Try again") { Task { await model.select(ref) } }
                 .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
@@ -1634,7 +1641,7 @@ private struct ReplyDock: View, Equatable {
         } else {
             let permission = request.kind == "permission"
             Button { openRequest(request) } label: {
-                Label(permission ? "Review the permission" : "Answer the question", systemImage: permission ? "lock.shield" : "questionmark.bubble")
+                Label(permission ? String(localized: "Review the permission") : String(localized: "Answer the question"), systemImage: permission ? "lock.shield" : "questionmark.bubble")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(ActionStyle(wide: true))
@@ -1648,14 +1655,14 @@ private struct ReplyDock: View, Equatable {
     private var replyField: some View {
         let photos = model.photos(ref)
         let shape = RoundedRectangle(cornerRadius: photos.isEmpty ? 26 : 22, style: .continuous)
-        let placeholder = model.thread(ref)?.status == "running" ? "Reply while it works" : "Reply to this thread"
+        let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(ref: ref)
             // Photos wait inside the reply box, above the words, as in Messages.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(ref: ref).padding(.top, Space.s1) }
                 if let notice = model.photoNotices[ref.id] {
-                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
                         .accessibilityAddTraits(.updatesFrequently)
                 }
                 TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
@@ -1725,7 +1732,7 @@ private struct ReplyDock: View, Equatable {
         }
         .buttonStyle(PressStyle())
         .disabled(!canSend)
-        .accessibilityLabel(queues ? (preparing ? "Queuing reply" : "Queue for after this turn") : (preparing ? "Sending reply" : "Send reply"))
+        .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
     }
 }
 
@@ -1743,12 +1750,12 @@ private struct FollowupStack: View {
                     FollowupCard(ref: ref, item: item)
                 }
                 if hidden > 0 {
-                    Button(all ? "Show fewer" : "\(hidden) more queued") { all.toggle() }
+                    Button(all ? String(localized: "Show fewer", comment: "Shows only the first queued messages again") : (hidden == 1 ? String(localized: "1 more queued", comment: "Shows the rest of the queued messages") : String(localized: "\(hidden) more queued", comment: "Shows the rest of the queued messages"))) { all.toggle() }
                         .font(.sotto(.small, .semibold))
                         .foregroundStyle(Palette.accentText)
                         .frame(minHeight: 44)
                         .padding(.horizontal, Space.s4)
-                        .accessibilityLabel(all ? "Show fewer queued messages" : "Show \(hidden) more queued messages")
+                        .accessibilityLabel(all ? String(localized: "Show fewer queued messages") : (hidden == 1 ? String(localized: "Show 1 more queued message") : String(localized: "Show \(hidden) more queued messages")))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1774,7 +1781,7 @@ private struct FollowupCard: View {
             .font(.sotto(.caption, .semibold))
             .foregroundStyle(tone)
             if item.status == "failed", let error = item.error, !error.isEmpty {
-                Text(error).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: error).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
             Text(words)
                 .font(.sotto(.body))
@@ -1795,7 +1802,7 @@ private struct FollowupCard: View {
                         Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
                             .buttonStyle(PillButtonStyle(kind: .ghost))
                             .disabled(!model.canRemove(item, in: ref))
-                            .accessibilityLabel(item.wakeUp == true ? "Remove the wake-up from the queue" : "Remove this message from the queue")
+                            .accessibilityLabel(item.wakeUp == true ? String(localized: "Remove the wake-up from the queue") : String(localized: "Remove this message from the queue"))
                     }
                 }
             }
@@ -1808,7 +1815,7 @@ private struct FollowupCard: View {
     }
     /// The message on one line, and how many photos go with it.
     private var words: String {
-        let photos = item.attachmentCount == 1 ? "1 photo" : "\(item.attachmentCount) photos"
+        let photos = item.attachmentCount == 1 ? String(localized: "1 photo") : String(localized: "\(item.attachmentCount) photos")
         let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if item.attachmentCount == 0 { return text }
         return text.isEmpty ? photos : text + " · " + photos
@@ -1869,7 +1876,7 @@ struct RequestSheet: View {
                 if let current, let owner {
                     content(current, threadTitle: owner.title, providerID: owner.providerID)
                 } else {
-                    Text("This request was answered or changed.").font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
+                    Text("This request was answered or changed.").font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink).paragraphDirection()
                     Button("Close") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s4)
                 }
             }
@@ -1890,8 +1897,7 @@ struct RequestSheet: View {
         let provider = Words.provider(providerID)
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
-        let from = permission ? "Permission for \(provider) in \(threadTitle)"
-            : count > 1 ? "\(count) questions from \(provider) in \(threadTitle)" : "Question from \(provider) in \(threadTitle)"
+        let from = Self.from(permission: permission, count: count, provider: provider, threadTitle: threadTitle)
         HStack(spacing: Space.s2) {
             Light(tone: .warning)
             Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
@@ -1902,7 +1908,7 @@ struct RequestSheet: View {
         if let headline = title(current, provider) {
             Text(headline)
                 .font(.sotto(.title, .semibold))
-                .tracking(-0.4)
+                .headingTracking(-0.4)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s3)
@@ -1933,14 +1939,14 @@ struct RequestSheet: View {
             }
         }
         if permission && current.context?.command == nil {
-            Text(current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+            Text(verbatim: current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
-            note("This request can’t be answered here. Check the thread, or answer it on \(computer).")
+            note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if !model.mayAnswer(at: place) {
-            note("This iPhone can’t answer on \(computer) yet. Turn on Can answer for it in Sotto on \(computer), or answer there.")
+            note(String(localized: "This iPhone can’t answer on \(computer) yet. Turn on Can answer for it in Sotto on \(computer), or answer there.", comment: "Both %@ are the computer's name; Can answer is a setting's name in Sotto on the computer"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if permission {
             permissionChoices(current)
@@ -1950,15 +1956,32 @@ struct RequestSheet: View {
         if let feedback = model.feedback {
             Text(feedback).font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s4)
+                .paragraphDirection()
                 .accessibilityAddTraits(.updatesFrequently)
         }
+    }
+
+    /// Who asks, and in which thread, over the headline.
+    private static func from(permission: Bool, count: Int, provider: String, threadTitle: String) -> String {
+        if permission {
+            return String(localized: "Permission for \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
+        }
+        if count > 1 {
+            let questions = count == 1
+                ? String(localized: "1 question", comment: "How many questions a request asks")
+                : String(localized: "\(count) questions", comment: "How many questions a request asks")
+            return String(localized: "\(questions) from \(provider) in \(threadTitle)", comment: "The first %@ is how many questions, such as “2 questions”, the second the agent's name, the third the thread's title")
+        }
+        return String(localized: "Question from \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
     }
 
     /// The sheet's headline: what a permission is for, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
     private func title(_ request: AgentRequest, _ provider: String) -> String? {
         if request.kind == "permission" {
-            return request.context?.command != nil ? "\(provider) wants to run a command" : "\(provider) is asking permission"
+            return request.context?.command != nil
+                ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
+                : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")
         }
         if let questions = request.questions, !questions.isEmpty { return questions.count == 1 ? questions[0].question : nil }
         return request.text
@@ -1966,14 +1989,15 @@ struct RequestSheet: View {
 
     private func note(_ words: String) -> some View {
         Text(words).font(.sotto(.body)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
+            .paragraphDirection()
     }
 
     private func runsIn(_ cwd: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("It runs in").font(.sotto(.small)).foregroundStyle(Palette.muted)
-            Text(cwd).font(.system(.footnote, design: .monospaced)).foregroundStyle(Palette.ink).textSelection(.enabled)
+            Text("It runs in", comment: "Starts a sentence split over three lines: “It runs in”, then a folder's path, then “on <computer>.”").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text(verbatim: cwd).font(.system(.footnote, design: .monospaced)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("on \(computer).").font(.sotto(.small)).foregroundStyle(Palette.muted)
+            Text("on \(computer).", comment: "Ends the sentence “It runs in <folder> on <computer>.”, under the folder's path; %@ is the computer's name").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .padding(.top, Space.s4)
         .accessibilityElement(children: .combine)
@@ -1985,8 +2009,9 @@ struct RequestSheet: View {
             let sending = model.isSending(marker)
             HStack(spacing: Space.s2) {
                 if sending { ProgressView().controlSize(.small) }
-                Text(sending ? "Sending your answer…" : "Not confirmed yet. Check the thread before answering again.")
+                (sending ? Text("Sending your answer…") : Text("Not confirmed yet. Check the thread before answering again."))
                     .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
@@ -2036,8 +2061,8 @@ struct RequestSheet: View {
 
     private func choiceLabel(_ option: PermissionChoice) -> some View {
         VStack(spacing: 2) {
-            Text(option.label)
-            if let description = option.description { Text(description).font(.sotto(.small)).fontWeight(.regular) }
+            Text(verbatim: option.label)
+            if let description = option.description { Text(verbatim: description).font(.sotto(.small)).fontWeight(.regular) }
         }
         .frame(maxWidth: .infinity)
     }
@@ -2064,7 +2089,7 @@ struct RequestSheet: View {
                             }
                         }
                     } else {
-                        answerField(text: $text, id: "answer", label: "Your answer")
+                        answerField(text: $text, id: "answer", label: String(localized: "Your answer"))
                     }
                 }
                 .disabled(!enabled)
@@ -2076,10 +2101,10 @@ struct RequestSheet: View {
     private func questionField(_ item: Question, showsTitle: Bool, enabled: Bool) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if showsTitle {
-                Text(item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: item.question).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
             }
             if let reason = item.unavailableReason {
-                Text(reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: reason).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
             choices(item).disabled(!enabled)
         }
@@ -2103,7 +2128,7 @@ struct RequestSheet: View {
             } else {
                 let open = writingOwn(item)
                 Button { toggleOwn(item) } label: {
-                    OptionLabel(title: "Write your own answer", detail: "Say it in your own words.", chosen: open, multiple: item.multiSelect)
+                    OptionLabel(title: String(localized: "Write your own answer"), detail: String(localized: "Say it in your own words."), chosen: open, multiple: item.multiSelect)
                 }
                 .buttonStyle(ChoiceStyle(chosen: open))
                 .accessibilityAddTraits(open ? .isSelected : [])
@@ -2155,7 +2180,7 @@ struct RequestSheet: View {
             answer.text = value
             if !item.multiSelect && !value.isEmpty { answer.optionIds = [] }
             answers[item.id] = answer
-        }), id: item.id, label: "Your own answer to: \(item.question)")
+        }), id: item.id, label: String(localized: "Your own answer to: \(item.question)", comment: "%@ is the question's own words"))
         .disabled(item.unavailableReason != nil)
     }
 
@@ -2236,12 +2261,12 @@ private struct LinkRows: View {
     var body: some View {
         VStack(spacing: Space.s2) {
             ForEach(pages) { row in
-                Button { openPage(row) } label: { label(icon: "macwindow", title: "Open the prototype", place: row.page.name) }
+                Button { openPage(row) } label: { label(icon: "macwindow", title: String(localized: "Open the prototype"), place: row.page.name) }
                     .buttonStyle(PressStyle())
                     .accessibilityLabel("Open the prototype, \(row.page.name)")
             }
             ForEach(links, id: \.absoluteString) { url in
-                Button { openURL(url) } label: { label(icon: "link", title: "Open the link", place: WebLinks.place(url)) }
+                Button { openURL(url) } label: { label(icon: "link", title: String(localized: "Open the link"), place: WebLinks.place(url)) }
                     .buttonStyle(PressStyle())
                     .accessibilityLabel("Open the link, \(url.host ?? WebLinks.place(url))")
             }
@@ -2255,7 +2280,7 @@ private struct LinkRows: View {
                 .foregroundStyle(Palette.accentText)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                Text(place)
+                Text(verbatim: place)
                     .font(.sotto(.small))
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
@@ -2332,7 +2357,7 @@ private struct PermissionCommand: View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("$").foregroundStyle(Palette.muted).accessibilityHidden(true)
-            Text(command).foregroundStyle(Palette.codeInk).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: command).foregroundStyle(Palette.codeInk).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(.callout, design: .monospaced))
         .frame(maxWidth: .infinity, alignment: .leading)

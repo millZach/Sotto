@@ -117,7 +117,7 @@ extension AppModel {
         } while watcherRereads.contains(hostID)
     }
     static func watcherUnreadable(_ computer: String) -> String {
-        "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again."
+        String(localized: "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again.", comment: "%@ is the computer's name")
     }
     /// Why Watcher's page couldn't be read, or nil once it is. Set only when it changes, so nothing redraws for nothing.
     private func setWatcherReadProblem(_ problem: String?, on hostID: String) {
@@ -169,10 +169,16 @@ extension AppModel {
     /// its own banner.
     func watcherSendHeld(_ hostID: String) -> String? {
         guard online(hostID) else { return nil }
-        guard let page = watcherPage(hostID) else { return watcherReadProblems[hostID] ?? "Reading Watcher on \(name(hostID))…" }
-        guard let current = page.current else { return "Watcher isn’t running on \(name(hostID)). Start it in Sotto on \(name(hostID)), then ask it here." }
-        if !current.connected { return "\(AgentNames.name(current.provider)) isn’t connected on \(name(hostID)), so Watcher can’t take messages. Nothing was sent." }
-        if page.needsYou.contains(where: { page.isOwn($0) }) { return "Answer Watcher’s request first." }
+        guard let page = watcherPage(hostID) else {
+            return watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(name(hostID))…", comment: "%@ is the computer's name")
+        }
+        guard let current = page.current else {
+            return String(localized: "Watcher isn’t running on \(name(hostID)). Start it in Sotto on \(name(hostID)), then ask it here.", comment: "Both placeholders are the computer's name")
+        }
+        if !current.connected {
+            return String(localized: "\(AgentNames.name(current.provider)) isn’t connected on \(name(hostID)), so Watcher can’t take messages. Nothing was sent.", comment: "The first placeholder is the provider's name, such as Codex; the second is the computer's name")
+        }
+        if page.needsYou.contains(where: { page.isOwn($0) }) { return String(localized: "Answer Watcher’s request first.") }
         return nil
     }
     /// Whether the Watcher box holds words it can send now.
@@ -251,8 +257,8 @@ extension AppModel {
             }
         }
     }
-    static let watcherUnconfirmed = "Watcher didn’t confirm your message, so it’s back in the box. Check the conversation before you send it again."
-    static let watcherUnconfirmedSetAside = "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again."
+    static let watcherUnconfirmed = String(localized: "Watcher didn’t confirm your message, so it’s back in the box. Check the conversation before you send it again.")
+    static let watcherUnconfirmedSetAside = String(localized: "Watcher didn’t confirm your message. It’s kept under the conversation, because the box has newer words. Check the conversation before you send it again.")
     /// Puts words that didn't reach Watcher, or that it didn't confirm, back in its box. When the user has written
     /// something new there since, they are kept under the conversation instead, to be put back once the box is empty.
     /// Says whether they went back in the box.
@@ -306,16 +312,18 @@ extension AppModel {
     /// now. A card for a thread on another computer is Watcher's copy, not that computer's word: it is answered only
     /// while that computer, reached now, still holds the same request in that thread. Otherwise the card says why.
     func watcherCardRoute(_ card: WatcherPage.RequestCard, on hostID: String) -> WatcherCardRoute {
-        guard let place = watcherCardPlace(card, on: hostID) else { return .note("Answer this one in Sotto on \(name(hostID)).") }
+        guard let place = watcherCardPlace(card, on: hostID) else {
+            return .note(String(localized: "Answer this one in Sotto on \(name(hostID)).", comment: "%@ is the computer's name"))
+        }
         switch place {
         case .watcher:
             guard let request = waitingRequest(card.request.id, at: place) else { return .note(Self.requestNoLongerWaiting) }
             return .answer(place, request)
         case .thread(let ref):
             let computer = name(ref.hostID)
-            guard online(ref.hostID) else { return .note("Reconnect to \(computer) to answer this one.") }
+            guard online(ref.hostID) else { return .note(String(localized: "Reconnect to \(computer) to answer this one.", comment: "%@ is the computer's name")) }
             guard let request = waitingRequest(card.request.id, at: place), request.kind == card.request.kind else {
-                return .note("This request is no longer waiting on \(computer). Nothing was answered.")
+                return .note(String(localized: "This request is no longer waiting on \(computer). Nothing was answered.", comment: "%@ is the computer's name"))
             }
             return .answer(place, request)
         }
@@ -370,7 +378,7 @@ extension AppModel {
                 if ["invalid_request", "stale_request", "forbidden", "busy"].contains(error.failure.code) { try rejectOperation(operation) }
                 if error.failure.code == "forbidden" { update(hostID) { $0.mayAnswer = false } }
                 feedback = error.failure.code == "stale_request"
-                    ? "That request changed before your answer reached it. Nothing was answered. Check the card again."
+                    ? String(localized: "That request changed before your answer reached it. Nothing was answered. Check the card again.")
                     : error.localizedDescription
                 await readWatcher(hostID)
             } catch {
@@ -378,7 +386,7 @@ extension AppModel {
                 if let token = claimReceipt(operation.id, over: epoch) { await followReceipt(operation, on: connection, epoch: epoch, token: token) }
             }
             if generations[hostID] == epoch, pending.contains(where: { $0.id == operation.id }) {
-                operationFeedback("Your answer isn’t confirmed. Check the thread before you answer again. Nothing was resent.", operations: [operation.id])
+                operationFeedback(String(localized: "Your answer isn’t confirmed. Check the thread before you answer again. Nothing was resent."), operations: [operation.id])
             }
         } catch { feedback = error.localizedDescription }
     }
@@ -404,7 +412,7 @@ extension AppModel {
         } catch let refusal as HostRefusal {
             feedback = refusal.localizedDescription
         } catch {
-            feedback = "Stop all couldn’t be checked on \(name(hostID)). Nothing was stopped. Try again."
+            feedback = String(localized: "Stop all couldn’t be checked on \(name(hostID)). Nothing was stopped. Try again.", comment: "Stop all is the name of a button. %@ is the computer's name")
         }
         return nil
     }
@@ -443,7 +451,7 @@ extension AppModel {
             await recoverWatcherStop(hostID)
         }
     }
-    static let watcherStopUnconfirmed = "Stop all isn’t confirmed. Check Watched before you stop anything again."
+    static let watcherStopUnconfirmed = String(localized: "Stop all isn’t confirmed. Check Watched before you stop anything again.", comment: "Stop all is the name of a button; Watched is the name of a section of the Watcher tab")
     /// Reads what a Stop all whose acknowledgement was lost did, from the receipt its computer keeps under the request's
     /// ID, then reads Watcher's page again. Still being carried out, or not read, it is kept and read again once the
     /// computer is reached again. Nothing is stopped again.
@@ -596,7 +604,8 @@ extension AppModel {
         let key = Self.watchKey(ref)
         watcherManaging.insert(key)
         defer { watcherManaging.remove(key) }
-        let named = title ?? thread(ref)?.title ?? watcherPage(host)?.watchedThreads.first { $0.target.ref == ref }?.title ?? "this thread"
+        let named = title ?? thread(ref)?.title ?? watcherPage(host)?.watchedThreads.first { $0.target.ref == ref }?.title
+            ?? String(localized: "this thread", comment: "Stands in for a thread's title in a sentence when the title isn't known")
         let target = WatcherTarget(hostId: ref.hostID, threadId: ref.threadID)
         let notice = WatchNotice(id: UUID(), hostID: host, target: ref, title: named, watched: watched)
         #if DEBUG && os(iOS)
@@ -656,7 +665,7 @@ extension AppModel {
     /// words. An acknowledgement lost on the way reads that request's receipt, and then the page.
     private func manageWatcher(_ operation: [String: JSONValue], on hostID: String, unconfirmed: String) async -> WatcherManageOutcome {
         guard let connection = connections[hostID], let epoch = generations[hostID] else {
-            feedback = "Sotto can’t reach \(name(hostID)) now. Nothing changed."
+            feedback = String(localized: "Sotto can’t reach \(name(hostID)) now. Nothing changed.", comment: "%@ is the computer's name")
             return .refused
         }
         let id = UUID().uuidString.lowercased()
@@ -903,10 +912,10 @@ struct HeldDetail {
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
-    private static let requestNoLongerWaiting = "That request is no longer waiting."
-    private static let markersUnreadable = "Saved unconfirmed actions could not be read. Check your threads before sending again. Nothing was resent."
+    private static let requestNoLongerWaiting = String(localized: "That request is no longer waiting.")
+    private static let markersUnreadable = String(localized: "Saved unconfirmed actions could not be read. Check your threads before sending again. Nothing was resent.")
     private static func pairingWarning(_ count: Int) -> String {
-        count == 1 ? "1 saved computer needs pairing again." : "\(count) saved computers need pairing again."
+        count == 1 ? String(localized: "1 saved computer needs pairing again.") : String(localized: "\(count) saved computers need pairing again.")
     }
     /// In the order they were added. Credentials live in the Keychain, one item per host ID.
     @Published private(set) var computers: [SavedComputer] = [] { didSet { listed = Listed() } }
@@ -1295,7 +1304,7 @@ struct HeldDetail {
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
-        if arguments.contains("--ui-feedback-computer-unreadable") { feedback = "Recovered the saved computer list. " + Self.pairingWarning(1) }
+        if arguments.contains("--ui-feedback-computer-unreadable") { feedback = String(localized: "Recovered the saved computer list.") + " " + Self.pairingWarning(1) }
     }
     /// The streaming journeys: the working thread's update grows by a word every 50 milliseconds, as often as a computer
     /// sends, and each time the computer's thread list comes again unchanged, as it does while a thread streams.
@@ -1410,7 +1419,7 @@ struct HeldDetail {
         fixtureShells[ref.hostID] = root
         update(ref.hostID) { $0.shell = next }
         confirmedAnswers.insert(ref.hostID + "/" + ref.threadID + "/" + request.id)
-        feedback = "Answer sent."
+        feedback = String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request")
     }
 
     // MARK: Watcher in the simulator journeys
@@ -1646,7 +1655,7 @@ struct HeldDetail {
         }
         if card.target.hostId == hostID, thread(card.target.ref) != nil { try? settleFixtureAnswer(card.request, in: card.target.ref) }
         confirmedAnswers.insert(hostID + "/" + card.target.threadId + "/" + card.request.id)
-        feedback = "Answer sent."
+        feedback = String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request")
     }
     private func fixtureWatcherStopPreview(_ hostID: String) -> WatcherStopPreview? {
         guard let page = watcherPage(hostID) else { return nil }
@@ -1687,7 +1696,9 @@ struct HeldDetail {
     /// Where a computer's question pages open (ADR-0085): the address its connection reached, which can be phone access's
     /// other port, else the one it was saved with.
     func pageEndpoint(_ hostID: String) -> HostEndpoint? { connections[hostID]?.reached ?? computer(hostID)?.endpoint }
-    func name(_ hostID: String) -> String { computer(hostID)?.name ?? "the computer" }
+    func name(_ hostID: String) -> String {
+        computer(hostID)?.name ?? String(localized: "the computer", comment: "Stands in for a computer's name in a sentence when the name isn't known")
+    }
     func status(_ hostID: String) -> ComputerStatus { live[hostID]?.status ?? .connecting }
     func online(_ hostID: String) -> Bool { status(hostID) == .online }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
@@ -1786,10 +1797,12 @@ struct HeldDetail {
     }
     /// Why Compact context can't go now, in a few words, or nil when it can.
     func compactionHeld(_ ref: ThreadRef) -> String? {
-        guard let thread = self.thread(ref) else { return "This thread is no longer open" }
-        if !online(ref.hostID) { return "Available when \(name(ref.hostID)) is connected" }
+        guard let thread = self.thread(ref) else { return String(localized: "This thread is no longer open", comment: "Why Compact context can't be pressed now") }
+        if !online(ref.hostID) {
+            return String(localized: "Available when \(name(ref.hostID)) is connected", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
+        }
         if !pending(for: ref).isEmpty || live[ref.hostID]?.shell?.busyThreadIds?.contains(ref.threadID) == true {
-            return "Available once \(name(ref.hostID)) confirms your last action"
+            return String(localized: "Available once \(name(ref.hostID)) confirms your last action", comment: "Why Compact context can't be pressed now. %@ is the computer's name")
         }
         let detail = shown(for: ref)
         return ContextCompaction.held(thread, messages: detail?.messages,
@@ -1826,7 +1839,7 @@ struct HeldDetail {
     /// Secure storage may be locked during a prewarmed launch. Publish nothing until all reads succeed.
     private func loadComputers() {
         guard !storageReady else { return }
-        let storageProblem = "Secure connection details could not be read. Unlock this iPhone and return to Sotto."
+        let storageProblem = String(localized: "Secure connection details could not be read. Unlock this iPhone and return to Sotto.")
         do {
             var warnings: [String] = []
             let noticesAccount = "recovery-notices"
@@ -1892,7 +1905,10 @@ struct HeldDetail {
             for computer in kept { live[computer.hostID] = Live() }
             storageReady = true
             if unreadableComputers > 0 { warnings.append(Self.pairingWarning(unreadableComputers)) }
-            if announceRecovery { warnings.insert(kept.isEmpty ? "The saved computer list could not be recovered." : "Recovered the saved computer list.", at: 0) }
+            if announceRecovery {
+                warnings.insert(kept.isEmpty ? String(localized: "The saved computer list could not be recovered.")
+                                    : String(localized: "Recovered the saved computer list."), at: 0)
+            }
             if !warnings.isEmpty { feedback = warnings.joined(separator: " "); pairFeedback = feedback }
             else {
                 if feedback == storageProblem { feedback = nil }
@@ -2012,7 +2028,7 @@ struct HeldDetail {
         retries.removeValue(forKey: hostID)?.cancel()
         // A refused or slow thread read does not mean the computer's connection was lost.
         do { try await observeAndRead(hostID) }
-        catch { if generations[hostID] == current { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
+        catch { if generations[hostID] == current { detailProblem = String(localized: "This thread could not be loaded. Nothing was lost. Try again.") } }
         if generations[hostID] == current, !helloCarriedWatcher { await readWatcher(hostID) }
         await checkDelivery(hostID)
         // A Stop all whose outcome is still unknown is read once this attempt is over: a computer still carrying it out
@@ -2107,7 +2123,7 @@ struct HeldDetail {
             let hit = try await HostFinder.probe(candidates) { endpoint in try await finder.health(endpoint: endpoint) }
             guard current == pairGeneration else { return }
             if let existing = computer(hit.found.hostId) {
-                pairFeedback = "This iPhone is already paired with \(existing.name). To pair it again, remove it in Computers first."
+                pairFeedback = String(localized: "This iPhone is already paired with \(existing.name). To pair it again, remove it in Computers first.", comment: "%@ is the computer's name. Computers is the name of a tab")
                 return
             }
             found = FoundHost(endpoint: hit.endpoint, health: hit.found)
@@ -2219,11 +2235,14 @@ struct HeldDetail {
     private enum Revocation {
         case confirmed, unreachable, unconfirmed
         func words(name: String, clientID: String) -> String {
-            let there = "Remove it there too: in Settings › Hosts & phones on \(name). For a computer without a screen, use Phones on its row in Settings › Hosts & phones on your main computer, or its --revoke-client \(clientID) command."
+            let command = Interface.isolated("--revoke-client \(clientID)")
+            let there = String(localized: "Remove it there too: in Settings › Hosts & phones on \(name). For a computer without a screen, use Phones on its row in Settings › Hosts & phones on your main computer, or its \(command) command.", comment: "Settings › Hosts & phones and Phones name places in Sotto on the desktop. The first placeholder is the computer's name; the second is a command line, such as --revoke-client followed by an ID")
             switch self {
-            case .confirmed: return "Removed \(name)."
-            case .unreachable: return "Removed \(name) from this iPhone. It couldn’t be reached, so it still lists this iPhone. " + there
-            case .unconfirmed: return "Removed \(name) from this iPhone, but couldn’t confirm removal there, so it may still list this iPhone. " + there
+            case .confirmed: return String(localized: "Removed \(name).", comment: "%@ is the computer's name")
+            case .unreachable:
+                return String(localized: "Removed \(name) from this iPhone. It couldn’t be reached, so it still lists this iPhone.", comment: "%@ is the computer's name") + " " + there
+            case .unconfirmed:
+                return String(localized: "Removed \(name) from this iPhone, but couldn’t confirm removal there, so it may still list this iPhone.", comment: "%@ is the computer's name") + " " + there
             }
         }
     }
@@ -2266,7 +2285,7 @@ struct HeldDetail {
         guard let ref, selected == ref, threadSelectionGeneration == selection, !Task.isCancelled, online(ref.hostID) else { return }
         let current = generations[ref.hostID]
         do { try await observeAndRead(ref.hostID) }
-        catch { if generations[ref.hostID] == current, selected == ref { detailProblem = "This thread could not be loaded. Nothing was lost. Try again." } }
+        catch { if generations[ref.hostID] == current, selected == ref { detailProblem = String(localized: "This thread could not be loaded. Nothing was lost. Try again.") } }
     }
     /// Tells one computer which of its threads is open here, and reads that thread.
     private func observeAndRead(_ hostID: String) async throws {
@@ -2307,7 +2326,7 @@ struct HeldDetail {
                     && (openDetail?.revision ?? 0) < detailWantedRevision
             } catch {
                 if !Task.isCancelled, selected == ref, generations[ref.hostID] == epoch {
-                    detailProblem = "This thread could not be refreshed. Nothing was lost. Try again."
+                    detailProblem = String(localized: "This thread could not be refreshed. Nothing was lost. Try again.")
                 }
             }
         }
@@ -2354,7 +2373,7 @@ struct HeldDetail {
         }
         // Nothing below waits until the marker is kept, so the checks hold when it is.
         guard canSend(ref), images.isEmpty || photoSupport(ref) == .available, let computer = self.computer(ref.hostID) else {
-            if !images.isEmpty { photoNotices[ref.id] = "Your reply wasn’t sent. It’s still in the reply box." }
+            if !images.isEmpty { photoNotices[ref.id] = String(localized: "Your reply wasn’t sent. It’s still in the reply box.") }
             return
         }
         let draft = UUID().uuidString
@@ -2379,10 +2398,19 @@ struct HeldDetail {
     func attachPhotos(_ ref: ThreadRef, from sources: [PhotoSource]) {
         guard !sources.isEmpty, photoSupport(ref) == .available, !preparingSends.contains(ref.id) else { return }
         let room = PhotoLimits.count - photos(ref).count
-        guard room > 0 else { photoNotices[ref.id] = "A reply can carry \(PhotoLimits.count) photos."; return }
+        let limit = PhotoLimits.count
+        guard room > 0 else {
+            photoNotices[ref.id] = limit == 1 ? String(localized: "A reply can carry 1 photo.") : String(localized: "A reply can carry \(limit) photos.")
+            return
+        }
         let added = sources.prefix(room).map { (photo: DraftPhoto(), source: $0) }
         draftPhotos[ref.id, default: []] += added.map { $0.photo }
-        photoNotices[ref.id] = sources.count > room ? "A reply can carry \(PhotoLimits.count) photos. The others weren’t added." : nil
+        if sources.count > room {
+            photoNotices[ref.id] = limit == 1 ? String(localized: "A reply can carry 1 photo. The others weren’t added.")
+                : String(localized: "A reply can carry \(limit) photos. The others weren’t added.")
+        } else {
+            photoNotices[ref.id] = nil
+        }
         let previous = photoWork
         photoWork = Task { [weak self] in
             await previous?.value
@@ -2401,7 +2429,7 @@ struct HeldDetail {
             guard photo(id, in: ref) != nil else { return }
             let others = photos(ref).filter { $0.id != id }.compactMap { $0.prepared?.byteCount }
             guard Photos.fits(prepared.byteCount, with: others) else {
-                throw ClientError.rejected("These photos would take the reply over 20 MB, so this one wasn’t added. Send these first, or remove one.")
+                throw ClientError.rejected(String(localized: "These photos would take the reply over 20 MB, so this one wasn’t added. Send these first, or remove one."))
             }
             change(id, in: ref) { $0.prepared = prepared }
             // Staged on its own, so a slow computer never holds up preparing photos for any other reply.
@@ -2473,7 +2501,7 @@ struct HeldDetail {
             guard stagingTasks[id] != nil || photo.needsStaging(generation: generations[ref.hostID]) else { continue }
             guard await stage(id, in: ref) else {
                 if photoNotices[ref.id] == nil {
-                    photoNotices[ref.id] = "A photo couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected."
+                    photoNotices[ref.id] = String(localized: "A photo couldn’t reach \(name(ref.hostID)), so nothing was sent. Try again when it’s connected.", comment: "%@ is the computer's name")
                 }
                 return nil
             }
@@ -2565,7 +2593,7 @@ struct HeldDetail {
         } catch { feedback = error.localizedDescription }
     }
     private func remember(_ operation: PendingOperation) throws {
-        guard pending.count < 100 else { throw ClientError.rejected("Check the unconfirmed actions before sending more.") }
+        guard pending.count < 100 else { throw ClientError.rejected(String(localized: "Check the unconfirmed actions before sending more.")) }
         let next = pending + [operation]; try keychain.write(next, account: ComputerStore.pendingAccount); pending = next
     }
     private func forgetMarker(_ id: String) throws {
@@ -2612,7 +2640,7 @@ struct HeldDetail {
                 await followReceipt(operation, on: connection, epoch: current, token: token)
             }
             if generations[hostID] == current, pending.contains(where: { $0.id == operation.id }) {
-                operationFeedback("Delivery is unconfirmed. Reconnect and check the thread before sending again.", operations: [operation.id])
+                operationFeedback(String(localized: "Delivery is unconfirmed. Reconnect and check the thread before sending again."), operations: [operation.id])
             }
         }
         return nil
@@ -2666,7 +2694,12 @@ struct HeldDetail {
                     Task { [weak self] in await self?.followReceipt(item, on: connection, epoch: current, token: token) }
                 }
             }
-        } catch { if generations[hostID] == current { operationFeedback("Delivery to \(name(hostID)) could not be checked. Nothing was resent. Reconnect to try again.", operations: Set(scoped(hostID).map(\.id))) } }
+        } catch {
+            if generations[hostID] == current {
+                operationFeedback(String(localized: "Delivery to \(name(hostID)) could not be checked. Nothing was resent. Reconnect to try again.", comment: "%@ is the computer's name"),
+                                  operations: Set(scoped(hostID).map(\.id)))
+            }
+        }
     }
     private func operationFeedback(_ words: String, operations: Set<String>) {
         feedback = words; feedbackOperations = operations
@@ -2681,7 +2714,9 @@ struct HeldDetail {
             guard confirmed || gone else { return }
             if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
             try forgetMarker(item.id)
-            if feedback == nil || feedbackOperations.contains(item.id) { feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting }
+            if feedback == nil || feedbackOperations.contains(item.id) {
+                feedback = confirmed ? String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request") : Self.requestNoLongerWaiting
+            }
             return
         }
         // A phone-minted Sotto ID identifies this exact creation even after its receipt expired.
@@ -2709,14 +2744,21 @@ struct HeldDetail {
             if confirmed, let request = item.requestID { confirmedAnswers.insert(item.hostID + "/" + item.threadID + "/" + request) }
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
-                feedback = confirmed ? "Answer sent." : Self.requestNoLongerWaiting
+                feedback = confirmed ? String(localized: "Answer sent.", comment: "Said once the computer confirms the user's answer to a request") : Self.requestNoLongerWaiting
             }
         } else if delivery?.status == "failed" {
             try rejectOperation(item)
             // Named, because the thread open now may be another one, on another computer.
-            let title = thread.map { "“\($0.title)”" } ?? "a thread"
-            let outcome = item.kind == "queue" ? "wasn’t queued" : "wasn’t sent"
-            feedback = "Your reply to \(title) on \(name(item.hostID)) \(outcome). Its text is back in that thread."
+            let queued = item.kind == "queue"
+            if let title = thread?.title {
+                feedback = queued
+                    ? String(localized: "Your reply to “\(title)” on \(name(item.hostID)) wasn’t queued. Its text is back in that thread.", comment: "The first placeholder is the thread's title; the second is the computer's name")
+                    : String(localized: "Your reply to “\(title)” on \(name(item.hostID)) wasn’t sent. Its text is back in that thread.", comment: "The first placeholder is the thread's title; the second is the computer's name")
+            } else {
+                feedback = queued
+                    ? String(localized: "Your reply to a thread on \(name(item.hostID)) wasn’t queued. Its text is back in that thread.", comment: "%@ is the computer's name")
+                    : String(localized: "Your reply to a thread on \(name(item.hostID)) wasn’t sent. Its text is back in that thread.", comment: "%@ is the computer's name")
+            }
         } else if accepted || receipt.map({ item.reconciled(receipt: $0, deliveries: shell?.deliveries ?? []) }) == true {
             try forgetMarker(item.id)
             if feedbackOperations.remove(item.id) != nil, feedbackOperations.isEmpty { feedback = nil }
@@ -2740,7 +2782,7 @@ struct HeldDetail {
         }
     }
     func acknowledgeUnknown(_ id: String) {
-        do { try forgetMarker(id); feedback = "Unconfirmed action dismissed. Nothing was resent." }
+        do { try forgetMarker(id); feedback = String(localized: "Unconfirmed action dismissed. Nothing was resent.") }
         catch { feedback = error.localizedDescription }
     }
 
@@ -2796,7 +2838,7 @@ struct HeldDetail {
         }
         #endif
         guard canBrowseFolders(hostID), let connection = connections[hostID], let epoch = generations[hostID] else {
-            throw ClientError.rejected("Folder browsing is unavailable. Reconnect or update Sotto on this computer.")
+            throw ClientError.rejected(String(localized: "Folder browsing is unavailable. Reconnect or update Sotto on this computer."))
         }
         let result = try await connection.call(NewThreads.folderRequest(path: path), as: FolderResult.self)
         guard generations[hostID] == epoch, online(hostID) else { throw ClientError.disconnected }
@@ -2837,7 +2879,7 @@ struct HeldDetail {
         do {
             guard (projectID != nil) != (folder != nil),
                   let model = creationModels(hostID).first(where: { $0.id == modelID }) else {
-                throw ClientError.rejected("The project or model changed. Choose it again before opening a thread.")
+                throw ClientError.rejected(String(localized: "The project or model changed. Choose it again before opening a thread."))
             }
             // Validate the visible options before registering anything on the computer.
             _ = try Commands.createThread(projectID: projectID ?? "new-project", threadID: threadID, model: model,
@@ -2846,7 +2888,7 @@ struct HeldDetail {
             var chosenProject = projectID
             if let folder, let path = folder.path {
                 guard case .listed(let fresh) = try await folders(hostID, path: .string(path)), fresh.path != nil else {
-                    throw ClientError.rejected("This folder can no longer be opened. Nothing was added. Choose another folder.")
+                    throw ClientError.rejected(String(localized: "This folder can no longer be opened. Nothing was added. Choose another folder."))
                 }
                 guard generations[hostID] == epoch, online(hostID) else { throw ClientError.disconnected }
                 let confirmedPath = fresh.path!
@@ -2854,14 +2896,14 @@ struct HeldDetail {
                 if chosenProject == nil {
                     guard let providerID = model.providerId,
                           live[hostID]?.shell?.host.providers?.first(where: { $0.id == providerID })?.capabilities.projects == true else {
-                        throw ClientError.rejected("This provider cannot add a project folder. Choose another model.")
+                        throw ClientError.rejected(String(localized: "This provider cannot add a project folder. Choose another model."))
                     }
                     let command = try Commands.createProject(providerID: providerID, title: fresh.projectName, path: confirmedPath)
                     let marker = PendingOperation(hostID: hostID, clientID: computer.pairing.clientId, threadID: threadID, kind: "create-project")
                     try remember(marker)
                     guard let result = await dispatch(command, operation: marker), generations[hostID] == epoch,
                           !pending.contains(where: { $0.id == marker.id }) else {
-                        creationFeedback = creationResultWords(hostID, kind: "Project registration")
+                        creationFeedback = creationResultWords(hostID, project: true)
                         return nil
                     }
                     chosenProject = result.host.projects.first { NewThreads.sameFolder($0.path, confirmedPath, separator: fresh.separator) && ($0.providerId == nil || $0.providerId == providerID) }?.id
@@ -2870,7 +2912,7 @@ struct HeldDetail {
             guard generations[hostID] == epoch, online(hostID), let chosenProject,
                   live[hostID]?.shell?.host.projects.contains(where: { $0.id == chosenProject }) == true,
                   let currentModel = creationModels(hostID).first(where: { $0.id == modelID }) else {
-                throw ClientError.rejected("The project or model is no longer available. Reconnect and choose it again.")
+                throw ClientError.rejected(String(localized: "The project or model is no longer available. Reconnect and choose it again."))
             }
             let command = try Commands.createThread(projectID: chosenProject, threadID: threadID, model: currentModel,
                                                    effort: effort, permissionID: permissionID, mayAnswer: mayAnswer(hostID),
@@ -2881,18 +2923,25 @@ struct HeldDetail {
             let ref = ThreadRef(hostID: hostID, threadID: threadID)
             guard generations[hostID] == epoch, online(hostID), thread(ref) != nil,
                   !pending.contains(where: { $0.id == marker.id }) else {
-                creationFeedback = creationResultWords(hostID, kind: "Thread creation")
+                creationFeedback = creationResultWords(hostID, project: false)
                 return nil
             }
             return ref
         } catch { creationFeedback = error.localizedDescription; return nil }
     }
-    private func creationResultWords(_ hostID: String, kind: String) -> String {
+    /// What became of a project's registration (`project`) or a thread's creation that didn't finish.
+    private func creationResultWords(_ hostID: String, project: Bool) -> String {
         let explanation = creationFeedback.map { $0 + " " } ?? ""
         if pendingCreations.contains(where: { $0.hostID == hostID }) {
-            return explanation + "\(kind) on \(name(hostID)) is unconfirmed. Nothing was resent. Close this sheet and check Threads before trying again."
+            let unconfirmed = project
+                ? String(localized: "Project registration on \(name(hostID)) is unconfirmed. Nothing was resent. Close this sheet and check Threads before trying again.", comment: "%@ is the computer's name. Threads is the name of a tab")
+                : String(localized: "Thread creation on \(name(hostID)) is unconfirmed. Nothing was resent. Close this sheet and check Threads before trying again.", comment: "%@ is the computer's name. Threads is the name of a tab")
+            return explanation + unconfirmed
         }
-        return creationFeedback ?? feedback ?? "\(kind) did not finish. Choose the project and model again."
+        let unfinished = project
+            ? String(localized: "Project registration did not finish. Choose the project and model again.")
+            : String(localized: "Thread creation did not finish. Choose the project and model again.")
+        return creationFeedback ?? feedback ?? unfinished
     }
 
     // MARK: Alerts on this iPhone
@@ -2991,7 +3040,7 @@ struct HeldDetail {
             default: throw ClientError.invalidProtocol
             }
         } catch {
-            let words = "The update from \(name(hostID)) could not be read. Reconnect to refresh it."
+            let words = String(localized: "The update from \(name(hostID)) could not be read. Reconnect to refresh it.", comment: "%@ is the computer's name")
             connectionEnded(hostID, problem: words, retrying: false)
             watches[hostID] = nil; watcherWatches[hostID] = nil
             connections[hostID]?.disconnect(); feedback = words
@@ -3028,7 +3077,7 @@ extension AppModel {
         }
         #endif
         guard offersPullRequestSheet(ref.hostID), online(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
-            throw ClientError.rejected("\(name(ref.hostID)) can’t be reached, so the pull request wasn’t read. Reconnect and try again.")
+            throw ClientError.rejected(String(localized: "\(name(ref.hostID)) can’t be reached, so the pull request wasn’t read. Reconnect and try again.", comment: "%@ is the computer's name"))
         }
         let read = try await connection.call(try PullRequests.request(threadID: ref.threadID, url: url), as: PullRequestRead.self)
         guard generations[ref.hostID] == epoch else { throw ClientError.disconnected }
@@ -3160,7 +3209,7 @@ extension AppModel {
     }
     private func agentsRead<T: Decodable & Sendable>(_ ref: ThreadRef, _ operation: [String: JSONValue], as type: T.Type) async throws -> T {
         guard offersAgentsView(ref.hostID), online(ref.hostID), let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else {
-            throw ClientError.rejected("Can\u{2019}t reach \(name(ref.hostID)) to read its agents. Nothing was changed. Reconnect, then try again.")
+            throw ClientError.rejected(String(localized: "Can\u{2019}t reach \(name(ref.hostID)) to read its agents. Nothing was changed. Reconnect, then try again.", comment: "%@ is the computer's name"))
         }
         let result = try await connection.call(operation, as: type)
         guard generations[ref.hostID] == epoch, online(ref.hostID) else { throw ClientError.disconnected }

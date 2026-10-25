@@ -30,9 +30,9 @@ enum PhoneAppearance: String, CaseIterable {
     case dark, light, system
     var title: String {
         switch self {
-        case .dark: return "Dark"
-        case .light: return "Light"
-        case .system: return "System"
+        case .dark: return String(localized: "Dark", comment: "Appearance choice: always dark.")
+        case .light: return String(localized: "Light", comment: "Appearance choice: always light.")
+        case .system: return String(localized: "System", comment: "Appearance choice: follow the iPhone's own setting.")
         }
     }
 }
@@ -43,11 +43,11 @@ enum PhoneTextSize: String, CaseIterable {
     case smaller, standard = "default", large, larger, largest
     var title: String {
         switch self {
-        case .smaller: return "Smaller"
-        case .standard: return "Default"
-        case .large: return "Large"
-        case .larger: return "Larger"
-        case .largest: return "Largest"
+        case .smaller: return String(localized: "Smaller", comment: "Text size step, one below the iPhone's own size.")
+        case .standard: return String(localized: "Default", comment: "Text size step: the iPhone's own size.")
+        case .large: return String(localized: "Large", comment: "Text size step, one above the iPhone's own size.")
+        case .larger: return String(localized: "Larger", comment: "Text size step, two above the iPhone's own size.")
+        case .largest: return String(localized: "Largest", comment: "Text size step, three above the iPhone's own size.")
         }
     }
     /// Steps from the iPhone's own text size.
@@ -70,13 +70,13 @@ enum PhoneTextSize: String, CaseIterable {
 /// How much room messages, lists and steps get.
 enum PhoneDensity: String, CaseIterable {
     case comfortable, compact
-    var title: String { self == .comfortable ? "Comfortable" : "Compact" }
+    var title: String { self == .comfortable ? String(localized: "Comfortable", comment: "Message density choice: more room between messages.") : String(localized: "Compact", comment: "Message density choice: tighter spacing.") }
 }
 
 /// Where a new thread works: the project's shared folder or a new worktree.
 enum PhoneWorkingCopy: String, CaseIterable {
     case shared, independent
-    var title: String { self == .shared ? "Project folder" : "New worktree" }
+    var title: String { self == .shared ? String(localized: "Project folder", comment: "Where a new thread works: the project's shared folder.") : String(localized: "New worktree", comment: "Where a new thread works: a new git worktree of its own.") }
 }
 
 /// Reads and writes the preferences outside SwiftUI.

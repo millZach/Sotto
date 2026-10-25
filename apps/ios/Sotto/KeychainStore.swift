@@ -66,5 +66,5 @@ struct KeychainStore {
         return query
     }
     /// Secure storage could not be opened, as against an item that is missing or undecodable.
-    static let failure = ClientError.rejected("Sotto could not access secure storage. Unlock this iPhone and return to Sotto.")
+    static let failure = ClientError.rejected(String(localized: "Sotto could not access secure storage. Unlock this iPhone and return to Sotto."))
 }

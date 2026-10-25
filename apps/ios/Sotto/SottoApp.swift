@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import SottoCore
 
 @main struct SottoApp: App {
     @StateObject private var model = AppModel()
@@ -33,6 +34,11 @@ import UserNotifications
                 }
                 .onChange(of: phase) { _, value in model.phase(value) }
                 .modifier(PhoneDisplayPreferences())
+                // In Arabic and Urdu the window keeps its English layout; only paragraph text runs right to left,
+                // inside its own box (`paragraphDirection()`). Fonts follow the interface language, so Chinese and
+                // Japanese get their own glyph shapes (ADR-0123).
+                .environment(\.layoutDirection, .leftToRight)
+                .typesettingLanguage(Locale.Language(identifier: Interface.language))
         }
     }
 }

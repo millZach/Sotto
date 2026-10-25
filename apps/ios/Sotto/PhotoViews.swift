@@ -162,8 +162,9 @@ private struct FullPhoto: View {
             if let image {
                 Image(image, scale: 1, label: Text("Photo: \(name)")).resizable().scaledToFit()
             } else if missing {
-                Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.")
+                Text("This photo couldn’t be loaded from \(model.name(key.ref.hostID)). Nothing was lost. Try again when it’s connected.", comment: "%@ is the computer’s name.")
                     .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(32)
+                    .paragraphDirection()
             } else { ProgressView() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -214,7 +215,7 @@ private struct DraftPhotoView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
-            .accessibilityValue(photo.preparing ? "Getting it ready" : photo.staging ? "Sending it to the computer" : "Ready")
+            .accessibilityValue(photo.preparing ? String(localized: "Getting it ready", comment: "Accessibility value: a photo in the reply box is being prepared.") : photo.staging ? String(localized: "Sending it to the computer", comment: "Accessibility value: a photo in the reply box is being sent to the computer.") : String(localized: "Ready", comment: "Accessibility value: a photo in the reply box is ready to send."))
             Button(action: remove) {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
                     .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
@@ -255,7 +256,7 @@ struct AttachPhotosButton: View {
                 .background(Palette.raised, in: Circle())
         }
         .accessibilityLabel("Attach photos")
-        .accessibilityHint(reason ?? "Choose photos from the library, or take one with the camera.")
+        .accessibilityHint(reason ?? String(localized: "Choose photos from the library, or take one with the camera."))
         .accessibilityIdentifier("thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
@@ -282,14 +283,15 @@ struct AttachPhotosButton: View {
     private var room: Int { PhotoLimits.count - model.photos(ref).count }
     private var reason: String? {
         if let reason = model.photoSupport(ref).reason(computer: model.name(ref.hostID)) { return reason }
-        if model.preparingSends.contains(ref.id) { return "Your reply is being sent." }
-        return room > 0 ? nil : "A reply can carry \(PhotoLimits.count) photos."
+        if model.preparingSends.contains(ref.id) { return String(localized: "Your reply is being sent.") }
+        guard room <= 0 else { return nil }
+        return PhotoLimits.count == 1 ? String(localized: "A reply can carry 1 photo.") : String(localized: "A reply can carry \(PhotoLimits.count) photos.")
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .denied, .restricted:
-            model.photoNotices[ref.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
+            model.photoNotices[ref.id] = String(localized: "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera.")
         default: shooting = true
         }
     }

@@ -30,7 +30,8 @@ import XCTest
             app.terminate()
             XCTAssertTrue(app.wait(for: .notRunning, timeout: 20), "The earlier copy of Sotto must stop before the next launch")
         }
-        app.launchArguments = arguments
+        // The journeys read English labels, so Sotto runs in English whatever the simulator's language (ADR-0123).
+        app.launchArguments = arguments + ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "Sotto must come to the foreground after launch")
         XCTAssertTrue(app.textFields["thread-search"].waitForExistence(timeout: 20))

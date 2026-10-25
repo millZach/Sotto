@@ -13,6 +13,15 @@ public struct GitChips: Equatable, Sendable {
         public let number: Int
         /// `draft`, `open`, `merged` or `closed`.
         public let state: String
+        /// The state as the chip says it, in the interface language.
+        public var stateWord: String {
+            switch state {
+            case "draft": return String(localized: "draft", bundle: .module, comment: "A pull request's state on its chip, as in #721 draft")
+            case "merged": return String(localized: "merged", bundle: .module, comment: "A pull request's state on its chip, as in #721 merged")
+            case "closed": return String(localized: "closed", bundle: .module, comment: "A pull request's state on its chip, as in #721 closed")
+            default: return String(localized: "open", bundle: .module, comment: "A pull request's state on its chip, as in #721 open")
+            }
+        }
     }
 
     public let branch: String?
@@ -55,13 +64,23 @@ public struct GitChips: Equatable, Sendable {
     /// The row as VoiceOver reads it, leaving the pull request out when its chip is a button of its own.
     public func spoken(includingPullRequest: Bool) -> String {
         var parts: [String] = []
-        if let branch { parts.append("Branch \(branch)") }
-        if let changes {
-            let files = changes.files == 1 ? "1 file changed" : "\(changes.files) files changed"
-            let added = changes.insertions == 1 ? "1 line added" : "\(changes.insertions) lines added"
-            parts.append("\(files), \(added), \(changes.deletions) removed")
+        if let branch {
+            parts.append(String(localized: "Branch \(Interface.isolated(branch))", bundle: .module, comment: "%@ is the branch's name"))
         }
-        if includingPullRequest, let pullRequest { parts.append("Pull request \(pullRequest.number), \(pullRequest.state)") }
+        if let changes {
+            let files = changes.files == 1 ? String(localized: "1 file changed", bundle: .module)
+                : String(localized: "\(changes.files) files changed", bundle: .module)
+            let added = changes.insertions == 1 ? String(localized: "1 line added", bundle: .module)
+                : String(localized: "\(changes.insertions) lines added", bundle: .module)
+            let removed = changes.deletions == 1 ? String(localized: "1 removed", bundle: .module, comment: "How many lines were removed")
+                : String(localized: "\(changes.deletions) removed", bundle: .module, comment: "How many lines were removed")
+            parts.append(String(localized: "\(files), \(added), \(removed)", bundle: .module,
+                                comment: "A thread's changes for VoiceOver, such as 7 files changed, 212 lines added, 48 removed"))
+        }
+        if includingPullRequest, let pullRequest {
+            parts.append(String(localized: "Pull request \(pullRequest.number), \(pullRequest.stateWord)", bundle: .module,
+                                comment: "%lld is the pull request's number, %@ its state, such as open or draft"))
+        }
         return parts.joined(separator: ". ")
     }
 }

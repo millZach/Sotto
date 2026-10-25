@@ -68,10 +68,10 @@ public enum PhotoSupport: Equatable, Sendable {
     public func reason(computer: String) -> String? {
         switch self {
         case .available: return nil
-        case .offline: return "Reconnect to \(computer) to attach photos."
-        case .needsUpdate: return "Update Sotto on \(computer) to send photos from this iPhone."
-        case .modelCannot: return "This thread’s model can’t take photos. Change the model on \(computer) to attach them."
-        case .modelUnknown: return "\(computer) hasn’t said whether this thread’s model takes photos. Reconnect and try again."
+        case .offline: return String(localized: "Reconnect to \(computer) to attach photos.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .needsUpdate: return String(localized: "Update Sotto on \(computer) to send photos from this iPhone.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .modelCannot: return String(localized: "This thread’s model can’t take photos. Change the model on \(computer) to attach them.", bundle: .module, comment: "%@ is the computer's name, such as forge")
+        case .modelUnknown: return String(localized: "\(computer) hasn’t said whether this thread’s model takes photos. Reconnect and try again.", bundle: .module, comment: "%@ is the computer's name, such as forge")
         }
     }
 }

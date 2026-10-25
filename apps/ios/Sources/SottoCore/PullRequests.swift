@@ -219,13 +219,13 @@ public enum PullRequests {
     /// What a check's state says in words.
     public static func checkWord(_ status: String) -> String {
         switch status {
-        case "failure": return "Failed"
-        case "cancelled": return "Cancelled"
-        case "pending": return "Running"
-        case "action-required": return "Waiting for approval"
-        case "success": return "Passed"
-        case "skipped": return "Skipped"
-        default: return "Neutral"
+        case "failure": return String(localized: "Failed", bundle: .module, comment: "A pull request check's state")
+        case "cancelled": return String(localized: "Cancelled", bundle: .module, comment: "A pull request check's state")
+        case "pending": return String(localized: "Running", bundle: .module, comment: "A pull request check's state: it is still going")
+        case "action-required": return String(localized: "Waiting for approval", bundle: .module, comment: "A pull request check's state")
+        case "success": return String(localized: "Passed", bundle: .module, comment: "A pull request check's state")
+        case "skipped": return String(localized: "Skipped", bundle: .module, comment: "A pull request check's state")
+        default: return String(localized: "Neutral", bundle: .module, comment: "A pull request check's state: it neither passed nor failed")
         }
     }
     /// "1 failing, 1 running, 9 passed", worst first, or "No checks".
@@ -233,11 +233,24 @@ public enum PullRequests {
         let tones = checks.map { tone(ofCheck: $0.status) }
         let count = { (wanted: Tone) in tones.filter { $0 == wanted }.count }
         var parts: [String] = []
-        if count(.failing) > 0 { parts.append("\(count(.failing)) failing") }
-        if count(.running) > 0 { parts.append("\(count(.running)) running") }
-        if count(.passed) > 0 { parts.append("\(count(.passed)) passed") }
-        if count(.quiet) > 0 { parts.append("\(count(.quiet)) skipped") }
-        return parts.isEmpty ? "No checks" : parts.joined(separator: ", ")
+        let failing = count(.failing), running = count(.running), passed = count(.passed), skipped = count(.quiet)
+        if failing > 0 {
+            parts.append(failing == 1 ? String(localized: "1 failing", bundle: .module, comment: "How many of a pull request's checks are failing")
+                : String(localized: "\(failing) failing", bundle: .module, comment: "How many of a pull request's checks are failing"))
+        }
+        if running > 0 {
+            parts.append(running == 1 ? String(localized: "1 running", bundle: .module, comment: "How many of a pull request's checks are still running")
+                : String(localized: "\(running) running", bundle: .module, comment: "How many of a pull request's checks are still running"))
+        }
+        if passed > 0 {
+            parts.append(passed == 1 ? String(localized: "1 passed", bundle: .module, comment: "How many of a pull request's checks passed")
+                : String(localized: "\(passed) passed", bundle: .module, comment: "How many of a pull request's checks passed"))
+        }
+        if skipped > 0 {
+            parts.append(skipped == 1 ? String(localized: "1 skipped", bundle: .module, comment: "How many of a pull request's checks were skipped")
+                : String(localized: "\(skipped) skipped", bundle: .module, comment: "How many of a pull request's checks were skipped"))
+        }
+        return parts.isEmpty ? String(localized: "No checks", bundle: .module) : parts.joined(separator: ", ")
     }
     /// The chip's dot: failing, running or passed, or nil when there are no checks to say anything about.
     public static func dot(_ detail: PullRequestDetail) -> Tone? {
@@ -260,12 +273,16 @@ public enum PullRequests {
     /// How long a check took, "14m 02s", or has taken so far, "6m 10s so far"; nil when GitHub gave no start.
     public static func duration(_ check: PullRequestDetail.Check, now: Date = Date()) -> String? {
         guard let seconds = seconds(check, now: now) else { return nil }
-        return check.completedAt.flatMap(Stamp.date) != nil ? StepRun.duration(seconds) : StepRun.duration(seconds) + " so far"
+        let length = StepRun.duration(seconds)
+        return check.completedAt.flatMap(Stamp.date) != nil ? length
+            : String(localized: "\(length) so far", bundle: .module, comment: "How long a check that is still running has taken, such as 6m 10s so far")
     }
     /// The same for VoiceOver: "14 minutes 2 seconds", "6 minutes 10 seconds so far".
     public static func spokenDuration(_ check: PullRequestDetail.Check, now: Date = Date()) -> String? {
         guard let seconds = seconds(check, now: now) else { return nil }
-        return check.completedAt.flatMap(Stamp.date) != nil ? StepRun.spokenDuration(seconds) : StepRun.spokenDuration(seconds) + " so far"
+        let length = StepRun.spokenDuration(seconds)
+        return check.completedAt.flatMap(Stamp.date) != nil ? length
+            : String(localized: "\(length) so far", bundle: .module, comment: "How long a check that is still running has taken, such as 6m 10s so far")
     }
     private static func seconds(_ check: PullRequestDetail.Check, now: Date) -> TimeInterval? {
         guard let start = check.startedAt.flatMap(Stamp.date) else { return nil }
@@ -280,51 +297,116 @@ public enum PullRequests {
     /// The checks line: whether any failed or still runs, with the roll-up under it.
     public static func checksLine(_ detail: PullRequestDetail) -> Line {
         let checks = detail.checks
-        if detail.checksUnknown && checks.isEmpty { return Line(.quiet, "Checks unknown", "GitHub did not let Sotto read the checks") }
-        if checks.isEmpty { return Line(.quiet, "No checks", "GitHub reports none for this pull request") }
-        let failing = checks.filter { tone(ofCheck: $0.status) == .failing }.count
-        let words = rollup(checks) + (detail.checksUnknown ? ". GitHub did not let Sotto read every check" : "")
-        if failing > 0 { return Line(.failing, failing == 1 ? "A check failed" : "\(failing) checks failed", words) }
-        if let waiting = checks.first(where: { $0.status == "action-required" }) {
-            return Line(.running, "A check is waiting", "\(waiting.name) is waiting for approval on GitHub")
+        if detail.checksUnknown && checks.isEmpty {
+            return Line(.quiet, String(localized: "Checks unknown", bundle: .module), String(localized: "GitHub did not let Sotto read the checks", bundle: .module))
         }
-        if checks.contains(where: { tone(ofCheck: $0.status) == .running }) { return Line(.running, "Checks running", words) }
-        if detail.checksUnknown { return Line(.quiet, "Not every check could be read", words) }
-        return Line(.passed, "Checks passed", words)
+        if checks.isEmpty {
+            return Line(.quiet, String(localized: "No checks", bundle: .module), String(localized: "GitHub reports none for this pull request", bundle: .module))
+        }
+        let failing = checks.filter { tone(ofCheck: $0.status) == .failing }.count
+        let rolled = rollup(checks)
+        let words = detail.checksUnknown
+            ? String(localized: "\(rolled). GitHub did not let Sotto read every check", bundle: .module,
+                     comment: "%@ is how the checks stand, such as 1 failing, 9 passed")
+            : rolled
+        if failing > 0 {
+            let title = failing == 1 ? String(localized: "A check failed", bundle: .module)
+                : String(localized: "\(failing) checks failed", bundle: .module)
+            return Line(.failing, title, words)
+        }
+        if let waiting = checks.first(where: { $0.status == "action-required" }) {
+            return Line(.running, String(localized: "A check is waiting", bundle: .module),
+                        String(localized: "\(waiting.name) is waiting for approval on GitHub", bundle: .module,
+                               comment: "%@ is the check's name on GitHub"))
+        }
+        if checks.contains(where: { tone(ofCheck: $0.status) == .running }) {
+            return Line(.running, String(localized: "Checks running", bundle: .module), words)
+        }
+        if detail.checksUnknown { return Line(.quiet, String(localized: "Not every check could be read", bundle: .module), words) }
+        return Line(.passed, String(localized: "Checks passed", bundle: .module), words)
     }
     /// The review line: GitHub's decision and who made it, as the desktop's merge checklist says it.
     public static func reviewLine(_ detail: PullRequestDetail) -> Line {
         // GitHub lists the reviews oldest first, so the later of two is the one that stands.
         let approved = detail.reviews.last { $0.state == "approved" }
         let changes = detail.reviews.last { $0.state == "changes_requested" }
+        let approvedWord = String(localized: "Approved", bundle: .module, comment: "A pull request's review decision")
+        let changesWord = String(localized: "Changes requested", bundle: .module, comment: "A pull request's review decision")
         switch detail.reviewDecision {
-        case "approved": return Line(.passed, "Approved", approved.map { "Approved by \($0.author)" } ?? "Approved")
-        case "changes_requested": return Line(.failing, "Changes requested", changes.map { "\($0.author) asked for changes" } ?? "Changes were asked for")
+        case "approved":
+            return Line(.passed, approvedWord, approved.map { approvedBy($0.author) } ?? approvedWord)
+        case "changes_requested":
+            return Line(.failing, changesWord, changes.map { askedForChanges($0.author) } ?? String(localized: "Changes were asked for", bundle: .module))
         case "review_required":
-            let why = detail.draft ? "Reviewers wait until it is ready" : detail.reviews.isEmpty ? "Nobody has reviewed it yet" : "It still needs an approving review"
-            return Line(.running, "Review needed", why)
+            let why = detail.draft ? String(localized: "Reviewers wait until it is ready", bundle: .module)
+                : detail.reviews.isEmpty ? String(localized: "Nobody has reviewed it yet", bundle: .module)
+                : String(localized: "It still needs an approving review", bundle: .module)
+            return Line(.running, String(localized: "Review needed", bundle: .module), why)
         default:
-            if let changes { return Line(.quiet, "Changes requested", "\(changes.author) asked for changes. This repository does not require a review") }
-            if let approved { return Line(.passed, "Approved", "Approved by \(approved.author)") }
-            return Line(.passed, "No review required", "This repository merges without one")
+            if let changes {
+                return Line(.quiet, changesWord,
+                            String(localized: "\(changes.author) asked for changes. This repository does not require a review", bundle: .module,
+                                   comment: "%@ is the reviewer's GitHub name"))
+            }
+            if let approved { return Line(.passed, approvedWord, approvedBy(approved.author)) }
+            return Line(.passed, String(localized: "No review required", bundle: .module), String(localized: "This repository merges without one", bundle: .module))
         }
+    }
+    private static func approvedBy(_ author: String) -> String {
+        String(localized: "Approved by \(author)", bundle: .module, comment: "%@ is the reviewer's GitHub name")
+    }
+    private static func askedForChanges(_ author: String) -> String {
+        String(localized: "\(author) asked for changes", bundle: .module, comment: "%@ is the reviewer's GitHub name")
     }
     /// The merge line: merged or closed, conflicts, how far behind its base, or clean.
     public static func mergeLine(_ detail: PullRequestDetail) -> Line {
-        let base = detail.baseBranch.isEmpty ? "its base" : detail.baseBranch
-        if detail.state == "merged" { return Line(.passed, "Merged", "Merged into \(base)") }
-        if detail.state == "closed" { return Line(.quiet, "Closed", "Closed without merging") }
-        let behind = detail.behindBy.flatMap { $0 > 0 ? "\($0) \($0 == 1 ? "commit" : "commits") behind \(base)" : nil }
+        let base = baseName(detail)
+        if detail.state == "merged" {
+            return Line(.passed, String(localized: "Merged", bundle: .module, comment: "A pull request's state"),
+                        String(localized: "Merged into \(base)", bundle: .module, comment: "%@ is the base branch's name, or its base"))
+        }
+        if detail.state == "closed" {
+            return Line(.quiet, String(localized: "Closed", bundle: .module, comment: "A pull request's state"),
+                        String(localized: "Closed without merging", bundle: .module))
+        }
+        let behind = detail.behindBy.flatMap { count -> String? in
+            guard count > 0 else { return nil }
+            let commits = count == 1 ? String(localized: "1 commit", bundle: .module) : String(localized: "\(count) commits", bundle: .module)
+            return String(localized: "\(commits) behind \(base)", bundle: .module,
+                          comment: "The first %@ is how many commits, such as 3 commits; the second is the base branch's name, or its base")
+        }
+        let noConflicts = String(localized: "No conflicts", bundle: .module)
         switch detail.mergeable {
         case "conflicting":
-            return Line(.failing, "Conflicts with \(base)", "Resolve them in the branch and push" + (behind.map { ". It is \($0)" } ?? ""))
+            let what = behind.map {
+                String(localized: "Resolve them in the branch and push. It is \($0)", bundle: .module,
+                       comment: "%@ is how far behind its base the pull request is, such as 3 commits behind main")
+            } ?? String(localized: "Resolve them in the branch and push", bundle: .module)
+            return Line(.failing, String(localized: "Conflicts with \(base)", bundle: .module, comment: "%@ is the base branch's name, or its base"), what)
         case "mergeable":
-            if let behind { return Line(.running, behind, "No conflicts. Merges cleanly into \(base)") }
-            if detail.behindBy == nil { return Line(.passed, "No conflicts", "Merges cleanly into \(base). GitHub could not compare it with \(base)") }
-            return Line(.passed, "No conflicts", "Up to date with \(base) and merges cleanly")
+            if let behind {
+                return Line(.running, behind, String(localized: "No conflicts. Merges cleanly into \(base)", bundle: .module,
+                                                     comment: "%@ is the base branch's name, or its base"))
+            }
+            if detail.behindBy == nil {
+                return Line(.passed, noConflicts, String(localized: "Merges cleanly into \(base). GitHub could not compare it with \(base)", bundle: .module,
+                                                         comment: "Both %@ are the base branch's name, or its base"))
+            }
+            return Line(.passed, noConflicts, String(localized: "Up to date with \(base) and merges cleanly", bundle: .module,
+                                                     comment: "%@ is the base branch's name, or its base"))
         default:
-            return Line(.running, "Checking for conflicts", "GitHub is still checking whether it merges cleanly" + (behind.map { ". It is \($0)" } ?? ""))
+            let what = behind.map {
+                String(localized: "GitHub is still checking whether it merges cleanly. It is \($0)", bundle: .module,
+                       comment: "%@ is how far behind its base the pull request is, such as 3 commits behind main")
+            } ?? String(localized: "GitHub is still checking whether it merges cleanly", bundle: .module)
+            return Line(.running, String(localized: "Checking for conflicts", bundle: .module), what)
         }
+    }
+    /// The base branch's name, set apart from the words around it, or "its base" when GitHub gave none.
+    private static func baseName(_ detail: PullRequestDetail) -> String {
+        detail.baseBranch.isEmpty
+            ? String(localized: "its base", bundle: .module, comment: "Stands in for a pull request's base branch when GitHub doesn't name it, as in Merged into its base")
+            : Interface.isolated(detail.baseBranch)
     }
 
     // MARK: Files
@@ -340,8 +422,10 @@ public enum PullRequests {
     public static func fileCount(_ detail: PullRequestDetail) -> String? {
         guard let files = detail.files else { return nil }
         let total = max(detail.changedFiles ?? files.count, files.count)
-        let noun = total == 1 ? "file" : "files"
-        return files.count < total ? "\(files.count) of \(total) \(noun)" : "\(total) \(noun)"
+        let all = total == 1 ? String(localized: "1 file", bundle: .module) : String(localized: "\(total) files", bundle: .module)
+        guard files.count < total else { return all }
+        return String(localized: "\(files.count) of \(all)", bundle: .module,
+                      comment: "How many of a pull request's files GitHub listed; %lld is how many it listed, %@ how many there are, such as 312 files")
     }
 
     // MARK: Babysitting
@@ -361,30 +445,63 @@ public enum PullRequests {
         let wanted = Self.key(detail.url)
         if let current = babysitting.first(where: { wanted != nil && Self.key($0.url) == wanted }) {
             let since = Stamp.date(current.startedAt).map { at(clock, $0, now: now) }
-            let who = current.startedBy == "user" ? "Started by you." : "Started by \(agent)."
-            return .babysitting(title: since.map { "Babysitting since \($0)" } ?? "Babysitting",
-                                detail: "\(who) Sotto sends this thread a wake-up when #\(detail.number) needs it.")
+            let who = current.startedBy == "user" ? String(localized: "Started by you.", bundle: .module, comment: "Who started babysitting a pull request")
+                : String(localized: "Started by \(agent).", bundle: .module, comment: "Who started babysitting a pull request; %@ is the agent's name, such as Codex")
+            let title = since.map {
+                String(localized: "Babysitting since \($0)", bundle: .module, comment: "%@ is when babysitting started, such as 2:02 PM or Oct 7, 2:02 PM")
+            } ?? String(localized: "Babysitting", bundle: .module, comment: "Sotto is watching this thread's pull request for it")
+            let wakes = String(localized: "Sotto sends this thread a wake-up when #\(detail.number) needs it.", bundle: .module,
+                               comment: "%lld is the pull request's number")
+            return .babysitting(title: title, detail: who + " " + wakes)
         }
         let last = ended.first { wanted != nil && Self.key($0.url) == wanted }
         if detail.state != "open" {
             let words = last.map { endedWords($0, now: now, clock: clock) }
-                ?? (detail.state == "merged" ? "It merged into \(detail.baseBranch.isEmpty ? "its base" : detail.baseBranch)." : "It was closed.")
-            return .finished(title: "Nothing to babysit", detail: words)
+                ?? (detail.state == "merged"
+                    ? String(localized: "It merged into \(baseName(detail)).", bundle: .module, comment: "%@ is the base branch's name, or its base")
+                    : String(localized: "It was closed.", bundle: .module, comment: "A pull request that was closed without merging"))
+            return .finished(title: String(localized: "Nothing to babysit", bundle: .module), detail: words)
         }
-        let what = "Sotto wakes this thread when a check fails, the checks pass, someone reviews, it conflicts or it merges."
+        let what = String(localized: "Sotto wakes this thread when a check fails, the checks pass, someone reviews, it conflicts or it merges.", bundle: .module)
         return .offered(detail: last.map { endedWords($0, now: now, clock: clock) + " " + what } ?? what)
     }
     /// Why babysitting ended, as the desktop's surface says it. The time is when babysitting ended, never the merge's.
     public static func endedWords(_ ended: ThreadBabysitEnded, now: Date = Date(), clock: (Date) -> String = PullRequests.clock) -> String {
         let when = Stamp.date(ended.endedAt).map { at(clock, $0, now: now) }
-        let lead = when.map { "Ended at \($0)," } ?? "Ended"
+        let number = ended.number
+        // Each reason is one sentence with the time and one without, so every language words both whole.
         switch ended.reason {
-        case "merged": return "\(lead) after #\(ended.number) merged."
-        case "closed": return "\(lead) after #\(ended.number) was closed."
-        case "comment-limit": return "\(lead) after ten wake-ups in a row brought only comments."
-        case "unreadable": return "\(when.map { "Ended at \($0)" } ?? "Ended"). Sotto could not read #\(ended.number) from GitHub for about 16 minutes."
-        case "switched-off": return "\(lead) when Let agents babysit pull requests was turned off in Settings."
-        default: return when.map { "Ended at \($0)." } ?? "Ended."
+        case "merged":
+            return when.map {
+                String(localized: "Ended at \($0), after #\(number) merged.", bundle: .module,
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
+            } ?? String(localized: "Ended after #\(number) merged.", bundle: .module, comment: "Why babysitting ended; %lld is the pull request's number")
+        case "closed":
+            return when.map {
+                String(localized: "Ended at \($0), after #\(number) was closed.", bundle: .module,
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
+            } ?? String(localized: "Ended after #\(number) was closed.", bundle: .module, comment: "Why babysitting ended; %lld is the pull request's number")
+        case "comment-limit":
+            return when.map {
+                String(localized: "Ended at \($0), after ten wake-ups in a row brought only comments.", bundle: .module,
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM")
+            } ?? String(localized: "Ended after ten wake-ups in a row brought only comments.", bundle: .module)
+        case "unreadable":
+            return when.map {
+                String(localized: "Ended at \($0). Sotto could not read #\(number) from GitHub for about 16 minutes.", bundle: .module,
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM, and %lld is the pull request's number")
+            } ?? String(localized: "Ended. Sotto could not read #\(number) from GitHub for about 16 minutes.", bundle: .module,
+                        comment: "Why babysitting ended; %lld is the pull request's number")
+        case "switched-off":
+            return when.map {
+                String(localized: "Ended at \($0), when Let agents babysit pull requests was turned off in Settings.", bundle: .module,
+                       comment: "Why babysitting ended; %@ is when, such as 2:02 PM. Let agents babysit pull requests is a setting's name")
+            } ?? String(localized: "Ended when Let agents babysit pull requests was turned off in Settings.", bundle: .module,
+                        comment: "Why babysitting ended. Let agents babysit pull requests is a setting's name")
+        default:
+            return when.map {
+                String(localized: "Ended at \($0).", bundle: .module, comment: "Babysitting ended; %@ is when, such as 2:02 PM")
+            } ?? String(localized: "Ended.", bundle: .module, comment: "Babysitting ended")
         }
     }
     /// What the sheet says when `computer` could not read the pull request from GitHub (#1290): what happened, that
@@ -393,15 +510,20 @@ public enum PullRequests {
     public static func readFailureWords(reason: String?, computer: String) -> String {
         switch reason {
         case "gh-missing":
-            return "GitHub’s command line tool, gh, isn’t installed on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Install gh there and sign in with gh auth login, then try again."
+            return String(localized: "GitHub’s command line tool, gh, isn’t installed on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Install gh there and sign in with gh auth login, then try again.", bundle: .module,
+                          comment: "Every %@ is the computer's name, or the computer")
         case "gh-signed-out":
-            return "gh isn’t signed in to GitHub on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Sign in to GitHub on \(computer) with gh auth login, then try again."
+            return String(localized: "gh isn’t signed in to GitHub on \(computer), so Sotto couldn’t read the pull request. Nothing was lost. Sign in to GitHub on \(computer) with gh auth login, then try again.", bundle: .module,
+                          comment: "Every %@ is the computer's name, or the computer")
         case "offline":
-            return "GitHub can’t be reached from \(computer) right now, so Sotto couldn’t read the pull request. Nothing was lost. Try again when it’s back online."
+            return String(localized: "GitHub can’t be reached from \(computer) right now, so Sotto couldn’t read the pull request. Nothing was lost. Try again when it’s back online.", bundle: .module,
+                          comment: "Every %@ is the computer's name, or the computer")
         case "unreadable":
-            return "GitHub didn’t give \(computer) this pull request. Nothing was lost. Try again in a moment, or open it on GitHub to check it still exists."
+            return String(localized: "GitHub didn’t give \(computer) this pull request. Nothing was lost. Try again in a moment, or open it on GitHub to check it still exists.", bundle: .module,
+                          comment: "Every %@ is the computer's name, or the computer")
         default:
-            return "Sotto couldn’t read the pull request from GitHub on \(computer). Nothing was lost. Check that gh is installed and signed in there and can reach GitHub, then try again."
+            return String(localized: "Sotto couldn’t read the pull request from GitHub on \(computer). Nothing was lost. Check that gh is installed and signed in there and can reach GitHub, then try again.", bundle: .module,
+                          comment: "Every %@ is the computer's name, or the computer")
         }
     }
     /// "2:02 PM" today, or "Oct 7, 2:02 PM" before.
