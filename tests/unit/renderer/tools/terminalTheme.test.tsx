@@ -1,4 +1,5 @@
 import { deferred } from '../../../fixtures/deferred'
+import { saying } from '../../../fixtures/renderer/laterWords'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const xterm = vi.hoisted(() => ({ selection: 'terminal selection', range: { start: { x: 0, y: 0 }, end: { x: 18, y: 0 } }, instances: [] as { options: Record<string, unknown>; themes: unknown[]; key: (event: KeyboardEvent) => boolean; clearSelection: ReturnType<typeof vi.fn>; selectionChange: () => void }[] }))
@@ -119,7 +120,7 @@ it('keeps the terminal selection until copying succeeds and explains a failed co
   terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
   expect(terminal.clearSelection).not.toHaveBeenCalled()
   fail(new Error('Permission denied'))
-  await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Could not copy. Your selection is kept. Try Ctrl+C again.'))
+  await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith(saying('Could not copy. Your selection is kept. Try Ctrl+C again.')))
   expect(terminal.clearSelection).not.toHaveBeenCalled()
   deliverOutput.mockResolvedValue('copied')
   terminal.key(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true }))
@@ -213,7 +214,7 @@ it('does not copy whitespace-only terminal selections or interrupt the command',
   expect(deliverOutput).not.toHaveBeenCalled()
   expect(terminal.clearSelection).not.toHaveBeenCalled()
   expect(onInterrupt).not.toHaveBeenCalled()
-  expect(onNotice).toHaveBeenCalledWith('Nothing to copy. Select some text first.')
+  expect(onNotice).toHaveBeenCalledWith(saying('Nothing to copy. Select some text first.'))
   view.dispose()
 })
 

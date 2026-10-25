@@ -1,4 +1,7 @@
 import React, { Fragment, memo, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { i18n, type I18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Copy, FolderTree, MessageSquare, Pilcrow, RotateCw, Rows3, WrapText } from 'lucide-react'
 import type { GitChangesBridge, GitReviewFile } from '../../../shared/gitChanges'
 import type { ToolsError } from '../../../shared/tools'
@@ -7,11 +10,18 @@ import { Button } from '../components/Button'
 import { diffRows, fileHasLine, quotedLines, reviewLine, rowLabel, rowShowing, rowsShowing, selectableRows, type DiffRow } from './diffSelection'
 import { ChangesBasePicker, type RefsReader } from './ChangesBasePicker'
 import { revealLabel } from './FilePreview'
-import { CHANGE_STATUS, collapsedIn, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
+import { CHANGE_STATUS, collapsedIn, fileProblemWords, parseUnifiedDiff, scopeKey, turnNumber, useChangesView, useThreadChanges, type ChangesReview, type ChangesScope, type ChangesStore, type ChangesView, type DiffLine, type ThreadChanges } from './changesStore'
 import { GitActions } from './GitActions'
 import { ToolsChrome } from './ToolsChrome'
 import './changes.css'
 import { useDiffPreferences } from '../state/gitSettings'
+import { inEnglish } from '../state/interfaceLanguage'
+import { shownWords } from '../features/settings/laterWords'
+import { shownCount, shownNotice } from './toolsWords'
+
+const BINARY_DIFF = msg`Binary file: no text diff.`
+const TOO_LARGE_DIFF = msg`Too large to show as a diff.`
+const NO_DIFF = msg`No diff is available for this file.`
 
 /** A long file shows this many rows first; the rest is one action away so a huge diff never stalls the panel. */
 const DIFF_ROW_LIMIT = 3_000
@@ -22,17 +32,18 @@ function splitPath(path: string): { readonly folder: string; readonly name: stri
 }
 
 function listProblem(error: ToolsError, bridge: boolean): string {
-  if (!bridge) return 'Changes is not available in this window.'
+  if (!bridge) return i18n._(msg`Changes is not available in this window.`)
   switch (error.code) {
-    case 'not-repository': return 'This working folder is not a Git repository.'
-    case 'thread-unavailable': return 'This thread is not available to Changes.'
-    case 'workspace-unavailable': return 'The working folder is not available.'
-    case 'busy': return 'Git is busy.'
-    default: return error.message || 'Changes could not read Git.'
+    case 'not-repository': return i18n._(msg`This working folder is not a Git repository.`)
+    case 'thread-unavailable': return i18n._(msg`This thread is not available to Changes.`)
+    case 'workspace-unavailable': return i18n._(msg`The working folder is not available.`)
+    case 'busy': return i18n._(msg`Git is busy.`)
+    default: return error.message || i18n._(msg`Changes could not read Git.`)
   }
 }
 
-const SCOPE_LOADING: Record<ChangesScope['kind'], string> = { working: 'Reading the working tree…', branch: 'Reading branch changes…', turn: 'Reading the turn’s checkpoint…' }
+const SCOPE_LOADING: Record<ChangesScope['kind'], MessageDescriptor> = { working: msg`Reading the working tree…`, branch: msg`Reading branch changes…`, turn: msg`Reading the turn’s checkpoint…` }
+const CHANGES = msg({ message: 'Changes', comment: 'The Tools surface that shows a thread\'s changed files.' })
 
 export interface ChangesSurfaceProps {
   readonly threadId: string
@@ -55,6 +66,7 @@ export interface ChangesSurfaceProps {
  * checkpoints (a thread on a paired host) offers no turns and no Checkpoints, and one without reveal no Show in folder.
  */
 export function ChangesSurface({ threadId, store, bridge, platform, onStatus, onOpenFile, refs, comments = reviewCommentStore }: ChangesSurfaceProps): ReactNode {
+  const { t, i18n } = useLingui()
   const changes = useThreadChanges(store, threadId)
   const view = useChangesView(store)
   // Diff layout, Hide whitespace changes and Default diff file state say where the view starts (ADR-0027, #271).
@@ -65,14 +77,15 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   }, [store, startLayout, startHidden, startFileState])
   // Checkpoints draws its toggle into the line of chrome.
   const [toggleSlot, setToggleSlot] = useState<HTMLElement | null>(null)
-  if (!changes) return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Loading…</p></>
+  const changesTitle = i18n._(CHANGES)
+  if (!changes) return <><ToolsChrome title={changesTitle} /><p className="files-preview__loading" role="status">{t`Loading…`}</p></>
   const { list } = changes
-  if (list.status === 'loading') return <><ToolsChrome title="Changes" /><p className="files-preview__loading" role="status">Reading changes…</p></>
+  if (list.status === 'loading') return <><ToolsChrome title={changesTitle} /><p className="files-preview__loading" role="status">{t`Reading changes…`}</p></>
   if (list.status === 'error') {
     const repository = list.error.code !== 'not-repository'
-    return <><ToolsChrome title="Changes" /><div className="files-problem files-problem--root" role="status">
+    return <><ToolsChrome title={changesTitle} /><div className="files-problem files-problem--root" role="status">
       <strong>{listProblem(list.error, bridge !== undefined)}</strong>
-      {bridge && repository ? <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button> : null}
+      {bridge && repository ? <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>{t`Try again`}</button> : null}
     </div></>
   }
   const reviewState = changes.review
@@ -82,8 +95,8 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
   const allCollapsed = files.length > 0 && files.every(file => collapsed.has(file.path))
   const totals = files.reduce((sum, file) => ({ additions: sum.additions + (file.additions ?? 0), deletions: sum.deletions + (file.deletions ?? 0) }), { additions: 0, deletions: 0 })
   const tree = view.fileTree && files.length > 0
-  const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? 'Path copied' : 'Could not copy the path')) }
-  const reveal = bridge?.reveal ? (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus('Could not open the folder') }) } : undefined
+  const copy = (path: string): void => { void store.copyPath(bridge, threadId, path).then(result => onStatus(result.ok ? t`Path copied` : t`Could not copy the path`)) }
+  const reveal = bridge?.reveal ? (path: string): void => { void store.reveal(bridge, threadId, path).then(result => { if (!result.ok) onStatus(t`Could not open the folder`) }) } : undefined
   const setScope = (scope: ChangesScope): void => store.setScope(bridge, threadId, scope)
   const toggle = (key: keyof Pick<ChangesView, 'wrap' | 'ignoreWhitespace' | 'fileTree'>): void => store.setView({ [key]: !view[key] })
 
@@ -96,7 +109,7 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
       </span>
       <div className="tools-chrome__actions">
         <span className="changes-summary__git" ref={setToggleSlot} />
-        <button type="button" className="files-icon tt-focusable" aria-label="Refresh diff" title="Refresh diff" data-busy={changes.refreshing || reviewState?.status === 'loading' || undefined}
+        <button type="button" className="files-icon tt-focusable" aria-label={t`Refresh diff`} title={t`Refresh diff`} data-refresh-diff="" data-busy={changes.refreshing || reviewState?.status === 'loading' || undefined}
           onClick={() => void store.refresh(bridge, threadId)}><RotateCw size={15} aria-hidden="true" /></button>
       </div>
     </div>
@@ -104,36 +117,36 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
     <div className="changes-bar">
       {changes.scope.kind === 'branch'
         ? <ChangesBasePicker key={threadId} threadId={threadId} selected={changes.scope.base} resolved={review?.branch} refs={refs} onPick={base => setScope({ kind: 'branch', base })} />
-        : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? 'Against HEAD' : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
-      <div className="changes-bar__view" role="group" aria-label="Diff view">
+        : <span className="changes-bar__fact">{changes.scope.kind === 'working' ? t`Against HEAD` : review?.turn ? turnWhen(review.turn.checkpoint.createdAt) : ''}</span>}
+      <div className="changes-bar__view" role="group" aria-label={t`Diff view`}>
         {files.length > 0 ? <Totals {...totals} place="bar" /> : null}
         <button type="button" className="files-icon files-icon--small tt-focusable" disabled={files.length === 0}
-          aria-label={allCollapsed ? 'Expand all files' : 'Collapse all files'} title={allCollapsed ? 'Expand all files' : 'Collapse all files'}
+          aria-label={allCollapsed ? t`Expand all files` : t`Collapse all files`} title={allCollapsed ? t`Expand all files` : t`Collapse all files`}
           onClick={() => store.setAllCollapsed(threadId, !allCollapsed)}>{allCollapsed ? <ChevronsUpDown size={15} aria-hidden="true" /> : <ChevronsDownUp size={15} aria-hidden="true" />}</button>
         <span className="changes-bar__segment">
-          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Stacked diff view" title="Stacked diff view" aria-pressed={view.layout === 'stacked'} onClick={() => store.setView({ layout: 'stacked' })}><Rows3 size={15} aria-hidden="true" /></button>
-          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label="Split diff view" title="Split diff view" aria-pressed={view.layout === 'split'} onClick={() => store.setView({ layout: 'split' })}><Columns2 size={15} aria-hidden="true" /></button>
+          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t`Stacked diff view`} title={t`Stacked diff view`} aria-pressed={view.layout === 'stacked'} onClick={() => store.setView({ layout: 'stacked' })}><Rows3 size={15} aria-hidden="true" /></button>
+          <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t`Split diff view`} title={t`Split diff view`} aria-pressed={view.layout === 'split'} onClick={() => store.setView({ layout: 'split' })}><Columns2 size={15} aria-hidden="true" /></button>
         </span>
         <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.wrap || undefined}
-          aria-label={view.wrap ? 'Disable line wrapping' : 'Enable line wrapping'} title={view.wrap ? 'Disable line wrapping' : 'Enable line wrapping'}
+          aria-label={view.wrap ? t`Disable line wrapping` : t`Enable line wrapping`} title={view.wrap ? t`Disable line wrapping` : t`Enable line wrapping`}
           onClick={() => toggle('wrap')}><WrapText size={15} aria-hidden="true" /></button>
         <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.ignoreWhitespace || undefined}
-          aria-label={view.ignoreWhitespace ? 'Show whitespace changes' : 'Hide whitespace changes'} title={view.ignoreWhitespace ? 'Show whitespace changes' : 'Hide whitespace changes'}
+          aria-label={view.ignoreWhitespace ? t`Show whitespace changes` : t`Hide whitespace changes`} title={view.ignoreWhitespace ? t`Show whitespace changes` : t`Hide whitespace changes`}
           onClick={() => toggle('ignoreWhitespace')}><Pilcrow size={15} aria-hidden="true" /></button>
         <button type="button" className="files-icon files-icon--small tt-focusable" data-on={view.fileTree || undefined} disabled={files.length === 0}
-          aria-label={view.fileTree ? 'Hide file tree' : 'Show file tree'} title={view.fileTree ? 'Hide file tree' : 'Show file tree'}
+          aria-label={view.fileTree ? t`Hide file tree` : t`Show file tree`} title={view.fileTree ? t`Hide file tree` : t`Show file tree`}
           onClick={() => toggle('fileTree')}><FolderTree size={15} aria-hidden="true" /></button>
       </div>
     </div>
     {reviewState?.status === 'error'
-      ? <><div className="files-problem" role="status"><strong>{reviewState.error.message || 'This comparison could not be read.'}</strong>
-        <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>Try again</button></div>
+      ? <><div className="files-problem" role="status"><strong>{reviewState.error.message || t`This comparison could not be read.`}</strong>
+        <button type="button" className="files-link tt-focusable" onClick={() => void store.refresh(bridge, threadId)}>{t`Try again`}</button></div>
         <ElsewhereComments threadId={threadId} files={NO_FILES} store={comments} /></>
-      : !review ? <p className="files-preview__loading" role="status">{SCOPE_LOADING[changes.scope.kind]}</p>
-        : review.notice ? <><div className="files-problem" role="status"><strong>{review.notice}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
+      : !review ? <p className="files-preview__loading" role="status">{i18n._(SCOPE_LOADING[changes.scope.kind])}</p>
+        : review.notice ? <><div className="files-problem" role="status"><strong>{shownNotice(review.notice)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
           : files.length === 0 ? <><div className="files-problem" role="status"><strong>{emptyWords(changes.scope, review, view)}</strong></div><ElsewhereComments threadId={threadId} files={files} store={comments} /></>
             : <>
-              {review.truncated ? <p className="changes-note">Git reported more files than Sotto lists.</p> : null}
+              {review.truncated ? <p className="changes-note tt-paragraph">{t`Git reported more files than Sotto lists.`}</p> : null}
               <div className="changes-review" data-tree={tree || undefined}>
                 <ChangesFiles key={`${threadId}\n${scopeKey(changes.scope)}`} changes={changes} review={review} view={view} store={store} comments={comments}
                   onCopy={copy} onReveal={reveal} onOpenFile={onOpenFile} platform={platform} />
@@ -148,25 +161,32 @@ export function ChangesSurface({ threadId, store, bridge, platform, onStatus, on
  * the window's own controls, so CSS shows the copy at the head of the view bar instead. Only one is ever displayed.
  */
 function Totals({ additions, deletions, place }: { readonly additions: number; readonly deletions: number; readonly place: 'chrome' | 'bar' }): ReactNode {
-  return <span className={`changes-counts changes-counts--${place}`} title={`${additions} lines added, ${deletions} removed`}>
+  // Each count in the interface language, and in English as it always read: a plural's own # would group its digits.
+  const added = shownCount(additions), removed = shownCount(deletions)
+  const words = plural(additions, { other: `${added} lines added, ${removed} removed` })
+  return <span className={`changes-counts changes-counts--${place}`} title={words}>
     <span aria-hidden="true"><span className="changes-counts__add">+{additions}</span> <span className="changes-counts__remove">−{deletions}</span></span>
-    <span className="tt-visually-hidden">{additions} lines added, {deletions} removed</span>
+    <span className="tt-visually-hidden">{words}</span>
   </span>
 }
 
 function turnWhen(createdAt: string): string {
   const date = new Date(createdAt)
-  return Number.isNaN(date.getTime()) ? '' : `Started ${date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+  if (Number.isNaN(date.getTime())) return ''
+  const when = date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return i18n._(msg({ message: `Started ${when}`, comment: 'When a turn started; {when} is a date and time.' }))
 }
 
 function emptyWords(scope: ChangesScope, review: ChangesReview, view: ChangesView): string {
-  const whitespace = view.ignoreWhitespace ? ' Whitespace changes are hidden.' : ''
-  if (scope.kind === 'working') return `The working copy matches HEAD.${whitespace}`
+  const hidden = view.ignoreWhitespace
+  if (scope.kind === 'working') return hidden ? i18n._(msg`The working copy matches HEAD. Whitespace changes are hidden.`) : i18n._(msg`The working copy matches HEAD.`)
   if (scope.kind === 'branch') {
-    if (!review.branch?.base) return 'Sotto found no base branch to compare with. Choose one.'
-    return `This branch has no changes against ${review.branch.base}.${whitespace}`
+    if (!review.branch?.base) return i18n._(msg`Sotto found no base branch to compare with. Choose one.`)
+    const base = review.branch.base
+    return hidden ? i18n._(msg({ message: `This branch has no changes against ${base}. Whitespace changes are hidden.`, comment: '{base} is a Git branch name.' }))
+      : i18n._(msg({ message: `This branch has no changes against ${base}.`, comment: '{base} is a Git branch name.' }))
   }
-  return `This turn changed no files.${whitespace}`
+  return hidden ? i18n._(msg`This turn changed no files. Whitespace changes are hidden.`) : i18n._(msg`This turn changed no files.`)
 }
 
 /** Scroll a file's block into view, open it if it was collapsed, and put focus on its name. */
@@ -184,19 +204,23 @@ function showFile(changes: ThreadChanges, store: ChangesStore, path: string): vo
  * `turns` (a thread on a paired host, whose turn checkpoints are not kept here) it offers the first two alone.
  */
 function ScopePicker({ changes, turns: offersTurns, onChange }: { readonly changes: ThreadChanges; readonly turns: boolean; readonly onChange: (scope: ChangesScope) => void }): ReactNode {
+  const { t } = useLingui()
   const { scope, turns } = changes
   const value = scope.kind === 'turn' ? scope.checkpointId === null ? 'latest' : `turn:${scope.checkpointId}` : scope.kind
   return <label className="changes-scope">
-    <span className="tt-visually-hidden">Diff scope</span>
+    <span className="tt-visually-hidden">{t`Diff scope`}</span>
     <select className="changes-scope__select tt-focusable" value={value} onChange={event => {
       const next = event.target.value
       onChange(next === 'working' ? { kind: 'working' } : next === 'branch' ? { kind: 'branch', base: null } : next === 'latest' ? { kind: 'turn', checkpointId: null } : { kind: 'turn', checkpointId: next.slice('turn:'.length) })
     }}>
-      <option value="working">Working tree</option>
-      <option value="branch">Branch changes</option>
-      {offersTurns ? <option value="latest">Latest turn</option> : null}
-      {offersTurns && turns.length > 0 ? <optgroup label="Turn">
-        {turns.map(turn => <option key={turn.id} value={`turn:${turn.id}`}>Turn {turnNumber(turns, turn.id)}{turn.status === 'unavailable' ? ' (unavailable)' : ''}</option>)}
+      <option value="working">{t`Working tree`}</option>
+      <option value="branch">{t`Branch changes`}</option>
+      {offersTurns ? <option value="latest">{t`Latest turn`}</option> : null}
+      {offersTurns && turns.length > 0 ? <optgroup label={t({ message: 'Turn', comment: 'A heading over the list of a thread\'s turns.' })}>
+        {turns.map(turn => {
+          const number = turnNumber(turns, turn.id)
+          return <option key={turn.id} value={`turn:${turn.id}`}>{turn.status === 'unavailable' ? t({ message: `Turn ${number} (unavailable)`, comment: '{number} counts the thread\'s turns.' }) : t({ message: `Turn ${number}`, comment: '{number} counts the thread\'s turns.' })}</option>
+        })}
       </optgroup> : null}
     </select>
     <ChevronDown size={14} aria-hidden="true" className="changes-scope__chevron" />
@@ -239,6 +263,7 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
   readonly changes: ThreadChanges; readonly review: ChangesReview; readonly view: ChangesView; readonly store: ChangesStore; readonly comments: ReviewCommentStore
   readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined; readonly onOpenFile?: ((path: string) => void) | undefined; readonly platform?: string | undefined
 }): ReactNode {
+  const { t } = useLingui()
   const body = useRef<HTMLDivElement>(null)
   const { threadId } = changes
   const key = scopeKey(changes.scope)
@@ -290,8 +315,10 @@ function ChangesFiles({ changes, review, view, store, comments: commentStore, on
     return next
   }
   const collapsed = collapsedIn(changes)
-  const labels = changes.scope.kind === 'working' ? ['HEAD', 'Working tree'] : changes.scope.kind === 'branch' ? [review.branch?.base ?? 'Base', review.branch?.head ?? 'Branch'] : ['Before the turn', 'After the turn']
-  return <div ref={body} className="changes-files" data-wrap={view.wrap || undefined} data-layout={view.layout} aria-label="Changed files"
+  const labels = changes.scope.kind === 'working' ? ['HEAD', t`Working tree`]
+    : changes.scope.kind === 'branch' ? [review.branch?.base ?? t({ message: 'Base', comment: 'Heads the side of a split diff that shows the base branch.' }), review.branch?.head ?? t({ message: 'Branch', comment: 'Heads the side of a split diff that shows the thread\'s branch.' })]
+      : [t`Before the turn`, t`After the turn`]
+  return <div ref={body} className="changes-files" data-wrap={view.wrap || undefined} data-layout={view.layout} aria-label={t`Changed files`}
     role="region" onScroll={event => store.setScroll(threadId, key, event.currentTarget.scrollTop)}>
     {review.files.map(file => <FileBlock key={file.path} file={file} collapsed={collapsed.has(file.path)} split={view.layout === 'split'} labels={labels}
       onToggle={() => store.toggleCollapsed(threadId, file.path)} onCopy={onCopy} onReveal={onReveal}
@@ -315,6 +342,7 @@ function drawsLines(file: GitReviewFile): boolean {
  * is here too, with its words, so it can always be finished or cancelled.
  */
 function ElsewhereComments({ threadId, files, store }: { readonly threadId: string; readonly files: readonly GitReviewFile[]; readonly store: ReviewCommentStore }): ReactNode {
+  const { t } = useLingui()
   const comments = useReviewComments(store, threadId)
   const draft = useReviewDraft(store, threadId)
   const shown = new Set(files.filter(drawsLines).map(file => file.path))
@@ -333,10 +361,10 @@ function ElsewhereComments({ threadId, files, store }: { readonly threadId: stri
     if (next) { next.focus(); return }
     const surface = section.current?.closest('.changes-surface')
     const heads = surface?.querySelectorAll<HTMLElement>('.changes-file__toggle')
-    ;(heads?.[heads.length - 1] ?? surface?.querySelector<HTMLElement>('button[aria-label="Refresh diff"]'))?.focus()
+    ;(heads?.[heads.length - 1] ?? surface?.querySelector<HTMLElement>('button[data-refresh-diff]'))?.focus()
   }
   return <section ref={section} className="changes-elsewhere" aria-labelledby={`changes-elsewhere-${threadId}`}>
-    <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">Comments on lines this comparison does not show</h3>
+    <h3 id={`changes-elsewhere-${threadId}`} className="changes-elsewhere__title">{t`Comments on lines this comparison does not show`}</h3>
     {strayDraft ? <CommentDraft draft={strayDraft} full={store.full(threadId)} focus={NO_FOCUS} standalone
       onText={text => store.editDraft(threadId, text)} onCancel={() => { handOff(null); store.closeDraft(threadId) }}
       onAdd={() => { if (store.addDraft(threadId)) requestAnimationFrame(() => [...section.current?.querySelectorAll<HTMLElement>('.changes-comment__delete') ?? []].at(-1)?.focus()) }} /> : null}
@@ -369,26 +397,28 @@ const FileBlock = memo(function FileBlock({ file, collapsed, split, labels, onTo
   readonly onToggle: () => void; readonly onCopy: (path: string) => void; readonly onReveal?: ((path: string) => void) | undefined
   readonly onOpen?: ((path: string) => void) | undefined; readonly platform?: string | undefined; readonly review: FileReview
 }): ReactNode {
+  const { t } = useLingui()
   const { folder, name } = splitPath(file.path)
   const status = CHANGE_STATUS[file.status]
+  const path = file.path, additions = file.additions, deletions = file.deletions, originalPath = file.originalPath
   const title = <>{folder ? <span className="changes-file__folder"><bdi>{folder}</bdi></span> : null}<span className="changes-file__base">{name}</span></>
   return <section className="changes-file" data-file-path={file.path} data-collapsed={collapsed || undefined} role="group" aria-label={file.path}>
     <div className="changes-file__head">
       <button type="button" className="changes-file__toggle files-icon files-icon--small tt-focusable" aria-expanded={!collapsed}
-        aria-label={collapsed ? `Expand ${file.path}` : `Collapse ${file.path}`} title={collapsed ? 'Expand diff' : 'Collapse diff'} onClick={onToggle}>
+        aria-label={collapsed ? t({ message: `Expand ${path}`, comment: '{path} is a file\'s path.' }) : t({ message: `Collapse ${path}`, comment: '{path} is a file\'s path.' })} title={collapsed ? t`Expand diff` : t`Collapse diff`} onClick={onToggle}>
         {collapsed ? <ChevronRight size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
       </button>
       <span className="changes-badge" data-status={file.status} role="img" aria-label={status.label} title={status.label}>{status.letter}</span>
-      {onOpen ? <button type="button" className="changes-file__name tt-focusable" aria-label={`Open ${file.path}`} title={`Open ${file.path} in Files`} onClick={() => onOpen(file.path)}>{title}</button>
+      {onOpen ? <button type="button" className="changes-file__name tt-focusable" aria-label={t({ message: `Open ${path}`, comment: '{path} is a file\'s path.' })} title={t({ message: `Open ${path} in Files`, comment: '{path} is a file\'s path.' })} onClick={() => onOpen(file.path)}>{title}</button>
         : <span className="changes-file__name" title={file.path}>{title}</span>}
       {file.additions !== null && file.deletions !== null ? <span className="changes-counts changes-counts--file">
         <span aria-hidden="true"><span className="changes-counts__add">+{file.additions}</span> <span className="changes-counts__remove">−{file.deletions}</span></span>
-        <span className="tt-visually-hidden">{file.additions} added, {file.deletions} removed</span>
+        <span className="tt-visually-hidden">{t`${additions} added, ${deletions} removed`}</span>
       </span> : null}
-      <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={`Copy path: ${file.path}`} title="Copy path" onClick={() => onCopy(file.path)}><Copy size={14} aria-hidden="true" /></button>
+      <button type="button" className="files-icon files-icon--small tt-focusable" aria-label={t({ message: `Copy path: ${path}`, comment: '{path} is a file\'s path.' })} title={t`Copy path`} onClick={() => onCopy(file.path)}><Copy size={14} aria-hidden="true" /></button>
     </div>
     {!collapsed ? <>
-      {file.originalPath ? <p className="changes-note">Renamed from <code>{file.originalPath}</code></p> : null}
+      {originalPath ? <p className="changes-note tt-paragraph"><Trans comment="{originalPath} is the file's path before it was renamed.">Renamed from <code>{originalPath}</code></Trans></p> : null}
       <FileBody file={file} split={split} labels={labels} onReveal={onReveal ? () => onReveal(file.path) : undefined} platform={platform} review={review} />
     </> : null}
   </section>
@@ -411,6 +441,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   readonly file: GitReviewFile; readonly split: boolean; readonly labels: readonly string[]; readonly onReveal?: (() => void) | undefined; readonly platform?: string | undefined
   readonly review: FileReview
 }): ReactNode {
+  const { t } = useLingui()
   const [all, setAll] = useState(false)
   const [active, setActive] = useState(0)
   const grid = useRef<HTMLDivElement>(null)
@@ -442,11 +473,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const draftAnchor = draft && selectable.length > 0 ? rowShowing(shown, rows, draft.lines.at(-1))?.key ?? rows.at(-1)?.key : undefined
 
   if (file.content.kind !== 'text') {
-    const title = file.content.kind === 'binary' ? 'Binary file: no text diff.' : file.content.kind === 'too-large' ? 'Too large to show as a diff.' : 'No diff is available for this file.'
-    return <div className="changes-file__problem" role="note"><strong>{title}</strong>{file.content.message && file.content.message !== title ? <p>{file.content.message}</p> : null}
+    // Main writes its message in English, so it is compared with the English title and shown only when it says more.
+    const title = file.content.kind === 'binary' ? BINARY_DIFF : file.content.kind === 'too-large' ? TOO_LARGE_DIFF : NO_DIFF
+    const detail = file.content.message && file.content.message !== inEnglish(title) ? fileProblemWords(file.content.message) : null
+    return <div className="changes-file__problem" role="note"><strong>{i18n._(title)}</strong>{detail !== null ? <p className={typeof detail === 'string' ? undefined : 'tt-paragraph'}>{shownWords(detail)}</p> : null}
       {file.status !== 'deleted' && onReveal ? <button type="button" className="files-link tt-focusable" onClick={onReveal}>{revealLabel(platform)}</button> : null}</div>
   }
-  if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>No line changes.</strong><p>Only the file’s mode or name changed.</p></div>
+  if (lines.length === 0) return <div className="changes-file__problem" role="note"><strong>{t`No line changes.`}</strong><p className="tt-paragraph">{t`Only the file’s mode or name changed.`}</p></div>
 
   const selection = picked && picked.patch === patch && picked.split === split ? picked : null
   const from = selection ? Math.min(selection.anchor, selection.focus) : -1
@@ -514,11 +547,13 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
   const done = (position: number): void => {
     requestAnimationFrame(() => { if (document.activeElement === null || document.activeElement === document.body) focusRow(position) })
   }
+  const path = file.path
+  const shownCount = shown.length.toLocaleString(), lineCount = lines.length.toLocaleString()
   const lastPosition = (keys: ReadonlySet<string>): number => rows.reduce((found, row) => row.position !== null && keys.has(row.key) ? row.position : found, current)
 
   return <div className="changes-diff__body">
     {split ? <div className="changes-split__head" aria-hidden="true"><span>{labels[0]}</span><span>{labels[1]}</span></div> : null}
-    <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} role="grid" aria-multiselectable="true" aria-label={`Lines of ${file.path}`}
+    <div ref={grid} className="changes-diff__rows" data-layout={split ? 'split' : 'unified'} role="grid" aria-multiselectable="true" aria-label={t({ message: `Lines of ${path}`, comment: '{path} is a file\'s path.' })}
       onMouseDown={event => { if (event.shiftKey && rowOf(event.target)) event.preventDefault() }} onClick={onClick} onKeyDown={onKeyDown}>
       {rows.map(row => {
         // The draft's own lines stay marked while it is open, and a new pick shows beside them.
@@ -527,7 +562,7 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
           <DiffRowView row={row} path={file.path} selected={selected} current={row.position === current} noted={notedRows.has(row.key)} />
           {selection && !pickIsDraft && row.position === to ? <CommentPill label={reviewLabel({ path: file.path, lines: quotedLines(shown, selectable, from, to) })} full={review.full}
             waiting={review.drafting} onPress={() => commentOn(to)} /> : null}
-          {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place]}
+          {markers.get(row.key)?.map(({ comment, place }) => <CommentMarker key={comment.id} comment={comment} note={MARKER_NOTE[place] ? i18n._(MARKER_NOTE[place]!) : null}
             onDelete={() => { actions.remove(comment.id); done(row.position ?? current) }} />)}
           {draft && draftAnchor === row.key ? <CommentDraft draft={draft} full={review.full} focus={review.focusDraft}
             onText={actions.editDraft} onCancel={() => { const back = lastPosition(draftRows); actions.cancelDraft(); done(back) }}
@@ -535,14 +570,15 @@ function FileBody({ file, split, labels, onReveal, platform, review }: {
         </Fragment>
       })}
     </div>
-    {shown.length < lines.length ? <div className="changes-diff__more"><span>Showing {shown.length.toLocaleString()} of {lines.length.toLocaleString()} lines.</span>
-      <button type="button" className="files-link tt-focusable" onClick={() => setAll(true)}>Show all</button></div> : null}
+    {shown.length < lines.length ? <div className="changes-diff__more"><span>{t`Showing ${shownCount} of ${lineCount} lines.`}</span>
+      <button type="button" className="files-link tt-focusable" onClick={() => setAll(true)}>{t`Show all`}</button></div> : null}
   </div>
 }
 
 const sign = (line: DiffLine | undefined): string => line?.kind === 'add' ? '+' : line?.kind === 'remove' ? '−' : ''
-const spoken = (line: DiffLine | undefined): ReactNode => line?.kind === 'add' ? <span className="tt-visually-hidden">Added: </span> : line?.kind === 'remove' ? <span className="tt-visually-hidden">Removed: </span> : null
-const commentTitle = (number: number | null | undefined): string | undefined => number == null ? undefined : `Comment on line ${number}`
+const spoken = (line: DiffLine | undefined, words: I18n): ReactNode => line?.kind === 'add' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Added: ', comment: 'Read before an added line of a diff.' }))}</span>
+  : line?.kind === 'remove' ? <span className="tt-visually-hidden">{words._(msg({ message: 'Removed: ', comment: 'Read before a removed line of a diff.' }))}</span> : null
+const commentTitle = (number: number | null | undefined, words: I18n): string | undefined => number == null ? undefined : words._(msg({ message: `Comment on line ${number}`, comment: '{number} is a line number.' }))
 
 /**
  * One row. Rows carry the file and both line numbers as data; a row a comment can cover is also a grid row the
@@ -551,6 +587,7 @@ const commentTitle = (number: number | null | undefined): string | undefined => 
 const DiffRowView = memo(function DiffRowView({ row, path, selected, current, noted }: {
   readonly row: DiffRow; readonly path: string; readonly selected: boolean; readonly current: boolean; readonly noted: boolean
 }): ReactNode {
+  const { i18n } = useLingui()
   const pickable = row.position !== null ? {
     'data-position': row.position, tabIndex: current ? 0 : -1, 'aria-selected': selected, 'aria-label': rowLabel(row), 'data-noted': noted || undefined,
   } : {}
@@ -558,18 +595,18 @@ const DiffRowView = memo(function DiffRowView({ row, path, selected, current, no
     const { line } = row
     const number = line.newLine ?? line.oldLine
     return <div className="changes-line" role="row" data-kind={line.kind} data-path={path} data-old-line={line.oldLine ?? undefined} data-new-line={line.newLine ?? undefined} {...pickable}>
-      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.oldLine ?? number) : undefined}>{line.oldLine ?? ''}</span>
-      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number) : undefined}>{line.newLine ?? ''}</span>
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.oldLine ?? number, i18n) : undefined}>{line.oldLine ?? ''}</span>
+      <span className="changes-line__number" aria-hidden="true" title={row.position !== null ? commentTitle(line.newLine ?? number, i18n) : undefined}>{line.newLine ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text" role="gridcell">{spoken(line)}{line.text || ' '}</span>
+      <span className="changes-line__text" role="gridcell">{spoken(line, i18n)}{line.text || ' '}</span>
     </div>
   }
   const cell = (line: DiffLine | undefined, side: 'old' | 'new'): ReactNode => {
     const number = side === 'old' ? line?.oldLine : line?.newLine
     return <div className="changes-split__cell" role="gridcell" data-kind={line?.kind} {...(side === 'old' ? { 'data-old-line': number ?? undefined } : { 'data-new-line': number ?? undefined })}>
-      <span className="changes-line__number" aria-hidden="true" title={commentTitle(number)}>{number ?? ''}</span>
+      <span className="changes-line__number" aria-hidden="true" title={commentTitle(number, i18n)}>{number ?? ''}</span>
       <span className="changes-line__sign" aria-hidden="true">{sign(line)}</span>
-      <span className="changes-line__text">{spoken(line)}{line?.text || ' '}</span>
+      <span className="changes-line__text">{spoken(line, i18n)}{line?.text || ' '}</span>
     </div>
   }
   return <div className="changes-split__row" role="row" data-path={path} data-old-line={row.old?.oldLine ?? undefined} data-new-line={row.next?.newLine ?? undefined} {...pickable}>
@@ -583,15 +620,16 @@ function CommentPill({ label, full, waiting, onPress }: {
   /** The draft still open elsewhere, whose words would otherwise be replaced. */
   readonly waiting: string | null; readonly onPress: () => void
 }): ReactNode {
-  const why = waiting !== null ? `Finish or cancel your comment on ${waiting} first.`
-    : full ? `A message carries at most ${MAX_REVIEW_COMMENTS} comments. Send it or delete one first.` : undefined
+  const { t } = useLingui()
+  const why = waiting !== null ? t({ message: `Finish or cancel your comment on ${waiting} first.`, comment: '{waiting} names the lines the open comment is on, as in "src/app.ts line 4".' })
+    : full ? plural(MAX_REVIEW_COMMENTS, { other: 'A message carries at most # comments. Send it or delete one first.' }) : undefined
   const reason = useId()
   // Unavailable, it stays in the Tab order with its reason read out; pressed while a draft waits, it goes to that draft.
   return <div className="changes-comment-pill" role="row"><div role="gridcell">
-    <button type="button" className="changes-comment-pill__button tt-focusable" aria-label={`Comment on ${label}`}
+    <button type="button" className="changes-comment-pill__button tt-focusable" aria-label={t({ message: `Comment on ${label}`, comment: '{label} names the picked lines, as in "src/app.ts line 4".' })}
       title={why} aria-disabled={why !== undefined || undefined} aria-describedby={why !== undefined ? reason : undefined}
       onClick={() => { if (waiting !== null || !full) onPress() }}>
-      <MessageSquare size={14} aria-hidden="true" />Comment</button>
+      <MessageSquare size={14} aria-hidden="true" />{t({ message: 'Comment', comment: 'Opens a comment on the picked lines of a diff.' })}</button>
     {why !== undefined ? <span id={reason} className="tt-visually-hidden">{why}</span> : null}
   </div></div>
 }
@@ -603,6 +641,7 @@ function CommentDraft({ draft, full, focus, standalone = false, onText, onCancel
   readonly standalone?: boolean
   readonly onText: (text: string) => void; readonly onCancel: () => void; readonly onAdd: () => void
 }): ReactNode {
+  const { t } = useLingui()
   const field = useRef<HTMLTextAreaElement>(null)
   useLayoutEffect(() => {
     if (!focus.current || !field.current) return
@@ -614,27 +653,27 @@ function CommentDraft({ draft, full, focus, standalone = false, onText, onCancel
   const ready = draft.text.trim() !== '' && !full
   return <div className="changes-comment changes-comment--draft" role={standalone ? undefined : 'row'}><div className="changes-comment__cell" role={standalone ? undefined : 'gridcell'}>
     <div className="changes-comment__label">{label}</div>
-    <textarea ref={field} className="changes-comment__field" rows={2} aria-label={`Comment on ${label}`} placeholder="Add a comment…" value={draft.text}
+    <textarea ref={field} className="changes-comment__field" rows={2} aria-label={t({ message: `Comment on ${label}`, comment: '{label} names the picked lines, as in "src/app.ts line 4".' })} placeholder={t`Add a comment…`} value={draft.text}
       onChange={event => onText(event.target.value)}
       onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
         else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (ready) onAdd() }
       }} />
-    {full ? <p className="changes-comment__note">A message carries at most {MAX_REVIEW_COMMENTS} comments. Send it or delete one first.</p> : null}
+    {full ? <p className="changes-comment__note tt-paragraph">{plural(MAX_REVIEW_COMMENTS, { other: 'A message carries at most # comments. Send it or delete one first.' })}</p> : null}
     <div className="changes-comment__actions">
-      <span className="changes-comment__hint" aria-hidden="true">Esc cancels</span>
-      <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-      <Button variant="primary" disabled={!ready} onClick={onAdd}>Comment</Button>
+      <span className="changes-comment__hint" aria-hidden="true">{t`Esc cancels`}</span>
+      <Button variant="ghost" onClick={onCancel}>{t`Cancel`}</Button>
+      <Button variant="primary" disabled={!ready} onClick={onAdd}>{t({ message: 'Comment', comment: 'Puts the written comment on the next message.' })}</Button>
     </div>
   </div></div>
 }
 
 /** Where a comment's marker is drawn: under its last line, after the rows drawn when its line is further on, or there because its lines have changed. */
 type MarkerPlace = 'here' | 'further' | 'changed'
-const MARKER_NOTE: Record<MarkerPlace, string | null> = {
+const MARKER_NOTE: Record<MarkerPlace, MessageDescriptor | null> = {
   here: null,
-  further: 'Its lines are further down. Show all to see them.',
-  changed: 'These lines have changed since. The comment still sends them as they were.',
+  further: msg`Its lines are further down. Show all to see them.`,
+  changed: msg`These lines have changed since. The comment still sends them as they were.`,
 }
 
 /** A comment waiting on the composer, under its last line, until the message goes or it is deleted. */
@@ -643,12 +682,13 @@ function CommentMarker({ comment, note, full = false, onDelete }: {
   /** Outside its file's lines the marker names the whole path and is not a row of a grid. */
   readonly full?: boolean; readonly onDelete: (button: HTMLElement) => void
 }): ReactNode {
+  const { t } = useLingui()
   const label = reviewLabel(comment, full)
   return <div className="changes-comment changes-comment--marker" role={full ? undefined : 'row'}><div className="changes-comment__cell" role={full ? undefined : 'gridcell'}>
     <div className="changes-comment__head">
       <MessageSquare size={14} aria-hidden="true" className="changes-comment__icon" />
       <span className="changes-comment__label">{label}</span>
-      <Button variant="ghost" className="changes-comment__delete" aria-label={`Delete comment on ${label}`} onClick={event => onDelete(event.currentTarget)}>Delete comment</Button>
+      <Button variant="ghost" className="changes-comment__delete" aria-label={t({ message: `Delete comment on ${label}`, comment: '{label} names the lines the comment is on, as in "src/app.ts line 4".' })} onClick={event => onDelete(event.currentTarget)}>{t`Delete comment`}</Button>
     </div>
     <p className="changes-comment__text">{comment.text}</p>
     {note ? <p className="changes-comment__note">{note}</p> : null}
@@ -660,6 +700,7 @@ function CommentMarker({ comment, note, full = false, onDelete }: {
  * brings its block into view.
  */
 function ChangesTree({ files, onPick }: { readonly files: readonly GitReviewFile[]; readonly onPick: (path: string) => void }): ReactNode {
+  const { t } = useLingui()
   const list = useRef<HTMLDivElement>(null)
   const [focused, setFocused] = useState<string | null>(null)
   const groups = useMemo(() => {
@@ -682,15 +723,16 @@ function ChangesTree({ files, onPick }: { readonly files: readonly GitReviewFile
     setFocused(path)
     list.current?.querySelector<HTMLElement>(`[data-tree-path="${CSS.escape(path)}"]`)?.focus()
   }
-  return <nav className="changes-tree" aria-label="File tree">
-    <div ref={list} className="changes-tree__list" role="listbox" aria-label="Files in this comparison" onKeyDown={move}>
-      {groups.map(([folder, items]) => <div key={folder} role="group" aria-label={folder || 'Working folder'} className="changes-tree__group">
+  return <nav className="changes-tree" aria-label={t`File tree`}>
+    <div ref={list} className="changes-tree__list" role="listbox" aria-label={t`Files in this comparison`} onKeyDown={move}>
+      {groups.map(([folder, items]) => <div key={folder} role="group" aria-label={folder || t`Working folder`} className="changes-tree__group">
         {folder ? <div className="changes-tree__folder" aria-hidden="true"><bdi>{folder}</bdi></div> : null}
         {items.map(file => {
           const status = CHANGE_STATUS[file.status]
           const { name } = splitPath(file.path)
+          const state = status.label
           return <div key={file.path} role="option" aria-selected={file.path === current} tabIndex={file.path === current ? 0 : -1} data-tree-path={file.path}
-            className="changes-tree__item" data-nested={folder !== '' || undefined} aria-label={`${name}, ${status.label}${folder ? `, in ${folder}` : ''}`}
+            className="changes-tree__item" data-nested={folder !== '' || undefined} aria-label={folder ? t({ message: `${name}, ${state}, in ${folder}`, comment: '{name} is a file name; {state} its Git status, as in Modified; {folder} its folder.' }) : t({ message: `${name}, ${state}`, comment: '{name} is a file name; {state} its Git status, as in Modified.' })}
             onFocus={() => setFocused(file.path)} onClick={() => onPick(file.path)}
             onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onPick(file.path) } }}>
             <span className="changes-badge" data-status={file.status} aria-hidden="true">{status.letter}</span>

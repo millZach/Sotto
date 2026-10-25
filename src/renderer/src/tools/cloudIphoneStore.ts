@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import type { BrowserBounds } from '../../../shared/browser'
 import type { CloudEvent, CloudIphoneBridge, CloudIphoneStatus, CloudSession } from '../../../shared/cloudIphone'
 
@@ -83,7 +84,7 @@ export class CloudIphoneStore {
 
   /** Checks the key with run.cloud and saves it only if accepted; an empty value removes the saved key. */
   async setKey(bridge: CloudIphoneBridgeLike, value: string): Promise<{ saved: boolean; problem: string | null }> {
-    if (!bridge) return { saved: false, problem: 'Cloud iPhone is not available in this window.' }
+    if (!bridge) return { saved: false, problem: t`Cloud iPhone is not available in this window.` }
     const result = await bridge.setKey({ value })
     if (!result.ok) return { saved: false, problem: result.error.message }
     void this.loadStatus(bridge)
@@ -92,7 +93,7 @@ export class CloudIphoneStore {
 
   /** The user's Start cloud iPhone or Deny on the thread's request card. */
   async answer(bridge: CloudIphoneBridgeLike, session: CloudSession, allow: boolean): Promise<string | null> {
-    if (!bridge) return 'Cloud iPhone is not available in this window.'
+    if (!bridge) return t`Cloud iPhone is not available in this window.`
     const result = await bridge.answer({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id, allow })
     if (!result.ok) return result.error.message
     this.receive({ type: 'session', session: result.value })
@@ -101,7 +102,7 @@ export class CloudIphoneStore {
 
   /** The user's End session. */
   async end(bridge: CloudIphoneBridgeLike, session: CloudSession): Promise<string | null> {
-    if (!bridge) return 'Cloud iPhone is not available in this window.'
+    if (!bridge) return t`Cloud iPhone is not available in this window.`
     const result = await bridge.end({ threadId: session.threadId, workspaceId: session.workspaceId, sessionId: session.id })
     if (!result.ok) return result.error.message
     this.receive({ type: 'session', session: result.value })

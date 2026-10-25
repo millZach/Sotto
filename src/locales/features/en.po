@@ -286,6 +286,10 @@ msgstr "{lower} window"
 msgid "{model} from {provider}"
 msgstr "{model} from {provider}"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another."
+msgstr "{model} is on a server added with a key, which OpenCode keeps and Sotto does not, so Mercury 2 cleans up instead. Choose another."
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "{model}, from {provider}"
 msgstr "{model}, from {provider}"
@@ -476,6 +480,10 @@ msgstr "{settledCount, plural, one {Settled, # thread} other {Settled, # threads
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "{shownStop} of {shownStops}"
 msgstr "{shownStop} of {shownStops}"
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "{slug} on {server}"
+msgstr "{slug} on {server}"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{sottoShare} in Sotto"
@@ -1819,6 +1827,18 @@ msgstr "Expired"
 msgid "Expires"
 msgstr "Expires"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: least thinking, {time} s."
+msgstr "Fastest: least thinking, {time} s."
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: the model’s own thinking, {time} s."
+msgstr "Fastest: the model’s own thinking, {time} s."
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Fastest: thinking off, {time} s."
+msgstr "Fastest: thinking off, {time} s."
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
 msgstr "Files Watcher changed"
@@ -2472,6 +2492,14 @@ msgstr "Maximize"
 msgid "Maximize Sotto"
 msgstr "Maximize Sotto"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measure again"
+msgstr "Measure again"
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
+msgstr "Measuring {chosenName}. Sotto cleans up a built-in sample on the server, never your dictation."
+
 #. The page link: the Memory page
 #: src/renderer/src/components/AppShell.tsx
 msgid "Memory"
@@ -2777,6 +2805,10 @@ msgstr "No reading yet. Muse reports its limits after a Muse turn runs on {host}
 msgid "No saved policies. Existing permission checks still apply."
 msgstr "No saved policies. Existing permission checks still apply."
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
+msgstr "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "No Sotto account, no telemetry"
 msgstr "No Sotto account, no telemetry"
@@ -2903,6 +2935,10 @@ msgstr "Not installed"
 msgid "Not matched for these prompts"
 msgstr "Not matched for these prompts"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Not measured yet. Measure again finds the fastest setting for this server."
+msgstr "Not measured yet. Measure again finds the fastest setting for this server."
+
 #: src/renderer/src/App.tsx
 #: src/renderer/src/features/memory/Questionnaire.tsx
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
@@ -2958,6 +2994,10 @@ msgstr "Not tested yet."
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 msgid "Not working now"
 msgstr "Not working now"
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Nothing answered at {server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again."
+msgstr "Nothing answered at {server}. Nothing was changed. Check the server is on and this computer can reach it, then measure again."
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Nothing heard yet."
@@ -4041,6 +4081,10 @@ msgstr "Sent to"
 msgid "Sent to it"
 msgstr "Sent to it"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
+msgstr "Servers added with a key are not listed. OpenCode keeps the key, not Sotto, so cleanup cannot use it."
+
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Set up {firstShort}"
 msgstr "Set up {firstShort}"
@@ -4331,6 +4375,10 @@ msgstr "Sotto could not check your coding agents. Nothing was changed. Press Che
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Sotto could not connect it."
 msgstr "Sotto could not connect it."
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Sotto could not finish measuring. Nothing was changed. Measure again."
+msgstr "Sotto could not finish measuring. Nothing was changed. Measure again."
 
 #: src/renderer/src/App.tsx
 msgid "Sotto could not finish starting"
@@ -4899,6 +4947,10 @@ msgstr "Tests, visual checks, and the evidence you want before calling work fini
 #: src/renderer/src/features/onboarding/LookStep.tsx
 msgid "That look could not be saved. Your previous look is still on. Choose it again to retry."
 msgstr "That look could not be saved. Your previous look is still on. Choose it again to retry."
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
+msgstr "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
@@ -5987,6 +6039,10 @@ msgstr "Your existing permission boundaries stay in place."
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Your first message starts Watcher on {modelName}, with your own {accountProvider} account."
 msgstr "Your first message starts Watcher on {modelName}, with your own {accountProvider} account."
+
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Your own servers"
+msgstr "Your own servers"
 
 #: src/renderer/src/App.tsx
 msgid "Your preferences, with their history."

@@ -1,4 +1,5 @@
 import type { IBuffer, IMarker, Terminal } from '@xterm/xterm'
+import { t } from '@lingui/core/macro'
 import { externalLinkSchema } from '../../../shared/externalLinks'
 import { terminalLineStart as firstRow, terminalLineText as lineText } from './terminalBuffer'
 
@@ -121,7 +122,7 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
   panel.className = 'terminal-links'
   panel.hidden = true
   panel.setAttribute('role', 'dialog')
-  panel.setAttribute('aria-label', 'Open terminal link')
+  panel.setAttribute('aria-label', t`Open terminal link`)
   panel.setAttribute('popover', 'auto')
   let returnFocus: HTMLElement | null = null
   let placementFrame = 0
@@ -134,21 +135,22 @@ export function terminalLinkPicker(element: HTMLElement, catalog: ReturnType<typ
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       panel.replaceChildren()
       const header = document.createElement('header'), title = document.createElement('strong'), close = document.createElement('button')
-      title.textContent = 'Open terminal link'
-      close.type = 'button'; close.textContent = 'Close'; close.setAttribute('aria-label', 'Close terminal links')
+      title.textContent = t`Open terminal link`
+      close.type = 'button'; close.textContent = t({ message: 'Close', comment: 'Closes the list of links in a terminal\'s output.' }); close.setAttribute('aria-label', t`Close terminal links`)
       close.addEventListener('click', hide)
       header.append(title, close); panel.append(header)
       const list = document.createElement('div')
       list.className = 'terminal-links__list'
       for (const link of catalog.list()) {
         const button = document.createElement('button'), label = document.createElement('span'), destination = document.createElement('small')
-        button.type = 'button'; button.setAttribute('aria-label', `Open ${link.label}`)
+        const name = link.label
+        button.type = 'button'; button.setAttribute('aria-label', t({ message: `Open ${name}`, comment: '{name} is a link\'s text in a terminal\'s output.' }))
         label.textContent = link.label; destination.textContent = link.uri
         button.append(label, destination)
         button.addEventListener('click', () => { openLink(link.uri); hide() })
         list.append(button)
       }
-      if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = 'No web links in this output.'; list.append(empty) }
+      if (!list.childElementCount) { const empty = document.createElement('p'); empty.textContent = t`No web links in this output.`; list.append(empty) }
       panel.append(list); panel.hidden = false; element.append(panel)
       // The top layer escapes a short drawer's clipping while the DOM stays inside its keyboard/focus boundary.
       panel.showPopover?.()
