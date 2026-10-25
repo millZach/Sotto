@@ -125,6 +125,13 @@ export class ThreadMap {
   get(id: string): AgentThread | undefined { return this.nodes.get(id)?.record }
   has(id: string): boolean { return this.nodes.has(id) }
   *ids(): IterableIterator<string> { for (let node = this.first; node; node = node.next) yield node.record.id }
+  /** The first thread's ID, undefined when the map holds none. */
+  get firstId(): string | undefined { return this.first?.record.id }
+  /** The ID of the thread after `id`: null when `id` is last, undefined when the map does not hold `id`. */
+  nextId(id: string): string | null | undefined {
+    const node = this.nodes.get(id)
+    return node ? node.next?.record.id ?? null : undefined
+  }
   /** Every record in order, in a list of the caller's own. */
   threads(): AgentThread[] {
     const threads: AgentThread[] = []
