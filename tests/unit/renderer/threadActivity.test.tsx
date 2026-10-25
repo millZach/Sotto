@@ -199,6 +199,19 @@ describe('the running turn', () => {
     expect(within(transcript).queryByRole('button', { name: 'npm ci, completed in 9.0s' })).not.toBeInTheDocument()
   })
 
+  it('starts the next turn folded, whatever the last one was left as', () => {
+    const { live, transcript } = mount(stateWith({ status: 'running', activities: running() }))
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 2 steps so far' }))
+    const publish = (patch: Partial<AgentThread>): void => act(() => {
+      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, ...patch } : thread) } })
+    })
+    publish({ status: 'idle', activities: running().map(item => item.kind === 'turn' ? { ...item, status: 'completed', completedAt: iso(0) } : { ...item, status: 'completed' }) })
+    publish({ status: 'running', activities: [...live.state.host.threads.find(thread => thread.id === THREAD)!.activities!,
+      lifecycle({ turnId: 'turn-2', status: 'running', startedAt: iso(0) }), activity({ id: 'next', turnId: 'turn-2', command: 'git status' })] })
+    expect(within(transcript).getByRole('button', { name: 'Working, 1 step so far' })).toHaveAttribute('aria-expanded', 'false')
+    expect(within(transcript).queryByRole('button', { name: /^git status/ })).not.toBeInTheDocument()
+  })
+
   it('says only its words until the turn reports a step, then offers the steps', () => {
     const { live, transcript } = mount(stateWith({ status: 'running', activities: [lifecycle({ status: 'running', startedAt: iso(-65_000) })] }))
     const liveRow = (): HTMLElement => within(transcript).getByTestId('thread-activity-live')

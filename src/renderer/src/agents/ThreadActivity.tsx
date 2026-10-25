@@ -352,24 +352,36 @@ function useStillWaiting(startedAt: string | undefined, active: boolean): boolea
  * The live line of a turn waiting on one of the user's own model servers: what it is waiting for, with Stop, the
  * thread's own interrupt. Only its words are announced, and politely, so a new try does not move anything.
  */
-function OwnServerLine({ actions, server, startedAt }: {
+function OwnServerLine({ actions, server, startedAt, steps }: {
   readonly actions: OwnServerTurnActions; readonly server: OwnServerTurn
   /** When the turn began: given, the line says it is still waiting and counts from then; absent, it says which try it is. */
   readonly startedAt?: string | undefined
+  /** The steps the turn took before the server needed trying again, still one press away. */
+  readonly steps?: StepsDisclosure | undefined
 }): ReactNode {
   const { i18n } = useLingui()
   const name = stopName(i18n)
   const words = startedAt === undefined ? retryingWords(i18n, server, server.attempt ?? 1, server.attempts ?? server.attempt ?? 1) : stillWaitingWords(i18n, server)
   const note = startedAt === undefined ? undefined : stillWaitingNote(i18n)
-  return <div className="thread-activity-live thread-activity-live--own-server" data-testid="thread-activity-live" data-connected>
+  return <div className="thread-activity-live thread-activity-live--own-server" data-testid="thread-activity-live" data-connected data-expanded={steps?.open || undefined}
+    onKeyDown={steps?.onKeyDown}>
     <i className="thread-activity__pulse" data-connected data-tone={startedAt === undefined ? 'attention' : undefined} aria-hidden="true" />
     <span className="thread-activity-live__state"><span role="status">{words}</span>{startedAt ? <> <Elapsed startedAt={startedAt} /></> : null}</span>
     <button type="button" className="thread-activity-live__stop tt-focusable" aria-label={name} title={name} disabled={!actions.canStop}
       onClick={event => { const pressed = event.currentTarget; actions.stop(); focusComposerFrom(pressed) }}>
       <Square size={10} fill="currentColor" aria-hidden="true" />{stopWords(i18n)}
     </button>
+    {steps ? <button type="button" className="thread-activity-live__stop tt-focusable" aria-expanded={steps.open} aria-controls={steps.open ? steps.id : undefined}
+      onClick={steps.onToggle}>{steps.label}<ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /></button> : null}
     {note ? <p className="thread-activity-live__note tt-paragraph">{note}</p> : null}
+    {steps?.opened}
   </div>
+}
+
+/** A running turn's folded steps, as the line that holds them offers them. */
+interface StepsDisclosure {
+  readonly id: string; readonly label: string; readonly open: boolean; readonly opened: ReactNode
+  readonly onToggle: (event: React.MouseEvent<HTMLElement>) => void; readonly onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void
 }
 
 /**
@@ -390,7 +402,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
    */
   readonly sendingSince?: string | undefined
 }): ReactNode {
-  const [open, setOpen] = useState(false)
+  // The turn whose steps are open, so the next turn starts folded even though this line stays mounted between turns.
+  const [openTurn, setOpenTurn] = useState<string | null>(null)
   const stepsId = useId()
   const turnId = liveTurnId(thread)
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
@@ -412,30 +425,37 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
     </div>
   }
   if (turnId === null && sendingSince === undefined) return null
+  const open = turnId !== null && openTurn === turnId
+  const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
+    id: stepsId, label: stepsLabel(steps.length), open,
+    opened: open ? <div id={stepsId} className="thread-activity-live__steps">
+      <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
+    </div> : null,
+    onToggle: event => { onDisclosure?.(event.currentTarget); setOpenTurn(open ? null : turnId) },
+    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setOpenTurn(null) }),
+  }
   if (server !== undefined && own !== null && server.attempt !== undefined) {
-    return <OwnServerLine actions={own} server={server} />
+    return <OwnServerLine actions={own} server={server} steps={disclosure} />
   }
   if (server !== undefined && own !== null && waiting && turn?.startedAt) {
-    return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} />
+    return <OwnServerLine actions={own} server={server} startedAt={turn.startedAt} steps={disclosure} />
   }
   const words = <>
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">{connected ? <WorkingWord /> : 'Last seen working'}</span>
   </>
   // Until the turn has a step there is nothing to open, so the line is only its words.
-  if (!steps.length || turnId === null) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
+  if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
     <div className="thread-activity-live__line">{words}</div>
   </div>
-  const name = `${connected ? 'Working' : 'Last seen working'}, ${stepsLabel(steps.length)} so far`
+  const name = `${connected ? 'Working' : 'Last seen working'}, ${disclosure.label} so far`
   return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined} data-expanded={open || undefined}
-    onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
+    onKeyDown={disclosure.onKeyDown}>
     <button type="button" className="thread-activity-live__line tt-focusable" aria-expanded={open} aria-controls={open ? stepsId : undefined} aria-label={name}
-      onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
+      onClick={disclosure.onToggle}>
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
-    {open ? <div id={stepsId} className="thread-activity-live__steps">
-      <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
-    </div> : null}
+    {disclosure.opened}
   </div>
 }
