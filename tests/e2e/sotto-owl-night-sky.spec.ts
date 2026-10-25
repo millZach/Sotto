@@ -79,24 +79,20 @@ async function readSky(page: Page): Promise<SkyReading> {
       }
     })
     const obstacles = [
-      ...[...row.querySelectorAll('button, [role="radio"]')].map(control => ({ name: control.getAttribute('aria-label') ?? control.getAttribute('title') ?? '', ...box(control.querySelector('svg')!) })),
+      ...[...row.querySelectorAll('button')].map(control => ({ name: control.getAttribute('aria-label') ?? control.getAttribute('title') ?? '', ...box(control.querySelector('svg')!) })),
       { name: 'Sotto Owl tile', ...box(row.querySelector('.thread-nav__tile')!) },
       { name: 'Search threads', ...box(sidebar.querySelector('.threads-search input')!) },
     ]
     const twinkles = (sky?.getAnimations({ subtree: true }) ?? []).map(animation => ({
       duration: Number(animation.effect?.getComputedTiming().duration ?? 0), running: animation.playState === 'running',
     }))
-    const seg = row.querySelector<HTMLElement>('.thread-nav__seg')!
-    const lit = seg.querySelector<HTMLElement>('[aria-checked="true"]')!
     const input = sidebar.querySelector<HTMLInputElement>('.threads-search input')!
     const band = token('--tt-owl-night')
     const painting = [
-      // The buttons on the band; the switch's two sit on the switch, measured below.
-      ...[...row.querySelectorAll<HTMLElement>('button:not([role="radio"])')].map(button => ({
+      // The buttons on the band.
+      ...[...row.querySelectorAll<HTMLElement>('button')].map(button => ({
         name: button.getAttribute('aria-label') ?? '', ink: hex(getComputedStyle(button).color), stable: token('--threads-sidebar'), owl: band,
       })),
-      { name: 'Threads | Terminal switch, unlit', ink: hex(getComputedStyle(seg.querySelector('[aria-checked="false"]')!).color), stable: token('--tt-surface-sunken'), owl: hex(getComputedStyle(seg).backgroundColor) },
-      { name: 'Threads | Terminal switch, lit', ink: hex(getComputedStyle(lit).color), stable: token('--tt-surface-elevated'), owl: hex(getComputedStyle(lit).backgroundColor) },
       { name: 'Search placeholder', ink: hex(getComputedStyle(input, '::placeholder').color), stable: token('--threads-field'), owl: hex(getComputedStyle(input).backgroundColor) },
       { name: 'Search icon', ink: hex(getComputedStyle(sidebar.querySelector('.threads-search > svg')!).color), stable: token('--threads-field'), owl: hex(getComputedStyle(input).backgroundColor) },
     ]
@@ -326,8 +322,12 @@ test.describe('Sotto Owl night sky on the built app', () => {
     await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', 'dark'), async (launched) => {
       await onThreads(launched)
       await resizeContentWindow(launched, 1280, 800)
-      // A Windows run has no traffic lights; the sidebar's own macOS layout is what moves the tile and the sky.
-      await launched.page.locator('aside.thread-nav[data-mode]').evaluate(node => node.classList.add('thread-nav--mac'))
+      // A Windows run has no traffic lights; the sidebar's own macOS layout is what moves the sky. A macOS build
+      // draws no brand beside the lights, so the Windows build's is hidden to match.
+      await launched.page.locator('aside.thread-nav[data-mode]').evaluate(node => {
+        node.classList.add('thread-nav--mac')
+        node.querySelector<HTMLElement>('.thread-nav__brand')?.style.setProperty('display', 'none')
+      })
       const result: Record<string, unknown> = {}
       for (const [key, shown] of [['reset', 11], ['Home', 5]] as const) {
         const width = await sidebarWidth(launched, key)
@@ -335,11 +335,20 @@ test.describe('Sotto Owl night sky on the built app', () => {
         const reading = await readSky(launched.page)
         expectClear(reading, shown)
         const tile = reading.obstacles.find(obstacle => obstacle.name === 'Sotto Owl tile')!
-        expect(Math.round(tile.x)).toBe(78)
-        // Nothing sits where the traffic lights are drawn, 16 to 68 pixels in.
-        for (const star of reading.stars.filter(candidate => candidate.shown)) expect(star.x, `a star at ${star.x},${star.y}`).toBeGreaterThan(70)
+        // No tile sits beside the traffic lights: the hidden brand has no box for a star to meet.
+        expect(tile.width).toBe(0)
+        // Nothing sits where the traffic lights are drawn, 16 to about 76 pixels in (macOS 26 and later).
+        for (const star of reading.stars.filter(candidate => candidate.shown)) expect(star.x, `a star at ${star.x},${star.y}`).toBeGreaterThan(78)
+        // Even at the narrowest sidebar the row holds every action at its full 28px, inside the sidebar.
+        const row = await launched.page.locator('aside.thread-nav[data-mode] .thread-nav__top').evaluate(node => ({
+          right: node.getBoundingClientRect().right - parseFloat(getComputedStyle(node).paddingRight),
+          buttons: [...node.querySelectorAll('.tt-button, .thread-nav__collapse')].map(button => button.getBoundingClientRect()).map(box => ({ width: box.width, right: box.right })),
+        }))
+        expect(row.buttons).toHaveLength(3)
+        for (const button of row.buttons) expect(button.width).toBeCloseTo(28, 1)
+        expect(Math.max(...row.buttons.map(button => button.right))).toBeLessThanOrEqual(row.right + 0.5)
         expectOnScreen(await starsOnScreen(launched.page))
-        result[`sidebar-${width}`] = { stars: reading.stars.filter(star => star.shown).length, tileX: Math.round(tile.x) }
+        result[`sidebar-${width}`] = { stars: reading.stars.filter(star => star.shown).length, tile: 'none' }
         await holdOwlSky(launched.page)
         await header(launched, `header-owl-sotto-dark-mac-${width}.png`)
       }

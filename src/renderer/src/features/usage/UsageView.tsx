@@ -1,8 +1,12 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, plural } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { servedModelName } from '../../../../shared/modelCatalog'
-import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageProviderId, UsageQuery, UsageSource } from '../../../../shared/usageDashboard'
+import type { UsageBridge, UsageDashboardRead, UsageHostRead, UsageLimitProviderId, UsageProviderId, UsageQuery, UsageSource } from '../../../../shared/usageDashboard'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { roomKeyTarget } from '../../components/AppShell'
+import { useHeldProviders } from '../../state/owlFeature'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { ActionMenu, ChoiceMenu, type ChoiceOption } from './UsageMenu'
 import { Models } from './UsageModels'
@@ -17,11 +21,11 @@ import { EVERY_HOST, useUsageRead } from './useUsageRead'
 import './usage.css'
 
 const TABS: readonly UsageTab[] = ['overview', 'subscriptions', 'models']
-const TAB_NAMES: Record<UsageTab, string> = { overview: 'Overview', subscriptions: 'Subscriptions', models: 'Models' }
+const TAB_NAMES: Record<UsageTab, MessageDescriptor> = { overview: msg`Overview`, subscriptions: msg`Subscriptions`, models: msg`Models` }
 type Range = '7' | '30' | '90' | 'all' | 'custom'
-const RANGES: readonly ChoiceOption<Range>[] = [{ value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }, { value: '90', label: 'Last 90 days' }, { value: 'all', label: 'All time' }, { value: 'custom', label: 'Choose dates' }]
-const PLACES: readonly ChoiceOption<UsageWhere>[] = [{ value: 'all', label: 'Everywhere' }, { value: 'sotto', label: 'In Sotto' }, { value: 'outside', label: 'Outside Sotto' }]
-const PROVIDER_CHOICES: readonly ChoiceOption<UsageProviderId | 'all'>[] = [{ value: 'all', label: 'All providers' }, ...USAGE_PROVIDERS.map(id => ({ value: id, label: PROVIDER_NAMES[id] }))]
+interface Choice<T extends string> { readonly value: T; readonly label: MessageDescriptor }
+const RANGES: readonly Choice<Range>[] = [{ value: '7', label: msg`Last 7 days` }, { value: '30', label: msg`Last 30 days` }, { value: '90', label: msg`Last 90 days` }, { value: 'all', label: msg`All time` }, { value: 'custom', label: msg`Choose dates` }]
+const PLACES: readonly Choice<UsageWhere>[] = [{ value: 'all', label: msg`Everywhere` }, { value: 'sotto', label: msg`In Sotto` }, { value: 'outside', label: msg`Outside Sotto` }]
 const QUOTA_FRESH_MS = 60_000
 const DAYS_MAX = 366
 const currentDate = (): Date => new Date()
@@ -40,6 +44,7 @@ const withoutHistory = (host: UsageHostRead): boolean => host.status === 'unsupp
 
 
 export function UsageView({ bridge = window.sotto?.usage, computers, now = currentDate, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone }: UsageViewProps): ReactNode {
+  const { t, i18n } = useLingui()
   const agents = useOptionalAgents()
   const state = agents?.state
   const connections: readonly UsageComputer[] = computers ?? state?.connections ?? []
@@ -51,7 +56,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [today, setToday] = useState(() => calendarDay(now(), timeZone))
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<MessageDescriptor | null>(null)
   const [clearRead, setClearRead] = useState<UsageDashboardRead | null>(null)
   const [refreshing, setRefreshing] = useState<ReadonlySet<UsageProviderId>>(() => new Set())
   const [announcement, setAnnouncement] = useState('')
@@ -87,22 +92,28 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   const raw = usage.read
   const read = useMemo<UsageDashboardRead>(() => ({ hosts: (raw?.hosts ?? []).map(host => scopeHost(host, sources)) }), [raw, sources])
   const summary = useMemo(() => presentUsage(read), [read])
+  // A provider held to Owl has no usage on this run (ADR-0072), so the menu does not offer it.
+  const held = useHeldProviders()
+  const providerChoices = useMemo<readonly ChoiceOption<UsageProviderId | 'all'>[]>(() => [{ value: 'all', label: t`All providers` },
+    ...USAGE_PROVIDERS.filter(id => !held.has(id)).map(id => ({ value: id, label: PROVIDER_NAMES[id] }))], [held, t])
+  const ranges = RANGES.map(option => ({ value: option.value, label: i18n._(option.label) }))
+  const places = PLACES.map(option => ({ value: option.value, label: i18n._(option.label) }))
   const clock = now().getTime()
   const limits = providerLimits(read, clock)
 
   const localId = connections.find(item => item.kind === 'local')?.hostId ?? state?.hostId
   const hostName = useCallback((value: string): string => {
-    if (value === localId || value === state?.host.hostId) return 'This computer'
+    if (value === localId || value === state?.host.hostId) return t`This computer`
     const named = connections.find(item => item.hostId === value)?.name
     if (named !== undefined) return named
-    const index = read.hosts.findIndex(host => host.hostId === value)
-    return `Computer ${Math.max(1, index + 1)}`
-  }, [connections, localId, read, state?.host.hostId])
+    const number = Math.max(1, read.hosts.findIndex(host => host.hostId === value) + 1)
+    return t`Computer ${number}`
+  }, [connections, localId, read, state?.host.hostId, t])
   // One name per served model on every computer, online or not: a client catalog's names differ between versions and hosts.
   const modelName = (row: { modelId: string; providerId: UsageProviderId }): string => servedModelName(row.providerId, row.modelId)
-  const providerAccount = (providerId: UsageProviderId, owner: string): string => {
+  const providerAccount = (providerId: UsageLimitProviderId, owner: string): string => {
     const statuses = state?.host.clientHosts?.find(item => item.hostId === owner)?.providers ?? (owner === localId || owner === state?.host.hostId ? state?.host.providers : undefined)
-    return statuses?.find(item => item.id === providerId)?.account ?? PROVIDER_ACCOUNTS[providerId]
+    return statuses?.find(item => item.id === providerId)?.account ?? i18n._(PROVIDER_ACCOUNTS[providerId])
   }
 
   const announce = useCallback((text: string): void => { setAnnouncement(''); setTimeout(() => { if (mounted.current) setAnnouncement(text) }, 30) }, [])
@@ -134,10 +145,11 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
         return !Number.isFinite(observed) || Math.abs(clock - observed) >= QUOTA_FRESH_MS
       }).map(quota => quota.providerId)
       if (providerIds.length === 0) continue
-      void bridge.refresh({ hostIds: [host.hostId], providerIds }).then(result => {
+      // Made on its own, so a provider whose read is costly may answer from a recent reading (#1456); Read again never is.
+      void bridge.refresh({ hostIds: [host.hostId], providerIds, background: true }).then(result => {
         if (!mounted.current) return
         usage.applyQuotas(result, providerIds); reloadRef.current([host.hostId])
-      }, () => { if (mounted.current) setNotice('Subscription limits could not be read again. Your saved figures are still here.') })
+      }, () => { if (mounted.current) setNotice(msg`Subscription limits could not be read again. Your saved figures are still here.`) })
     }
   }, [bridge, raw, clock, usage.applyQuotas])
 
@@ -155,14 +167,15 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
     if (bridge === undefined || refreshing.has(providerId)) return
     const hostIds = read.hosts.filter(host => host.quotas.some(quota => quota.providerId === providerId && quota.refreshable)).map(host => host.hostId)
     if (hostIds.length === 0) return
+    const name = PROVIDER_NAMES[providerId]
     setRefreshing(value => new Set(value).add(providerId)); setNotice(null)
     try {
       const result = await bridge.refresh({ hostIds, providerIds: [providerId] })
       if (!mounted.current) return
       usage.applyQuotas(result, [providerId])
-      announce(`${PROVIDER_NAMES[providerId]} limits read just now`)
+      announce(t`${name} limits read just now`)
     } catch {
-      if (mounted.current) setNotice(`${PROVIDER_NAMES[providerId]}'s limits could not be read again. The last reading is still shown. Try Read again.`)
+      if (mounted.current) setNotice(msg`${name}'s limits could not be read again. The last reading is still shown. Try Read again.`)
     } finally {
       if (mounted.current) setRefreshing(value => { const next = new Set(value); next.delete(providerId); return next })
     }
@@ -178,12 +191,18 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       const complete = result.length === hosts.length && hosts.every(host => result.filter(item => item.hostId === host.hostId && item.status === 'cleared').length === 1)
       if (!complete) {
         setClearRead(null)
-        const prefix = result.some(item => item.status === 'cleared') ? 'Some usage figures were cleared. ' : ''
-        setNotice(`${prefix}${result.some(item => item.status === 'stale') ? 'Usage changed while the question was open. Review the current figures, then choose Clear usage again.' : 'Some computers could not confirm that usage was cleared. Review the current figures before trying again.'}`)
+        const some = result.some(item => item.status === 'cleared')
+        setNotice(result.some(item => item.status === 'stale')
+          ? some
+            ? msg`Some usage figures were cleared. Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
+            : msg`Usage changed while the question was open. Review the current figures, then choose Clear usage again.`
+          : some
+            ? msg`Some usage figures were cleared. Some computers could not confirm that usage was cleared. Review the current figures before trying again.`
+            : msg`Some computers could not confirm that usage was cleared. Review the current figures before trying again.`)
         reloadRef.current()
         return true
       }
-      setNotice('Saved usage figures were cleared on the selected computers.'); reloadRef.current(); return true
+      setNotice(msg`Saved usage figures were cleared on the selected computers.`); reloadRef.current(); return true
     } catch { return false }
   }
 
@@ -206,8 +225,11 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
 
   const ready = read.hosts.filter(host => host.status === 'ready' && host.activity !== undefined && !withoutHistory(host))
   const old = summary.withoutPlaces.map(hostName)
-  const withoutPlacesNote = old.length === 0 ? null : old.length === 1
-    ? `${old[0]} counts only its Sotto threads until its Owl host update.` : `${joinNames(old)} count only their Sotto threads until their Owl host updates.`
+  const oldNames = joinNames(old), oldCount = old.length
+  const withoutPlacesNote = oldCount === 0 ? null : plural(oldCount, {
+    one: `${oldNames} counts only its Sotto threads until its host update.`,
+    other: `${oldNames} count only their Sotto threads until their hosts update.`,
+  })
   const page: UsagePage = {
     bridge, read, summary, limits, query: query ?? { timeZone }, hostIds: targets, now: clock, today, timeZone, rangeLabel: label, days,
     provider: activityFilters ? provider : 'all', where: activityFilters ? where : 'all',
@@ -217,68 +239,80 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   }
 
   const noHistory = read.hosts.length > 0 && read.hosts.every(withoutHistory)
-  const computerChoices: ChoiceOption<string>[] = [{ value: 'all', label: 'All computers' },
+  const computerChoices: ChoiceOption<string>[] = [{ value: 'all', label: t`All computers` },
     ...[...new Set([...connections.map(item => item.hostId), ...read.hosts.map(host => host.hostId)])].map(value => ({ value, label: hostName(value) }))]
   const pendingNames = usage.read === null ? [] : usage.pending.filter(item => item !== EVERY_HOST && !read.hosts.some(host => host.hostId === item)).map(hostName)
   const scanning = read.hosts.filter(host => host.activity?.metadata.history?.status === 'scanning').map(host => hostName(host.hostId))
+  const pendingList = joinNames(pendingNames.map(midSentence))
+  const scanningList = joinNames(scanning.map(name => {
+    const whose = midSentence(name)
+    return t({ message: `${whose}'s`, comment: 'A computer\'s, in "Still reading {scanningList} history"' })
+  }))
+  const clearingList = clearRead === null ? '' : joinNames(clearRead.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => midSentence(hostName(host.hostId))))
 
   let body: ReactNode
-  if (bridge === undefined) body = <p className="usage-none" role="alert">Usage is not available in this build.</p>
+  if (bridge === undefined) body = <p className="usage-none tt-paragraph" role="alert"><Trans>Usage is not available in this build.</Trans></p>
   else if (usage.read === null && usage.failed.length > 0 && !usage.loading) body = null
-  else if (usage.read === null) body = <p className="usage-loading" role="status">Reading usage…</p>
+  else if (usage.read === null) body = <p className="usage-loading tt-paragraph" role="status"><Trans>Reading usage…</Trans></p>
   else if (invalidRange) body = null
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
   else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory names={read.hosts.map(host => hostName(host.hostId))} /></>
   else if (tab === 'models') body = <Models page={page} />
   // As the approved design has it, a cleared computer with nothing new replaces the index; an empty range keeps it.
-  else if (page.cleared && isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage title="Nothing recorded yet" detail="Usage starts counting again with your next prompt." /></>
+  else if (page.cleared && isEmptyActivity(summary.totals)) body = <><Glance page={page} /><EmptyUsage title={t`Nothing recorded yet`} detail={t`Usage starts counting again with your next prompt.`} /></>
   else body = <Overview page={page} />
 
-  return <section className="usage-view" aria-label="Usage"><div ref={scroll} className="usage-scroll"><div className="usage-page">
+  return <section className="usage-view" aria-label={t`Usage`}><div ref={scroll} className="usage-scroll"><div className="usage-page">
     <header className="usage-header">
       <div className="usage-title">
-        <h1>Usage</h1>
-        <ActionMenu ref={moreButton} label="More usage actions" items={[{ id: 'clear', label: 'Clear usage…', tone: 'danger', disabled: clearable.length === 0,
-          ...(clearable.length === 0 ? { hint: 'Nothing on the selected computers can be cleared.' } : {}), run: () => { setNotice(null); setClearRead(read) } }]} />
+        <h1><Trans>Usage</Trans></h1>
+        <ActionMenu ref={moreButton} label={t`More usage actions`} items={[{ id: 'clear', label: t`Clear usage…`, tone: 'danger', disabled: clearable.length === 0,
+          ...(clearable.length === 0 ? { hint: t`Nothing on the selected computers can be cleared.` } : {}), run: () => { setNotice(null); setClearRead(read) } }]} />
       </div>
-      <p className="usage-subtitle">Your subscriptions, and the work on each computer, in Sotto and outside it.</p>
+      <p className="usage-subtitle tt-paragraph"><Trans>Your subscriptions, and the work on each computer, in Sotto and outside it.</Trans></p>
       <div className="usage-bar">
-        <div ref={tabs} className="usage-seg" role="tablist" aria-label="Usage views">{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
+        <div ref={tabs} className="usage-seg" role="tablist" aria-label={t`Usage views`}>{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
           id={`${id}-${value}`} aria-controls={`${id}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
-          onClick={() => setTab(value)} onKeyDown={event => onTabKey(event, index)}>{TAB_NAMES[value]}</button>)}</div>
+          onClick={() => setTab(value)} onKeyDown={event => onTabKey(event, index)}>{i18n._(TAB_NAMES[value])}</button>)}</div>
         <div className="usage-filters">
-          {activityFilters ? <ChoiceMenu name="Date range" value={range} options={RANGES} onChoose={setRange} /> : null}
-          {activityFilters ? <ChoiceMenu name="Provider" value={provider} options={PROVIDER_CHOICES} onChoose={setProvider} /> : null}
-          <ChoiceMenu name="Computer" value={hostId} options={computerChoices} onChoose={setHostId} />
-          {activityFilters ? <ChoiceMenu name="Where" value={where} options={PLACES} onChoose={setWhere} /> : null}
+          {activityFilters ? <ChoiceMenu name={t`Date range`} value={range} options={ranges} onChoose={setRange} /> : null}
+          {activityFilters ? <ChoiceMenu name={t`Provider`} value={provider} options={providerChoices} onChoose={setProvider} /> : null}
+          <ChoiceMenu name={t`Computer`} value={hostId} options={computerChoices} onChoose={setHostId} />
+          {activityFilters ? <ChoiceMenu name={t`Where`} value={where} options={places} onChoose={setWhere} /> : null}
         </div>
       </div>
       {range === 'custom' && activityFilters ? <div className="usage-dates">
-        <label>From<input className="tt-focusable" type="date" value={customFrom} max={today} onChange={event => setCustomFrom(event.target.value)} /></label>
-        <label>Through<input className="tt-focusable" type="date" value={customTo} max={today} onChange={event => setCustomTo(event.target.value)} /></label>
+        <label><Trans>From</Trans><input className="tt-focusable" type="date" value={customFrom} max={today} onChange={event => setCustomFrom(event.target.value)} /></label>
+        <label><Trans>Through</Trans><input className="tt-focusable" type="date" value={customTo} max={today} onChange={event => setCustomTo(event.target.value)} /></label>
       </div> : null}
     </header>
     <div className="usage-notices">
-      {invalidRange && activityFilters ? <p className="usage-notice" role="alert">Choose an end date on or after the start date.</p> : null}
-      {notice !== null ? <p className="usage-notice" role="status">{notice}</p> : null}
-      {usage.failed.map(item => <p key={item} className="usage-notice" role="alert">{item === EVERY_HOST ? 'Usage could not be read.' : `Usage could not be read from ${midSentence(hostName(item))}.`} Your saved figures were not changed. <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}>Try again</button></p>)}
-      {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice" role="alert">Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</p> : null}
-      {read.hosts.filter(host => host.status !== 'ready' || withoutHistory(host)).filter(host => !(noHistory && withoutHistory(host))).map(host => <p key={host.hostId} className="usage-notice usage-notice--quiet">{
-        withoutHistory(host) ? `${hostName(host.hostId)}'s history appears after its Owl host update.`
-          : host.status === 'offline' ? `${hostName(host.hostId)} is offline. Its figures appear when it reconnects.`
-            : `Usage could not be read from ${midSentence(hostName(host.hostId))}. Nothing was changed. Try again in a moment.`}</p>)}
-      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet" role="status">Still reading {joinNames(pendingNames.map(midSentence))}…</p> : null}
-      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet">Still reading {joinNames(scanning.map(name => `${midSentence(name)}'s`))} history. The figures fill in as it reads.</p> : null}
+      {invalidRange && activityFilters ? <p className="usage-notice tt-paragraph" role="alert"><Trans>Choose an end date on or after the start date.</Trans></p> : null}
+      {notice !== null ? <p className="usage-notice tt-paragraph" role="status">{i18n._(notice)}</p> : null}
+      {usage.failed.map(item => {
+        const from = item === EVERY_HOST ? '' : midSentence(hostName(item))
+        return <p key={item} className="usage-notice tt-paragraph" role="alert">{item === EVERY_HOST ? t`Usage could not be read. Your saved figures were not changed.` : t`Usage could not be read from ${from}. Your saved figures were not changed.`} <button type="button" className="usage-link tt-focusable" onClick={() => usage.reload([item])}><Trans>Try again</Trans></button></p>
+      })}
+      {read.hosts.some(host => host.persistence === 'failed') ? <p className="usage-notice tt-paragraph" role="alert"><Trans>Some recent usage could not be saved. Provider work goes on; repair local storage, then restart Sotto.</Trans></p> : null}
+      {read.hosts.filter(host => host.status !== 'ready' || withoutHistory(host)).filter(host => !(noHistory && withoutHistory(host))).map(host => {
+        const name = hostName(host.hostId), from = midSentence(name)
+        return <p key={host.hostId} className="usage-notice usage-notice--quiet tt-paragraph">{
+          withoutHistory(host) ? t`${name}'s history appears after its host update.`
+            : host.status === 'offline' ? t`${name} is offline. Its figures appear when it reconnects.`
+              : t`Usage could not be read from ${from}. Nothing was changed. Try again in a moment.`}</p>
+      })}
+      {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet tt-paragraph" role="status"><Trans>Still reading {pendingList}…</Trans></p> : null}
+      {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet tt-paragraph"><Trans>Still reading {scanningList} history. The figures fill in as it reads.</Trans></p> : null}
     </div>
     <div id={`${id}-panel`} className="usage-panel" role="tabpanel" aria-labelledby={`${id}-${tab}`} aria-busy={usage.loading || undefined}>
       <div key={tab} className="usage-enter">{body}</div>
     </div>
     <p className="tt-visually-hidden" aria-live="polite">{announcement}</p>
   </div></div>
-  {clearRead !== null ? <ConfirmationDialog title="Clear saved usage?" description={<>
-    <p>Remove the usage figures saved on {joinNames(clearRead.hosts.filter(host => host.status === 'ready' && host.activity !== undefined).map(host => midSentence(hostName(host.hostId))))}?</p>
-    <p>This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are.</p>
-    <p>Records from before the clear never come back. New work counts afterward.</p>
-  </>} confirmLabel="Clear saved usage" cancelLabel="Keep usage" onConfirm={clear} onCancel={() => setClearRead(null)} failureMessage="Usage could not be cleared. Your saved figures may remain. Try again." fallbackFocusRef={moreButton} /> : null}
+  {clearRead !== null ? <ConfirmationDialog title={t`Clear saved usage?`} description={<>
+    <p className="tt-paragraph"><Trans>Remove the usage figures saved on {clearingList}?</Trans></p>
+    <p className="tt-paragraph"><Trans>This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are.</Trans></p>
+    <p className="tt-paragraph"><Trans>Records from before the clear never come back. New work counts afterward.</Trans></p>
+  </>} confirmLabel={t`Clear saved usage`} cancelLabel={t`Keep usage`} onConfirm={clear} onCancel={() => setClearRead(null)} failureMessage={t`Usage could not be cleared. Your saved figures may remain. Try again.`} fallbackFocusRef={moreButton} /> : null}
   </section>
 }

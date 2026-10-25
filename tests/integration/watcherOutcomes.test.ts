@@ -7,7 +7,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentHost } from '../../src/main/agents/host'
 import { WatcherEvidenceStore } from '../../src/main/agents/watcherEvidence'
+import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
+import { ThreadStore } from '../../src/main/agents/threadStore'
 import { watcherTurnOutcome } from '../../src/main/agents/watcherOutcomes'
+import type { AgentThread } from '../../src/shared/agents'
 import type { WatcherOperation } from '../../src/shared/watcher'
 import { claudeFixture } from '../fixtures/claudeFixture'
 import { codexFixture } from '../fixtures/codexFixture'
@@ -46,10 +49,15 @@ async function worker(provider: keyof typeof providers, script?: Record<string, 
     await expect.poll(async () => (await thread()).messages.some(message => message.role === 'user' && message.id === messageId)).toBe(true)
     return { messageId, delivery }
   }
-  const outcome = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => watcherTurnOutcome(operation, await thread(), messageId => watcherMessages.has(messageId))
-  const replyText = async (messageId: string | undefined) => (await thread()).messages.find(message => message.id === messageId)?.text
+  const outcomeIn = (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>, current: AgentThread) => watcherTurnOutcome(operation, current, messageId => watcherMessages.has(messageId))
+  const outcome = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => outcomeIn(operation, await thread())
+  // The words of the reply a brief's outcome names, read from the same snapshot as the outcome.
+  const reply = async (operation: Pick<WatcherOperation, 'messageId' | 'delivery'>) => {
+    const current = await thread(), replyMessageId = outcomeIn(operation, current)?.replyMessageId
+    return replyMessageId === undefined ? undefined : current.messages.find(message => message.id === replyMessageId)?.text
+  }
   const idle = async () => { await expect.poll(async () => (await thread()).status).toBe('idle') }
-  return { f, id, thread, brief, outcome, replyText, idle }
+  return { f, id, thread, brief, outcome, reply, idle }
 }
 
 describe.each(['claude', 'codex'] as const)('%s', provider => {
@@ -60,7 +68,7 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic worker reply')
     await w.idle()
     await expect.poll(() => w.outcome(start)).toMatchObject({ outcome: 'answered', turnMessageId: start.messageId, replyMessageId: expect.any(String) })
-    expect(await w.replyText((await w.outcome(start))?.replyMessageId)).toBe('Synthetic worker reply')
+    expect(await w.reply(start)).toBe('Synthetic worker reply')
   })
 
   it('folds a steer into the turn it was read into, sharing that turn\'s answer', async () => {
@@ -77,9 +85,9 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic answer to both')
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered' })
-    const answered = await w.outcome(first)
-    expect(await w.outcome(steer)).toEqual(answered)
-    expect(await w.replyText(answered?.replyMessageId)).toBe('Synthetic answer to both')
+    // The reply can land after the outcome reads answered, so it is waited for like the outcome.
+    await expect.poll(() => w.reply(first)).toBe('Synthetic answer to both')
+    expect(await w.outcome(steer)).toEqual(await w.outcome(first))
   })
 
   it('gives a queued send its own turn and answer', async () => {
@@ -92,11 +100,11 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
     await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
     await w.idle()
     await expect.poll(() => w.outcome(queued)).toMatchObject({ outcome: 'answered', turnMessageId: queued.messageId })
+    await expect.poll(() => w.reply(queued)).toBe('Synthetic second answer')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic first answer')
     const own = await w.outcome(queued), earlier = await w.outcome(first)
     expect(earlier).toMatchObject({ outcome: 'answered', turnMessageId: first.messageId })
     expect(own?.replyMessageId).not.toBe(earlier?.replyMessageId)
-    expect(await w.replyText(own?.replyMessageId)).toBe('Synthetic second answer')
-    expect(await w.replyText(earlier?.replyMessageId)).toBe('Synthetic first answer')
   })
 
   it('pauses a brief whose turn the user\'s own message took over, and stops one that was only stopped', async () => {
@@ -115,6 +123,65 @@ describe.each(['claude', 'codex'] as const)('%s', provider => {
 })
 
 describe('claude', () => {
+  it('retains a proven reply owner through stored history replay and timestamp correction', async () => {
+    const w = await worker('claude', { steering: 'queue' })
+    const first = await w.brief('now', 'Synthetic first brief')
+    const steer = await w.brief('steer', 'Synthetic held steer')
+    await w.f.driver.completeTurn(w.id, 'Synthetic first answer')
+    await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'working', turnMessageId: steer.messageId })
+    await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
+    await w.idle()
+    const finished = await w.thread()
+    const reply = finished.messages.find(message => message.text === 'Synthetic first answer')!
+    expect(reply).toMatchObject({ turnMessageId: first.messageId })
+    const store = new ThreadStore(join(w.f.root, 'ownership.sqlite'))
+    store.open()
+    try {
+      store.appendMany(w.id, finished.messages.map(message => ({ kind: 'message-added', at: message.createdAt, message })))
+      store.close()
+      store.open()
+      const corrected = { ...reply, createdAt: new Date(Date.parse(finished.activities!.find(activity => activity.turnId === steer.messageId)!.startedAt!) + 1000).toISOString() }
+      Reflect.deleteProperty(corrected, 'turnMessageId')
+      store.append(w.id, { kind: 'message-replaced', at: corrected.createdAt, message: corrected })
+      expect(store.message(w.id, reply.id)).toMatchObject({ turnMessageId: first.messageId, createdAt: corrected.createdAt })
+      // The adapter can resume from text-free identities; the provider's fresh read carries no Sotto owner.
+      const replay = new ThreadMessageLog()
+      replay.seed(w.id, store.messageIdentities(w.id))
+      replay.observe([w.id])
+      for (const message of finished.messages) {
+        const native = message.id === reply.id ? corrected : { ...message }
+        Reflect.deleteProperty(native, 'turnMessageId')
+        replay.add(w.id, native)
+      }
+      const restored = { ...finished, messages: replay.published(w.id) }
+      expect(restored.messages.find(message => message.id === reply.id)).toMatchObject({ turnMessageId: first.messageId, createdAt: corrected.createdAt })
+      expect(watcherTurnOutcome(first, restored, () => true)).toMatchObject({ replyMessageId: reply.id })
+      expect(watcherTurnOutcome(steer, restored, () => true)?.replyMessageId).not.toBe(reply.id)
+    } finally { store.close() }
+  })
+
+  it('does not give a newer turn reply to an earlier completed turn that emitted no reply', async () => {
+    const w = await worker('claude', { steering: 'queue' })
+    const first = await w.brief('now', 'Synthetic first brief')
+    const steer = await w.brief('steer', 'Synthetic held steer')
+    await w.f.driver.completeTurn(w.id, '')
+    await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'working', turnMessageId: steer.messageId })
+    await w.f.driver.completeTurn(w.id, 'Synthetic newer turn answer')
+    await w.idle()
+    const finished = await w.thread()
+    const reply = finished.messages.find(message => message.text === 'Synthetic newer turn answer')!
+    expect(reply).toMatchObject({ turnMessageId: steer.messageId })
+    const replay = new ThreadMessageLog()
+    for (const message of finished.messages) replay.add(w.id, message)
+    const corrected = { ...reply, createdAt: finished.activities!.find(activity => activity.turnId === first.messageId)!.startedAt! }
+    Reflect.deleteProperty(corrected, 'turnMessageId')
+    replay.add(w.id, corrected)
+    const restored = { ...finished, messages: replay.published(w.id) }
+    expect(watcherTurnOutcome(first, restored, () => true)).toMatchObject({ outcome: 'answered', turnMessageId: first.messageId })
+    expect(watcherTurnOutcome(first, restored, () => true)?.replyMessageId).toBeUndefined()
+    expect(watcherTurnOutcome(steer, restored, () => true)).toMatchObject({ outcome: 'answered', replyMessageId: reply.id })
+  })
+
   it('proves an ordinary worker\'s answer by Claude Code\'s own turn ID, so its turn-finished evidence goes with it', async () => {
     // The fixture's threads are ordinary workers, not Watcher's own runtime.
     const w = await worker('claude')
@@ -142,8 +209,8 @@ describe('claude', () => {
     await w.f.driver.completeTurn(w.id, 'Synthetic answer after the cut')
     await w.idle()
     await expect.poll(() => w.outcome(first)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
+    await expect.poll(() => w.reply(first)).toBe('Synthetic answer after the cut')
     expect(await w.outcome(steer)).toEqual(await w.outcome(first))
-    expect(await w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic answer after the cut')
   })
 
   it('gives a steer the turn ended before reading its own turn and answer', async () => {
@@ -156,8 +223,9 @@ describe('claude', () => {
     await w.f.driver.completeTurn(w.id, 'Synthetic second answer')
     await w.idle()
     await expect.poll(() => w.outcome(steer)).toMatchObject({ outcome: 'answered', turnMessageId: steer.messageId })
-    expect(await w.replyText((await w.outcome(steer))?.replyMessageId)).toBe('Synthetic second answer')
-    expect(await w.replyText((await w.outcome(first))?.replyMessageId)).toBe('Synthetic first answer')
+    // The first turn's reply can land after the steer's outcome does (#1113), so each reply is waited for.
+    await expect.poll(() => w.reply(steer)).toBe('Synthetic second answer')
+    await expect.poll(() => w.reply(first)).toBe('Synthetic first answer')
   })
 
   it('pauses a brief whose turn the user cut with a steer of their own', async () => {

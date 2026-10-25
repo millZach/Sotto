@@ -1,5 +1,7 @@
 # Effort colourways and the highest-level outline
 
+October 24, 2026 amendment: the composer no longer wears the outline or its travelling ring at the highest level; the user asked for every edge round the composer to go ([ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md), "The composer's edge"). The highest level still shows in the effort chip's word and the card, and reaching it still plays the arrival's tide through the composer. The Appearance sample's composer drops its outline with it.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The managed composer described below has been removed. The thread composer keeps the effort outline, arrival and reduced-motion behavior.
 
 Accepted September 20, 2026. Zach reviewed two rounds of effort-control prototypes and two references, Codex's effort slider and Claude Code's effort picker, and asked for Codex's slider with a reaction of Sotto's own at a model's highest level; he then chose the Wash arrival, asked to see it in other colours, and asked for those colours to be a choice in Settings and for the composer to wear an outline in the chosen colour while a thread sits at its highest level. This decides where those colours come from, which is the one place the main window's colour does not come from the theme.

@@ -329,7 +329,7 @@ struct NewThreadSheet: View {
             FieldNote(text: "\(computerName) hasn’t let this iPhone answer, so this thread starts by asking.", warm: true)
                 .accessibilityIdentifier("new-thread-permission-held-back")
         } else if !mayAnswer {
-            FieldNote(text: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Phones.")
+            FieldNote(text: "This iPhone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones.")
         }
     }
 
@@ -338,7 +338,7 @@ struct NewThreadSheet: View {
         Binding(get: { permissionID }, set: { permissionID = $0; heldBack = false })
     }
 
-    private func modelName(_ value: ThreadModel) -> String { "\(Words.provider(value.providerId)) · \(value.name)" }
+    private func modelName(_ value: ThreadModel) -> String { value.label }
 
     private var canCreate: Bool {
         guard !busy, model.online(hostID), !model.pendingCreations.contains(where: { $0.hostID == hostID }),

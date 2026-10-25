@@ -1,3 +1,4 @@
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
 import { AgentControl, coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../../src/main/agents/control'
@@ -29,9 +30,17 @@ export interface CopyBudgetPipeline {
   readonly adapter: StreamingAdapter
   readonly control: AgentControl
   readonly streamIds: readonly string[]
+  /** A thread the window shows that delegated, with a wake-up of delegation news no one is shown (ADR-0081). */
+  readonly parentId: string
   /** Updates the coordinator broadcast since the last reset. */
   broadcasts(): number
   resetCounts(): void
+  /**
+   * Holds the workspace's saves until the returned call, which makes the one save they came to. The workspace saves at
+   * most once a 250 ms window while anything changes, so how many saves fall inside a stream depends on how long the
+   * machine takes to run it: one, two, or three on a slow one. Each copies the saved organization on stable.
+   */
+  holdSaves(): () => Promise<void>
   stop(): Promise<void>
 }
 
@@ -55,23 +64,24 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     usage: { latest: { input: 1200, output: 560, cached: 820 }, total: { input: 19340, output: 5250, cached: 12030 }, contextUsed: 2200, contextWindow: 200000,
       elapsedMs: 9800, estimatedUsd: 0.12, elapsedKind: 'api', rateVersions: ['synthetic'], partial: false, updatedAt: at, contextUpdatedAt: at, modelId: 'fake:model' } })
   state.threads.push(thread('stream-0'))
+  state.threads.push(thread('parent-0'))
   for (let index = 1; index < threads; index++) state.threads.push(thread(`idle-${index}`, index % 10 === 0 ? records(`idle-${index}`, 40) : undefined))
   for (const item of state.threads) item.projectId = item.projectId || 'project'
   const adapter = new StreamingAdapter(state)
   const native = new ConfiguredProviderHost({ directory: root, provider: () => 'claude', enabledProviders: () => ['claude'], threadProvider: id => registry.byThread(id)?.provider,
     hosts: { claude: new SottoThreadHost('claude', adapter, registry), codex: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(),
-      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
+      muse: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), opencode: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), cursor: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)), deepseek: new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) } })
   const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, owl, owl)
   await workspace.initialize()
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   const control = new AgentControl({ directory: root, host: workspace, credentials, reasoner: e2eAgentReasoner, watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   await control.start()
   await control.command({ type: 'connect' })
-  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, limit: () => 4 }) : undefined
+  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
   // The window's Watcher room, as main wires it on Owl: it copies the room state for each Watcher publication.
-  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true, setLimit: async () => undefined })
+  const room = createWatcherRoomDesktop({ watcherEnabled: owl, streamingPublishCost: owl, watcher, send: () => true })
   const service = new LocalHostService({ control, events: workspace, ...(watcher ? { watcher } : {}) })
   const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: owl, museEnabled: owl, streamingPublishCost: owl })
   router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
@@ -90,8 +100,21 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
   let broadcasts = 0
   const offCount = control.subscribe(() => { broadcasts++ })
   const streamIds = [registry.bySession('claude', 'stream-0')!.threadId]
-  await control.command({ type: 'observe-threads', threadIds: [...streamIds] })
+  // A thread that delegated, open in the window: the user's message, the delegation's hidden news, and its reply. The news
+  // is sent as the coordinator sends it, so the workspace records it from its own record of the send.
+  const parentId = registry.bySession('claude', 'parent-0')!.threadId
+  const said = (id: string, role: 'user' | 'assistant', text: string) => adapter.log.add('parent-0', { id, role, text, createdAt: at })
+  // A send goes in the thread's project folder, which is there.
+  await mkdir(state.projects.find(project => project.id === state.threads.find(item => item.id === 'parent-0')!.projectId)!.path, { recursive: true })
+  said('parent-user', 'user', 'Synthetic request')
+  await workspace.execute({ type: 'send', commandId: 'parent-news', threadId: parentId, messageId: 'parent-news', text: 'Synthetic delegation news', wakeUp: true, hiddenWakeUp: true })
+  said('parent-news', 'user', 'Synthetic delegation news')
+  said('parent-reply', 'assistant', 'Synthetic reply')
+  adapter.state.threads.find(item => item.id === 'parent-0')!.status = 'idle'
+  adapter.publish(false)
+  await control.command({ type: 'observe-threads', threadIds: [...streamIds, parentId] })
   control.threadDetail(streamIds[0]!)
+  control.threadDetail(parentId)
   const stop = async (): Promise<void> => {
     offCount(); updates.dispose(); room?.dispose(); offState(); offDetail(); statePublisher.dispose(); detailPublisher.dispose(); router.dispose(); watcher?.close(); await tools?.close()
     control.dispose(); workspace.disconnect(); await workspace.privacyChanged(); await registry.flush(); workspace.dispose()
@@ -106,9 +129,20 @@ export async function copyBudgetPipeline(root: string, threads: number, owl: boo
     if (watched.status !== 'ok') throw new Error(`Watcher did not watch the thread: ${JSON.stringify(watched)}`)
   } catch (error) { await stop(); throw error }
   return {
-    adapter, control, streamIds,
+    adapter, control, streamIds, parentId,
     broadcasts: () => broadcasts,
     resetCounts: () => { broadcasts = 0 },
+    holdSaves: () => {
+      const saving = workspace as unknown as { writeSoon(): void; flush(): Promise<void> }
+      if (typeof saving.writeSoon !== 'function' || typeof saving.flush !== 'function') throw new Error('The workspace no longer saves through writeSoon and flush; hold its saves another way.')
+      const writeSoon = Object.getOwnPropertyDescriptor(saving, 'writeSoon')
+      let owed = false
+      saving.writeSoon = () => { owed = true }
+      return async () => {
+        if (writeSoon) Object.defineProperty(saving, 'writeSoon', writeSoon); else delete (saving as { writeSoon?: unknown }).writeSoon
+        if (owed) await saving.flush()
+      }
+    },
     stop,
   }
 }

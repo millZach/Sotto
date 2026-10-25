@@ -5,14 +5,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { DesktopHostRouter, hostAbsolutePath, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import type { FileListRequest, FileRequest } from '../../../src/shared/files'
 import { EMPTY_SUBAGENT_SUMMARY } from '../../../src/shared/subagents'
-import { hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
+import { hostRequestSchema, hostVersionMismatch, type HostOperation } from '../../../src/shared/hostProtocol'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import type { RequestAnswerRecovery } from '../../../src/main/agents/hostService'
 import { requestQuestionsDigest } from '../../../src/main/agents/requestDrafts'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { HostConnectionError, SocketHostService } from '../../../src/main/agents/socketHostService'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { agentStateSchema, MAX_DELIVERED_DRAFTS, hostForThread, capabilitiesForThread, noProviderRefusal, SCREENSHOT_WRONG_TYPE, type AgentCommand, type AgentState, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 import { deferred } from '../../fixtures/deferred'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -49,6 +49,16 @@ function unsupportedComposer() {
 }
 
 describe('desktop host routing', () => {
+  it('refuses set-aside recovery on remote hosts before forwarding any command', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), remote = fixture(REMOTE, 'remote')
+    router.add(remote.connection); router.select(REMOTE)
+    try {
+      const result = await router.command({ type: 'set-aside-send', threadId: hostEntityKey(REMOTE, 'thread'), draftId: randomUUID() }, desktopWindowClient())
+      expect(result.error).toBe('Continue with a new message on the desktop that owns this thread. Nothing was changed.')
+      expect(remote.command).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+
   it('qualifies and bounds exact retirement and delivery proof across two full host ledgers', () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     for (const f of [local, remote]) {
@@ -191,10 +201,10 @@ describe('desktop host routing', () => {
     remote.state.error = noProviderRefusal('host', false)
     remote.command.mockImplementationOnce(async () => ({ ...remote.state, error: noProviderRefusal('host', true) }))
     expect((await router.command({ type: 'manual-send', threadId: hostEntityKey(REMOTE, 'thread'), text: 'Reply' }, desktopWindowClient())).error)
-      .toBe('No provider is connected on forge. Connect one in Settings > Hosts. Your draft is saved.')
+      .toBe('No provider is connected on forge. Connect one in Settings > Hosts & phones. Your draft is saved.')
     remote.command.mockImplementationOnce(async () => remote.state)
     await router.command({ type: 'create-project', title: 'Site', path: '/srv/site', useExisting: true }, desktopWindowClient())
-    expect(router.shell().error).toBe('No provider is connected on forge. Connect one in Settings > Hosts.')
+    expect(router.shell().error).toBe('No provider is connected on forge. Connect one in Settings > Hosts & phones.')
     // This computer's own refusal names this computer already and is passed on as it is.
     const own = new DesktopHostRouter(emptyDesktopState)
     own.add(local.connection)
@@ -243,6 +253,27 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, stage: stages.remote, content: contents.remote, available: () => false })
     await expect(router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes })).rejects.toThrow('Nothing was attached.')
     expect(await router.attachmentContent({ threadId: hostEntityKey(REMOTE, 'thread'), digest: handle.digest })).toBeNull()
+  })
+  it('asks no host to keep a file while this desktop’s attach-any-file answer is off, and forwards one when it is on (ADR-0131)', async () => {
+    const handle = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, digest: 'b'.repeat(64) }
+    const bytes = new Uint8Array([104, 101, 108, 108, 111])
+    for (const attachAnyFile of [undefined, false, true]) {
+      const router = new DesktopHostRouter(emptyDesktopState, attachAnyFile === undefined ? {} : { attachAnyFile }), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+      const stages = { local: vi.fn(async () => handle), remote: vi.fn(async () => handle) }
+      router.add({ ...local.connection, stage: stages.local }); router.add({ ...remote.connection, stage: stages.remote })
+      const staged = router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'notes.txt', mimeType: 'text/plain', bytes })
+      if (attachAnyFile) {
+        await expect(staged).resolves.toEqual(handle)
+        expect(stages.remote).toHaveBeenCalledWith({ name: 'notes.txt', mimeType: 'text/plain', bytes })
+      } else {
+        await expect(staged).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        await expect(router.stageAttachment({ threadId: null, name: 'notes.txt', mimeType: 'text/plain', bytes })).rejects.toThrow(SCREENSHOT_WRONG_TYPE)
+        expect(stages.remote).not.toHaveBeenCalled(); expect(stages.local).not.toHaveBeenCalled()
+        // Images go as they always have.
+        await router.stageAttachment({ threadId: hostEntityKey(REMOTE, 'thread'), name: 'Shot.png', mimeType: 'image/png', bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) })
+        expect(stages.remote).toHaveBeenCalledOnce()
+      }
+    }
   })
   it('passes each host\'s finished-unread mark to the window on that host\'s thread, and sends the window\'s panes to the host that owns them (ADR-0046)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
@@ -433,6 +464,33 @@ describe('desktop host routing', () => {
     router.add({ ...local.connection })
     await expect(router.hostFolders({ hostId: LOCAL })).rejects.toThrow('cannot list its folders yet')
   })
+  it('reads one record whole on the thread’s own host, and answers null for this computer’s threads (ADR-0025, October 18 amendment)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const whole = { id: 'build', turnId: 'turn', sequence: 0, kind: 'command' as const, status: 'completed' as const, title: 'Ran npm test', output: 'all of it' }
+    const activityBody = vi.fn(async () => whole)
+    router.add(local.connection); router.add({ ...remote.connection, activityBody })
+    expect(await router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).toEqual(whole)
+    expect(activityBody).toHaveBeenCalledWith('thread', 'build')
+    expect(await router.activityBody({ threadId: hostEntityKey(LOCAL, 'thread'), activityId: 'build' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, activityBody, available: () => false })
+    await expect(router.activityBody({ threadId: hostEntityKey(REMOTE, 'thread'), activityId: 'build' })).rejects.toThrow('disconnected')
+    expect(activityBody).toHaveBeenCalledTimes(1)
+  })
+  it('reads the prompts above a pane’s window on the thread’s own host, and null while it cannot say (ADR-0109)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const prompts = { prompts: [{ id: 'u0', createdAt: '2026-10-24T09:00:00.000Z', text: 'Why?' }] }
+    const threadPrompts = vi.fn(async () => prompts)
+    router.add(local.connection); router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts } })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toEqual(prompts)
+    expect(threadPrompts).toHaveBeenCalledExactlyOnceWith('thread', 'u3')
+    // A host that keeps no store, and one that is disconnected, leave the scrubber the window's ticks.
+    expect(await router.threadPrompts({ threadId: hostEntityKey(LOCAL, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts }, available: () => false })
+    expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toBeNull()
+    expect(threadPrompts).toHaveBeenCalledOnce()
+  })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)
@@ -480,7 +538,7 @@ describe('desktop host routing', () => {
     await expect(router.subagentPage({ threadId: key })).rejects.toThrow(older.message)
     // Anything else it could not read is named by the host, never shown raw.
     await expect(router.gitChanges({ threadId: key })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Forge could not read this thread\'s changes. Nothing was changed. Try again.' } })
-    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts.' } })
+    await expect(router.gitReview({ threadId: key, workspaceId, scope: { kind: 'working' } })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Changes is unavailable on this host. Nothing was changed. Check the host in Settings > Hosts & phones.' } })
     await expect(router.subagentAssignments({ threadId: key, agentId: 'agent' })).rejects.toThrow('Agents is unavailable on this host.')
     router.remove(REMOTE)
     router.add({ ...remote.connection, threadFiles: vi.fn(), available: () => false })
@@ -506,6 +564,115 @@ describe('desktop host routing', () => {
     await expect(router.command({ type: 'open-thread-folder', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient())).rejects.toThrow('host machine')
     router.remove(REMOTE)
     await expect(router.threadDetail(hostEntityKey(REMOTE, 'thread'))).rejects.toThrow('Connect a host')
+  })
+  it('keeps a dropped host out of the window\'s own reads, and names it when the user\'s action cannot reach it', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const dropped = () => new HostConnectionError('The host connection closed. Connect again to refresh.', 'disconnected')
+    let available = true
+    remote.observe.mockImplementation(async () => { throw dropped() })
+    router.add(local.connection); router.add({ ...remote.connection, available: () => available })
+    // The panes being read when the connection drops are read again on reconnect; the other host's still are now.
+    await expect(router.command({ type: 'observe-threads', threadIds: [hostEntityKey(LOCAL, 'thread'), hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    expect(local.observe).toHaveBeenCalledWith(['thread'])
+    remote.observe.mockImplementationOnce(async () => { throw new HostConnectionError('Forge refused this.', 'forbidden') })
+    await expect(router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())).rejects.toThrow('Forge refused this.')
+    // A branch re-read the window made when it regained focus, lost in flight or never sent, is no failure.
+    remote.command.mockImplementationOnce(async () => { throw dropped() })
+    const background = { type: 'refresh-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread'), background: true } as const
+    await expect(router.command(background, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    available = false
+    remote.command.mockClear()
+    await expect(router.command(background, desktopWindowClient())).resolves.toMatchObject({ error: null })
+    expect(remote.command).not.toHaveBeenCalled()
+    // What the user pressed is refused in words that name the host.
+    await expect(router.command({ type: 'refresh-thread-worktree', threadId: hostEntityKey(REMOTE, 'thread') }, desktopWindowClient()))
+      .rejects.toThrow('Forge is disconnected. Nothing was sent. Try again once it reconnects.')
+    await expect(router.command({ type: 'rename-thread', threadId: hostEntityKey(REMOTE, 'thread'), title: 'Renamed' }, desktopWindowClient()))
+      .rejects.toThrow('Forge is disconnected.')
+  })
+  it('tells each remote host that keeps what is shown when the window loses or regains the focus, with the threads it observes (ADR-0092)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const older = fixture('33333333-3333-4333-8333-333333333333', 'remote')
+    Object.assign(remote.connection.service, { supportsFailureSeen: true })
+    for (const f of [local, remote, older]) router.add(f.connection)
+    try {
+      await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread'), hostEntityKey(older.connection.hostId, 'thread')] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'])
+      for (const f of [remote, older]) f.observe.mockClear()
+      router.setWindowFocused(false)
+      expect(remote.observe).toHaveBeenCalledWith(['thread'], false)
+      // A host from before the seen record is told nothing new: it counts what it observes as shown, as it always did.
+      expect(older.observe).not.toHaveBeenCalled()
+      // The window's next change of panes carries the focus too, and so does coming back to the front.
+      await router.command({ type: 'observe-threads', threadIds: [hostEntityKey(REMOTE, 'thread')] }, desktopWindowClient())
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'], false)
+      router.setWindowFocused(true)
+      expect(remote.observe).toHaveBeenLastCalledWith(['thread'])
+      // Telling it the same twice sends nothing more.
+      remote.observe.mockClear(); router.setWindowFocused(true)
+      expect(remote.observe).not.toHaveBeenCalled()
+    } finally { router.dispose() }
+  })
+  it('says the window shows a thread only while it has the focus and one of its panes is that thread, on any host (ADR-0117)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) router.add(f.connection)
+    try {
+      const here = hostEntityKey(LOCAL, 'thread'), there = hostEntityKey(REMOTE, 'thread'), other = hostEntityKey(REMOTE, 'other')
+      expect(router.windowShows(here)).toBe(false)
+      await router.command({ type: 'observe-threads', threadIds: [here, there] }, desktopWindowClient())
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([true, true, false])
+      // Behind another app, minimised or in the tray, the panes show nothing; the threads stay observed.
+      router.setWindowFocused(false)
+      expect([router.windowShows(here), router.windowShows(there)]).toEqual([false, false])
+      router.setWindowFocused(true)
+      expect(router.windowShows(here)).toBe(true)
+      // The window's next change of panes replaces what it shows, per host.
+      await router.command({ type: 'observe-threads', threadIds: [other] }, desktopWindowClient())
+      expect([router.windowShows(here), router.windowShows(there), router.windowShows(other)]).toEqual([false, false, true])
+      router.remove(REMOTE)
+      expect(router.windowShows(other)).toBe(false)
+    } finally { router.dispose() }
+  })
+  it('says a window is behind another app only to a host that lists failure-seen, whose observe takes the field (ADR-0092)', async () => {
+    const remote = fixture(REMOTE, 'remote')
+    for (const features of [[], ['failure-seen']]) {
+      const service = new SocketHostService({ url: 'http://127.0.0.1:4319', token: 'paired-token', catchUpEvents: false })
+      const call = vi.fn(async (_operation: HostOperation) => { void _operation; return null })
+      Object.assign(service, { cached: remote.state, features, call })
+      await service.observe(['thread'], false)
+      // A host from before the record would refuse an observe carrying a field it does not know, so it is sent none.
+      expect(call.mock.lastCall?.[0]).toEqual(features.length ? { op: 'observe', threadIds: ['thread'], shown: false } : { op: 'observe', threadIds: ['thread'] })
+      expect(hostRequestSchema.safeParse({ v: 1, id: 'one', session: 'session', ...call.mock.lastCall?.[0] }).success).toBe(true)
+      await service.observe(['thread'])
+      expect(call.mock.lastCall?.[0]).toEqual({ op: 'observe', threadIds: ['thread'] })
+    }
+  })
+  it('sends Dismiss all to each host for its own failed threads, and says which host kept them (ADR-0092)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const third = fixture('33333333-3333-4333-8333-333333333333', 'remote')
+    Object.assign(remote.connection.service, { supportsFailureSeen: true })
+    third.connection.name = 'Studio'
+    for (const f of [local, remote, third]) router.add(f.connection)
+    try {
+      const both = [{ threadId: hostEntityKey(LOCAL, 'thread'), failure: 'here' }, { threadId: hostEntityKey(REMOTE, 'thread'), failure: 'there' }]
+      const result = await router.command({ type: 'dismiss-failures', failures: both }, desktopWindowClient())
+      expect(result.error).toBeNull()
+      // Each host hears its own threads by their own IDs, each with the failure its row showed.
+      expect(local.command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'thread', failure: 'here' }] }, desktopWindowClient())
+      expect(remote.command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'thread', failure: 'there' }] }, desktopWindowClient())
+      // A host none of whose threads were named hears nothing.
+      expect(third.command).not.toHaveBeenCalled()
+      // A host that predates the seen record is not sent it, and the window is told its threads still need attention.
+      const older = await router.command({ type: 'dismiss-failures', failures: [{ threadId: hostEntityKey(third.connection.hostId, 'thread'), failure: '' }] }, desktopWindowClient())
+      expect(third.command).not.toHaveBeenCalled()
+      expect(older.error).toBe('Studio runs an older Sotto, so its threads still say Needs attention. Nothing was changed there. Update it in Settings > Hosts & phones, then press Dismiss all again.')
+      // One that is out of reach is not sent it either.
+      Object.assign(third.connection.service, { supportsFailureSeen: true })
+      third.connection.available = () => false
+      const away = await router.command({ type: 'dismiss-failures', failures: [{ threadId: hostEntityKey(third.connection.hostId, 'thread'), failure: '' }] }, desktopWindowClient())
+      expect(third.command).not.toHaveBeenCalled()
+      expect(away.error).toBe('Studio did not answer, so its threads still say Needs attention. Nothing was changed there. Connect to it again, then press Dismiss all again.')
+    } finally { router.dispose() }
   })
 })
 
@@ -890,7 +1057,7 @@ describe('settings on several computers (ADR-0074)', () => {
     await router.command({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
     expect(local.command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: 'D:\\Projects' } }, desktopWindowClient())
     await expect(router.command({ type: 'configure', patch: { projectsDirectory: '/x' }, hostId: randomUUID() }, desktopWindowClient()))
-      .rejects.toThrow('This host is not connected. Connect it in Settings > Hosts, then try again. Nothing was changed.')
+      .rejects.toThrow('This host is not connected. Connect it in Settings > Hosts & phones, then try again. Nothing was changed.')
     router.dispose()
   })
   it('answers a save with its own outcome, not the selected host’s last error', async () => {
@@ -955,7 +1122,7 @@ describe('a question’s pages (ADR-0085)', () => {
     withPage(local, 'file', 'greeting.html'); withPage(remote, 'file', 'greeting.html')
     router.add({ ...local.connection, questionPage: asked => asked === token ? { kind: 'file', root: '/repo/docs', file: '/repo/docs/greeting.html' } : undefined })
     router.add({ ...remote.connection, pageAddress: asked => `https://forge.example.ts.net:8443/page/${asked}/` })
-    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html' })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html', token, start: 'greeting.html' })
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token }))
       .toEqual({ kind: 'url', url: `https://forge.example.ts.net:8443/page/${token}/greeting.html` })
   })
@@ -974,6 +1141,28 @@ describe('a question’s pages (ADR-0085)', () => {
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token: other })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'another', token })).toBeNull()
     expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+
+  it('opens a page of a thread’s waiting prototype by its token alone, and nothing that is not one of its pages (ADR-0108)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    for (const f of [local, remote]) f.state.host.threads[0]!.prototypeReady = { source: 'reply:m', pages: [{ token, kind: 'file', name: 'greeting.html', start: 'greeting.html' }] }
+    router.add({ ...local.connection, questionPage: asked => asked === token || asked === other ? { kind: 'file', root: '/repo/docs', file: '/repo/docs/greeting.html' } : undefined })
+    router.add({ ...remote.connection, pageAddress: asked => `https://forge.example.ts.net:8443/page/${asked}/` })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), token })).toEqual({ kind: 'file', file: '/repo/docs/greeting.html', token, start: 'greeting.html' })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(REMOTE, 'thread'), token })).toEqual({ kind: 'url', url: `https://forge.example.ts.net:8443/page/${token}/greeting.html` })
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), token: other })).toBeNull()
+    // A question's token is not a prototype's, and the other way round.
+    expect(router.questionPageOpening({ threadId: hostEntityKey(LOCAL, 'thread'), requestId: 'question', token })).toBeNull()
+  })
+
+  it('tells this computer’s host a page was opened, and leaves a remote host to hear it from its own page route (ADR-0108)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const opened: string[] = []
+    router.add({ ...local.connection, questionPageOpened: asked => opened.push(`local ${asked}`) })
+    router.add({ ...remote.connection, questionPageOpened: asked => opened.push(`remote ${asked}`) })
+    router.questionPageOpened({ threadId: hostEntityKey(LOCAL, 'thread'), token })
+    router.questionPageOpened({ threadId: hostEntityKey(REMOTE, 'thread'), token })
+    expect(opened).toEqual([`local ${token}`])
   })
 })
 
@@ -1051,5 +1240,73 @@ describe('a remote thread after its host restarts (#1098)', () => {
     after.push(whole(9)); after.push(delta(9, 10))
     expect(forwarded.map(item => item.revision)).toEqual([5, 9, 10])
     router.dispose()
+  })
+})
+
+describe('a new version of Sotto has each host check its clients afresh (ADR-0077)', () => {
+  const reading = (state: 'idle' | 'updated' | 'failed' | 'queued') => ({ id: 'codex' as const, installed: '0.155.1', published: '0.158.0', behind: true,
+    channel: 'npm' as const, canInstall: true, checkedAt: '2026-10-21T00:00:00.000Z', state })
+  const checks = (item: ReturnType<typeof fixture>) => item.command.mock.calls.filter(([command]) => command.type === 'check-client-updates').length
+
+  it('asks each connected host that offers client updates, and never this computer, which its coordinator checks', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), offering = fixture(REMOTE, 'remote')
+    const older = fixture('33333333-3333-4333-8333-333333333333', 'remote'), away = fixture('44444444-4444-4444-8444-444444444444', 'remote')
+    offering.state.clientUpdates = [reading('idle')]
+    router.add(local.connection); router.add({ ...offering.connection, offersClientUpdates: () => true })
+    router.add(older.connection); router.add({ ...away.connection, offersClientUpdates: () => true, available: () => false })
+    await router.checkHostClientsAfresh()
+    expect(offering.command).toHaveBeenCalledWith({ type: 'check-client-updates' }, desktopWindowClient())
+    expect([checks(local), checks(older), checks(away)]).toEqual([0, 0, 0])
+  })
+
+  it('asks a host that keeps what its updates said whatever they said, and leaves an older one holding a finding to its own check', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const keeping = (['updated', 'failed'] as const).map((state, index) => {
+      const host = fixture(`5555555${index}-5555-4555-8555-555555555555`, 'remote')
+      host.state.clientUpdates = [reading(state)]
+      router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true })
+      return host
+    })
+    // A host on another Sotto may set a finding aside when it checks, while a press may still be reading it.
+    const older = fixture('66666666-6666-4666-8666-666666666666', 'remote'), olderIdle = fixture('88888888-8888-4888-8888-888888888888', 'remote')
+    older.state.clientUpdates = [reading('updated')]; olderIdle.state.clientUpdates = [reading('idle')]
+    router.add({ ...older.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => false })
+    router.add({ ...olderIdle.connection, offersClientUpdates: () => true })
+    await router.checkHostClientsAfresh()
+    expect([...keeping, older, olderIdle].map(checks)).toEqual([1, 1, 0, 1])
+  })
+
+  it('asks a host whose update line runs once the line is empty, and only once, deciding from what the host pushed', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), host = fixture(REMOTE, 'remote')
+    let broadcast: (state: AgentState) => void = () => undefined
+    host.state.clientUpdates = [reading('queued')]; host.state.clientUpdateRun = { total: 1, done: 0 }
+    // A read of the host's state copies its retained drafts, so the pushes below must not make one.
+    const shell = vi.fn(() => host.state), view = vi.fn(() => host.state)
+    router.add({ ...host.connection, offersClientUpdates: () => true, keepsClientOutcomes: () => true,
+      service: { ...host.connection.service, shell, view, subscribe: listener => { broadcast = listener; return () => undefined } } as DesktopHostConnection['service'] })
+    await router.checkHostClientsAfresh()
+    expect(checks(host)).toBe(0)
+    shell.mockClear(); view.mockClear()
+    // Still running in what it pushed: still owed.
+    broadcast({ ...host.state, clientUpdates: [reading('updated')] })
+    expect(checks(host)).toBe(0)
+    // The push says the line is empty, whatever a read of the host would say.
+    const empty = { ...host.state, clientUpdates: [reading('updated')] }
+    delete empty.clientUpdateRun
+    broadcast(empty)
+    await vi.waitFor(() => { expect(checks(host)).toBe(1) })
+    broadcast(empty)
+    expect(checks(host)).toBe(1)
+    expect([shell.mock.calls.length, view.mock.calls.length]).toEqual([0, 0])
+  })
+
+  it('does not ask a host that would enumerate a provider this build holds, and carries on past a host that refuses', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), muse = fixture(REMOTE, 'remote'), refusing = fixture('77777777-7777-4777-8777-777777777777', 'remote')
+    muse.state.host.providers = [{ id: 'muse', name: 'Muse', capabilities: muse.state.host.capabilities, connection: 'connected', version: '1.4.8' }]
+    refusing.command.mockRejectedValueOnce(new Error('The host did not answer.'))
+    router.add({ ...muse.connection, offersClientUpdates: () => true }); router.add({ ...refusing.connection, offersClientUpdates: () => true })
+    await expect(router.checkHostClientsAfresh()).resolves.toBeUndefined()
+    expect(checks(muse)).toBe(0)
+    expect(checks(refusing)).toBe(1)
   })
 })

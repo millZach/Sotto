@@ -1,12 +1,13 @@
 import { baseProps, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SettingsView } from '../../../../../src/renderer/src/features/settings/SettingsView'
 import { setupBridgeFixture } from '../../../../fixtures/renderer/omarchySetup'
 import { UPDATE_CHECK_PRIVACY_NOTICE } from '../../../../../src/shared/contracts'
-import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
+import { DEFAULT_SETTINGS, defaultSettings } from '../../../../../src/shared/settings'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../../../src/shared/platform'
 
 const SHELL_PILL_DESCRIPTION = 'On Omarchy, the owl in the bar replaces the widget. Remove the shell plugin to bring it back.'
 const WIDGET_DESCRIPTION = 'Keep the small dictation sliver on screen between sessions. Click it to dictate.'
@@ -32,7 +33,7 @@ describe('Settings on Linux', () => {
     await selectCategory('Application')
 
     expect(screen.getByText('Sotto looks for new releases on GitHub and installs them itself.')).toBeVisible()
-    expect(screen.getByText('Update checks run only in the installed Windows app.')).toBeVisible()
+    expect(screen.getByText('Update checks run in the installed Windows app and in Sotto Owl on a Mac.')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Check now' })).toBeEnabled()
     expect(screen.getByRole('switch', { name: 'Check for updates automatically' })).toBeEnabled()
     expect(screen.queryByText(/pacman/u)).not.toBeInTheDocument()
@@ -41,7 +42,7 @@ describe('Settings on Linux', () => {
   it('explains the idle widget row while the shell pill stands in for the widget, and saves nothing', async () => {
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: true }, onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeDisabled()
@@ -55,7 +56,7 @@ describe('Settings on Linux', () => {
   it('keeps the idle widget row working on Linux without the shell pill', async () => {
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: false }, onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeEnabled()
@@ -66,7 +67,7 @@ describe('Settings on Linux', () => {
 
   it.each(['win32', 'darwin'] as const)('never reads the shell pill on %s', async (platform) => {
     render(<SettingsView {...baseProps({ platform, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, shellPillInUse: true } })} />)
-    await selectCategory('Application')
+    await selectCategory('Dictation')
 
     const toggle = screen.getByRole('switch', { name: 'Show floating widget when idle' })
     expect(toggle).toBeEnabled()
@@ -76,13 +77,14 @@ describe('Settings on Linux', () => {
   it('offers the three Omarchy pieces and asks main to set them up only on a press', async () => {
     const f = setupBridgeFixture()
     vi.stubGlobal('sotto', { omarchySetup: f.bridge })
-    render(<SettingsView {...baseProps({ platform: 'linux' })} />)
+    render(<SettingsView {...baseProps({ platform: 'linux', settings: { ...defaultSettings(defaultHotkey('linux'), defaultHoldShortcuts('linux')), onboardingComplete: true } })} />)
 
     expect(await screen.findByRole('button', { name: 'Set up all three' })).toBeVisible()
     expect(screen.getByText('F9 and Super+Ctrl+X')).toBeVisible()
     expect(screen.getByText('The owl in the bar')).toBeVisible()
     expect(screen.getByText('The Omarchy theme')).toBeVisible()
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    // The setup asks for nothing typed; Typing speed elsewhere on the page is a field of its own.
+    expect(within(screen.getByLabelText('Omarchy setup')).queryByRole('textbox')).not.toBeInTheDocument()
     expect(f.calls).toEqual([])
     await userEvent.click(screen.getByRole('button', { name: 'Set up all three' }))
     expect(f.calls).toEqual([{ type: 'setup', pieces: ['keys', 'owl', 'theme'], keys: 'unconfirmed' }])
@@ -97,10 +99,10 @@ describe('Settings on Linux', () => {
     expect(screen.queryByRole('button', { name: 'Set up all three' })).not.toBeInTheDocument()
   })
 
-  it.each(['win32', 'darwin'] as const)('keeps the %s global shortcut field and offers no setup steps', async (platform) => {
+  it.each(['win32', 'darwin'] as const)('keeps the %s dictation shortcut recorder and offers no setup steps', async (platform) => {
     render(<SettingsView {...baseProps({ platform })} />)
 
-    expect(screen.getByLabelText('Global shortcut')).toBeVisible()
+    expect(screen.getByRole('group', { name: 'Press to start and stop' })).toBeVisible()
     expect(screen.queryByRole('button', { name: /setup steps/u })).not.toBeInTheDocument()
     expect(screen.queryByText('Compositor bindings')).not.toBeInTheDocument()
   })

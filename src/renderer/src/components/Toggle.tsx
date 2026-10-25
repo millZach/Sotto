@@ -6,9 +6,11 @@ export interface ToggleProps {
   readonly onCheckedChange: (checked: boolean) => void
   readonly disabled?: boolean
   readonly description?: string
+  /** The setting it changes, for Find a setting (`data-setting`, settingsPages.ts). */
+  readonly setting?: string
 }
 
-export function Toggle({ label, checked, onCheckedChange, disabled = false, description }: ToggleProps): ReactNode {
+export function Toggle({ label, checked, onCheckedChange, disabled = false, description, setting }: ToggleProps): ReactNode {
   const descriptionId = useId()
   return (
     <button
@@ -19,6 +21,7 @@ export function Toggle({ label, checked, onCheckedChange, disabled = false, desc
       aria-describedby={description === undefined ? undefined : descriptionId}
       className="tt-toggle tt-focusable"
       disabled={disabled}
+      data-setting={setting}
       onClick={() => onCheckedChange(!checked)}
     >
       <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
@@ -27,7 +30,7 @@ export function Toggle({ label, checked, onCheckedChange, disabled = false, desc
         {description === undefined ? null : (
           <span
             id={descriptionId}
-            className="tt-field__description"
+            className="tt-field__description tt-paragraph"
           >{description}</span>
         )}
       </span>

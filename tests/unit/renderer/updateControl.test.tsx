@@ -55,7 +55,7 @@ describe('updateTooltip', () => {
     expect(updateTooltip(status({ phase: 'downloading', version: '3.5.0', percent: 42 }))).toBe('Downloading update (42%)')
     expect(updateTooltip(status({ phase: 'downloaded', version: '3.5.0', problem: null }))).toBe('Update 3.5.0 downloaded. Click to restart and install.')
     expect(updateTooltip(status({ phase: 'downloaded', version: '3.5.0', problem: 'x' }))).toBe('Install failed for 3.5.0. Click to retry.')
-    expect(updateTooltip(status({ phase: 'unsupported' }))).toBe('Update checks run only in the installed Windows app.')
+    expect(updateTooltip(status({ phase: 'unsupported' }))).toBe('Update checks run in the installed Windows app and in Sotto Owl on a Mac.')
   })
 })
 

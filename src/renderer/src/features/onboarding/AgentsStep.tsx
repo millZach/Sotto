@@ -1,5 +1,8 @@
 import { AlertCircle, Check, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react'
 import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { AgentProviderStatus, ProviderId } from '../../../../shared/agents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
@@ -18,9 +21,9 @@ export interface AgentsStepProps {
 type RowKind = 'ready' | 'checking' | 'not-installed' | 'needs-you' | 'off' | 'unchecked'
 interface Row { readonly kind: RowKind; readonly state: string; readonly detail: string; readonly guide: boolean }
 
-const CHECK_FAILED = 'Sotto could not check your coding agents. Nothing was changed. Press Check again.'
-const LOCAL_HOST_OFF = 'This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts, then restart Sotto.'
-const SWITCH_FAILED = 'Sotto could not switch to this computer, so it checked nothing. Press Check again.'
+const CHECK_FAILED = msg`Sotto could not check your coding agents. Nothing was changed. Press Check again.`
+const LOCAL_HOST_OFF = msg`This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.`
+const SWITCH_FAILED = msg`Sotto could not switch to this computer, so it checked nothing. Press Check again.`
 
 /**
  * One provider's row. Only main's own answer says a client is missing: a connect that failed for want of it, or a
@@ -29,22 +32,22 @@ const SWITCH_FAILED = 'Sotto could not switch to this computer, so it checked no
  */
 function rowFor(status: AgentProviderStatus | undefined, working: boolean, installed: boolean | undefined, off: boolean): Row {
   const version = status?.version ? shownVersion(status.version) : ''
-  if (status?.connection === 'connected') return { kind: 'ready', state: 'Ready', detail: [status.account, version].filter(Boolean).join(' · ') || 'Signed in', guide: false }
-  if (status?.connection === 'connecting' || working) return { kind: 'checking', state: 'Checking…', detail: version, guide: false }
+  if (status?.connection === 'connected') return { kind: 'ready', state: t({ message: 'Ready', comment: 'A coding agent on this computer is connected' }), detail: [status.account, version].filter(Boolean).join(' · ') || t`Signed in`, guide: false }
+  if (status?.connection === 'connecting' || working) return { kind: 'checking', state: t`Checking…`, detail: version, guide: false }
   if (status?.connection === 'error') {
     const said = status.error ?? ''
     switch (status.problem) {
-      case 'not-installed': return { kind: 'not-installed', state: 'Not installed', detail: said || 'Not found on this computer.', guide: true }
-      case 'signed-out': return { kind: 'needs-you', state: 'Not signed in', detail: said || 'Installed. Sign in to it, then check again.', guide: false }
-      case 'too-old': return { kind: 'needs-you', state: 'Too old to use', detail: said || 'Update it, then check again.', guide: true }
-      case 'cannot-start': return { kind: 'needs-you', state: "Can't be started", detail: said || 'Installed, but Sotto could not start it.', guide: false }
-      default: return { kind: 'needs-you', state: 'Needs attention', detail: said || 'Sotto could not connect it.', guide: false }
+      case 'not-installed': return { kind: 'not-installed', state: t`Not installed`, detail: said || t`Not found on this computer.`, guide: true }
+      case 'signed-out': return { kind: 'needs-you', state: t`Not signed in`, detail: said || t`Installed. Sign in to it, then check again.`, guide: false }
+      case 'too-old': return { kind: 'needs-you', state: t`Too old to use`, detail: said || t`Update it, then check again.`, guide: true }
+      case 'cannot-start': return { kind: 'needs-you', state: t`Can't be started`, detail: said || t`Installed, but Sotto could not start it.`, guide: false }
+      default: return { kind: 'needs-you', state: t`Needs attention`, detail: said || t`Sotto could not connect it.`, guide: false }
     }
   }
-  if (status && installed === false) return { kind: 'not-installed', state: 'Not installed', detail: 'Not found on this computer.', guide: true }
-  if (status && off) return { kind: 'off', state: 'Turned off', detail: 'You turned it off on this computer. Connect it to use it here.', guide: false }
-  if (status) return { kind: 'off', state: 'Not connected', detail: 'Connect it to use it on this computer.', guide: false }
-  return { kind: 'unchecked', state: 'Not checked yet', detail: '', guide: false }
+  if (status && installed === false) return { kind: 'not-installed', state: t`Not installed`, detail: t`Not found on this computer.`, guide: true }
+  if (status && off) return { kind: 'off', state: t`Turned off`, detail: t`You turned it off on this computer. Connect it to use it here.`, guide: false }
+  if (status) return { kind: 'off', state: t`Not connected`, detail: t`Connect it to use it on this computer.`, guide: false }
+  return { kind: 'unchecked', state: t`Not checked yet`, detail: '', guide: false }
 }
 
 /**
@@ -55,14 +58,15 @@ function rowFor(status: AgentProviderStatus | undefined, working: boolean, insta
  * which picks up a client installed since. Sotto signs in to nothing.
  */
 export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode {
+  const { t, i18n } = useLingui()
   const agents = useOptionalAgents()
   const held = useHeldProviders()
   const state = liveAgentState(agents?.state)
   const providers = state ? localProviders(state) : []
   const [checking, setChecking] = useState(false)
   const [connecting, setConnecting] = useState<ReadonlySet<ProviderId>>(() => new Set())
-  const [failure, setFailure] = useState<string | null>(null)
-  const [hostProblem, setHostProblem] = useState<string | null>(null)
+  const [failure, setFailure] = useState<MessageDescriptor | null>(null)
+  const [hostProblem, setHostProblem] = useState<MessageDescriptor | null>(null)
   // The host selected for new work before this step switched to this computer, given back when the step closes.
   const switchedFrom = useRef<string | null>(null)
   const [linkFailed, setLinkFailed] = useState<ProviderId | null>(null)
@@ -137,6 +141,7 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
     return { id, row: rowFor(status, working, choices?.installed?.includes(id), choices?.off.includes(id) === true) }
   })
   const ready = rows.filter(({ row }) => row.kind === 'ready').length
+  const total = rows.length
 
   const openGuide = async (provider: ProviderId): Promise<void> => {
     setLinkFailed(null)
@@ -146,15 +151,17 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
   return (
     <section aria-labelledby="onboarding-heading">
       {heading}
-      {state === null && agents?.error ? <p className="onboarding-recovery" role="alert">{agents.error}</p> : null}
-      <ul className="onboarding-agents" aria-label="Coding agents">
-        {rows.map(({ id, row }) => (
-          <li key={id} className="onboarding-agent" data-kind={row.kind}>
+      {state === null && agents?.error ? <p className="onboarding-recovery tt-paragraph" role="alert">{agents.error}</p> : null}
+      <ul className="onboarding-agents" aria-label={t`Coding agents`}>
+        {rows.map(({ id, row }) => {
+          const provider = providerLabel(id)
+          const guide = PROVIDER_INSTALL_GUIDES[id].replace(/^https:\/\//u, '')
+          return <li key={id} className="onboarding-agent" data-kind={row.kind}>
             <span className="onboarding-agent__mark" aria-hidden="true"><ProviderMark provider={id} name={providerLabel(id)} size={18} /></span>
             <span className="onboarding-agent__name">
               <strong>{providerLabel(id)}</strong>
               {row.detail ? <span>{row.detail}</span> : null}
-              {linkFailed === id ? <span className="onboarding-agent__failure" role="alert">Your browser did not open. Go to {PROVIDER_INSTALL_GUIDES[id].replace(/^https:\/\//u, '')} to install it.</span> : null}
+              {linkFailed === id ? <span className="onboarding-agent__failure" role="alert"><Trans>Your browser did not open. Go to {guide} to install it.</Trans></span> : null}
             </span>
             <span className="onboarding-agent__state">
               {row.kind === 'ready' ? <Check aria-hidden="true" size={14} /> : null}
@@ -162,24 +169,24 @@ export function AgentsStep({ heading, onOpenLink }: AgentsStepProps): ReactNode 
               {row.kind === 'needs-you' ? <AlertCircle aria-hidden="true" size={14} /> : null}
               {row.state}
             </span>
-            {row.guide ? <Button variant="ghost" aria-label={`Open the ${providerLabel(id)} install guide`} onClick={() => void openGuide(id)}><ExternalLink aria-hidden="true" size={15} />Install guide</Button> : null}
-            {row.kind === 'off' ? <Button variant="secondary" aria-label={`Connect ${providerLabel(id)}`} disabled={!command} onClick={() => void connect(id)}>Connect</Button> : null}
+            {row.guide ? <Button variant="ghost" aria-label={t`Open the ${provider} install guide`} onClick={() => void openGuide(id)}><ExternalLink aria-hidden="true" size={15} /><Trans>Install guide</Trans></Button> : null}
+            {row.kind === 'off' ? <Button variant="secondary" aria-label={t`Connect ${provider}`} disabled={!command} onClick={() => void connect(id)}><Trans>Connect</Trans></Button> : null}
             {!row.guide && row.kind !== 'off' ? <span /> : null}
           </li>
-        ))}
+        })}
       </ul>
       <div className="onboarding-agents__foot">
-        <span role="status">{checking ? 'Connecting the agents on this computer…'
-          : state && !hostProblem && providers.length === 0 ? 'Sotto has no word yet on this computer’s agents. Press Check again.'
-          : ready === 0 ? 'None ready yet. Threads need at least one; Settings › Providers has them later too.'
-          : `${ready} of ${rows.length} ready. Settings › Providers manages them later.`}</span>
+        <span role="status">{checking ? t`Connecting the agents on this computer…`
+          : state && !hostProblem && providers.length === 0 ? t`Sotto has no word yet on this computer’s agents. Press Check again.`
+          : ready === 0 ? t`None ready yet. Threads need at least one; Settings › Providers has them later too.`
+          : t`${ready} of ${total} ready. Settings › Providers manages them later.`}</span>
         <Button variant="secondary" disabled={checking || !command} onClick={() => void check()}>
           <RefreshCw aria-hidden="true" size={15} />
-          {checking ? 'Checking…' : 'Check again'}
+          {checking ? t`Checking…` : t`Check again`}
         </Button>
       </div>
-      {failure ? <p className="onboarding-recovery" role="alert">{failure}</p> : null}
-      {hostProblem ? <p className="onboarding-recovery" role="alert">{hostProblem}</p> : null}
+      {failure ? <p className="onboarding-recovery tt-paragraph" role="alert">{i18n._(failure)}</p> : null}
+      {hostProblem ? <p className="onboarding-recovery tt-paragraph" role="alert">{i18n._(hostProblem)}</p> : null}
     </section>
   )
 }

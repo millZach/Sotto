@@ -8,7 +8,7 @@ import type { AppContextValue, AppNavigation } from '../../../src/renderer/src/s
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { PageSidebar } from '../../../src/renderer/src/agents/PageSidebar'
-import { SIDEBAR_MODE_KEY, SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
+import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { takeNewThreadIntent } from '../../../src/renderer/src/agents/threadIntent'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -46,16 +46,17 @@ describe('the Threads sidebar beside another page', () => {
     expect(nav.getByText('Sotto')).toBeInTheDocument()
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'true')
     expect(nav.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'false')
-    expect(nav.getByRole('link', { name: 'History' })).not.toHaveAttribute('aria-current')
+    expect(nav.getByRole('link', { name: 'Help' })).not.toHaveAttribute('aria-current')
+    expect(nav.queryByRole('link', { name: 'History' })).toBeNull()
     expect(nav.getByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
     // No thread is current and no pane is open, so nothing can be opened beside anything.
     expect(nav.queryByRole('button', { name: /beside$/ })).toBeNull()
   })
 
   it('lights the page link of the open page and no room on a page outside both rooms', () => {
-    mount(threadsStateFixture(), 'history')
+    mount(threadsStateFixture(), 'help')
     const nav = within(sidebar())
-    expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page')
+    expect(nav.getByRole('link', { name: 'Help' })).toHaveAttribute('aria-current', 'page')
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('aria-selected', 'false')
     expect(nav.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'false')
     expect(nav.getByRole('tab', { name: 'Dictate' })).toHaveAttribute('tabindex', '0')
@@ -79,21 +80,6 @@ describe('the Threads sidebar beside another page', () => {
     expect(navigate).toHaveBeenCalledWith('threads')
     expect(takeNewThreadIntent()).toEqual({ projectId: undefined })
     expect(takeNewThreadIntent()).toBeNull()
-  })
-
-  it('turns the remembered mode back to Threads with a New thread, so the thread is not opened behind Terminal', () => {
-    localStorage.setItem(SIDEBAR_MODE_KEY, 'terminals')
-    const { navigate } = mount(threadsStateFixture())
-    fireEvent.click(within(sidebar()).getByRole('button', { name: 'New thread' }))
-    expect(localStorage.getItem(SIDEBAR_MODE_KEY)).toBe('threads')
-    expect(navigate).toHaveBeenCalledWith('threads')
-  })
-
-  it('leads to the Threads page when the switch is turned to Terminal, remembering the mode', () => {
-    const { navigate } = mount(threadsStateFixture())
-    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Sidebar mode' })).getByRole('radio', { name: 'Terminal' }))
-    expect(localStorage.getItem(SIDEBAR_MODE_KEY)).toBe('terminals')
-    expect(navigate).toHaveBeenCalledWith('threads')
   })
 
   it('stands as an empty frame with the way off the page until agent controls arrive', () => {

@@ -20,13 +20,16 @@ function panes(): { readonly first: HTMLElement; readonly second: HTMLElement; r
 describe('the Terminal drawer shortcut', () => {
   afterEach(() => { document.body.innerHTML = '' })
 
-  it('is Ctrl+J, or Cmd+J on a Mac, and steps aside when the dictation hotkey means it', () => {
-    expect(paneTerminalChord(undefined, 'win32')).toBe('mod+j')
-    expect(paneTerminalChord('Control+J', 'win32')).toBeNull()
-    expect(paneTerminalChord('Command+J', 'darwin')).toBeNull()
-    expect(paneTerminalChord('Control+Shift+Space', 'win32')).toBe('mod+j')
-    expect(paneTerminalShortcutLabel('win32')).toBe('Ctrl+J')
-    expect(paneTerminalShortcutLabel('darwin')).toBe('Cmd+J')
+  it('is Ctrl+J, or Cmd+J on a Mac, at its default, and steps aside when the dictation hotkey means it', () => {
+    expect(paneTerminalChord('mod+j', undefined, 'win32')).toBe('mod+j')
+    expect(paneTerminalChord('mod+j', 'Control+J', 'win32')).toBeNull()
+    expect(paneTerminalChord('mod+j', 'Command+J', 'darwin')).toBeNull()
+    expect(paneTerminalChord('mod+j', 'Control+Shift+Space', 'win32')).toBe('mod+j')
+    expect(paneTerminalChord(null, undefined, 'win32')).toBeNull()
+    expect(paneTerminalShortcutLabel('mod+j', 'win32')).toBe('Ctrl+J')
+    expect(paneTerminalShortcutLabel('mod+j', 'darwin')).toBe('Cmd+J')
+    // The words follow the chord chosen on Settings › Keyboard, never the default (ADR-0133).
+    expect(paneTerminalShortcutLabel('mod+shift+t', 'darwin')).toBe('Cmd+Shift+T')
   })
 
   it('toggles the pane the key lands in, including from inside that pane’s own drawer terminal', () => {
@@ -41,20 +44,19 @@ describe('the Terminal drawer shortcut', () => {
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBe('second')
     second.setAttribute('data-hidden', '')
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBeNull()
-    // No pane at all: Terminal mode or another page. The key is not the drawer's.
+    // No pane at all: another page. The key is not the drawer's.
     document.body.innerHTML = ''
     expect(paneTerminalTarget(keydown(), windows, 'second')).toBeNull()
   })
 
-  it('leaves the key alone in a pane with no drawer: Terminal mode’s panes, and a thread on a paired host', () => {
-    // Terminal mode lays its terminals out in the same pane grid, with no drawer button in their headers.
+  it('leaves the key alone in a pane with no drawer, as a thread on a paired host has', () => {
     document.body.innerHTML = '<section class="thread-pane" data-thread-id="terminal-1"><button>Stop</button></section>'
     const control = document.querySelector('button')!
     expect(paneTerminalTarget(keydown({ target: control }), windows, 'terminal-1')).toBeNull()
     expect(paneTerminalTarget(keydown(), windows, 'terminal-1')).toBeNull()
   })
 
-  it('leaves the key to a terminal that is not a drawer, so Tools and Terminal mode shells still get Ctrl+J', () => {
+  it('leaves the key to a terminal that is not a drawer, so Tools shells still get Ctrl+J', () => {
     panes()
     const tools = document.createElement('aside')
     tools.innerHTML = '<div class="xterm"><textarea></textarea></div>'

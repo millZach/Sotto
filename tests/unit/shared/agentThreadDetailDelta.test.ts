@@ -4,9 +4,9 @@
  * holds after applying one.
  */
 import { describe, expect, it } from 'vitest'
-import { applyAgentThreadDetailDelta, diffAgentThreadDetail, mergeAgentThreadDetailUpdates } from '../../../src/shared/agentThreadDetail'
+import { applyAgentThreadDetailDelta, diffAgentThreadDetail, foldAgentThreadDetailUpdates, mergeAgentThreadDetailUpdates } from '../../../src/shared/agentThreadDetail'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
-import type { AgentMessage, AgentThreadDetail } from '../../../src/shared/agents'
+import type { AgentActivityDelta, AgentMessage, AgentThreadDetail, AgentThreadDetailDelta, AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 const message = (id: string, text: string): AgentMessage =>
   ({ id, role: 'assistant', text, createdAt: '2026-01-01T00:00:00.000Z' })
@@ -52,6 +52,18 @@ describe('diffing the detail of one thread', () => {
     const delta = diffAgentThreadDetail(held, { messages: [], activities: [next] }, 5)!
     expect(delta.activityDeltas).toEqual([{ record: next }])
     expect(applyAgentThreadDetailDelta(held, delta)?.activities).toEqual([next])
+  })
+
+  it('carries a turn on the user’s own server that is tried again or let down while its status stays the same (ADR-0124)', () => {
+    const server = { name: 'Sparks', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
+    const old = record('turn', { kind: 'turn', title: 'Working', ownServer: server })
+    for (const ownServer of [{ ...server, attempt: 1, attempts: 10 }, { ...server, attempt: 3, attempts: 10 }]) {
+      const next = { ...old, ownServer }
+      const delta = diffAgentThreadDetail(base([], [old]), { messages: [], activities: [next] }, 5)!
+      expect(delta.activityDeltas).toEqual([{ record: next }])
+    }
+    const failed = { ...old, status: 'failed' as const, ownServer: { ...server, failure: 'unreachable' as const } }
+    expect(diffAgentThreadDetail(base([], [{ ...failed, ownServer: { ...server, failure: 'timeout' } }]), { messages: [], activities: [failed] }, 5)!.activityDeltas).toEqual([{ record: failed }])
   })
 
   it('copies what it carries, so the snapshot it builds never references the live thread', () => {
@@ -106,5 +118,52 @@ describe('merging two updates for one thread', () => {
     const first = { threadId: 'workshop', baseRevision: 1, revision: 2, messageDeltas: [], activityDeltas: [] }
     expect(mergeAgentThreadDetailUpdates(first, { ...first, baseRevision: 7, revision: 8 })).toBeNull()
     expect(mergeAgentThreadDetailUpdates(first, { ...first, baseRevision: 2, revision: 3, activityDeltas: [{ id: 'one', removed: true }] })).toBeNull()
+  })
+})
+
+describe('folding updates a host holds for a client that reads slowly (#1089)', () => {
+  /** A seeded sequence, so a failure names the same deltas every run. */
+  const random = (seed: number) => () => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed / 2 ** 31 }
+
+  it('folds any run of deltas, removals among them, into one that applies to the same history', () => {
+    for (const seed of [1, 7, 42, 1089]) {
+      const next = random(seed)
+      const start = base([message('reply', 'Hi')], Array.from({ length: 5 }, (_, index) => record('r' + index)))
+      let stepped: AgentThreadDetail = start
+      let folded: AgentThreadDetailUpdate | null = null
+      for (let revision = 5; revision < 205; revision++) {
+        const present = stepped.activities!.map(item => item.id)
+        const activityDeltas: AgentActivityDelta[] = []
+        // Remove a record or two, often the oldest as a long thread's window does, and add or update others, some of them
+        // records removed earlier.
+        // As a diff does, a delta names each record once.
+        const named = new Set<string>()
+        const name = (id: string): boolean => !named.has(id) && named.add(id) !== undefined
+        if (present.length > 0 && next() < 0.6 && name(present[0]!)) activityDeltas.push({ id: present[0]!, removed: true })
+        const other = present[Math.floor(next() * present.length)]
+        if (other !== undefined && next() < 0.3 && name(other)) activityDeltas.push({ id: other, removed: true })
+        for (let count = Math.floor(next() * 3); count > 0; count--) {
+          const id = 'r' + Math.floor(next() * 12)
+          if (name(id)) activityDeltas.push({ record: record(id, { title: 'at ' + revision }) })
+        }
+        const delta: AgentThreadDetailDelta = { threadId: 'workshop', baseRevision: revision - 1, revision, activityDeltas,
+          messageDeltas: next() < 0.5 ? [{ id: 'reply', appendText: ' ' + revision }] : [] }
+        stepped = applyAgentThreadDetailDelta(stepped, delta)!
+        folded = folded === null ? delta : foldAgentThreadDetailUpdates(folded, delta)
+        expect(folded).not.toBeNull()
+      }
+      expect(applyAgentThreadDetailDelta(start, folded as AgentThreadDetailDelta)).toEqual(stepped)
+      // A record has at most a removal and then an upsert in the fold, however many deltas named it.
+      const entries = new Map<string, number>()
+      for (const item of (folded as AgentThreadDetailDelta).activityDeltas) { const id = 'removed' in item ? item.id : item.record.id; entries.set(id, (entries.get(id) ?? 0) + 1) }
+      expect(Math.max(...entries.values())).toBeLessThanOrEqual(2)
+    }
+  })
+
+  it('takes a delta into a whole it follows, and folds nothing that does not follow', () => {
+    const whole = base([message('a', 'Pick')], [record('one')])
+    const delta: AgentThreadDetailDelta = { threadId: 'workshop', baseRevision: 4, revision: 5, messageDeltas: [{ id: 'a', appendText: ' one' }], activityDeltas: [{ id: 'one', removed: true }] }
+    expect(foldAgentThreadDetailUpdates(whole, delta)).toEqual({ threadId: 'workshop', revision: 5, messages: [message('a', 'Pick one')], activities: [] })
+    expect(foldAgentThreadDetailUpdates(delta, { ...delta, baseRevision: 9, revision: 10 })).toBeNull()
   })
 })

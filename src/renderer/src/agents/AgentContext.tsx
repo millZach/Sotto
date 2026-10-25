@@ -1,4 +1,5 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
 import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../shared/agentThreadDetail'
@@ -10,7 +11,10 @@ import { createStateSharing } from './stateSharing'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
+import { answeredChoices } from './requests/answeredChoices'
 import { useWatcherEnabled } from '../state/watcherFeature'
+import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { visibleWatcherState, watcherThreadVisible } from './watcherVisibility'
 
 export interface AgentConnection {
@@ -24,6 +28,23 @@ export interface AgentConnection {
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
 const SHELL_CACHE_INTERVAL_MS = 2_000
+/** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
+const COMMAND_UNCONFIRMED = msg`The action could not be confirmed. Your draft is retained; check the connection before retrying.`
+
+/**
+ * Main's own sentence for a command that failed, such as which host is disconnected, or the unconfirmed sentence,
+ * kept as a message until it is shown.
+ */
+function commandFailureWords(error: unknown): LaterWords {
+  const said = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (?:[A-Za-z]*Error: )?/u, '').trim() : ''
+  return /^\S.*\s.*[.!?]$/su.test(said) && !isJson(said) ? said : COMMAND_UNCONFIRMED
+}
+/** The words of a failed command as shown now. */
+export function commandFailure(error: unknown): string { return shownWords(commandFailureWords(error)) }
+/** A schema failure's message is its issues as JSON; a host's name may still open a sentence with a bracket. */
+function isJson(text: string): boolean {
+  try { JSON.parse(text); return true } catch { return false }
+}
 
 export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnection {
   const watcherEnabled = useWatcherEnabled()
@@ -44,7 +65,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
   }), [bridge])
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
-  const [failure, setFailure] = useState<{ session: typeof session; error: string } | null>(null)
+  // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
+  useInterfaceLanguageState()
+  const [failure, setFailure] = useState<{ session: typeof session; error: LaterWords } | null>(null)
   /** When the newest state arrived, and when the dev console was last told what one cost. */
   const arrived = useRef<number | null>(null)
   const reported = useRef(0)
@@ -88,8 +111,12 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   const receiveState = useCallback((next: AgentState, options: { urgent?: boolean } = {}): void => {
     if (next.stale !== true) {
       const owners = new Set(next.host.threads.map(thread => thread.id))
-      for (const owner of session.requestOwners) if (!owners.has(owner)) requestAnswerStore.prune(owner, [])
-      for (const thread of next.host.threads) requestAnswerStore.prune(thread.id, thread.requests)
+      for (const owner of session.requestOwners) if (!owners.has(owner)) { requestAnswerStore.prune(owner, []); answeredChoices.observe(owner, []) }
+      for (const thread of next.host.threads) {
+        requestAnswerStore.prune(thread.id, thread.requests)
+        // What this window answered follows each request's life, for Watcher's lines; only answered threads are read.
+        if (answeredChoices.has(thread.id)) answeredChoices.observe(thread.id, thread.requests)
+      }
       session.requestOwners = owners
     }
     arrived.current = performance.now()
@@ -184,6 +211,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     if ('threadId' in request && typeof request.threadId === 'string' && !visible(request.threadId)) return Promise.resolve(null)
     if (request.type === 'observe-threads') request = { ...request, threadIds: request.threadIds.filter(visible) }
+    if (request.type === 'dismiss-failures') {
+      const failures = request.failures.filter(item => visible(item.threadId))
+      if (!failures.length) return Promise.resolve(null)
+      request = { ...request, failures }
+    }
     // Telling main which panes are open is also this window's own record of whose history it needs.
     if (request.type === 'observe-threads') {
       detail.viewed = new Set(request.threadIds)
@@ -199,12 +231,17 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
           setFailure(null)
           // A shell held for its frame is older than this response; it commits first so it can never land after.
           // Both commit urgently: the user is watching their own action land, and a transition here could let
-          // the sync command reply paint before the older pending shell it must follow.
-          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent: true }); receiveState(next, { urgent: true }) }
+          // the sync command reply paint before the older pending shell it must follow. A draft save is not an
+          // action the user watches: the composer saves a pause in typing on its own, and its reply is background
+          // news like a broadcast. Both commit as one transition there, still in order, so the whole-sidebar render
+          // a reply causes yields to the next keystroke instead of holding it (October 20, 2026: with a few hundred
+          // threads that render took 60-70 ms, once per saved pause).
+          const urgent = request.type !== 'save-thread-draft'
+          if (request.type !== 'preview-reclaim-thread-worktree' && version === session.observed) { commitPendingShell({ urgent }); receiveState(next, { urgent }) }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
-      } catch {
-        if (session.current) setFailure({ session, error: 'The action could not be confirmed. Your draft is retained; check the connection before retrying.' })
+      } catch (error) {
+        if (session.current) setFailure({ session, error: commandFailureWords(error) })
         return null
       }
     }
@@ -222,14 +259,15 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // waits for the reply before it. Composer saves and Send reach main at once in invocation order;
     // their execution still shares main's global lane, so older saves cannot land after a Send.
     const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
-    if (threadCommand || composerOperation || request.type === 'observe-threads' || providerOperation) return run()
+    // Dismiss all is the window's record of what the user has seen, as telling main which panes are open is.
+    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'dismiss-failures' || providerOperation) return run()
     const operation = session.tail.then(run)
     session.tail = operation
     return operation
   }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   const state = snapshot?.session === session ? snapshot.state : null
-  const error = failure?.session === session ? failure.error : null
+  const error = failure?.session === session ? shownWords(failure.error) : null
   const shownState = useMemo(() => visibleWatcherState(state, watcherEnabled), [state, watcherEnabled])
   useEffect(() => {
     const thread = state?.host.threads.find(candidate => candidate.id === state.activeThreadId)
@@ -268,7 +306,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
     void bridge?.get().then(next => {
       if (active && version === session.observed) receive(next, { urgent: true })
-    }).catch(() => { if (active) setFailure({ session, error: 'Agent controls are unavailable. Reopen Sotto to reconnect.' }) })
+    }).catch(() => { if (active) setFailure({ session, error: msg`Agent controls are unavailable. Reopen Sotto to reconnect.` }) })
     const flush = (): void => threadDrafts.flushAll()
     window.addEventListener('pagehide', flush)
     window.addEventListener('beforeunload', flush)

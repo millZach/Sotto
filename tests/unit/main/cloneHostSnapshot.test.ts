@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { performance } from 'node:perf_hooks'
-import { expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { agentHostSnapshotSchema, EMPTY_AGENT_HOST, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { cloneHostSnapshot } from '../../../src/main/agents/cloneHostSnapshot'
+import { cloneHostSnapshot, copyOver } from '../../../src/main/agents/cloneHostSnapshot'
 
 function fixture(): AgentHostSnapshot {
   return agentHostSnapshotSchema.parse({
@@ -97,4 +97,75 @@ it('reports the cost of copying 24 MiB of retained activity output', () => {
   const snapshotMs = measure(cloneHostSnapshot)
   console.info(JSON.stringify({ benchmark: 'host-snapshot-24mib', baselineMs, snapshotMs }))
   if (process.env.SOTTO_PERF_ASSERT === '1') expect(snapshotMs).toBeLessThan(baselineMs / 2)
+})
+
+describe('a copy over the last one (#1326)', () => {
+  const kept = new WeakSet<object>()
+  const seal = (item: object): void => { Object.freeze(item); kept.add(item) }
+  const over = <T>(value: T, previous?: T): T => copyOver([value], [previous], item => kept.has(item), seal)[0]!
+
+  it('equals a fresh copy, keys in order, and gives back the last copy itself when nothing changed', () => {
+    const source = fixture()
+    const first = over(source)
+    expect(first).toStrictEqual(structuredClone(source))
+    expect(JSON.stringify(first)).toBe(JSON.stringify(source))
+    expect(Object.isFrozen(first.threads[0]!.messages[0]!.attachments![0])).toBe(true)
+    expect(over(source, first)).toBe(first)
+    expect(over(structuredClone(source), first)).toBe(first)
+  })
+
+  it('copies only the path to what changed, even when it was changed in place', () => {
+    const source = fixture()
+    const first = over(source)
+    source.threads[0]!.requests[0]!.questions![0]!.question = 'Choose again'
+    const second = over(source, first)
+    expect(second).toStrictEqual(structuredClone(source))
+    expect(second).not.toBe(first)
+    expect(second.threads[0]!.requests[0]!.questions![0]!.question).toBe('Choose again')
+    expect(first.threads[0]!.requests[0]!.questions![0]!.question).toBe('Choose')
+    expect(second.threads[0]!.messages).toBe(first.threads[0]!.messages)
+    expect(second.threads[0]!.activities).toBe(first.threads[0]!.activities)
+    expect(second.models).toBe(first.models)
+    expect(second.threads[0]!.requests[0]!.options).toBe(first.threads[0]!.requests[0]!.options)
+  })
+
+  it('keeps what a list had when it grew at its end, and follows a key that moved, appeared or went', () => {
+    const source = fixture()
+    const first = over(source)
+    source.threads[0]!.messages.push({ id: 'next', role: 'assistant', text: 'Reply', createdAt: '2026-09-20T00:00:01Z' })
+    const grown = over(source, first)
+    expect(grown.threads[0]!.messages).toHaveLength(2)
+    expect(grown.threads[0]!.messages[0]).toBe(first.threads[0]!.messages[0])
+    const thread = source.threads[0]! as unknown as Record<string, unknown>
+    const { title, ...rest } = thread
+    source.threads[0] = { ...rest, title } as unknown as typeof source.threads[0]
+    const moved = over(source, grown)
+    expect(Object.keys(moved.threads[0]!)).toEqual(Object.keys(source.threads[0]!))
+    expect(JSON.stringify(moved)).toBe(JSON.stringify(source))
+    delete source.threads[0]!.reasoningEffort
+    source.threads[0]!.historySaveNotice = 'Notice'
+    const changed = over(source, moved)
+    expect(JSON.stringify(changed)).toBe(JSON.stringify(source))
+    expect(changed).toStrictEqual(structuredClone(source))
+  })
+
+  it('tells -0 from 0, and never keeps a part of the last copy that it does not own', () => {
+    const first = over({ value: 0, nested: { text: 'a' } })
+    expect(Object.is(over({ value: -0, nested: { text: 'a' } }, first).value, -0)).toBe(true)
+    const loose = { value: 1, nested: { text: 'a' } }
+    const copy = over({ value: 1, nested: { text: 'a' } }, loose)
+    expect(copy).not.toBe(loose)
+    expect(copy.nested).not.toBe(loose.nested)
+    expect(copy).toEqual(loose)
+  })
+
+  it('copies each record over the previous at its place, in a list the caller owns', () => {
+    const first = copyOver([{ id: 'a', n: 1 }, { id: 'b', n: 2 }], [undefined, undefined], item => kept.has(item), seal)
+    const second = copyOver([{ id: 'c', n: 3 }, { id: 'a', n: 1 }, { id: 'b', n: 5 }], [undefined, first[0], first[1]], item => kept.has(item), seal)
+    expect(second).toEqual([{ id: 'c', n: 3 }, { id: 'a', n: 1 }, { id: 'b', n: 5 }])
+    expect(second[1]).toBe(first[0])
+    expect(second[2]).not.toBe(first[1])
+    expect(Object.isFrozen(second)).toBe(false)
+    expect(Object.isFrozen(second[2])).toBe(true)
+  })
 })

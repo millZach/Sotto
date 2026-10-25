@@ -148,8 +148,8 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                     } else {
                         Picker(
                             "Model",
-                            chosenModel?.let { "${Words.provider(it.providerId)} · ${it.name}" } ?: "Saved model unavailable — choose a model",
-                            models.map { Triple(it.id, "${Words.provider(it.providerId)} · ${it.name}", true) },
+                            chosenModel?.label ?: "Saved model unavailable — choose a model",
+                            models.map { Triple(it.id, it.label, true) },
                         ) { modelID = it; resetOptions() }
                         val efforts = chosenModel?.reasoningEfforts
                         if (!efforts.isNullOrEmpty()) {
@@ -167,7 +167,7 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                                 Text("This model has no supported permission modes. Choose another model.", style = figtree(16), color = p.muted)
                             } else if (!model.mayAnswer(hostID)) {
                                 Text(
-                                    "This phone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Phones.",
+                                    "This phone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones.",
                                     style = figtree(14), color = p.muted,
                                 )
                             }

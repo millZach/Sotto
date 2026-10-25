@@ -19,7 +19,7 @@ it('offers Claude compaction only at the inclusive 100k token and 70 minute boun
   rerender(<ThreadCompaction thread={{ ...thread, usage: { ...thread.usage!, contextUpdatedAt: '2026-09-13T09:59:00Z' } }} supported connected command={command} />)
   expect(screen.getByText('Keep full history')).toBeInTheDocument()
 })
-it('preserves dismissal across remount, ignores bookkeeping timestamps, suppresses pending work and excludes other providers', () => {
+it('preserves dismissal across remount, ignores bookkeeping timestamps, suppresses pending work and excludes providers that cannot compact', () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T11:10:00Z'))
   const command = vi.fn()
   const owner = { ...thread, id: 'remount' }
@@ -36,7 +36,6 @@ it('preserves dismissal across remount, ignores bookkeeping timestamps, suppress
     { ...thread, id: 'small', usage: { ...thread.usage!, contextUsed: 99_999 } },
     { ...thread, id: 'unknown', usage: { ...thread.usage!, contextUpdatedAt: undefined } },
     { ...thread, id: 'never', resumeCompactionDismissed: true },
-    { ...thread, id: 'codex', providerId: 'codex' as const },
     { ...thread, id: 'grok', providerId: 'grok' as const },
   ]) {
     next.rerender(mount(value, value.providerId !== 'grok'))
@@ -85,4 +84,59 @@ it('offers compaction before Claude has reported support, but not once it report
   expect(compactionOffered(compact, { ...thread, manualCompactionSupported: false })).toBe(false)
   expect(compactionOffered(compact, { ...thread, nativeSessionStarted: false })).toBe(false)
   expect(compactionOffered({ compact: false }, thread)).toBe(false)
+})
+it('offers Codex and Muse compaction at the same 100k token and 70 minute boundary as Claude, once they report context', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T11:09:59.999Z'))
+  const command = vi.fn()
+  for (const providerId of ['codex', 'muse'] as const) {
+    const owner = { ...thread, id: `${providerId}-offer`, providerId }
+    const view = render(<ThreadCompaction thread={owner} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.getByText('Keep full history')).toBeInTheDocument()
+    view.rerender(<ThreadCompaction thread={{ ...owner, usage: { ...owner.usage!, contextUsed: 99_999 } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    // A thread whose provider has not said how full its context is gets no recommendation.
+    view.rerender(<ThreadCompaction thread={{ ...owner, usage: { ...owner.usage!, contextUsed: undefined } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.rerender(<ThreadCompaction thread={{ ...owner, modelId: 'other', usage: { ...owner.usage!, modelId: 'earlier' } }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.unmount()
+    vi.setSystemTime(new Date('2026-09-13T11:09:59.999Z'))
+  }
+})
+it('never offers compaction for Grok Build, Devin, OpenCode or a thread that names no provider, whatever their usage says', () => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date('2026-09-13T12:00:00Z'))
+  const command = vi.fn()
+  for (const providerId of ['grok', 'devin', 'opencode', undefined] as const) {
+    const view = render(<ThreadCompaction thread={{ ...thread, id: `${providerId ?? 'none'}-never`, providerId }} supported connected command={command} />)
+    expect(screen.queryByText('Keep full history')).not.toBeInTheDocument()
+    view.unmount()
+  }
+})
+
+it('says nothing under the composer when an idle compaction works, and names Sotto with Turn off when one does not (ADR-0127)', async () => {
+  const navigate = vi.fn()
+  const appContext = await import('../../../src/renderer/src/state/AppContext')
+  const spy = vi.spyOn(appContext, 'useOptionalApp').mockReturnValue({ actions: { navigate } } as unknown as ReturnType<typeof appContext.useOptionalApp>)
+  const target = await import('../../../src/renderer/src/features/settings/settingsTarget')
+  const idle = (status: 'completed' | 'failed' | 'uncertain'): AgentThread => ({ ...thread, id: `idle-${status}`, usage: { ...thread.usage!, contextUsed: 41_000 }, compaction: { commandId: 'c', status, idle: true } })
+  // Zach asked for the success line to go: the transcript's boundary already says the context was compacted.
+  const view = render(<ThreadCompaction thread={idle('completed')} supported connected command={vi.fn()} />)
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Sotto compacted/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Turn off idle compaction in Settings' })).not.toBeInTheDocument()
+  view.rerender(<ThreadCompaction thread={idle('failed')} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Sotto could not compact this idle thread. Its full history is kept.')
+  fireEvent.click(screen.getByRole('button', { name: 'Turn off idle compaction in Settings' }))
+  expect(navigate).toHaveBeenCalledWith('settings', 'settings-providers', 'compact-idle-threads')
+  expect(target.takeAimedProvider()).toBe('claude')
+  view.rerender(<ThreadCompaction thread={idle('uncertain')} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result.')
+  expect(screen.getByRole('button', { name: 'Turn off idle compaction in Settings' })).toBeInTheDocument()
+  // The user's own compaction keeps its plain line and has no Turn off.
+  view.rerender(<ThreadCompaction thread={{ ...thread, compaction: { commandId: 'c', status: 'completed' } }} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Context compacted')
+  expect(screen.queryByRole('button', { name: 'Turn off idle compaction in Settings' })).not.toBeInTheDocument()
+  spy.mockRestore()
 })

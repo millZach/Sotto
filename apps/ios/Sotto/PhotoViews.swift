@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import UniformTypeIdentifiers
 import AVFoundation
 import SottoCore
 
@@ -70,6 +71,24 @@ import SottoCore
         let image = await task.value
         openingFull[key] = nil
         return image
+    }
+}
+
+/// A user message's photos its computer keeps, each standing on its own above the words, as in Messages: a press opens
+/// them full screen. A thread's and Watcher's conversation draw them the same way.
+struct SentPhotoButtons: View {
+    let ref: ThreadRef
+    let messageID: String
+    let photos: [Attachment]
+    let open: (OpenPhotos) -> Void
+    var body: some View {
+        ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
+            Button { open(OpenPhotos(ref: ref, messageID: messageID, photos: photos, index: index)) } label: {
+                SentPhotoView(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: photo.id), name: photo.name)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open photo \(photo.name)")
+        }
     }
 }
 
@@ -182,14 +201,14 @@ private extension Array {
 /// The photos waiting in a reply box, at their own shape, each with its own Remove button.
 struct DraftPhotoStrip: View {
     @EnvironmentObject var model: AppModel
-    let ref: ThreadRef
+    let box: PhotoBox
     var body: some View {
-        let photos = model.photos(ref)
+        let photos = model.photos(box)
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(Array(photos.enumerated()), id: \.element.id) { index, photo in
                     DraftPhotoView(photo: photo, number: index + 1, count: photos.count,
-                                   locked: model.preparingSends.contains(ref.id)) { model.removePhoto(photo.id, from: ref) }
+                                   locked: model.preparingSends.contains(box.id)) { model.removePhoto(photo.id, from: box) }
                 }
             }.padding(.top, 2)
         }.frame(height: 92)
@@ -233,36 +252,48 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library or Camera. When the thread can't take photos the choices stay
-/// in the menu, unavailable, with the reason beneath them.
+/// The reply box's + button: Photo library or Camera, and in a thread's box Files (ADR-0131). When the box can't take
+/// photos, or files, those choices stay in the menu, unavailable, with the reason beneath them. A thread's box and
+/// Watcher's work the same way for photos; Watcher's takes no files yet.
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
-    let ref: ThreadRef
+    let box: PhotoBox
     @State private var choosing = false
     @State private var shooting = false
+    @State private var choosingFiles = false
     @State private var picked: [PhotosPickerItem] = []
     var body: some View {
-        let reason = self.reason
+        let reason = self.reason, fileReason = self.fileReason
         Menu {
-            Button { choosing = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
-                .disabled(reason != nil)
-            Button { openCamera() } label: { Label("Camera", systemImage: "camera") }
-                .disabled(reason != nil || !CameraPicker.available)
-            if let reason { Text(reason) }
+            Section {
+                Button { choosing = true } label: { Label("Photo library", systemImage: "photo.on.rectangle") }
+                    .disabled(reason != nil)
+                Button { openCamera() } label: { Label("Camera", systemImage: "camera") }
+                    .disabled(reason != nil || !CameraPicker.available)
+                if let reason { Text(reason) }
+            }
+            if !watcher {
+                Section {
+                    Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
+                        .disabled(fileReason != nil)
+                    if let fileReason { Text(fileReason) }
+                }
+            }
         } label: {
             Image(systemName: "plus").fontWeight(.semibold).frame(width: 44, height: 44)
-                .foregroundStyle(reason == nil ? Palette.ink : Palette.muted)
+                .foregroundStyle(reason == nil || (!watcher && fileReason == nil) ? Palette.ink : Palette.muted)
                 .background(Palette.raised, in: Circle())
         }
-        .accessibilityLabel("Attach photos")
-        .accessibilityHint(reason ?? "Choose photos from the library, or take one with the camera.")
-        .accessibilityIdentifier("thread-attach-photos")
+        .accessibilityLabel(watcher ? "Attach photos" : "Attach photos or files")
+        .accessibilityHint(watcher ? reason ?? "Choose photos from the library, or take one with the camera."
+            : [reason, fileReason].compactMap { $0 }.first ?? "Choose photos from the library, take one with the camera, or choose files.")
+        .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
         .onChange(of: picked) { _, items in
             guard !items.isEmpty else { return }
-            let start = model.photos(ref).count
-            model.attachPhotos(ref, from: items.enumerated().map { offset, item in
+            let start = model.photos(box).count
+            model.attachPhotos(box, from: items.enumerated().map { offset, item in
                 PhotoSource(name: "Photo \(start + offset + 1)") {
                     guard let data = try await item.loadTransferable(type: Data.self) else { throw PhotoPipelineError.unreadable }
                     return data
@@ -270,26 +301,61 @@ struct AttachPhotosButton: View {
             })
             picked = []
         }
+        // Opened where they are, not copied in: only the files chosen are handed over, each read under its own access.
+        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { pickedFiles(urls) }
+        }
         .fullScreenCover(isPresented: $shooting) {
             CameraPicker(shown: $shooting) { image in
-                model.attachPhotos(ref, from: [PhotoSource(name: "Camera photo") {
+                model.attachPhotos(box, from: [PhotoSource(name: "Camera photo") {
                     guard let data = image.jpegData(compressionQuality: 0.95) else { throw PhotoPipelineError.unreadable }
                     return data
                 }])
             }.ignoresSafeArea()
         }
     }
-    private var room: Int { PhotoLimits.count - model.photos(ref).count }
+    private var watcher: Bool { if case .watcher = box { return true }; return false }
+    /// Photos and files count toward the same eight.
+    private var room: Int { PhotoLimits.count - model.photos(box).count - model.files(box).count }
     private var reason: String? {
-        if let reason = model.photoSupport(ref).reason(computer: model.name(ref.hostID)) { return reason }
-        if model.preparingSends.contains(ref.id) { return "Your reply is being sent." }
-        return room > 0 ? nil : "A reply can carry \(PhotoLimits.count) photos."
+        if let reason = model.photoSupport(box).reason(computer: model.name(box.hostID), watcher: watcher) { return reason }
+        if model.preparingSends.contains(box.id) { return watcher ? "Your message is being sent." : "Your reply is being sent." }
+        if room > 0 { return nil }
+        return model.files(box).isEmpty ? "\(box.carrier) can carry \(PhotoLimits.count) photos." : FileWords.full
+    }
+    private var fileReason: String? {
+        guard case .thread(let ref) = box else { return nil }
+        if let reason = model.fileSupport(ref).reason(computer: model.name(box.hostID)) { return reason }
+        if model.preparingSends.contains(box.id) { return "Your reply is being sent." }
+        return room > 0 ? nil : FileWords.full
+    }
+    /// A photo chosen in Files goes as a photo, made ready as one from the library is, and is refused in the photos' own
+    /// words where the thread's model can't take photos. Everything else goes as a file. The whole choice is checked
+    /// first: when its files are past the limits, counting the photos chosen with them, nothing of it is attached.
+    private func pickedFiles(_ urls: [URL]) {
+        guard case .thread(let ref) = box, !urls.isEmpty else { return }
+        let photos = urls.filter { PhotoLimits.mimeTypes.contains(Files.mimeType(forName: $0.lastPathComponent)) }
+        let files = urls.filter { !photos.contains($0) }.map(PickedFile.source)
+        let photoRefusal = photos.isEmpty ? nil : model.photoSupport(box).reason(computer: model.name(box.hostID))
+        let chosenPhotos = photoRefusal == nil ? photos.count : 0
+        let others = model.photos(box).map { $0.prepared?.byteCount ?? 0 } + model.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
+        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
+            model.photoNotices[box.id] = refusal
+            return
+        }
+        if !files.isEmpty { model.attachFiles(ref, from: files) }
+        if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
+        else if !photos.isEmpty {
+            model.attachPhotos(box, from: photos.map { url in
+                PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
+            })
+        }
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .denied, .restricted:
-            model.photoNotices[ref.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
+            model.photoNotices[box.id] = "Sotto can’t use the camera. Turn it on in Settings › Sotto › Camera."
         default: shooting = true
         }
     }

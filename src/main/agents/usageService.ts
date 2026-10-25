@@ -3,18 +3,20 @@ import type { AgentHostSnapshot } from '../../shared/agents'
 import {
   usageLocalClearRequestSchema, usageLocalHostReadSchema, usageLocalQuerySchema, usageQuotaReadSchema,
   usageTokenObservationSchema, usagePromptSubmissionSchema, usagePromptIdentitySchema,
-  isUsageProviderId, usageProviderIdSchema,
-  type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
+  isUsageProviderId, USAGE_HISTORY_BATCH_MAX, USAGE_LIMIT_PROVIDERS,
+  type UsageLimitProviderId, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery,
   type UsagePromptSubmission, type UsageQuotaRead, type UsageTokenObservation,
   type UsagePromptIdentity, type UsageProviderId,
 } from '../../shared/usageDashboard'
 import type { AgentHost } from './host'
 import { subscribeActivitySnapshots } from './activitySnapshots'
+import { ThreadMap, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
 import { unavailableProviderQuota } from './providerQuota'
 import { UsageStore, USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
 
-const PROVIDERS: readonly UsageProviderId[] = usageProviderIdSchema.options
+/** OpenCode reports no account limits, so it is never asked for any (ADR-0087). */
+const LIMIT_PROVIDERS: readonly UsageLimitProviderId[] = USAGE_LIMIT_PROVIDERS
 const BUFFER_MAX = 4_096
 const FLUSH_MS = 1_000
 const RETRY_MS = 5_000
@@ -29,7 +31,7 @@ export interface UsagePromptRecorder {
   discardPrompt(threadId: string, messageId: string): void
 }
 
-type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokens' | 'submitPrompt' | 'acceptSubmittedPrompt' |
+type Store = Pick<UsageStore, 'open' | 'close' | 'metadata' | 'observeTokenBatch' | 'submitPrompt' | 'acceptSubmittedPrompt' |
   'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
   & Partial<Omit<UsageHistoryStore, 'metadata'>>
 interface PromptWrite { submission?: UsagePromptSubmission; action?: 'accept' | 'discard' }
@@ -39,12 +41,19 @@ export class UsageService implements UsagePromptRecorder {
   private readonly store: Store
   private readonly tokens = new Map<string, UsageTokenObservation>()
   private readonly prompts = new Map<string, PromptWrite>()
-  private readonly quotas = new Map<UsageProviderId, UsageQuotaRead>()
+  private readonly quotas = new Map<UsageLimitProviderId, UsageQuotaRead>()
+  /** Where in the order refreshes began the newest refresh to answer for each provider began. */
+  private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
+  private quotaStarts = 0
   private readonly visited = new Set<string>()
+  /** Threads whose usage could not be read: each change reads them again, as every snapshot read every thread not yet read. */
+  private readonly unread = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
   private readonly subscriptions: (() => void)[] = []
-  private readonly refreshing = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
-  private readonly reading = new Map<UsageProviderId, Promise<UsageQuotaRead>>()
+  private readonly refreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
+  /** Refreshes Usage made on its own, which may be answered from a recent reading, so Read again never joins one. */
+  private readonly backgroundRefreshing = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
+  private readonly reading = new Map<UsageLimitProviderId, Promise<UsageQuotaRead>>()
   private history: UsageHistoryImporter | undefined
   private timer: ReturnType<typeof setTimeout> | undefined
   private reconcileTimer: ReturnType<typeof setTimeout> | undefined
@@ -74,7 +83,13 @@ export class UsageService implements UsagePromptRecorder {
     if (this.options.host.subscribeUsage) {
       this.subscriptions.push(this.options.host.subscribeUsage(record => this.observeTokens(record)))
     }
-    this.subscriptions.push(subscribeActivitySnapshots(this.options.host, snapshot => this.acceptSnapshot(snapshot)))
+    const host = this.options.host
+    if (host.subscribeActivityChanges) {
+      // The host's thread changes (#925): a change reads only the threads it names, and those not yet read that could not be.
+      const map = new ThreadMap({ verify: false })
+      const subscription: ActivityChangesSubscription = host.subscribeActivityChanges(changes => this.acceptChanges(map, subscription, changes))
+      this.subscriptions.push(subscription)
+    } else this.subscriptions.push(subscribeActivitySnapshots(host, snapshot => this.acceptSnapshot(snapshot)))
     if (this.options.host.subscribeEvents) {
       this.subscriptions.push(this.options.host.subscribeEvents(({ threadId, event }) => {
         if ((event.kind === 'message-added' || event.kind === 'message-replaced') && event.message.role === 'user') {
@@ -91,7 +106,7 @@ export class UsageService implements UsagePromptRecorder {
   private startHistory(): void {
     const host = this.options.host
     if (!host.scanUsageHistory && !host.visitRecordedUserMessages) return
-    if (!this.store.observeTokenBatch || !this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
+    if (!this.store.importPrompts || !this.store.historyCursor || !this.store.setHistoryCursors || !this.store.setHistoryStatus) return
     this.history = new UsageHistoryImporter({
       source: {
         ...(host.scanUsageHistory ? { scanUsageHistory: (sink, signal) => host.scanUsageHistory!(sink, signal) } : {}),
@@ -153,8 +168,9 @@ export class UsageService implements UsagePromptRecorder {
       persistence: this.failed || this.lost ? 'failed' : 'saved' })
   }
 
-  async refresh(providerIds?: readonly UsageProviderId[]): Promise<UsageLocalHostRead> {
-    const quotas = await this.readQuotas(providerIds, true)
+  /** `background` is a refresh Usage made on its own when it opened; Read again leaves it out and always reads afresh. */
+  async refresh(providerIds?: readonly UsageProviderId[], background = false): Promise<UsageLocalHostRead> {
+    const quotas = await this.readQuotas(providerIds, true, background)
     return { status: 'ready', quotas, persistence: this.failed || this.lost ? 'failed' : 'saved' }
   }
 
@@ -178,7 +194,17 @@ export class UsageService implements UsagePromptRecorder {
     clearTimeout(this.timer); this.timer = undefined
     if (!this.open()) { this.schedule(RETRY_MS); return }
     try {
-      for (const [key, record] of this.tokens) { this.store.observeTokens(record); this.tokens.delete(key) }
+      // A few bounded transactions rather than one per record: a start-up backlog of thousands held main for seconds.
+      // A batch that fails rolls back whole and stays buffered, with everything after it, for the retry.
+      while (this.tokens.size) {
+        const keys: string[] = [], records: UsageTokenObservation[] = []
+        for (const [key, record] of this.tokens) {
+          if (keys.length === USAGE_HISTORY_BATCH_MAX) break
+          keys.push(key); records.push(record)
+        }
+        this.store.observeTokenBatch(records, { revision: 'per-record' })
+        for (const key of keys) this.tokens.delete(key)
+      }
       for (const [key, write] of this.prompts) {
         if (write.submission) this.store.submitPrompt(write.submission)
         if (write.action === 'accept') this.store.acceptSubmittedPrompt(...parsePromptKey(key))
@@ -230,20 +256,42 @@ export class UsageService implements UsagePromptRecorder {
       for (const thread of snapshot.threads) if (isUsageProviderId(thread.providerId)) this.connected.add(thread.providerId)
       for (const model of snapshot.models) if (isUsageProviderId(model.providerId)) this.connected.add(model.providerId)
     }
-    if (this.options.host.visitUsage) {
-      for (const thread of snapshot.threads) {
-        if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) continue
-        try {
-          this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
-          this.visited.add(thread.id)
-        } catch { this.failed = true }
-      }
-    }
+    for (const thread of snapshot.threads) this.visit(thread)
     if (this.started && (firstSnapshot || [...this.connected].some(provider => !previouslyConnected.has(provider)))) {
       this.reconciliationRequested = true
       this.reconcilePending()
     }
     if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+  }
+
+  /**
+   * One publication of the host's thread changes. A whole one, one carrying the rest of the snapshot, and one from a host
+   * that names no providers are read whole, as every snapshot was: they can change which providers are connected, and so
+   * which threads are read. Any other reads only the threads it upserted and those whose read failed, which is what reading
+   * every thread again would have read.
+   */
+  private acceptChanges(map: ThreadMap, subscription: ActivityChangesSubscription, changes: AgentHostChanges): void {
+    const applied = map.apply(changes)
+    if (applied === 'resync') { subscription.resync(); return }
+    if (applied === 'stale') return
+    if (changes.whole || changes.rest !== undefined || !map.rest?.providers || !this.receivedSnapshot) {
+      this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot)
+      return
+    }
+    for (const thread of changes.upserts) this.visit(thread)
+    for (const id of [...this.unread]) { const thread = map.get(id); if (thread) this.visit(thread); else this.unread.delete(id) }
+    if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+  }
+
+  /** Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication. */
+  private visit(thread: AgentHostSnapshot['threads'][number]): void {
+    if (!this.options.host.visitUsage) return
+    if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) return
+    try {
+      this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
+      this.visited.add(thread.id)
+      this.unread.delete(thread.id)
+    } catch { this.failed = true; this.unread.add(thread.id) }
   }
 
   private reconcilePending(): void {
@@ -277,24 +325,34 @@ export class UsageService implements UsagePromptRecorder {
     }
   }
 
-  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean): Promise<UsageQuotaRead[]> {
-    const selected = PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
+  private async readQuotas(providerIds: readonly UsageProviderId[] | undefined, refresh: boolean, background = false): Promise<UsageQuotaRead[]> {
+    const selected = LIMIT_PROVIDERS.filter(provider => providerIds === undefined || providerIds.includes(provider))
     return Promise.all(selected.map(async providerId => {
       if (!this.connected.has(providerId)) return unavailableProviderQuota(providerId, 'not-connected')
       if (!this.options.host.readProviderQuota) return unavailableProviderQuota(providerId, 'unsupported')
       const read = async (): Promise<UsageQuotaRead> => {
+        // A refresh that began after this one and has already answered is newer news, and stands over this one (#1456).
+        // A read of the last reading takes no place in that order: it answers at once with whatever the provider holds.
+        const start = refresh ? ++this.quotaStarts : 0
+        const newer = (): UsageQuotaRead | undefined => refresh && (this.quotaStarted.get(providerId) ?? 0) > start ? this.quotas.get(providerId) : undefined
         try {
-          const quota = usageQuotaReadSchema.parse(await this.options.host.readProviderQuota!(providerId, refresh))
+          const host = this.options.host
+          const quota = usageQuotaReadSchema.parse(await (background ? host.readProviderQuota!(providerId, true, true) : host.readProviderQuota!(providerId, refresh)))
           if (quota.providerId !== providerId) throw new Error('Usage provider does not match')
+          const standing = newer()
+          if (standing) return standing
           this.quotas.set(providerId, quota)
+          if (refresh) this.quotaStarted.set(providerId, start)
           return quota
         } catch {
+          const standing = newer()
+          if (standing) return standing
           const previous = this.quotas.get(providerId)
           return { ...(previous ?? unavailableProviderQuota(providerId, 'read-failed')), status: 'error', reason: 'read-failed' }
         }
       }
-      const inFlight = refresh ? this.refreshing : this.reading
-      const existing = inFlight.get(providerId)
+      const inFlight = !refresh ? this.reading : background ? this.backgroundRefreshing : this.refreshing
+      const existing = (background ? this.refreshing.get(providerId) : undefined) ?? inFlight.get(providerId)
       if (existing) return refresh ? existing : this.waitForQuota(providerId, existing)
       const pending = read().finally(() => { inFlight.delete(providerId) })
       inFlight.set(providerId, pending)
@@ -303,7 +361,7 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   /** A read answers with the last limits it has once a provider is slow; the reading still lands in the cache. */
-  private async waitForQuota(providerId: UsageProviderId, pending: Promise<UsageQuotaRead>): Promise<UsageQuotaRead> {
+  private async waitForQuota(providerId: UsageLimitProviderId, pending: Promise<UsageQuotaRead>): Promise<UsageQuotaRead> {
     let timer: ReturnType<typeof setTimeout> | undefined
     const late = new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), QUOTA_READ_WAIT_MS); timer.unref?.() })
     try { return await Promise.race([pending, late]) ?? this.quotas.get(providerId) ?? unavailableProviderQuota(providerId, 'not-read') }

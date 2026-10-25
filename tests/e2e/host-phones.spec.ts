@@ -11,7 +11,7 @@ import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support
 /**
  * Phones on a remote host (ADR-0050) in the built app, over a scripted ssh that runs the real launch script and a real
  * headless host, whose Tailscale is a stand-in it reads from a file: forge has no screen, so its phone access is turned
- * on, checked, paired and turned off from this computer's Settings > Hosts, from the keyboard.
+ * on, checked, paired and turned off from this computer's Settings > Hosts & phones, from the keyboard.
  */
 
 /** Whether an element sits wholly inside the window, so nothing is clipped at the minimum size. */
@@ -46,7 +46,7 @@ test('forge’s phone access is turned on, checked, paired and turned off from t
 
     // Add forge.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()

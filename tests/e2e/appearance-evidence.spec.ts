@@ -129,7 +129,7 @@ test.describe('appearance rendered evidence', () => {
           window.focus()
         })
         await page.getByRole('link', { name: 'Settings' }).click()
-        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Application', exact: true }).click()
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
         const select = page.getByRole('combobox', { name: 'Reduced motion' })
         await select.scrollIntoViewIfNeeded()
         expect(await select.evaluate(element => getComputedStyle(element).colorScheme)).toBe(appearance)

@@ -7,10 +7,15 @@ import { DatabaseSync, type SQLOutputValue, type StatementSync } from 'node:sqli
 import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import { agentActivitySchema, MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, threadEventSchema, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
-import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
+import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
+import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
+import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt, type AgentThreadPrompts } from '../../shared/threadPrompts'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
+import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
+import { flushedCommits, SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
+import { AUTOMATIC_CHECKPOINT, BUILT_CHECKPOINT_WORKER, NO_AUTOMATIC_CHECKPOINT, WalCheckpointer } from '../storage/walCheckpointer'
 
 /** The first window a pane is given, and what each later request adds, both counted in turns. */
 export const FIRST_WINDOW_TURNS = 10
@@ -104,6 +109,20 @@ const migrations = [{
   version: 6,
   sql: `ALTER TABLE messages ADD COLUMN watcher_own_change TEXT;
     ALTER TABLE messages ADD COLUMN watcher_observed_changes TEXT;`,
+}, {
+  // An observed reply keeps its Sotto turn anchor when native history corrects its timestamp.
+  version: 7,
+  sql: 'ALTER TABLE messages ADD COLUMN turn_message_id TEXT;',
+}, {
+  // The requests a Watcher wake-up's news said waited on the user, kept with the wake-up as identities alone, so its
+  // conversation shows their cards under it after a messages-reset and a restart (ADR-0073). Null for every other wake-up.
+  version: 8,
+  sql: 'ALTER TABLE wake_ups ADD COLUMN watcher_asks TEXT;',
+}, {
+  // A wake-up that carried only delegation news, which no window or phone shows (ADR-0081, October 19, 2026): the mark
+  // alone, never its words, so it stays hidden however many come after and through a messages-reset. Null for every other.
+  version: 9,
+  sql: 'ALTER TABLE wake_ups ADD COLUMN hidden INTEGER;',
 }]
 
 /** One visual as the store keeps it: the visual, when it arrived, and where in the thread it was drawn. */
@@ -186,6 +205,7 @@ function messageOf(row: Record<string, SQLOutputValue>): AgentMessage {
     id: String(row.message_id), role: String(row.role) as AgentMessage['role'],
     text: String(row.text), createdAt: String(row.created_at),
     ...(row.command_id === null || row.command_id === undefined ? {} : { commandId: String(row.command_id) }),
+    ...(row.turn_message_id === null || row.turn_message_id === undefined ? {} : { turnMessageId: String(row.turn_message_id) }),
     ...(attachments === undefined || attachments.length === 0 ? {} : { attachments }),
     ...(ownChange?.success ? { watcherOwnChange: ownChange.data } : {}),
     ...(observedChanges?.success ? { watcherObservedChanges: observedChanges.data } : {}),
@@ -217,9 +237,18 @@ export class ThreadStore {
   private readonly visualCache = new Map<string, readonly StoredVisual[]>()
   /** Each thread's wake-up message IDs as last read or written, for the same reason. */
   private readonly wakeUpCache = new Map<string, ReadonlySet<string>>()
+  /** Each thread's Watcher wake-up asks, by wake-up message ID, as last read or written. */
+  private readonly wakeUpAskCache = new Map<string, ReadonlyMap<string, readonly WatcherAsk[]>>()
+  private readonly hiddenWakeUpCache = new Map<string, ReadonlySet<string>>()
+  /** Checkpoints the durable file's log off main, so no save runs one (#1451); absent, SQLite checkpoints in the save. */
+  private checkpointer: WalCheckpointer | undefined
 
-  /** The main runtime supplies a path under `app.getPath('userData')`. */
-  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean) {}
+  /**
+   * The main runtime supplies a path under `app.getPath('userData')`. `checkpointWorker` is the built checkpoint worker,
+   * or null to leave checkpoints to SQLite, as where no worker file sits beside this module (the test runner).
+   */
+  constructor(private readonly path: string, private readonly preserveThread?: (threadId: string) => boolean,
+    private readonly checkpointWorker: string | null = BUILT_CHECKPOINT_WORKER) {}
 
   /** Opens the database. `ephemeral` keeps this run's history in memory, for Keep local history off. */
   open(options: { ephemeral?: boolean } = {}): void {
@@ -244,6 +273,7 @@ export class ThreadStore {
         this.activityRedactions.add(String(row.identity_hash))
       }
       for (const hash of redactions) this.activityRedactions.add(hash)
+      if (!ephemeral) this.startCheckpointer(db)
     } catch (error) {
       this.statements.clear()
       this.activityRedactions.clear()
@@ -252,6 +282,27 @@ export class ThreadStore {
       db.close()
       throw error
     }
+  }
+
+  /**
+   * Hands the log's checkpoints to a worker and turns SQLite's own off on this connection. A worker that goes without
+   * being stopped hands them back.
+   */
+  private startCheckpointer(db: DatabaseSync): void {
+    const checkpointer = WalCheckpointer.start(this.path, this.checkpointWorker, () => {
+      if (this.checkpointer !== checkpointer) return
+      this.checkpointer = undefined
+      if (this.db === db) try { db.exec(AUTOMATIC_CHECKPOINT) } catch { /* The connection is going; nothing waits on its log. */ }
+    })
+    if (checkpointer === undefined) return
+    try { db.exec(NO_AUTOMATIC_CHECKPOINT) } catch (error) { checkpointer.stop(); throw error }
+    this.checkpointer = checkpointer
+  }
+
+  /** Main's own checkpoint, with no checkpoint of the worker's in flight to make it find the log busy. */
+  private scrub(db: DatabaseSync): void {
+    if (this.checkpointer) this.checkpointer.aside(() => scrub(db))
+    else scrub(db)
   }
 
   /** True while this run's history is being kept in memory rather than on disk. */
@@ -290,6 +341,11 @@ export class ThreadStore {
     this.redactionChecks.clear()
     this.visualCache.clear()
     this.wakeUpCache.clear()
+    this.wakeUpAskCache.clear()
+    this.hiddenWakeUpCache.clear()
+    // The worker's connection closes first, so main's close is the file's last and checkpoints the log as it always did.
+    this.checkpointer?.stop()
+    this.checkpointer = undefined
     this.db?.close()
     this.db = undefined
     this.memory = false
@@ -320,18 +376,22 @@ export class ThreadStore {
       // Persist before accepting the activity in memory. Quitting while history is off must
       // not make a later provider replay eligible for retention.
       if (this.durableRedactions === undefined) {
-        const durable = new ThreadStore(this.path)
+        // It writes a few identity hashes, each waiting for the disk: SQLite's own checkpoints are enough for it.
+        const durable = new ThreadStore(this.path, undefined, null)
         durable.open()
         this.durableRedactions = durable
       }
       this.durableRedactions.rememberActivityRedactions(added)
     } else {
       const db = this.requireOpen()
-      db.exec('BEGIN IMMEDIATE')
-      try {
-        for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
-        db.exec('COMMIT')
-      } catch (error) { db.exec('ROLLBACK'); throw error }
+      // A redaction a power cut undid would let a provider replay bring the record back.
+      flushedCommits(db, () => {
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          for (const hash of added) this.statement('INSERT OR IGNORE INTO activity_redactions (identity_hash) VALUES (?)').run(hash)
+          db.exec('COMMIT')
+        } catch (error) { db.exec('ROLLBACK'); throw error }
+      })
     }
     for (const hash of added) this.activityRedactions.add(hash)
     this.redactionRevision++
@@ -364,7 +424,7 @@ export class ThreadStore {
       const rows = this.statement('SELECT activity_id, position, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId)
       const records: ActivityState['records'] = new Map()
       for (const row of rows) {
-        const activity = storedActivity(row)
+        const activity = ownBuiltActivity(storedActivity(row))
         records.set(activity.id, { position: Number(row.position), activity })
       }
       state = { known: epochRow !== undefined, epoch: epoch === undefined || epoch === null ? undefined : String(epoch), resetSequence: epochRow?.message_reset_seq === null || epochRow?.message_reset_seq === undefined ? undefined : Number(epochRow.message_reset_seq), records }
@@ -451,14 +511,24 @@ export class ThreadStore {
 
   /**
    * A caller owns its returned records, including nested plan steps and file changes. With `keep: false` a read of records
-   * this store does not hold leaves them unheld, for a caller that only looks (#918).
+   * this store does not hold leaves them unheld, for a caller that only looks (#918). With `shared` the caller gets the held
+   * records themselves, frozen and owned (`ownBuiltActivity`), read from the disk the first time: for a caller that keeps
+   * records as they are and replaces rather than edits them, as the workspace does with every list it holds. They are
+   * shared rather than copied, and a later save of the same records knows them by identity.
+   *
+   * Every held record was checked against the schema when it came off the disk or was saved, so a read hands out a copy
+   * of it rather than checking it again: checking each of two thousand records twice was a quarter of the longest freezes
+   * main had (#1333). The copy keeps the caller's records apart from the held ones; it shares the strings, so it costs a
+   * few milliseconds where the second check cost tens. The copy is for Watcher, an adapter's restore and the start; the
+   * workspace reads `shared` and copies nothing.
    */
-  readActivities(threadId: string, options: { keep?: boolean } = {}): AgentActivity[] {
+  readActivities(threadId: string, options: { keep?: boolean; shared?: boolean } = {}): AgentActivity[] {
     const held = this.activityStates.get(threadId)
-    if (held === undefined && options.keep === false) {
+    if (held === undefined && options.keep === false && options.shared !== true) {
       return this.statement('SELECT activity_id, payload FROM activities WHERE thread_id = ? ORDER BY position').all(threadId).map(storedActivity)
     }
-    return [...(held ?? this.activityState(threadId)).records.values()].map(({ activity }) => agentActivitySchema.parse(activity))
+    const records = Array.from((held ?? this.activityState(threadId)).records.values(), ({ activity }) => activity)
+    return options.shared === true ? records : clonePlainData(records)
   }
 
   /** The identities of a thread's stored records, read without the records. */
@@ -560,7 +630,7 @@ export class ThreadStore {
         next.records.set(activity.id, { position, activity: prior!.activity, ...(input ? { input } : {}) })
         if (prior!.position !== position) moved.push({ id: activity.id, position })
       } else {
-        const record = { position, activity: agentActivitySchema.parse(activity), ...(input ? { input } : {}) }
+        const record = { position, activity: ownBuiltActivity(agentActivitySchema.parse(activity)), ...(input ? { input } : {}) }
         next.records.set(activity.id, record)
         changed.push(record)
       }
@@ -600,7 +670,11 @@ export class ThreadStore {
   }
 
   /** The same for a run of events, so a publish costs one transaction. Returns the last sequence written. */
+  /** A reset waits for the disk: whatever it took out, a rewind's turns among them, a power cut must not bring back. */
   appendMany(threadId: string, events: readonly ThreadEvent[]): number {
+    return resets(events) ? flushedCommits(this.requireOpen(), () => this.appendManyNow(threadId, events)) : this.appendManyNow(threadId, events)
+  }
+  private appendManyNow(threadId: string, events: readonly ThreadEvent[]): number {
     const db = this.requireOpen()
     if (events.length === 0) return this.latestSeq()
     db.exec('BEGIN IMMEDIATE')
@@ -620,7 +694,11 @@ export class ThreadStore {
    * appendMany gave one batch: a thread whose batch fails rolls back alone and is named in `failed`,
    * while the others commit. A failure of the commit itself throws, with nothing written.
    */
+  /** A window that carries a reset commits waiting for the disk, as `appendMany` does. */
   appendBatches(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
+    return [...batches.values()].some(resets) ? flushedCommits(this.requireOpen(), () => this.appendBatchesNow(batches)) : this.appendBatchesNow(batches)
+  }
+  private appendBatchesNow(batches: ReadonlyMap<string, readonly ThreadEvent[]>): { failed: Set<string> } {
     const db = this.requireOpen()
     const due = [...batches].filter(([, events]) => events.length > 0)
     const failed = new Set<string>()
@@ -704,15 +782,59 @@ export class ThreadStore {
 
   /** Every message this thread holds, by ID and role, oldest first: what an adapter needs to recognise
    * a message the store already has without reading the words back out of it. */
-  messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant' }[] {
-    return this.statement('SELECT message_id, role FROM messages WHERE thread_id = ? ORDER BY position')
-      .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant' }))
+  messageIdentities(threadId: string): { id: string; role: 'user' | 'assistant'; turnMessageId?: string }[] {
+    return this.statement('SELECT message_id, role, turn_message_id FROM messages WHERE thread_id = ? ORDER BY position')
+      .all(threadId).map(row => ({ id: String(row.message_id), role: String(row.role) as 'user' | 'assistant',
+        ...(row.turn_message_id === null ? {} : { turnMessageId: String(row.turn_message_id) }) }))
   }
 
   /** One indexed message; identity repairs never read the whole transcript. */
   message(threadId: string, messageId: string): AgentMessage | undefined {
     const row = this.statement('SELECT * FROM messages WHERE thread_id = ? AND message_id = ?').get(threadId, messageId)
     return row === undefined ? undefined : messageOf(row)
+  }
+
+  /**
+   * The messages the user sent before this one, oldest first, each with its turn's last reply with words: what the message
+   * scrubber marks above a pane's window (ADR-0109). Only the start of each message and the start and end of each reply
+   * are read, a page of the newest at a time: `next` is the message the next page is read before, absent once the page
+   * reaches the first. A message the store does not hold has nothing before it.
+   */
+  promptsBefore(threadId: string, messageId: string, skip: ReadonlySet<string>): AgentThreadPrompts {
+    const before = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (before === null || before === undefined) return { prompts: [] }
+    // Only the newest prompts an answer carries are read, so a longer history costs no more. The page is counted in the
+    // messages the user's role sent, wake-ups among them, so where it starts says whether there is more.
+    const start = this.statement(`SELECT position, message_id FROM messages WHERE thread_id = ? AND role = 'user' AND position < ? ORDER BY position DESC LIMIT 1 OFFSET ${THREAD_PROMPTS_MOST - 1}`).get(threadId, before)
+    const from = start?.position ?? 0
+    const whole = THREAD_PROMPT_REPLY_HEAD + THREAD_PROMPT_REPLY_TAIL
+    const rows = this.statement(`SELECT role, message_id, created_at, attachments, substr(text, 1, CASE WHEN role = 'user' THEN ${THREAD_PROMPT_TEXT} ELSE ${whole} END) AS head,
+      CASE WHEN role = 'assistant' AND length(text) > ${whole} THEN substr(text, -${THREAD_PROMPT_REPLY_TAIL * 2}) END AS tail
+      FROM messages WHERE thread_id = ? AND position >= ? AND position < ? AND (role = 'user' OR trim(text, char(32, 9, 10, 11, 12, 13)) <> '') ORDER BY position`).all(threadId, from, before)
+    const prompts: { -readonly [K in keyof AgentThreadPrompt]: AgentThreadPrompt[K] }[] = []
+    let current: typeof prompts[number] | undefined
+    for (const row of rows) {
+      const id = String(row.message_id)
+      if (row.role === 'user') {
+        // A wake-up is Sotto's and starts a turn of its own, so what answers it is no prompt's reply.
+        if (skip.has(id)) { current = undefined; continue }
+        const attached = row.attachments === null || row.attachments === undefined ? 0 : (JSON.parse(String(row.attachments)) as unknown[]).length
+        current = { id, createdAt: String(row.created_at), text: clipText(String(row.head), THREAD_PROMPT_TEXT), ...(attached > 0 ? { attachments: Math.min(attached, 1000) } : {}) }
+        prompts.push(current)
+      } else if (current) {
+        const tail = row.tail === null || row.tail === undefined ? null : String(row.tail)
+        // A reply of space alone is no reply with words, whatever kind of space the store's own trim leaves.
+        if (tail !== null || String(row.head).trim().length > 0) current.reply = { id, text: promptReplyText(String(row.head), tail) }
+      }
+    }
+    return { prompts, ...(start !== undefined && Number(from) > 0 ? { next: String(start.message_id) } : {}) }
+  }
+
+  /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */
+  turnsFrom(threadId: string, messageId: string): number | undefined {
+    const at = this.statement('SELECT position FROM messages WHERE thread_id = ? AND message_id = ? LIMIT 1').get(threadId, messageId)?.position
+    if (at === null || at === undefined) return undefined
+    return Number(this.statement(`SELECT COUNT(*) AS turns FROM messages WHERE thread_id = ? AND role = 'user' AND position >= ?`).get(threadId, at)!.turns)
   }
 
   /** Whether the thread holds this message: one indexed lookup, never a read of the thread. */
@@ -776,6 +898,10 @@ export class ThreadStore {
 
   /** Drops one thread's projection and takes the words out of its log, leaving only that it happened. */
   forget(threadId: string): void {
+    flushedCommits(this.requireOpen(), () => this.forgetFlushed(threadId))
+  }
+
+  private forgetFlushed(threadId: string): void {
     const db = this.requireOpen()
     const hashes = this.activityIdentityHashes(threadId)
     db.exec('BEGIN IMMEDIATE')
@@ -796,14 +922,20 @@ export class ThreadStore {
     this.activityMetas.delete(threadId)
     this.visualCache.delete(threadId)
     this.wakeUpCache.delete(threadId)
+    this.wakeUpAskCache.delete(threadId)
+    this.hiddenWakeUpCache.delete(threadId)
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    scrub(db)
+    this.scrub(db)
   }
 
   /** The same for every thread: what Keep local history turning off asks of the file. */
   redactAll(): void {
+    flushedCommits(this.requireOpen(), () => this.redactAllFlushed())
+  }
+
+  private redactAllFlushed(): void {
     const db = this.requireOpen()
     // A release gate can keep dormant threads outside this runtime's privacy ownership.
     const threadIds = this.preserveThread ? this.statement('SELECT thread_id FROM events UNION SELECT thread_id FROM messages UNION SELECT thread_id FROM activities UNION SELECT thread_id FROM activity_epochs UNION SELECT thread_id FROM visuals').all().map(row => String(row.thread_id)) : undefined
@@ -832,7 +964,7 @@ export class ThreadStore {
     for (const hash of hashes) this.activityRedactions.add(hash)
     this.redactionRevision++
     this.redactionChecks.clear()
-    scrub(db)
+    this.scrub(db)
   }
 
   /** The newest message the projection holds, and the newest user message: where a visual arriving now is drawn. */
@@ -869,26 +1001,81 @@ export class ThreadStore {
     return ids
   }
 
-  /** Keeps a wake-up's message ID with its thread. Throws when the store refuses it. */
-  addWakeUp(threadId: string, messageId: string): void {
-    const before = this.wakeUps(threadId)
-    if (before.has(messageId)) return
-    this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, messageId)
-    this.wakeUpCache.set(threadId, new Set([...before, messageId]))
+  /**
+   * The requests each of this thread's Watcher wake-ups said waited on the user, by the wake-up's message ID
+   * (ADR-0073). Identities alone; a row this build cannot read is left out.
+   */
+  wakeUpAsks(threadId: string): ReadonlyMap<string, readonly WatcherAsk[]> {
+    const held = this.wakeUpAskCache.get(threadId)
+    if (held) return held
+    const asks = new Map<string, readonly WatcherAsk[]>()
+    for (const row of this.statement('SELECT message_id, watcher_asks FROM wake_ups WHERE thread_id = ? AND watcher_asks IS NOT NULL').all(threadId)) {
+      let parsed: ReturnType<typeof watcherAsksSchema.safeParse> | undefined
+      try { parsed = watcherAsksSchema.safeParse(JSON.parse(String(row.watcher_asks))) } catch { /* Unreadable: left out. */ }
+      if (parsed?.success && parsed.data.length) asks.set(String(row.message_id), parsed.data)
+    }
+    this.wakeUpAskCache.set(threadId, asks)
+    return asks
   }
 
-  /** Keeps every one of these wake-up message IDs with its thread, in one transaction. Throws when the store refuses them. */
-  addWakeUps(threadId: string, messageIds: readonly string[]): void {
-    const before = this.wakeUps(threadId)
+  /** The IDs of this thread's wake-ups that carried only delegation news, which no window or phone shows (ADR-0081). */
+  hiddenWakeUps(threadId: string): ReadonlySet<string> {
+    const held = this.hiddenWakeUpCache.get(threadId)
+    if (held) return held
+    const ids = new Set(this.statement('SELECT message_id FROM wake_ups WHERE thread_id = ? AND hidden = 1').all(threadId).map(row => String(row.message_id)))
+    this.hiddenWakeUpCache.set(threadId, ids)
+    return ids
+  }
+  /** Marks these of a thread's wake-ups as ones no one is shown, keeping each as a wake-up too. Throws when the store refuses them. */
+  private markHidden(threadId: string, messageIds: readonly string[]): void {
+    const before = this.hiddenWakeUps(threadId)
     const added = [...new Set(messageIds)].filter(id => !before.has(id))
+    if (!added.length) return
+    for (const id of added) this.statement('INSERT INTO wake_ups (thread_id, message_id, hidden) VALUES (?, ?, 1) ON CONFLICT (thread_id, message_id) DO UPDATE SET hidden = 1').run(threadId, id)
+    this.hiddenWakeUpCache.set(threadId, new Set([...before, ...added]))
+    const wakeUps = this.wakeUps(threadId)
+    if (added.some(id => !wakeUps.has(id))) this.wakeUpCache.set(threadId, new Set([...wakeUps, ...added]))
+  }
+
+  /**
+   * Keeps a wake-up's message ID with its thread, and, for a Watcher wake-up, the requests its news said waited on the
+   * user; `hidden` marks one that carried only delegation news. Throws when the store refuses it.
+   */
+  addWakeUp(threadId: string, messageId: string, asks?: readonly WatcherAsk[], hidden = false): void {
+    if (hidden) this.markHidden(threadId, [messageId])
+    const before = this.wakeUps(threadId)
+    const beforeAsks = asks?.length ? this.wakeUpAsks(threadId) : undefined
+    if (before.has(messageId) && (beforeAsks === undefined || beforeAsks.has(messageId))) return
+    if (beforeAsks === undefined) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, messageId)
+    else this.statement('INSERT INTO wake_ups (thread_id, message_id, watcher_asks) VALUES (?, ?, ?) ON CONFLICT (thread_id, message_id) DO UPDATE SET watcher_asks = excluded.watcher_asks')
+      .run(threadId, messageId, JSON.stringify(asks))
+    this.wakeUpCache.set(threadId, new Set([...before, messageId]))
+    if (beforeAsks !== undefined) this.wakeUpAskCache.set(threadId, new Map([...beforeAsks, [messageId, [...asks!]]]))
+  }
+
+  /**
+   * Keeps every one of these wake-up message IDs with its thread, with the asks of those that have them, in one
+   * transaction. Throws when the store refuses them.
+   */
+  addWakeUps(threadId: string, messageIds: readonly string[], asks?: ReadonlyMap<string, readonly WatcherAsk[]>, hidden: readonly string[] = []): void {
+    if (hidden.length) this.markHidden(threadId, hidden)
+    const before = this.wakeUps(threadId)
+    const beforeAsks = asks?.size ? this.wakeUpAsks(threadId) : new Map<string, readonly WatcherAsk[]>()
+    const added = [...new Set(messageIds)].filter(id => !before.has(id) || asks?.has(id) && !beforeAsks.has(id))
     if (!added.length) return
     const db = this.requireOpen()
     db.exec('BEGIN IMMEDIATE')
     try {
-      for (const id of added) this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      for (const id of added) {
+        const kept = asks?.get(id)
+        if (kept?.length) this.statement('INSERT INTO wake_ups (thread_id, message_id, watcher_asks) VALUES (?, ?, ?) ON CONFLICT (thread_id, message_id) DO UPDATE SET watcher_asks = excluded.watcher_asks')
+          .run(threadId, id, JSON.stringify(kept))
+        else this.statement('INSERT OR IGNORE INTO wake_ups (thread_id, message_id) VALUES (?, ?)').run(threadId, id)
+      }
       db.exec('COMMIT')
     } catch (error) { db.exec('ROLLBACK'); throw error }
     this.wakeUpCache.set(threadId, new Set([...before, ...added]))
+    if (asks?.size) this.wakeUpAskCache.set(threadId, new Map([...beforeAsks, ...added.flatMap(id => asks.get(id)?.length ? [[id, asks.get(id)!] as const] : [])]))
   }
 
   /** Keeps one visual with its thread. Throws when the store refuses it, so nothing is shown that was not kept. */
@@ -907,11 +1094,13 @@ export class ThreadStore {
     const removed = before.filter(stored => stored.anchorUserMessageId !== null && doomed.has(stored.anchorUserMessageId))
     if (removed.length === 0) return 0
     const db = this.requireOpen()
-    db.exec('BEGIN IMMEDIATE')
-    try {
-      for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
-      db.exec('COMMIT')
-    } catch (error) { db.exec('ROLLBACK'); throw error }
+    flushedCommits(db, () => {
+      db.exec('BEGIN IMMEDIATE')
+      try {
+        for (const stored of removed) this.statement('DELETE FROM visuals WHERE thread_id = ? AND visual_id = ?').run(threadId, stored.visual.id)
+        db.exec('COMMIT')
+      } catch (error) { db.exec('ROLLBACK'); throw error }
+    })
     this.visualCache.set(threadId, before.filter(stored => !removed.includes(stored)))
     return removed.length
   }
@@ -919,7 +1108,7 @@ export class ThreadStore {
   /**
    * This thread's history is now exactly these messages: a rewind the provider confirmed, or the
    * one-time move of a thread out of `workspace.json`. One transaction, so a failure leaves the
-   * thread as it was.
+   * thread as it was. Its reset waits for the disk (`appendMany`), so a power cut cannot bring back what it replaced.
    */
   replaceThreadMessages(threadId: string, messages: readonly AgentMessage[], historyEpoch?: string): void {
     const at = new Date().toISOString()
@@ -928,6 +1117,9 @@ export class ThreadStore {
       ...messages.map(message => ({ kind: 'message-added' as const, at: message.createdAt || at, message })),
     ])
   }
+
+  /** Runs `work` with its commits waiting for the disk (`flushedCommits`), for a caller outside the store. */
+  flushed<T>(work: () => T): T { return flushedCommits(this.requireOpen(), work) }
 
   /** Rebuilds every projection from the log; the log is the record, the projection only reads faster. */
   rebuild(): void { rebuildProjection(this.requireOpen()) }
@@ -945,11 +1137,11 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
       const row = prepare('SELECT MAX(position) AS last FROM messages WHERE thread_id = ?').get(threadId)
       const position = row?.last === null || row?.last === undefined ? 0 : Number(row.last) + 1
       const { message } = event
-      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments, watcher_own_change, watcher_observed_changes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      prepare('INSERT INTO messages (thread_id, position, message_id, role, text, created_at, command_id, attachments, watcher_own_change, watcher_observed_changes, turn_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(threadId, position, message.id, message.role, message.text, message.createdAt,
           message.commandId ?? null, message.attachments === undefined ? null : JSON.stringify(message.attachments),
           message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
-          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges))
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null)
       return
     }
     case 'message-text-appended':
@@ -959,11 +1151,11 @@ function applyEvent(db: DatabaseSync, threadId: string, event: ThreadEvent,
     case 'message-replaced': {
       const { message } = event
       // Native history has no Sotto mark. An omitted field must not erase history-owned observation.
-      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ?, watcher_own_change = COALESCE(?, watcher_own_change), watcher_observed_changes = COALESCE(?, watcher_observed_changes) WHERE thread_id = ? AND message_id = ?')
+      prepare('UPDATE messages SET role = ?, text = ?, created_at = ?, command_id = ?, attachments = ?, watcher_own_change = COALESCE(?, watcher_own_change), watcher_observed_changes = COALESCE(?, watcher_observed_changes), turn_message_id = COALESCE(turn_message_id, ?) WHERE thread_id = ? AND message_id = ?')
         .run(message.role, message.text, message.createdAt, message.commandId ?? null,
           message.attachments === undefined ? null : JSON.stringify(message.attachments),
           message.watcherOwnChange === undefined ? null : JSON.stringify(message.watcherOwnChange),
-          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), threadId, message.id)
+          message.watcherObservedChanges === undefined ? null : JSON.stringify(message.watcherObservedChanges), message.turnMessageId ?? null, threadId, message.id)
       return
     }
     case 'message-aliased': {
@@ -1006,7 +1198,8 @@ function redactedPayload(payload: string): string | undefined {
  * checkpoint folds the log into the file and the vacuum rewrites it, so what was taken out is gone.
  */
 function scrub(db: DatabaseSync): void {
-  db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  // A checkpoint that found the log busy folded none of it: the redaction has not finished, and is retried as a failure.
+  if (Number(db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()?.busy ?? 0) !== 0) throw new Error('The history log could not be cleared')
   db.exec('VACUUM')
 }
 
@@ -1055,11 +1248,14 @@ function writeMeta(db: DatabaseSync, key: string, value: string): void {
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
 }
 
+/** Whether a batch resets a thread's messages, which takes out what came before. */
+function resets(events: readonly ThreadEvent[]): boolean { return events.some(event => event.kind === 'messages-reset') }
+
 /** The memory store's pattern: each pending migration in its own transaction, checked inside it. */
 export function prepareThreadDatabase(db: DatabaseSync): void {
-  // Provider cursors are saved independently: history cannot rely on replay after a lost commit.
+  // A save does not wait for the disk (`SAVE_SYNCHRONOUS`); what the user takes out does (`flushedCommits`).
   // `secure_delete` overwrites a deleted row rather than leaving its text in a freed page.
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;')
+  db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=${SAVE_SYNCHRONOUS}; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;`)
   db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliedAt TEXT NOT NULL)')
   for (const migration of migrations) {
     db.exec('BEGIN IMMEDIATE')

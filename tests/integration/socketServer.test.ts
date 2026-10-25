@@ -211,6 +211,27 @@ it('offers a phone on a listener that tells desktops apart everything but the de
   expect(desktopHello.phoneAccess).toEqual({ status: 'on', phones: 1 })
 })
 
+it('offers terminals to nobody, and sends a phone that still accepts them an empty list so a waiting terminal answer settles', async () => {
+  const { pairing, paired } = await pairedClient('Zach’s iPhone')
+  const newer = await pairing.redeem(pairing.issuePairingCode().code, 'Newer iPhone')
+  const { service } = recordingService()
+  listener = await startSocketServer({ service, pairing })
+  const health = await (await fetch(`http://127.0.0.1:${listener.descriptor.port}/v1/health`)).json() as { features: string[] }
+  expect(health.features).not.toContain('terminals')
+
+  // An iPhone from before ADR-0111 still lists `terminals`; an empty list is how it learns its terminal left.
+  const older = await connected(listener.descriptor.port, pairing.signSession(paired.clientId))
+  const hello = (await older.call('hello', { op: 'hello', accepts: ['terminals'] })).result as { features: string[]; shell: { terminals?: unknown } }
+  expect(hello.features).not.toContain('terminals')
+  expect(hello.shell.terminals).toEqual([])
+  expect(((await older.call('shell', { op: 'shell' })).result as { terminals?: unknown }).terminals).toEqual([])
+  expect(await older.call('observe-terminals', { op: 'observe-terminals', terminalIds: [] })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  const current = await connected(listener.descriptor.port, pairing.signSession(newer.clientId))
+  const currentHello = (await current.call('hello', { op: 'hello' })).result as { shell: Record<string, unknown> }
+  expect(currentHello.shell).not.toHaveProperty('terminals')
+})
+
 it('opens nothing for a phone while phones are not admitted, closes one already connected, and keeps the desktop', async () => {
   const { pairing, paired } = await pairedClient('Zach’s iPhone')
   const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
@@ -413,13 +434,17 @@ it('serves a question’s page by its token alone, whatever origin asks, and not
   const token = 'p'.repeat(32)
   // The host keeps a page's folder as it is after links are followed.
   const root = await realpath(directory)
+  const opened: string[] = []
   const service = { shell: () => ({ hostId: 'host' }), subscribe: () => () => {},
-    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined } as unknown as HostService
+    questionPage: (asked: string) => asked === token ? { kind: 'file', root, file: join(root, 'greeting.html') } : undefined,
+    questionPageOpened: (asked: string) => opened.push(asked) } as unknown as HostService
   listener = await startSocketServer({ service, pairing })
   const base = `http://127.0.0.1:${listener.descriptor.port}`
   const origin = { Origin: 'https://laptop.example.ts.net:8443' }
   const page = await fetch(`${base}/page/${token}/greeting.html`, { headers: origin })
   expect([page.status, await page.text()]).toEqual([200, '<h1>Greeting</h1>'])
+  // Opening the page tells the host, which clears the prototype-ready mark it belongs to (ADR-0108).
+  expect(opened).toEqual([token])
   expect((await fetch(`${base}/page/${'q'.repeat(32)}/greeting.html`)).status).toBe(404)
   // The token opens its page and nothing of the listener's own.
   expect((await fetch(`${base}/v1/session`, { method: 'POST', headers: origin })).status).toBe(401)

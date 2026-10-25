@@ -6,11 +6,11 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 import {
-  SPEECH_MODEL,
+  speechModelBytes,
   speechModelFileUrl,
+  type SottoSpeechModel,
   type SpeechModelFailure,
   type SpeechModelFile,
-  type SpeechModelManifest,
   type SpeechModelStatus,
 } from '../../shared/speechModel'
 import type { SpeechEngine, SpeechEngineLoader } from './speechEngine'
@@ -34,6 +34,20 @@ class SpeechModelError extends Error {
   }
 }
 
+/**
+ * Errors that mean this computer would not let the model be written: full, over a per-user or
+ * network-storage quota, read-only, or not allowed. Each is `disk`, so the user is told to free up
+ * space rather than that GitHub could not be reached.
+ */
+const STORAGE_ERROR_CODES = new Set(['ENOSPC', 'EDQUOT', 'EACCES', 'EPERM', 'EROFS'])
+
+/** What a failed attempt tells the user: its own reason, `disk` for a storage error, otherwise `network`. */
+function failureOf(error: unknown): SpeechModelFailure {
+  if (error instanceof SpeechModelError) return error.reason
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code !== undefined && STORAGE_ERROR_CODES.has(code) ? 'disk' : 'network'
+}
+
 export interface SpeechModelStoreDependencies {
   /** The folder that holds every speech model, under userData. */
   readonly directory: string
@@ -41,25 +55,33 @@ export interface SpeechModelStoreDependencies {
   readonly onStatus: (status: SpeechModelStatus) => void
   readonly fetchFn?: typeof fetch
   readonly now?: () => number
-  /** The model to fetch; Parakeet unless a test passes a small one. */
-  readonly model?: SpeechModelManifest
+  /** The model this store downloads and runs; a test passes a small one. */
+  readonly model: SottoSpeechModel
   readonly fileUrl?: (file: SpeechModelFile) => string
 }
 
 /**
- * Owns the speech model on disk and the engine running it (ADR-0071). `ensure()` makes the model
+ * Owns one of Sotto's speech models on disk and the engine running it (ADR-0071); there is one store
+ * per model Sotto downloads, each in its own folder (ADR-0094). `ensure()` makes the model
  * ready: files already verified load at once; missing or partial files download, resuming where a
  * stopped download left off, and must match their pinned size and SHA-256 before the engine starts.
  * Only one `ensure()` runs at a time; calling it again while it runs returns the same attempt.
+ * `unload()` lets go of the model when the user picks another one; an attempt already running then
+ * stops at its next chunk and never publishes, so it cannot bring the old model back.
  */
 export class SpeechModelStore {
   private status: SpeechModelStatus = { state: 'missing' }
   private engine: SpeechEngine | null = null
   private attempt: Promise<void> | null = null
+  /** The last attempt started, finished or not; a new one waits for it so two never write the same files. */
+  private latest: Promise<void> = Promise.resolve()
+  /** Bumped by `unload()`; an attempt from an earlier generation no longer counts. */
+  private generation = 0
+  private readonly listeners = new Set<(status: SpeechModelStatus) => void>()
   private readonly fetchFn: typeof fetch
   private readonly now: () => number
   private readonly modelDirectory: string
-  private readonly model: SpeechModelManifest
+  readonly model: SottoSpeechModel
   private readonly fileUrl: (file: SpeechModelFile) => string
   private readonly totalBytes: number
   private disposed = false
@@ -67,9 +89,9 @@ export class SpeechModelStore {
   constructor(private readonly dependencies: SpeechModelStoreDependencies) {
     this.fetchFn = dependencies.fetchFn ?? globalThis.fetch.bind(globalThis)
     this.now = dependencies.now ?? Date.now
-    this.model = dependencies.model ?? SPEECH_MODEL
-    this.fileUrl = dependencies.fileUrl ?? speechModelFileUrl
-    this.totalBytes = this.model.files.reduce((total, file) => total + file.bytes, 0)
+    this.model = dependencies.model
+    this.fileUrl = dependencies.fileUrl ?? ((file) => speechModelFileUrl(this.model, file))
+    this.totalBytes = speechModelBytes(this.model)
     this.modelDirectory = join(dependencies.directory, this.model.id)
   }
 
@@ -84,8 +106,35 @@ export class SpeechModelStore {
 
   ensure(): Promise<void> {
     if (this.status.state === 'ready') return Promise.resolve()
-    this.attempt ??= this.run().finally(() => { this.attempt = null })
+    if (this.attempt === null) {
+      const generation = this.generation
+      const attempt = this.latest.then(() => this.run(generation)).finally(() => {
+        if (this.attempt === attempt) this.attempt = null
+      })
+      this.attempt = attempt
+      this.latest = attempt
+    }
     return this.attempt
+  }
+
+  /** Hears every status after `onStatus` does; the speech model manager passes them on while this model is chosen. */
+  subscribe(listener: (status: SpeechModelStatus) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  /** True when the files are here and verified, without hashing them again or loading anything. */
+  isDownloaded(): Promise<boolean> {
+    return this.verifiedOnDisk()
+  }
+
+  /** Lets go of the engine when another model is chosen, and goes back to `missing`; the files stay. */
+  unload(): void {
+    this.generation += 1
+    this.attempt = null
+    disposeEngine(this.engine)
+    this.engine = null
+    this.publish({ state: 'missing' })
   }
 
   dispose(): void {
@@ -93,48 +142,58 @@ export class SpeechModelStore {
     this.engine = null
   }
 
-  private publish(status: SpeechModelStatus): void {
-    if (this.disposed) return
+  private publish(status: SpeechModelStatus, generation = this.generation): void {
+    if (this.disposed || generation !== this.generation) return
     this.status = status
-    try {
-      this.dependencies.onStatus(status)
-    } catch {
-      // A window that cannot take the update does not stop the model.
+    for (const listener of [this.dependencies.onStatus, ...this.listeners]) {
+      try {
+        listener(status)
+      } catch {
+        // A window that cannot take the update does not stop the model.
+      }
     }
   }
 
-  private async run(): Promise<void> {
+  private async run(generation: number): Promise<void> {
+    const stale = (): boolean => generation !== this.generation
+    const publish = (status: SpeechModelStatus): void => this.publish(status, generation)
     let received = 0
     try {
       await mkdir(this.modelDirectory, { recursive: true }).catch(() => { throw new SpeechModelError('disk') })
       if (!(await this.verifiedOnDisk())) {
         received = await this.bytesAlreadyHere()
-        this.publish({ state: 'downloading', receivedBytes: received, totalBytes: this.totalBytes })
+        publish({ state: 'downloading', receivedBytes: received, totalBytes: this.totalBytes })
         let lastPush = 0
         const progress = (bytes: number): void => {
           received = bytes
           const now = this.now()
           if (now - lastPush < PROGRESS_INTERVAL_MS) return
           lastPush = now
-          this.publish({ state: 'downloading', receivedBytes: Math.min(bytes, this.totalBytes), totalBytes: this.totalBytes })
+          publish({ state: 'downloading', receivedBytes: Math.min(bytes, this.totalBytes), totalBytes: this.totalBytes })
         }
-        await this.download(progress)
+        await this.download(progress, stale)
         await writeFile(join(this.modelDirectory, VERIFIED_MARKER), JSON.stringify(this.model.files)).catch(() => { throw new SpeechModelError('disk') })
         received = this.totalBytes
       }
-      this.publish({ state: 'loading' })
+      publish({ state: 'loading' })
+      let engine: SpeechEngine
       try {
-        this.engine = await this.dependencies.loadEngine(this.modelDirectory)
+        engine = await this.dependencies.loadEngine(this.modelDirectory)
       } catch {
         // The marker trusts sizes, and a file can go bad without changing size. Dropping it makes
         // Try again hash every file and download any that no longer match.
         await rm(join(this.modelDirectory, VERIFIED_MARKER), { force: true }).catch(() => undefined)
         throw new SpeechModelError('engine')
       }
-      this.publish({ state: 'ready' })
+      if (stale() || this.disposed) {
+        disposeEngine(engine)
+        return
+      }
+      this.engine = engine
+      publish({ state: 'ready' })
     } catch (error) {
-      const reason = error instanceof SpeechModelError ? error.reason : 'network'
-      this.publish({ state: 'failed', reason, receivedBytes: Math.min(received, this.totalBytes), totalBytes: this.totalBytes })
+      const reason = failureOf(error)
+      publish({ state: 'failed', reason, receivedBytes: Math.min(received, this.totalBytes), totalBytes: this.totalBytes })
     }
   }
 
@@ -165,9 +224,10 @@ export class SpeechModelStore {
     return join(this.modelDirectory, `${file.name}.part`)
   }
 
-  private async download(progress: (bytes: number) => void): Promise<void> {
+  private async download(progress: (bytes: number) => void, stale: () => boolean): Promise<void> {
     let done = 0
     for (const file of this.model.files) {
+      if (stale()) throw new SpeechModelError('network')
       const target = join(this.modelDirectory, file.name)
       const complete = await stat(target).catch(() => null)
       if (complete?.size === file.bytes && (await sha256(target)) === file.sha256) {
@@ -176,7 +236,7 @@ export class SpeechModelStore {
         continue
       }
       await rm(target, { force: true }).catch(() => undefined)
-      await this.downloadFile(file, (bytes) => progress(done + bytes))
+      await this.downloadFile(file, (bytes) => progress(done + bytes), stale)
       if ((await sha256(this.partPath(file)).catch(() => { throw new SpeechModelError('disk') })) !== file.sha256) {
         await rm(this.partPath(file), { force: true }).catch(() => undefined)
         throw new SpeechModelError('checksum')
@@ -188,7 +248,7 @@ export class SpeechModelStore {
   }
 
   /** Fetches one file into its `.part`, continuing from what is already there when the host allows it. */
-  private async downloadFile(file: SpeechModelFile, progress: (bytes: number) => void): Promise<void> {
+  private async downloadFile(file: SpeechModelFile, progress: (bytes: number) => void, stale: () => boolean): Promise<void> {
     const part = this.partPath(file)
     let have = (await stat(part).catch(() => null))?.size ?? 0
     if (have > file.bytes) {
@@ -226,7 +286,7 @@ export class SpeechModelStore {
         transform(chunk: Buffer, _encoding, callback) {
           received += chunk.length
           armStall()
-          if (received > file.bytes) { callback(new SpeechModelError('network')); return }
+          if (received > file.bytes || stale()) { callback(new SpeechModelError('network')); return }
           progress(received)
           callback(null, chunk)
         },
@@ -237,8 +297,7 @@ export class SpeechModelStore {
         await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>), counter, sink)
       } catch (error) {
         if (error instanceof SpeechModelError) throw error
-        const code = (error as NodeJS.ErrnoException | null)?.code
-        throw new SpeechModelError(code === 'ENOSPC' || code === 'EACCES' || code === 'EPERM' || code === 'EROFS' ? 'disk' : 'network')
+        throw new SpeechModelError(failureOf(error))
       }
       if (received !== file.bytes) throw new SpeechModelError('network')
     } finally {
@@ -264,6 +323,15 @@ export class SpeechModelStore {
       if (location === null || redirects >= MAX_REDIRECTS) throw new SpeechModelError('network')
       current = new URL(location, current)
     }
+  }
+}
+
+/** Stops an engine that has its own process; sherpa's runs in this one and has nothing to stop. */
+export function disposeEngine(engine: SpeechEngine | null): void {
+  try {
+    engine?.dispose?.()
+  } catch {
+    // An engine that is already gone has nothing left to stop.
   }
 }
 

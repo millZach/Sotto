@@ -1,5 +1,9 @@
 import { focusedComposerField } from './promptSelection'
+import { Marked } from '../components/marks'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
+import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { Button } from '../components/Button'
@@ -10,12 +14,13 @@ import { useOwlFeature } from '../state/owlFeature'
 import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
 import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
-import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
-import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
+import { creationErrorWords, draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
+import { shownWords, type LaterWords } from './interfaceWords'
+import { describeThreads, EMPTY_NEEDS_YOU, organizeWorkspace, type ThreadRow } from './threadFacts'
 import { useContinueEnabled } from './continuations'
 import { NewThreadDialog } from './NewThreadDialog'
 import { beginNewThread, unusedNewThread, type ThreadCreationStart } from './newThread'
-import { newThreadChord, newThreadChordLabel, newThreadChordPressed } from './newThreadShortcut'
+import { claimedThreadChord, threadChordLabel, threadChordPressed } from './threadShortcuts'
 import { ProviderUpgradeNotice, isRecoveredDraft } from './ProviderUpgradeNotice'
 import { EmptyWorkspace, type CarriedDraft } from './EmptyWorkspace'
 import { HostUpdateControl } from './HostUpdates'
@@ -25,15 +30,12 @@ import { ThreadPane } from './ThreadPane'
 import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
-import { SidebarChromeProvider, useSidebarMode } from './SidebarFrame'
+import { SidebarChromeProvider } from './SidebarFrame'
 import { useShared } from './stateSharing'
-import { takeNewThreadIntent } from './threadIntent'
-import { TerminalWorkspace, type TerminalWorkspaceProps } from '../terminals/TerminalWorkspace'
+import { onNewThreadIntent, takeNewThreadIntent } from './threadIntent'
 import { qualifyLegacyLayout, isSplit, prune, retarget, setFocused, splitLayoutStore, threadPromptId, useSplitLayout, type SplitLayoutStore } from './splitLayout'
 
 type Command = AgentConnection['command']
-
-const TOO_LONG_TO_MOVE = "This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved."
 
 /** Put the cursor in the composer of the pane that just appeared, once it has been painted. */
 function focusNewComposer(): void {
@@ -80,26 +82,25 @@ export interface ThreadsViewProps {
    */
   readonly onPaneThreadsChange?: ((threadIds: readonly string[]) => void) | undefined
   readonly layoutStore?: SplitLayoutStore | undefined
-  /** What Terminal mode is given beyond the state: its bridge, view and stores; tests pass stand-ins. */
-  readonly terminals?: Pick<TerminalWorkspaceProps, 'store' | 'bridge' | 'viewFactory' | 'layoutStore' | 'platform'> | undefined
   /** Test-only: the pane area's size where layout measurement is unavailable. */
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, terminals, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+  const { t, i18n: { locale } } = useLingui()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
   // On Owl the Update all card speaks for older hosts (ADR-0077).
   const updateAll = useOwlFeature('update-all')
   const now = useClock(fixedNow)
-  const [mode, setMode] = useSidebarMode()
   const [query, setQuery] = useState('')
   // The chooser for the top New thread button and the sidebar's own top button; the pen and the empty page's
   // button already know their project and skip it, opening the thread at once (issue #347). Opened by New thread
   // with this draft, it carries that draft into the thread it opens, and closing it lets the draft go with it.
   const [chooser, setChooser] = useState<{ readonly carried?: CarriedDraft } | null>(null)
-  const [newThreadError, setNewThreadError] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown, so a change of language rewords them; main's as written.
+  const [newThreadError, setNewThreadError] = useState<LaterWords | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   // The pane the user just focused, shown at once while main confirms the selection. Once the command
   // settles, the next published state is the truth, so an older echo cannot pull focus back meanwhile.
@@ -120,13 +121,15 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
   // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
+  // Rows and folders carry words in the interface language, so a change of language describes them again.
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued, locale]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
-  // Delegated threads sit under the thread that delegated to them (ADR-0081; Owl only).
-  const nestDelegated = useOwlFeature('thread-delegation')
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, rows, query, state.activeProjectId, nestDelegated), [state, rows, query, nestDelegated]))
+  // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
+  const delegation = useOwlFeature('thread-delegation')
+  const sidebarRows = useListedRows(agents.threadDrafts, rows)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now, locale]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -139,6 +142,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const visible = state === null || rows.length === 0 ? stored : prune(stored, id => rowsById.has(id))
   const layout = retarget(visible, lastFocused.current ?? visible.focused, focusedId)
   const paneIds = useShared(isSplit(layout) ? layout.panes : focusedId !== null ? [focusedId] : [])
+  // A delegated thread in a pane marks the row it is reached from, the top of its delegation, since it has none of its own.
+  // Only the mark: the sidebar's pane actions still go by the threads really in the panes.
+  const listedThreadId = focusedId === null ? null : organization.listedAs?.get(focusedId) ?? focusedId
 
   useEffect(() => { if (layout !== visible) layoutStore.set(layout) }, [layout, visible, layoutStore])
   useEffect(() => {
@@ -173,7 +179,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
   const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {
     void store.place(threadId, carried).then(placed => {
-      if (placed === 'too-long') { setNewThreadError(TOO_LONG_TO_MOVE); return }
+      if (placed === 'too-long') { setNewThreadError(msg`This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved.`); return }
       const latest = publishedRef.current
       const sameImages = (latest?.draftAttachments ?? []).map(image => image.id).join('\n') === carried.attachments.map(image => image.id).join('\n')
       if (placed === 'saved' && latest !== null && latest.draft === carried.text && latest.draftThreadId === carried.threadId && sameImages) void command({ type: 'cancel-draft' })
@@ -189,19 +195,20 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     store.restoreRefusedCreation(start.thread.id, start.thread.projectId)
     if (carried) placeCarriedDraft(start.thread.id, carried)
     focusNewComposer()
-    void start.created.then(creationError => {
-      if (creationError === null) return
+    void start.created.then(refusal => {
+      if (refusal === null) return
+      const creationError = creationErrorWords(refusal)
       // A broadcast can confirm creation and release sends before the command's reply is lost.
       if (publishedRef.current?.host.threads.some(thread => thread.id === start.thread.id)) return
       // The pane is gone and gated sends never left the window; retain all its content, not just unsent text.
       const kept = store.carryRefusedCreation(start.thread.id, start.thread.projectId)
-      setNewThreadError(kept
-        ? `${creationError} Your prompt and screenshots are kept. Open New thread in ${projectTitle ?? 'the same project'} to get them back.`
-        : creationError)
+      setNewThreadError(!kept ? creationError : projectTitle === undefined
+        ? msg({ message: `${{ creationError }} Your prompt and screenshots are kept. Open New thread in the same project to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' })
+        : msg({ message: `${{ creationError }} Your prompt and screenshots are kept. Open New thread in ${projectTitle} to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' }))
     })
   }, [store, placeCarriedDraft])
   // The pen and the empty page's button already know their project: the thread opens at once, on the defaults
-  // from Settings → Agents, selected and focused; a refusal shows in the sidebar's own error place.
+  // from Settings → Threads, selected and focused; a refusal shows in the sidebar's own error place.
   // Settles once the thread has opened or been refused.
   const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): Promise<void> => {
     if (state === null) return Promise.resolve()
@@ -226,21 +233,26 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     return Promise.resolve()
   }, [state, createThreadIn])
   const openNewThread = useCallback((projectId?: string): void => { void startNewThread(projectId) }, [startNewThread])
-  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads.
-  useEffect(() => { const intent = takeNewThreadIntent(); if (intent !== null) openNewThread(intent.projectId) }, [openNewThread])
-  // Ctrl+Shift+N (Cmd+Shift+N on a Mac): a new thread in the focused thread's project, or the chooser when none
-  // is focused. Checked against the dictation hotkey like every other chord; an open dialog or a terminal keeps
-  // its keys.
+  // A New thread pressed in the sidebar beside another page lands here, once, after the navigation to Threads; one asked
+  // for while this page is already open (an activity recording's Attach to a thread) lands at once. A carried draft opens
+  // in the new thread's composer, unsent.
+  useEffect(() => {
+    const take = (): void => { const intent = takeNewThreadIntent(); if (intent !== null) void startNewThread(intent.projectId, intent.carried) }
+    take()
+    return onNewThreadIntent(take)
+  }, [startNewThread])
+  // New thread (Ctrl+Shift+N, Cmd+Shift+N on a Mac, until changed on Settings › Keyboard, ADR-0133): a new thread
+  // in the focused thread's project, or the chooser when none is focused. Checked against the dictation hotkey
+  // like every other chord; an open dialog or a terminal keeps its keys.
   const platform: SottoPlatform = app?.platform ?? 'win32'
-  const hotkey = app?.settings?.hotkey
-  const shortcutChord = newThreadChord(hotkey, platform)
+  const shortcutChord = claimedThreadChord(app?.settings, 'new-thread', platform)
   // Hoisted rather than a fresh object every render: passed down to the memoised sidebar rows, which compare it.
-  const newThreadShortcutLabel = useMemo(() => shortcutChord ? newThreadChordLabel(platform) : undefined, [shortcutChord, platform])
+  const newThreadShortcutLabel = useMemo(() => shortcutChord ? threadChordLabel(shortcutChord, platform) : undefined, [shortcutChord, platform])
   const dismissNewThreadError = useCallback((): void => setNewThreadError(null), [])
   useEffect(() => {
     if (shortcutChord === null) return
     const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (!newThreadChordPressed(event, shortcutChord, platform)) return
+      if (!threadChordPressed(event, shortcutChord, platform)) return
       event.preventDefault()
       // The focused pane's project, or the chooser: unlike the empty page's own button, this never falls back
       // to the last-active project, since no thread being focused is exactly when the project is unclear.
@@ -249,6 +261,19 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [shortcutChord, platform, focusedId, rowsById, openNewThread])
+  // Focus the prompt (Settings › Keyboard): the cursor lands in the focused pane's composer, the same landing
+  // a pane's own actions use. No focused pane, no landing.
+  const focusPromptChord = claimedThreadChord(app?.settings, 'focus-prompt', platform)
+  useEffect(() => {
+    if (focusPromptChord === null || focusedId === null) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (!threadChordPressed(event, focusPromptChord, platform)) return
+      event.preventDefault()
+      focusInPane(focusedId)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusPromptChord, platform, focusedId])
   // The pane actions are rebuilt every render from the current layout; the sidebar is handed a stable
   // entry point into the latest one instead.
   const gridRef = useRef<ReturnType<typeof paneGridActions> | null>(null)
@@ -264,19 +289,11 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const mac = app?.platform === 'darwin'
   const page = `management-view threads-view${mac ? ' threads-view--mac' : ''}`
   if (state === null) return <div className={mac ? 'threads-view threads-view--bare threads-view--mac' : 'threads-view threads-view--bare'}>
-    <p role="status">{agents.error ?? 'Preparing agent controls…'}</p>
+    <p className="tt-paragraph" role="status">{agents.error ?? t`Preparing agent controls…`}</p>
     {/* An error can stand for good, and this page has no sidebar to leave by. */}
-    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings')}>Open Settings</Button> : null}
+    {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button> : null}
     <PageWindowControls />
   </div>
-  // Terminal mode keeps the same frame; the threads and their panes wait, unchanged, for the switch back.
-  if (mode === 'terminals') {
-    return <SidebarChromeProvider updateControl={updateControl}><div className={page} data-mode="terminals">
-      <TerminalWorkspace state={state} command={command} mode={mode} onMode={setMode} now={fixedNow} {...terminals} paneAreaWidth={paneAreaWidth} paneAreaHeight={paneAreaHeight} />
-      <PageWindowControls />
-    </div></SidebarChromeProvider>
-  }
-
   const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
   gridRef.current = grid
 
@@ -303,19 +320,19 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><div className={page} onKeyDown={grid.onKeyDown}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} onKeyDown={grid.onKeyDown} {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} mode={mode} onMode={setMode} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
-      currentThreadId={focusedId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
-      newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
-    <section className="thread-workspace" aria-label="Thread workspace">
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
+      currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
+      newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive />
+    <section className="thread-workspace" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
-      <div className="thread-workspace__body">
+      <div className="thread-workspace__body" data-panes={paneIds.length > 0 || undefined}>
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />
@@ -327,5 +344,5 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       </div>
     </section>
     <PageWindowControls />
-  </div></SidebarChromeProvider>
+  </div>}</Marked></SidebarChromeProvider>
 }

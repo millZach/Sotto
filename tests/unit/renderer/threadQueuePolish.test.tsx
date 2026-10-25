@@ -148,6 +148,18 @@ describe('queue presentation', () => {
     expect(within(queue).getAllByRole('button', { name: 'Resume queue' })).toHaveLength(1)
   })
 
+  it('names Watcher on a pause its stop made, with the reason once and Resume queue', () => {
+    const state = manualState()
+    const reason = 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.'
+    state.followups = [followup({ id: ids(1), text: 'Run the audio suite', status: 'paused', error: reason, pausedBy: 'watcher' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByText('Paused by Watcher')).toBeInTheDocument()
+    expect(within(queue).queryByText('Paused')).toBeNull()
+    expect(within(queue).getAllByText(reason)).toHaveLength(1)
+    expect(within(queue).getByRole('button', { name: 'Resume queue' })).toBeInTheDocument()
+  })
+
   it('collapses to a count and the next message in a short window, and the toggle shows the list', () => {
     shortWindow(true)
     const state = manualState({ running: true })
@@ -178,6 +190,23 @@ describe('queue presentation', () => {
     const queue = screen.getByRole('region', { name: 'Queued messages' })
     expect(queue).toHaveTextContent('Maybe sent')
     expect(within(queue).getByRole('button', { name: 'Check again' })).toBeInTheDocument()
+  })
+
+  it('keeps an unanswered admission in a collapsed queue, since the transcript no longer shows it', async () => {
+    shortWindow(true)
+    const state = manualState({ running: true })
+    state.followups = [followup({ id: ids(1), text: 'Already waiting' })]
+    const { live, prompt } = mount(state)
+    const answer = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'queue-followup' ? null : answer(request))
+    type(prompt(), 'Lost on the way')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    await waitFor(() => expect(within(queue).getByText('Unconfirmed')).toBeInTheDocument())
+    expect(within(queue).getByRole('button', { name: /Queued 1/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(queue).toHaveTextContent('Lost on the way')
+    expect(within(queue).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(requests(live, 'queue-followup')).toHaveLength(1)
   })
 
   it('keeps the user queue available despite retired assignment data', () => {
@@ -255,5 +284,29 @@ describe('composer while a turn runs', () => {
     expect(screen.queryByRole('button', { name: 'Stop agent' })).not.toBeInTheDocument()
     expect(prompt().closest('form')).not.toHaveAttribute('data-running')
     expect(prompt()).toHaveAttribute('data-placeholder', 'What would you like to do next?')
+  })
+})
+
+describe('queued message line (ADR-0113)', () => {
+  it('says when the list sends while a turn runs, keeps the count in the toggle, and gives each row Steer now as a quiet button', () => {
+    shortWindow(false)
+    const state = manualState({ running: true, capabilities: { steer: true } })
+    state.followups = [followup({ id: ids(1), text: 'First follow-up' }), followup({ id: ids(2), text: 'Second follow-up' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(within(queue).getByRole('button', { name: /^Queued 2$/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(queue.querySelector('.thread-followups__when')).toHaveTextContent('· sends when Claude Code finishes')
+    const steer = within(queue).getAllByRole('button', { name: 'Steer now' })
+    expect(steer).toHaveLength(2)
+    for (const button of steer) expect(button).toHaveClass('tt-button--ghost', 'thread-followup__steer')
+  })
+
+  it('says nothing about when it sends once no turn runs', () => {
+    shortWindow(false)
+    const state = manualState({ running: false })
+    state.followups = [followup({ id: ids(1), text: 'First follow-up' })]
+    mount(state)
+    const queue = screen.getByRole('region', { name: 'Queued messages' })
+    expect(queue.querySelector('.thread-followups__when')).toBeNull()
   })
 })

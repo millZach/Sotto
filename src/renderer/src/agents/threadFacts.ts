@@ -1,10 +1,14 @@
-import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { t } from '@lingui/core/macro'
+
+import { hostForThread, PROVIDER_LABELS, isThreadProviderConnected, providerIdOfLabel, threadSummaryOf, type AgentModel, type AgentProject, type AgentRequest, type AgentState, type AgentThread, type ProviderId } from '../../../shared/agents'
+import { hasNoSendableChoice, isUnavailable, permissionSummary, requestMode, textOnly } from './requests/requestAnswers'
 import { resolveModel } from '../../../shared/modelCatalog'
-import { DELEGATION_LEVELS_MAX } from '../../../shared/delegation'
 import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { failureUnseen } from '../../../shared/threadFailures'
+import { localeFormatter } from './localeFormat'
 
 const DAY_MS = 86_400_000
 const WEEK_MS = 7 * DAY_MS
@@ -60,6 +64,11 @@ export interface ThreadRow {
   readonly workingSince: number
   /** Your side of the thread, shown under an open row; the sentence already carries the provider's. */
   readonly lastMessage: ThreadLastMessage | undefined
+  /**
+   * The delegated thread below this one whose request the row's needs-you stands for (ADR-0081, October 17, 2026): set
+   * only on a sidebar row that says Needs your approval or Needs your answer for a thread it delegated, never its own.
+   */
+  readonly waitingIn?: string | undefined
 }
 
 export interface ThreadGroup {
@@ -86,15 +95,17 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', other: provider.trim().charAt(0).toLocaleUpperCase() }
+  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', cursor: 'Cu', deepseek: 'DS', other: provider.trim().charAt(0).toLocaleUpperCase() }
   const glyph = glyphs[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
 
+const clockTime = localeFormatter({ hour: 'numeric', minute: '2-digit' })
+/** "2:02 pm" in the window's own locale; empty when the moment cannot be read. One formatter serves every call (#1328). */
 export function clockLabel(at: number): string {
   const date = new Date(at)
   if (!Number.isFinite(date.valueOf())) return ''
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).toLocaleLowerCase()
+  return clockTime(date).toLocaleLowerCase()
 }
 
 /** "4 min", "2 h", "3 d": how long a working thread has been at it. */
@@ -162,48 +173,58 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
   let waitingFor: ThreadRow['waitingFor'] = null
   if (closed) {
     state_ = 'done'
-    stateLabel = Number.isFinite(parse(thread.archivedAt)) ? 'Archived' : 'Settled'
-    sentence = lastAssistant?.text ?? 'This thread is closed. Its history is still available.'
-  } else if (decision !== undefined || thread.status === 'error') {
+    stateLabel = Number.isFinite(parse(thread.archivedAt)) ? t({ message: 'Archived', comment: 'A thread row\'s state.' }) : t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' })
+    sentence = lastAssistant?.text ?? t`This thread is closed. Its history is still available.`
+  } else if (decision !== undefined || failureUnseen(thread)) {
+    // A failed turn a client has shown, or the user dismissed, is no longer news: it reads Done below (ADR-0092).
     state_ = 'needs'
     // A permission holds the agent still until you allow or deny it, so it outranks a question here as it does in the composer.
     const kinds = [decision?.kind, ...thread.requests.map(request => request.kind)]
     waitingFor = kinds.includes('permission') ? 'approval' : kinds.includes('question') ? 'question' : null
-    stateLabel = waitingFor === 'approval' ? 'Needs your approval' : waitingFor === 'question' ? 'Needs your answer'
-      : thread.status === 'error' && decision === undefined ? 'Needs attention' : 'Waiting on you'
+    stateLabel = waitingFor === 'approval' ? t`Needs your approval` : waitingFor === 'question' ? t`Needs your answer`
+      : thread.status === 'error' && decision === undefined ? t`Needs attention` : t`Waiting on you`
     sentence = decision !== undefined
       ? (lastAssistant?.text ?? decision.text)
-      : (lastAssistant?.text ?? 'The agent reported an error. Open the transcript to see what happened.')
+      : (lastAssistant?.text ?? t`The agent reported an error. Open the transcript to see what happened.`)
   } else if (thread.compaction?.status === 'running') {
     // Compaction keeps the thread running without the agent working, so the row says which of the two it is.
     state_ = 'working'
-    stateLabel = 'Compacting context'
-    sentence = 'Compacting the context. Nothing can be sent until it finishes.'
+    stateLabel = t`Compacting context`
+    sentence = t`Compacting the context. Nothing can be sent until it finishes.`
   } else if (thread.status === 'running') {
     state_ = 'working'
-    stateLabel = 'Working'
+    stateLabel = t({ message: 'Working', comment: 'A thread row\'s state: its agent is working.' })
     if (lastAssistant !== undefined && (lastUser === undefined || parse(lastAssistant.createdAt) >= parse(lastUser.createdAt))) sentence = lastAssistant.text
-    else if (lastUser !== undefined) { sentence = `Working on “${lastUser.text}”.`; sentenceFromUser = true }
-    else sentence = 'Working on your prompt.'
+    else if (lastUser !== undefined) {
+      const prompt = lastUser.text
+      sentence = t({ message: `Working on “${prompt}”.`, comment: '{prompt} is your last message to the thread.' })
+      sentenceFromUser = true
+    } else sentence = t`Working on your prompt.`
   } else if (thread.backgroundWork?.length) {
     // The turn has ended but work it started is still running, so the thread has not reported back yet.
     // Agents work; a command on its own is waited on, the word the composer's creature uses for it.
     state_ = 'working'
-    stateLabel = thread.backgroundWork.some(task => task.type !== 'command') ? 'Working' : 'Waiting'
-    sentence = lastAssistant?.text ?? 'Working in the background.'
+    stateLabel = thread.backgroundWork.some(task => task.type !== 'command')
+      ? t({ message: 'Working', comment: 'A thread row\'s state: its agent is working.' })
+      : t({ message: 'Waiting', comment: 'A thread row\'s state: a command it started is still running.' })
+    sentence = lastAssistant?.text ?? t`Working in the background.`
   } else {
     state_ = 'done'
-    stateLabel = 'Done'
+    stateLabel = t({ message: 'Done', context: 'thread state', comment: 'A thread row\'s state: its turn has finished.' })
     if (lastAssistant !== undefined) sentence = lastAssistant.text
-    else if (lastUser !== undefined) { sentence = `Waiting to start on “${lastUser.text}”.`; sentenceFromUser = true }
-    else sentence = 'Ready for your next prompt.'
+    else if (thread.status === 'error') sentence = t`The last turn failed. Open the thread to see why.`
+    else if (lastUser !== undefined) {
+      const prompt = lastUser.text
+      sentence = t({ message: `Waiting to start on “${prompt}”.`, comment: '{prompt} is your last message to the thread.' })
+      sentenceFromUser = true
+    } else sentence = t`Ready for your next prompt.`
   }
 
   // The card never repeats the sentence: it shows your latest prompt, or nothing.
   const lastUserAt = parse(lastUser?.createdAt)
   const lastMessage: ThreadLastMessage | undefined = lastUser === undefined || sentenceFromUser ? undefined : {
     // Babysitting's wake-ups are Sotto's, by the record of who sent them, never by their text.
-    who: thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : 'You',
+    who: thread.wakeUpMessageIds?.includes(lastUser.id) ? 'Sotto' : t({ message: 'You', comment: 'Who sent a thread\'s last message.' }),
     at: Number.isFinite(lastUserAt) ? lastUserAt : activityAt,
     text: lastUser.text,
   }
@@ -223,15 +244,37 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
 }
 
 /**
- * The state a sidebar row says. A thread the host marked finished while no client showed it says Just finished
- * (ADR-0046); one that babysits a pull request says so where it would say Done (ADR-0061, variant C), so Working, Just
- * finished and anything waiting on you all outrank it. Settling says Settled, which ends babysitting anyway.
+ * What Dismiss all names: every thread whose row says Needs attention for a failed turn, wherever it is listed, with the
+ * host's name for the failure it showed, so a failure that comes after the press is not marked seen with it (ADR-0092).
  */
-export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): { readonly text: string; readonly finished: boolean; readonly babysitting: boolean } {
-  const label = row.settledBy === 'provider' ? row.stateLabel : row.state === 'done' && row.settledBy !== null ? 'Settled' : row.stateLabel
-  const finished = row.thread.finishedUnread === true && label === 'Done'
-  const babysitting = !finished && label === 'Done' ? babysittingWord(row.thread) : undefined
-  return { text: finished ? 'Just finished' : babysitting ?? label, finished, babysitting: babysitting !== undefined }
+export function unseenFailures(threads: readonly AgentThread[]): { readonly threadId: string; readonly failure: string }[] {
+  return threads.filter(failureUnseen).map(thread => ({ threadId: thread.id, failure: thread.failureId ?? '' }))
+}
+
+/**
+ * The state a sidebar row says. A thread whose prototype waits for the user says Prototype ready (ADR-0108); one the
+ * host marked finished while no client showed it says Just finished (ADR-0046); one that babysits a pull request says so
+ * (ADR-0061, variant C). Each stands where the row would say Done, in that order, so Working and anything waiting on you
+ * outrank all three. Settling says Settled, which ends babysitting anyway and leaves a prototype to the thread's pane.
+ * `background` is a Done thread something will still wake, babysitting or a monitoring task, which says Monitoring there:
+ * the status ring shows an hourglass for it rather than the idle outline.
+ */
+export function rowStatus(row: Pick<ThreadRow, 'thread' | 'state' | 'stateLabel' | 'settledBy'>): {
+  readonly text: string; readonly finished: boolean; readonly babysitting: boolean; readonly prototype: boolean; readonly background: boolean
+} {
+  const label = row.settledBy === 'provider' ? row.stateLabel
+    : row.state === 'done' && row.settledBy !== null ? t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }) : row.stateLabel
+  // A row says Done exactly when it is done and neither settled nor closed: its state says so, whatever language its words are in.
+  const done = row.state === 'done' && row.settledBy === null
+  const prototype = row.thread.prototypeReady !== undefined && done
+  const finished = !prototype && row.thread.finishedUnread === true && done
+  const babysitting = !prototype && !finished && done ? babysittingWord(row.thread) : undefined
+  // A monitoring task alone says Monitoring, the creature's readout word for it; babysitting names its pull request.
+  const monitoring = !prototype && !finished && done && (row.thread.monitoring?.length ?? 0) > 0
+  const background = babysitting !== undefined || monitoring
+  return { text: prototype ? t`Prototype ready` : finished ? t`Just finished`
+    : babysitting ?? (monitoring ? t({ message: 'Monitoring', comment: 'A thread row\'s state: a task its agent started is being watched.' }) : label),
+  finished, babysitting: babysitting !== undefined, prototype, background }
 }
 
 /**
@@ -271,8 +314,8 @@ export function groupThreads(rows: readonly ThreadRow[], _now?: number): ThreadG
   const unsettled = sorted.filter(row => row.settledBy === null)
   const settled = sorted.filter(row => row.settledBy !== null)
   const groups: ThreadGroup[] = []
-  if (unsettled.length > 0) groups.push({ id: 'unsettled', label: 'Unsettled', tone: 'plain', rows: unsettled })
-  if (settled.length > 0) groups.push({ id: 'settled', label: 'Settled', tone: 'plain', rows: settled })
+  if (unsettled.length > 0) groups.push({ id: 'unsettled', label: t`Unsettled`, tone: 'plain', rows: unsettled })
+  if (settled.length > 0) groups.push({ id: 'settled', label: t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }), tone: 'plain', rows: settled })
   return groups
 }
 
@@ -293,11 +336,6 @@ export interface ProjectFolder {
   /** The whole project was settled; its folder sits in Settled with every thread. */
   readonly settled: boolean
   readonly rows: readonly ThreadRow[]
-  /**
-   * Delegated threads listed under the thread that delegated to them (ADR-0081, design A): each one's level below it,
-   * 1 or 2, with the title of the thread above. Absent while the Owl list keeps delegation off or nothing here delegated.
-   */
-  readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }>
   readonly working: number
   readonly needs: number
   readonly activityAt: number
@@ -306,8 +344,16 @@ export interface ProjectFolder {
 export interface WorkspaceOrganization {
   readonly open: readonly ProjectFolder[]
   readonly settled: readonly ProjectFolder[]
+  /** The Needs you queue over every row, search or none (ADR-0135). */
+  readonly needsYou: NeedsYouQueue
   /** Rows the query found, before attention rows are added back. */
   readonly matching: number
+  /**
+   * Each delegated thread the sidebar leaves out, with the listed thread it is reached from: the top of its delegation
+   * (ADR-0081, October 17, 2026). The sidebar marks that row current while the delegated thread is in the pane. Absent
+   * while the Owl list keeps delegation off.
+   */
+  readonly listedAs?: ReadonlyMap<string, string>
 }
 
 const byActivity = (first: { readonly activityAt: number; readonly id: string }, second: { readonly activityAt: number; readonly id: string }): number => {
@@ -317,37 +363,160 @@ const byActivity = (first: { readonly activityAt: number; readonly id: string },
 }
 
 /**
- * Rows in activity order, each delegated thread moved under the thread that delegated to it when that thread is listed
- * here too, its own delegated threads under it in turn (ADR-0081 decision 2). Siblings keep their activity order. A
- * delegated thread whose delegating thread is not listed, settled or filtered away, stands on its own.
+ * Where each delegated thread is reached from (ADR-0081, as Zach settled it on October 17, 2026): the top of its
+ * delegation, the thread at the end of its `delegatedBy` links, which the sidebar lists. A delegated thread whose
+ * delegating thread is gone from the state is the top of its own, so it stays listed and is never out of reach; so is
+ * every thread in a loop of links. So is an open delegated thread whose delegating thread is settled (`settled`, the
+ * sidebar's own answer: the project or the thread settled, or the provider closed it), at either level: it stands in
+ * Open with its own attention rather than under a thread on the Settled shelf. Threads no thread started are not in
+ * the map.
  */
-export function nestDelegated(rows: readonly ThreadRow[]): { readonly rows: readonly ThreadRow[]; readonly delegation?: ReadonlyMap<string, { readonly level: number; readonly parent: string }> } {
-  const listed = new Map(rows.map(row => [row.thread.id, row]))
-  const children = new Map<string, ThreadRow[]>()
-  for (const row of rows) {
-    const parent = row.thread.delegatedBy
-    if (parent !== undefined && parent !== row.thread.id && listed.has(parent)) children.set(parent, [...children.get(parent) ?? [], row])
+export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy'>[], settled: (threadId: string) => boolean = () => false): ReadonlyMap<string, string> {
+  const parents = new Map<string, string | undefined>(threads.map(thread => [thread.id, thread.delegatedBy]))
+  // A link holds unless it would put an open thread under a settled one.
+  const linked = (child: string, parent: string): boolean => parents.has(parent) && (!settled(parent) || settled(child))
+  const tops = new Map<string, string>()
+  for (const thread of threads) {
+    if (thread.delegatedBy === undefined || !linked(thread.id, thread.delegatedBy)) continue
+    const seen = new Set([thread.id])
+    let top = thread.delegatedBy
+    let loop = false
+    for (let up = parents.get(top); up !== undefined && linked(top, up); up = parents.get(top)) {
+      if (seen.has(top)) { loop = true; break }
+      seen.add(top)
+      top = up
+    }
+    if (!loop && !seen.has(top)) tops.set(thread.id, top)
   }
-  if (!children.size) return { rows }
-  const ordered: ThreadRow[] = [], delegation = new Map<string, { level: number; parent: string }>(), placed = new Set<string>()
-  const place = (row: ThreadRow, level: number): void => {
-    if (placed.has(row.thread.id)) return
-    placed.add(row.thread.id); ordered.push(row)
-    const parent = level > 0 && row.thread.delegatedBy !== undefined ? listed.get(row.thread.delegatedBy) : undefined
-    if (parent) delegation.set(row.thread.id, { level, parent: parent.thread.title })
-    for (const child of children.get(row.thread.id) ?? []) place(child, Math.min(level + 1, DELEGATION_LEVELS_MAX))
-  }
-  for (const row of rows) if (row.thread.delegatedBy === undefined || !listed.has(row.thread.delegatedBy)) place(row, 0)
-  // A loop of links is no family: whatever no top-level row reached stands on its own, in activity order.
-  for (const row of rows) place(row, 0)
-  return { rows: ordered, delegation }
+  return tops
 }
 
-function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean, nest = false): ProjectFolder {
-  const byTime = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
-  const { rows: sorted, delegation } = nest ? nestDelegated(byTime) : { rows: byTime, delegation: undefined }
+/** How much a row below a thread needs the user, for the roll-up: a permission, then a question, then an error. */
+const needRank = (row: Pick<ThreadRow, 'state' | 'waitingFor'>): number => row.waitingFor === 'approval' ? 3 : row.waitingFor === 'question' ? 2 : row.state === 'needs' ? 1 : 0
+
+/**
+ * The sidebar's rows while delegation is on: no row for a delegated thread, and each thread a delegated thread below it
+ * needs the user for says so in the words its own row would: Needs your approval, then Needs your answer, then the
+ * error's own words (Needs attention), as one row orders them. Its own waiting wins, and its own error outranks an
+ * error below.
+ */
+function withoutDelegated(rows: readonly ThreadRow[], tops: ReadonlyMap<string, string>): ThreadRow[] {
+  const waiting = new Map<string, ThreadRow>()
+  for (const row of rows) {
+    const top = tops.get(row.thread.id)
+    if (top === undefined || needRank(row) === 0) continue
+    const held = waiting.get(top)
+    if (held === undefined || needRank(row) > needRank(held)) waiting.set(top, row)
+  }
+  return rows.filter(row => !tops.has(row.thread.id)).map((row): ThreadRow => {
+    const below = waiting.get(row.thread.id)
+    if (below === undefined || row.waitingFor !== null || (below.waitingFor === null && row.state === 'needs')) return row
+    return { ...row, state: 'needs', waitingFor: below.waitingFor, stateLabel: below.stateLabel, attention: true,
+      when: clockLabel(row.activityAt), workingSince: Number.NaN, waitingIn: below.thread.title }
+  })
+}
+
+/** How many Needs you entries stand before the rest are counted in one line (ADR-0135). */
+export const NEEDS_YOU_SHOWN_MAX = 3
+/** The longest permission command, and folder, an entry shows whole; a longer ask is judged in its thread. */
+export const NEEDS_YOU_COMMAND_MAX = 160
+export const NEEDS_YOU_CWD_MAX = 80
+/** The most permission choices, and question options, an entry offers in place. */
+export const NEEDS_YOU_CHOICES_MAX = 3
+export const NEEDS_YOU_OPTIONS_MAX = 4
+
+export type NeedsYouKind = 'approval' | 'question' | 'failed'
+
+/** One thread in the sidebar's Needs you queue: what it waits for, since when, and what a press there may do. */
+export interface NeedsYouEntry {
+  readonly row: ThreadRow
+  readonly kind: NeedsYouKind
+  /** The entry thread's own first pending request; undefined for a failure or a delegated wait reached from its top. */
+  readonly request: AgentRequest | undefined
+  /** When the wait began, from the host's stamp (ADR-0135); NaN when no stamp was published, which says no wait words. */
+  readonly waitingSince: number
+  /** "12 min", "2 h": how long it has waited, from its stamp alone; empty without one. */
+  readonly wait: string
+  /** Answer it here, dismiss its failure, or open the thread — the shape of the ask alone decides; the queue's
+   * caller further withholds `answer` while an answer is busy, held, uncertain or half-drafted in the store. */
+  readonly action: 'answer' | 'dismiss' | 'open'
+}
+
+export interface NeedsYouQueue {
+  readonly entries: readonly NeedsYouEntry[]
+  readonly shown: readonly NeedsYouEntry[]
+  readonly overflow: { readonly approval: number; readonly question: number; readonly failed: number; readonly total: number }
+  /** The oldest blocking wait in words, for the heading; empty when nothing blocking carries a stamp. */
+  readonly oldestBlockingWait: string
+}
+
+/** The queue with nobody in it, for a sidebar whose rows have not been described yet. */
+export const EMPTY_NEEDS_YOU: NeedsYouQueue = { entries: [], shown: [], overflow: { approval: 0, question: 0, failed: 0, total: 0 }, oldestBlockingWait: '' }
+
+/** Whether an ask can be judged whole from a sidebar entry (ADR-0135); everything else opens its thread. */
+function fitsEntry(request: AgentRequest): boolean {
+  if (request.delivery === 'uncertain' || request.answerRetryReady === true) return false
+  const mode = requestMode(request)
+  if (mode === 'permission') {
+    if (hasNoSendableChoice(request) || request.context?.plan) return false
+    const choices = request.permissionChoices
+    if (choices && (choices.length > NEEDS_YOU_CHOICES_MAX || choices.some(choice => choice.description))) return false
+    const summary = permissionSummary(request)
+    return summary.details === undefined && (summary.command?.length ?? 0) <= NEEDS_YOU_COMMAND_MAX && (summary.cwd?.length ?? 0) <= NEEDS_YOU_CWD_MAX
+  }
+  if (mode !== 'structured') return false
+  const questions = request.questions ?? []
+  if (questions.length !== 1 || request.pages?.length || request.linkMissing) return false
+  const question = questions[0]!
+  return !question.multiSelect && !question.allowFreeText && !isUnavailable(question) && !textOnly(question)
+    && question.options.length >= 1 && question.options.length <= NEEDS_YOU_OPTIONS_MAX
+}
+
+/**
+ * The Needs you queue over the sidebar's rows (ADR-0135): one entry per row that needs the user, blocking first —
+ * permissions, then questions, then unseen failures, as `needRank` orders them — and oldest wait first inside each
+ * kind. The wait reads the host's stamp where one stands and the row's last activity where none does, unknown last;
+ * its words come from the stamp alone. Derived from the rows as given, settled rows included: what a row's state
+ * already settled (seen failures, finishes, prototypes) never reaches this list.
+ */
+export function describeNeedsYou(rows: readonly ThreadRow[], now: number): NeedsYouQueue {
+  const entries = rows.filter(row => row.state === 'needs').map((row): NeedsYouEntry => {
+    const kind: NeedsYouKind = row.waitingFor ?? 'failed'
+    const delegated = row.waitingIn !== undefined
+    const request = delegated || row.request === undefined ? undefined
+      : row.thread.requests.find(item => item.id === row.request!.requestId)
+    const waitingSince = kind === 'failed' ? parse(row.thread.failureSince) : parse(request?.since)
+    return {
+      row, kind, request, waitingSince,
+      wait: Number.isFinite(waitingSince) ? elapsedLabel(waitingSince, now) : '',
+      action: kind === 'failed' ? delegated ? 'open' : 'dismiss' : request !== undefined && fitsEntry(request) ? 'answer' : 'open',
+    }
+  }).sort((first, second) => {
+    const rank = needRank(second.row) - needRank(first.row)
+    if (rank !== 0) return rank
+    const at = (entry: NeedsYouEntry): number => Number.isFinite(entry.waitingSince) ? entry.waitingSince
+      : Number.isFinite(entry.row.activityAt) ? entry.row.activityAt : Number.POSITIVE_INFINITY
+    return (at(first) - at(second)) || first.row.thread.id.localeCompare(second.row.thread.id)
+  })
+  const rest = entries.slice(NEEDS_YOU_SHOWN_MAX)
+  const oldestBlocking = entries.find(entry => entry.kind !== 'failed' && entry.wait !== '')
   return {
-    id, project, title: project?.title ?? rows[0]?.provider ?? 'Project', settled, rows: sorted, ...(delegation ? { delegation } : {}),
+    entries,
+    shown: entries.slice(0, NEEDS_YOU_SHOWN_MAX),
+    overflow: {
+      approval: rest.filter(entry => entry.kind === 'approval').length,
+      question: rest.filter(entry => entry.kind === 'question').length,
+      failed: rest.filter(entry => entry.kind === 'failed').length,
+      total: rest.length,
+    },
+    oldestBlockingWait: oldestBlocking?.wait ?? '',
+  }
+}
+
+function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
+  const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+  return {
+    id, project, title: project?.title ?? rows[0]?.provider ?? t`Project`, settled, rows: sorted,
     working: rows.filter(row => row.state === 'working').length,
     needs: rows.filter(row => row.state === 'needs').length,
     activityAt: rows.reduce((latest, row) => Number.isFinite(row.activityAt) && (!Number.isFinite(latest) || row.activityAt > latest) ? row.activityAt : latest, Number.NaN),
@@ -358,9 +527,15 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
  * A search keeps attention rows and projects whose name matches; without a search an open project
- * with no threads yet (or the selected project) still shows so a thread can be started there.
+ * with no threads yet (or the selected project) still shows so a thread can be started there. With `delegation` (the Owl
+ * answer for ADR-0081), a delegated thread has no row and no search finds it: it lives in the Tools › Agents of the thread
+ * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
+ * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, nestDelegatedThreads = false): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now()): WorkspaceOrganization {
+  const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
+  const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId)) : undefined
+  const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
   const { matching, listed } = listThreads(rows, query)
   const needle = query.trim().toLocaleLowerCase()
   const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
@@ -376,15 +551,15 @@ export function organizeWorkspace(state: AgentState, rows: readonly ThreadRow[],
     const nameMatch = project !== undefined && projectMatches(project)
     const shown = nameMatch ? all : all.filter(row => listed.includes(row))
     if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
-      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true, nestDelegatedThreads))
+      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
       continue
     }
     const openRows = shown.filter(row => row.settledBy === null)
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false, nestDelegatedThreads))
-    if (settledRows.length) settled.push(folder(id, project, settledRows, false, nestDelegatedThreads))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length)) open.push(folder(id, project, openRows, false))
+    if (settledRows.length) settled.push(folder(id, project, settledRows, false))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), settled: ordered(settled), matching: matching.length }
+  return { open: ordered(open), settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
 }

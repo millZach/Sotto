@@ -1,4 +1,6 @@
 import { deferred } from '../../../fixtures/deferred'
+import { i18n } from '@lingui/core'
+import { generateMessageId } from '@lingui/message-utils/generateMessageId'
 import { browserBridgeFixture, browserPage } from '../../../fixtures/renderer/browserBridge'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -11,6 +13,7 @@ import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { BrowserStore, normalizeAddress } from '../../../../src/renderer/src/tools/browserStore'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
+import { shownNotice } from '../../../../src/renderer/src/tools/toolsWords'
 import { ThreadWebLinks } from '../../../../src/renderer/src/tools/webLinks'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { TOKEN_A, fakeFilesBridge, text } from '../../../fixtures/renderer/fakeFilesBridge'
@@ -609,5 +612,28 @@ describe('the test iPhone’s own mount slot (ADR-0045)', () => {
     expect(within(pages).getAllByRole('tab')).toHaveLength(1)
     expect(within(pages).queryByRole('tab', { name: phone.url })).not.toBeInTheDocument()
     expect(store.browser.thread('visual-gate')?.activePageId).toBe(pane.id)
+  })
+})
+
+describe('browser notices in the interface language (ADR-0123)', () => {
+  it('keeps a failed action as words, so a change of language reaches a notice already shown, and main’s own text stays as written', async () => {
+    const browser = fakeBrowser()
+    const store = new BrowserStore()
+    await store.activate(browser.bridge, workspace.threadId)
+    vi.mocked(browser.bridge.create).mockRejectedValueOnce(new Error('gone'))
+    await store.create(browser.bridge, workspace.threadId, 'http://localhost:5173/')
+    const notice = () => shownNotice(store.thread(workspace.threadId)?.notice)
+    expect(notice()).toBe('Could not open the page. Sotto did not answer.')
+    const german = { 'Could not open the page.': 'Die Seite konnte nicht geöffnet werden.', 'Sotto did not answer.': 'Sotto hat nicht geantwortet.' }
+    i18n.loadAndActivate({ locale: 'de', messages: Object.fromEntries(Object.entries(german).map(([english, words]) => [generateMessageId(english), words])) })
+    try {
+      expect(notice()).toBe('Die Seite konnte nicht geöffnet werden. Sotto hat nicht geantwortet.')
+      vi.mocked(browser.bridge.create).mockResolvedValueOnce({ ok: false, error: { code: 'unavailable', message: 'The page closed.' } })
+      await store.create(browser.bridge, workspace.threadId, 'http://localhost:5173/')
+      expect(notice()).toBe('Die Seite konnte nicht geöffnet werden. The page closed.')
+    } finally {
+      act(() => i18n.activate('en'))
+    }
+    expect(notice()).toBe('Could not open the page. The page closed.')
   })
 })

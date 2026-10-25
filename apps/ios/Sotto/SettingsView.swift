@@ -395,7 +395,7 @@ private struct DefaultsPanel: View {
         }
     }
 
-    private static func modelName(_ value: ThreadModel) -> String { "\(Words.provider(value.providerId)) · \(value.name)" }
+    private static func modelName(_ value: ThreadModel) -> String { value.label }
 
     private func modelValue(_ models: [ThreadModel]) -> String {
         guard !modelID.isEmpty else { return Self.computersChoice }

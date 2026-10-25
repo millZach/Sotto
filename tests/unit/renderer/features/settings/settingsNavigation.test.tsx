@@ -1,5 +1,5 @@
 import { threadsStateFixture } from '../../../../fixtures/agentState'
-import { baseProps, copy, deferred, selectCategory } from '../../../../fixtures/renderer/settingsViewHarness'
+import { baseProps, copy, deferred, selectCategory, settingsTab } from '../../../../fixtures/renderer/settingsViewHarness'
 import React from 'react'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,18 +11,18 @@ import { DEFAULT_SETTINGS, parseSettings } from '../../../../../src/shared/setti
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 
 describe('SettingsView', () => {
-  it('turns letting agents babysit pull requests off beside the other agent switches, saying what each value does (ADR-0061)', async () => {
+  it('turns letting agents babysit pull requests off with the pull request settings, saying what each value does (ADR-0061)', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     const view = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Application')
+    await selectCategory('Git & worktrees')
 
     const toggle = screen.getByRole('switch', { name: 'Let agents babysit pull requests' })
     expect(toggle).toBeChecked()
     expect(toggle).toHaveAccessibleDescription('An agent can hand its pull request to Sotto, which wakes the thread when the pull request needs it.')
-    // It sits with the switches that let agents act on their own, after the visuals one.
+    // It sits with what happens when a pull request is made or merged, after Auto-settle merged threads.
     const switches = screen.getAllByRole('switch').map(item => item.getAttribute('aria-label'))
-    expect(switches.indexOf('Let agents babysit pull requests')).toBe(switches.indexOf('Let agents draw visuals in threads') + 1)
+    expect(switches.indexOf('Let agents babysit pull requests')).toBe(switches.indexOf('Auto-settle merged threads') + 1)
     await user.click(toggle)
     expect(update).toHaveBeenCalledWith({ babysitPullRequests: false })
 
@@ -34,51 +34,51 @@ describe('SettingsView', () => {
   it('exposes exactly one category at a time with keyboard navigation into its controls', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)
-    const categories = ['Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Phones', 'Agents', 'Output', 'Appearance', 'Application', 'Git']
+    const categories = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application']
     for (const name of categories) {
       await selectCategory(name)
       expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
       const panel = screen.getByRole('tabpanel', { name })
       expect(panel).toBeVisible()
-      expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true')
+      expect(settingsTab(name)).toHaveAttribute('aria-selected', 'true')
       // The sidebar foot's room switch is a tablist of its own, so the count is scoped to the sections.
       expect(within(screen.getByRole('tablist', { name: 'Settings sections' })).getAllByRole('tab', { selected: true })).toHaveLength(1)
-      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(12)
+      expect(screen.getAllByRole('tabpanel', { hidden: true })).toHaveLength(categories.length)
     }
-    screen.getByRole('tab', { name: 'Application' }).focus()
+    settingsTab('Application').focus()
     await user.keyboard('{Home}')
-    expect(screen.getByRole('tab', { name: 'Dictation' })).toHaveFocus()
+    expect(settingsTab('Dictation')).toHaveFocus()
     await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('tab', { name: 'Transcription' })).toHaveFocus()
+    expect(settingsTab('Cleanup')).toHaveFocus()
     // The column continues into the sidebar foot (the room switch, then the page links) before the room itself.
     await user.tab()
     expect(screen.getByRole('tablist', { name: 'Page' })).toContainElement(document.activeElement as HTMLElement)
-    for (const name of ['History', 'Settings', 'Help']) {
+    for (const name of ['Settings', 'Help']) {
       await user.tab()
       expect(screen.getByRole('link', { name })).toHaveFocus()
     }
     await user.tab()
-    expect(screen.getByRole('tabpanel', { name: 'Transcription' })).toHaveFocus()
+    expect(screen.getByRole('tabpanel', { name: 'Cleanup' })).toHaveFocus()
     await user.tab()
-    expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toHaveFocus()
-    expect(screen.queryByRole('textbox', { name: 'Global shortcut' })).not.toBeInTheDocument()
-    screen.getByRole('tab', { name: 'Transcription' }).focus()
+    expect(screen.getByRole('switch', { name: 'AI formatting' })).toHaveFocus()
+    expect(screen.queryByRole('group', { name: 'Press to start and stop' })).not.toBeInTheDocument()
+    settingsTab('Cleanup').focus()
     await user.keyboard('{End}')
-    expect(screen.getByRole('tab', { name: 'Git' })).toHaveFocus()
+    expect(settingsTab('Application')).toHaveFocus()
     await user.keyboard('{ArrowUp}')
-    expect(screen.getByRole('tab', { name: 'Application' })).toHaveFocus()
+    expect(settingsTab('Appearance')).toHaveFocus()
   })
 
   it('preserves invalid numeric drafts and their validation when returning to a category', async () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Output')
+    await selectCategory('Dictation')
     await user.clear(screen.getByRole('textbox', { name: 'Paste delay' }))
     await user.type(screen.getByRole('textbox', { name: 'Paste delay' }), '49')
-    await selectCategory('Dictation')
+    await selectCategory('Cleanup')
     expect(screen.queryByRole('textbox', { name: 'Paste delay' })).not.toBeInTheDocument()
-    await selectCategory('Output')
+    await selectCategory('Dictation')
     expect(screen.getByRole('textbox', { name: 'Paste delay' })).toHaveValue('49')
     expect(screen.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
     expect(update).not.toHaveBeenCalled()
@@ -89,16 +89,16 @@ describe('SettingsView', () => {
     const pending = deferred<boolean>()
     const props = baseProps({ onUpdateSettings: vi.fn(() => pending.promise) })
     render(<SettingsView {...props} />)
-    await selectCategory('Output')
+    await selectCategory('Dictation')
     await user.clear(screen.getByRole('textbox', { name: 'Paste delay' }))
     await user.type(screen.getByRole('textbox', { name: 'Paste delay' }), '300')
-    await selectCategory('Dictation')
+    await selectCategory('Cleanup')
     expect(props.onUpdateSettings).toHaveBeenCalledWith({ pasteDelayMs: 300 })
     pending.resolve(false)
     expect(await screen.findByRole('alert')).toHaveTextContent('That setting could not be saved. Your previous setting is still active.')
     expect(screen.getByRole('alert')).toBeVisible()
-    expect(screen.getByRole('tabpanel', { name: 'Dictation' })).toBeVisible()
-    await selectCategory('Output')
+    expect(screen.getByRole('tabpanel', { name: 'Cleanup' })).toBeVisible()
+    await selectCategory('Dictation')
     expect(screen.getByRole('textbox', { name: 'Paste delay' })).toHaveValue(String(props.settings.pasteDelayMs))
   })
 
@@ -106,21 +106,20 @@ describe('SettingsView', () => {
     render(<div><SettingsView {...baseProps()} /></div>)
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
     expect(screen.getByRole('combobox', { name: 'Microphone' })).toBeVisible()
-    expect(screen.getByRole('textbox', { name: 'Global shortcut' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Change shortcut, Ctrl Shift Space' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Sound cues' })).toBeVisible()
     expect(screen.getByRole('radiogroup', { name: 'Maximum recording time' })).toBeVisible()
-    await selectCategory('Transcription')
+    expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
     expect(screen.getByRole('heading', { level: 3, name: 'Parakeet v3' })).toBeVisible()
     expect(screen.getByRole('switch', { name: 'Whitespace formatting' })).toBeVisible()
-    await selectCategory('Output')
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatic clipboard copy' })).toBeDisabled()
     expect(screen.getByRole('switch', { name: 'Automatic paste' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Paste delay' })).toBeVisible()
     expect(screen.getByRole('textbox', { name: 'Success message duration' })).toBeVisible()
-    await selectCategory('Application')
+    await selectCategory('Appearance')
     expect(screen.getByRole('combobox', { name: 'Reduced motion' })).toBeVisible()
-    expect(screen.getByRole('switch', { name: 'Show floating widget when idle' })).toBeChecked()
+    await selectCategory('Application')
     for (const name of [copy.settingsLaunchAtStartupLabel, 'Start minimized', 'Keep local history']) {
       expect(screen.getByRole('switch', { name })).toBeVisible()
     }
@@ -129,7 +128,7 @@ describe('SettingsView', () => {
 
 })
 
-it('places Hosts, Phones and Agents after Providers and keeps new-thread defaults inline', async () => {
+it('runs the pages in four runs, dictation, threads, connections and the app, and keeps new-thread defaults inline', async () => {
     const capabilities = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
     const state: AgentState = threadsStateFixture({ cloneOverrides: false,
     configuration: { ...defaultAgentConfiguration(), reasoning: 'claude' },
@@ -137,11 +136,13 @@ it('places Hosts, Phones and Agents after Providers and keeps new-thread default
     topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container } = render(<SettingsView {...baseProps()} />)
-    await selectCategory('Agents')
+    await selectCategory('Threads')
     const nav = screen.getByRole('tablist', { name: 'Settings sections' })
     expect(within(nav).getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Dictation', 'Transcription', 'Cleanup', 'Providers', 'Hosts', 'Phones', 'Cloud iPhone', 'Agents', 'Output', 'Appearance', 'Application', 'Git',
+      'Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application',
     ])
+    // A divider opens each run after the first.
+    expect(within(nav).getAllByRole('tab').filter(tab => tab.hasAttribute('data-run-start')).map(tab => tab.textContent)).toEqual(['Threads', 'Providers', 'Appearance'])
     const agents = container.querySelector('#settings-agents') as HTMLElement
     expect(within(agents).queryByRole('button', { name: 'Configure agents' })).toBeNull()
     expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
@@ -158,14 +159,14 @@ it('preserves saved defaults without dormant reasoning, voice or wake controls',
     topLevel: { connection: 'disconnected', activeThreadId: null, activeProjectId: null } })
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(async () => state)))
     const { container, rerender } = render(<SettingsView {...baseProps()} />)
-    await selectCategory('Agents')
+    await selectCategory('Threads')
     const agents = container.querySelector('#settings-agents') as HTMLElement
-    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
+    expect(within(agents).getByText('New threads, replies, the browser & visuals')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
     expect(within(agents).queryByRole('button', { name: 'Stop speech' })).toBeNull()
     expect(within(agents).queryByRole('combobox', { name: 'Reasoning account' })).toBeNull()
     // A legacy flag cannot restore the removed controls.
     rerender(<SettingsView {...baseProps({ settings: parseSettings({ ...DEFAULT_SETTINGS, onboardingComplete: true, voiceCoordinatorEnabled: true }) })} />)
-    expect(within(agents).getByText('New threads & projects')).toBeInTheDocument()
+    expect(within(agents).getByText('New threads, replies, the browser & visuals')).toBeInTheDocument()
     expect(within(agents).queryByText('Advanced wake settings')).toBeNull()
   })

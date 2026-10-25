@@ -13,7 +13,7 @@ describe('reading a pull request from a host', () => {
   it('reads an answer from a later host that adds fields, dropping what this build does not know', () => {
     const later = {
       ...answer, labels: ['ui'],
-      checks: [{ ...answer.checks[0], startedAt: '2026-09-23T00:00:00Z' }],
+      checks: [{ ...answer.checks[0], queuedAt: '2026-09-23T00:00:00Z' }],
       reviews: [{ ...answer.reviews[0], submittedAt: '2026-09-23T00:00:00Z' }],
       autoMerge: { method: 'squash', enabledBy: 'mira' },
     }
@@ -21,6 +21,10 @@ describe('reading a pull request from a host', () => {
     // An answer without checksUnknown, as a host on an earlier build gives it, reads its checks as given.
     expect(read).toEqual({ ...answer, checksUnknown: false, autoMerge: { method: 'squash' } })
     expect(read).not.toHaveProperty('labels')
+    // A check run's times are known since #1281, and kept beside what this build still drops.
+    const timed = gitPullRequestResultSchema.parse({ ...later, checks: [{ ...later.checks[0], startedAt: '2026-09-23T00:00:00Z', completedAt: '2026-09-23T00:02:00Z' }] })
+    expect(timed).toMatchObject({ checks: [{ ...answer.checks[0], startedAt: '2026-09-23T00:00:00Z', completedAt: '2026-09-23T00:02:00Z' }] })
+    expect((timed as { checks: object[] }).checks[0]).not.toHaveProperty('queuedAt')
   })
   it('still refuses a field of the wrong kind, and keeps what a client sends strict', () => {
     expect(gitPullRequestResultSchema.safeParse({ ...answer, number: 'seventy-four' }).success).toBe(false)

@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import process from 'node:process'
 
 export const RELEASE_REPOSITORY = 'millZach/Sotto-releases'
 export const SOURCE_REPOSITORY = 'millZach/Sotto'
@@ -102,9 +103,14 @@ export function releaseCheckout(root) {
 }
 
 async function publicGitHubJson(url, description, fetchFeed) {
+  const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'Sotto-release-check', 'X-GitHub-Api-Version': '2022-11-28' }
+  // A hosted runner shares its address with other jobs, so the stable Mac workflow passes its read-only job token
+  // here to stay clear of the public rate limit. The hand path sets nothing and reads the same public data.
+  const token = process.env.SOTTO_RELEASE_CHECK_TOKEN
+  if (token) headers.Authorization = `Bearer ${token}`
   let response
   try {
-    response = await fetchFeed(url, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Sotto-release-check', 'X-GitHub-Api-Version': '2022-11-28' },
+    response = await fetchFeed(url, { headers,
       signal: globalThis.AbortSignal.timeout(20_000) })
   } catch { throw new Error(`Could not read ${description}. Check your connection and run release:check again.`) }
   if (!response.ok) {
@@ -115,7 +121,7 @@ async function publicGitHubJson(url, description, fetchFeed) {
   catch { throw new Error(`GitHub returned unreadable ${description}. Run release:check again when GitHub is available.`) }
 }
 
-/** Public GitHub release feed only. No token or gh credentials. */
+/** Public GitHub release feed only. No gh credentials; a token only when SOTTO_RELEASE_CHECK_TOKEN is set. */
 export async function publishedReleases(fetchFeed = globalThis.fetch) {
   const releases = []
   for (let page = 1; ; page += 1) {

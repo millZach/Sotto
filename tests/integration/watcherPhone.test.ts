@@ -10,19 +10,29 @@ import { UsageService } from '../../src/main/agents/usageService'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
 import { startSocketServer } from '../../src/host/socketServer'
-import { watcherPhoneResultSchema, watcherPhoneSendResultSchema } from '../../src/shared/watcherPhone'
+import { watcherPhoneResultSchema, watcherPhoneSendResultSchema, watcherPhoneStateSchema } from '../../src/shared/watcherPhone'
 import { hostReceiptSchema } from '../../src/shared/hostProtocol'
 import { WATCHER_STOP_ALL_PREVIEW_LIMIT } from '../../src/shared/watcherRoom'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { deferred } from '../fixtures/deferred'
+import { PIXEL_PNG } from '../fixtures/stagedImages'
+import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
 
+const GIB = 1024 ** 3
+/** This computer as its host facts read it: busy, with memory to spare (#1032). */
+const MACHINE_REPORT = { facts: { observedAt: new Date().toISOString(), os: { family: 'linux' as const, name: 'Omarchy', version: null }, architecture: 'x64',
+  totalMemoryBytes: 64 * GIB, freeMemoryBytes: null, logicalCpuCount: 24 }, runningThreads: 0, placedNotStarted: 0,
+  get load() { const at = new Date().toISOString(); return { observedAt: at, windowMs: 2_000, cpuBusyPercent: 93, loadAverage: null, availableMemoryBytes: 41 * GIB,
+    windowStartAvailableMemoryBytes: 41 * GIB, memoryPressurePercent: null } } }
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture(phoneFeature = true, usageEnabled = false) {
+/** `steers`: Watcher's provider takes a steer into its running turn, as Codex and Claude Code do and Grok Build does not. */
+async function fixture(phoneFeature = true, usageEnabled = false, steers = false, machines = false) {
   const workspace = await workspaceFixture()
   cleanups.push(workspace.remove)
+  if (steers) workspace.adapters.codex.state.capabilities.steer = true
   const usage = usageEnabled ? new UsageService({ directory: workspace.root, host: workspace.host,
     acceptedPromptIdentities: identities => workspace.host.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -30,7 +40,8 @@ async function fixture(phoneFeature = true, usageEnabled = false) {
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
     control: { watcherEnabled: true, ...(usage ? { usage } : {}), authority: { authorizes: () => ({ allowed: false, reason: 'no-policy' }),
       mayGrant: client => ({ allowed: client.transport === 'ipc' || canAnswer, reason: 'paired-client' }) } } })
-  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, limit: () => 4, historyEnabled: () => true })
+  const watcher = new WatcherService({ directory: workspace.root, host: workspace.host, control: f.control, historyEnabled: () => true,
+    ...machines ? { crossMachine: true, machineFacts: async () => MACHINE_REPORT, workerMachine: () => 'this-computer' as const } : {} })
   const tools = new WatcherToolServer(watcher); workspace.host.useWatcherTools(tools)
   cleanups.push(async () => { watcher.close(); await tools.close(); f.control.dispose(); await f.control.closed(); usage?.close(); await workspace.stop() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
@@ -39,7 +50,7 @@ async function fixture(phoneFeature = true, usageEnabled = false) {
   const project = f.control.shell().host.projects.find(row => row.providerId === 'codex')!
   expect(await watcher.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const target = watcher.state().current!.target
-  const phone = new WatcherPhoneService(f.control, watcher)
+  const phone = new WatcherPhoneService(f.control, watcher, machines)
   const service = new LocalHostService({ control: f.control, ...(phoneFeature ? { watcherPhone: phone } : {}) })
   const pairing = new PairedClients(workspace.root); await pairing.load()
   const server = await startSocketServer({ service, pairing, admin: false, mayAnswer: () => canAnswer })
@@ -60,8 +71,8 @@ async function fixture(phoneFeature = true, usageEnabled = false) {
     expect(result.status).toBe('ok'); return result.target
   }
   return { ...f, workspace, watcher, phone, target, service, pairing, server, pair, native, finish, start, usage,
-    canAnswer: (value: boolean) => { canAnswer = value }, send: (clientId: string, draftId = randomUUID(), text = 'Synthetic phone request') => ({ op: 'watcher-phone-send',
-      request: { origin: { kind: 'phone', hostId: target.hostId, clientId }, target, draftId, text } }) }
+    canAnswer: (value: boolean) => { canAnswer = value }, send: (clientId: string, draftId = randomUUID(), text = 'Synthetic phone request', delivery?: 'steer') => ({ op: 'watcher-phone-send',
+      request: { origin: { kind: 'phone', hostId: target.hostId, clientId }, target, draftId, text, ...(delivery ? { delivery } : {}) } }) }
 }
 
 it('offers phone Watcher only on its desktop listener and leaves old phones ordinary workers without misleading master rows or events', async () => {
@@ -73,7 +84,7 @@ it('offers phone Watcher only on its desktop listener and leaves old phones ordi
   expect(await old.call('no-opt', { op: 'watcher-phone-read' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
   expect(await old.call('hidden-detail', { op: 'detail', threadId: f.target.threadId })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
   const read = await current.call('read', { op: 'watcher-phone-read' })
-  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { current: { target: f.target }, inFlightLimit: 4 } })
+  expect(watcherPhoneResultSchema.parse(read.result)).toMatchObject({ status: 'ok', state: { current: { target: f.target }, inFlight: 0, inFlightLimit: 8 } })
   const admin = await startSocketServer({ service: f.service, pairing: f.pairing }); cleanups.push(() => admin.close())
   expect(admin.descriptor.features).not.toContain('watcher-phone')
   const stable = await fixture(false), stablePhone = await stable.pair()
@@ -86,7 +97,7 @@ it('admits a paired phone origin without Can answer, keeps the computer defaults
   const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
   const sent = await peer.call('send', packet)
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
-  expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages[0]?.text).toBe(packet.request.text)
   // The provider receives the phone's words as typed; the request rides beside them.
   expect(f.native(f.target.threadId).messages[0]?.text).toBe(packet.request.text)
@@ -133,7 +144,7 @@ it('counts accepted paired phone instructions as user prompts while keeping actu
   const f = await fixture(true, true), peer = await f.pair()
   const text = 'Synthetic private phone instruction', packet = f.send(peer.paired.clientId, randomUUID(), text)
   expect(await peer.call('phone-user', packet)).toMatchObject({ ok: true, result: { status: 'ok' } })
-  expect(f.watcher.state().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
+  expect(f.control.watcherRecord().requests.at(-1)?.phoneOrigin).toEqual(packet.request.origin)
   expect(f.phone.state(false).conversation.messages.some(message => message.text === text)).toBe(true)
   expect(f.native(f.target.threadId).messages.filter(message => message.role === 'user')).toHaveLength(1)
   expect((await f.usage!.read()).activity!.totals.prompts).toEqual({ user: 1, watcher: 0, wakeUp: 0, total: 1, steered: 0 })
@@ -231,7 +242,59 @@ it('projects worker cards inside Watcher and routes the user answer to the worke
   expect(await peer.call('stale', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
 })
 
-it('fences a phone direct send as takeover and binds Stop all previews to the exact user and ownership', async () => {
+it.each([
+  { kind: 'permission' as const, answer: 'Deny', approved: false },
+  { kind: 'question' as const, answer: 'Synthetic explicit phone answer' },
+])('delivers an explicit phone $kind answer after desktop recovery without releasing the set-aside prompt', async choice => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  await f.finish(worker.threadId)
+  const original = { type: 'manual-send' as const, threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic unconfirmed phone-worker prompt' }
+  const adapter = f.workspace.adapters.codex, execute = adapter.execute.bind(adapter)
+  const spy = vi.spyOn(adapter, 'execute').mockImplementation(async command => {
+    if (command.type === 'send' && command.text === original.text) {
+      adapter.commands.push(structuredClone(command))
+      return { accepted: false, uncertain: true, error: 'Synthetic lost send acknowledgement' }
+    }
+    return execute(command)
+  })
+  try { await f.control.commandShell(original) } finally { spy.mockRestore() }
+  const oldDelivery = () => f.control.shell().deliveries?.find(item => item.threadId === worker.threadId && item.draftId === original.draftId)
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain' })
+  expect((await f.control.commandShell({ type: 'set-aside-send', threadId: worker.threadId, draftId: original.draftId })).error).toBeNull()
+  const requestId = randomUUID(), otherId = randomUUID()
+  f.native(worker.threadId).requests = [
+    { id: requestId, kind: choice.kind, text: 'Synthetic pending worker card', options: [] },
+    { id: otherId, kind: 'question', text: 'Synthetic other worker card', options: [] },
+  ]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const answer = { op: 'watcher-phone-answer', request: { target: worker, command: { type: 'answer', threadId: worker.threadId,
+    requestId, answer: choice.answer, ...('approved' in choice ? { approved: choice.approved } : {}) } } }
+  const answers = () => adapter.commands.filter(command => command.type === 'answer')
+  expect(f.phone.state(false).needsYou).toEqual(expect.arrayContaining([expect.objectContaining({ target: worker, request: expect.objectContaining({ id: requestId }), mayAnswer: false })]))
+  expect(await peer.call('not-granted', answer)).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(answers()).toHaveLength(0)
+  f.canAnswer(true)
+  expect(f.phone.state(true).needsYou).toEqual(expect.arrayContaining([expect.objectContaining({ target: worker, request: expect.objectContaining({ id: requestId }), mayAnswer: true })]))
+  expect(await peer.call('explicit-answer', answer)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(answers()).toEqual([expect.objectContaining({ threadId: f.native(worker.threadId).id, requestId, answer: choice.answer,
+    ...('approved' in choice ? { approved: choice.approved } : {}) })])
+  expect(f.native(worker.threadId).requests.map(request => request.id)).toEqual([otherId])
+  f.canAnswer(false)
+  expect(await peer.call('revoked', { ...answer, request: { ...answer.request, command: { ...answer.request.command, requestId: otherId, answer: 'Synthetic later answer' } } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(answers()).toHaveLength(1)
+  expect(f.native(worker.threadId).requests.map(request => request.id)).toEqual([otherId])
+  expect(oldDelivery()).toMatchObject({ status: 'uncertain', setAside: true })
+  expect(oldDelivery()?.updatesResumed).not.toBe(true)
+  const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
+  expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target: worker,
+    text: 'Synthetic forbidden automatic continuation', delivery: 'now' })).toMatchObject({ status: 'refused' })
+  await f.control.commandShell(original)
+  expect(adapter.commands.filter(command => command.type === 'send' && command.text === original.text)).toHaveLength(1)
+})
+
+it('holds Watcher behind a phone direct send and binds Stop all previews to the exact user and ownership', async () => {
   const f = await fixture(), peer = await f.pair(), other = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
@@ -240,12 +303,13 @@ it('fences a phone direct send as takeover and binds Stop all previews to the ex
   expect(await other.call('stolen', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(worker.threadId)
   expect(await peer.call('direct', { op: 'command', command: { type: 'manual-send', threadId: worker.threadId, draftId: randomUUID(), text: 'Synthetic direct user input' } })).toMatchObject({ ok: true })
-  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('taken-over')
+  // The thread stays watched; while the user's own turn runs, Watcher may only steer it, and Stop all leaves it be.
+  expect(f.watcher.state().requests.at(-1)?.participants[0]?.state).toBe('participating')
   const watch = f.watcher.state().standingWatches!.find(row => row.target.threadId === worker.threadId)!
   expect(f.phone.state(false).watchedThreads.find(row => row.target.threadId === worker.threadId)).toMatchObject({ watched: true, paused: true })
-  for (const delivery of ['now', 'queue', 'steer']) {
+  for (const delivery of ['now', 'queue']) {
     expect(await f.watcher.invoke(f.target.threadId, 'send_to_thread', { requestId: watch.id, retryKey: randomUUID(),
-      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_TAKEN_OVER' })
+      target: worker, delivery, text: 'Synthetic automatic follow-up' })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY' })
   }
   expect(await peer.call('changed', { op: 'watcher-phone-stop-all', confirmationId })).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
   await f.finish(f.target.threadId); await peer.call('second-send', f.send(peer.paired.clientId)); const eligible = await f.start()
@@ -574,4 +638,341 @@ it('rechecks phone permission authority after an await before the native writer'
   expect(f.watcher.state().runtimeMode).toBe('approval-required')
   expect(f.workspace.adapters.codex.commands).toHaveLength(before)
   spy.mockRestore()
+})
+
+// Steering Watcher from the phone (#1229, Zach's pick B): Send steers into Watcher's running turn, or the message goes next.
+const STEER = ['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-phone-steer']
+type Fixture = Awaited<ReturnType<typeof fixture>>
+/** Ends a thread's turn, as its provider reports a finished one. */
+async function settle(f: Fixture, threadId: string) {
+  const thread = f.native(threadId); thread.status = 'idle'; thread.lastTurn = { id: thread.lastTurn?.id ?? randomUUID(), status: 'completed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+}
+/**
+ * Watcher's provider takes a steer as its running turn's newest user message, as a real one does; this fake's own steer
+ * ends the turn instead. `refuse` makes the next steer find the turn already over, so the provider takes nothing.
+ */
+function takeSteers(f: Fixture) {
+  const codex = f.workspace.adapters.codex, execute = codex.execute.bind(codex)
+  const options = { refuse: false }
+  vi.spyOn(codex, 'execute').mockImplementation(async command => {
+    if (command.type !== 'steer') return execute(command)
+    codex.commands.push(structuredClone(command))
+    const master = codex.state.threads.find(thread => thread.id === command.threadId)!
+    if (options.refuse) {
+      options.refuse = false
+      master.status = 'idle'; master.lastTurn = { id: master.lastTurn?.id ?? randomUUID(), status: 'completed' }
+      codex.emit()
+      return { accepted: false, error: 'There is no running turn to steer.' }
+    }
+    master.messages.push({ id: command.messageId, commandId: command.commandId, role: 'user', text: command.text, createdAt: new Date().toISOString() })
+    master.lastUserMessageId = command.messageId
+    codex.emit()
+    return { accepted: true }
+  })
+  return options
+}
+/** Sotto's news of a watched thread's question, sent to Watcher; Watcher's turn on it then runs. */
+async function startNews(f: Fixture) {
+  const model = f.control.shell().host.models.find(row => row.providerId === 'codex')!
+  const project = f.control.shell().host.projects.find(row => row.providerId === 'codex')!
+  const watched = { hostId: f.target.hostId, threadId: randomUUID() }
+  expect((await f.control.commandShell({ type: 'create-thread', threadId: watched.threadId, projectId: project.id, modelId: model.id,
+    title: 'Synthetic watched worker', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  await f.control.commandShell({ type: 'manual-send', threadId: watched.threadId, draftId: randomUUID(), text: 'Synthetic existing turn' })
+  await settle(f, watched.threadId)
+  expect(await f.watcher.watchThread({ target: watched })).toMatchObject({ status: 'ok' })
+  f.native(watched.threadId).requests = [{ id: 'synthetic-card', kind: 'question', text: 'Synthetic question', options: [] }]
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.watcher.state().news?.some(event => event.kind === 'needs-user')).toBe(true), { timeout: 30_000 })
+  const event = f.watcher.state().news!.find(item => item.kind === 'needs-user')!
+  const master = f.native(f.target.threadId)
+  master.lastUserMessageId = master.messages.findLast(message => message.role === 'user')?.id
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await f.control.deliverWakeUp(f.target.threadId, { source: 'watcher', watcher: f.watcher.state().current!.target, events: [event], omitted: 0 }, { tool: false })
+  // The news turn has started: the provider runs it, and Watcher has recorded the wake-up as what it last sent. A wake-up
+  // still on its way already reads as Watcher's turn (`watcherWakeUpTurn`), and a steer then meets that send in flight:
+  // refused while the provider has yet to start the turn, or joined to the request of the newest message before it (#1322).
+  await vi.waitFor(() => {
+    expect(f.control.watcherPhoneTurn(f.target.threadId).running).toBe(true)
+    expect(f.watcher.lastSendWasWakeUp(f.target.threadId)).toBe(true)
+  }, { timeout: 30_000 })
+}
+const lastSteer = (f: Fixture) => {
+  const steer = f.workspace.adapters.codex.commands.findLast(command => command.type === 'steer')
+  if (steer?.type !== 'steer') throw new Error('Nothing was steered')
+  return steer
+}
+
+it('steers a phone message into Watcher’s running turn under the request it answers, and under one of its own during news (#1229)', async () => {
+  const f = await fixture(true, false, true), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-steer']) } })
+  takeSteers(f)
+  expect(await peer.call('ask', f.send(clientId))).toMatchObject({ ok: true, result: { status: 'ok', state: { current: { status: 'running', steers: true }, followups: [] } } })
+  const asked = f.watcher.state().requests.at(-1)!, requests = f.watcher.state().requests.length
+  const draftId = randomUUID(), text = 'Synthetic phone steer: and the release notes'
+  expect(await peer.call('steer', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok', draftId, state: { followups: [] } } })
+  const steer = lastSteer(f)
+  // Part of the request the turn answers: no note of its own, and no new request.
+  expect(steer).toMatchObject({ text, threadId: f.workspace.registry.byThread(f.target.threadId)!.sessionId })
+  expect(f.watcher.state().requests).toHaveLength(requests)
+  expect(f.watcher.state().requests.find(request => request.id === asked.id)!.userFollowups).toContainEqual({ draftId, messageId: steer.messageId })
+  // The same draft again is that steer, never a second one.
+  const steers = f.workspace.adapters.codex.commands.filter(command => command.type === 'steer').length
+  expect(await peer.call('steer-again', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'steer')).toHaveLength(steers)
+
+  // Into a turn Sotto's news started, the steer opens a request of its own, from this phone, with its request line.
+  await settle(f, f.target.threadId)
+  await startNews(f)
+  const newsText = 'Synthetic phone steer: watch that thread again'
+  expect(await peer.call('news-steer', f.send(clientId, randomUUID(), newsText, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok' } })
+  const second = lastSteer(f)
+  const opened = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === second.messageId)!
+  expect(opened).toMatchObject({ state: 'active', participants: [], phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
+  expect(second.text).toBe(newsText + watcherRequestLine(watcherRequestNote(opened.id, f.control.hostId()!)))
+  // The phone shows the words alone.
+  await vi.waitFor(() => expect(f.phone.state(false).conversation.messages.find(message => message.id === second.messageId)?.text).toBe(newsText))
+})
+
+// Photos for Watcher from the phone (October 23, 2026): staged as a thread's are, sent with the words or alone.
+it('sends a phone’s photos to Watcher with or without words, now or next, and lets the phone draw them back', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  f.workspace.adapters.codex.state.models[0]!.supportsImages = true
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-photos', 'attachment-staging']) } })
+  const stage = async (name: string) => (await peer.call('stage-' + name, { op: 'stage-attachment',
+    image: { name, mimeType: 'image/png', data: PIXEL_PNG.toString('base64') } })).result as { id: string; digest: string }
+  const photo = await stage('Photo 1.png')
+  const withPhotos = (draftId: ReturnType<typeof randomUUID>, text: string, images: unknown[], delivery?: 'steer') => {
+    const packet = f.send(clientId, draftId, text, delivery)
+    return { ...packet, request: { ...packet.request, images } }
+  }
+  // Neither words nor photos is nothing to send.
+  expect(await peer.call('empty', f.send(clientId, randomUUID(), ' '))).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  // A photo alone, to Watcher at rest: it reaches Watcher's provider by its handle.
+  const draftId = randomUUID()
+  expect(await peer.call('photo', withPhotos(draftId, '', [photo]))).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.workspace.adapters.codex.commands.findLast(command => command.type === 'send')).toMatchObject({
+    attachments: [expect.objectContaining({ id: photo.id, digest: photo.digest })] })
+  // The phone's page marks the photo on the user's message, and the phone reads it back through Watcher alone.
+  const message = f.phone.state(false).conversation.messages.findLast(row => row.role === 'user')!
+  expect(message.attachments).toEqual([expect.objectContaining({ id: photo.id, name: 'Photo 1.png', preview: { available: true } })])
+  const preview = { op: 'watcher-phone-preview', request: { target: f.target, messageId: message.id, attachmentId: photo.id } }
+  expect(await peer.call('preview', preview)).toMatchObject({ ok: true, result: { dataUrl: `data:image/png;base64,${PIXEL_PNG.toString('base64')}` } })
+  expect(await peer.call('hidden-preview', { op: 'preview', request: { threadId: f.target.threadId, messageId: message.id, attachmentId: photo.id } }))
+    .toMatchObject({ ok: false, error: { code: 'forbidden' } })
+  expect(await peer.call('other-watcher', { ...preview, request: { ...preview.request, target: { ...f.target, threadId: randomUUID() } } }))
+    .toMatchObject({ ok: true, result: null })
+
+  // While Watcher works, words and a photo go next together when its provider takes no steer.
+  const second = await stage('Photo 2.png'), nextDraft = randomUUID(), nextText = 'Synthetic phone words with a photo'
+  expect(await peer.call('next', withPhotos(nextDraft, nextText, [second], 'steer'))).toMatchObject({ ok: true, result: { status: 'ok',
+    state: { followups: [{ draftId: nextDraft, text: nextText, status: 'queued' }] } } })
+  expect(f.control.shell().followups).toContainEqual(expect.objectContaining({ draftId: nextDraft, text: nextText,
+    attachments: [expect.objectContaining({ id: second.id, digest: second.digest })] }))
+})
+
+it('queues a phone message to go next when Watcher’s provider takes no steer, shows it on the page and removes it (#1229)', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  await peer.call('ask', f.send(clientId))
+  const sends = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'send' || command.type === 'steer').length
+  const before = sends(), draftId = randomUUID(), text = 'Synthetic phone message for after this turn'
+  const queued = await peer.call('queue', f.send(clientId, draftId, text, 'steer'))
+  expect(queued).toMatchObject({ ok: true, result: { status: 'ok', draftId, state: { current: { steers: false }, followups: [{ draftId, text, status: 'queued' }] } } })
+  expect(sends()).toBe(before)
+  // Desktop and phone see the same queue; the desktop shows no banner for the phone's message.
+  const itemId = (queued.result as { state: { followups: { itemId: string }[] } }).state.followups[0]!.itemId
+  expect(f.control.shell().followups).toContainEqual(expect.objectContaining({ id: itemId, draftId, text }))
+  expect(f.control.shell().error).toBeNull()
+  // An older phone may not remove it, nor ask for a steer.
+  const old = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage'])
+  const remove = { op: 'watcher-phone-remove-followup', request: { target: f.target, itemId } }
+  expect(await old.call('old-remove', remove)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  expect(await old.call('old-steer', f.send(old.paired.clientId, randomUUID(), text, 'steer'))).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // A queue the computer could not save is said in plain words, never the file system's.
+  const store = Reflect.get(f.control, 'followupStore') as { edit: (...args: unknown[]) => Promise<void> }
+  vi.spyOn(store, 'edit').mockRejectedValueOnce(Object.assign(new Error('EPERM: operation not permitted, rename \'C:\\synthetic\\followups.json.tmp\''), { code: 'EPERM', syscall: 'rename' }))
+  const failed = await peer.call('remove-fails', remove)
+  expect(failed).toMatchObject({ ok: true, result: { status: 'refused', message: 'Your message wasn’t removed. It’s still waiting for Watcher. Try again.' } })
+  expect(JSON.stringify(failed)).not.toContain('EPERM')
+  expect(f.control.shell().error).toBeNull()
+  expect(await peer.call('remove', remove)).toMatchObject({ ok: true, result: { status: 'ok', state: { followups: [] } } })
+  expect(f.control.shell().followups ?? []).toEqual([])
+  expect(hostReceiptSchema.parse((await peer.call('remove-receipt', { op: 'receipt', commandId: 'remove' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
+  // Removing it again, or after it went, removes nothing more.
+  expect(await peer.call('remove-again', remove)).toMatchObject({ ok: true, result: { status: 'ok' } })
+
+  // One that waits goes as its own turn once Watcher's turn ends, under a request of its own.
+  const nextDraft = randomUUID(), nextText = 'Synthetic phone message that goes next'
+  expect(await peer.call('next', f.send(clientId, nextDraft, nextText, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok' } })
+  const asked = f.watcher.state().requests.at(-1)!
+  await settle(f, f.target.threadId)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.some(command => command.type === 'send' && command.text === nextText)).toBe(true), { timeout: 30_000 })
+  const delivered = f.workspace.adapters.codex.commands.find(command => command.type === 'send' && command.text === nextText)!
+  if (delivered.type !== 'send') throw new Error('The message was not sent')
+  const own = f.control.watcherRecord().requests.find(request => request.rootUserMessageId === delivered.messageId)!
+  // Its request is the phone's, as one its own send opened would be.
+  expect(own).toMatchObject({ state: 'active', phoneOrigin: { kind: 'phone', hostId: f.target.hostId, clientId } })
+  expect(own.id).not.toBe(asked.id)
+  // The queue lets the item go once the provider has acknowledged it, which can come after the adapter has the words.
+  await vi.waitFor(() => expect(f.phone.state(false, true, true).followups).toEqual([]), { timeout: 30_000 })
+  await vi.waitFor(() => expect(f.phone.state(false).draftDeliveries).toContainEqual({ draftId: nextDraft, status: 'accepted' }))
+  // The desktop's window is never sent the phone's client ID, with its queue or with Watcher's requests.
+  expect(JSON.stringify(f.watcher.state())).not.toContain(clientId)
+  expect(JSON.stringify(f.control.shell().followups ?? [])).not.toContain(clientId)
+})
+
+it('answers a phone that negotiated management but not steering with the page it knows (#1229)', async () => {
+  const f = await fixture(true, false, true), old = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage'])
+  const managed = await old.call('old-permission', { op: 'watcher-phone-set-permission', request: { runtimeMode: 'approval-required' } })
+  expect(managed).toMatchObject({ ok: true, result: { status: 'ok' } })
+  // Without what goes next or whether Watcher steers, which an older phone's strict page refuses.
+  const state = (managed.result as { state: { followups?: unknown; current: { steers?: unknown } } }).state
+  expect(state.followups).toBeUndefined()
+  expect(state.current.steers).toBeUndefined()
+})
+
+it('reports a phone’s queued message as queued whatever the desktop’s banner says, and sends nothing once that phone is unpaired (#1229)', async () => {
+  const f = await fixture(), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  await peer.call('ask', f.send(clientId))
+  // An older error on the desktop's banner is the desktop's: the phone hears what became of its own message.
+  ;(Reflect.get(f.control, 'state') as { error: string | null }).error = 'Synthetic older desktop error'
+  const draftId = randomUUID(), text = 'Synthetic phone message whose phone is unpaired before it goes'
+  expect(await peer.call('queue', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok', draftId,
+    state: { followups: [{ draftId, text, status: 'queued' }] } } })
+  expect(f.control.shell().error).toBe('Synthetic older desktop error')
+  // The same message again is that one, and still reported as queued.
+  expect(await peer.call('queue-again', f.send(clientId, draftId, text, 'steer'))).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.control.shell().followups?.filter(item => item.draftId === draftId)).toHaveLength(1)
+  // The phone is unpaired before Watcher's turn ends: its message is not sent.
+  await f.pairing.revoke(clientId)
+  await settle(f, f.target.threadId)
+  await vi.waitFor(() => expect(f.control.shell().followups?.find(item => item.draftId === draftId)?.status).toBe('failed'), { timeout: 30_000 })
+  expect(f.workspace.adapters.codex.commands.some(command => 'text' in command && command.text.startsWith(text))).toBe(false)
+})
+
+it('sends a phone message next, once, when Watcher’s turn ends before its steer lands (#1229)', async () => {
+  const f = await fixture(true, false, true), peer = await f.pair(STEER), clientId = peer.paired.clientId
+  const steering = takeSteers(f)
+  await peer.call('ask', f.send(clientId))
+  steering.refuse = true
+  const draftId = randomUUID(), text = 'Synthetic phone steer that comes too late'
+  const result = await peer.call('late', f.send(clientId, draftId, text, 'steer'))
+  expect(result).toMatchObject({ ok: true, result: { status: 'ok', draftId } })
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'steer' && command.text === text)).toHaveLength(1)
+  await vi.waitFor(() => expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'send' && command.text === text)).toHaveLength(1), { timeout: 30_000 })
+  await vi.waitFor(() => expect(f.phone.state(false, true, true).followups).toEqual([]))
+  expect(f.workspace.adapters.codex.commands.filter(command => 'text' in command && command.text === text)).toHaveLength(2)
+})
+
+it('refuses a send without a steer while Watcher works, saying why, and keeps an older phone’s page as it was (#1229)', async () => {
+  const f = await fixture(true, false, true), old = await f.pair(), clientId = old.paired.clientId
+  await old.call('ask', f.send(clientId))
+  const before = f.workspace.adapters.codex.commands.length
+  expect(await old.call('busy', f.send(clientId, randomUUID(), 'Synthetic second phone request'))).toMatchObject({ ok: true, result: {
+    status: 'refused', code: 'THREAD_BUSY', message: 'Watcher is working, so your message wasn’t sent. Your words are kept on the phone. Send them again when it finishes.' } })
+  expect(f.workspace.adapters.codex.commands).toHaveLength(before)
+  const read = watcherPhoneResultSchema.parse((await old.call('read', { op: 'watcher-phone-read' })).result)
+  if (read.status !== 'ok') throw new Error('The page was not read')
+  expect(read.state.followups).toBeUndefined()
+  expect(read.state.current?.steers).toBeUndefined()
+  expect(f.control.shell().error).toBeNull()
+})
+
+it('sends the machines line only to a phone that accepts it, where Work across machines is on, and reads it afresh only when asked (#1032)', async () => {
+  const MACHINES = [...STEER, 'watcher-phone-machines']
+  // Without Work across machines, the feature is not offered and a fresh read is refused.
+  const off = await fixture(), plain = await off.pair(MACHINES)
+  expect((plain.hello.result as { features: string[] }).features).not.toContain('watcher-phone-machines')
+  expect((plain.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await plain.call('fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+  const f = await fixture(true, false, false, true), phone = await f.pair(MACHINES), older = await f.pair(STEER)
+  expect(phone.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-machines']) } })
+  // Before any read, This computer stands alone with its count and nothing of its load.
+  expect((phone.hello.result as { shell: { watcher: unknown } }).shell.watcher).toMatchObject({ machines: { readAt: null,
+    rows: [{ hostId: f.target.hostId, name: 'This computer', thisComputer: true, connected: true, working: 0, cpuState: null, memoryState: null, unknownWhy: null }] } })
+  // An iPhone that did not accept it is sent none, and may not ask for a fresh read.
+  expect((older.hello.result as { shell: { watcher: { machines?: unknown } } }).shell.watcher.machines).toBeUndefined()
+  expect(await older.call('older-fresh', { op: 'watcher-phone-read', machines: true })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+  // An ordinary read does not read the machines; a fresh one does, and every page after it carries that read.
+  const ordinary = watcherPhoneResultSchema.parse((await phone.call('read', { op: 'watcher-phone-read' })).result)
+  expect(ordinary).toMatchObject({ status: 'ok', state: { machines: { readAt: null } } })
+  const fresh = watcherPhoneResultSchema.parse((await phone.call('fresh', { op: 'watcher-phone-read', machines: true })).result)
+  if (fresh.status !== 'ok') throw new Error('The page was not read')
+  expect(fresh.state.machines?.readAt).toEqual(expect.any(String))
+  expect(fresh.state.machines?.rows).toEqual([expect.objectContaining({ name: 'This computer', cpuState: 'busy', memoryState: 'enough', system: 'Omarchy (Linux)',
+    logicalCpuCount: 24, cpuBusyPercent: 93, windowMs: 2_000, availableMemoryBytes: 41 * GIB, totalMemoryBytes: 64 * GIB, isDefault: true, unknownWhy: null, threads: [] })])
+  expect(watcherPhoneResultSchema.parse((await phone.call('again', { op: 'watcher-phone-read' })).result)).toMatchObject({ state: { machines: { readAt: fresh.state.machines!.readAt } } })
+})
+
+it('pushes a phone no shell whose only news is when Watcher\'s page was read, and pushes the next change whole', async () => {
+  const f = await fixture(), peer = await f.pair()
+  type Pushed = { state: { watcher?: { observedAt: string }; clientCapabilities?: { mayAnswer: boolean } } }
+  const shells = () => peer.messages.filter(message => message.event === 'shell') as unknown as Pushed[]
+  // A publish reads the shell once, as it sends, so a read means the listener has handled it.
+  const reads = vi.spyOn(f.service, 'shell')
+  // Each publish reads Watcher's page a second later, as a phone's publishes come while the computer works.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const publish = async () => {
+      const before = reads.mock.calls.length
+      vi.setSystemTime(Date.now() + 1_000)
+      await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+      await expect.poll(() => reads.mock.calls.length).toBeGreaterThan(before)
+    }
+    // An answer to a request made after a publish comes behind any shell that publish wrote, on the same socket. This read
+    // moves nothing the listener remembers for the phone, so a shell missing once it is answered was never written.
+    let asked = 0
+    const received = () => peer.call(`after-${++asked}`, { op: 'events', afterSeq: 0, threadId: f.target.threadId })
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(1)
+    await publish(); await publish(); await received()
+    expect(shells()).toHaveLength(1)
+    // The phone may answer now: its shell says so, with the page as read then.
+    f.canAnswer(true)
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(2)
+    const [first, second] = shells()
+    expect(second!.state.clientCapabilities).toEqual({ mayAnswer: true })
+    expect(() => watcherPhoneStateSchema.parse(second!.state.watcher)).not.toThrow()
+    expect(Date.parse(second!.state.watcher!.observedAt)).toBeGreaterThan(Date.parse(first!.state.watcher!.observedAt))
+    // A page the phone was answered with replaces the one its last shell carried, so the next shell goes though it repeats.
+    expect(await peer.call('read', { op: 'watcher-phone-read' })).toMatchObject({ ok: true, result: { status: 'ok' } })
+    await publish()
+    await expect.poll(() => shells()).toHaveLength(3)
+    await publish(); await received()
+    expect(shells()).toHaveLength(3)
+  } finally { vi.useRealTimers() }
+})
+
+it('knows the threads Watcher started from an index of its record, for the phone’s machines line (#1032)', async () => {
+  const f = await fixture(), peer = await f.pair()
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  expect(f.watcher.startedByWatcher(f.target.hostId, f.target.threadId)).toBe(false)
+  expect(f.watcher.startedByWatcher(worker.hostId, 'another-thread')).toBe(false)
+  // A change to something attribution does not read keeps the index: no walk of Watcher's history.
+  const walks = vi.spyOn(f.watcher as unknown as { indexWatcherStarts: (record: unknown) => unknown }, 'indexWatcherStarts')
+  const before = f.control.watcherRecordView()
+  await f.control.updateWatcher(next => { next.lastRuntimeMode = next.lastRuntimeMode === 'auto' ? 'approval-required' : 'auto' })
+  expect(f.control.watcherRecordView()).not.toBe(before)
+  expect(f.watcher.startedByWatcher(worker.hostId, worker.threadId)).toBe(true)
+  // Another start is read on its own, from where the index left off.
+  await f.finish(worker.threadId); await f.finish(f.target.threadId)
+  await peer.call('second', f.send(peer.paired.clientId)); const second = await f.start()
+  expect(f.watcher.startedByWatcher(second.hostId, second.threadId)).toBe(true)
+  expect(walks).not.toHaveBeenCalled()
+})
+
+it('keeps the machines line on the page Stop all answers with, which the iPhone takes whole (#1032)', async () => {
+  const f = await fixture(true, false, false, true), peer = await f.pair([...STEER, 'watcher-phone-machines'])
+  await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
+  const preview = await peer.call('preview', { op: 'watcher-phone-prepare-stop-all' })
+  const confirmationId = (preview.result as { confirmationId: string }).confirmationId
+  const stopped = await peer.call('stop', { op: 'watcher-phone-stop-all', confirmationId })
+  expect(stopped).toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }],
+    state: { machines: { rows: [expect.objectContaining({ name: 'This computer', thisComputer: true })] } } } })
 })

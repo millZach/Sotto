@@ -473,6 +473,16 @@ describe('AtomicJsonStore', () => {
     expect(await readFile(filePath, 'utf8')).toBe('{"value":"second"}\n')
   })
 
+  it('writes JSON handed over already encoded, in pieces, as the text those pieces spell', async () => {
+    const filePath = join(await createRoot(), 'store.json')
+    const store = AtomicJsonStore.compact(filePath, (input) => exampleSchema.parse(input), () => ({ value: 'default' }))
+
+    await store.writeSerialized([Buffer.from('{"value":'), Buffer.from('"pièce"'), Buffer.from('}')])
+
+    expect(await readFile(filePath, 'utf8')).toBe('{"value":"pièce"}\n')
+    await expect(store.read()).resolves.toEqual({ value: 'pièce' })
+  })
+
   it('shares one queued latest write among calls made before it starts, reading the value as it starts', async () => {
     const filePath = join(await createRoot(), 'store.json')
     const store = createStore(filePath)

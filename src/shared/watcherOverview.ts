@@ -24,6 +24,15 @@ export interface WatcherOverviewRow {
   observedAt?: string
 }
 
+/**
+ * Work that can go quiet: a running turn, provider-confirmed working sub-agents, background work or monitoring. Unknown
+ * sub-agents keep a turn unsettled but do not alone prove work. The quiet wake and this grouping read the one rule.
+ */
+export function isWatcherWorkActive(thread: AgentThread): boolean {
+  return thread.status === 'running' || thread.lastTurn?.status === 'running'
+    || Boolean(thread.subagentSummary?.working || thread.backgroundWork?.length || thread.monitoring?.length)
+}
+
 /** The same projection can serve a roster and a sidebar without changing either reader's marks. */
 export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
   observations: ReadonlyMap<string, WatcherObservation> = new Map()): WatcherOverviewRow[] {
@@ -34,12 +43,15 @@ export function watcherOverview(state: Pick<AgentState, 'host'>, now: number,
     let group: WatcherGroup = 'Idle'
     const project = state.host.projects.find(project => project.id === thread.projectId && project.hostId === thread.hostId)
     if (!isThreadClosed(thread)) {
-      if (thread.requests.length || thread.status === 'error' || thread.lastTurn?.status === 'failed') group = 'Needs you'
-      else if (!isWorkspaceThreadSettled(thread, project)) {
+      // A settled thread was put aside: only a question or permission still waits on the user there, not an error or a
+      // prototype. A prototype waiting for review needs the user like a question does (ADR-0108), whatever else it does.
+      const settled = isWorkspaceThreadSettled(thread, project)
+      if (thread.requests.length || !settled && (thread.status === 'error' || thread.lastTurn?.status === 'failed' || thread.prototypeReady)) group = 'Needs you'
+      else if (!settled) {
         const landingAt = Date.parse(observation?.landing?.observedAt ?? '')
         const landing = available && observation?.fresh && observation.landing?.fresh && Number.isFinite(landingAt) && landingAt <= now
         const openPr = thread.pullRequests?.some(pr => pr.state === 'open') || thread.worktree?.git?.pullRequest?.state === 'open'
-        const active = thread.status === 'running' || Boolean(thread.backgroundWork?.length || thread.monitoring?.length)
+        const active = isWatcherWorkActive(thread)
         const connectedAt = Date.parse(observation?.connectedAt ?? '')
         const progressAt = Date.parse(observation?.lastProgressAt ?? '')
         const quietSince = Math.max(connectedAt, progressAt)

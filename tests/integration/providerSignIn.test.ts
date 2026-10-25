@@ -80,6 +80,25 @@ describe('the sign-in on the host', () => {
     } finally { service.close() }
   })
 
+  it('runs Cursor\'s agent login, reads its cursor.com page with no code, and connects once the user signs in there (ADR-0128)', async () => {
+    const service = signIns()
+    try {
+      const started = await service.start('cursor', 'desktop')
+      expect(started).toMatchObject({ provider: 'cursor', shape: 'page', stage: 'waiting', url: 'https://cursor.com/loginDeepControl?challenge=fixture&uuid=fixture&mode=login', page: 'cursor.com' })
+      expect(started.code).toBeUndefined()
+      expect(JSON.parse(await readFile(join(root, 'cursor.args.json'), 'utf8'))).toEqual(['login'])
+      // Nothing is pasted back: the page finishes the sign-in on Cursor's side.
+      expect(() => service.code(started.id, 'desktop', 'anything#at-all')).toThrow()
+      await writeFile(join(root, 'cursor.approved'), '')
+      await expect.poll(() => service.read(started.id, 'desktop')?.stage).toBe('connected')
+      expect(connected).toEqual([['cursor', 'desktop']])
+    } finally { service.close() }
+    const elsewhere = signIns({ page: 'https://cursor.example.com/login' })
+    try {
+      expect(await elsewhere.start('cursor', 'desktop')).toMatchObject({ stage: 'failed' })
+    } finally { elsewhere.close() }
+  })
+
   it('opens only the provider\'s own page, and stops a sign-in that is cancelled or runs out of time', async () => {
     const elsewhere = signIns({ page: 'https://login.example.com/device' })
     try {
@@ -163,8 +182,9 @@ describe('signing a host\'s provider in from a paired client', () => {
       const desktop = await pair('Sotto desktop'), other = await pair('Another client')
       expect(desktop.offersSignIn()).toBe(true)
       const providers = () => Object.fromEntries((desktop.shell().host.providers ?? []).map(status => [status.id, [status.connection, status.problem ?? null]]))
-      // Stable tries ordinary providers at start (ADR-0036); Owl-only providers stay dormant.
-      await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'] })
+      // A host tries every provider it runs at start (ADR-0036): Muse and OpenCode too, on either track, since 0.1.40.
+      await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'],
+        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'] })
 
       // Device code: the code comes back to the client that asked and to no other, and the host connects Codex itself.
       const codex = await desktop.signIn({ op: 'sign-in-start', provider: 'codex' }) as HostSignIn

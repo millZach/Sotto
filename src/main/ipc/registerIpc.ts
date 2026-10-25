@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_LIMIT, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
-  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, watcherContinueHandoverRequestSchema,
-  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetLimitRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
+import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
+  WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_READ_MERGE_TURNS, WATCHER_READ_MACHINES, watcherContinueHandoverRequestSchema,
+  watcherOpenRequestSchema, watcherStopAllRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../../shared/watcherRoom'
 import { externalLinkSchema } from '../../shared/externalLinks'
 import { questionPageOpenSchema, type QuestionPageOpen, type QuestionPageOpenResult } from '../../shared/questionPageOpen'
 import { systemSettingsPaneSchema, type SystemSettingsPane } from '../../shared/systemSettings'
@@ -18,6 +18,8 @@ import {
   QUESTION_PAGE_OPEN,
   SYSTEM_SETTINGS_OPEN,
   DICTATION_REQUEST,
+  DICTATION_RECORD_GET,
+  DICTATION_RECORDS_LIST,
   HISTORY_ADD,
   HISTORY_CLEAR,
   HISTORY_DELETE,
@@ -25,13 +27,22 @@ import {
   HISTORY_SEARCH,
   HOTKEY_GET,
   HOTKEY_REPLACE,
+  DICTATION_SHORTCUTS_REPLACE,
+  DICTATION_SHORTCUTS_SUSPEND,
+  DICTATION_KEYS_RECORD,
+  DICTATION_KEYS_RECORD_CANCEL,
+  KEY_LISTENER_PERMISSION_GET,
+  KEY_LISTENER_PERMISSION_REQUEST,
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
   TRANSCRIPTION_CANCEL,
   SPEECH_MODEL_GET_STATUS,
+  SPEECH_MODEL_CHOOSE,
   SPEECH_MODEL_DOWNLOAD,
+  SPEECH_MODEL_LIST,
   OPENROUTER_CHECK_KEY,
+  OPENROUTER_LIST_MODELS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
@@ -59,11 +70,16 @@ import {
   widgetSnapshotSchema,
   type CommandResult,
   type DictationCommand,
+  type DictationShortcutsChange,
+  type DictationShortcutsResult,
   type HotkeyChangeResult,
+  type KeyListenerPermission,
+  type KeyRecordResult,
   type OutputOutcome,
   type OutputDeliveryRequest,
   type OutputResult,
   type OpenRouterKeyCheck,
+  type OpenRouterModelList,
   type TranscriptionRequest,
   type TranscriptionResult,
   type StartupState,
@@ -73,8 +89,9 @@ import {
   type WidgetDragPayload,
   type WidgetPresentationPayload,
 } from '../../shared/contracts'
-import type { SpeechModelStatus } from '../../shared/speechModel'
-import { historyEntrySchema, type HistoryEntry } from '../../shared/history'
+import { speechModelIdSchema, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
+import { finishedDictationSchema, type HistoryEntry } from '../../shared/history'
+import type { DictationRecord } from '../../shared/dictationRecord'
 import {
   settingsSchema,
   worktreeCleanupRulesSchema,
@@ -84,6 +101,8 @@ import {
 import type { RendererRole } from '../security'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
+import { INTERFACE_LANGUAGE_GET } from '../../shared/interfaceLanguageBridge'
+import type { InterfaceLanguageState } from '../../shared/interfaceLanguages'
 
 const noPayloadSchema = z.undefined()
 const settingKeys = [
@@ -94,12 +113,22 @@ const settingKeys = [
   'darkTheme',
   'appearanceContrast',
   'effortColor',
+  'menuBarOwlBody',
+  'menuBarOwlEyes',
+  'creature',
+  'showCreature',
+  'interfaceLanguage',
   'customThemes',
   'reducedMotion',
+  'roomTransition',
+  'roomTransitionSpeed',
+  'roomTransitionLook',
   'terminalFontSize',
+  'threadShortcuts',
   'microphoneId',
   'maxRecordingSeconds',
   'soundCues',
+  'typingSpeedWpm',
   'formatWhitespace',
   'autoCopy',
   'autoPaste',
@@ -107,6 +136,9 @@ const settingKeys = [
   'successDisplayMs',
   'startMinimized',
   'showWidgetWhenIdle',
+  'dictationEnabled',
+  'notifyNeedsYou',
+  'notifyFinished',
   'historyEnabled',
   'historyRetention',
   'onboardingComplete',
@@ -116,7 +148,11 @@ const settingKeys = [
   'llmDictionary',
   'llmTimeoutMs',
   'llmMinWords',
+  'llmModel',
+  'llmMode',
+  'llmOwnModel',
   'threadTitles',
+  'nextPromptSuggestions',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',
@@ -135,6 +171,7 @@ const settingKeys = [
   'commitMessages',
   'pullRequestText',
   'autoUpdateCheck',
+  'mainFreezeNotice',
   'webLinkDestination',
   'responseStreaming',
   'localHostEnabled',
@@ -145,8 +182,11 @@ const settingKeys = [
   'visualsInThreads',
   'babysitPullRequests',
   'resumeThreadsAfterRestart',
-  'watcherInFlightLimit',
   'workerRoles',
+  'watcherSettlesFinishedThreads',
+  'newWorkerMachine',
+  'watcherCompactAtTokens',
+  'compactIdleThreads',
   'memoryEnabled',
   'cloudIphoneMonthlyMinutes',
   'cloudIphoneIdleMinutes',
@@ -155,7 +195,9 @@ const settingKeys = [
 const looseSettingsPatchSchema = settingsSchema
   // `tailnetConnections` is a headless host's own, written by its administrative route; nothing on a desktop sets it,
   // so a payload naming it is refused rather than dropped (ADR-0053).
-  .omit({ hotkey: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true })
+  // The speech model is chosen through SPEECH_MODEL_CHOOSE, which also loads it; a plain save would
+  // change the setting without the model following, so a payload naming it is refused (ADR-0094).
+  .omit({ hotkey: true, pressShortcuts: true, holdShortcuts: true, launchAtStartup: true, tailnetConnections: true, omarchyTheme: true, shellPillInUse: true, speechModel: true })
   .partial()
   // The retired accent is still accepted from older callers and never copied
   // into the patch below (ADR-0011). The retired glass and frost settings are
@@ -207,6 +249,11 @@ const hotkeySchema = z
   .min(1)
   .max(128)
   .refine((accelerator) => accelerator.toLowerCase() !== 'escape')
+// Mirrors the preload's schema for the same channel.
+const dictationShortcutsChangeSchema = z.object({
+  press: z.array(z.string().min(1).max(64)).min(1).max(4),
+  hold: z.array(z.string().min(1).max(64)).max(4),
+}).strict()
 const UNAVAILABLE = Object.freeze({ ok: false as const, reason: 'unavailable' as const })
 const OK = Object.freeze({ ok: true as const })
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -248,14 +295,19 @@ export interface SettingsIpcService {
 }
 
 export interface HistoryIpcService {
+  /** Every saved transcript, including those kept from before Keep local history was turned off; only read while it is off. */
   list(options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
+  /** Keeps a finished dictation's record, and its transcript while `enabled` (ADR-0100). */
   add(
     entry: HistoryEntry,
     options: { readonly enabled: boolean; readonly retention: number | 'unlimited' },
   ): Promise<HistoryEntry[]>
   search(query: string, options: { readonly enabled: boolean }): Promise<HistoryEntry[]>
+  /** Deletes a dictation's transcript and its record. */
   delete(id: string): Promise<boolean>
   clear(): Promise<void>
+  listRecords(): Promise<DictationRecord[]>
+  getRecord(id: string): Promise<DictationRecord | null>
 }
 
 export interface StartupIpcService {
@@ -266,6 +318,16 @@ export interface StartupIpcService {
 export interface HotkeyIpcService {
   current(): string | null | Promise<string | null>
   replace(accelerator: string): HotkeyChangeResult | Promise<HotkeyChangeResult>
+}
+
+/** Every dictation shortcut beyond the single hotkey; suspend also covers the hotkey, so stable supplies it too. */
+export interface DictationShortcutsIpcService {
+  replace(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
+  suspend(suspended: boolean): void
+  record(): Promise<KeyRecordResult>
+  cancelRecord(): void
+  permission(): KeyListenerPermission
+  requestPermission(): Promise<KeyListenerPermission>
 }
 
 export interface AppIpcService {
@@ -283,14 +345,21 @@ export interface DictationIpcService {
   publishWidgetState(state: z.infer<typeof widgetSnapshotSchema>): void | Promise<void>
 }
 
-export interface OutputIpcService {
-  deliver(
-    text: string,
-    options: Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'> & {
-      readonly restoreWidget?: boolean
-    },
-  ): OutputOutcome | Promise<OutputOutcome>
+type OutputIpcOptions = Pick<OutputDeliveryRequest, 'autoPaste' | 'pasteDelayMs'> & {
+  readonly restoreWidget?: boolean
 }
+
+export interface OutputIpcService {
+  deliver(text: string, options: OutputIpcOptions): OutputOutcome | Promise<OutputOutcome>
+  /** Delivers a dictation and reads the delivered app: the name of the app that had focus, or null when it could not be read. */
+  deliverDictation?(
+    text: string,
+    options: OutputIpcOptions,
+  ): Promise<{ readonly outcome: OutputOutcome; readonly app: string | null }>
+}
+
+/** How many delivered apps main holds for dictations whose history has not arrived yet. One is in flight at a time. */
+const DELIVERED_APPS_HELD = 8
 
 export interface TranscriptPolishIpcService {
   polish(
@@ -304,14 +373,18 @@ export interface TranscriptionIpcService {
   cancel(requestId: string): void
 }
 
-/** The speech model on this computer (ADR-0071): where it stands, and a way to start or retry its download. */
+/** The speech model dictation uses: where it stands, a retry, the models on offer and the choice between them. */
 export interface SpeechModelIpcService {
   status(): SpeechModelStatus
   download(): void
+  list(): Promise<SpeechModelOption[]>
+  choose(id: string): Promise<boolean>
 }
 
 export interface OpenRouterKeyIpcService {
   check(): Promise<OpenRouterKeyCheck>
+  /** Absent while the cleanup model Owl feature is off (ADR-0122). */
+  models?: () => Promise<OpenRouterModelList>
 }
 
 export interface UpdateIpcService {
@@ -327,11 +400,12 @@ export interface RecoveryNoticeIpcService {
 
 export interface RegisterIpcDependencies {
   /** Supplied only when the immutable Watcher release gate is on. Never served over socket IPC. */
-  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged'>>
+  readonly watcher?: Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
   readonly settings: SettingsIpcService
   readonly history: HistoryIpcService
   readonly startup: StartupIpcService
   readonly hotkeys: HotkeyIpcService
+  readonly dictationShortcuts?: DictationShortcutsIpcService
   readonly app: AppIpcService
   readonly trustedSenders: () => readonly TrustedIpcSender[]
   readonly openExternalLink?: (url: string) => Promise<void>
@@ -351,6 +425,8 @@ export interface RegisterIpcDependencies {
   readonly recoveryNotices?: RecoveryNoticeIpcService
   readonly widget?: WidgetIpcService
   readonly microphoneAccess?: { ensure(): Promise<boolean> }
+  /** Supplied only while the `interface-language` Owl feature is on (ADR-0123); both windows ask it as they start. */
+  readonly interfaceLanguage?: { current(): InterfaceLanguageState }
 }
 
 export interface WidgetIpcService {
@@ -451,6 +527,8 @@ export function registerIpc(
   const ownership = activeOwnership ?? new Map<string, symbol>()
   handlerOwners.set(ipcMain, ownership)
   const ownedChannels: string[] = []
+  /** Delivered apps by dictation id, from a dictation's delivery until its history arrives. */
+  const deliveredApps = new Map<string, string>()
 
   const register = <Input, Result>(
     channel: string,
@@ -510,13 +588,17 @@ export function registerIpc(
       register(WATCHER_OPEN, watcherOpenRequestSchema, 1, request => watcher.open(request))
       register(WATCHER_PREPARE_STOP_ALL, noPayloadSchema, 0, () => watcher.prepareStopAll())
       register(WATCHER_STOP_ALL, watcherStopAllRequestSchema, 1, request => watcher.stopAll(request))
-      register(WATCHER_SET_LIMIT, watcherSetLimitRequestSchema, 1, request => watcher.setLimit(request))
       register(WATCHER_SET_PERMISSION, watcherSetPermissionRequestSchema, 1, request => watcher.setPermission(request))
       register(WATCHER_WATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.watchThread(request))
       register(WATCHER_UNWATCH_THREAD, watcherWatchThreadRequestSchema, 1, request => watcher.unwatchThread(request))
       register(WATCHER_READ_HANDOVER, noPayloadSchema, 0, () => watcher.readHandover())
       register(WATCHER_CONTINUE_HANDOVER, watcherContinueHandoverRequestSchema, 1, request => watcher.continueWithHandover(request))
       register(WATCHER_DISMISS_HANDOVER, noPayloadSchema, 0, () => watcher.dismissHandover())
+      register(WATCHER_START_NEW, noPayloadSchema, 0, () => watcher.startNew())
+      register(WATCHER_READ_MERGE_TURNS, noPayloadSchema, 0, () => watcher.readMergeTurns())
+      // Only while Work across machines is on (#1032): Stable registers no machines read.
+      const readMachines = watcher.readMachines
+      if (readMachines) register(WATCHER_READ_MACHINES, noPayloadSchema, 0, () => readMachines.call(watcher))
     }
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],
@@ -526,14 +608,22 @@ export function registerIpc(
       dependencies.settings.update(patch),
     )
     register(SETTINGS_RESET, noPayloadSchema, 0, () => dependencies.settings.reset())
+    if (dependencies.interfaceLanguage) {
+      const interfaceLanguage = dependencies.interfaceLanguage
+      register(INTERFACE_LANGUAGE_GET, noPayloadSchema, 0, () => interfaceLanguage.current(), ['main', 'widget'])
+    }
 
+    // Transcripts saved before Keep local history was turned off stay listed, and can be copied and deleted, while it is off.
     register(HISTORY_LIST, noPayloadSchema, 0, async () => {
       const settings = await dependencies.settings.get()
       return dependencies.history.list({ enabled: settings.historyEnabled })
     })
-    register(HISTORY_ADD, historyEntrySchema.strict(), 1, async (entry) => {
+    // Every finished dictation keeps its record; Keep local history decides only whether its text is saved (ADR-0100).
+    register(HISTORY_ADD, finishedDictationSchema, 1, async (entry) => {
       const settings = await dependencies.settings.get()
-      return dependencies.history.add(entry, {
+      const app = deliveredApps.get(entry.id)
+      deliveredApps.delete(entry.id)
+      return dependencies.history.add(app === undefined ? entry : { ...entry, app }, {
         enabled: settings.historyEnabled,
         retention: settings.historyRetention,
       })
@@ -544,11 +634,33 @@ export function registerIpc(
     })
     register(HISTORY_DELETE, historyIdSchema, 1, (id) => dependencies.history.delete(id))
     register(HISTORY_CLEAR, noPayloadSchema, 0, () => dependencies.history.clear())
+    register(DICTATION_RECORDS_LIST, noPayloadSchema, 0, () => dependencies.history.listRecords())
+    // One record, so the window takes in a new dictation without reading every record again.
+    register(DICTATION_RECORD_GET, historyIdSchema, 1, (id) => dependencies.history.getRecord(id))
 
     register(HOTKEY_GET, noPayloadSchema, 0, () => dependencies.hotkeys.current())
     register(HOTKEY_REPLACE, hotkeySchema, 1, (accelerator) =>
       dependencies.hotkeys.replace(accelerator),
     )
+    const shortcuts = dependencies.dictationShortcuts
+    register(DICTATION_SHORTCUTS_REPLACE, dictationShortcutsChangeSchema, 1, async (change): Promise<DictationShortcutsResult> =>
+      shortcuts === undefined ? UNAVAILABLE : shortcuts.replace(change))
+    register(DICTATION_SHORTCUTS_SUSPEND, z.boolean(), 1, async (suspended): Promise<CommandResult> => {
+      if (shortcuts === undefined) return UNAVAILABLE
+      shortcuts.suspend(suspended)
+      return OK
+    })
+    register(DICTATION_KEYS_RECORD, noPayloadSchema, 0, async (): Promise<KeyRecordResult> =>
+      shortcuts === undefined ? { kind: 'unavailable' } : shortcuts.record())
+    register(DICTATION_KEYS_RECORD_CANCEL, noPayloadSchema, 0, async (): Promise<CommandResult> => {
+      if (shortcuts === undefined) return UNAVAILABLE
+      shortcuts.cancelRecord()
+      return OK
+    })
+    register(KEY_LISTENER_PERMISSION_GET, noPayloadSchema, 0, async (): Promise<KeyListenerPermission> =>
+      shortcuts === undefined ? 'unsupported' : shortcuts.permission())
+    register(KEY_LISTENER_PERMISSION_REQUEST, noPayloadSchema, 0, async (): Promise<KeyListenerPermission> =>
+      shortcuts === undefined ? 'unsupported' : shortcuts.requestPermission())
 
     register(UPDATE_GET_STATUS, noPayloadSchema, 0, async () => {
       if (dependencies.updates === undefined) return UNAVAILABLE
@@ -690,9 +802,21 @@ export function registerIpc(
       dependencies.speechModel.download()
       return OK
     })
+    register(SPEECH_MODEL_LIST, noPayloadSchema, 0, async (): Promise<SpeechModelOption[]> => {
+      if (dependencies.speechModel === undefined) return []
+      return dependencies.speechModel.list()
+    })
+    register(SPEECH_MODEL_CHOOSE, speechModelIdSchema, 1, async (id): Promise<CommandResult> => {
+      if (dependencies.speechModel === undefined) return UNAVAILABLE
+      return (await dependencies.speechModel.choose(id)) ? OK : UNAVAILABLE
+    })
     register(OPENROUTER_CHECK_KEY, noPayloadSchema, 0, async (): Promise<OpenRouterKeyCheck> => {
       if (dependencies.openRouterKey === undefined) return { ok: false, reason: 'unconfigured' }
       return dependencies.openRouterKey.check()
+    })
+    register(OPENROUTER_LIST_MODELS, noPayloadSchema, 0, async (): Promise<OpenRouterModelList> => {
+      const models = dependencies.openRouterKey?.models
+      return models === undefined ? { ok: false, reason: 'http' } : models()
     })
     register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true
@@ -703,14 +827,29 @@ export function registerIpc(
         return UNAVAILABLE
       }
       const settings = await dependencies.settings.get()
-      return dependencies.output.deliver(request.text, {
+      const options = {
         autoPaste: request.autoPaste && settings.autoPaste,
         pasteDelayMs: Math.min(
           1_000,
           Math.max(50, request.pasteDelayMs, settings.pasteDelayMs),
         ),
         restoreWidget: settings.showWidgetWhenIdle,
-      })
+      }
+      const { dictationId } = request
+      if (dictationId === undefined || dependencies.output.deliverDictation === undefined) {
+        return dependencies.output.deliver(request.text, options)
+      }
+      // The delivered app waits here for the dictation's history, which follows its delivery.
+      const delivered = await dependencies.output.deliverDictation(request.text, options)
+      if (delivered.app !== null) {
+        deliveredApps.delete(dictationId)
+        deliveredApps.set(dictationId, delivered.app)
+        for (const stale of deliveredApps.keys()) {
+          if (deliveredApps.size <= DELIVERED_APPS_HELD) break
+          deliveredApps.delete(stale)
+        }
+      }
+      return delivered.outcome
     })
     register(OUTPUT_COPY_IMAGE, outputImageRequestSchema, 1, async (request): Promise<CommandResult> => {
       if (dependencies.imageClipboard === undefined) return UNAVAILABLE

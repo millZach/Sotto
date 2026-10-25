@@ -1,11 +1,21 @@
 import { useSyncExternalStore } from 'react'
+import { msg } from '@lingui/core/macro'
 import type { AgentCommand, AgentRuntimeMode, AgentState, AgentThread } from '../../../shared/agents'
+import type { LaterWords } from './interfaceWords'
 
 /**
  * What a refused creation says when main answered nothing at all: it is gone from here, so the sidebar carries
  * whatever the user had typed into it over to the next new thread opened in the same project instead of losing it.
  */
 export const UNCONFIRMED_CREATION = 'Sotto could not confirm this thread was created, so it is gone from here. Check the project before opening another; anything you had typed is kept for it.'
+
+/**
+ * A refused creation's reason as the window keeps it to show: main's own words as written, and Sotto's unconfirmed
+ * creation as a message read in the interface language when shown. The English sentence is what the stores carry.
+ */
+export function creationErrorWords(error: string): LaterWords {
+  return error === UNCONFIRMED_CREATION ? msg`Sotto could not confirm this thread was created, so it is gone from here. Check the project before opening another; anything you had typed is kept for it.` : error
+}
 
 type Command = (command: AgentCommand) => Promise<AgentState | null>
 
@@ -32,7 +42,7 @@ export function draftThread(values: {
   readonly host?: Pick<AgentThread, 'hostId' | 'hostLabel' | 'remoteHost'> | undefined
 }): AgentThread {
   return {
-    id: values.id, projectId: values.projectId, title: values.title, modelId: values.modelId,
+    id: values.id, projectId: values.projectId, title: values.title, titleSource: 'default', modelId: values.modelId,
     ...(values.host?.hostId ? { hostId: values.host.hostId } : {}),
     ...(values.host?.hostLabel ? { hostLabel: values.host.hostLabel } : {}),
     ...(values.host?.remoteHost ? { remoteHost: true } : {}),

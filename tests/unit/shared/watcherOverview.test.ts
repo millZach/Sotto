@@ -70,9 +70,36 @@ describe('Overview projection', () => {
     expect(project({ archivedAt: centerTime, status: 'running' }).group).toBe('Idle')
     expect(project({ workspaceSettledAt: centerTime }).group).toBe('Idle')
     // Workspace organization alone does not suppress requests that still need the user.
-    expect(project({ workspaceSettledAt: centerTime, status: 'error' }).group).toBe('Needs you')
+    expect(project({ workspaceSettledAt: centerTime, status: 'error', requests: [{ id: 'q', kind: 'question', text: 'Question', options: [] }] }).group).toBe('Needs you')
+    expect(project({ workspaceSettledAt: centerTime, requests: [{ id: 'p', kind: 'permission', text: 'Permission', options: [] }] }).group).toBe('Needs you')
     const threads = [thread(), thread({ id: 'current', kind: 'watcher' }), thread({ id: 'old', kind: 'watcher-history' })]
     expect(watcherOverview({ host: { ...EMPTY_AGENT_HOST, connected: true, threads } }, now).map(row => row.thread.id)).toEqual(['worker'])
+  })
+  it('leaves an error or failed turn in a settled thread out of Needs you, and keeps it there for unsettled ones', () => {
+    // As reported: a delegated Muse thread that answered its briefs, settled, and at rest in error, as builds before #1174
+    // held a Muse thread whose model Muse had not confirmed. Nothing there waits on the user.
+    const reported = { delegatedBy: 'delegator', workspaceSettledAt: centerTime, status: 'error' as const, lastTurn: { id: 't', status: 'completed' as const } }
+    expect(project(reported).group).toBe('Idle')
+    expect(project({ ...reported, status: 'idle', lastTurn: { id: 't', status: 'failed' } }).group).toBe('Idle')
+    // Nor does it move to another group that settling already leaves.
+    expect(project({ ...reported, pullRequests: [openPr] }, { landing: { source: 'github', observedAt: centerTime, fresh: true } }).group).toBe('Idle')
+    expect(project({ ...reported, workspaceSettledAt: undefined }).group).toBe('Needs you')
+    expect(project({ delegatedBy: 'delegator', lastTurn: { id: 't', status: 'failed' } }).group).toBe('Needs you')
+    // A settled project settles its threads, on the project's own host only.
+    const settledProject = { ...EMPTY_AGENT_HOST, connected: true, threads: [thread({ status: 'error' })],
+      projects: [{ id: 'project', hostId: centerHostId, title: 'Project', path: '/project', workspaceSettledAt: centerTime }] }
+    expect(watcherOverview({ host: settledProject }, now)[0]!.group).toBe('Idle')
+    expect(watcherOverview({ host: { ...settledProject, projects: [{ ...settledProject.projects[0]!, hostId: 'other-host' }] } }, now)[0]!.group).toBe('Needs you')
+  })
+  it('puts a prototype waiting for review under Needs you while the thread is open and not put aside (ADR-0108)', () => {
+    const prototypeReady = { source: 'reply:m-1', pages: [{ token: 'p'.repeat(32), kind: 'file' as const, name: 'x.html', start: 'x.html' }] }
+    expect(project({ prototypeReady }).group).toBe('Needs you')
+    expect(project({ prototypeReady, pullRequests: [openPr] }).group).toBe('Needs you')
+    // A wake-up turn may run while the mark stands; the prototype still waits on the user.
+    expect(project({ prototypeReady, status: 'running' }).group).toBe('Needs you')
+    expect(project({ prototypeReady, archivedAt: centerTime }).group).toBe('Idle')
+    expect(project({ prototypeReady, settledAt: centerTime }).group).toBe('Idle')
+    expect(project({ prototypeReady, workspaceSettledAt: centerTime }).group).toBe('Idle')
   })
   it('qualifies identical IDs on different hosts and reads no user marks', () => {
     expect(watcherObservationKey(thread())).not.toBe(watcherObservationKey(thread({ hostId: '22222222-2222-4222-8222-222222222222' })))

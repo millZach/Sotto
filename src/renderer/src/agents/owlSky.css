@@ -9,10 +9,12 @@
 .thread-nav[data-sky] { background: linear-gradient(var(--tt-owl-night) 76px, var(--threads-sidebar) 92px); }
 .thread-nav[data-sky] .thread-nav__top { position: relative; }
 .thread-nav__sky { --owl-sky-inset: 0px; position: absolute; top: 0; right: 0; left: 0; height: 92px; overflow: hidden; pointer-events: none; background: radial-gradient(130px 70px at calc(26px + var(--owl-sky-inset)) 22px, var(--tt-owl-glow), transparent 72%); }
-/* macOS: the tile sits 64 pixels further in, right of the traffic lights, and the sky moves with it. On a sidebar
-   narrower than 319 pixels (318 inside its 1-pixel border, which is what the query measures) the open sky between
-   the tile and the toolbar closes, so the stars in it go. */
-.thread-nav--mac .thread-nav__sky { --owl-sky-inset: 64px; }
+/* macOS: the sky starts right of the traffic lights' room. No tile sits beside the lights there, so the glow
+   behind the tile goes with it. On a sidebar narrower than 319 pixels (318 inside its 1-pixel border, which is
+   what the query measures) the open sky between the tile's place and the toolbar closes, so the stars in it go. */
+/* The wider room leaves 10px less open sky between the tile's place and the toolbar at the default 320px sidebar, so the
+   stars past it close up to four fifths of their spread and the brightest stays clear of the mode switch. */
+.thread-nav--mac .thread-nav__sky { --owl-sky-inset: calc(var(--mac-lights-room) - 14px); --owl-open-sky-scale: .8; background: none; }
 @container thread-sidebar (width < 318px) { .thread-nav--mac .thread-nav__star[data-open-sky] { display: none; } }
 
 .thread-nav__star { position: absolute; display: block; width: calc(var(--owl-star-size) * var(--tt-owl-star-scale)); height: calc(var(--owl-star-size) * var(--tt-owl-star-scale)); border-radius: 50%; background: var(--tt-owl-star); opacity: var(--owl-star-strength); }
@@ -23,10 +25,8 @@
 /* Light mode drops the faintest stars outright, so none of them sits there invisible, twinkling. */
 .thread-nav__star[data-tier='4'] { --owl-star-strength: var(--tt-owl-star-o4); display: var(--tt-owl-faintest-stars); }
 
-/* The search field and the Threads | Terminal switch take the night, as in Zach's screenshot. */
+/* The search field takes the night, as in Zach's screenshot. */
 .thread-nav[data-sky] .threads-search .tt-input { background: var(--tt-owl-night-field); }
-.thread-nav[data-sky] .thread-nav__top .thread-nav__seg { background: var(--tt-owl-night-control); }
-.thread-nav[data-sky] .thread-nav__top .thread-nav__seg button[aria-checked='true'] { background: var(--tt-owl-night-control-on); }
 
 /* Four stars dim to a fifth of their strength and come back, each on its own slow cycle and never in step; by day
    the fourth is among the faintest, which light mode drops, so three are seen. With reduced motion, from the system

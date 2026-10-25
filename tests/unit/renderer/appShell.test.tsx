@@ -14,9 +14,20 @@ vi.mock('../../../src/renderer/src/state/memoryFeature', () => ({
   useMemoryEnabled: () => memory.enabled,
 }))
 
+// The room switch follows Watcher's gate and whether dictation is on (ADR-0107).
+const rooms = vi.hoisted(() => ({ watcher: false, dictation: true }))
+vi.mock('../../../src/renderer/src/state/watcherFeature', () => ({
+  useWatcherEnabled: () => rooms.watcher,
+}))
+vi.mock('../../../src/renderer/src/state/dictationFeature', () => ({
+  useDictationOn: () => rooms.dictation,
+}))
+
 afterEach(() => {
   cleanup()
   memory.enabled = false
+  rooms.watcher = false
+  rooms.dictation = true
 })
 
 const chrome = {
@@ -78,8 +89,10 @@ describe('AppShell', () => {
     expect(screen.getByText('Sotto')).toBeInTheDocument()
     const links = screen.getByRole('navigation', { name: 'Pages' })
     // Memory is hidden for the beta, so its link is not among them.
-    expect(links.querySelectorAll('a')).toHaveLength(4)
-    for (const name of ['Threads', 'History', 'Settings', 'Help']) {
+    expect(links.querySelectorAll('a')).toHaveLength(3)
+    // Transcripts live in the Dictate room's Journal, so there is no History page to link to (#1293).
+    expect(screen.queryByRole('link', { name: 'History' })).not.toBeInTheDocument()
+    for (const name of ['Threads', 'Settings', 'Help']) {
       expect(screen.getByRole('link', { name })).not.toHaveAttribute('aria-current')
     }
     expect(screen.queryByRole('link', { name: /home|dictionary|agents|dictate/i })).not.toBeInTheDocument()
@@ -97,7 +110,7 @@ describe('AppShell', () => {
     memory.enabled = true
     render(<AppShell {...chrome} navigation="home"><p /></AppShell>)
     const links = screen.getByRole('navigation', { name: 'Pages' })
-    expect(links.querySelectorAll('a')).toHaveLength(5)
+    expect(links.querySelectorAll('a')).toHaveLength(4)
     expect(screen.getByRole('link', { name: 'Memory' })).toBeInTheDocument()
   })
 
@@ -211,13 +224,15 @@ describe('AppShell', () => {
     expect(screen.queryByRole('button', { name: /minimize sotto/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /close sotto to tray/i })).not.toBeInTheDocument()
     expect(container.querySelector('.app-strip')).toHaveClass('app-strip--mac')
+    // No app mark beside the traffic lights: the strip's left end stays empty on macOS.
+    expect(container.querySelector('.app-mark')).toBeNull()
   })
 
   it('maps pages to the room they light', () => {
     expect(roomFor('home')).toBe('dictate')
     expect(roomFor('threads')).toBe('threads')
     expect(roomFor('memory')).toBe('threads')
-    expect(roomFor('history')).toBeNull()
+    expect(roomFor('help')).toBeNull()
     expect(roomFor(null)).toBeNull()
   })
 
@@ -233,7 +248,7 @@ describe('AppShell', () => {
     expect(css).toMatch(/\.app-strip\s*\{[^}]*-webkit-app-region:\s*drag;/su)
     expect(css).toMatch(/\.app-switch\s*\{[^}]*-webkit-app-region:\s*no-drag;/su)
     expect(css).toMatch(/\.app-controls\s*\{[^}]*-webkit-app-region:\s*no-drag;/su)
-    expect(css).toMatch(/\.app-strip--mac\s*\{[^}]*padding-left:\s*78px;/su)
+    expect(css).toMatch(/\.app-strip--mac\s*\{[^}]*padding-left:\s*var\(--mac-lights-room\);/su)
     expect(css).toMatch(/\.app-room\s*\{[^}]*overflow:\s*auto;/su)
     expect(css).toMatch(/\.app-footer\s*\{[^}]*border-top:\s*1px solid var\(--tt-hairline\);/su)
     expect(css).toContain('@media (max-width: 820px)')
@@ -248,7 +263,9 @@ describe('AppShell', () => {
       'src/renderer/src/components/AppShell.tsx',
       'src/renderer/src/components/ConfirmationDialog.tsx',
       'src/renderer/src/features/dictate/DictateRoom.tsx',
-      'src/renderer/src/features/history/HistoryView.tsx',
+      'src/renderer/src/features/dictate/Journal.tsx',
+      'src/renderer/src/features/dictate/JournalStats.tsx',
+      'src/renderer/src/features/dictate/journalFacts.ts',
       'src/renderer/src/features/settings/SettingsView.tsx',
       'src/renderer/src/features/help/HelpView.tsx',
     ].map((path) => readFileSync(join(process.cwd(), path), 'utf8')).join('\n')
@@ -322,10 +339,37 @@ describe('AppShell', () => {
   })
 })
 
+describe('appRooms', () => {
+  const ids = (watcher: boolean, dictation: boolean): string[] => appRooms({ watcher, dictation }).map(({ id }) => id)
+
+  it('draws Dictate, the owl while Watcher is on, and Threads; Dictate leaves while dictation is off', () => {
+    expect(ids(true, true)).toEqual(['dictate', 'watcher', 'threads'])
+    expect(ids(false, true)).toEqual(['dictate', 'threads'])
+    expect(ids(true, false)).toEqual(['watcher', 'threads'])
+    expect(ids(false, false)).toEqual(['threads'])
+  })
+
+  it('keeps the strip switch to owl and Threads while dictation is off', () => {
+    rooms.watcher = true
+    rooms.dictation = false
+    render(<AppShell {...chrome} layout="strip" navigation="threads"><p /></AppShell>)
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs.map(tab => tab.getAttribute('data-room'))).toEqual(['watcher', 'threads'])
+    expect(screen.getByRole('tab', { name: 'Threads' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('draws no strip switch when Threads is the only room left', () => {
+    rooms.dictation = false
+    render(<AppShell {...chrome} layout="strip" navigation="threads"><p /></AppShell>)
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+  })
+})
+
 describe('useRoomSwitch', () => {
   /** A bare switch: the hook's behaviour with nothing of any switch's look. */
   function Switch({ room, navigate, shown }: { readonly room: AppRoom | null; readonly navigate: (destination: string) => void; readonly shown?: boolean }) {
-    const rooms = appRooms(true)
+    const rooms = appRooms({ watcher: true, dictation: true })
     const roomSwitch = useRoomSwitch(room, rooms, navigate, shown)
     return <div ref={roomSwitch.ref} role="tablist" aria-label="Rooms">
       {rooms.map((target, index) => <button key={target.id} type="button" role="tab" {...roomSwitch.tab(target, index)}>{target.id === 'watcher' ? 'owl' : target.label}</button>)}

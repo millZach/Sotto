@@ -6,6 +6,8 @@ import {
 import {
   APP_QUIT,
   APP_RELOAD,
+  DICTATION_RECORD_GET,
+  DICTATION_RECORDS_LIST,
   DICTATION_REQUEST,
   HISTORY_CLEAR,
   MICROPHONE_ENSURE_ACCESS,
@@ -19,6 +21,7 @@ import {
   WIDGET_PUBLISH
 } from '../../src/shared/channels'
 import { createIpcHarness, FakeIpcMain } from '../fixtures/ipcHarness'
+import { INTERFACE_LANGUAGE_GET } from '../../src/shared/interfaceLanguageBridge'
 
 describe('IPC validation and lifecycle', () => {
   it('reloads the main window through the authenticated no-payload command', async () => {
@@ -56,6 +59,8 @@ describe('IPC validation and lifecycle', () => {
       SETTINGS_GET,
       SETTINGS_UPDATE,
       HISTORY_CLEAR,
+      DICTATION_RECORDS_LIST,
+      DICTATION_RECORD_GET,
       APP_RELOAD,
       APP_QUIT,
       WIDGET_PUBLISH,
@@ -241,4 +246,36 @@ describe('IPC validation and lifecycle', () => {
       ).rejects.toThrow('Unauthorized IPC sender')
       expect(harness.settings.update).not.toHaveBeenCalled()
     })
+})
+
+describe('the interface language channel (ADR-0123)', () => {
+  const widgetUrl = 'file:///C:/Sotto/out/renderer/widget.html'
+  const widgetFrame = { parent: null, url: widgetUrl }
+  const widgetContents = { getURL: (): string => widgetUrl, isDestroyed: (): boolean => false, mainFrame: widgetFrame }
+
+  it('answers both windows while the Owl feature supplies it, and takes no payload', async () => {
+    const harness = createIpcHarness()
+    harness.cleanup()
+    const state = { language: 'ja', system: 'en' } as const
+    registerIpc(harness.ipc, {
+      settings: harness.settings, history: harness.history, startup: harness.startup, hotkeys: harness.hotkeys, app: harness.app,
+      trustedSenders: () => [
+        { role: 'main' as const, webContents: harness.trustedContents, url: harness.trustedUrl },
+        { role: 'widget' as const, webContents: widgetContents, url: widgetUrl },
+      ],
+      interfaceLanguage: { current: () => state },
+    })
+    await expect(harness.ipc.invokeArgs(INTERFACE_LANGUAGE_GET, [])).resolves.toEqual(state)
+    await expect(harness.ipc.invokeArgs(INTERFACE_LANGUAGE_GET, [], { sender: widgetContents, senderFrame: widgetFrame })).resolves.toEqual(state)
+    await expect(harness.ipc.invoke(INTERFACE_LANGUAGE_GET, 'ar')).rejects.toThrow('Invalid IPC payload')
+  })
+
+  it('does not exist while the Owl feature is off', async () => {
+    const harness = createIpcHarness()
+    try {
+      await expect(harness.ipc.invokeArgs(INTERFACE_LANGUAGE_GET, [])).rejects.toThrow()
+    } finally {
+      harness.cleanup()
+    }
+  })
 })

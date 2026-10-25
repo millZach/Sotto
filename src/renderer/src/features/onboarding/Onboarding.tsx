@@ -6,15 +6,18 @@ import React, {
   type ReactNode,
   type RefObject,
 } from 'react'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
-import { SPEECH_MODEL, SPEECH_MODEL_SIZE, type SpeechModelStatus } from '../../../../shared/speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from '../../../../shared/speechModel'
 import type { HostsBridge } from '../../../../shared/hosts'
 import type { PhonesBridge } from '../../../../shared/phones'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useAudioInputDevices, type MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import { SpeechModelStatus as SpeechModelStatusView } from '../../components/SpeechModelStatus'
+import { formatModelSize, speechModelRefusedMessage, SpeechModelStatus as SpeechModelStatusView, speechModelSummary } from '../../components/SpeechModelStatus'
 import { Button } from '../../components/Button'
 import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsButton'
 import { Card } from '../../components/Card'
@@ -37,10 +40,18 @@ import './onboarding.css'
 export interface OnboardingProps {
   readonly settings: AppSettings
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
-  /** Where the speech model stands (ADR-0071); null until main answers. */
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels: readonly SpeechModelOption[] | null
+  /** The id of the model dictation uses; null until the user chooses one. */
+  readonly speechModelChoice: string | null
+  /** Where the chosen speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
-  /** Starts the speech model download, or retries one that failed. */
-  readonly onDownloadSpeechModel: () => void
+  /** Chooses a model for dictation; choosing one of Sotto's models not here yet downloads it. */
+  readonly onChooseSpeechModel: (id: string) => void
+  /** True when the last choice was refused because that model is no longer on this computer. */
+  readonly speechModelRefused?: boolean
+  /** Tries the chosen model again after it failed. */
+  readonly onRetrySpeechModel: () => void
   readonly microphoneState: MicrophoneTestState
   readonly microphoneLevel?: number
   readonly shortcut: string
@@ -61,26 +72,37 @@ export interface OnboardingProps {
 
 type StepId = 'welcome' | 'omarchy' | 'look' | 'microphone' | 'speech-model' | 'shortcut' | 'agents' | 'project' | 'computers' | 'phone'
 
+type StepGroup = 'start' | 'dictation' | 'agents' | 'elsewhere'
+
 interface SetupStep {
   readonly id: StepId
-  readonly group: string
-  readonly title: string
+  readonly group: StepGroup
+  /** The step's name in the progress line, read in the interface language; Omarchy and iPhone are names. */
+  readonly title: MessageDescriptor | string
+}
+
+/** The progress bar's group names, in the interface language where they are shown. */
+const GROUP_NAMES: Readonly<Record<StepGroup, MessageDescriptor>> = {
+  start: msg({ message: 'Start', comment: 'First-run setup: the group of steps that begins it' }),
+  dictation: msg({ message: 'Dictation', comment: 'First-run setup: the group of steps about dictation' }),
+  agents: msg({ message: 'Agents', comment: 'First-run setup: the group of steps about coding agents' }),
+  elsewhere: msg({ message: 'Elsewhere', comment: 'First-run setup: the group of steps about other computers and the iPhone' }),
 }
 
 /** First-run setup, in order: what Sotto is, how it looks, dictation, the coding agents, and other places to use it. */
 const STEPS: readonly SetupStep[] = [
-  { id: 'welcome', group: 'Start', title: 'Welcome' },
-  { id: 'look', group: 'Start', title: 'Look' },
-  { id: 'microphone', group: 'Dictation', title: 'Microphone' },
-  { id: 'speech-model', group: 'Dictation', title: 'Speech model' },
-  { id: 'shortcut', group: 'Dictation', title: 'Shortcut' },
-  { id: 'agents', group: 'Agents', title: 'Coding agents' },
-  { id: 'project', group: 'Agents', title: 'First project' },
-  { id: 'computers', group: 'Elsewhere', title: 'Other computers' },
-  { id: 'phone', group: 'Elsewhere', title: 'iPhone' },
+  { id: 'welcome', group: 'start', title: msg({ message: 'Welcome', comment: 'First-run setup: the first step' }) },
+  { id: 'look', group: 'start', title: msg({ message: 'Look', comment: 'First-run setup: the step that chooses how Sotto looks' }) },
+  { id: 'microphone', group: 'dictation', title: msg({ message: 'Microphone', comment: 'First-run setup: the microphone step' }) },
+  { id: 'speech-model', group: 'dictation', title: msg`Speech model` },
+  { id: 'shortcut', group: 'dictation', title: msg({ message: 'Shortcut', comment: 'First-run setup: the dictation shortcut step' }) },
+  { id: 'agents', group: 'agents', title: msg`Coding agents` },
+  { id: 'project', group: 'agents', title: msg`First project` },
+  { id: 'computers', group: 'elsewhere', title: msg`Other computers` },
+  { id: 'phone', group: 'elsewhere', title: 'iPhone' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
-const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'Start', title: 'Omarchy' }, ...STEPS.slice(1)]
+const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'start', title: 'Omarchy' }, ...STEPS.slice(1)]
 
 /**
  * The microphone test passes once Sotto hears a voice, the level Settings' test counts as one, for this long in all,
@@ -105,7 +127,7 @@ function StepHeading({ title, lead, headingRef }: {
   return (
     <>
       <h1 id="onboarding-heading" ref={headingRef} tabIndex={-1}>{title}</h1>
-      <p className="onboarding-lead">{lead}</p>
+      <p className="onboarding-lead tt-paragraph">{lead}</p>
     </>
   )
 }
@@ -113,8 +135,12 @@ function StepHeading({ title, lead, headingRef }: {
 export function Onboarding({
   settings,
   onUpdateSettings,
+  speechModels,
+  speechModelChoice,
   speechModel,
-  onDownloadSpeechModel,
+  onChooseSpeechModel,
+  speechModelRefused = false,
+  onRetrySpeechModel,
   microphoneState,
   microphoneLevel = 0,
   shortcut,
@@ -128,17 +154,17 @@ export function Onboarding({
   phonesBridge,
   onComplete,
 }: OnboardingProps): ReactNode {
+  const { t, i18n } = useLingui()
   const [index, setIndex] = useState(0)
   const steps = platform === 'linux' ? LINUX_STEPS : STEPS
   const step = steps[index]!
   const omarchy = useOmarchySetup(platform === 'linux' && step.id === 'omarchy')
   const keysSet = omarchy.state && ['done', 'manual'].includes(omarchy.state.pieces.keys.status)
 
-  // Main starts the download when Sotto opens; this step starts it too if nothing has yet.
-  const speechModelMissing = speechModel?.state === 'missing'
-  useEffect(() => {
-    if (step.id === 'speech-model' && speechModelMissing) onDownloadSpeechModel()
-  }, [onDownloadSpeechModel, speechModelMissing, step.id])
+  // Nothing downloads until the user picks one of Sotto's models; models already on this computer come first.
+  const installedSpeechModels = speechModels?.filter(model => model.installed) ?? []
+  const downloadableSpeechModels = speechModels?.filter(model => !model.installed) ?? []
+  const chosenSpeechModel = speechModels?.find(model => model.id === speechModelChoice) ?? null
   const [microphoneId, setMicrophoneId] = useState(settings.microphoneId)
   const [savedMicrophoneId, setSavedMicrophoneId] = useState(settings.microphoneId)
   if (settings.microphoneId !== savedMicrophoneId) {
@@ -215,14 +241,14 @@ export function Onboarding({
     void Promise.resolve(onStopMicrophone?.()).catch(() => undefined)
   }
   // What the test box says: what happened, and what to do next.
-  const testStatus: { readonly title: string; readonly next: string } = microphoneHeard ? { title: 'Sotto heard you. Your microphone works.', next: 'Test again after changing the microphone.' }
-    : nothingHeard ? { title: 'Nothing heard yet.', next: 'Check that the microphone above is the one you speak into, then say something.' }
-    : listening ? { title: 'Listening. Say something.', next: 'The test passes once Sotto hears your voice.' }
-    : microphoneState === 'requesting' ? { title: 'Opening the microphone…', next: '' }
-    : microphoneState === 'denied' ? { title: 'Microphone access is blocked.', next: '' }
-    : microphoneState === 'missing' ? { title: 'No microphone was found.', next: '' }
-    : microphoneState === 'error' ? { title: 'The microphone test could not start.', next: 'Try again, or choose another microphone.' }
-    : { title: 'Not tested yet.', next: 'Press Test microphone, then say a few words.' }
+  const testStatus: { readonly title: string; readonly next: string } = microphoneHeard ? { title: t`Sotto heard you. Your microphone works.`, next: t`Test again after changing the microphone.` }
+    : nothingHeard ? { title: t`Nothing heard yet.`, next: t`Check that the microphone above is the one you speak into, then say something.` }
+    : listening ? { title: t`Listening. Say something.`, next: t`The test passes once Sotto hears your voice.` }
+    : microphoneState === 'requesting' ? { title: t`Opening the microphone…`, next: '' }
+    : microphoneState === 'denied' ? { title: t`Microphone access is blocked.`, next: '' }
+    : microphoneState === 'missing' ? { title: t`No microphone was found.`, next: '' }
+    : microphoneState === 'error' ? { title: t`The microphone test could not start.`, next: t`Try again, or choose another microphone.` }
+    : { title: t`Not tested yet.`, next: t`Press Test microphone, then say a few words.` }
 
   const testMicrophone = (): void => {
     setMicrophoneHeard(false)
@@ -243,7 +269,7 @@ export function Onboarding({
       case 'omarchy': return !!omarchy.state && Object.values(omarchy.state.pieces).some(piece => ['done', 'manual'].includes(piece.status))
       case 'microphone': return microphoneHeard
       // Once the download is under way setup can go on; dictation works as soon as it finishes.
-      case 'speech-model': return speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
+      case 'speech-model': return speechModelChoice !== null && speechModel !== null && speechModel.state !== 'missing' && speechModel.state !== 'failed'
       case 'agents': return agentState !== null && localProviders(agentState).some(provider => provider.connection === 'connected')
       case 'project': return agentState !== null && localProjects(agentState).length > 0
       case 'computers': return hostCount > 0
@@ -298,12 +324,15 @@ export function Onboarding({
 
   const last = index === steps.length - 1
   const done = stepDone(step.id)
+  const stepNumber = index + 1
+  const stepCount = steps.length
+  const stepTitle = typeof step.title === 'string' ? step.title : i18n._(step.title)
 
   return (
     <main className="onboarding-shell" aria-labelledby="onboarding-heading">
-      <nav className="onboarding-progress" aria-label={`Setup progress: step ${index + 1} of ${steps.length}`}>
+      <nav className="onboarding-progress" aria-label={t`Setup progress: step ${stepNumber} of ${stepCount}`}>
         <span className="onboarding-progress__text" aria-live="polite" aria-atomic="true">
-          Step {index + 1} of {steps.length} · {step.title}
+          <Trans>Step {stepNumber} of {stepCount} · {stepTitle}</Trans>
         </span>
         <ol aria-hidden="true">
           {GROUPS.map(group => {
@@ -313,7 +342,7 @@ export function Onboarding({
                 <span className="onboarding-progress__bars">
                   {members.map(({ at }) => <i key={at} data-complete={at < index} data-current={at === index} />)}
                 </span>
-                <span className="onboarding-progress__group">{group}</span>
+                <span className="onboarding-progress__group">{i18n._(GROUP_NAMES[group])}</span>
               </li>
             )
           })}
@@ -326,56 +355,57 @@ export function Onboarding({
           {step.id === 'welcome' ? (
             <section aria-labelledby="onboarding-heading">
               <SottoMark className="onboarding-welcome__mark" />
-              <p className="onboarding-eyebrow">Welcome to Sotto</p>
-              {heading('Talk to your computer and your coding agents', platform === 'linux'
-                ? 'Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.'
-                : 'Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.')}
+              <p className="onboarding-eyebrow"><Trans>Welcome to Sotto</Trans></p>
+              {heading(t`Talk to your computer and your coding agents`, platform === 'linux'
+                ? t`Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`
+                : t`Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`)}
               <div className="onboarding-assurances">
-                <p><Check aria-hidden="true" size={18} /> Transcribed on this computer by {SPEECH_MODEL.name}</p>
-                <p><Check aria-hidden="true" size={18} /> Your audio never leaves this computer</p>
-                <p><Check aria-hidden="true" size={18} /> Your threads go only to each agent's own provider</p>
-                <p><Check aria-hidden="true" size={18} /> No Sotto account, no telemetry</p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Transcribed on this computer by the speech model you choose</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your audio never leaves this computer</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>Your threads go only to each agent's own provider</Trans></p>
+                <p className="tt-paragraph"><Check aria-hidden="true" size={18} /> <Trans>No Sotto account, no telemetry</Trans></p>
               </div>
-              <p className="onboarding-aside">Every step after this one can be skipped and finished later in Settings.</p>
+              <p className="onboarding-aside tt-paragraph"><Trans>Every step after this one can be skipped and finished later in Settings.</Trans></p>
             </section>
           ) : null}
 
           {step.id === 'omarchy' ? <section aria-labelledby="onboarding-heading">
-            {heading('Set up Sotto in Omarchy', 'Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation.')}
+            {heading(t`Set up Sotto in Omarchy`, t`Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation.`)}
             <OmarchySetupPanel surface="first-run" controller={omarchy} />
           </section> : null}
 
           {step.id === 'look' ? (
             <LookStep settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
-              heading={heading('Choose how Sotto looks', 'Pick light or dark and a theme. The window and the owl follow your choice.')} />
+              heading={heading(t`Choose how Sotto looks`, t`Pick light or dark and a theme. The window and the owl follow your choice.`)} />
           ) : null}
 
           {step.id === 'microphone' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Check your microphone', 'Sotto opens the microphone only while you dictate or run this test.')}
+              {heading(t`Check your microphone`, t`Sotto opens the microphone only while you dictate or run this test.`)}
               <Field
                 className="onboarding-microphone-picker"
-                label="Microphone"
+                label={t({ message: 'Microphone', comment: 'The microphone picker' })}
                 {...(deviceState === 'error' ? { description: copy.settingsMicrophoneUnavailable } : {})}
-                {...(microphoneSaveFailed ? { error: 'Sotto could not save that microphone. The previous one is still selected.' } : {})}
+                {...(microphoneSaveFailed ? { error: t`Sotto could not save that microphone. The previous one is still selected.` } : {})}
               >
                 <Select
                   value={microphoneId ?? ''}
                   onChange={(event) => void chooseMicrophone(event.currentTarget.value || null)}
                 >
                   <option value="">{copy.settingsMicrophoneDefaultOption}</option>
-                  {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>Previous microphone (unavailable)</option> : null}
-                  {microphones.map((microphone, at) => (
-                    <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || `Microphone ${at + 1}`}</option>
-                  ))}
+                  {!microphoneKnown && settings.microphoneId !== null ? <option value={settings.microphoneId}>{t`Previous microphone (unavailable)`}</option> : null}
+                  {microphones.map((microphone, at) => {
+                    const number = at + 1
+                    return <option key={microphone.deviceId} value={microphone.deviceId}>{microphone.label || t`Microphone ${number}`}</option>
+                  })}
                 </Select>
               </Field>
               <div className="onboarding-microphone-test" data-state={microphoneHeard ? 'heard' : listening ? 'listening' : microphoneState}>
                 {microphoneHeard
                   ? <span className="onboarding-microphone-test__heard"><Check aria-hidden="true" size={18} /></span>
                   // The wave the widget and the Dictate room show; it listens for as long as the test's stream runs.
-                  : <VoiceWave stage={microphoneState === 'requesting' || listening ? 'listening' : 'idle'} value={microphoneLevel} label="Microphone level" size="deck" holdSpeaking={listening} />}
-                <p role="status"><strong>{testStatus.title}</strong>{testStatus.next ? <span>{testStatus.next}</span> : null}</p>
+                  : <VoiceWave stage={microphoneState === 'requesting' || listening ? 'listening' : 'idle'} value={microphoneLevel} label={t`Microphone level`} size="deck" holdSpeaking={listening} />}
+                <p className="tt-paragraph" role="status"><strong>{testStatus.title}</strong>{testStatus.next ? <span>{testStatus.next}</span> : null}</p>
                 {/* One button that changes with the test, so focus stays on it from Test to Stop to Test again. */}
                 <Button
                   variant={listening || microphoneHeard ? 'secondary' : 'primary'}
@@ -383,92 +413,130 @@ export function Onboarding({
                   onClick={microphoneState === 'requesting' ? undefined : listening ? stopTest : testMicrophone}
                 >
                   {listening ? <MicOff aria-hidden="true" size={18} /> : <Mic2 aria-hidden="true" size={18} />}
-                  {listening ? 'Stop test'
-                    : microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error' ? 'Try microphone again'
-                    : microphoneHeard ? 'Test again' : 'Test microphone'}
+                  {listening ? t`Stop test`
+                    : microphoneState === 'denied' || microphoneState === 'missing' || microphoneState === 'error' ? t`Try microphone again`
+                    : microphoneHeard ? t`Test again` : t`Test microphone`}
                 </Button>
               </div>
               {microphoneSkipped ? (
-                <p className="onboarding-aside">Microphone test skipped. Dictation waits until you run the test in Settings.</p>
+                <p className="onboarding-aside tt-paragraph"><Trans>Microphone test skipped. Dictation waits until you run the test in Settings.</Trans></p>
               ) : null}
               {microphoneState === 'denied' ? (
                 <>
-                  <p className="onboarding-recovery">{copy.onboardingMicrophoneDenied}</p>
+                  <p className="onboarding-recovery tt-paragraph">{copy.onboardingMicrophoneDenied}</p>
                   <OpenSystemSettingsButton platform={platform} pane="microphone" />
                 </>
               ) : null}
               {microphoneState === 'missing' ? (
-                <p className="onboarding-recovery">{copy.onboardingMicrophoneMissing}</p>
+                <p className="onboarding-recovery tt-paragraph">{copy.onboardingMicrophoneMissing}</p>
               ) : null}
             </section>
           ) : null}
 
           {step.id === 'speech-model' ? (
             <section aria-labelledby="onboarding-heading">
-              {heading('Download the speech model', 'Sotto turns your voice into text on this computer. Your audio never leaves it.')}
-              <div className="tt-field onboarding-speech-model">
-                <span className="tt-field__label">{SPEECH_MODEL.name}, by {SPEECH_MODEL.maker}</span>
-                <p className="tt-field__description">{SPEECH_MODEL_SIZE}, downloaded once from Sotto's releases on GitHub.</p>
-                <SpeechModelStatusView status={speechModel} onRetry={onDownloadSpeechModel} />
-              </div>
-              <p className="onboarding-aside">{speechModel?.state === 'ready' ? '' : 'You can continue while it downloads. Dictation works as soon as it finishes. '}AI cleanup is optional; turn it on in Settings → Cleanup.</p>
+              {heading(t`Choose a speech model`, t`Sotto turns your voice into text on this computer. Your audio never leaves it.`)}
+              {speechModels === null ? (
+                <p className="tt-field__description tt-paragraph" role="status"><Trans>Looking for speech models on this computer…</Trans></p>
+              ) : (
+                <>
+                  {installedSpeechModels.length > 0 ? <p className="onboarding-speech-models__intro"><Trans>Already on this computer:</Trans></p> : null}
+                  <ul className="onboarding-speech-models">
+                    {[...installedSpeechModels, ...downloadableSpeechModels].map((model, position) => {
+                      const chosen = model.id === speechModelChoice
+                      const { name, maker, languages } = model
+                      const size = formatModelSize(model.bytes)
+                      return (
+                        <li key={model.id} className="onboarding-speech-model" data-chosen={chosen || undefined}>
+                          <div>
+                            <span className="tt-field__label"><Trans>{name}, by {maker}</Trans></span>
+                            <p className="tt-field__description tt-paragraph" {...(chosen ? { role: 'status' } : {})}>
+                              {chosen && speechModel !== null && speechModel.state !== 'failed' && speechModel.state !== 'missing'
+                                ? speechModel.state === 'ready' ? t`${languages}. Ready.` : `${speechModelSummary(speechModel, model.name)}.`
+                                : model.installed ? `${languages}.` : t`${languages}. ${size}, from GitHub.`}
+                            </p>
+                          </div>
+                          {/* The button stays once chosen (pressed) so keyboard focus is not lost. */}
+                          <Button
+                            variant={chosen || (position === 0 && speechModelChoice === null) ? 'primary' : 'secondary'}
+                            aria-pressed={chosen}
+                            onClick={() => { if (!chosen) onChooseSpeechModel(model.id) }}
+                          >
+                            {chosen ? <Check aria-hidden="true" size={16} /> : null}
+                            {model.installed ? t`Use ${name}` : t`Download ${name}`}
+                          </Button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {speechModelRefused ? <p className="onboarding-recovery tt-paragraph" role="status">{speechModelRefusedMessage()}</p> : null}
+                  {/* Rows say how the chosen model stands in one line, so every row fits the smallest window;
+                      a failure needs its whole sentence and Try again, so it gets them below the list. */}
+                  {speechModelChoice !== null && (chosenSpeechModel === null || speechModel?.state === 'failed')
+                    ? <SpeechModelStatusView status={speechModel} model={chosenSpeechModel} onRetry={onRetrySpeechModel} />
+                    : null}
+                </>
+              )}
+              <p className="onboarding-aside tt-paragraph onboarding-speech-model__aside">{chosenSpeechModel?.source === 'sotto' && speechModel?.state === 'downloading'
+                ? t`You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup.`
+                : t`AI cleanup is optional; turn it on in Settings → Cleanup.`}</p>
             </section>
           ) : null}
 
           {step.id === 'shortcut' ? (
             <section aria-labelledby="onboarding-heading">
               {platform === 'linux'
-                ? heading(keysSet ? 'Hold F9 to try it' : 'Speak, then paste into any window', keysSet
-                  ? 'Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.'
-                  : 'Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste.')
-                : heading('One shortcut from speech to text', 'Press it to start and again to finish. Your text is always copied before Sotto pastes it.')}
+                ? heading(keysSet ? t`Hold F9 to try it` : t`Speak, then paste into any window`, keysSet
+                  ? t`Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste.`
+                  : t`Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste.`)
+                : heading(t`One shortcut from speech to text`, t`Press it to start and again to finish. Your text is always copied before Sotto pastes it.`)}
               <div className="onboarding-shortcut">{platform === 'linux'
-                ? <><span>Omarchy defaults</span><span>F9 · Super+Ctrl+X</span></>
-                : <><span>Active shortcut</span><ShortcutKey accelerator={shortcut} platform={platform} /></>}</div>
-              <Field label="Paste test" description="A safe local field for testing your clipboard or shortcut.">
+                ? <><span><Trans>Omarchy defaults</Trans></span><span>F9 · Super+Ctrl+X</span></>
+                : <><span><Trans>Active shortcut</Trans></span><ShortcutKey accelerator={shortcut} platform={platform} /></>}</div>
+              <Field label={t`Paste test`} description={t`A safe local field for testing your clipboard or shortcut.`}>
                 <textarea
                   className="tt-input onboarding-paste-field"
                   value={pasteTest}
                   onChange={(event) => setPasteTest(event.currentTarget.value)}
-                  placeholder="Paste or type here"
+                  placeholder={t`Paste or type here`}
                 />
               </Field>
-              {microphoneSkipped ? <p className="onboarding-aside">Microphone test skipped. Run it in Settings when you want to dictate.</p> : null}
+              {microphoneSkipped ? <p className="onboarding-aside tt-paragraph"><Trans>Microphone test skipped. Run it in Settings when you want to dictate.</Trans></p> : null}
             </section>
           ) : null}
 
           {step.id === 'agents' ? (
             <AgentsStep onOpenLink={onOpenLink}
-              heading={heading('Your coding agents', 'Sotto connects every agent installed on this computer, each signed in with your own account.')} />
+              heading={heading(t`Your coding agents`, t`Sotto connects every agent installed on this computer, each signed in with your own account.`)} />
           ) : null}
 
           {step.id === 'project' ? (
             <ProjectStep
-              heading={heading('Choose a project folder', 'A project is a folder your agents work in, usually a Git repository. Threads start in it.')} />
+              heading={heading(t`Choose a project folder`, t`A project is a folder your agents work in, usually a Git repository. Threads start in it.`)} />
           ) : null}
 
           {step.id === 'computers' ? (
             <ComputersStep bridge={hostsBridge ?? window.sotto?.hosts} onHostsChange={setHostCount}
-              heading={heading('Run agents on another computer', 'Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here.')} />
+              heading={heading(t`Run agents on another computer`, t`Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here.`)} />
           ) : null}
 
           {step.id === 'phone' ? (
             <>
               <PhoneStep phoneAccess={settings.phoneAccess} onUpdateSettings={onUpdateSettings} onOpenLink={onOpenLink}
                 bridge={phonesBridge ?? window.sotto?.phones}
-                heading={heading('Answer your threads from your iPhone', 'The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer.')} />
-              {completionError ? <p className="onboarding-completion-error" role="alert">Setup could not be saved. Your choices are intact; please try again.</p> : null}
+                heading={heading(t`Answer your threads from your iPhone`, t`The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer.`)} />
+              {completionError ? <p className="onboarding-completion-error tt-paragraph" role="alert"><Trans>Setup could not be saved. Your choices are intact; please try again.</Trans></p> : null}
             </>
           ) : null}
         </div>
 
         <footer className="onboarding-actions">
-          {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing || step.id === 'omarchy' && omarchy.busy}>Back</Button> : <span />}
-          {step.id === 'welcome' ? <Button onClick={advance}>Get started</Button> : null}
-          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? 'Continue' : 'Skip for now'}</Button> : null}
+          {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing || step.id === 'omarchy' && omarchy.busy}><Trans>Back</Trans></Button> : <span />}
+          {step.id === 'welcome' ? <Button onClick={advance}><Trans>Get started</Trans></Button> : null}
+          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? t`Continue` : t`Skip for now`}</Button> : null}
           {last ? (
             <Button onClick={() => void finish()} disabled={(microphoneState !== 'ready' && !microphoneSkipped) || finishing}>
-              {finishing ? 'Saving setup...' : 'Finish setup'}
+              {finishing ? t`Saving setup...` : t`Finish setup`}
             </Button>
           ) : null}
         </footer>

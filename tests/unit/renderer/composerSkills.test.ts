@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { detectSkillTrigger, insertSkill, retainSkillReferences, searchSkills, type CatalogSkill } from '../../../src/renderer/src/agents/composerSkills'
+import { detectSkillTrigger, insertSkill, retainSkillReferences, searchSkills, skillSigils, type CatalogSkill } from '../../../src/renderer/src/agents/composerSkills'
 import { composerMenuKeyAction } from '../../../src/renderer/src/agents/composerKeys'
 
 const skill = (name: string, description = '', scope: CatalogSkill['scope'] = 'user'): CatalogSkill => ({ name, description, scope, path: `C:/skills/${name}/SKILL.md` })
@@ -63,5 +63,13 @@ describe('skills menu keys', () => {
     expect(composerMenuKeyAction(key({ key: 'Tab', shiftKey: true }), { optionCount: 2, highlighted: false })).toBe('none')
     expect(composerMenuKeyAction(key({ key: 'Escape' }), { optionCount: 0, highlighted: false })).toBe('close')
     expect(composerMenuKeyAction(key({ key: 'ArrowDown' }), { optionCount: 0, highlighted: false })).toBe('none')
+  })
+})
+
+describe('skill sigils', () => {
+  it('take the sigils the provider profile names, and $ alone for a provider this build does not know', () => {
+    expect(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'].map(skillSigils)).toEqual([['$'], ['$', '/'], ['$', '/'], ['$'], ['$'], ['$']])
+    expect(skillSigils(undefined)).toEqual(['$'])
+    expect(skillSigils('test-seventh')).toEqual(['$'])
   })
 })

@@ -46,7 +46,7 @@ describe('thread draft recovery through the real connection and disk', () => {
   it('admits a direct send on its own thread lane while the coordinator is busy with other work', async () => {
     const f = await draftFixture()
     const { promise: gate, resolve: release } = deferred<void>()
-    let refreshing: Promise<AgentState | null> | undefined, sending: Promise<void> | undefined
+    let refreshing: Promise<AgentState | null> | undefined, sending: Promise<boolean | null> | undefined
     const execute = vi.spyOn(f.host, 'execute')
     const snapshot = f.control.get().host
     vi.spyOn(f.host, 'snapshot').mockImplementationOnce(async () => { await gate; return snapshot })
@@ -135,7 +135,7 @@ describe('thread draft recovery through the real connection and disk', () => {
   it('admits a send before newer edits while an earlier renderer IPC reply is still held', async () => {
     const f = await draftFixture()
     const { promise: gate, resolve: release } = deferred<void>()
-    let waiting = false, previous: Promise<AgentState | null> | undefined, sending: Promise<void> | undefined
+    let waiting = false, previous: Promise<AgentState | null> | undefined, sending: Promise<boolean | null> | undefined
     const execute = vi.spyOn(f.host, 'execute')
     const bridge: AgentBridge = { ...f.bridge, command: async request => {
       const state = await f.control.command(request)

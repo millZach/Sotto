@@ -8,12 +8,15 @@ import { startSocketServer } from '../../src/host/socketServer'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { SCREENSHOT_NOT_ITS_TYPE, type AgentCommand, type AgentModel, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../src/shared/agents'
-import { hostVersionMismatch, type HostOperation } from '../../src/shared/hostProtocol'
-import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { HOST_FEATURES, hostVersionMismatch, type HostFeature, type HostOperation } from '../../src/shared/hostProtocol'
+import { owlFeaturesForTrack, type OwlFeatureId } from '../../src/shared/owlFeatures'
+import { getReleaseTrack } from '../../src/shared/releaseTrack'
+import { GitPullRequestRefusal } from '../../src/main/agents/gitPullRequests'
+import { HostFactsSource, hostMachineReport, type MachineWork } from '../../src/main/agents/hostFacts'
 import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
-import { useSocketHostFixture } from '../fixtures/socketHostFixture'
+import { SAME_VERSION_HELD, useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
 
@@ -64,21 +67,29 @@ describe('host facts over the socket (#1031)', () => {
     expect((await client.hostFacts()).facts.observedAt).toBe(first.facts.observedAt)
   })
 
-  it('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it', async () => {
+  it.each([true, false])('carries a fresh memory reading across the socket once the refresh window has passed, and the last one inside it, with Work across machines %s', async live => {
     let free = 9 * 1024 ** 3, at = Date.parse('2026-10-15T12:00:00.000Z')
-    const source = new HostFactsSource({ now: () => new Date(at), readFile: async () => 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
+    const source = new HostFactsSource({ now: () => new Date(at), sleep: async () => undefined,
+      readFile: async path => path === '/proc/meminfo' ? `MemAvailable: ${free / 1024} kB\n` : 'PRETTY_NAME="Omarchy"\nVERSION_ID="4.0.4"\n',
       os: { platform: () => 'linux', release: () => '6.17.1', version: () => '#1 SMP', machine: () => 'x86_64', totalmem: () => 16 * 1024 ** 3, freemem: () => free, cpus: () => Array.from({ length: 16 }, () => ({})) } })
     const service: HostService = {
       shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
       command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
-      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, [{ status: 'running' }]),
+      supportsHostFacts: true, hostFacts: () => hostMachineReport(source, () => ({ threads: [{ id: 'a', status: 'running' }, { id: 'b', status: 'idle' }],
+        deliveries: [{ threadId: 'b', status: 'queued' }] }) as unknown as MachineWork, live),
     }
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     try {
       const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
       const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
       await client.connect()
-      expect(await client.hostFacts()).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      const answer = await client.hostFacts()
+      expect(answer).toMatchObject({ runningThreads: 1, facts: { os: { family: 'linux', name: 'Omarchy', version: '4.0.4' }, freeMemoryBytes: 9 * 1024 ** 3 } })
+      // Its live load and work placed but not started cross the socket with the facts only with Work across machines on
+      // (#1311); with it off the answer is the facts and running threads, as before.
+      if (live) expect(answer).toMatchObject({ placedNotStarted: 1,
+        load: { availableMemoryBytes: 9 * 1024 ** 3, windowStartAvailableMemoryBytes: 9 * 1024 ** 3, cpuBusyPercent: null, memoryPressurePercent: null } })
+      else expect(Object.keys(answer).sort()).toEqual(['facts', 'runningThreads'])
       free = 2 * 1024 ** 3; at += HOST_FACTS_REFRESH_MS - 1
       expect((await client.hostFacts()).facts.freeMemoryBytes).toBe(9 * 1024 ** 3)
       at += 1
@@ -108,14 +119,84 @@ describe('host facts over the socket (#1031)', () => {
   })
 })
 
+describe('the iPhone’s pull request sheet (#1281)', () => {
+  it('is offered, phones included, only by a host whose Owl answer turns it on, and leaves the pull request read and babysitting as they were', async () => {
+    const base: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => null, supportsBabysitting: true,
+    }
+    for (const [service, offered] of [[{ ...base, supportsPullRequestView: true }, true], [base, false], [{ ...base, supportsPullRequestView: false }, false]] as const) {
+      // The desktop's phone listener, which serves phones only.
+      const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+      try {
+        const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+        const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+        const features = (await client.connect()).features ?? []
+        expect(features.includes('pull-request-view')).toBe(offered)
+        expect(features).toEqual(expect.arrayContaining(['git-pull-request', 'pull-request-babysit']))
+        expect(server.descriptor.features.includes('pull-request-view')).toBe(offered)
+      } finally { await server.close() }
+    }
+  })
+  it('says why a pull request read failed as a reason beside today’s refusal, and never sends gh’s words (#1290)', async () => {
+    let failure: Error = new Error('unset')
+    const service: HostService = {
+      shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+      gitPullRequest: async () => { throw failure }, supportsPullRequestView: true,
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'iPhone')
+    const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await phone.call('hello', { op: 'hello', accepts: [] })
+      const said = 'gh auth login as octocat at https://token@github.com'
+      const cases: Array<[Error, string]> = [
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-signed-out'), 'gh-signed-out'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'gh-missing'), 'gh-missing'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`, 'offline'), 'offline'],
+        [new GitPullRequestRefusal(`Could not read the pull request. ${said}`), 'unreadable'],
+        [new Error(said), 'unreadable'],
+      ]
+      for (const [index, [error, reason]] of cases.entries()) {
+        failure = error
+        const answer = await phone.call(`pr-${index}`, { op: 'git-pull-request', request: { threadId: 'thread-1', reference: 'https://github.com/o/r/pull/42' } })
+        // The code and sentence an older phone reads are today's; the reason is beside them, and nothing gh said is.
+        expect(answer).toMatchObject({ ok: false, error: { code: 'unavailable', message: 'The host could not complete this request. Refresh the thread before trying again.', reason } })
+        expect(JSON.stringify(answer)).not.toMatch(/octocat|token@|gh auth/u)
+      }
+      // Any other refusal carries no reason.
+      const other = await phone.call('host-facts', { op: 'host-facts' }) as { error: Record<string, unknown> }
+      expect(other.error).not.toHaveProperty('reason')
+    } finally { phone.frames.close(); await server.close() }
+  })
+})
+
 describe('host version and features', () => {
+  /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts']
+  /**
+   * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
+   * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
+   */
+  const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
+    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view' }
+  const offered = (always: readonly HostFeature[]): HostFeature[] => {
+    const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
+    return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
+  }
+
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
+    // Its own features, and those its version's Owl answers turn on, in the protocol's order.
+    const listed = offered(LISTED), greeted = offered(GREETED)
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
-    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse'] })
+    expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: listed })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
-    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse'] })
+    expect(listener).toMatchObject({ v: 1, sottoVersion: packageVersion, features: listed })
     const { client } = await pair()
-    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts'], capabilities: { mayAnswer: false } })
+    expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: greeted, capabilities: { mayAnswer: false } })
   })
 
   it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {
@@ -145,6 +226,31 @@ describe('host version and features', () => {
       await expect(other.command({ type: 'queue-client-updates', providers: ['codex'] })).rejects.toMatchObject({ code: 'forbidden' })
       await expect(other.command({ type: 'cancel-client-updates', providers: ['codex'] })).rejects.toMatchObject({ code: 'forbidden' })
     } finally { await phone.close() }
+  })
+
+  it('sends mise’s not-listed failure only to a desktop that accepts it, and the installer’s failure to every other', async () => {
+    const reading = { id: 'claude' as const, installed: '2.1.309', published: '2.1.310', behind: true, channel: 'mise' as const, command: 'mise install claude@2.1.310',
+      canInstall: true, checkedAt: '2026-10-23T23:50:00.000Z', state: 'failed' as const, step: 1, failure: 'not-listed' as const }
+    const service: HostService = {
+      shell: () => ({ ...fixture.host.service.shell(), clientUpdates: [reading] }), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+      command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+    }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, clientUpdates: true })
+    expect(server.descriptor.features).toContain('client-update-not-listed')
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    const desktop = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(desktop)
+    const session = fixture.host.pairing.signSession(paired.clientId)
+    const older = await rawPeer(server.descriptor.port, session), oldest = await rawPeer(server.descriptor.port, session)
+    try {
+      await desktop.connect()
+      expect(desktop.shell().clientUpdates).toEqual([expect.objectContaining({ channel: 'mise', failure: 'not-listed' })])
+      // A desktop from before this failure knows client updates but would refuse a shell naming a failure it does not know.
+      type Hello = { result: { shell: { clientUpdates: unknown[] } } }
+      const before = await older.call('hello', { op: 'hello', accepts: ['client-updates'] }) as Hello
+      expect(before.result.shell.clientUpdates).toEqual([expect.objectContaining({ channel: 'mise', state: 'failed', failure: 'installer' })])
+      const pre480 = await oldest.call('hello', { op: 'hello', accepts: [] }) as Hello
+      expect(pre480.result.shell.clientUpdates).toEqual([expect.objectContaining({ channel: 'unknown', failure: 'installer' })])
+    } finally { older.frames.close(); oldest.frames.close(); await server.close() }
   })
 
   it('sends the mise channel and the waiting state only to a client that accepts client-updates, and the rest as it knew them (#480)', async () => {
@@ -277,11 +383,12 @@ describe('model catalog revisions (#699)', () => {
       expect(answered).toMatchObject({ ok: true }); expect(answered.result!.host).toMatchObject({ modelsRevision: first })
       expect(answered.result!.host).not.toHaveProperty('models')
 
-      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time.
-      const olderPush = await nextShell(older, publish)
-      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
+      // A client that did not accept the feature is sent exactly what v1 sends: the whole catalog, every time. Its answer
+      // comes first: a push of the shell it was already pushed is not sent again, and one after an answer is.
       const olderAnswer = await older.call('select', { op: 'command', command: { type: 'select-project', projectId: 'project' } }) as Frame
       expect(olderAnswer.result!.host!.models).toEqual(models); expect(olderAnswer.result!.host).not.toHaveProperty('modelsRevision')
+      const olderPush = await nextShell(older, publish)
+      expect(olderPush.models).toEqual(models); expect(olderPush).not.toHaveProperty('modelsRevision')
 
       // A changed catalog goes whole once, under a new revision, then is named again.
       models = syntheticModelCatalog(6)
@@ -323,7 +430,7 @@ describe('model catalog revisions (#699)', () => {
     const { service, publish } = catalogHost(() => models)
     const server = await startSocketServer({ service, pairing: fixture.host.pairing })
     const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
-    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+    const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
     const transport = client as unknown as { receive(text: string): void }
     const receive = transport.receive.bind(client), wire: Record<string, unknown>[] = []
     transport.receive = text => { wire.push(JSON.parse(text) as Record<string, unknown>); receive(text) }

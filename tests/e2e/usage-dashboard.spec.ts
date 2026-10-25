@@ -8,11 +8,12 @@ import { fillPrompt, promptField } from './support/prompt'
 import { openThreads } from './support/sottoLaunch'
 import { textContrast } from './support/textContrast'
 import {
-  REPORTED_USAGE_MODEL, SELECTED_USAGE_MODEL, chooseUsageFilter, usageAssistantFrame, usageDashboardHarness,
+  REPORTED_USAGE_MODEL, SEEDED_USAGE_MODELS, SELECTED_USAGE_MODEL, chooseUsageFilter, seedUsageHistory, usageAssistantFrame, usageDashboardHarness,
   usageResultFrame, usageWait, waitForNativePrompt,
 } from './support/usageDashboard'
 
 const artifacts = evidenceDirectory('artifacts/usage-dashboard')
+const splitArtifacts = evidenceDirectory('artifacts/usage-chart-split')
 
 test('Owl Usage counts real accepted sends under their served model, filters by place and clears safely, and survives history off and restart', async () => {
   test.setTimeout(180_000)
@@ -188,7 +189,10 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
 
     const more = page.getByRole('button', { name: 'More usage actions', exact: true })
     const clear = async (): Promise<void> => { await more.click(); await page.getByRole('menuitem', { name: 'Clear usage…', exact: true }).click() }
-    await more.focus(); await more.press('ArrowDown')
+    // Focus scrolls the page back up to the button. A popup closes on a scroll, so let that scroll land first,
+    // as it always has before a person's next key.
+    await more.focus(); await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))))
+    await more.press('ArrowDown')
     await expect(page.getByRole('menuitem', { name: 'Clear usage…', exact: true })).toBeFocused()
     await page.keyboard.press('Escape'); await expect(page.getByRole('menu')).toHaveCount(0); await expect(more).toBeFocused()
     await clear(); await expect(page.getByRole('dialog', { name: 'Clear saved usage?', exact: true })).toBeVisible()
@@ -254,6 +258,93 @@ test('Owl Usage counts real accepted sends under their served model, filters by 
       selectedModel: SELECTED_USAGE_MODEL, reportedModel: REPORTED_USAGE_MODEL, initial: initial.totals, afterClear: afterClear.totals,
       newTurn: beforeQuit.totals, afterRestart: restored.totals, afterReplay: afterReplay.totals, captures: harness.captures,
       historyOffRetained: true, staleClearRefused: true, activeAndReplayedGroupsSuppressed: true, pageErrorCount: harness.pageErrors.length }, null, 2))
+  } finally { await harness.cleanup() }
+})
+
+test('Owl Usage splits the Per day chart by model and provider, as bars or lines, and reads each series for a day', async () => {
+  test.setTimeout(150_000)
+  const harness = await usageDashboardHarness()
+  try {
+    await mkdir(splitArtifacts, { recursive: true })
+    const seeded = await seedUsageHistory(harness.home)
+    const page = await harness.launch()
+    await harness.open()
+    // The importer reads the seeded transcripts and rollout a few seconds after start.
+    await expect.poll(async () => (await harness.activity()).totals.prompts.total, usageWait).toBe(seeded)
+    await harness.open()
+    const measures = page.getByRole('tablist', { name: 'Usage measures', exact: true })
+    await expect(measures.getByRole('tab', { name: new RegExp(`^Prompts ${seeded} `, 'u') })).toBeVisible(usageWait)
+    const show = page.getByRole('radiogroup', { name: 'Show on the chart', exact: true })
+    const style = page.getByRole('radiogroup', { name: 'Draw the days as', exact: true })
+    const plot = page.getByRole('group', { name: /^Prompts per day, /u })
+    const values = page.getByRole('list', { name: /^Each model, /u })
+    const row = (name: string) => values.getByRole('listitem').filter({ has: page.getByText(name, { exact: true }) }).locator('b')
+    const sum = (model: typeof SEEDED_USAGE_MODELS[number]) => model.prompts.reduce((total, count) => total + count, 0)
+    // At the minimum the stage sits below the index; bring the Per day block to the top before a capture.
+    const toPerDay = async (width: number, height: number): Promise<void> => {
+      await harness.resize(width, height)
+      await page.locator('.usage-chart-head').evaluate(element => {
+        const scroll = element.closest<HTMLElement>('.usage-scroll')!
+        scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 16
+      })
+    }
+    await expect(show.getByRole('radio', { name: 'Total', exact: true })).toHaveAttribute('aria-checked', 'true')
+
+    await show.getByRole('radio', { name: 'By model', exact: true }).click()
+    await expect(values.getByRole('listitem')).toHaveCount(6)
+    for (const model of SEEDED_USAGE_MODELS.slice(0, 5)) await expect(row(model.name)).toHaveText(String(sum(model)))
+    await expect(row('Other (2)')).toHaveText(String(sum(SEEDED_USAGE_MODELS[5]!) + sum(SEEDED_USAGE_MODELS[6]!)))
+    await expect(plot).toHaveAccessibleName(/Stacked by model: Claude Opus 5\.5, GPT-6\.1 Sol, Claude Sonnet 5\.5, Claude Fable 5, Claude Haiku 4\.5 and Other \(2\)\./u)
+    await expect(plot).not.toHaveAttribute('aria-busy', 'true')
+    await harness.capture(splitArtifacts, 'prompts-by-model-bars-light-1280.png', 1280, 800, 'light')
+
+    await style.getByRole('radio', { name: 'Bars', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(style.getByRole('radio', { name: 'Lines', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await expect(plot.locator('.usage-chart__line')).toHaveCount(6)
+    await expect(plot.locator('.usage-chart__column')).toHaveCount(0)
+    await plot.focus(); await plot.press('End'); await plot.press('ArrowLeft')
+    const yesterday = SEEDED_USAGE_MODELS.map(model => model.prompts.at(-2)!)
+    await expect(row('Claude Opus 5.5')).toHaveText(String(yesterday[0]))
+    await expect(page.locator('.usage-view [aria-live="polite"]')).toContainText(`: ${yesterday.reduce((total, count) => total + count, 0)} prompts. Claude Opus 5.5 ${yesterday[0]}, GPT-6.1 Sol ${yesterday[1]},`)
+    await harness.capture(splitArtifacts, 'prompts-by-model-lines-dark-1600.png', 1600, 1000, 'dark')
+    await plot.press('Escape')
+    await expect(row('Claude Opus 5.5')).toHaveText(String(sum(SEEDED_USAGE_MODELS[0]!)))
+    // Each model's provider and what Other holds, in words: the next Tab stop after the chart opens them and Escape closes them.
+    const more = page.locator('details.usage-values-more')
+    const providerOf = (model: typeof SEEDED_USAGE_MODELS[number]): string => model.providerId === 'claude' ? 'Claude Code' : 'Codex'
+    await page.keyboard.press('Tab')
+    await expect(more.locator('summary')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(more).toHaveAttribute('open', '')
+    await expect(more.getByRole('listitem').first()).toHaveText(`${SEEDED_USAGE_MODELS[0]!.name}, from ${providerOf(SEEDED_USAGE_MODELS[0]!)}`)
+    await expect(more.getByRole('listitem').last()).toHaveText(`Other holds ${SEEDED_USAGE_MODELS.slice(5).map(model => `${model.name} from ${providerOf(model)}`).join(' and ')}.`)
+    await harness.resize(820, 560)
+    await more.evaluate(element => element.scrollIntoView({ block: 'end' }))
+    await harness.capture(splitArtifacts, 'prompts-by-model-providers-dark-820.png', 820, 560, 'dark')
+    await page.keyboard.press('Escape')
+    await expect(more).not.toHaveAttribute('open', '')
+    await expect(more.locator('summary')).toBeFocused()
+    await toPerDay(820, 560)
+    await harness.capture(splitArtifacts, 'prompts-by-model-lines-dark-820.png', 820, 560, 'dark')
+
+    // The choice follows to Tokens; By provider there draws Claude Code and Codex as bars.
+    await measures.getByRole('tab', { name: /^Tokens /u }).click()
+    await expect(show.getByRole('radio', { name: 'By model', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await expect(style.getByRole('radio', { name: 'Lines', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await show.getByRole('radio', { name: 'By provider', exact: true }).click()
+    await style.getByRole('radio', { name: 'Bars', exact: true }).click()
+    const providers = page.getByRole('list', { name: /^Each provider, /u })
+    await expect(providers.getByRole('listitem')).toHaveCount(2)
+    await expect(providers.getByRole('listitem').first()).toContainText('Claude Code')
+    await expect(page.getByRole('group', { name: /^Tokens per day, .* Stacked by provider: Claude Code and Codex\./u })).not.toHaveAttribute('aria-busy', 'true')
+    await toPerDay(820, 560)
+    await harness.capture(splitArtifacts, 'tokens-by-provider-bars-light-820.png', 820, 560, 'light')
+    await harness.capture(splitArtifacts, 'tokens-by-provider-bars-dark-1280.png', 1280, 800, 'dark')
+    expect(harness.pageErrors).toEqual([])
+    await writeFile(join(splitArtifacts, 'verified.json'), JSON.stringify({ surface: 'production Electron main, renderer and history importer over seeded synthetic transcripts',
+      syntheticOnly: true, networkDisabled: true, seededPrompts: seeded, models: SEEDED_USAGE_MODELS.map(model => ({ name: model.name, prompts: sum(model) })),
+      captures: harness.captures, pageErrorCount: harness.pageErrors.length }, null, 2))
   } finally { await harness.cleanup() }
 })
 

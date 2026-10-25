@@ -1,9 +1,11 @@
+import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools, ThreadMcpServer } from './threadToolServer'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
+import type { WatcherAsk } from '../../shared/watcherAsks'
 import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
@@ -13,6 +15,7 @@ import type { ThreadEvent } from '../../shared/threadEvents'
 import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -56,6 +59,11 @@ export type AgentHostCommand =
     /** A wake-up babysitting sends (ADR-0061 decision 8): the workspace records the message as Sotto's before the provider hears it. */
     readonly wakeUp?: true
     /**
+     * Set beside `wakeUp` on a wake-up that carries only delegation news (ADR-0081, October 19, 2026): the workspace
+     * records the message as one no window or phone shows. No adapter hears it; the provider gets the text as any send's.
+     */
+    readonly hiddenWakeUp?: true
+    /**
      * Main's request note for a user Send to the current Watcher (ADR-0073), set only by its Watcher service. A Watcher
      * thread's adapter gives it to the model through the provider's own context channel for this turn, never in the
      * user's text, so the message is sent, echoed and shown as typed. Every other thread ignores it.
@@ -66,11 +74,18 @@ export type AgentHostCommand =
      * travels exactly as the request note does, through the same channel, beside a short message of Sotto's that no
      * one is shown. Every other thread ignores it.
      */
-    readonly watcherNews?: string }
+    readonly watcherNews?: string
+    /**
+     * The requests that wake-up's news said waited on the user, text-free (ADR-0073, answering in Watcher's
+     * conversation), set only by the coordinator beside `watcherNews`. The workspace records them with the wake-up, and
+     * no adapter hears them.
+     */
+    readonly watcherAsks?: readonly WatcherAsk[] }
   | { readonly type: 'steer'; readonly commandId: string; readonly threadId: string; readonly messageId: string; readonly text: string; readonly attachments?: readonly PromptImage[]; readonly skills?: AgentSkillReference[]; readonly files?: AgentFileReference[]; readonly expectedLastUserMessageId?: string | null }
   | { readonly type: 'answer'; readonly commandId: string; readonly threadId: string; readonly requestId: string; readonly answer: string; readonly approved?: boolean; readonly questionAnswers?: AgentQuestionAnswers; readonly permissionChoice?: string }
   | { readonly type: 'interrupt'; readonly commandId: string; readonly threadId: string }
-  | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string }
+  /** `idle` marks Sotto's own idle compaction (ADR-0127), which the transcript names as such. */
+  | { readonly type: 'compact-thread'; readonly commandId: string; readonly threadId: string; readonly idle?: true }
 export interface AgentHostResult {
   readonly accepted: boolean
   readonly uncertain?: boolean
@@ -187,7 +202,7 @@ export interface RestoredThreadHistory {
 /** One change to what a thread said, addressed by Sotto thread ID (ADR-0016). */
 export interface ThreadHostEvent { readonly threadId: string; readonly event: ThreadEvent }
 /** One message the event store already holds, as an adapter needs to recognise it: its ID and its role. */
-export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant' }
+export interface StoredMessageIdentity { readonly id: string; readonly role: 'user' | 'assistant'; readonly turnMessageId?: string }
 /**
  * What the host's event store already holds for a thread, asked for one thread at a time. An adapter
  * re-reading a provider's own history uses it to append the unseen tail instead of adding the history
@@ -242,7 +257,12 @@ export interface AgentHost {
   /** Owl-only numeric observations. Adapters own native IDs; wrappers translate to Sotto IDs. */
   subscribeUsage?(listener: (record: UsageTokenObservation) => void): () => void
   visitUsage?(threadId: string, visitor: (record: UsageTokenObservation) => void): void
-  readProviderQuota?(providerId: ProviderId, refresh: boolean): Promise<UsageQuotaRead>
+  /**
+   * A provider's limits: the last reading, or with `refresh` a new one. `background` marks a refresh Usage made on its
+   * own when it opened, which a provider whose read is costly may answer from a recent reading (#1456). Read again
+   * never sets it.
+   */
+  readProviderQuota?(providerId: ProviderId, refresh: boolean, background?: boolean): Promise<UsageQuotaRead>
   /**
    * Owl-only (ADR-0083): read this computer's own provider records into Usage, numbers only. Each native adapter reads
    * its own provider's files, reports a session it owns under its own thread ID, and every other session under a
@@ -313,6 +333,8 @@ export interface AgentHost {
   /** The held provider of each saved thread hidden for it, so a refusal names that provider rather than another held one. */
   dormantThreadProviders?(): ReadonlyMap<string, ProviderId>
   setWorkspaceSettled?(kind: 'project' | 'thread', id: string, settled: boolean, options?: { expectedMergedTip: string; expectedMergedBranch: string }, watcherGuard?: () => void): Promise<AgentHostSnapshot>
+  /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
+  reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
@@ -335,8 +357,16 @@ export interface AgentHost {
    * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).
    */
   recordAnswer?(threadId: string, event: AnswerGivenEvent): void
-  /** Widen one thread's loaded message window by another twenty turns and publish (issue #119). */
-  loadEarlierMessages?(threadId: string): Promise<AgentHostSnapshot>
+  /**
+   * Widen one thread's loaded message window by another twenty turns and publish (issue #119), or, with `throughMessageId`,
+   * far enough back to hold that message, for the message scrubber's press on a prompt above the window (ADR-0109).
+   */
+  loadEarlierMessages?(threadId: string, throughMessageId?: string): Promise<AgentHostSnapshot>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null
   /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records
@@ -394,6 +424,12 @@ export interface AgentHost {
    * A subscriber that keeps history from `subscribeEvents` says so in `options`, and then a host that
    * publishes events carries every thread with its summary and no messages, held or not (ADR-0016, #322). */
   subscribeActivitySnapshots?(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void
+  /**
+   * The same publications as thread changes (ADR-0016, #925): a whole first publication, then the threads that changed
+   * and the threads that went, numbered, from the same view and the same emit as `subscribeActivitySnapshots`. Every
+   * provider adapter offers it beside its activity snapshots; the layers above still read the snapshots until they move.
+   */
+  subscribeActivityChanges?(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription
   /**
    * Every change to what a thread said, as it happens. An adapter that implements this publishes each
    * change once through its own append path, and its snapshots then carry the messages only for the

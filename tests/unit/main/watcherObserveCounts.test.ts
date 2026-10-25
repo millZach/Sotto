@@ -57,7 +57,7 @@ async function pairedWatcher(size: number) {
       action: 'start' as const, target: { hostId, threadId }, generation: 0, deliveryState: 'accepted' as const, createdAt: at, updatedAt: at,
       receiptId: `receipt-${index}`, cardId: `card-${index}`, messageId: `brief-${index}` })))
   })
-  const watcher = new WatcherService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => false, limit: () => 8, streamingPublishCost: true })
+  const watcher = new WatcherService({ directory: f.root, control: f.control, host: workspace.host, historyEnabled: () => false, streamingPublishCost: true })
   cleanups.push(async () => { watcher.close() })
   const remote = router.watcherHosts(), listHosts = remote.hosts.bind(remote)
   remote.hosts = () => { if (counted()) tally.hostLists++; return listHosts() }
@@ -65,6 +65,8 @@ async function pairedWatcher(size: number) {
   const readRecord = f.control.watcherRecord.bind(f.control)
   f.control.watcherRecord = () => { if (counted()) tally.records++; return readRecord() }
   watcher.wakes.start()
+  // These count reads per pass, so every update runs its pass at once, as one does after WATCHER_OBSERVE_MS.
+  Object.defineProperty(watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })
   const measure = async (read: () => unknown) => {
     for (const name of Object.keys(tally) as (keyof typeof tally)[]) tally[name] = 0
     const token = measuring = {}
@@ -87,9 +89,10 @@ async function counts(size: number) {
 it('reads the paired shell, the host list and the Watcher record a fixed number of times per pass, whatever the size', async () => {
   const small = await counts(2), large = await counts(24)
   expect(large).toEqual(small)
-  // A pass reads the merged snapshot and the record once; a state read copies the shell once for the room's inputs and
-  // once for the news it checks, and lists the hosts once for outcomes and once for the news.
-  expect(small.observe).toMatchObject({ shells: 1, records: 1 })
+  // A pass reads the merged snapshot once and the record without copying it; a state read copies the shell once for the
+  // room's inputs and once for the news it checks, and lists the hosts once for outcomes and once for the news.
+  expect(small.observe).toMatchObject({ shells: 1, records: 0 })
+  expect(small.state.records).toBe(0)
   expect(small.state.shells).toBeLessThanOrEqual(2)
   expect(small.state.hostLists).toBeLessThanOrEqual(2)
 }, 120_000)

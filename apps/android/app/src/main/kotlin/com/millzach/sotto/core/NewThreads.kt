@@ -19,9 +19,24 @@ data class ThreadModel(
     val defaultReasoningEffort: String? = null,
     val runtimeModes: List<String>? = null,
     val providerModes: List<ProviderMode>? = null,
+    // Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
+    // maker, the company that made it, such as Anthropic (ADR-0128). Other providers' models say nothing.
+    val source: String? = null,
 ) {
     @Serializable
     data class ProviderMode(val id: String, val name: String, val allows: String? = null, val asks: String? = null)
+
+    // The model as a row reads it: "Codex · GPT-6.1 Sol", or "OpenCode · Anthropic · Claude Sonnet 4.5" with a source, and
+    // "Cursor · Anthropic · Claude Sonnet 5.5" with a maker, so a Cursor thread on Claude never reads as Claude Code.
+    val label: String get() = labelOf(providerId, source, name)
+
+    companion object {
+        // A source that only repeats the agent's name, as Cursor's own models' maker does, is left out: "Cursor · Auto".
+        fun labelOf(providerID: String?, source: String?, name: String): String {
+            val agent = AgentNames.name(providerID)
+            return listOfNotNull(agent, source?.takeIf { it.isNotEmpty() && it != agent }, name).joinToString(" · ")
+        }
+    }
 
     val startingEffort: String
         get() {

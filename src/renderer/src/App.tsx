@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import type { SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
-import { HistoryView } from './features/history/HistoryView'
 import { UsageView } from './features/usage/UsageView'
 import { Onboarding } from './features/onboarding/Onboarding'
 import { ThreadsTour } from './features/onboarding/ThreadsTour'
@@ -23,6 +25,8 @@ import {
 } from './features/onboarding/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
+import { useDictationOn } from './state/dictationFeature'
+import { useOpenThreadsOnNotification } from './state/desktopNotifications'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -52,18 +56,18 @@ import { StartingScreenGate } from './features/starting/StartingScreen'
 import { appearancePreview, applyAppearance, systemPrefersDark, useAppearancePreviewVersion, useSystemPrefersDark } from './state/appearance'
 
 const recoveryMessages = {
-  DESKTOP_CLIPBOARD_UNAVAILABLE: 'Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.',
-  RETIRED_CHAT_HISTORY_NOT_CLEARED: 'Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.',
-  ANSWER_HISTORY_NOT_CLEARED: 'Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  REMOTE_DRAFT_STORAGE_NOT_UPDATED: 'Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.',
-  REMOTE_DRAFTS_UNREADABLE: 'Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.',
-  OPENROUTER_KEY_MIGRATION_FAILED: 'The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.',
-  SETTINGS_RECOVERED: 'Sotto restored default settings after a local settings file could not be read. The original file was preserved.',
-  CREDENTIALS_RECOVERED: 'Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.',
-  HISTORY_RECOVERED: 'Sotto started with an empty history after its local history file could not be read. The original file was preserved.',
-  ACCESSIBILITY_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.',
-  AUTOMATION_PERMISSION_REQUIRED: 'Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.',
-} as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, string>
+  DESKTOP_CLIPBOARD_UNAVAILABLE: msg`Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again.`,
+  RETIRED_CHAT_HISTORY_NOT_CLEARED: msg`Saved chat history could not be fully cleared. Some local chat data was left in place. Repair local storage, then save Settings or restart Sotto to try again.`,
+  ANSWER_HISTORY_NOT_CLEARED: msg`Saved answer cleanup could not finish. The original file was preserved. Repair local storage, then restart Sotto to try again.`,
+  REMOTE_DRAFT_STORAGE_NOT_UPDATED: msg`Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.`,
+  REMOTE_DRAFTS_UNREADABLE: msg`Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.`,
+  OPENROUTER_KEY_MIGRATION_FAILED: msg`The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.`,
+  SETTINGS_RECOVERED: msg`Sotto restored default settings after a local settings file could not be read. The original file was preserved.`,
+  CREDENTIALS_RECOVERED: msg`Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings.`,
+  HISTORY_RECOVERED: msg`Sotto started with an empty history after its local history file could not be read. The original file was preserved.`,
+  ACCESSIBILITY_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again.`,
+  AUTOMATION_PERMISSION_REQUIRED: msg`Sotto copied the transcript instead of pasting it. Paste it with ⌘V. Automatic paste needs Sotto allowed to control System Events in System Settings > Privacy & Security > Automation.`,
+} as const satisfies Record<Exclude<RecoveryNotice['code'], 'OPENROUTER_KEY_UNREADABLE'>, MessageDescriptor>
 
 // The macOS pane that holds the permission a notice is about.
 const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>> = {
@@ -74,7 +78,7 @@ const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>>
 function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
   const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
     ? platformCopy(platform).openRouterKeyUnreadable
-    : recoveryMessages[notice.code]
+    : i18n._(recoveryMessages[notice.code])
   const pane = recoveryPanes[notice.code]
   return {
     id: notice.code,
@@ -111,37 +115,59 @@ export function applyDocumentPreferences(
  * beside the sidebar, or the corner of a page that owns its window): what this
  * page keeps. Threads has no foot line, so it says nothing here.
  */
-function FooterStatus({ navigation, settings, historyKept, speechModel }: {
+/** The chosen model's name, for the lines that say it is ready; generic until the list says which. */
+function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choice: string | null): string {
+  const chosen = models?.find((model) => model.id === choice)
+  if (chosen !== undefined) return chosen.name
+  if (choice === null) return PARAKEET_V3.name
+  return sottoSpeechModel(choice)?.name ?? i18n._(msg`The speech model`)
+}
+
+function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
-  readonly settings: AppSettings
+  /** With dictation off (ADR-0107) the speech model is not loaded, so the status says nothing about it. */
+  readonly dictationOn: boolean
   readonly speechModel: SpeechModelStatus | null
-  /** Whether History still holds transcripts the user could clear. */
-  readonly historyKept: boolean
+  readonly speechModelName: string
 }): ReactNode {
+  const { t } = useLingui()
   switch (navigation) {
-    case 'history': return settings.historyEnabled ? 'Kept on this computer only.' : historyKept ? 'History is off. Older transcripts are still here.' : 'History is off.'
-    case 'usage': return 'Numeric usage stays on each computer.'
-    case 'memory': return 'Your preferences, with their history.'
-    case 'settings': return 'Changes save as you make them.'
-    case 'help': return 'Shortcuts, privacy, and troubleshooting.'
-    default: return speechModelSummary(speechModel)
+    case 'usage': return t`Numeric usage stays on each computer.`
+    case 'memory': return t`Your preferences, with their history.`
+    case 'settings': return t`Changes save as you make them.`
+    case 'help': return t`Shortcuts, privacy, and troubleshooting.`
+    default: return dictationOn ? speechModelSummary(speechModel, speechModelName) : null
   }
 }
 
 export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
+  const { t } = useLingui()
   const watcherEnabled = useWatcherEnabled()
+  const dictationOn = useDictationOn()
   const usageEnabled = useOwlFeature('usage')
   const updateAll = useOwlFeature('update-all')
   const downloadSpeechModel = useCallback((): void => { void app.actions.downloadSpeechModel() }, [app.actions])
+  // Set when main refused the last choice, so the picker can say why nothing changed.
+  const [speechModelRefused, setSpeechModelRefused] = useState(false)
+  const chooseSpeechModel = useCallback((id: string): void => {
+    setSpeechModelRefused(false)
+    void app.actions.chooseSpeechModel(id).then(chosen => { setSpeechModelRefused(!chosen) })
+  }, [app.actions])
+  // The models on this computer can change while Sotto runs (another app downloads or deletes one),
+  // so the list is read again whenever a page that offers them opens. Settings offers none while dictation is off.
+  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || (app.navigation === 'settings' && dictationOn)
+  useEffect(() => {
+    if (offersSpeechModels) void app.actions.refreshSpeechModels()
+  }, [offersSpeechModels, app.actions])
   const memoryEnabled = useMemoryEnabled()
   const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
   const [microphoneLevel, setMicrophoneLevel] = useState(0)
-  const [historyQuery, setHistoryQuery] = useState('')
-  const [historyClearOpen, setHistoryClearOpen] = useState(false)
+  // The Journal's search outlives the room, so leaving Dictate and coming back finds it as it was.
+  const [journalQuery, setJournalQuery] = useState('')
   // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
   const [threadsTour, setThreadsTour] = useState(false)
-  const [historySearchRequest, setHistorySearchRequest] = useState(0)
+  const [journalSearchRequest, setJournalSearchRequest] = useState(0)
   const microphoneRef = useRef<MicrophoneTestController | null>(null)
   const microphoneGenerationRef = useRef(0)
   const microphoneMountedRef = useRef(false)
@@ -184,7 +210,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <strong>{notice.title}</strong>
         {notice.detail === null ? null : <> {notice.detail}</>}
         {link !== null && open !== undefined
-          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}>Read more</button></>
+          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
           : null}
       </>
     )
@@ -216,17 +242,26 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const search = (event: KeyboardEvent): void => {
       if (!app.settings?.onboardingComplete || document.querySelector('dialog[open], [role="dialog"]')) return
       if (event.key.toLowerCase() !== 'k' || !(app.platform === 'darwin' ? event.metaKey : event.ctrlKey)) return
+      // Ctrl+K (Cmd+K on macOS) opens the Dictate room on the Journal's search; with dictation off there is no room.
+      if (!dictationOn) return
       event.preventDefault()
-      app.actions.navigate('history')
-      setHistorySearchRequest(value => value + 1)
+      app.actions.navigate('home')
+      setJournalSearchRequest(value => value + 1)
     }
     window.addEventListener('keydown', search)
     return () => window.removeEventListener('keydown', search)
-  }, [app.actions, app.platform, app.settings?.onboardingComplete])
+  }, [app.actions, app.platform, app.settings?.onboardingComplete, dictationOn])
+
+  // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
+  useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
+
+  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
+  const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
+  useOpenThreadsOnNotification(showThreads)
 
   useEffect(() => {
-    if (historySearchRequest > 0 && app.navigation === 'history') document.querySelector<HTMLInputElement>('.history-find__input')?.focus()
-  }, [historySearchRequest, app.navigation])
+    if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
+  }, [journalSearchRequest, app.navigation])
 
   const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
     const existing = microphoneReleasesRef.current.get(controller)
@@ -338,13 +373,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   let content: ReactNode
   if (app.status === 'loading') {
-    content = <main className="app-loading" aria-busy="true"><p role="status">Preparing Sotto...</p></main>
+    content = <main className="app-loading" aria-busy="true"><p className="tt-paragraph" role="status"><Trans>Preparing Sotto...</Trans></p></main>
   } else if (app.status === 'unavailable' || app.settings === null) {
     content = (
       <main className="app-unavailable">
         <Card>
-          <h1>Sotto could not finish starting</h1>
-          <p>Your data was not changed. Close and reopen Sotto, then try again.</p>
+          <h1><Trans>Sotto could not finish starting</Trans></h1>
+          <p className="tt-paragraph"><Trans>Your data was not changed. Close and reopen Sotto, then try again.</Trans></p>
         </Card>
       </main>
     )
@@ -357,8 +392,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           microphoneLevel={microphoneLevel}
           settings={app.settings}
           onUpdateSettings={app.actions.updateSettings}
+          speechModels={app.speechModels}
+          speechModelChoice={app.speechModelChoice}
           speechModel={app.speechModel}
-          onDownloadSpeechModel={downloadSpeechModel}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
+          onRetrySpeechModel={downloadSpeechModel}
           shortcut={app.settings.hotkey}
           platform={app.platform}
           onRequestMicrophone={requestMicrophone}
@@ -381,13 +420,16 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const navigation = app.navigation
     // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
     const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
-    // Watcher's room is reachable only while its gate is on; without it the navigation lands on Threads.
+    // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
+    // without them the navigation lands on Threads.
     const watcherPage = navigation === 'watcher' && watcherEnabled
-    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled)
+    const threadsPage = navigation === 'threads' || (navigation === 'watcher' && !watcherEnabled) || (navigation === 'memory' && !memoryEnabled) || (navigation === 'usage' && !usageEnabled) || (navigation === 'home' && !dictationOn)
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} settings={app.settings} speechModel={app.speechModel} historyKept={app.historyStatus === 'ready' && app.history.length > 0} />
+    const statusText = <FooterStatus navigation={navigation} dictationOn={dictationOn} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
+    // An end-to-end run counts the Journal's days from the instant its dictations are stamped near.
+    const journalNow = window.sottoE2E === undefined ? undefined : E2E_THREADS_NOW
     const threadWorkspace = (
       <ThreadWorkspace
         updateControl={updateControl}
@@ -406,22 +448,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       case 'watcher':
         view = watcherPage ? <WatcherView updateControl={updateControl} now={captureNow} /> : threadWorkspace
         break
-      case 'history':
-        view = <HistoryView
-          entries={app.history}
-          enabled={app.settings.historyEnabled}
-          status={app.historyStatus}
-          query={historyQuery}
-          onQueryChange={setHistoryQuery}
-          clearOpen={historyClearOpen}
-          onClearOpenChange={setHistoryClearOpen}
-          onOpenDictate={() => app.actions.navigate('home')}
-          onOpenSettings={() => app.actions.navigate('settings')}
-          onCopy={app.actions.copyHistory}
-          onDelete={app.actions.deleteHistory}
-          onClear={app.actions.clearHistory}
-        />
-        break
       case 'usage':
         view = usageEnabled ? <UsageView /> : threadWorkspace
         break
@@ -435,29 +461,37 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           updateStatus={app.update}
           onUpdateSettings={app.actions.updateSettings}
           onReplaceHotkey={app.actions.replaceHotkey}
+          onReplaceDictationShortcuts={app.actions.replaceDictationShortcuts}
           onSetStartup={app.actions.setStartup}
           onResetSettings={app.actions.resetSettings}
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
+          onListOpenRouterModels={app.actions.listOpenRouterModels}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
+          speechModels={app.speechModels}
+          onChooseSpeechModel={chooseSpeechModel}
+          speechModelRefused={speechModelRefused}
           onCheckForUpdates={updateFlow.check}
           onDownloadUpdate={updateFlow.download}
           // The press opens the same confirmation the footer control uses; the
           // install itself happens only once that is answered.
           onInstallUpdate={async () => { updateFlow.activate('install'); return true }}
+          openSection={app.settingsRequest ?? null}
         />
         break
       case 'help':
-        view = <HelpView shortcut={app.settings.hotkey} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
+        view = <HelpView shortcut={app.settings.hotkey} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} />
         break
       default:
-        view = <DictateRoom
+        view = threadsPage ? threadWorkspace : <DictateRoom
           settings={app.settings}
           speechModel={app.speechModel}
+          speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
           entries={app.history}
+          records={app.dictationRecords}
           recovery={app.dictationRecovery}
           onDismissRecovery={app.actions.dismissDictationRecovery}
           historyStatus={app.historyStatus}
@@ -465,8 +499,13 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onStop={app.actions.stop}
           onRetry={app.actions.retry}
           onDismiss={app.actions.dismiss}
-          onOpenSettings={() => app.actions.navigate('settings')}
+          onOpenSettings={section => app.actions.navigate('settings', section)}
           onCopy={app.actions.copyHistory}
+          onDelete={app.actions.deleteHistory}
+          onClear={app.actions.clearHistory}
+          query={journalQuery}
+          onQueryChange={setJournalQuery}
+          now={journalNow}
         />
     }
 
@@ -497,8 +536,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           <ConfirmationDialog
             title={pendingInstall.title}
             description={pendingInstall.description}
-            confirmLabel="Restart and install"
-            cancelLabel="Not now"
+            confirmLabel={t`Restart and install`}
+            cancelLabel={t`Not now`}
             danger={false}
             onConfirm={async () => { await updateFlow.confirmInstall(); return true }}
             onCancel={updateFlow.cancelInstall}
@@ -516,7 +555,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           ...(themeNotice === null ? [] : [themeNotice]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,
-            message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label="Dismiss dictionary save notice" onClick={() => setSettingsNotice(null)}>Dismiss</button></>,
+            message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label={t`Dismiss dictionary save notice`} onClick={() => setSettingsNotice(null)}><Trans>Dismiss</Trans></button></>,
           }]),
           ...updateToasts,
         ]} />

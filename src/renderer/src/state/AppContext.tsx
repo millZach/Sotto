@@ -12,16 +12,20 @@ import {
 
 import type {
   HotkeyChangeResult,
+  DictationShortcutsChange,
+  DictationShortcutsResult,
   OpenRouterKeyCheck,
+  OpenRouterModelList,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
   UpdateStatus,
 } from '../../../shared/contracts'
-import type { SpeechModelStatus } from '../../../shared/speechModel'
+import type { SpeechModelOption, SpeechModelStatus } from '../../../shared/speechModel'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
+import type { DictationRecord } from '../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../shared/settings'
 import type { RecoveryNotice } from '../../../shared/recoveryNotice'
@@ -35,12 +39,21 @@ import {
   type DictationTranscriber,
 } from '../features/dictation/dictationController'
 import { platformCopy, type PlatformCopy } from '../platformCopy'
+import { cancelNightFalls, nightFallsRun, playNightFalls } from '../watcher/nightFalls'
+import type { SettingsSectionId } from '../features/settings/settingsPages'
 import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBridge } from '../transcription/localTranscriber'
 
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
-export type AppNavigation = 'onboarding' | 'home' | 'history' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+
+/** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
+export interface SettingsRequest {
+  readonly section: SettingsSectionId; readonly key: number
+  /** A setting on that page to bring into view and focus, by its `data-setting` id. */
+  readonly setting?: string | undefined
+}
 export type AppFailureCode =
   | 'SETTINGS_LOAD_FAILED'
   | 'SETTINGS_UPDATE_FAILED'
@@ -138,10 +151,12 @@ export interface AppActions {
   cancel(): Promise<void>
   retry(): Promise<void>
   dismiss(): Promise<void>
-  navigate(destination: AppNavigation): void
+  /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts), and at one setting on it. */
+  navigate(destination: AppNavigation, settingsSection?: SettingsSectionId, setting?: string): void
   updateSettings(patch: SettingsPatch): Promise<boolean>
   resetSettings(): Promise<boolean>
   replaceHotkey(accelerator: string): Promise<HotkeyChangeResult>
+  replaceDictationShortcuts(change: DictationShortcutsChange): Promise<DictationShortcutsResult>
   setStartup(enabled: boolean): Promise<StartupState | null>
   listHistory(): Promise<boolean>
   searchHistory(query: string): Promise<boolean>
@@ -150,8 +165,17 @@ export interface AppActions {
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
+  /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
+  listOpenRouterModels(): Promise<OpenRouterModelList>
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
+  /**
+   * Switches dictation to a model from `speechModels`; one of Sotto's downloads if it is not here
+   * yet. False when main refused it (the model is no longer here); the list is then read again.
+   */
+  chooseSpeechModel(id: string): Promise<boolean>
+  /** Reads again which speech models this computer has. */
+  refreshSpeechModels(): Promise<void>
   checkForUpdates(): Promise<UpdateStatus | null>
   downloadUpdate(): Promise<boolean>
   installUpdate(): Promise<boolean>
@@ -171,12 +195,20 @@ export interface AppContextValue {
   readonly failure: AppFailureCode | null
   readonly settings: AppSettings | null
   readonly history: readonly HistoryEntry[]
+  /** Every dictation record, newest first (ADR-0100): read at start, then one record after each dictation and delete. */
+  readonly dictationRecords: readonly DictationRecord[]
   readonly dictationRecovery: readonly HistoryEntry[]
   readonly dictation: DictationState
   readonly navigation: AppNavigation
+  /** The Settings page or group last asked for with `navigate('settings', section)`; Settings opens there. */
+  readonly settingsRequest?: SettingsRequest | null
   readonly recoveryNotices: readonly RecoveryNotice[]
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
+  /** The speech models Sotto can run on this computer; null until main answers. */
+  readonly speechModels: readonly SpeechModelOption[] | null
+  /** The chosen speech model's id (`settings.speechModel`); null while none is chosen. */
+  readonly speechModelChoice: string | null
   /** Null until the main process answers, and on any build without a feed. */
   readonly update: UpdateStatus | null
   /** How many times the application menu asked for a check; each rise is one press. */
@@ -216,13 +248,25 @@ export function AppProvider({
   const [failure, setFailure] = useState<AppFailureCode | null>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [history, setHistory] = useState<readonly HistoryEntry[]>([])
+  const [dictationRecords, setDictationRecords] = useState<readonly DictationRecord[]>([])
+  /** Record reads run one after another, so one dictation's record never lands under an older full read. */
+  const dictationRecordsTailRef = useRef<Promise<void>>(Promise.resolve())
   const [dictationRecovery, setDictationRecovery] = useState<readonly HistoryEntry[]>([])
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
+  const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  // The navigation and the update as of the last render, for navigate(), which is made once.
+  const navigationRef = useRef(navigation)
+  navigationRef.current = navigation
+  const updateRef = useRef(update)
+  const navigationGenerationRef = useRef(0)
+  updateRef.current = update
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
   const speechModelRef = useRef<SpeechModelStatus | null>(null)
+  const [speechModels, setSpeechModels] = useState<readonly SpeechModelOption[] | null>(null)
+  const speechModelsVersionRef = useRef(0)
   const [updateCheckRequest, setUpdateCheckRequest] = useState(0)
 
   // The main process resolved the platform once and carried it across the
@@ -262,6 +306,20 @@ export function AppProvider({
     (generation: number): boolean => activeGenerationRef.current === generation,
     [],
   )
+
+  // The list is read again after every change of status that ends a load, so
+  // a model downloaded or gone shows on the picker; the latest read wins.
+  const refreshSpeechModels = useCallback(async (): Promise<void> => {
+    if (bridge === undefined) return
+    const generation = activeGenerationRef.current
+    const version = ++speechModelsVersionRef.current
+    try {
+      const models = await bridge.listSpeechModels()
+      if (isCurrentGeneration(generation) && speechModelsVersionRef.current === version) setSpeechModels(models)
+    } catch {
+      // The picker keeps the list it had.
+    }
+  }, [bridge, isCurrentGeneration])
 
   const commitSettings = useCallback((next: AppSettings): void => {
     settingsRef.current = next
@@ -305,6 +363,41 @@ export function AppProvider({
     setHistory(entries)
     setHistoryStatus('ready')
   }, [])
+
+  const queueDictationRecords = useCallback((read: () => Promise<void>): void => {
+    const queued = dictationRecordsTailRef.current.then(read)
+    dictationRecordsTailRef.current = queued.then(() => undefined, () => undefined)
+  }, [])
+
+  /** Reads every dictation record: at start, and after a Clear history that may not have finished. A failed read keeps the last ones. */
+  const refreshDictationRecords = useCallback((): void => {
+    if (bridge === undefined) return
+    const generation = activeGenerationRef.current
+    queueDictationRecords(async () => {
+      const records = await bridge.listDictationRecords()
+      if (isCurrentGeneration(generation)) setDictationRecords(records)
+    })
+  }, [bridge, isCurrentGeneration, queueDictationRecords])
+
+  /**
+   * Reads one dictation's record and puts it in its place, newest first, or takes it out when main has none, so a
+   * dictation or a delete costs one record however many there are.
+   */
+  const refreshDictationRecord = useCallback((id: string): void => {
+    if (bridge === undefined) return
+    const generation = activeGenerationRef.current
+    queueDictationRecords(async () => {
+      const record = await bridge.getDictationRecord(id)
+      if (!isCurrentGeneration(generation)) return
+      setDictationRecords((current) => {
+        const others = current.filter((candidate) => candidate.id !== id)
+        if (record === null) return others.length === current.length ? current : others
+        const at = others.findIndex((candidate) => candidate.createdAt < record.createdAt
+          || (candidate.createdAt === record.createdAt && candidate.id > record.id))
+        return at === -1 ? [...others, record] : [...others.slice(0, at), record, ...others.slice(at)]
+      })
+    })
+  }, [bridge, isCurrentGeneration, queueDictationRecords])
 
   const enqueueHistoryMutation = useCallback(
     (operation: () => Promise<HistoryEntry[]>): Promise<boolean> => {
@@ -363,9 +456,11 @@ export function AppProvider({
     settingsRef.current = null
     historyRef.current = []
     setHistory([])
+    setDictationRecords([])
     setDictation(initialDictationState)
     setRecoveryNotices([])
     setUpdate(null)
+    setSpeechModels(null)
 
     if (bridge === undefined) {
       setStatus('unavailable')
@@ -407,11 +502,14 @@ export function AppProvider({
     }
     try {
       unsubscribeSpeechModel = bridge.onSpeechModelStatus((speechModelStatus) => {
-        if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus)
+        if (!isCurrentGeneration(generation)) return
+        commitSpeechModel(speechModelStatus)
+        if (speechModelStatus.state === 'ready' || speechModelStatus.state === 'failed') void refreshSpeechModels()
       })
     } catch {
       // Without the subscription the status below is still read once.
     }
+    void refreshSpeechModels()
     void bridge.getSpeechModelStatus().then(
       (speechModelStatus) => { if (isCurrentGeneration(generation)) commitSpeechModel(speechModelStatus) },
       () => undefined,
@@ -422,6 +520,7 @@ export function AppProvider({
       },
       () => undefined,
     )
+    refreshDictationRecords()
     void bridge.listHistory().then(
       (entries) => {
         if (
@@ -490,7 +589,10 @@ export function AppProvider({
             try {
               entries = await request
             } catch (error: unknown) {
-              if (isCurrentGeneration(generation) && historyVersionRef.current === version) {
+              refreshDictationRecord(entry.id)
+              // With history off there is no transcript to have failed, so a refused record is not History's failure.
+              const historyOff = settingsRef.current?.historyEnabled === false
+              if (!historyOff && isCurrentGeneration(generation) && historyVersionRef.current === version) {
                 setHistoryStatus('degraded')
                 setFailure('HISTORY_UPDATE_FAILED')
               }
@@ -499,6 +601,7 @@ export function AppProvider({
             if (isCurrentGeneration(generation) && historyVersionRef.current === version) {
               commitHistory(entries)
             }
+            refreshDictationRecord(entry.id)
             return entries
           },
           publishWidgetState: async (snapshot) => {
@@ -575,7 +678,7 @@ export function AppProvider({
       try { localController?.dispose() } catch { /* resources are independently guarded */ }
       localController = null
     }
-  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration])
+  }, [bridge, commitHistory, commitRecoveryNotice, commitSettings, commitUpdate, createController, isCurrentGeneration, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
 
   const actions = useMemo<AppActions>(() => ({
     start: () => invokeController(controllerRef.current, (controller) => controller.start()),
@@ -584,7 +687,20 @@ export function AppProvider({
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
-    navigate: setNavigation,
+    navigate: (destination, settingsSection, setting) => {
+      // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
+      const generation = ++navigationGenerationRef.current
+      const go = (): void => {
+        if (generation !== navigationGenerationRef.current) return
+        setNavigation(destination)
+        // A request is for one visit: Settings opened any other way starts on its first page again.
+        setSettingsRequest(request => destination === 'settings' && settingsSection !== undefined ? { section: settingsSection, key: (request?.key ?? 0) + 1, ...(setting !== undefined ? { setting } : {}) } : null)
+      }
+      // Between Dictate or Threads and Watcher's room the window plays night falls, unless the setting is off.
+      const run = nightFallsRun(navigationRef.current, destination, updateRef.current, settingsRef.current)
+      if (run !== null) playNightFalls(go, run)
+      else { cancelNightFalls(); go() }
+    },
     updateSettings: (patch) => bridge === undefined
       ? Promise.resolve(false)
       : enqueueSettings(() => bridge.updateSettings(patch), 'SETTINGS_UPDATE_FAILED'),
@@ -596,6 +712,16 @@ export function AppProvider({
       let result: HotkeyChangeResult = UNAVAILABLE
       await enqueueSettings(async () => {
         result = await bridge.replaceHotkey(accelerator)
+        if (!result.ok) throw new Error('HOTKEY_UPDATE_FAILED')
+        return bridge.getSettings()
+      }, 'HOTKEY_UPDATE_FAILED')
+      return result
+    },
+    replaceDictationShortcuts: async (change) => {
+      if (bridge?.replaceDictationShortcuts === undefined) return UNAVAILABLE
+      let result: DictationShortcutsResult = UNAVAILABLE
+      await enqueueSettings(async () => {
+        result = await bridge.replaceDictationShortcuts!(change)
         if (!result.ok) throw new Error('HOTKEY_UPDATE_FAILED')
         return bridge.getSettings()
       }, 'HOTKEY_UPDATE_FAILED')
@@ -619,9 +745,10 @@ export function AppProvider({
     deleteHistory: async (id) => {
       if (bridge === undefined) return false
       return enqueueHistoryMutation(async () => {
-        if (!await bridge.deleteHistory(id)) throw new Error('HISTORY_UPDATE_FAILED')
-        if (settingsRef.current?.historyEnabled === false) {
-          return historyRef.current.filter(entry => entry.id !== id)
+        try {
+          if (!await bridge.deleteHistory(id)) throw new Error('HISTORY_UPDATE_FAILED')
+        } finally {
+          refreshDictationRecord(id)
         }
         return bridge.listHistory()
       })
@@ -629,7 +756,13 @@ export function AppProvider({
     clearHistory: async () => {
       if (bridge === undefined) return false
       return enqueueHistoryMutation(async () => {
-        await bridge.clearHistory()
+        try {
+          await bridge.clearHistory()
+        } catch (error: unknown) {
+          refreshDictationRecords()
+          throw error
+        }
+        queueDictationRecords(async () => { setDictationRecords([]) })
         return []
       })
     },
@@ -661,10 +794,23 @@ export function AppProvider({
       if (bridge === undefined) return { ok: false, reason: 'unconfigured' }
       try { return await bridge.checkOpenRouterKey() } catch { return { ok: false, reason: 'network' } }
     },
+    listOpenRouterModels: async () => {
+      if (bridge === undefined) return { ok: false, reason: 'network' }
+      try { return await bridge.listOpenRouterModels() } catch { return { ok: false, reason: 'network' } }
+    },
     downloadSpeechModel: async () => {
       if (bridge === undefined) return
       try { await bridge.downloadSpeechModel() } catch { /* the status it would have changed stays as it was */ }
     },
+    // Main saves the choice and publishes the setting and the status. A choice it
+    // refuses changes nothing, and the list is read again so the model that went is gone from it.
+    chooseSpeechModel: async (id) => {
+      if (bridge === undefined) return false
+      const chosen = await bridge.chooseSpeechModel(id).then(result => result.ok, () => false)
+      if (!chosen) void refreshSpeechModels()
+      return chosen
+    },
+    refreshSpeechModels,
     // Nothing about updating may raise a failure banner: an update that cannot
     // be reached is simply an update the user hears nothing about.
     checkForUpdates: async () => {
@@ -717,7 +863,7 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
-  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration])
+  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
 
   const value = useMemo<AppContextValue>(() => ({
     windowMaximized,
@@ -728,15 +874,19 @@ export function AppProvider({
     failure,
     settings,
     history,
+    dictationRecords,
     dictationRecovery,
     dictation,
     navigation,
+    settingsRequest,
     recoveryNotices,
     speechModel,
+    speechModels,
+    speechModelChoice: settings?.speechModel ?? null,
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecovery, failure, history, historyStatus, navigation, platform, recoveryNotices, settings, speechModel, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

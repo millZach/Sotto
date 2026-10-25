@@ -125,7 +125,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
 
     // 2. Change a setting and see the card keep it once its receipt has come back.
     await openPage(page, 'Settings')
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const directory = page.locator('#settings-agents').getByLabel('Default projects directory', { exact: true })
     const chosen = 'D:\\Receipt projects'
     const beforeSetting = await settled(page, traffic)
@@ -152,7 +152,7 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     const reconnectedRevision = replyRevision(reconnected)
     console.info(`catalog revisions across a reconnect: ${JSON.stringify({ connectedRevision, disconnectedRevision, reconnectedRevision, reconnectReads })}`)
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const defaultModel = page.getByRole('combobox', { name: 'Thread model', exact: true })
     await defaultModel.click()
     await page.getByRole('tab', { name: 'Codex', exact: true }).click()

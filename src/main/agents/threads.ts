@@ -3,10 +3,12 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { AgentHostSnapshot, ProviderId } from '../../shared/agents'
+import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
-import { subscribeActivitySnapshots } from './activitySnapshots'
+import { asActivityPublication, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
+import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
+  type ThreadChangeSet } from './threadChanges'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
 
@@ -105,6 +107,23 @@ export class ThreadRegistry {
   }
 }
 
+/**
+ * One form of the wrapper's thread changes (with history from events or without): the adapter's changes as this wrapper
+ * received them, and what it handed on for each of the adapter's records.
+ */
+interface WrappedChanges {
+  readonly publisher: ThreadChangesPublisher
+  /** The adapter's records by its own session IDs, as its publications built them. */
+  readonly incoming: ThreadMap
+  /** The adapter's publications applied to `incoming` and not yet handed on: the next build reads and clears them. */
+  readonly pending: AgentHostChanges[]
+  /** Per provider session: the adapter's record last handed on, and the record under Sotto's ID it became. */
+  outputs: Map<string, { readonly input: AgentThread; readonly output: AgentThread }>
+  subscription: ActivityChangesSubscription | undefined
+  /** Set once nothing here subscribes to the form, so a publication the adapter was already delivering is dropped. */
+  stopped: boolean
+}
+
 /** Sotto-owned thread IDs around a provider adapter; provider session IDs never cross this boundary. */
 export class SottoThreadHost implements AgentHost {
   private launchProfiles: ThreadLaunchProfiles | undefined
@@ -131,11 +150,18 @@ export class SottoThreadHost implements AgentHost {
   readonly subscribeEvents?: (listener: (event: ThreadHostEvent) => void) => () => void
   readonly subscribeUsage?: (listener: (record: UsageTokenObservation) => void) => () => void
   readonly visitUsage?: (threadId: string, visitor: (record: UsageTokenObservation) => void) => void
-  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean) => Promise<UsageQuotaRead>
+  readonly readProviderQuota?: (providerId: ProviderId, refresh: boolean, background?: boolean) => Promise<UsageQuotaRead>
   readonly scanUsageHistory?: (sink: UsageHistorySink, signal: AbortSignal) => Promise<void>
+  /**
+   * The adapter's thread changes under Sotto's thread IDs (ADR-0016, #925), beside its activity snapshots. Absent when
+   * the adapter inside publishes none, so the host above knows to work them out from the snapshots instead.
+   */
+  readonly subscribeActivityChanges?: (listener: ActivityChangesListener, options?: ActivitySubscriptionOptions) => ActivityChangesSubscription
+  private readonly changeForms = new Map<boolean, WrappedChanges>()
 
   constructor(private readonly provider: string, private readonly inner: AgentHost,
     private readonly registry: ThreadRegistry) {
+    if (inner.subscribeActivityChanges) this.subscribeActivityChanges = (listener, options) => this.watchChanges(listener, options)
     const events = inner.subscribeEvents?.bind(inner)
     if (events) this.subscribeEvents = listener => events(({ threadId, event }) => {
       if (!this.registry.loaded) return
@@ -160,7 +186,7 @@ export class SottoThreadHost implements AgentHost {
       const binding = this.registry.byThread(threadId)
       if (binding?.provider === this.provider) inner.visitUsage!(binding.sessionId, record => visitor({ ...record, threadId }))
     }
-    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh) => inner.readProviderQuota!(providerId, refresh)
+    if (inner.readProviderQuota) this.readProviderQuota = (providerId, refresh, background) => inner.readProviderQuota!(providerId, refresh, background)
     if (inner.scanUsageHistory) this.scanUsageHistory = async (sink, signal) => {
       await this.registry.load()
       // Owned sessions come up under their Sotto thread; one with no binding has no thread to count under.
@@ -297,8 +323,102 @@ export class SottoThreadHost implements AgentHost {
   }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return subscribeActivitySnapshots(this.inner, snapshot => {
-      if (this.registry.loaded) listener(this.mapSnapshot(snapshot))
+      if (this.registry.loaded) listener(asActivityPublication(this.mapSnapshot(snapshot), snapshot))
     }, options)
+  }
+
+  /**
+   * The adapter's thread changes, with each record under its Sotto thread ID, bound as `mapSnapshot` binds it, and each
+   * removal and placement naming Sotto's IDs. Each form is subscribed to the adapter once, while something here
+   * subscribes to it. An adapter record handed on before comes out as the same record, so a publication that re-names an
+   * unchanged thread carries nothing for it. As with the snapshots, nothing is handed on before the durable bindings are
+   * loaded, and the first publication after they are is whole.
+   */
+  private watchChanges(listener: ActivityChangesListener, options?: ActivitySubscriptionOptions): ActivityChangesSubscription {
+    const historyFromEvents = options?.historyFromEvents === true
+    let form = this.changeForms.get(historyFromEvents)
+    if (!form) {
+      const created: WrappedChanges = { publisher: new ThreadChangesPublisher(), incoming: new ThreadMap({ verify: false }), pending: [], outputs: new Map(), subscription: undefined, stopped: false }
+      this.changeForms.set(historyFromEvents, created)
+      created.subscription = this.inner.subscribeActivityChanges!(changes => this.receive(created, changes), { historyFromEvents })
+      form = created
+    }
+    const watched = form
+    const subscription = watched.publisher.subscribe(listener, { historyFromEvents })
+    const off = (() => {
+      subscription()
+      if (watched.publisher.size || this.changeForms.get(historyFromEvents) !== watched) return
+      this.changeForms.delete(historyFromEvents)
+      watched.stopped = true
+      watched.subscription?.()
+    }) as ActivityChangesSubscription
+    off.resync = () => subscription.resync()
+    return off
+  }
+
+  private receive(form: WrappedChanges, changes: AgentHostChanges): void {
+    if (form.stopped) return
+    const applied = form.incoming.apply(changes)
+    if (applied === 'resync') { form.subscription?.resync(); return }
+    // Before the bindings load, an adapter thread has no Sotto ID to go under. Its record waits in `incoming`, and the
+    // first publication once they load is whole, since nothing was published to the form before it.
+    if (applied === 'stale' || !this.registry.loaded) return
+    form.pending.push(changes)
+    form.publisher.publishChanges((_historyFromEvents, published) => this.wrappedChanges(form, published))
+  }
+
+  /**
+   * What this form hands on, built when its publisher builds it rather than when it was asked for: a publication asked for
+   * while another is being delivered builds afterwards, and then carries every adapter publication received by then.
+   */
+  private wrappedChanges(form: WrappedChanges, published: ThreadMap | undefined): ThreadChangeSet {
+    const pending = form.pending.splice(0)
+    if (!published || pending.some(changes => changes.whole)) {
+      const outputs = new Map<string, { input: AgentThread; output: AgentThread }>()
+      const upserts = form.incoming.threads().map(record => this.wrapped(form, record, outputs))
+      form.outputs = outputs
+      return { whole: true, upserts, removals: [], rest: form.incoming.rest! }
+    }
+    // One adapter publication translates exactly. Several, received while one of this wrapper's was being delivered, are
+    // worked out from the whole view instead, which costs a comparison per thread and happens about never.
+    if (pending.length > 1) return this.wrappedBetween(form, published)
+    const [changes] = pending
+    if (!changes) return { upserts: [], removals: [] }
+    const removals: string[] = []
+    for (const sessionId of changes.removals) {
+      const held = form.outputs.get(sessionId)
+      if (!held) continue
+      form.outputs.delete(sessionId)
+      removals.push(held.output.id)
+    }
+    const upserts = changes.upserts.map(record => this.wrapped(form, record))
+    let placements: { id: string; beforeId: string | null }[] | undefined
+    if (changes.placements?.length) {
+      placements = []
+      for (const placement of changes.placements) {
+        const id = form.outputs.get(placement.id)?.output.id
+        const beforeId = placement.beforeId === null ? null : form.outputs.get(placement.beforeId)?.output.id
+        if (id === undefined || beforeId === undefined) return this.wrappedBetween(form, published)
+        placements.push({ id, beforeId })
+      }
+    }
+    return { upserts, removals, ...(placements ? { placements } : {}), ...(changes.rest ? { rest: changes.rest } : {}) }
+  }
+
+  private wrappedBetween(form: WrappedChanges, published: ThreadMap): ThreadChangeSet {
+    const outputs = new Map<string, { input: AgentThread; output: AgentThread }>()
+    const threads = form.incoming.threads().map(record => this.wrapped(form, record, outputs))
+    form.outputs = outputs
+    return threadChangesBetween(published, { ...form.incoming.rest!, threads })
+  }
+
+  /** An adapter record under its Sotto thread ID: the record handed on for it before when it has not changed since. */
+  private wrapped(form: WrappedChanges, record: AgentThread, into = form.outputs): AgentThread {
+    const held = form.outputs.get(record.id)
+    if (held?.input === record) { into.set(record.id, held); return held.output }
+    const output = ownBuiltRecord({ ...record, id: this.registry.bind(this.provider, record.id, record.projectId).threadId })
+    into.set(record.id, { input: record, output })
+    return output
   }
 
   /** The store answers about Sotto's thread; the adapter inside asks about its own session. */

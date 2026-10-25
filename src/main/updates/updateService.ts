@@ -63,6 +63,11 @@ export interface UpdateServiceDependencies {
    * (ADR-0077); undefined when nothing holds it. The sentence becomes the download's problem, and nothing quits.
    */
   readonly restartHold?: () => string | undefined
+  /**
+   * Called when the installer refuses, however late. macOS's installer closes every window and quits only once they are
+   * all gone, and its refusal can come after that: the quit it began is off, and the window should be back with the reason.
+   */
+  readonly restartRefused?: () => void
   readonly now?: () => number
   readonly startupDelayMs?: number
   readonly intervalMs?: number
@@ -127,6 +132,21 @@ export function waitingVersion(phase: UpdatePhase, before: string | undefined): 
   return phase.phase === 'checking' ? before : undefined
 }
 
+/**
+ * Hears every phase the update service moves through and calls `found` once for each version of Sotto it finds: when
+ * it is first offered, downloading or downloaded, never again for that version's download progress or a later phase.
+ * Main has every machine check its clients afresh then, so their updates are listed beside Sotto's own (ADR-0077).
+ */
+export function newVersionListener(found: (version: string) => void): (phase: UpdatePhase) => void {
+  let seen: string | undefined
+  return phase => {
+    if (phase.phase !== 'available' && phase.phase !== 'downloading' && phase.phase !== 'downloaded') return
+    if (phase.version === seen) return
+    seen = phase.version
+    found(phase.version)
+  }
+}
+
 function samePhase(left: UpdatePhase, right: UpdatePhase): boolean {
   if (left.phase !== right.phase) return false
   if (left.phase === 'available' && right.phase === 'available') {
@@ -166,7 +186,10 @@ export class UpdateService {
   private previousOffer: Extract<UpdatePhase, { phase: 'available' }> | null = null
   private checkedAt: number | null = null
   private checkInFlight: Promise<UpdateStatus> | null = null
-  /** True from a `quitAndInstall` call until the installer refuses or the process quits. */
+  /**
+   * True from a `quitAndInstall` call until the installer refuses or the process quits. A Mac's installer fetches the
+   * update only now and closes the windows afterwards, so this can last seconds, and nothing has quit yet.
+   */
   private installing = false
   /** Set by an `error` event that arrives while the installer is being started. */
   private installRefusal: { problem: string | null } | null = null
@@ -268,12 +291,16 @@ export class UpdateService {
    * phase, and the same action offers to try again. A refusal may be thrown,
    * dispatched before `quitAndInstall` returns, or (when the installer process
    * fails to spawn) dispatched afterwards; the service stays armed for the
-   * late one until the process quits or the user asks again.
+   * late one until the process quits or the user asks again. A press while a
+   * restart is already under way starts nothing again: a Mac's installer is
+   * still fetching, a second call makes that second fetch fail, and the failure
+   * would read as a refusal of the restart that is still going ahead.
    */
   install(): CommandResult {
     if (this.disposed) return UNAVAILABLE
     const adapter = this.ensureAdapter()
     if (adapter === null || this.phase.phase !== 'downloaded') return UNAVAILABLE
+    if (this.installing) return OK
     const held = this.dependencies.restartHold?.()
     if (held !== undefined) { this.setPhase({ phase: 'downloaded', version: this.phase.version, problem: held }); return UNAVAILABLE }
     this.installing = true
@@ -287,8 +314,30 @@ export class UpdateService {
     const refusal = this.takeInstallRefusal()
     if (thrown === null && refusal === null) return OK
     this.installing = false
-    if (thrown !== null) this.recordInstallRefusal(thrown)
+    if (thrown !== null) {
+      this.recordInstallRefusal(thrown)
+      // An error event dispatched first has already called it off.
+      if (refusal === null) this.restartRefused()
+    }
     return UNAVAILABLE
+  }
+
+  /**
+   * True while a restart is under way: the installer has been handed the quit and has neither refused nor quit. Electron
+   * can announce a restart when none is, as it does when the last window closes after a refusal, and that must not begin
+   * a quit.
+   */
+  restarting(): boolean {
+    return this.installing
+  }
+
+  /** Putting Sotto back after a refusal is best effort: the refusal is on the phase whether or not it worked. */
+  private restartRefused(): void {
+    try {
+      this.dependencies.restartRefused?.()
+    } catch {
+      // The window can still be opened from the tray or the dock.
+    }
   }
 
   dispose(): void {
@@ -413,6 +462,7 @@ export class UpdateService {
           this.installing = false
           this.installRefusal = { problem }
           this.recordInstallRefusal(problem)
+          this.restartRefused()
         } else if (current.phase === 'checking') this.recordCheckFailure(problem)
         else if (current.phase === 'downloading') {
           this.setPhase({ phase: 'available', version: current.version, problem, failedStep: 'download' })

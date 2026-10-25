@@ -32,20 +32,21 @@ import type { HostUpdateAction, HostUpdateState } from '../../shared/hostUpdates
 import { nameHostInRefusal, type AgentProviderStatus, type ProviderId } from '../../shared/agents'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import type { HostProviderJobSource, ProviderJobHost } from './hostProviderJob'
-import { isProviderSignInPage, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
+import { HOST_ANSWER_LOST, SIGN_IN_WORDS, isOpenCodeSignInPage, opencodeHostNeedsUpdate, opencodeSignInComesBack, type SignInRefusalReason, type SignInWait } from '../../shared/opencodeSignIn'
+import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostSignIn, type HostSignInRequest, type ProviderSignInView } from '../../shared/hostProviders'
 
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
 type Connection = Omit<RemoteHost, 'enabled'>
-/** What Settings > Hosts asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
+/** What Settings > Hosts & phones asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
 export interface HostSetupSource {
   state(): HostSetupState | undefined
   choice(): HostSetupChoice | undefined
   command(command: Extract<HostsCommand, { type: 'start-setup' | 'stop-setup' | 'dismiss-setup' }>): Promise<void>
   subscribe(listener: () => void): () => void
 }
-/** Each remote host's phone access (ADR-0050): Settings > Hosts shows it, and its Phones dialog sends it presses. */
+/** Each remote host's phone access (ADR-0050): Settings > Hosts & phones shows it, and its Phones dialog sends it presses. */
 export interface HostPhonesSource {
   state(): HostPhonesView[]
   command(id: string, command: HostPhonesCommand): Promise<void>
@@ -62,7 +63,7 @@ export interface HostUpdateSource {
   busy(id: string): string | undefined
   subscribe(listener: () => void): () => void
 }
-/** What Settings > Hosts asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
+/** What Settings > Hosts & phones asks of the start at boot changes (ADR-0054), which follow the saved hosts. */
 export interface HostBootSource {
   state(): HostBootState[]
   command(id: string, action: HostBootAction): Promise<void>
@@ -193,7 +194,7 @@ export class DesktopHosts {
   private pendingAdd: Promise<void> = Promise.resolve()
   private pendingSetup: Promise<void> = Promise.resolve()
   private generation = 0
-  /** The host setup, once main has one; Settings > Hosts shows it and sends it its commands. */
+  /** The host setup, once main has one; Settings > Hosts & phones shows it and sends it its commands. */
   private setup: HostSetupSource | undefined
   private unsubscribeSetup: (() => void) | undefined
   /** The provider job, once main has one (ADR-0035): the tiles show it and send it their Start and Stop. */
@@ -202,7 +203,7 @@ export class DesktopHosts {
   /** The host updates, once main has them (ADR-0040): the Threads page shows them and sends them its presses. */
   private updates: HostUpdateSource | undefined
   private unsubscribeUpdates: (() => void) | undefined
-  /** The start at boot changes, once main has them (ADR-0054): Settings > Hosts shows them and sends them its presses. */
+  /** The start at boot changes, once main has them (ADR-0054): Settings > Hosts & phones shows them and sends them its presses. */
   private boot: HostBootSource | undefined
   private unsubscribeBoot: (() => void) | undefined
   /** Each host's phone access, once main has it (ADR-0050). */
@@ -305,7 +306,7 @@ export class DesktopHosts {
       ...(this.boot ? { boot: this.boot.state().filter(view => this.saved.some(host => host.id === view.id)) } : {}),
       localHostRunning: this.options.localHostRunning, localHostEnabled: this.options.localHostEnabled() }
   }
-  /** Gives Settings > Hosts the host setup: its state joins every published state, and its commands go to it. */
+  /** Gives Settings > Hosts & phones the host setup: its state joins every published state, and its commands go to it. */
   useSetup(setup: HostSetupSource): void {
     this.unsubscribeSetup?.()
     this.setup = setup
@@ -326,14 +327,14 @@ export class DesktopHosts {
     this.unsubscribeUpdates = updates.subscribe(() => this.emit())
     this.emit()
   }
-  /** Gives Settings > Hosts the start at boot changes: their state joins every published state, and its presses go to them. */
+  /** Gives Settings > Hosts & phones the start at boot changes: their state joins every published state, and its presses go to them. */
   useBoot(boot: HostBootSource): void {
     this.unsubscribeBoot?.()
     this.boot = boot
     this.unsubscribeBoot = boot.subscribe(() => this.emit())
     this.emit()
   }
-  /** Gives Settings > Hosts each host's phone access: its state joins every published state, and the dialog's presses go to it. */
+  /** Gives Settings > Hosts & phones each host's phone access: its state joins every published state, and the dialog's presses go to it. */
   usePhones(phones: HostPhonesSource): void {
     this.unsubscribePhones?.()
     this.phones = phones
@@ -724,14 +725,14 @@ export class DesktopHosts {
     }
     if (command.type === 'host-phones' || command.type === 'watch-host-phones') {
       if (!this.phones) throw new Error('Phone access on hosts cannot be changed from this window. Nothing was changed.')
-      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
       if (command.type === 'watch-host-phones') this.phones.watch(command.id, command.watching)
       else await this.phones.command(command.id, command.command)
       return this.get()
     }
     if (command.type === 'host-boot') {
       if (!this.boot) throw new Error('Start at boot cannot be changed from this window. Nothing was changed.')
-      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+      if (!this.saved.some(host => host.id === command.id)) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
       if (command.action === 'install' || command.action === 'remove') { const busy = this.updates?.busy(command.id); if (busy) throw new Error(busy) }
       await this.boot.command(command.id, command.action)
       return this.get()
@@ -756,7 +757,7 @@ export class DesktopHosts {
     }
     if (command.type === 'save') return this.edit(command.host, command.prefer)
     const host = this.saved.find(item => item.id === command.id)
-    if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+    if (!host) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
     if (command.type === 'ssh-answer') {
       this.answerPrompt(host.id, command.promptId, command.answer)
       return this.get()
@@ -945,7 +946,7 @@ export class DesktopHosts {
     catch { throw new Error('The approval page could not open in your browser. Nothing was changed. Try Open approval page again.') }
   }
   /**
-   * The host's own connect, disconnect or refresh for one of its providers, from its tile in Settings > Hosts (ADR-0037).
+   * The host's own connect, disconnect or refresh for one of its providers, from its tile in Settings > Hosts & phones (ADR-0037).
    * It goes to that host and nowhere else: nothing about this computer's providers changes. A refusal comes back to the
    * tile, named for the host, rather than to the Threads page.
    */
@@ -966,7 +967,7 @@ export class DesktopHosts {
     return state.error ? { error: nameHostInRefusal(state.error, host.name) } : {}
   }
   /**
-   * A provider's sign-in on a connected host (ADR-0037), for Settings > Hosts. The host runs the client and holds what it
+   * A provider's sign-in on a connected host (ADR-0037), for Settings > Hosts & phones. The host runs the client and holds what it
    * printed; the window gets the code to show and never the page's address. Open sign-in page asks the host for the page
    * again, checks it is one of that provider's own, and opens it in the default browser, keeping nothing here.
    */
@@ -989,6 +990,90 @@ export class DesktopHosts {
     const shown: HostSignIn = { ...view }
     delete shown.url
     return shown
+  }
+  /**
+   * The host's own OpenCode signed in to a model source from its tile's Add a model source dialog (#1107, ADR-0037). Each
+   * call goes to that host alone and is answered as the desktop's own dialog is answered, a refusal in words included, so
+   * the dialog reads one shape for both. A key goes to the host once and comes back in nothing. Open the page asks the host
+   * for the page's address, checks it is https, and opens it in this computer's browser; the window never holds it unless
+   * the browser did not open, as on this computer. A browser sign-in that finishes by sending the browser back to OpenCode
+   * on the host's own machine cannot finish from here, so it is cancelled on the host as soon as it starts and refused.
+   */
+  async opencodeSignIn(request: HostOpenCodeSignInRequest): Promise<unknown> {
+    const refused = (message: string, reason?: SignInRefusalReason) => ({ status: 'refused' as const, ...(reason ? { reason } : {}), message })
+    let target: { host: SavedHost; socket: SocketHostService }
+    try { target = this.connectedSocket(request.id) } catch (error) { return refused(error instanceof Error ? error.message : 'This host is not connected. Nothing was changed.') }
+    const { host, socket } = target
+    if (!socket.offersOpenCodeSignIn()) return refused(opencodeHostNeedsUpdate(host.name))
+    const { call } = request
+    try {
+      if (call.action === 'reopen') {
+        const page = await socket.opencodeSignIn({ action: 'page', request: call.request })
+        if (page.status !== 'ok') return page
+        if (!isOpenCodeSignInPage(page.address)) return refused(SIGN_IN_WORDS.unsafePage)
+        if (!this.options.openExternal) return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        try { await this.options.openExternal(page.address); return { status: 'ok' } } catch {
+          return { status: 'not-opened', message: SIGN_IN_WORDS.pageNotOpened, address: page.address }
+        }
+      }
+      if (call.action === 'browser') {
+        const started = await socket.opencodeSignIn(call)
+        if (started.status !== 'waiting' || started.attempt.mode !== 'auto' || started.attempt.code !== undefined) return started
+        await socket.opencodeSignIn({ action: 'cancel', request: { attemptId: started.attempt.id } }).catch(() => undefined)
+        return refused(opencodeSignInComesBack(host.name), 'finishes-on-host')
+      }
+      if (call.action === 'wait') return this.afterLostWaits(host.id, call.request.attemptId, await socket.opencodeSignIn(call))
+      return await socket.opencodeSignIn(call)
+    } catch (error) {
+      if (error instanceof HostConnectionError && error.code === 'version_mismatch') return refused(opencodeHostNeedsUpdate(host.name))
+      return this.opencodeAnswerLost(socket, host, call)
+    }
+  }
+  /**
+   * The host sign-ins, as `<host>:<attempt>`, whose answer to a wait was lost (#1143). The next answer that says one waits
+   * no longer cannot say how it ended, since that was in the answer that never came, so it is told as lost.
+   */
+  private readonly lostWaits = new Set<string>()
+  private afterLostWaits(hostId: string, attemptId: string, answer: SignInWait): SignInWait | { status: 'refused'; reason: 'answer-lost'; message: string } {
+    const key = `${hostId}:${attemptId}`
+    if (answer.status === 'pending' || !this.lostWaits.delete(key) || answer.status !== 'refused') return answer
+    const host = this.saved.find(item => item.id === hostId)?.name ?? 'The host'
+    return { status: 'refused', reason: 'answer-lost', message: HOST_ANSWER_LOST.untold(host) }
+  }
+  /**
+   * A host's answer to a sign-in call that never came back (#1107). The host may have acted on it all the same, so Sotto never
+   * says nothing changed: for a key, an existing sign-in or a sign-out it reads the host's model sources again and answers
+   * with what they show, as this computer's own sign-in does when OpenCode's answer is lost (#1104). A wait only reads a
+   * browser sign-in, which still waits on the host, so the dialog waits on and asks again (#1143). A pasted code is followed
+   * by a wait: a sign-in that still waits asks for the code again, and one that waits no longer cannot say how it ended. Any
+   * other call names no source to check, so it is refused as `answer-lost` and the window reads the list again itself.
+   * Reading the list, or a sign-in page's address, changes nothing, so those say only that the host did not answer.
+   */
+  private async opencodeAnswerLost(socket: SocketHostService, saved: SavedHost, call: HostOpenCodeSignInRequest['call']): Promise<unknown> {
+    const host = saved.name
+    const lost = (message: string) => ({ status: 'refused' as const, reason: 'answer-lost' as const, message })
+    if (call.action === 'wait') {
+      this.lostWaits.add(`${saved.id}:${call.request.attemptId}`)
+      while (this.lostWaits.size > 32) this.lostWaits.delete(this.lostWaits.values().next().value!)
+      return { status: 'pending' }
+    }
+    if (call.action === 'finish') {
+      let now: SignInWait
+      try { now = await socket.opencodeSignIn({ action: 'wait', request: { attemptId: call.request.attemptId } }) } catch { return lost(HOST_ANSWER_LOST.untold(host)) }
+      if (now.status === 'pending') return { status: 'refused', reason: 'code-refused', message: HOST_ANSWER_LOST.code(host) }
+      return now.status === 'refused' ? lost(HOST_ANSWER_LOST.untold(host)) : now
+    }
+    if (call.action === 'sources') return { status: 'refused', message: HOST_ANSWER_LOST.unread(host) }
+    if (call.action === 'reopen') return { status: 'refused', message: HOST_ANSWER_LOST.page(host) }
+    if (call.action !== 'key' && call.action !== 'external' && call.action !== 'sign-out') return lost(HOST_ANSWER_LOST.untold(host))
+    let now: Awaited<ReturnType<typeof socket.opencodeSignIn<'sources'>>>
+    try { now = await socket.opencodeSignIn({ action: 'sources' }) } catch { return lost(HOST_ANSWER_LOST.unknown(host)) }
+    if (now.status !== 'ok') return lost(HOST_ANSWER_LOST.unknown(host))
+    const source = now.sources.find(item => item.id === call.request.sourceId)
+    const signingIn = call.action !== 'sign-out'
+    const name = source?.name ?? call.request.sourceId
+    if ((source?.signedIn !== undefined) === signingIn) return { status: 'ok', sources: now, warning: HOST_ANSWER_LOST.took(host, name, signingIn) }
+    return lost(HOST_ANSWER_LOST.notTaken(host, name, signingIn))
   }
   /** The live connection to a saved host that is connected now, for what its tiles ask of it. */
   private connectedSocket(id: string): { host: SavedHost; socket: SocketHostService } {
@@ -1021,7 +1106,7 @@ export class DesktopHosts {
    */
   private async edit(input: Connection, prefer?: HostConnectionPreference): Promise<HostsState> {
     const existing = this.saved.find(item => item.id === input.id)
-    if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts.')
+    if (!existing) throw new Error('This host is no longer saved. Add it again in Settings > Hosts & phones.')
     validateConnection(input)
     const choosing = prefer !== undefined && prefer !== this.tailnet.get(existing.id).prefer
     if (!choosing) return this.saveConnection(existing, input)
@@ -1400,10 +1485,11 @@ export class DesktopHosts {
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
-      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: ids => socket.observe(ids),
+      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: (ids, shown) => socket.observe(ids, shown),
+      activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
-      hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), offersBabysitting: () => socket.supportsBabysitting,
+      hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), keepsClientOutcomes: () => socket.keepsClientOutcomes(), offersBabysitting: () => socket.supportsBabysitting,
       // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).
       pageAddress: token => new URL(`/page/${token}/`, target.browserUrl ?? target.url).href,
       // A thread's Files, Changes and Agents, read on the host (ADR-0025, October 5 amendment).

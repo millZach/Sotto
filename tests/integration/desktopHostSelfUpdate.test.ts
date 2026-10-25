@@ -20,7 +20,7 @@ import { TAILNET_ONLY_MS } from '../../src/main/hosts/hostConnectionPlan'
 import type { HostUpdateState, HostUpdateStep } from '../../src/shared/hostUpdates'
 import { hostRelease, localArchiveName, releasesPage, sidecar, tarGz } from '../fixtures/hostArchive'
 import { collectLaunchScript, launchScriptChild } from '../fixtures/launchScriptRunner'
-import { buildSelfUpdatingHost, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
+import { buildSelfUpdatingHost, CLEAN_UP_TIMEOUT_MS, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { serveStandIn } from '../fixtures/serveStandIn'
 import { ensureFixtureDesktopAnswers } from '../fixtures/sshDesktopAnswers'
 import { testCredentials } from '../fixtures/testCredentials'
@@ -49,7 +49,7 @@ afterEach(async () => {
     await stopEverythingIn(root)
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined)
   }
-})
+}, CLEAN_UP_TIMEOUT_MS)
 
 const published = (entry: string): Map<string, Uint8Array | string> => {
   const archive = tarGz(hostRelease(NEW, entry, { commonjs: true }))

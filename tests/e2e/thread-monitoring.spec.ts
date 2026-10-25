@@ -8,6 +8,7 @@ import type { SottoE2EBridge } from '../../src/shared/e2e'
 import { closeSotto, launchSotto, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
 import { hostKeysPerTest } from './support/hostKeys'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { expectReadoutUnfilled, readoutContrast } from './support/readout'
 
 type HostEvent = Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]
 const evidence = evidenceDirectory('artifacts/process-creature')
@@ -57,31 +58,8 @@ async function expectWhole(page: Page): Promise<void> {
   }
 }
 
-async function contrastRatios(page: Page): Promise<{ label: number; status: number }> {
-  return indicator(page).locator('.thread-monitor__task').evaluate(element => {
-    const context = document.createElement('canvas').getContext('2d')!
-    const background = getComputedStyle(element).backgroundColor
-    const luminance = (color: string): number => {
-      context.clearRect(0, 0, 1, 1)
-      context.fillStyle = background
-      context.fillRect(0, 0, 1, 1)
-      context.fillStyle = color
-      context.fillRect(0, 0, 1, 1)
-      const pixel = context.getImageData(0, 0, 1, 1).data
-      if (pixel[3] !== 255) throw new Error('Contrast requires an opaque readout background.')
-      const linear = [...pixel].slice(0, 3).map(value => {
-        const channel = value / 255
-        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-      })
-      return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
-    }
-    const surface = luminance(background)
-    const contrast = (selector: string): number => {
-      const text = luminance(getComputedStyle(element.querySelector(selector)!).color)
-      return (Math.max(surface, text) + 0.05) / (Math.min(surface, text) + 0.05)
-    }
-    return { label: contrast('.thread-monitor__label'), status: contrast('.thread-monitor__status') }
-  })
+function contrastRatios(page: Page): Promise<{ label: number; status: number }> {
+  return readoutContrast(indicator(page).locator('.thread-monitor__task'))
 }
 
 /** Sample rendered frames: the pixel creature moves on a throttled RAF loop, not a CSS animation. */
@@ -165,6 +143,7 @@ test('process perch fits every supported size in light and dark and honors both 
       contrasts[appearance] = await contrastRatios(page)
       expect(contrasts[appearance]!.label).toBeGreaterThanOrEqual(4.5)
       expect(contrasts[appearance]!.status).toBeGreaterThanOrEqual(4.5)
+      await expectReadoutUnfilled(indicator(page).locator('.thread-monitor__task'))
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
         await contentSize(launched, width, height)
         await page.emulateMedia({ reducedMotion: 'no-preference' })

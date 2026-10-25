@@ -272,8 +272,11 @@ describe('a thread that babysits a pull request', () => {
       const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Footer links"]')!
       expect(rail).toHaveAttribute('title', 'Footer links · Babysitting #74')
       expect(rail).toHaveAccessibleDescription('Footer links · Babysitting #74')
+      expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-background')
       act(() => { live.publish(babysat(live.state, 'footer-links', 'idle', true)) })
       expect(rail).toHaveAttribute('title', 'Footer links · Just finished')
+      expect(rail.querySelector('.thread-nav__ring')).toHaveAttribute('data-unseen')
+      expect(rail.querySelector('.thread-nav__ring')).not.toHaveAttribute('data-background')
       act(() => { live.publish(babysat(live.state, 'footer-links', 'running')) })
       expect(rail).toHaveAttribute('title', 'Footer links · Working')
     } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
@@ -282,10 +285,59 @@ describe('a thread that babysits a pull request', () => {
   it('gives way to a request waiting on you, and to settling', () => {
     const state = threadsStateFixture()
     Object.assign(state, babysat(state, 'visual-gate', 'idle'))
-    expect(rowStatus(rowFor(state, 'visual-gate'))).toEqual({ text: 'Needs your approval', finished: false, babysitting: false })
+    expect(rowStatus(rowFor(state, 'visual-gate'))).toEqual({ text: 'Needs your approval', finished: false, babysitting: false, prototype: false, background: false })
     const done = rowFor(state, 'footer-links')
     const thread = { ...done.thread, babysitting }
-    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Babysitting #74', finished: false, babysitting: true })
-    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', babysitting: false })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Babysitting #74', finished: false, babysitting: true, prototype: false, background: true })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', babysitting: false, background: false })
+    const watching = { ...done.thread, monitoring: [{ id: '00000000-0000-4000-8000-000000000001', label: 'CI run' }] }
+    expect(rowStatus({ ...done, thread: watching, state: 'done', stateLabel: 'Done', settledBy: null })).toMatchObject({ text: 'Monitoring', background: true })
+  })
+})
+
+// Whether a prototype waits for the user is the host's to say (ADR-0108); the sidebar reads the mark and words it.
+describe('a thread with a prototype waiting for review', () => {
+  const page = { token: 'p'.repeat(32), kind: 'file' as const, name: 'settings-prototype.html', start: 'settings-prototype.html' }
+  const marked = (state: AgentState, threadId: string, threadStatus: 'idle' | 'running', patch: Partial<AgentState['host']['threads'][number]> = {}): Partial<AgentState> => {
+    const changed = withStatus(state, threadId, threadStatus)
+    return { host: { ...changed.host!, threads: changed.host!.threads.map(thread => thread.id === threadId
+      ? { ...thread, prototypeReady: { source: 'reply:m-1', pages: [page] }, ...patch } : thread) } }
+  }
+
+  it('says Prototype ready with the page glyph where it would say Done, and gives way to Working', () => {
+    const live = mount(threadsStateFixture(), NOW)
+    act(() => { live.publish(marked(live.state, 'footer-links', 'idle')) })
+    expect(status('Footer links')).toHaveTextContent('Prototype ready')
+    expect(status('Footer links')).toHaveAttribute('data-prototype', 'true')
+    expect(status('Footer links').querySelector('svg')).not.toBeNull()
+    act(() => { live.publish(marked(live.state, 'footer-links', 'running')) })
+    expect(status('Footer links')).toHaveTextContent('Working')
+    expect(status('Footer links')).not.toHaveAttribute('data-prototype')
+    expect(status('Footer links').querySelector('svg')).toBeNull()
+  })
+
+  it('outranks Just finished and babysitting, and the collapsed rail says the same', () => {
+    localStorage.removeItem('sotto.threadWorkspace.sidebar')
+    try {
+      const live = mount(threadsStateFixture(), NOW)
+      const babysitting = [{ url: 'https://github.com/o/r/pull/74', number: 74, startedBy: 'agent' as const, startedAt: '2026-10-08T21:02:00.000Z' }]
+      act(() => { live.publish(marked(live.state, 'footer-links', 'idle', { finishedUnread: true, babysitting })) })
+      expect(status('Footer links')).toHaveTextContent('Prototype ready')
+      expect(status('Footer links')).not.toHaveAttribute('data-unseen')
+      expect(status('Footer links')).not.toHaveAttribute('data-babysitting')
+      act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+      const rail = document.querySelector<HTMLElement>('.thread-nav__rail-thread[aria-label="Footer links"]')!
+      expect(rail).toHaveAttribute('title', 'Footer links · Prototype ready')
+    } finally { localStorage.removeItem('sotto.threadWorkspace.sidebar') }
+  })
+
+  it('gives way to a question waiting on you, the more urgent thing, and to settling', () => {
+    const state = asQuestion(threadsStateFixture())
+    Object.assign(state, marked(state, 'visual-gate', 'idle'))
+    expect(rowStatus(rowFor(state, 'visual-gate'))).toMatchObject({ text: 'Needs your answer', prototype: false })
+    const done = rowFor(state, 'footer-links')
+    const thread = { ...done.thread, prototypeReady: { source: 'reply:m-1', pages: [page] } }
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: null })).toEqual({ text: 'Prototype ready', finished: false, babysitting: false, prototype: true, background: false })
+    expect(rowStatus({ ...done, thread, state: 'done', stateLabel: 'Done', settledBy: 'thread' })).toMatchObject({ text: 'Settled', prototype: false })
   })
 })

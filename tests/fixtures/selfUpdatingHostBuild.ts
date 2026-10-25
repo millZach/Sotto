@@ -47,3 +47,8 @@ export async function stopEverythingIn(root: string): Promise<void> {
   })
   for (const pid of pids) if (pid !== process.pid) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
 }
+// The command line is the only way to find the restart and the host it starts, whose processes the test never sees. On
+// Windows that is a PowerShell CIM query, which a busy runner can keep for most of the default 15 s hook deadline before the
+// folder's removal retries for up to 11 s while a killed host lets go of its files. A clean-up that is not stuck never reaches
+// this; a stuck one still fails the test.
+export const CLEAN_UP_TIMEOUT_MS = 120_000

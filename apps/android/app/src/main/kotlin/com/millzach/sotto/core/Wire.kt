@@ -38,7 +38,7 @@ sealed class ClientError(message: String) : Exception(message) {
     class Rejected(message: String) : ClientError(message)
     class HostNotFound(name: String) : ClientError("Couldn't find $name on your tailnet. Check that Tailscale is connected on this phone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net.")
     class HostUnreachable(name: String) : ClientError("Couldn't reach $name. Check that it's online and that Tailscale is connected on this phone.")
-    class NotASottoHost(name: String) : ClientError("$name answered, but Sotto isn't listening there. If $name has no screen, turn on Let phones reach $name in Sotto on your main computer: Settings > Hosts, then Phones on its row. Otherwise, in Sotto on $name, turn on phone access in Settings > Phones.")
+    class NotASottoHost(name: String) : ClientError("$name answered, but Sotto isn't listening there. If $name has no screen, turn on Let phones reach $name in Sotto on your main computer: Settings > Hosts & phones, then Phones on its row. Otherwise, in Sotto on $name, turn on phone access in Settings > Hosts & phones.")
     class SottoNotRunning(name: String) : ClientError("$name answered, but Sotto isn't running there. Nothing was lost. Open Sotto on $name and try again.")
 }
 
@@ -323,10 +323,12 @@ object Wire {
     /// The phone reads snapshots, not event history: the desktop's v1 snapshot-only hello.
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs.
     /// `client-liveness` is left out: OkHttp answers the host's own pings, which every other client keeps.
+    /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
+    /// and `provider-cursor` the same for Cursor (ADR-0128).
     val snapshotHello: JsonObject = buildJsonObject {
         put("op", JsonPrimitive("hello"))
         put("afterSeq", JsonPrimitive(9_007_199_254_740_991L))
-        put("accepts", kotlinx.serialization.json.JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision").map(::JsonPrimitive)))
+        put("accepts", kotlinx.serialization.json.JsonArray(listOf("detail-delta", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor").map(::JsonPrimitive)))
     }
 
     /// A JSON object from a host, refused unless it is v1.

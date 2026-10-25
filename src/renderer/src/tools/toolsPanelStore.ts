@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { t } from '@lingui/core/macro'
 import type { BrowserPage, BrowserTask, BrowserBridge } from '../../../shared/browser'
 import { BrowserStore } from './browserStore'
 import { ChangesStore } from './changesStore'
@@ -8,7 +9,15 @@ import { SubagentsStore } from './subagentsStore'
 
 /** Surfaces that actually work. Later tools append here; nothing is listed before it exists. */
 /** Pull request's word on the rail is T3's short one, the one its Git action says (Create PR, View PR); the tile is too narrow for two words. */
-export const TOOL_SURFACES = [{ id: 'browser', label: 'Browser' }, { id: 'iphone', label: 'iPhone' }, { id: 'terminal', label: 'Terminal' }, { id: 'files', label: 'Files' }, { id: 'changes', label: 'Changes' }, { id: 'pull-request', label: 'PR' }, { id: 'agents', label: 'Agents' }] as const
+export const TOOL_SURFACES = [
+  { id: 'browser', get label(): string { return t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' }) } },
+  { id: 'iphone', label: 'iPhone' },
+  { id: 'terminal', get label(): string { return t({ message: 'Terminal', comment: 'A terminal\'s name, and the Tools surface that holds a thread\'s terminals.' }) } },
+  { id: 'files', get label(): string { return t({ message: 'Files', comment: 'The Tools surface that shows a thread\'s working folder.' }) } },
+  { id: 'changes', get label(): string { return t({ message: 'Changes', comment: 'The Tools surface that shows a thread\'s changed files.' }) } },
+  { id: 'pull-request', get label(): string { return t({ message: 'PR', comment: 'Short for pull request: the Tools surface\'s word on the narrow rail.' }) } },
+  { id: 'agents', get label(): string { return t({ message: 'Agents', comment: 'The subagents a provider reports for a thread.' }) } },
+] as const
 export type ToolSurfaceId = typeof TOOL_SURFACES[number]['id']
 
 const TOOLS_PANEL_DEFAULT_WIDTH = 600
@@ -26,7 +35,7 @@ export type ShowBrowserPageResult = 'opened' | 'unfocused' | 'pinned-elsewhere'
 export interface ToolsPanelChrome {
   readonly open: boolean
   readonly surface: ToolSurfaceId
-  /** Sotto thread ID held for working-copy surfaces; Agents always follows the focused thread. */
+  /** Sotto thread ID held for working-copy surfaces; Agents follows the focused thread unless delegation is on. */
   readonly pinnedThreadId: string | null
   readonly width: number
   readonly resized: boolean
@@ -161,7 +170,11 @@ export function useToolsPanelChrome(store: ToolsPanelStore = toolsPanelStore): T
   return useSyncExternalStore(store.subscribe, store.getSnapshot)
 }
 
-/** Agents belongs to the focused thread; the other surfaces share a pinned working copy. */
-export function toolsTarget(chrome: ToolsPanelChrome, focusedThreadId: string | null): string | null {
-  return chrome.surface === 'agents' ? focusedThreadId : chrome.pinnedThreadId ?? focusedThreadId
+/**
+ * Agents belongs to the focused thread; the other surfaces share a pinned working copy. While delegation is on
+ * (`agentsFollowPin`, ADR-0081), Agents follows the pin too, so a delegated thread opened from its roster leaves Tools on
+ * the thread that delegated it.
+ */
+export function toolsTarget(chrome: ToolsPanelChrome, focusedThreadId: string | null, agentsFollowPin = false): string | null {
+  return chrome.surface === 'agents' && !agentsFollowPin ? focusedThreadId : chrome.pinnedThreadId ?? focusedThreadId
 }

@@ -337,6 +337,22 @@ WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
 OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
 CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`
 
+// The Mac Core ML speech helper statically links FluidAudio, pinned in native/coreml-asr/Package.resolved.
+// Its texts come from the SwiftPM checkout, so build the helper (node scripts/build-coreml-asr.mjs) first.
+// FluidAudio's notices use Markdown code fences, which would end this file's text block, so those lines go.
+const fluidAudio = 'native/coreml-asr/.build/checkouts/FluidAudio'
+const fluidAudioNotice = async (file) => `${file}\n${(await read(`${fluidAudio}/ThirdPartyLicenses/${file}`)).replace(/^```.*\n/gmu, '').trim()}`
+const coreMlHelperLicenses = `FluidAudio 0.17.7 (Apache License 2.0; the full text is under "Apache License 2.0" below)
+Copyright (c) FluidInference and the FluidAudio contributors.
+https://github.com/FluidInference/FluidAudio
+
+The macOS app's Core ML speech helper (Contents/Resources/coreml-asr/sotto-coreml-asr) is built
+on FluidAudio, which compiles in the third-party code below. FluidAudio's own notices for it
+follow from its ThirdPartyLicenses folder, unmodified apart from Markdown code fences.
+vbx-LICENSE.md is the Apache License 2.0, reproduced under "Apache License 2.0" below.
+
+${(await Promise.all(['NemoTextProcessing-LICENSE.md', 'fastcluster-LICENSE.md', 'JapaneseG2P-LICENSE.md', 'KokoroAneSpanishFrenchG2P-LICENSE.md'].map(fluidAudioNotice))).join('\n\n')}`
+
 const licenseSections = [
   ['Claude Agent SDK terms', `${await read('node_modules/@anthropic-ai/claude-agent-sdk/LICENSE.md')}\n\n${await read('node_modules/@anthropic-ai/claude-agent-sdk/README.md')}`],
   ['Electron MIT license', await read('node_modules/electron/dist/LICENSE')],
@@ -386,12 +402,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Parakeet TDT 0.6B v3 (Creative Commons Attribution 4.0 International)
-The speech model Sotto downloads on first run is NVIDIA's Parakeet TDT 0.6B v3,
-by NVIDIA Corporation, licensed under CC BY 4.0
-(https://creativecommons.org/licenses/by/4.0/). Sotto uses the 8-bit ONNX export
+Speech models (Creative Commons Attribution 4.0 International)
+Sotto downloads one of these speech models when the user chooses it. None is in the
+installer. Each is licensed under CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/).
+
+Parakeet TDT 0.6B v3, by NVIDIA Corporation. Sotto uses the 8-bit ONNX export
 published by the sherpa-onnx project, unmodified.
-https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3`],
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Parakeet Ultra, by Moondream, a post-training of Parakeet TDT 0.6B v3 by NVIDIA
+Corporation. Sotto changed its format and nothing else: it mapped Moondream's
+weights onto NVIDIA's NeMo model of Parakeet TDT 0.6B v3 by renaming keys, left
+out the six vad_head tensors that model does not have, cast float16 weights to
+float32, and exported and quantized it to 8-bit ONNX with the sherpa-onnx
+project's export script for v3. Its tokens are v3's.
+https://huggingface.co/moondream/parakeet-ultra
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Parakeet TDT 0.6B v2, by NVIDIA Corporation. Sotto uses the 8-bit ONNX export
+published by the sherpa-onnx project, unmodified.
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2`],
+  ['Core ML speech helper licenses', coreMlHelperLicenses],
   ['Windows updater dependency MIT licenses', updaterMit],
   ['Windows updater dependency ISC licenses', updaterIsc],
   ['sax Blue Oak Model License 1.0.0', await read('node_modules/sax/LICENSE.md')],
@@ -446,7 +478,7 @@ const sections = licenseSections.map(([heading, text]) =>
 
 const output = `# Third-Party Notices
 
-Sotto transcribes dictated audio on the computer with NVIDIA's Parakeet speech model, which it downloads on first run, through sherpa-onnx. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
+Sotto transcribes dictated audio on the computer with the Parakeet speech model the user chooses (NVIDIA's Parakeet v3 or v2, or Moondream's Parakeet Ultra) through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -458,7 +490,7 @@ ${table}
 
 ## Sotto brand asset provenance
 
-The Sotto owl is original project artwork generated with OpenAI's Codex in October 2026 and supplied by the project owner as a brand sheet. No third-party logo, trademark, wordmark, or font was supplied to make it. The owl was redrawn by hand as the vector master \`build/icon.svg\` by tracing the sheet's app icon, and every platform derivative is rendered from that master by \`scripts/generate-brand-assets.mjs\`: the Windows PNG, multi-resolution ICO, and installer sidebar, the iPhone app icon, and the Android launcher icons. The macOS \`.icns\` is derived by electron-builder from \`build/icon.png\` at package time and is not committed, and the macOS menu-bar template images \`resources/tray/sottoTemplate.png\` and \`sottoTemplate@2x.png\` are rendered from \`build/tray-template.svg\`, the same owl simplified for 16 pixels.
+The Sotto owl is original project artwork generated with OpenAI's Codex in October 2026 and supplied by the project owner as a brand sheet. No third-party logo, trademark, wordmark, or font was supplied to make it. The owl was redrawn by hand as the vector master \`build/icon.svg\` by tracing the sheet's app icon, and every platform derivative is rendered from that master by \`scripts/generate-brand-assets.mjs\`: the Windows PNG, multi-resolution ICO, and installer sidebar, the iPhone app icon, and the Android launcher icons. The macOS \`.icns\` is derived by electron-builder from \`build/icon.png\` at package time and is not committed, and the macOS menu-bar template images \`resources/tray/sottoTemplate.png\` and \`sottoTemplate@2x.png\` are rendered from \`build/tray-template.svg\`, the same owl simplified for 16 pixels. \`resources/dock/mark-coverage.bin\` holds \`build/icon.svg\`'s tile and owl as coverage, which the app paints in the selected theme's colours for the macOS Dock.
 
 The brand sheet is retained as \`artifacts/design/brand/owl-brand-sheet.png\` in the source repository. Packaged users receive only the final application artwork.
 

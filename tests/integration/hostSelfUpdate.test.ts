@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { collectLaunchScript as collect, launchScriptChild } from '../fixtures/launchScriptRunner'
 import { hostRelease, localArchiveName, releasesPage, sha256, sidecar, tarGz } from '../fixtures/hostArchive'
-import { buildSelfUpdatingHost, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
+import { buildSelfUpdatingHost, CLEAN_UP_TIMEOUT_MS, installSelfUpdatingHost, stopEverythingIn } from '../fixtures/selfUpdatingHostBuild'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { hostLaunchTimings, HOST_STOP_DRAIN_MS, HOST_READY_TIMEOUT_MS } from '../../src/shared/hostLaunchTimings'
@@ -35,7 +35,7 @@ afterEach(async () => {
     await stopEverythingIn(root)
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => undefined)
   }
-})
+}, CLEAN_UP_TIMEOUT_MS)
 
 /** forge's host as an SSH launch leaves it: a flat install of `OLD`, started by the launch script, with ssh on its path recording any use. */
 async function installedHost(publish: Map<string, Uint8Array | string>, hold?: Parameters<typeof releasesPage>[2]) {

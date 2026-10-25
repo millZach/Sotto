@@ -41,7 +41,7 @@ public enum ClientError: Error, LocalizedError, Equatable {
         case .invalidHost: return "Enter the computer's name on your tailnet, such as forge, or its full address ending in .ts.net."
         case .hostNotFound(let name): return "Couldn't find \(name) on your tailnet. Check that Tailscale is connected on this iPhone and MagicDNS is on for your tailnet, or enter the full address ending in .ts.net."
         case .hostUnreachable(let name): return "Couldn't reach \(name). Check that it's on and that Tailscale is connected on this iPhone."
-        case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Phones."
+        case .notASottoHost(let name): return "\(name) answered, but Sotto isn't listening there. If \(name) has no screen, turn on Let phones reach \(name) in Sotto on your main computer: Settings > Hosts & phones, then Phones on its row. Otherwise, in Sotto on \(name), turn on phone access in Settings > Hosts & phones."
         case .sottoNotRunning(let name): return "\(name) answered, but Sotto isn't running there. Nothing was lost. Open Sotto on \(name) and try again."
         case .invalidCode: return "A pairing code is eight letters and numbers. Check the code on that computer."
         case .invalidProtocol: return "This computer uses a different connection format. Update Sotto before connecting."
@@ -118,7 +118,12 @@ public struct Health: Decodable, Equatable, Sendable {
         guard status == "ready" else { throw ClientError.rejected("Sotto on that computer is still starting. Try again in a moment.") }
     }
 }
-public struct WireFailure: Decodable, Sendable { public let code: String; public let message: String }
+public struct WireFailure: Decodable, Sendable {
+    public let code: String; public let message: String
+    /// Why a pull request read was refused (`gh-missing`, `gh-signed-out`, `offline`, `unreadable`), from a host since
+    /// #1290; nil on every other refusal and from an older host.
+    public let reason: String?
+}
 public struct Receipt: Decodable, Sendable {
     public let status: String; public let error: WireFailure?; public let answerDelivered: Bool?
     public let watcherStop: WatcherStopReceipt?
@@ -141,17 +146,13 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// Authority for this paired client, refreshed with the shell. Older hosts send it only in hello.
     public let clientCapabilities: Hello.Capabilities?
     public let configuration: ThreadStartPreferences?
-    /// Terminal-mode rows only, from a host offering `terminals` after this phone opts in. No screen text.
-    public var terminals: [TerminalSummary]? = nil
-    /// Local decoding evidence only. Omitted unreadable rows cannot prove a pending approval left.
-    public var terminalsComplete = false
     /// Present only after accepting watcher-phone from the Owl desktop running it.
     public var watcher: WatcherPhoneState? = nil
     /// Every thread's follow-up queue, in order. Older hosts send none.
     public let followups: [Followup]?
     /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
     public let followupReceipts: [DeliveryReceipt]?
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, terminals, followups, followupReceipts, watcher }
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -165,10 +166,6 @@ public struct Shell: Decodable, Equatable, Sendable {
         configuration = try c.decodeIfPresent(ThreadStartPreferences.self, forKey: .configuration)
         followups = try c.decodeIfPresent([Followup].self, forKey: .followups)
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
-        // A newer or malformed terminal is omitted without losing the computer's threads.
-        let rows = c.tolerant(TerminalRows.self, .terminals)
-        terminals = rows?.values
-        terminalsComplete = rows?.complete ?? false
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
     }
     public func validate(hostID: String) throws {
@@ -209,6 +206,17 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// this iPhone or the desktop (ADR-0046). Older computers never send it.
     public var kind: String? = nil
     public var watchedByWatcher: Bool? = nil
+    /// The thread on the same computer that delegated to this one, by its Sotto thread ID (ADR-0081). Only a computer
+    /// with delegation on sends it, and never for a delegating thread this iPhone can't read.
+    public var delegatedBy: String? = nil
+    /// How many sub-agents the thread's provider reports, and how many work (ADR-0103). Read tolerantly.
+    public var subagentSummary: SubagentSummary? = nil
+    /// The computer's word that the thread's last turn failed and a client has shown it since, or Dismiss all named it
+    /// (ADR-0092). Only a computer that lists `failure-seen` sends it; the Agents view reads it (ADR-0103).
+    public var failureSeen: Bool? = nil
+    /// How many monitors the thread's provider runs. Never work on its own (`ThreadState`), but its end can move a
+    /// delegated thread's outcome from Background work to Answered, so the Agents sheet reads again (ADR-0103).
+    public var monitoring: MonitorCount? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
@@ -223,6 +231,10 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public struct Summary: Decodable, Equatable, Sendable {
         public let lastMessageAt: String?; public let runningTurnStartedAt: String?
     }
+    /// The pull requests the thread babysits, and why babysitting each last ended on its own (ADR-0061), for the pull
+    /// request sheet (ADR-0102). Read item by item, so a later host's record never fails the thread. Older hosts send none.
+    public var babysitting: ThreadList<ThreadBabysitting>? = nil
+    public var babysitEnded: ThreadList<ThreadBabysitEnded>? = nil
 }
 /// What the thread page reads from a thread's worktree record (`agentWorktreeSchema` in src/shared/agents.ts): its
 /// mode, its branch and the Git status the host last read there (`gitStatusSchema` in src/shared/gitStatus.ts).

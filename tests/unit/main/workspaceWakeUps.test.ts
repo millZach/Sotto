@@ -151,4 +151,84 @@ describe('a wake-up in the workspace', () => {
     await expect.poll(() => messages()[0]?.text).toBe('Wake-up ')
     expect(messages().map(message => [message.id, message.wakeUp ?? false])).toEqual([['wake-0', true], ['wake-1', true]])
   })
+
+  it('keeps a wake-up of delegation news alone hidden past the record\'s newest thousand, through a history reset and a restart', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'codex')!
+    const model = snapshot.models.find(item => item.providerId === 'codex')!
+    await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
+    f.host.observeThreads(['local'])
+    await f.host.execute({ type: 'send', commandId: 'hidden-send', threadId: 'local', messageId: 'hidden-0', text: 'Sotto has news of work this thread delegated.', wakeUp: true, hiddenWakeUp: true })
+    const sessions = f.adapters.codex.state.threads
+    sessions.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!.status = 'idle'
+    const messages = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+    await expect.poll(() => messages().map(message => [message.id, message.wakeUp ?? false, message.hiddenWakeUp ?? false])).toEqual([['hidden-0', true, true]])
+    // No adapter hears the mark.
+    expect(f.adapters.codex.commands.filter(command => command.type === 'send').every(command => !('hiddenWakeUp' in command))).toBe(true)
+    await f.stop()
+    // The record is full of later ones: a thousand hidden wake-ups have gone since, so it no longer names this one.
+    const file = join(f.root, 'workspace.json')
+    const saved = JSON.parse(await readFile(file, 'utf8')) as { snapshot: { threads: Array<{ id: string; wakeUps?: string[]; hiddenWakeUps?: string[] }> } }
+    const later = Array.from({ length: WAKE_UP_IDS_KEPT }, (_, index) => `gone-${index}`)
+    Object.assign(saved.snapshot.threads.find(thread => thread.id === 'local')!, { wakeUps: later, hiddenWakeUps: later })
+    await writeFile(file, JSON.stringify(saved))
+
+    // After a restart and the provider's history read again from the start, the thread store's mark still hides it.
+    const reopened = await fixture(f.root)
+    reopened.adapters.codex.state.threads = structuredClone(sessions)
+    await reopened.host.connect()
+    reopened.host.observeThreads(['local'])
+    for (let load = 0; load < 3; load++) await reopened.host.loadEarlierMessages('local')
+    const session = reopened.adapters.codex.state.threads.find(thread => thread.id === reopened.registry.byThread('local')!.sessionId)!
+    session.historyEpoch = 'rebuilt'
+    session.messages = session.messages.map(message => ({ ...message, text: `${message.text} ` }))
+    reopened.adapters.codex.emit()
+    const after = () => reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+    await expect.poll(() => after()[0]?.text.endsWith(' ')).toBe(true)
+    expect(after().map(message => [message.id, message.wakeUp ?? false, message.hiddenWakeUp ?? false])).toEqual([['hidden-0', true, true]])
+  })
+
+  it('keeps the requests a Watcher wake-up named with it, text-free, through a history reset and a restart with history on or off', async () => {
+    const asks = [{ target: { hostId: '6c0f8f0e-7b1e-4d5a-9a43-1f4f0f3b2a10', threadId: 'footer' }, requestCardId: 'card-1', kind: 'question' as const }]
+    for (const history of [true, false]) {
+      const f = await fixture(undefined, history)
+      const snapshot = await f.host.connect()
+      const project = snapshot.projects.find(item => item.providerId === 'codex')!
+      const model = snapshot.models.find(item => item.providerId === 'codex')!
+      await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: model.id })
+      f.host.observeThreads(['local'])
+      const session = () => f.adapters.codex.state.threads.find(thread => thread.id === f.registry.byThread('local')!.sessionId)!
+      await f.host.execute({ type: 'send', commandId: 'wake-plain', threadId: 'local', messageId: 'wake-plain', text: 'Wake-up', wakeUp: true })
+      session().status = 'idle'
+      await f.host.execute({ type: 'send', commandId: 'wake-asks', threadId: 'local', messageId: 'wake-asks', text: 'Sotto has news of watched threads.', wakeUp: true, watcherAsks: asks })
+      session().status = 'idle'
+      const messages = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+      await expect.poll(() => messages().map(message => [message.id, message.watcherAsks ?? null])).toEqual([['wake-plain', null], ['wake-asks', asks]])
+      // No adapter hears which requests the news named.
+      expect(f.adapters.codex.commands.filter(command => command.type === 'send').every(command => !('watcherAsks' in command))).toBe(true)
+      // Kept as identities alone: nothing of the message's words is in the record.
+      const file = await readFile(join(f.root, 'workspace.json'), 'utf8')
+      const saved = (JSON.parse(file) as { snapshot: { threads: Array<{ id: string; wakeUpAsks?: unknown }> } }).snapshot.threads.find(thread => thread.id === 'local')!
+      expect(saved.wakeUpAsks).toEqual([{ messageId: 'wake-asks', asks }])
+
+      session().historyEpoch = 'rebuilt'
+      session().messages = session().messages.map(message => ({ ...message, text: `${message.text} ` }))
+      f.adapters.codex.emit()
+      await expect.poll(() => messages().find(message => message.id === 'wake-asks')?.text.endsWith(' ')).toBe(true)
+      expect(messages().find(message => message.id === 'wake-asks')?.watcherAsks).toEqual(asks)
+      expect(messages().find(message => message.id === 'wake-plain')?.watcherAsks).toBeUndefined()
+
+      const sessions = structuredClone(f.adapters.codex.state.threads)
+      await f.stop()
+      const reopened = await fixture(f.root, history)
+      reopened.adapters.codex.state.threads = sessions
+      await reopened.host.connect()
+      reopened.host.observeThreads(['local'])
+      const after = () => reopened.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!.messages
+      await expect.poll(() => after().map(message => [message.id, message.watcherAsks ?? null])).toEqual([['wake-plain', null], ['wake-asks', asks]])
+      await reopened.stop()
+      await f.remove()
+    }
+  })
 })

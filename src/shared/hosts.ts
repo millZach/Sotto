@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { HostDeviceList, TailscaleConnectOutcome, TailscaleSummary } from './hostDevices'
-import { hostProviderIdSchema, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostProviderJobState, type HostSignInRequest, type ProviderSignInView } from './hostProviders'
+import { hostProviderIdSchema, type HostOpenCodeAnswer, type HostOpenCodeCall, type HostClientUpdateRequest, type HostProviderAction, type HostProviderActionResult, type HostProviderJobState, type HostSignInRequest, type ProviderSignInView } from './hostProviders'
 import { hostUpdateCommandSchema, type HostUpdateState } from './hostUpdates'
 import { hostPhonesCommandSchema, type PhonesState } from './phones'
 import { hostBootCommandSchema, type BootStatus, type HostBootState } from './bootStart'
@@ -206,7 +206,7 @@ export interface HostForgotten {
   readonly bootCommand?: string | undefined
 }
 /**
- * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts shows it on
+ * A remote host's phone access as this computer last read it (ADR-0050). The host runs it; Settings > Hosts & phones shows it on
  * the host's row and in its Phones dialog. Absent `state` means the host has not answered yet on any connection.
  */
 export interface HostPhonesView {
@@ -313,6 +313,11 @@ export interface HostsBridge {
   updateClients(request: HostClientUpdateRequest): Promise<HostProviderActionResult>
   /** A provider's sign-in on a connected host: start, read, hand in a pasted code, cancel, or open its page (ADR-0037). */
   signIn(request: HostSignInRequest): Promise<ProviderSignInView | null>
+  /**
+   * One call of a connected host's OpenCode Add a model source dialog (#1107), answered as this computer's own dialog is.
+   * Present only while OpenCode's Owl feature is on.
+   */
+  opencodeSignIn?<A extends HostOpenCodeCall['action']>(request: { readonly id: string; readonly call: Extract<HostOpenCodeCall, { action: A }> }): Promise<HostOpenCodeAnswer<A>>
 }
 
 /** Client projection only; remote wire payloads keep their original host-local IDs. */

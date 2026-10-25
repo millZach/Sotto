@@ -1,9 +1,8 @@
-import { summarizeThread, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
+import { summarizeThread, withKeptMessageMetadata, type AgentMessage, type AgentThreadSummary } from '../../shared/agents'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { sameMessageContent, type ThreadEvent } from '../../shared/threadEvents'
 import type { StoredMessageIdentity, ThreadHostEvent } from './host'
 import { isImmutableActivities } from './activitySnapshots'
-import { withKeptWatcherChanges } from './watcherOwnChanges'
 
 /** Activity facts are independent of message text. Only certified immutable inputs may be reused. */
 const activitySummaries = new WeakMap<readonly AgentActivity[], AgentThreadSummary>()
@@ -24,6 +23,8 @@ type Published = { id: string; messages: AgentMessage[]; activities?: AgentActiv
 
 /** The per-message facts the log keeps once a thread's messages are put away. */
 interface Track {
+  /** Proven turn anchors, alongside the text-free message identities, retained when a window is released. */
+  readonly replyOwners: Map<string, string>
   /** The messages the adapter is working with, or undefined once they are put away. */
   messages: AgentMessage[] | undefined
   /** Every message recorded for this thread by ID, with a mark of the text, so a re-read of a provider's
@@ -50,7 +51,7 @@ interface Track {
 }
 
 function freshTrack(): Track {
-  return { messages: [], ids: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
+  return { messages: [], ids: new Map(), replyOwners: new Map(), order: [], userIds: [], last: undefined, lastTextId: undefined,
     lastUser: undefined, lastAssistant: undefined, lastMessageAt: undefined, empty: new Map(), growing: undefined }
 }
 
@@ -81,7 +82,7 @@ function said(text: string): boolean { return text.trim().length > 0 }
 
 /** True when the two messages differ in anything but their text. */
 function metadataChanged(previous: AgentMessage, next: AgentMessage): boolean {
-  return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId
+  return previous.createdAt !== next.createdAt || previous.commandId !== next.commandId || previous.turnMessageId !== next.turnMessageId
     || JSON.stringify(previous.attachments ?? []) !== JSON.stringify(next.attachments ?? [])
     || JSON.stringify(previous.watcherOwnChange) !== JSON.stringify(next.watcherOwnChange)
     || JSON.stringify(previous.watcherObservedChanges) !== JSON.stringify(next.watcherObservedChanges)
@@ -94,6 +95,13 @@ export class ThreadMessageLog {
   /** False until the host says what it is looking at. Until then no thread's messages are put away. */
   private declared = false
 
+  /**
+   * `changed` hears the ID of every thread whose messages, summary or held window this log changed, once the change is
+   * made, so an adapter that marks its own thread changes (ADR-0016, #925) marks it. It may hear of a thread that did not
+   * change after all, which costs that adapter one comparison.
+   */
+  constructor(private readonly changed: (threadId: string) => void = () => undefined) {}
+
   subscribeEvents(listener: (event: ThreadHostEvent) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -104,8 +112,8 @@ export class ThreadMessageLog {
     this.declared = true
     this.watched.clear()
     for (const id of ids) this.watched.add(id)
-    for (const [id, track] of this.tracks) if (!this.watched.has(id) && track.messages && !this.pinned.has(id)) track.messages = undefined
-    for (const id of ids) { const track = this.tracks.get(id); if (track) track.messages ??= [] }
+    for (const [id, track] of this.tracks) if (!this.watched.has(id) && track.messages && !this.pinned.has(id)) { track.messages = undefined; this.changed(id) }
+    for (const id of ids) { const track = this.tracks.get(id); if (track && !track.messages) { track.messages = []; this.changed(id) } }
   }
 
   /** Threads whose messages the adapter is still working with even though no window is looking at them. */
@@ -114,25 +122,36 @@ export class ThreadMessageLog {
   pin(threadId: string): void {
     this.pinned.add(threadId)
     const track = this.track(threadId)
-    track.messages ??= []
+    if (!track.messages) { track.messages = []; this.changed(threadId) }
   }
   /** Its session is closed: put the messages away unless a window is looking at the thread. */
   release(threadId: string): void {
     this.pinned.delete(threadId)
     const track = this.tracks.get(threadId)
-    if (track && this.declared && !this.watched.has(threadId)) track.messages = undefined
+    if (track?.messages && this.declared && !this.watched.has(threadId)) { track.messages = undefined; this.changed(threadId) }
   }
   /** Everything about this thread is gone: a disconnection, or a thread that no longer exists. */
-  forget(threadId: string): void { this.tracks.delete(threadId); this.pinned.delete(threadId) }
-  forgetAll(): void { this.tracks.clear(); this.pinned.clear() }
+  forget(threadId: string): void { this.tracks.delete(threadId); this.pinned.delete(threadId); this.changed(threadId) }
+  forgetAll(): void {
+    const ids = [...this.tracks.keys()]
+    this.tracks.clear(); this.pinned.clear()
+    for (const id of ids) this.changed(id)
+  }
 
   /**
    * True while this thread's messages should be in hand: a window is looking at it, its provider session
    * is open, or nothing has said yet what is being looked at.
    */
   private wanted(threadId: string): boolean { return !this.declared || this.watched.has(threadId) || this.pinned.has(threadId) }
-  /** True while this thread's messages are in hand rather than put away. */
-  holding(threadId: string): boolean { return this.tracks.get(threadId)?.messages !== undefined }
+  /**
+   * True while this thread's messages are in hand rather than put away. A thread the log holds nothing for yet counts as
+   * held, as it is once anything reads it: a fresh track holds an empty window. So a read never changes what the next
+   * read of the same thread gives, and a snapshot and a thread change built one after the other agree (#925).
+   */
+  holding(threadId: string): boolean {
+    const track = this.tracks.get(threadId)
+    return track === undefined || track.messages !== undefined
+  }
 
   /** The messages the adapter is working with. Empty once they are put away. */
   messages(threadId: string): AgentMessage[] { return this.track(threadId).messages ?? [] }
@@ -234,6 +253,7 @@ export class ThreadMessageLog {
       track.ids.set(identity.id, message ? mark(message.text) : UNREAD)
       track.order.push(identity.id)
       if (identity.role === 'user') track.userIds.push(identity.id)
+      else if (identity.turnMessageId !== undefined) track.replyOwners.set(identity.id, identity.turnMessageId)
       if (message) {
         if (message.role === 'user') track.lastUser = { ...message }
         else track.lastAssistant = { ...message }
@@ -244,6 +264,7 @@ export class ThreadMessageLog {
     }
     track.messages = words ? identities.map(identity => ({ ...(identity as AgentMessage) })) : undefined
     this.tracks.set(threadId, track)
+    this.changed(threadId)
   }
 
   /**
@@ -251,14 +272,23 @@ export class ThreadMessageLog {
    * grew by a suffix is an append, and anything else about a message already recorded is a replacement.
    * A message opened with no text yet is held back until it says something.
    */
-  add(threadId: string, message: AgentMessage): void { this.record(threadId, message) }
+  add(threadId: string, message: AgentMessage): void {
+    try { this.record(threadId, message) } finally { this.changed(threadId) }
+  }
 
   /** `add`, with the held messages already indexed by a caller recording a whole list. */
   private record(threadId: string, message: AgentMessage, held?: Map<string, AgentMessage>): void {
     const track = this.track(threadId)
     const existing = held ? held.get(message.id) : heldMessage(track, message.id)
     const retained = existing ?? (track.lastAssistant?.id === message.id ? track.lastAssistant : track.lastUser?.id === message.id ? track.lastUser : undefined)
-    message = withKeptWatcherChanges(message, retained)
+    message = withKeptMessageMetadata(message, retained)
+    if (message.role === 'assistant') {
+      const owner = track.replyOwners.get(message.id) ?? message.turnMessageId
+      if (owner !== undefined) {
+        track.replyOwners.set(message.id, owner)
+        if (message.turnMessageId !== owner) message = { ...message, turnMessageId: owner }
+      }
+    }
     if (!track.ids.has(message.id)) {
       if (track.empty.has(message.id)) {
         if (!said(message.text)) { track.empty.set(message.id, message.text); if (existing) Object.assign(existing, message); return }
@@ -311,7 +341,7 @@ export class ThreadMessageLog {
     }
     if (!track.ids.has(messageId)) return
     if (existing) existing.text += appendText
-    this.publish(threadId, track, { kind: 'message-text-appended', at: new Date().toISOString(), messageId, appendText })
+    try { this.publish(threadId, track, { kind: 'message-text-appended', at: new Date().toISOString(), messageId, appendText }) } finally { this.changed(threadId) }
   }
 
   /** A confirmed rewind: everything recorded for this thread is dropped and the new epoch written down. */
@@ -319,6 +349,7 @@ export class ThreadMessageLog {
     const track = this.track(threadId)
     const holding = track.messages !== undefined
     this.tracks.set(threadId, { ...freshTrack(), messages: holding ? [] : undefined })
+    this.changed(threadId)
     this.emit(threadId, { kind: 'messages-reset', at: new Date().toISOString(), ...(historyEpoch === undefined ? {} : { historyEpoch }) })
   }
 
@@ -334,11 +365,13 @@ export class ThreadMessageLog {
     // square of the thread's length.
     const held = new Map<string, AgentMessage>()
     for (const message of this.track(threadId).messages ?? []) if (!held.has(message.id)) held.set(message.id, message)
-    for (const message of messages) this.record(threadId, message, held)
-    // Only a list that covers everything the log knows is also what the window should hold.
-    const current = this.track(threadId)
-    if (!this.wanted(threadId)) { current.messages = undefined; return }
-    if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...withKeptWatcherChanges(message, held.get(message.id)) }))
+    try {
+      for (const message of messages) this.record(threadId, message, held)
+      // Only a list that covers everything the log knows is also what the window should hold.
+      const current = this.track(threadId)
+      if (!this.wanted(threadId)) { current.messages = undefined; return }
+      if (messages.length >= current.order.length) current.messages = messages.map(message => ({ ...withKeptMessageMetadata(message, held.get(message.id)) }))
+    } finally { this.changed(threadId) }
   }
 
   /**
@@ -350,6 +383,7 @@ export class ThreadMessageLog {
     const track = this.tracks.get(threadId)
     if (!track?.messages) return
     track.messages = track.messages.filter(keep).sort((first, second) => rank(first) - rank(second))
+    this.changed(threadId)
   }
 
   /** An exact native alias, already corroborated by the adapter. The store also
@@ -372,6 +406,7 @@ export class ThreadMessageLog {
     if (track.last?.id === messageId && !last || track.lastUser?.id === messageId && !lastUser
       || track.lastAssistant?.id === messageId && !lastAssistant) return
     track.ids.delete(messageId)
+    track.replyOwners.delete(messageId)
     track.growing = undefined
     track.order = order
     track.userIds = userIds
@@ -380,6 +415,7 @@ export class ThreadMessageLog {
     if (lastUser) track.lastUser = { ...lastUser }
     if (lastAssistant) track.lastAssistant = { ...lastAssistant }
     if (track.lastTextId === messageId) track.lastTextId = order.findLast(id => read(id)?.text.length)
+    this.changed(threadId)
     this.emit(threadId, { kind: 'message-aliased', at: new Date().toISOString(), messageId, canonicalId })
   }
 
@@ -388,7 +424,9 @@ export class ThreadMessageLog {
     const track = this.tracks.get(threadId)
     if (!track?.empty.size) return
     if (track.messages) track.messages = track.messages.filter(message => !track.empty.has(message.id))
+    for (const messageId of track.empty.keys()) track.replyOwners.delete(messageId)
     track.empty.clear()
+    this.changed(threadId)
   }
 
   /** Put a copy of a message in the held window, and in the caller's index of it when there is one. */

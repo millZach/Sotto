@@ -2,8 +2,9 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage, AgentThread } from '../../../src/shared/agents'
+import { share } from '../../../src/renderer/src/agents/stateSharing'
 import {
-  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, openActivityLabel, placeActivities,
+  activityLabel, heldAction, currentAction, fenced, formatDuration, groupSummary, heldLongEnough, liveTurnId, newsWorkLabel, openActivityLabel, placeActivities, splitTurns,
   statusText, timingNote, turnHeadline, heldLabel, HELD_AFTER_MS,
 } from '../../../src/renderer/src/agents/threadActivityView'
 
@@ -149,6 +150,174 @@ describe('placing activity when the messages are a window of a longer history', 
       expect(placement.leading).toEqual([])
     }
     expect(placeActivities([], [], live).trailing.map(group => group.records.map(item => item.id))).toEqual([['first']])
+  })
+})
+
+describe('the newest turn the placement reads', () => {
+  const at = (minute: number): string => new Date(Date.UTC(2026, 9, 23, 11, minute)).toISOString()
+  const messages: AgentMessage[] = [{ id: 'you', role: 'user', text: 'Check the threads.', createdAt: at(0) }, { id: 'answer', role: 'assistant', text: 'All quiet.', createdAt: at(1) }]
+  const activities: AgentActivity[] = [{ id: 'turn-you', turnId: 'you', afterMessageId: 'you', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(1) }]
+
+  const news: AgentActivity = { id: 'turn-news', turnId: 'news', afterMessageId: 'news', sequence: 1, kind: 'turn', status: 'running', title: 'Turn', startedAt: at(3) }
+
+  it('says the newest turn ended only when its own lifecycle ended and another turn’s lifecycle runs', () => {
+    expect(placeActivities(messages, messages, [...activities, news]).newestTurnEnded).toBe(true)
+    // Ended, with nothing else running: a turn the provider began on its own, such as Claude's report, may be the work going on.
+    expect(placeActivities(messages, messages, activities).newestTurnEnded).toBeUndefined()
+    // Another turn runs, but the newest turn's own lifecycle says nothing yet.
+    expect(placeActivities(messages, messages, [news]).newestTurnEnded).toBeUndefined()
+  })
+
+  it('reads work a provider leaves running after its turn ended as saying nothing about which turn is going', () => {
+    const left: AgentActivity[] = [{ id: 'plan', turnId: 'you', afterMessageId: 'you', sequence: 2, kind: 'plan', status: 'running', title: 'Plan', startedAt: at(0) },
+      { id: 'agent', turnId: 'you', afterMessageId: 'you', sequence: 3, kind: 'subagent', status: 'running', title: 'Review', startedAt: at(0) }]
+    expect(placeActivities(messages, messages, [...activities, ...left]).newestTurnEnded).toBeUndefined()
+    expect(placeActivities(messages, messages, [...activities, ...left, news]).newestTurnEnded).toBe(true)
+  })
+
+  it('is the same value on every update that changes nothing, so the placement that holds it is shared', () => {
+    const first = placeActivities(messages, messages, [...activities, news])
+    expect(share(first, placeActivities(messages, messages, [...activities, news].map(record => ({ ...record }))))).toBe(first)
+  })
+})
+
+describe('placing the work of an unshown turn', () => {
+  // Watcher's conversation leaves out each news wake-up (watcherWakeUpsAsShown), so the news turn's work names a message
+  // the transcript does not have. Times follow Zach's Watcher thread of October 19, 2026.
+  const clock = (time: string): string => `2026-10-19T11:${time}Z`
+  const said = (id: string, role: AgentMessage['role'], time: string, turnMessageId?: string): AgentMessage =>
+    ({ id, role, text: id, createdAt: clock(time), ...(turnMessageId ? { turnMessageId } : {}) })
+  const work = (turnId: string, from: string, to: string, kinds: AgentActivity['kind'][], first: number): AgentActivity[] => [
+    { id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence: first, kind: 'turn', status: 'completed', title: 'Turn', startedAt: clock(from), completedAt: clock(to) },
+    ...kinds.map((kind, index): AgentActivity => ({ id: `${turnId}-${index}`, turnId, afterMessageId: turnId, sequence: first + index + 1, kind, status: 'completed', title: kind,
+      startedAt: clock(from), completedAt: clock(to) })),
+  ]
+  // You, Watcher's answer, two news turns (one wrote nothing), then you again with the answer.
+  const messages = [
+    said('you-1', 'user', '56:40.379'), said('answer-1', 'assistant', '56:50.463'),
+    said('news-reply-1', 'assistant', '56:59.843'),
+    said('you-2', 'user', '59:05.573'), said('answer-2', 'assistant', '59:33.423'),
+  ]
+  const activities = [
+    ...work('you-1', '56:41.291', '56:50.600', ['reasoning', 'tool'], 0),
+    ...work('news-1', '56:54.086', '57:00.000', ['tool', 'reasoning'], 10),
+    ...work('news-2', '57:29.544', '57:36.613', ['tool'], 20),
+    ...work('you-2', '59:06.224', '59:33.500', ['reasoning', 'tool'], 30),
+  ]
+
+  it('puts a news turn’s work with the reply it wrote, and one that wrote none before the message after it, never at the end', () => {
+    const placement = placeActivities(messages, messages, activities)
+    expect(placement.trailing).toEqual([])
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+    expect([...placement.after.keys()]).toEqual(['you-1', 'you-2'])
+  })
+
+  it('takes the reply that names the turn over the one the clocks would pick', () => {
+    const named = [...messages.slice(0, 2), said('stray', 'assistant', '56:55.000', 'you-1'), said('news-reply-1', 'assistant', '56:59.843', 'news-1'), ...messages.slice(3)]
+    expect(placeActivities(named, named, activities).unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placeActivities(named, named, activities).unshown.has('stray')).toBe(false)
+  })
+
+  it('opens a turn at the reply, so it never reads as the answer to your message above it', () => {
+    const placement = placeActivities(messages, messages, activities)
+    expect(splitTurns(messages, placement.unshown).map(turn => [turn.user?.id, turn.replies.map(reply => reply.id), turn.unshown])).toEqual([
+      ['you-1', ['answer-1'], undefined], [undefined, ['news-reply-1'], true], ['you-2', ['answer-2'], undefined],
+    ])
+  })
+
+  it('trails a news turn nothing came after, and one it cannot date', () => {
+    const running = [...activities, ...work('news-3', '59:40.000', '59:45.000', ['tool'], 40)]
+    expect(placeActivities(messages, messages, running).trailing.map(group => group.turnId)).toEqual(['news-3'])
+    const undated = activities.map(item => item.turnId === 'news-1' ? { ...item, startedAt: undefined, completedAt: undefined } : item)
+    expect(placeActivities(messages, messages, undated).trailing.map(group => group.turnId)).toEqual(['news-1'])
+  })
+
+  it('opens a turn at a reply that names an unshown message, even once the turn’s work is gone from the records', () => {
+    const named = [...messages.slice(0, 2), said('news-reply-1', 'assistant', '56:59.843', 'news-1'), said('more', 'assistant', '57:01.000', 'news-1'), ...messages.slice(3)]
+    expect([...placeActivities(named, named, []).unshown]).toEqual([['news-reply-1', []]])
+    expect(placeActivities(named, named, activities.filter(item => !item.turnId.startsWith('news'))).unshown.get('news-reply-1')).toEqual([])
+    // A reply before the first user message the window holds may name one above the window, so it is not read.
+    const window = [said('cut', 'assistant', '56:10.000', 'above'), ...named]
+    expect(placeActivities(window, window, []).unshown.has('cut')).toBe(false)
+  })
+
+  it('places a news turn by its reply even when the turn before it lost its work to trimming', () => {
+    // The records keep only the newest turns' work, so the news turn is the oldest one left; it is still not above the messages.
+    const trimmed = activities.filter(item => item.turnId !== 'you-1')
+    const placement = placeActivities(messages, messages, trimmed)
+    expect(placement.leading).toEqual([])
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+  })
+
+  it('opens a turn at a reply it claims by time even when none of the turn’s work is shown', () => {
+    // A Codex or Grok news turn trimmed to its finished lifecycle: nothing of it is drawn, but its reply is still its own.
+    const lone = activities.filter(item => item.turnId !== 'news-1' || item.kind === 'turn')
+    const placement = placeActivities(messages, messages, lone)
+    expect(placement.unshown.get('news-reply-1')).toEqual([])
+    expect(splitTurns(messages, placement.unshown).map(turn => turn.key)).toEqual(['you-1', 'unshown:news-reply-1', 'you-2'])
+  })
+
+  it('never lets a turn that ended before a reply was written claim it', () => {
+    // news-2 ended at 57:36.613 and wrote nothing; the reply after it came from a turn Sotto has no times for.
+    const late = [...messages.slice(0, 3), said('late-reply', 'assistant', '58:20.000'), ...messages.slice(3)]
+    const placement = placeActivities(late, late, activities)
+    expect(placement.unshown.has('late-reply')).toBe(false)
+    expect(placement.before.get('you-2')!.map(group => group.turnId)).toEqual(['news-2'])
+  })
+
+  it('claims the reply when the turn’s own records began later than the turn, as real ones do', () => {
+    // Each record starts when it starts; only another turn's start closes the window for the reply.
+    const staggered = activities.map(item => item.turnId === 'news-1' && item.kind !== 'turn' ? { ...item, startedAt: clock(`56:5${5 + item.sequence % 3}.000`) } : item)
+    expect(placeActivities(messages, messages, staggered).unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+  })
+
+  it('opens a turn at the reply its own records follow, when it began from a message the conversation leaves out', () => {
+    // Codex and Grok Build anchor a turn's later records to the last message, which is the news reply being written.
+    const anchored: AgentActivity[] = [
+      ...activities.filter(item => item.turnId !== 'news-1'),
+      { id: 'turn-codex', turnId: 'codex-turn', afterMessageId: 'hidden-wake-up', sequence: 10, kind: 'turn', status: 'completed', title: 'Turn', startedAt: clock('56:54.086'), completedAt: clock('57:00.000') },
+      { id: 'codex-tool', turnId: 'codex-turn', afterMessageId: 'news-reply-1', sequence: 11, kind: 'tool', status: 'completed', title: 'read_thread' },
+    ]
+    const placement = placeActivities(messages, messages, anchored)
+    expect(placement.unshown.get('news-reply-1')).toEqual([])
+    expect(placement.after.get('news-reply-1')!.map(group => group.turnId)).toEqual(['codex-turn'])
+    expect(splitTurns(messages, placement.unshown).map(turn => turn.key)).toEqual(['you-1', 'unshown:news-reply-1', 'you-2'])
+  })
+
+  it('claims by time only for a turn that began inside the window, and never a reply that names another turn', () => {
+    const window = [said('answer-0', 'assistant', '56:30.000'), ...messages]
+    const before = [...activities, ...work('older', '56:20.000', '56:25.000', ['tool'], 50)]
+    expect(placeActivities(window, window, before).unshown.has('answer-0')).toBe(false)
+    const answered = [messages[0]!, said('answer-1', 'assistant', '56:50.463', 'you-1'), ...messages.slice(2)]
+    const overlapping = [...activities.filter(item => item.turnId !== 'you-1'), ...work('stray', '56:45.000', '56:52.000', ['tool'], 50)]
+    expect(placeActivities(answered, answered, overlapping).unshown.has('answer-1')).toBe(false)
+  })
+
+  it('gives a reply to one turn when two began at the same moment', () => {
+    const twins = [...activities, ...work('news-1b', '56:54.086', '57:00.000', ['tool'], 50)]
+    const placement = placeActivities(messages, messages, twins)
+    expect(placement.unshown.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1'])
+    // The other wrote nothing it can claim, so it goes before the next turn the transcript starts: that reply.
+    expect(placement.before.get('news-reply-1')!.map(group => group.turnId)).toEqual(['news-1b'])
+  })
+
+  it('claims nothing by time while the history is loading', () => {
+    const placement = placeActivities(messages, messages, activities, true)
+    expect(placement.unshown.size).toBe(0)
+    expect(placement.trailing).toEqual([])
+  })
+
+  it('shows nothing for a reply above the rendered page', () => {
+    expect(placeActivities(messages, messages.slice(3), activities).unshown.size).toBe(0)
+  })
+
+  it('says how long the news turn took, or how it ended', () => {
+    const [lifecycle] = work('news-1', '56:54.086', '57:00.000', [], 0)
+    expect(newsWorkLabel(lifecycle, false, undefined, [])).toBe('After news · 5.9s')
+    expect(newsWorkLabel({ ...lifecycle!, status: 'failed' }, false, undefined, [])).toBe('After news · failed after 5.9s')
+    expect(newsWorkLabel(undefined, false, undefined, [])).toBe('After news')
   })
 })
 

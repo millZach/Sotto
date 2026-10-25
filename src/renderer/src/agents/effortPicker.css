@@ -39,15 +39,15 @@
 /* The track: a 22px pill. The fill warms from the cool end toward the colourway as the level climbs, and the
    colourway's own gradient shows through near the top. Dots mark the stops; the thumb is a 26px disc. */
 .effort-card__track { position: relative; height: 26px; margin: 12px 0 0; }
-.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 999px; background: var(--tt-effort-track); overflow: hidden; }
-.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--effort-x) * (100% - 26px)); border-radius: 999px; overflow: hidden;
+.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 2px; background: var(--tt-effort-track); overflow: hidden; }
+.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--effort-x) * (100% - 26px)); border-radius: 2px; overflow: hidden;
   background: linear-gradient(90deg, color-mix(in srgb, var(--tt-effort-a) calc(30% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool)), color-mix(in srgb, var(--tt-effort-b) calc(45% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool))); }
 .effort-card__fill::before { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-image); opacity: calc(var(--effort-heat) * var(--effort-heat) * var(--effort-heat)); }
 .effort-card__fill::after { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-veil); }
 .effort-card[data-unknown='true'] .effort-card__fill { opacity: .35; }
 .effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--effort-stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--tt-effort-dot); transform: translate(-50%, -50%); }
 .effort-card__dot[data-under='true'] { background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); }
-.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); width: 26px; height: 26px; border-radius: 50%; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
 .effort-card[data-unknown='true'] .effort-card__thumb { opacity: .45; }
 .effort-card__track input {
   position: absolute;
@@ -59,7 +59,7 @@
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: 999px;
+  border-radius: 2px;
   outline: 0;
   cursor: ew-resize;
   touch-action: none;

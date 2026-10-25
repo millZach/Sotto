@@ -8,6 +8,12 @@ Renumbered from ADR-0062 on October 9, 2026, after the accepted Linux desktop AD
 
 Amended October 11, 2026: the Omarchy shell plugin, which came after this decision, had kept the bar and wave in the shell's bar and its dictation pill. It now draws the menu-bar template's owl there too, as decisions 1 and 5 say.
 
+Amended October 19, 2026: while Sotto runs on macOS, the Dock icon is painted by the theme like `SottoMark`: the tile is the accent and the owl a foreground that reads on it, in the half the main window shows (its `appearance`, not the widget's `theme`), from saved settings only, so an unsaved theme draft shows only inside the window; the default theme wears the icon's own colours. The bundle's icon on disk, which Finder and the Dock show while Sotto is not running, stays the teal of decision 3. Main cannot draw SVG, so the generator writes the icon's tile and owl as coverage (`resources/dock/mark-coverage.bin`) and main paints it (`src/main/dock/dockIcon.ts`).
+
+Amended October 22, 2026: on a Mac running a Sotto Owl build, the menu bar icon is the menu bar owl of [ADR-0114](0114-the-menu-bar-owl-is-alive.md): the owl in colour, perched on a branch, animated, with a beak. For the menu bar icon alone that amends decisions 1, 3 and 5. Stable, a Mac whose frames cannot be loaded and the Omarchy bar keep the template.
+
+Amended October 24, 2026, by the owner's choice: on macOS the app draws no mark beside the traffic lights, in either track. For decision 1's in-app places that takes `SottoMark` out of the strip and the sidebar top row on a Mac, and out of the collapsed rail's top and Watcher's room's corner; Watcher's context button there wears Watcher's owl instead. Every other place in decision 1 keeps the mark, and the window title still names the running build.
+
 ## Context
 
 The mark was a bar and a wave on a teal tile: a caret and a sound, from the months when Sotto was a dictation tool. Sotto now spends most of its time running coding agents' threads, and the owner wanted a mark with a character rather than a symbol. The sheet shows the owl as an app icon (a black owl on a teal tile, its eyes and beak cut through to the tile), a lockup with a lowercase wordmark, and a small inverted variant on a black tile. It is a raster image, so it cannot be the master for a 16-pixel menu-bar icon or a mark that a theme repaints.

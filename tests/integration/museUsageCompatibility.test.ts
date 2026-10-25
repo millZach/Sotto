@@ -76,8 +76,8 @@ function savedMuseMessages(root: string) {
   finally { db.close() }
 }
 
-describe('Muse beside four-provider Usage', () => {
-  it('accepts a Muse prompt without reporting failed persistence and still counts ordinary prompts', async () => {
+describe('Muse and OpenCode in Usage', () => {
+  it('counts a Muse prompt once its echo arrives, beside ordinary prompts, and asks Muse for its limits', async () => {
     const f = await fixture(), { runtime, host, quota, visit } = await f.start(true)
     expect((await runtime.agentControl.command({ type: 'select-thread', threadId: MUSE })).error).toBeNull()
     const museText = 'Synthetic Muse words stay in the thread'
@@ -86,10 +86,9 @@ describe('Muse beside four-provider Usage', () => {
     expect(host.commands.filter(command => command.type === 'send' && command.threadId === MUSE)).toHaveLength(1)
     expect(runtime.agentControl.get().host.threads.find(thread => thread.id === MUSE)!.messages.some(message => message.text === museText)).toBe(true)
     const read = await runtime.usage!.read()
-    expect(read).toMatchObject({ status: 'ready', persistence: 'saved', activity: { totals: { prompts: { total: 0 }, tokens: { total: { value: 120 } } } } })
-    expect(visit.mock.calls.map(([id]) => id)).not.toContain(MUSE)
-    expect(quota.mock.calls.map(([id]) => id)).not.toContain('muse')
-    expect(numericRows(f.root).every(row => row.provider === 'codex')).toBe(true)
+    expect(read).toMatchObject({ status: 'ready', persistence: 'saved', activity: { totals: { tokens: { total: { value: 120 } } } } })
+    expect(visit.mock.calls.map(([id]) => id)).toContain(MUSE)
+    expect(quota.mock.calls.map(([id]) => id)).toContain('muse')
     expect(JSON.stringify(numericRows(f.root))).not.toContain(museText)
 
     const ordinaryText = 'Synthetic ordinary words stay out of numeric storage'
@@ -97,10 +96,10 @@ describe('Muse beside four-provider Usage', () => {
     expect(ordinary.error).toBeNull()
     await runtime.agentControl.command({ type: 'refresh' })
     const counted = await runtime.usage!.read()
-    expect(counted).toMatchObject({ status: 'ready', persistence: 'saved', activity: { totals: { prompts: { user: 1, total: 1 } } } })
-    expect(counted.activity!.providers.map(provider => provider.providerId)).toEqual(['codex'])
+    expect(counted).toMatchObject({ status: 'ready', persistence: 'saved', activity: { totals: { prompts: { user: 2, total: 2 } } } })
+    expect(counted.activity!.providers.map(provider => [provider.providerId, provider.prompts.total])).toEqual([['codex', 1], ['muse', 1]])
     expect(JSON.stringify(numericRows(f.root))).not.toContain(ordinaryText)
-    expect(numericRows(f.root).some(row => row.thread_id === MUSE)).toBe(false)
+    expect(numericRows(f.root).some(row => row.thread_id === MUSE && row.provider === 'muse')).toBe(true)
   })
 
   it.each([false, true])('keeps a held Muse transcript dormant with Usage enabled=%s', async usageEnabled => {
@@ -131,7 +130,7 @@ describe('Muse beside four-provider Usage', () => {
     try { expect(store.query().totals.tokens.total.value).toBe(120) } finally { store.close() }
   })
 
-  it('refuses unsupported quota reads before native execution and excludes Muse from token publication and replay', async () => {
+  it('publishes and replays Muse usage, reads its limits, and refuses OpenCode limit reads before native execution', async () => {
     const codex: FakeProviderHost & AgentHost = new FakeProviderHost()
     const muse: FakeProviderHost & AgentHost = new FakeProviderHost()
     let publish: ((record: UsageTokenObservation) => void) | undefined
@@ -140,23 +139,29 @@ describe('Muse beside four-provider Usage', () => {
     const visitCodex = vi.fn((_threadId: string, visitor: (record: UsageTokenObservation) => void) => visitor(token))
     const visitMuse = vi.fn()
     const codexQuota = vi.fn(async () => unavailableProviderQuota('codex', 'unsupported'))
-    const museQuota = vi.fn(async () => unavailableProviderQuota('codex', 'unsupported'))
+    const museQuota = vi.fn(async () => unavailableProviderQuota('muse', 'not-reported'))
     codex.subscribeUsage = subscribeCodex; codex.visitUsage = visitCodex; codex.readProviderQuota = codexQuota
     muse.subscribeUsage = subscribeMuse; muse.visitUsage = visitMuse; muse.readProviderQuota = museQuota
+    const opencode: FakeProviderHost & AgentHost = new FakeProviderHost()
+    const opencodeQuota = vi.fn(async () => unavailableProviderQuota('codex', 'unsupported'))
+    opencode.readProviderQuota = opencodeQuota
     const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: {
-      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode: new FakeProviderHost() } })
+      codex, muse, claude: new FakeProviderHost(), grok: new FakeProviderHost(), devin: new FakeProviderHost(), opencode, cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() } })
     cleanup.push(async () => host.disconnect())
     const records: UsageTokenObservation[] = []
     const off = host.subscribeUsage!(record => records.push(record))
     cleanup.push(async () => off())
-    await host.connect('codex'); await host.connect('muse')
-    expect(subscribeCodex).toHaveBeenCalledOnce(); expect(subscribeMuse).not.toHaveBeenCalled()
+    await host.connect('codex'); await host.connect('muse'); await host.connect('opencode')
+    expect(subscribeCodex).toHaveBeenCalledOnce(); expect(subscribeMuse).toHaveBeenCalledOnce()
     publish!(token)
     expect(records).toMatchObject([{ providerId: 'codex', modelId: publicProviderEntityId('codex', 'model', token.modelId) }])
     host.visitUsage!(CODEX, record => records.push(record))
-    expect(visitCodex).toHaveBeenCalledOnce(); expect(visitMuse).not.toHaveBeenCalled()
-    await expect(host.readProviderQuota!('muse', true)).rejects.toThrow('Usage is not available for this provider.')
-    expect(museQuota).not.toHaveBeenCalled()
+    expect(visitCodex).toHaveBeenCalledOnce(); expect(visitMuse).toHaveBeenCalledOnce()
+    // OpenCode reports no account limits: nothing asks it for any (ADR-0087).
+    await expect(host.readProviderQuota!('opencode', true)).rejects.toThrow('Usage reads no limits for this provider.')
+    expect(opencodeQuota).not.toHaveBeenCalled()
+    expect(await host.readProviderQuota!('muse', true)).toMatchObject({ providerId: 'muse', status: 'unavailable', reason: 'not-reported' })
+    expect(museQuota).toHaveBeenCalledOnce()
     expect(await host.readProviderQuota!('codex', true)).toMatchObject({ providerId: 'codex', status: 'unavailable', reason: 'unsupported' })
     expect(codexQuota).toHaveBeenCalledOnce()
   })

@@ -1,26 +1,29 @@
 import { z } from 'zod'
 import { PROVIDER_COUNT, PROVIDER_LABELS, providerIdSchema, type AgentProviderStatus, type ProviderId, type ProviderProblem } from './agents'
 import type { HeldProviders } from './heldProviders'
+import { OPENCODE_SIGN_IN_ANSWERS, OPENCODE_SIGN_IN_CALLS, signInAttemptRequestSchema, signInDoneSchema } from './opencodeSignIn'
 
 /**
- * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts, the
+ * A host's providers from this computer (ADR-0037): the tiles under a connected host's row in Settings > Hosts & phones, the
  * host's own connect, disconnect and refresh for one of its providers, and a provider's sign-in, run on the host by its
  * own client and finished by the user in this computer's browser.
  */
 
 /**
  * The providers a host offers from this computer: its tiles, their connect, sign-in and agent jobs, and the provider job
- * brief. OpenCode is not one yet: hosts and phones take it in #1107, which adds it here. A headless host may still run
- * its adapter behind the Owl gate; nothing on this computer offers it for a host.
+ * brief. OpenCode joined in #1107 and Cursor with ADR-0128; a host sends either one's provider row, models and threads only
+ * to a client whose hello accepts its feature, `provider-opencode` or `provider-cursor` (`PROVIDER_HOST_FEATURES` in
+ * `hostProtocol.ts`).
  */
-export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse'] as const satisfies readonly ProviderId[]
+export const HOST_PROVIDERS = ['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'] as const satisfies readonly ProviderId[]
 export type HostProviderId = typeof HOST_PROVIDERS[number]
 export const hostProviderIdSchema = z.enum(HOST_PROVIDERS)
 /**
  * What a headless host holds on its run: the providers its Owl answers hold, and every provider hosts do not take yet,
  * whatever those answers are. A host starts no process for one, and its state names none of its providers, models or
- * threads, so a desktop or phone that does not know the provider never reads it there. OpenCode is held so until #1107
- * adds it to `HOST_PROVIDERS`, which lifts this; #1107 must then send it only to peers that list a host feature for it.
+ * threads, so a desktop or phone that does not know the provider never reads it there. Every provider is a host provider
+ * since #1107, so this holds only what the Owl answers hold; a provider added to Sotto before hosts take it is held here
+ * until it joins `HOST_PROVIDERS`, and is then sent only to peers that list its host feature.
  */
 export function heldOnHost(held: HeldProviders): HeldProviders {
   const hosted: readonly ProviderId[] = HOST_PROVIDERS
@@ -31,11 +34,12 @@ export function heldOnHost(held: HeldProviders): HeldProviders {
 export const PROVIDER_SIGN_IN_LIFETIME_MS = 15 * 60_000
 
 /**
- * The two ways a provider's client signs in without a terminal. `device-code`: it prints a page and a short code, the
+ * The three ways a provider's client signs in without a terminal. `device-code`: it prints a page and a short code, the
  * user enters the code on that page, and the client finishes by itself (Codex, Grok Build). `paste-code`: it prints a
- * page, the page shows a code once the user signs in, and the client waits for that code (Claude Code).
+ * page, the page shows a code once the user signs in, and the client waits for that code (Claude Code). `page`: it prints
+ * a page and no code, and finishes by itself once the user has signed in there (Cursor, ADR-0128).
  */
-export const providerSignInShapeSchema = z.enum(['device-code', 'paste-code'])
+export const providerSignInShapeSchema = z.enum(['device-code', 'paste-code', 'page'])
 export type ProviderSignInShape = z.infer<typeof providerSignInShapeSchema>
 
 /**
@@ -46,9 +50,13 @@ export type ProviderSignInShape = z.infer<typeof providerSignInShapeSchema>
 export const providerSignInStageSchema = z.enum(['starting', 'waiting', 'finishing', 'connected', 'refused', 'failed', 'ended'])
 export type ProviderSignInStage = z.infer<typeof providerSignInStageSchema>
 
-/** Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles show the command. */
+/**
+ * Which providers sign in from this computer, and how. Devin's and Muse's sign-ins run on the host itself, so their tiles
+ * show the command. OpenCode signs in to model sources instead, from its tile's Add a model source dialog, which drives
+ * the host's own OpenCode over the host connection (`opencode-sign-in`, #1107).
+ */
 export const PROVIDER_SIGN_IN_SHAPES: Readonly<Record<ProviderId, ProviderSignInShape | null>> = {
-  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null,
+  codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null,
 }
 /** What Devin's tile says to run on the host: its sign-in for a machine reached over SSH, where a browser cannot come back to it. */
 export const DEVIN_SIGN_IN_COMMAND = 'devin auth login --force-manual-token-flow'
@@ -72,16 +80,18 @@ export const PROVIDER_INSTALL_GUIDES: Readonly<Record<ProviderId, string>> = {
   muse: 'https://dev.meta.ai/docs/muse-code',
   // OpenCode 2's guide: opencode.ai/docs installs OpenCode 1, which Sotto refuses (ADR-0087).
   opencode: 'https://opencode.ai/v2/docs/',
+  cursor: 'https://cursor.com/docs/cli/installation',
+  deepseek: 'https://github.com/deepseek-ai/deepseek-harness',
 }
 
 /**
  * The only pages a host's sign-in may open, by provider: https, one of these names exactly, no port, no user. They are
  * the pages each client printed when its sign-in was run: Codex's `https://auth.openai.com/codex/device`, Grok Build's
- * `https://accounts.x.ai/oauth2/device`, and Claude Code's `https://claude.com/cai/oauth/authorize`, which older
- * versions printed on `claude.ai`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
+ * `https://accounts.x.ai/oauth2/device`, Claude Code's `https://claude.com/cai/oauth/authorize`, which older
+ * versions printed on `claude.ai`, and Cursor's `https://cursor.com/loginDeepControl`. A page anywhere else is not opened, and the sign-in says to finish it on the host.
  */
 export const PROVIDER_SIGN_IN_PAGES: Readonly<Record<ProviderId, readonly string[]>> = {
-  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [],
+  codex: ['auth.openai.com'], grok: ['accounts.x.ai'], claude: ['claude.com', 'claude.ai'], devin: [], muse: [], opencode: [], cursor: ['cursor.com'], deepseek: [],
 }
 export function isProviderSignInPage(provider: ProviderId, value: string): boolean {
   if (value.length > 4096 || /\s/u.test(value)) return false
@@ -110,7 +120,7 @@ export type ProviderSignInView = Omit<HostSignIn, 'url'>
 /** The longest code Sotto hands a client. Claude Code's is a code and a state joined by `#`, well under this. */
 export const PASTED_CODE_MAX = 2048
 
-/** What Settings > Hosts asks of one of a saved host's providers. `id` is the saved host's. */
+/** What Settings > Hosts & phones asks of one of a saved host's providers. `id` is the saved host's. */
 export const hostProviderActionSchema = z.object({
   id: z.uuid(), provider: hostProviderIdSchema, action: z.enum(['connect', 'disconnect', 'refresh']),
 }).strict()
@@ -168,7 +178,7 @@ export function hostProviderJobTitle(jobCase: HostProviderJobCase, provider: Pro
   return `${HOST_PROVIDER_JOB_WORDS[jobCase].title} ${PROVIDER_LABELS[provider]} on ${host}`
 }
 /**
- * A provider job as Settings > Hosts shows it: which saved host (`hostId`, its saved ID) and provider, the thread working
+ * A provider job as Settings > Hosts & phones shows it: which saved host (`hostId`, its saved ID) and provider, the thread working
  * on it and its model. `starting` until the thread has its brief, `running` while it works, then `found` once the host
  * finds the provider, `stopped` on Stop, or `failed` when the thread did not start working, with the reason.
  */
@@ -199,3 +209,18 @@ export type HostClientUpdateRequest = z.infer<typeof hostClientUpdateRequestSche
 export const HOSTS_PROVIDER_ACTION = 'hosts:provider-action'
 export const HOSTS_UPDATE_CLIENTS = 'hosts:update-clients'
 export const HOSTS_SIGN_IN = 'hosts:sign-in'
+export const HOSTS_OPENCODE_SIGN_IN = 'hosts:opencode-sign-in'
+
+/**
+ * What a host's OpenCode tile asks of its Add a model source dialog (#1107): the same calls the desktop's own dialog makes
+ * (`OpenCodeSignInBridge`), each naming the saved host it goes to. `reopen` has this computer's main ask the host for the
+ * page and open it here (ADR-0037); the window never asks for the address itself.
+ */
+export const hostOpenCodeCallSchema = z.discriminatedUnion('action', [...OPENCODE_SIGN_IN_CALLS,
+  z.object({ action: z.literal('reopen'), request: signInAttemptRequestSchema }).strict()])
+export type HostOpenCodeCall = z.infer<typeof hostOpenCodeCallSchema>
+export const hostOpenCodeSignInRequestSchema = z.object({ id: z.uuid(), call: hostOpenCodeCallSchema }).strict()
+export type HostOpenCodeSignInRequest = z.infer<typeof hostOpenCodeSignInRequestSchema>
+/** What each of those calls is answered with: the desktop's own dialog's answers, and `reopen` as Open the page again's. */
+export const HOST_OPENCODE_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, reopen: signInDoneSchema } as const satisfies Record<HostOpenCodeCall['action'], z.ZodType>
+export type HostOpenCodeAnswer<A extends HostOpenCodeCall['action']> = z.infer<(typeof HOST_OPENCODE_ANSWERS)[A]>

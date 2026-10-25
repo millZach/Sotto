@@ -7,13 +7,17 @@ import { agentAttachmentHandleSchema, agentAttachmentSchema, agentFollowupSchema
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { StageInline } from './attachmentStore'
 import { pullRequestKey } from '../../shared/gitPullRequests'
+import { watcherPhoneOriginSchema } from '../../shared/watcher'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { hiddenEvents } from './hiddenWakeUp'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp, WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
+import { wakeUpNewsSchema, foldWakeUpNews, isBabysitNews, isDelegationNews, isDelegationOnlyWakeUp, isHiddenWakeUp, isRestartNews, isWatcherNews, isWatcherOnlyWakeUp,
+  WAKE_UP_NEWS_MAX, type WakeUpNews } from './wakeUp'
 
 /** Why a follow-up came back from a restart without an image it had, whatever the reason the image was not kept. */
 export const LOST_IMAGES = 'An image in this follow-up was no longer kept when Sotto started, so the follow-up was paused rather than sent without it. Attach the image again or remove the follow-up.'
+/** Why a queue Watcher's stop holds for the user's review (ADR-0073) is paused. */
+export const WATCHER_STOP_PAUSE = 'Watcher stopped this thread, so its queue waits for you. Review the thread and resume its queue when ready.'
 /** Shared identity for prompt admission, the outbox and queue receipts. Images stay handles, never content reads. */
 export function followupDigest(input: Pick<AgentFollowup, 'text' | 'skills' | 'files'> & { readonly attachments?: readonly AgentAttachmentHandle[] | undefined }): string {
   const base = input.skills?.length ? [input.text.trim(), input.attachments ?? [], input.skills] : [input.text.trim(), input.attachments ?? []]
@@ -25,7 +29,12 @@ const receiptsSchema = z.array(agentDeliveryReceiptsSchema.element.extend({ dige
  * A queued item as the store keeps it. A wake-up keeps the news it was worded from, one part per pull request, so news
  * that comes later folds into it and a stop takes back its pull request's part; the window is sent the words alone.
  */
-const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional() })
+/**
+ * `phoneOrigin`: the paired iPhone a follow-up for Watcher came from, when its steer went next instead (#1229). Text-free,
+ * as `watcherOperationId` is; the coordinator asks again at dispatch whether that phone is still paired and admitted.
+ */
+const queuedSchema = agentFollowupSchema.extend({ watcherOperationId: z.uuid().optional(), news: z.array(wakeUpNewsSchema).max(WAKE_UP_NEWS_MAX + 1).optional(),
+  phoneOrigin: watcherPhoneOriginSchema.optional() })
 export type QueuedFollowup = z.infer<typeof queuedSchema>
 type State = { items: QueuedFollowup[]; receipts: z.infer<typeof receiptsSchema> }
 /**
@@ -110,7 +119,7 @@ export class FollowupStore {
         const remaining = item.attachments.filter(kept)
         if (remaining.length === item.attachments.length && !lost.has(item.id)) continue
         item.attachments = remaining
-        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES }
+        if (['queued', 'paused', 'failed'].includes(item.status)) { item.status = 'paused'; item.error = LOST_IMAGES; delete item.pausedBy }
       }
       for (const item of state.items) if (active(item.threadId) && item.status === 'dispatching') {
         item.status = 'uncertain'; item.error = 'Dispatch was interrupted. Refresh to reconcile; this message will not be replayed.'
@@ -134,7 +143,7 @@ export class FollowupStore {
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined }): Promise<void> {
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -216,9 +225,9 @@ export class FollowupStore {
     return this.change(state => {
       const items = state.items.filter(item => item.threadId === threadId)
       if (items.some(item => item.status === 'dispatching' || item.status === 'uncertain')) throw new Error('Wait for this thread’s pending delivery before reordering follow-ups.')
-      // A wake-up holding only Watcher's news is shown in no queue (ADR-0073), so an order may leave it out; anything
-      // else missing or added is a change made since the order was read.
-      const hidden = items.filter(item => isWatcherOnlyWakeUp(item) && !ids.includes(item.id))
+      // A wake-up holding only Watcher's news or only a delegation's is shown in no queue (ADR-0073, ADR-0081), so an order
+      // may leave it out; anything else missing or added is a change made since the order was read.
+      const hidden = items.filter(item => isHiddenWakeUp(item) && !ids.includes(item.id))
       const shown = items.filter(item => !hidden.includes(item))
       if (ids.length !== shown.length || new Set(ids).size !== ids.length || ids.some(id => !shown.some(item => item.id === id))) throw new Error('The follow-up order changed. Refresh and try again.')
       // Sotto's wake-up keeps its place after the user's follow-ups, wherever the user moved theirs; a resume note, before.
@@ -242,13 +251,16 @@ export class FollowupStore {
       if (hidden && state.items.some(item => item.threadId === threadId && isWatcherOnlyWakeUp(item))) throw new Error('Watcher already has news on its way.')
       // News `apart` picks out may not go yet, so it never shares a wake-up with news that may: neither holds the other.
       const side = apart?.(news) ?? false
+      // A delegation's news waits in a hidden wake-up of its own, one a thread, and folds into nothing else, nor anything
+      // else into it (ADR-0081, October 19, 2026): only the thread's own turn holds it, so it shares no other wake-up's wait.
+      const delegation = isDelegationNews(news)
       const waiting = hidden ? undefined : state.items.find(item => waitingWakeUp(item, threadId) && !isWatcherOnlyWakeUp(item)
-        && (!apart || (item.news ?? []).every(held => apart(held) === side)))
+        && isDelegationOnlyWakeUp(item) === delegation && (!apart || (item.news ?? []).every(held => apart(held) === side)))
       if (waiting) {
         const folded = foldWakeUpNews(waiting.news ?? [], wakeUpNewsSchema.parse(news))
         // Checked before it is saved: a queue file its own schema refuses would be set aside whole on the next start.
         // A resume note is the review a paused queue waits for: the turn it follows did not finish, and it says so.
-        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined } : {}
+        const resumes = isRestartNews(news) ? { status: 'queued' as const, error: undefined, pausedBy: undefined } : {}
         const next = queuedSchema.parse({ ...waiting, news: folded, text: word(folded), updatedAt: now, ...resumeAfterTurnId ? { resumeAfterTurnId } : {}, ...resumes })
         state.items = state.items.map(item => item === waiting ? next : item)
       } else {
@@ -289,6 +301,7 @@ export class FollowupStore {
   /**
    * Sets the news `apart` picks out of this thread's waiting wake-ups into a wake-up of its own at the end of the thread's
    * queue, whole, so a wake-up that may not go yet holds none of the news that may, nor the user's follow-ups behind it.
+   * News set apart folds into a waiting wake-up that already holds only such news, so a thread keeps one.
    */
   separateWakeUps(threadId: string, apart: (news: WakeUpNews) => boolean, word: WordWakeUp): Promise<void> {
     return this.change(state => {
@@ -298,9 +311,28 @@ export class FollowupStore {
       for (const item of mixed) {
         const kept = item.news!.filter(news => !apart(news)), held = item.news!.filter(apart)
         Object.assign(item, { news: kept, text: word(kept), updatedAt: now })
+        const alone = state.items.find(other => waitingWakeUp(other, threadId) && !!other.news?.length && other.news.every(apart))
+        if (alone) {
+          let folded: readonly WakeUpNews[] = alone.news!
+          for (const part of held) folded = foldWakeUpNews(folded, part)
+          Object.assign(alone, queuedSchema.parse({ ...alone, news: folded, text: word(folded), updatedAt: now }))
+          continue
+        }
         state.items.push(queuedSchema.parse({ id: randomUUID(), threadId, draftId: randomUUID(), text: word(held), attachments: [], status: 'queued', wakeUp: true,
           news: held, createdAt: now, updatedAt: now, ...(item.resumeAfterTurnId ? { resumeAfterTurnId: item.resumeAfterTurnId } : {}) }))
       }
+    })
+  }
+  /**
+   * Puts a delegation's hidden wake-up whose send surely did not go back to waiting, whole (ADR-0081, October 19, 2026):
+   * no one is shown it to resume it, so the thread's next free turn takes it.
+   */
+  requeueDelegationNews(id: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(candidate => candidate.id === id)
+      if (!item || !isDelegationOnlyWakeUp(item) || item.status === 'queued' || item.status === 'dispatching') return false
+      item.status = 'queued'; item.updatedAt = new Date().toISOString()
+      delete item.error; delete item.commandId; delete item.messageId
     })
   }
   /**
@@ -361,16 +393,45 @@ export class FollowupStore {
       state.items = kept
     })
   }
-  /** Pauses the thread's queued follow-ups. Watcher's hidden wake-up never pauses: no one could resume it. */
-  pause(threadId: string, error: string): Promise<void> {
+  /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
+  pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {
     return this.change(state => {
-      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isWatcherOnlyWakeUp(item)) Object.assign(item, { status: 'paused', error })
+      // A Watcher stop's pause holds the user's queue and Sotto's news; Watcher's own sends are fenced by the stop itself.
+      for (const item of state.items) if (item.threadId === threadId && item.status === 'queued' && !isHiddenWakeUp(item) && !(by && item.watcherOperationId)) {
+        Object.assign(item, { status: 'paused', error, ...by ? { pausedBy: by } : {} })
+      }
+    })
+  }
+  /**
+   * Pauses the user's own queued prompts in a thread, and nothing of Sotto's or Watcher's: those `held` says wait. A
+   * delegation's hidden news going past prompts a machine Stop holds pauses them first, so they wait for the user's
+   * Resume whatever turn completes next (ADR-0073, ADR-0081). Saves nothing when there are none.
+   */
+  pauseUserPrompts(threadId: string, error: string, held: (item: QueuedFollowup) => boolean): Promise<void> {
+    return this.change(state => {
+      // A prompt the stop already paused is paused again the same way: once the news turn runs, the hold ending is no
+      // longer the review, so only Resume queue sends it.
+      const items = state.items.filter(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'paused' && item.pausedBy === 'watcher')
+        && !item.wakeUp && !item.watcherOperationId && held(item))
+      if (!items.length) return false
+      for (const item of items) { Object.assign(item, { status: 'paused', error, updatedAt: new Date().toISOString() }); delete item.pausedBy }
+    })
+  }
+  /**
+   * Puts back what a Watcher stop paused once its hold has ended: the user's own command in the thread was the review
+   * (ADR-0073), so the queue goes on as it would have. Any other pause still waits for Resume queue.
+   */
+  releaseWatcherPause(threadId: string): Promise<void> {
+    return this.change(state => {
+      const items = state.items.filter(item => item.threadId === threadId && item.status === 'paused' && item.pausedBy === 'watcher')
+      if (!items.length) return false
+      for (const item of items) { item.status = 'queued'; delete item.error; delete item.pausedBy }
     })
   }
   resume(threadId: string, turnId?: string): Promise<void> {
     return this.change(state => {
       for (const item of state.items) if (item.threadId === threadId && ['paused', 'failed'].includes(item.status)) {
-        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error
+        item.status = 'queued'; if (turnId) item.resumeAfterTurnId = turnId; delete item.error; delete item.pausedBy
       }
     })
   }
@@ -391,6 +452,24 @@ export class FollowupStore {
       const item = state.items.find(item => item.id === id)
       if (!item || item.status !== 'queued' || mode === 'send' && state.items.find(candidate => candidate.threadId === item.threadId && !waits(candidate))?.id !== id) throw new Error(item?.wakeUp ? 'This wake-up is no longer ready to send.' : 'This follow-up is no longer ready to send.')
       Object.assign(item, { status: 'dispatching', commandId: randomUUID(), messageId: item.watcherOperationId && item.messageId ? item.messageId : randomUUID(), updatedAt: new Date().toISOString() })
+    })
+  }
+  /**
+   * Settles a wake-up that could not be sent and holds a resume note: the note leaves the queue rather than wait there for
+   * the user's review, so nothing the user sends that thread queues behind it (#1187). Other news folded with it stays,
+   * failed as any wake-up that could not be sent is, behind the thread's other items, so it holds none of them back. The
+   * thread is left as it was, not resumed.
+   */
+  dropFailedResume(id: string, word: WordWakeUp, error?: string): Promise<void> {
+    return this.change(state => {
+      const item = state.items.find(item => item.id === id)
+      if (!item) return false
+      const kept = (item.news ?? []).filter(news => !isRestartNews(news))
+      state.items = state.items.filter(candidate => candidate !== item)
+      if (!kept.length) return
+      Object.assign(item, { news: kept, text: word(kept), status: 'failed', error, updatedAt: new Date().toISOString() })
+      const last = state.items.findLastIndex(candidate => candidate.threadId === item.threadId)
+      state.items.splice(last + 1, 0, item)
     })
   }
   settle(id: string, status: 'accepted' | 'uncertain' | 'failed', error?: string): Promise<void> {

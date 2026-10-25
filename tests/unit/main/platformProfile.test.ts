@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createPasteCommands } from '../../../src/main/output/pasteCommand'
-import { platformProfile } from '../../../src/main/platformProfile'
+import { MAC_TRAY_GUID, platformProfile, updatesInApp } from '../../../src/main/platformProfile'
 import { defaultHotkey } from '../../../src/shared/platform'
 
 describe('platformProfile', () => {
@@ -22,6 +22,7 @@ describe('platformProfile', () => {
     expect(profile.pasteRequiresAccessibilityTrust).toBe(false)
     expect(profile.pasteUsesWarmHelper).toBe(true)
     expect(profile.requiresMediaAccessGate).toBe(false)
+    expect(profile.desktopNotifications).toBe(false)
     expect(profile.defaultHotkey).toBe('CommandOrControl+Shift+Space')
   })
 
@@ -36,11 +37,14 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'executable' },
-      inAppUpdates: true,
+      trayGuid: null,
+      inAppUpdateTracks: ['stable', 'owl'],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: true,
       requiresMediaAccessGate: false,
+      desktopNotifications: false,
       defaultHotkey: 'CommandOrControl+Shift+Space',
+      defaultHoldShortcuts: ['CommandOrControl+Super'],
     })
   })
 
@@ -55,11 +59,14 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: true,
       widgetIsPanel: true,
       trayIcon: { kind: 'template', relativePath: 'tray/sottoTemplate.png' },
-      inAppUpdates: false,
+      trayGuid: MAC_TRAY_GUID,
+      inAppUpdateTracks: ['owl'],
       pasteRequiresAccessibilityTrust: true,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: true,
+      desktopNotifications: true,
       defaultHotkey: 'Control+Shift+Space',
+      defaultHoldShortcuts: ['Fn'],
     })
   })
 
@@ -75,15 +82,37 @@ describe('platformProfile', () => {
       widgetVisibleOnAllWorkspaces: false,
       widgetIsPanel: false,
       trayIcon: { kind: 'image', relativePath: 'icon.png' },
-      inAppUpdates: false,
+      trayGuid: null,
+      inAppUpdateTracks: [],
       pasteRequiresAccessibilityTrust: false,
       pasteUsesWarmHelper: false,
       requiresMediaAccessGate: false,
-      defaultHotkey: 'CommandOrControl+Shift+Space',
+      desktopNotifications: false,
+      defaultHotkey: 'Super+CommandOrControl+X',
+      defaultHoldShortcuts: ['F9'],
     })
     if (profile.trayIcon.kind !== 'image') throw new Error('Linux needs a colour PNG')
     expect(existsSync(join('build', profile.trayIcon.relativePath))).toBe(true)
     expect(createPasteCommands('linux').oneShot()).toEqual({ executable: 'hyprctl', args: ['activewindow', '-j'] })
+  })
+
+  it('gives the macOS menu bar item one fixed UUID', () => {
+    // Electron hands the GUID to AppKit as the status item's autosave name. A changed value
+    // would be a new item to AppKit, with no saved position or visibility.
+    expect(MAC_TRAY_GUID).toBe('b51ae4d7-15a7-440a-89e1-f227a7cad4c0')
+    expect(MAC_TRAY_GUID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  })
+
+  // macOS takes an update only when it is signed by the running app's developer, and only Owl is (ADR-0093).
+  it.each([
+    ['win32', 'stable', true],
+    ['win32', 'owl', true],
+    ['darwin', 'stable', false],
+    ['darwin', 'owl', true],
+    ['linux', 'stable', false],
+    ['linux', 'owl', false],
+  ] as const)('updates in the app on %s %s: %s', (platform, track, expected) => {
+    expect(updatesInApp(platformProfile(platform), track)).toBe(expected)
   })
 
   it.each(['win32', 'darwin', 'linux'] as const)(
@@ -111,6 +140,7 @@ describe('platformProfile', () => {
 
       expect(Object.isFrozen(profile)).toBe(true)
       expect(Object.isFrozen(profile.trayIcon)).toBe(true)
+      expect(Object.isFrozen(profile.inAppUpdateTracks)).toBe(true)
       if (profile.trafficLightPosition !== null) {
         expect(Object.isFrozen(profile.trafficLightPosition)).toBe(true)
       }

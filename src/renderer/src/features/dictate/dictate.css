@@ -1,0 +1,480 @@
+/* ---- the Dictate room: the Journal (#1293) ----
+
+   A compact dictate bar over the Journal, every transcript by day, with the stats column beside it. The room is a
+   size container, so below 900 pixels of room the column becomes a row of figures over the feed and its charts step
+   aside, however wide the sidebar beside it is. Colour comes from the theme's roles only. */
+
+.dictate {
+  container: dictate-room / inline-size;
+  flex: 1 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.dictate__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-areas:
+    'bar stats'
+    'recovery stats'
+    'journal stats';
+  grid-template-rows: auto auto 1fr;
+  column-gap: 40px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 8px clamp(20px, 4cqi, 48px) 48px;
+}
+
+/* -- the dictate bar -- */
+
+.dictate__bar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 14px 16px 14px 20px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 14px;
+  background: var(--tt-surface);
+}
+
+.dictate__bar .voice-wave { flex: none; }
+.dictate__bar .voice-wave__bar { border-radius: 2px; }
+.dictate__bar .voice-wave--listening { width: 52px; }
+
+.dictate__words { flex: 1 1 200px; min-width: 0; }
+
+.dictate__state { display: grid; gap: 2px; }
+
+.dictate__sentence {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  line-height: 1.35;
+}
+
+.dictate__sentence time {
+  margin-left: 8px;
+  color: var(--tt-text-faint);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.dictate__detail {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.dictate__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0;
+  color: var(--tt-text-faint);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.dictate__actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  /* Pushed to the right on its own line once the sentence leaves it no room. */
+  margin-left: auto;
+}
+
+.dictate__actions .tt-button--primary {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+/* Stop is the same pill turned inside out: the bar's own surface with a hairline. */
+.dictate[data-status='listening'] .dictate__actions .tt-button--primary {
+  border-color: var(--tt-field-border);
+  background: transparent;
+  color: var(--tt-text);
+}
+
+.dictate[data-status='listening'] .dictate__actions .tt-button--primary:hover:not(:disabled) {
+  border-color: var(--tt-text-faint);
+  filter: none;
+}
+
+.dictate[data-status='error'] .dictate__bar { border-color: var(--tt-error-border); }
+
+/* -- text to recover, under the bar -- */
+
+.dictate__recovery { grid-area: recovery; margin-top: 18px; padding: 16px 0 0; border-top: 1px solid var(--tt-border); }
+.dictate__recovery h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.dictate__recovery > p { margin: 0 0 12px; color: var(--tt-text-muted); font-size: 13px; }
+.dictate__recovered + .dictate__recovered { margin-top: 16px; }
+.dictate__recovered textarea { width: 100%; min-height: 76px; max-height: 240px; resize: vertical; padding: 12px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); color: var(--tt-text); background: var(--tt-surface); font: inherit; line-height: 1.5; user-select: text; }
+.dictate__recovery-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.dictate__recovery-actions [role="status"] { font-size: 13px; color: var(--tt-text-muted); }
+
+/* -- the feed -- */
+
+.dictate__journal { grid-area: journal; min-width: 0; }
+
+.journal-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 20px 0 0;
+  padding: 8px 8px 8px 14px;
+  border-radius: 10px;
+  background: var(--tt-surface);
+  color: var(--tt-text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.journal-note > span { flex: 1 1 260px; }
+.journal-note .tt-button { min-height: 30px; padding: 0 10px; }
+
+.journal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 8px;
+  margin: 24px 0 4px;
+}
+
+.journal-search { position: relative; display: block; flex: 1 1 220px; min-width: 0; }
+
+.journal-search > svg {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  color: var(--tt-text-muted);
+  pointer-events: none;
+  translate: 0 -50%;
+}
+
+.journal-search__input {
+  width: 100%;
+  height: 34px;
+  padding: 0 34px;
+  border: 1px solid var(--tt-field-border);
+  border-radius: 6px;
+  background: var(--tt-field);
+  color: var(--tt-text);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.journal-search__input:focus { border-color: var(--tt-field-border-focus); }
+.journal-search__input::placeholder { color: var(--tt-text-faint); }
+.journal-search__input::-webkit-search-cancel-button { -webkit-appearance: none; }
+
+.journal-search__clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tt-text-muted);
+  cursor: pointer;
+  translate: 0 -50%;
+}
+
+.journal-search__clear:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+.journal-more { flex: none; }
+.journal-more > .pane-action { width: 34px; height: 34px; border-radius: 9px; }
+
+.journal-chips { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 6px; }
+
+.journal-chip {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--tt-text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.journal-chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+.journal-chip[aria-pressed='true'] {
+  border-color: var(--tt-selected-border);
+  background: var(--tt-selected);
+  color: var(--tt-accent-text);
+}
+
+.journal-alert { margin: 14px 0 0; color: var(--tt-error-text); font-size: 13px; }
+
+.journal-day { margin-top: 26px; }
+
+.journal-day__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--tt-hairline);
+}
+
+.journal-day__head h2 {
+  margin: 0;
+  color: var(--tt-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.journal-day__head span { color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.journal-list { margin: 0; padding: 0; list-style: none; }
+
+.journal-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--tt-hairline);
+}
+
+/* The whole row opens it; the button's own name is the time and length, never the text, so a transcript is
+   not read out twice. */
+.journal-entry__toggle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.journal-entry__toggle:focus-visible { outline-offset: 3px; }
+
+.journal-entry__time {
+  grid-column: 1;
+  grid-row: 1;
+  padding-top: 2px;
+  color: var(--tt-text-faint);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.journal-entry__text {
+  grid-column: 2;
+  grid-row: 1;
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--tt-text);
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.journal-entry[aria-current='true'] .journal-entry__text { display: block; -webkit-line-clamp: unset; }
+
+.journal-entry__meta {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.journal-entry__facts {
+  grid-column: 2;
+  grid-row: 3;
+  margin: 6px 0 0;
+  color: var(--tt-text-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+  pointer-events: none;
+}
+
+.journal-entry__facts b { font-weight: 600; }
+
+.journal-entry__copy {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  align-self: start;
+  position: relative;
+  z-index: 1;
+  min-height: 32px;
+  padding: 0 13px;
+  visibility: hidden;
+}
+
+.journal-entry:hover .journal-entry__copy,
+.journal-entry:focus-within .journal-entry__copy,
+.journal-entry[aria-current='true'] .journal-entry__copy { visibility: visible; }
+
+.journal-entry__delete { grid-column: 3; grid-row: 3; align-self: start; position: relative; z-index: 1; margin-top: 6px; }
+.journal-entry__delete .tt-button { min-height: 32px; padding: 0 12px; }
+
+.journal-more-days { margin-top: 20px; }
+
+.journal-empty { padding: 40px 0 24px; text-align: center; }
+.journal-empty h2 { margin: 0 0 6px; font-size: 20px; font-weight: 500; letter-spacing: -0.3px; }
+.journal-empty p { max-width: 400px; margin: 0 auto; color: var(--tt-text-muted); font-size: 14px; }
+
+/* -- the stats column -- */
+
+.dictate__stats { grid-area: stats; min-width: 0; }
+
+.journal-stats {
+  position: sticky;
+  top: 8px;
+  display: grid;
+  gap: 22px;
+  padding-top: 6px;
+}
+
+.journal-stats__section { min-width: 0; }
+.journal-stats__section + .journal-stats__section { padding-top: 20px; border-top: 1px solid var(--tt-hairline); }
+
+.journal-stats__heading {
+  margin: 0 0 10px;
+  color: var(--tt-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.journal-stats__quiet { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+
+.journal-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.journal-figure { min-width: 0; margin: 0; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.35; }
+
+.journal-figure b {
+  display: block;
+  margin: 0 0 2px;
+  color: var(--tt-text);
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  letter-spacing: -0.8px;
+  line-height: 1.1;
+}
+
+.journal-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.journal-chart__axis { fill: var(--tt-text-faint); font-family: var(--tt-font-ui); font-size: 11px; }
+.journal-chart__grid { stroke: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); stroke-dasharray: 3 4; }
+.journal-chart__usual { stroke: var(--tt-text-muted); stroke-dasharray: 4 4; }
+.journal-chart__area { fill: color-mix(in srgb, var(--tt-accent) 14%, transparent); }
+.journal-chart__line { fill: none; stroke: var(--tt-accent); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.journal-chart__dot { fill: var(--tt-accent); }
+
+.journal-calendar { max-width: 300px; }
+.journal-calendar__cell,
+.journal-legend i { fill: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); background: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); }
+.journal-calendar__cell[data-level='1'],
+.journal-legend i[data-level='1'] { fill: color-mix(in oklab, var(--tt-accent) 30%, var(--tt-canvas)); background: color-mix(in oklab, var(--tt-accent) 30%, var(--tt-canvas)); }
+.journal-calendar__cell[data-level='2'],
+.journal-legend i[data-level='2'] { fill: color-mix(in oklab, var(--tt-accent) 52%, var(--tt-canvas)); background: color-mix(in oklab, var(--tt-accent) 52%, var(--tt-canvas)); }
+.journal-calendar__cell[data-level='3'],
+.journal-legend i[data-level='3'] { fill: color-mix(in oklab, var(--tt-accent) 76%, var(--tt-canvas)); background: color-mix(in oklab, var(--tt-accent) 76%, var(--tt-canvas)); }
+.journal-calendar__cell[data-level='4'],
+.journal-legend i[data-level='4'] { fill: var(--tt-accent); background: var(--tt-accent); }
+.journal-calendar__cell[data-today] { stroke: var(--tt-text); stroke-width: 1.5; }
+
+.journal-calendar__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 6px;
+  color: var(--tt-text-muted);
+  font-size: 12.5px;
+}
+
+.journal-legend { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-faint); font-size: 12px; }
+.journal-legend i { display: block; width: 10px; height: 10px; border-radius: 2px; }
+
+.journal-where { display: grid; gap: 11px; margin: 4px 0 0; padding: 0; list-style: none; }
+.journal-where li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; }
+.journal-where__name { overflow: hidden; font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.journal-where__value { color: var(--tt-text-2); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.journal-where__value small { margin-left: 6px; color: var(--tt-text-muted); font-size: 12px; }
+.journal-meter { grid-column: 1 / -1; display: block; height: 6px; overflow: hidden; border-radius: 2px; background: color-mix(in oklab, var(--tt-text) 10%, var(--tt-canvas)); }
+.journal-meter i { display: block; height: 100%; border-radius: inherit; background: var(--tt-accent); }
+
+/* -- a narrower room: the figures over the feed, the charts aside -- */
+
+@container dictate-room (max-width: 899px) {
+  .dictate__layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'bar'
+      'recovery'
+      'stats'
+      'journal';
+    grid-template-rows: auto;
+  }
+
+  .journal-stats {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 28px;
+    margin-top: 22px;
+    padding-top: 0;
+  }
+
+  .journal-stats__section + .journal-stats__section { padding-top: 0; border-top: 0; }
+  .journal-stats [data-wide] { display: none; }
+}
+
+@container dictate-room (max-width: 600px) {
+  .dictate__bar { padding: 12px 14px; }
+  .journal-stats { column-gap: 20px; }
+  .journal-pair { gap: 10px; }
+  .journal-figure { font-size: 12px; }
+  .journal-figure b { font-size: 22px; letter-spacing: -0.5px; }
+  .journal-entry { grid-template-columns: minmax(0, 1fr) auto; }
+  .journal-entry__time { grid-column: 1; grid-row: 1; padding-top: 0; }
+  .journal-entry__text { grid-column: 1 / -1; grid-row: 2; }
+  .journal-entry__meta { grid-column: 1 / -1; grid-row: 3; }
+  .journal-entry__facts { grid-column: 1 / -1; grid-row: 4; }
+  .journal-entry__copy { grid-column: 2; grid-row: 1; align-self: center; visibility: visible; }
+  .journal-entry__delete { grid-column: 2; grid-row: 5; justify-self: end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dictate__bar .voice-wave__bar { transition: none; }
+}
+
+:root[data-reduced-motion='on'] .dictate__bar .voice-wave__bar { transition: none; }

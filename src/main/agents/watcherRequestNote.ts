@@ -7,13 +7,20 @@ import type { WatcherRequest } from '../../shared/watcher'
  * provider's own context channel for that turn (`watcherRequestNote` on a send), never in the user's text, and names no
  * projects: Watcher calls list_projects when it needs one.
  */
-export function watcherRequestNote(requestId: string, hostId: string): string {
-  return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.`
+export function watcherRequestNote(requestId: string, hostId: string, compacted = false): string {
+  return `Sotto Watcher request: ${requestId}. Local host: ${hostId}. Use this requestId for sotto_threads changes made for this message.${compacted ? ` ${WATCHER_COMPACTED_NOTE}` : ''}`
 }
+/**
+ * What a Watcher turn's note adds after its conversation was compacted, or in a new Watcher conversation, until Watcher
+ * reads its state back (#1189). Fixed
+ * words, so a Grok Build or Muse line that carries it is taken off as exactly as one that does not.
+ */
+export const WATCHER_COMPACTED_NOTE = 'This conversation is new or was compacted. Before anything else, call read_state for the threads you watch and what each waits on, and the decisions, rules and issues you kept.'
 
 /**
- * The note as one bracketed line after the user's words, for Grok Build alone: its prompt has no other model-visible
- * channel. The snapshot below takes this exact line off again, so no one is shown it.
+ * The note as one bracketed line after the user's words, for Grok Build, whose prompt has no other model-visible channel,
+ * and for a steer that opens a request of its own, since a steer has none on any provider (#1188). The snapshot below
+ * takes this exact line off again, so no one is shown it.
  */
 export const watcherRequestLine = (note: string): string => `\n\n[${note}]`
 
@@ -26,15 +33,17 @@ const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, 
 const PROJECT = '[^\\s,\\[\\]]+'
 
 /**
- * A Watcher message as the user typed it. Sotto put a line after the user's words in two cases only, both naming the
+ * A Watcher message as the user typed it. Sotto put a line after the user's words in these cases only, each naming the
  * message's own request: the routing footer main appended before the request note existed (which also listed project
- * IDs), and Grok Build's request line. Only that exact line, for that request, comes off; any other text, including a
+ * IDs), and the request line of a Grok Build send or of a steer that opened a request. Only that exact line, for that request, comes off; any other text, including a
  * note or footer the user typed themselves, stays.
  */
 export function watcherTextAsTyped(text: string, request: WatcherMessageRequest): string {
-  const line = watcherRequestLine(watcherRequestNote(request.requestId, request.hostId))
-  if (text.endsWith(line)) return text.slice(0, -line.length)
-  if (text === line.slice(2)) return ''
+  for (const compacted of [false, true]) {
+    const line = watcherRequestLine(watcherRequestNote(request.requestId, request.hostId, compacted))
+    if (text.endsWith(line)) return text.slice(0, -line.length)
+    if (text === line.slice(2)) return ''
+  }
   const footer = new RegExp(`(?:^|\\n\\n)\\[Sotto Watcher request: ${escape(request.requestId)}\\. Local host: ${escape(request.hostId)}\\. `
     + `Use this requestId for sotto_threads mutations\\. Known project IDs: (?:${PROJECT}(?:, ${PROJECT})*)?\\. Call list_projects for choices\\.\\]$`, 'u')
   const match = footer.exec(text)

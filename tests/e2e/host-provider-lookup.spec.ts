@@ -47,7 +47,7 @@ test('a host names itself when no provider is connected, and connects every sign
 
     // Add forge, whose providers are all signed out.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -70,7 +70,7 @@ test('a host names itself when no provider is connected, and connects every sign
     await dialog.getByRole('button', { name: /site/ }).click()
     await dialog.getByRole('button', { name: 'Use this folder' }).click()
     const refusal = dialog.getByRole('alert')
-    await expect(refusal).toHaveText('No provider is connected on forge. Connect one in Settings > Hosts.')
+    await expect(refusal).toHaveText('No provider is connected on forge. Connect one in Settings > Hosts & phones.')
     await capture(launched, 'no-provider', async () => {
       await expect(refusal).toBeInViewport()
       await expect(dialog.getByRole('button', { name: 'Use this folder' })).toBeInViewport()
@@ -81,7 +81,7 @@ test('a host names itself when no provider is connected, and connects every sign
     // Sign the providers in on forge and restart its host: Stop host, then switch it on.
     await rm(signedOut)
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     const row = page.getByRole('region', { name: 'forge', exact: true })
     await row.getByRole('button', { name: 'More for forge' }).click()
     await page.getByRole('menuitem', { name: 'Stop host' }).click()
@@ -97,7 +97,7 @@ test('a host names itself when no provider is connected, and connects every sign
     await writeFile(test.info().outputPath('host-providers.json'), JSON.stringify({ providers: await providers(page), enabledProviders: saved.configuration.enabledProviders }, null, 2))
 
     // The same project is added now.
-    await page.getByRole('tab', { name: 'Threads', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Page', exact: true }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await expect(addProject).toBeVisible()
     await addProject.click()
     await expect(dialog).toBeVisible()

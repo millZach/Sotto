@@ -6,6 +6,10 @@ import { join } from 'node:path'
 // A scripted `muse serve` (MSP over stdio), in the shape Sotto's Muse adapter speaks. Files in the root
 // steer it, as with the other fakes: `script.json` (cliVersion, schemaVersion, models, delayTurnMs,
 // suppressNotifications), `control.json` (one driver action at a time), `oneshot.json` (side-writing text).
+// `reportUsage` makes each completed reply a model call that reports `session/tokenUsage` the way Muse 1.4.9 does (turn,
+// prompt tokens and the durable records it was folded from), after which this host's `usage/read` answers its subscription
+// window, as Muse's serve host keeps the last one it saw; `usageChanged` also says so with `usage/changed`. `noUsageRead`
+// answers `usage/read` as a client without the method does. `usage/read` on a host that has seen no model call answers `{}`.
 // A process started with --no-session-log is one of Sotto's memory-only hosts (connect probe or side call):
 // its frames are recorded apart, in oneshot.jsonl, and its sessions are never durable.
 // Session tool servers (`config.mcpServers`) need the `sessionMcp` capability, granted when asked for unless
@@ -18,8 +22,21 @@ import { join } from 'node:path'
 // `permissionProfiles: false`; a session started with one reports its reviewer in `permissionState`, or the one
 // script.json's `reviewerAuthority` names, to a connection that asked for the experimental API and unless script.json
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
+// `parkSetModel` holds one session/setModel for the model it names until a `release-set-model` action answers it,
+// saying nothing.
+// `silentSetModel` accepts a model change without session/modelChanged, as an answer can arrive without one.
+// `moveDuringApprovalMode` and `moveDuringResume` each move the session to the model they name once, saying so with
+// session/modelChanged before answering session/setApprovalMode or session/resume: a resume's description is then older
+// than Muse's own word.
+// `session/setModel` is refused, with Muse's error shape, when script.json's `rejectSetModel` is true or lists the model,
+// and never answered when `holdSetModel` is true. The `model-changed` action moves a session to another model on Muse's
+// side and says so, as Muse does with session/modelChanged; `moveAfterSetModel` does the same once, to the model it
+// names, after accepting a session/setModel and before answering it. Each turn the session opens records the model it ran on in
+// the stored session's `turnModels`.
 const root = process.argv[2]
 const ephemeral = process.argv.includes('--no-session-log')
+// The serve arguments Sotto started this host with, one line per process, beside the frame logs.
+try { appendFileSync(join(root, 'argv.jsonl'), JSON.stringify(process.argv.slice(3)) + '\n') } catch { /* The root is the fixture's; a missing record fails its reader, not the host. */ }
 const path = name => join(root, name)
 const read = (name, fallback) => { try { return JSON.parse(readFileSync(path(name), 'utf8')) } catch { return fallback } }
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n')
@@ -63,9 +80,11 @@ function holding(sessionId, held) {
 const held = new Set()
 const cursor = session => `cursor-${session.items.length}-${session.items.reduce((sum, item) => sum + item.revision, 0)}`
 const REVIEWERS = { ':ask-me': 'human', ':read-only': 'human', ':auto-review': 'autoReview', ':unrestricted': 'none' }
-const view = session => ({
+// `reopenedAsDefault` describes a resumed or read session by the catalog's default model, as Muse 1.4.10 does, though
+// the session runs the model it was started on or last set to, as its start reply and session/modelChanged say.
+const view = (session, reopened = false) => ({
   sessionId: session.sessionId, path: `fixture:///${session.sessionId}`, status: session.activeTurnId ? 'running' : 'idle', ephemeral,
-  modelId: session.modelId, providerId: 'meta', workspaceRoot: session.cwd, cwd: session.cwd, approvalMode: { mode: session.mode, source: 'wire' },
+  modelId: reopened && read('script.json', {}).reopenedAsDefault ? MODELS.find(model => model.isDefault)?.modelId ?? session.modelId : session.modelId, providerId: 'meta', workspaceRoot: session.cwd, cwd: session.cwd, approvalMode: { mode: session.mode, source: 'wire' },
   activeTurnId: session.activeTurnId ?? null, turnCount: session.turns ?? 0, createdAt: session.createdAt, updatedAt: session.createdAt,
   ...(session.profileId && experimental && !read('script.json', {}).permissionStateHidden ? { permissionState: { profileId: session.profileId, reviewerAttached: false,
     reviewerAuthority: read('script.json', {}).reviewerAuthority ?? REVIEWERS[session.profileId] ?? 'autoReview' } } : {}),
@@ -104,7 +123,7 @@ let clock = 0
 const stamp = () => new Date(Date.UTC(2026, 9, 12, 12, 0, clock++)).toISOString()
 function openTurn(session, commandId, text, steered = false, displayText = undefined) {
   const turnId = session.activeTurnId ?? `turn-${randomUUID()}`
-  if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
+  if (!session.activeTurnId) { session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; session.turnModels = [...(session.turnModels ?? []), session.modelId]; notify('turn/started', { sessionId: session.sessionId, turnId, ...(commandId ? { commandId } : {}), viewCursor: cursor(session) }) }
   // script.json may have Muse keep no display text (`dropDisplayText`), or cut the message to `truncateUserText` characters.
   const script = read('script.json', {})
   if (script.dropDisplayText) displayText = undefined
@@ -113,11 +132,29 @@ function openTurn(session, commandId, text, steered = false, displayText = undef
   addItem(session, { itemId: `item-${randomUUID()}`, kind: 'userMessage', status: 'completed', revision: 1, turnId, recordedAt: stamp(), text, ...(displayText !== undefined ? { displayText } : {}), ...(cut ? { truncated: true } : {}), ...(commandId ? { commandId } : {}), ...(steered ? { steered: true } : {}) }, !script.suppressUserMessage)
   return turnId
 }
-function endTurn(session, terminal = 'completed') {
+function endTurn(session, terminal = 'completed', error = undefined) {
   const turnId = session.activeTurnId
   if (!turnId) return
   session.activeTurnId = undefined; save()
-  if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session) })
+  if (!read('script.json', {}).suppressTurnCompleted) notify('turn/completed', { sessionId: session.sessionId, turnId, terminal, durationMs: 1, viewCursor: cursor(session), ...(error ? { error, reason: error.message } : {}) })
+}
+/** This host's last-observed subscription window, which only a model call fills, as on Muse's serve host. */
+let hostUsage
+let usageCalls = 0
+function reportUsage(session) {
+  const script = read('script.json', {})
+  if (!script.reportUsage) return
+  usageCalls++
+  const record = `record-${session.sessionId}-${usageCalls}`
+  session.usageTotals = { prompt: (session.usageTotals?.prompt ?? 0) + 100, output: (session.usageTotals?.output ?? 0) + 7 }
+  notify('session/tokenUsage', { sessionId: session.sessionId, turnId: session.activeTurnId ?? 'unknown', modelId: session.modelId, promptTokens: 100, totalTokens: 107,
+    usage: { inputTokens: 100, outputTokens: 7, cachedTokens: 40, cacheReadTokens: 40, cacheWriteTokens: 5, reasoningTokens: 2 },
+    cumulative: { promptTokens: session.usageTotals.prompt, outputTokens: session.usageTotals.output, totalTokens: session.usageTotals.prompt + session.usageTotals.output },
+    sourceRange: { first: { id: record, sequence: usageCalls }, last: { id: record, sequence: usageCalls }, stream: { id: session.sessionId, kind: 'session' } },
+    viewCursor: cursor(session) })
+  hostUsage = script.reportUsage === true ? { observedAtMs: Date.now(), tier: 'fixture-tier',
+    window: { resetsAtMs: Date.now() + 3 * 3_600_000, usedPercent: 12, windowDurationMins: 300 },
+    weekly: { resetsAtMs: Date.now() + 4 * 86_400_000, usedPercent: 47 } } : script.reportUsage
 }
 function completeReply(session, text) {
   const itemId = `item-${randomUUID()}`
@@ -125,9 +162,11 @@ function completeReply(session, text) {
   addItem(session, base)
   notify('item/delta', { sessionId: session.sessionId, itemId, delta: text, field: 'text', viewCursor: cursor(session) })
   addItem(session, { ...base, status: 'completed', revision: 2, text })
+  reportUsage(session)
   endTurn(session)
+  if (hostUsage && read('script.json', {}).usageChanged) notify('usage/changed', hostUsage)
 }
-let seenAction, pendingListReply
+let seenAction, pendingListReply, parkedSetModel
 function check() {
   if (ephemeral) return
   const action = read('control.json', undefined)
@@ -140,8 +179,16 @@ function check() {
   else if (action.type === 'complete') completeReply(session, action.text)
   else if (action.type === 'reply-start') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'inProgress', revision: 1,
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text })
+  else if (action.type === 'tool-item') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'toolCall', status: 'completed', revision: 1,
+    turnId: session.activeTurnId ?? null, recordedAt: stamp(), tool: action.tool ?? 'read_file', callId: `call-${randomUUID()}`, args: '{}' })
   else if (action.type === 'exit') process.exit(0)
+  else if (action.type === 'release-set-model') { const answer = parkedSetModel; parkedSetModel = undefined; answer?.() }
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
+  else if (action.type === 'usage') {
+    // How full the context is, then token counts that arrive after it.
+    notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: action.context })
+    notify('session/tokenUsage', { sessionId: session.sessionId, usage: { inputTokens: 10, outputTokens: 5, cachedTokens: 0 }, cumulative: { promptTokens: 10, outputTokens: 5 } })
+  }
   else if (action.type === 'gap') {
     if (action.text) addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1,
       turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text }, false)
@@ -167,6 +214,10 @@ function check() {
     if (!session.activeTurnId) openTurn(session, undefined, 'A turn that calls a tool')
     requestApproval(session, action)
   } else if (action.type === 'mcp-call') void callTool(session, action)
+  else if (action.type === 'model-changed') {
+    session.modelId = action.modelId; save()
+    notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+  }
 }
 /** One tool call as Muse's model makes it, on the session's server whose name is the plain name and the thread's suffix. */
 async function callTool(session, action) {
@@ -195,6 +246,12 @@ let granted = []
 let experimental = false
 /** What this host built each session's runtime with: the servers' JSON, or null for none. */
 const loadedServers = new Map()
+// `compactedToolsBug` plays Muse 1.4.12: a compacted session whose runtime a new host builds with tool servers fails
+// every turn at once with a config error. A fork of it builds cleanly; the fork's runtime loads, without servers, in the
+// host that made it, and its history is rebuilt: the compaction's summary takes the first message's item, and an
+// assistant item Muse writes itself follows it. `rejectFork` refuses session/fork.
+const auditBroken = new Set()
+const AUDIT_FAILED = { kind: 'configError', message: 'invalid run configuration: MCP startup audit failed; MCP is disabled for this runtime', retryable: false }
 /** The servers themselves, by session, for the model's tool calls. */
 const sessionServers = new Map()
 const capabilityRequired = id => send({ id, error: { code: -32010, message: 'capability required', data: { kind: 'capabilityRequired', capability: 'sessionMcp' } } })
@@ -218,6 +275,7 @@ function load(sessionId, config) {
   const servers = config?.mcpServers && Object.keys(config.mcpServers).length ? config.mcpServers : null
   if (loadedServers.has(sessionId)) return config?.mcpServers === undefined || loadedServers.get(sessionId) === JSON.stringify(servers)
   loadedServers.set(sessionId, JSON.stringify(servers))
+  if (servers && sessions[sessionId]?.compacted && read('script.json', {}).compactedToolsBug) auditBroken.add(sessionId)
   if (servers) { sessionServers.set(sessionId, servers); void listServerTools(sessionId, servers) }
   return true
 }
@@ -266,7 +324,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     held.add(session.sessionId); holding(session.sessionId, true)
     const pendingRequests = [...(session.pendingApprovals ?? []).map(item => ({ kind: 'approval', approvalId: item.approvalId })),
       ...(session.pendingInputs ?? []).map(item => ({ kind: 'userInput', userInputId: item.userInputId }))]
-    const snapshot = globalThis.structuredClone({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    const snapshot = globalThis.structuredClone({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems ? null : session.items, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests, viewCursor: cursor(session) })
+    if (script.moveDuringResume) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveDuringResume: undefined }))
+      session.modelId = script.moveDuringResume; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
     if (script.resumeReplyRace) {
       writeFileSync(path('script.json'), JSON.stringify({ ...script, resumeReplyRace: undefined }))
       const item = session.items.findLast(candidate => candidate.kind === 'agentMessage' && candidate.status === 'inProgress')
@@ -289,24 +352,45 @@ createInterface({ input: process.stdin }).on('line', line => {
   } else if (frame.method === 'session/read') {
     const session = sessions[p.sessionId] ?? (ephemeral ? undefined : current().sessions[p.sessionId])
     if (!session) { fail('sessionNotFound', 'Unknown session'); return }
-    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems === false ? session.items : null, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
+    result({ session: view(session, true), history: { mode: 'inline', items: p.excludeItems === false ? session.items : null, totalItemCount: session.items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
   } else if (frame.method === 'session/list') result({ sessions: Object.values(ephemeral ? sessions : current().sessions).map(view) })
   else if (frame.method === 'session/setModel') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
+    if (script.holdSetModel) return
+    if (script.rejectSetModel === true || script.rejectSetModel?.includes?.(p.model.modelId)) { fail('commandRejected', 'Refused by the fixture', 'model_unavailable'); return }
+    if (script.parkSetModel === p.model.modelId) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, parkSetModel: undefined }))
+      parkedSetModel = () => {
+        const previous = session.modelId; session.modelId = p.model.modelId; save()
+        result({ modelId: p.model.modelId, previousModelId: previous })
+      }
+      return
+    }
     const previousModelId = session.modelId; session.modelId = p.model.modelId; save()
-    notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
-    result({ modelId: session.modelId, previousModelId })
+    if (!script.silentSetModel) notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    if (script.moveAfterSetModel) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveAfterSetModel: undefined }))
+      session.modelId = script.moveAfterSetModel; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
+    result({ modelId: p.model.modelId, previousModelId })
   } else if (frame.method === 'session/setApprovalMode') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     if (script.ceiling && ['allowAll', 'onRequest'].includes(p.mode)) { fail('commandRejected', 'Refused by the fixture ceiling', 'approval_mode_ceiling'); return }
     const previousMode = session.mode; session.mode = p.mode; save()
     notify('session/approvalModeChanged', { sessionId: session.sessionId, mode: p.mode, source: 'wire' })
+    if (script.moveDuringApprovalMode) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, moveDuringApprovalMode: undefined }))
+      session.modelId = script.moveDuringApprovalMode; save()
+      notify('session/modelChanged', { sessionId: session.sessionId, modelId: session.modelId })
+    }
     result({ mode: p.mode, effectiveMode: p.mode, previousMode })
   } else if (frame.method === 'turn/start' || frame.method === 'turn/steer') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
     const steer = frame.method === 'turn/steer'
     const go = () => {
       const turnId = openTurn(session, p.commandId, textOf(p.input), steer, p.displayText)
+      if (auditBroken.has(session.sessionId)) { setImmediate(() => endTurn(session, 'failed', AUDIT_FAILED)); return turnId }
       if (ephemeral) completeReply(session, read('oneshot.json', {}).text ?? 'Fixture title')
       return turnId
     }
@@ -379,6 +463,19 @@ createInterface({ input: process.stdin }).on('line', line => {
     const outcome = frame.method.endsWith('cancel') ? 'cancelled' : 'answered'
     notify('userInput/settled', { userInputId: p.userInputId, sessionId: session.sessionId, outcome })
     result({ outcome })
-  } else if (frame.method === 'session/compact') result({ outcome: 'noop' })
+  } else if (frame.method === 'session/compact') {
+    const session = hold(p.sessionId)
+    if (session && script.compactedToolsBug) { session.compacted = true; addItem(session, { itemId: `item-${randomUUID()}`, kind: 'compaction', status: 'completed', revision: 1, turnId: null, recordedAt: stamp() }); result({ outcome: 'compacted' }) } else result({ outcome: 'noop' })
+  } else if (frame.method === 'session/fork') {
+    if (script.rejectFork) { fail('commandRejected', 'Scripted fork refusal'); return }
+    const source = hold(p.sessionId); if (!source) { fail('sessionNotFound', 'Unknown session'); return }
+    const sessionId = randomUUID(), first = source.items.findIndex(item => item.kind === 'userMessage')
+    const items = source.items.filter(item => !source.activeTurnId || item.turnId !== source.activeTurnId).map((item, index) => index === first ? { ...item, text: 'summary: what the conversation held', displayText: undefined } : item)
+    if (first >= 0) items.splice(first + 1, 0, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'completed', revision: 1, turnId: items[first].turnId, recordedAt: stamp(), text: '[Previous turn ended without an assistant reply.]' })
+    const session = { ...globalThis.structuredClone(source), sessionId, items, compacted: false, activeTurnId: undefined, pendingApprovals: [], pendingInputs: [], forkedFrom: source.sessionId }
+    sessions[sessionId] = session; save(); held.add(sessionId); holding(sessionId, true); load(sessionId, undefined)
+    result({ session: view(session), history: { mode: 'inline', items: p.excludeItems ? null : items, totalItemCount: items.length, nextCursor: null, snapshot: null }, pendingRequests: [], viewCursor: cursor(session) })
+  }
+  else if (frame.method === 'usage/read' && !script.noUsageRead) result(hostUsage ? { usage: hostUsage } : {})
   else if (frame.id !== undefined) fail('methodNotFound', 'Not in this fixture')
 }).on('close', () => process.exit(0))

@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { HostsBridge, HostsCommand, HostsState, HostStatus } from '../../../../shared/hosts'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { useHostsModalOpen } from './HostsModal'
 import { hostQuestionKey, useHostQuestionDismissals } from './hostQuestionDismissals'
+import { shownWords, type LaterWords } from './laterWords'
 import './hosts.css'
 
 /**
@@ -24,9 +27,10 @@ function setupWait(state: HostsState | null): HostStatus | undefined {
  * dialog, and this one waits while a Hosts dialog is open so the two never stack.
  */
 export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly bridge?: HostsBridge | undefined }): ReactNode {
+  const { t } = useLingui()
   const [state, setState] = useState<HostsState | null>(null)
   const [answer, setAnswer] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const hostsDialogOpen = useHostsModalOpen()
   const answerRef = useRef<HTMLInputElement>(null)
   const hostKeyRef = useRef<HTMLPreElement>(null)
@@ -59,7 +63,7 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   const prompt = host?.prompt
   useEffect(() => { setAnswer(''); setError(null) }, [savedKey, prompt?.id, setupKey])
   if (!bridge || !host || hostsDialogOpen) return null
-  const run = async (command: HostsCommand, failure: string): Promise<boolean> => {
+  const run = async (command: HostsCommand, failure: LaterWords): Promise<boolean> => {
     setError(null)
     try { setState(await bridge.command(command)); return true }
     catch (reason) { setError(reason instanceof Error ? reason.message : failure); return false }
@@ -76,24 +80,26 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   }
   if (!saved) {
     const name = state?.setup?.name ?? host.name
-    const putOff = ' Not now leaves it waiting, and Show setup in Settings > Hosts has it too.'
-    if (!prompt) return <ConfirmationDialog key={setupKey} danger={false} fallbackFocusRef={fallbackFocusRef} title={`Approve the connection to ${name} in Tailscale`}
-      confirmLabel="Open approval page" cancelLabel="Not now" onCancel={dismiss}
-      onConfirm={() => run({ type: 'open-approval', id: host.id }, 'The approval page could not open. Nothing was changed. Try again.')}
-      {...(error ? { failureMessage: error } : {})}
-      description={<p>{`An agent is setting up ${name}, and Tailscale SSH asks you to approve this computer's connection before the setup goes on. Open the approval page and approve it in your browser.${putOff}`}</p>} />
+    const putOff = t`Not now leaves it waiting, and Show setup in Settings > Hosts & phones has it too.`
+    if (!prompt) return <ConfirmationDialog key={setupKey} danger={false} fallbackFocusRef={fallbackFocusRef} title={t`Approve the connection to ${name} in Tailscale`}
+      confirmLabel={t`Open approval page`} cancelLabel={t`Not now`} onCancel={dismiss}
+      onConfirm={() => run({ type: 'open-approval', id: host.id }, msg`The approval page could not open. Nothing was changed. Try again.`)}
+      {...(error ? { failureMessage: shownWords(error) } : {})}
+      description={<p className="tt-paragraph">{`${t`An agent is setting up ${name}, and Tailscale SSH asks you to approve this computer's connection before the setup goes on. Open the approval page and approve it in your browser.`} ${putOff}`}</p>} />
     const hostKey = prompt.kind === 'host-key'
+    const asks = hostKey ? t`An agent is setting up ${name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
+      : prompt.kind === 'passphrase' ? t`An agent is setting up ${name}, and SSH needs your key passphrase to sign in.`
+        : t`An agent is setting up ${name}, and SSH needs your password to sign in.`
     return <ConfirmationDialog key={setupKey} danger={false} confirmFirst submitOnEnter={!hostKey} initialFocus={hostKey ? hostKeyRef : answerRef} fallbackFocusRef={fallbackFocusRef}
-      title={hostKey ? `Trust the SSH host ${name}?` : `Unlock the SSH connection to ${name}`}
-      confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel="Not now" onCancel={dismiss}
+      title={hostKey ? t`Trust the SSH host ${name}?` : t`Unlock the SSH connection to ${name}`}
+      confirmLabel={hostKey ? t`Trust host` : t`Continue`} cancelLabel={t`Not now`} onCancel={dismiss}
       // The dialog stays until main clears the question, which it does once SSH has the answer.
-      onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Answer it again from Show setup in Settings > Hosts.'); setAnswer(''); return false }}
-      {...(error ? { failureMessage: error } : {})}
+      onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, msg`SSH did not take the answer. Answer it again from Show setup in Settings > Hosts & phones.`); setAnswer(''); return false }}
+      {...(error ? { failureMessage: shownWords(error) } : {})}
       description={<div className="hosts-dialog__fields">
-        <p>{(hostKey ? `An agent is setting up ${name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
-          : `An agent is setting up ${name}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`) + putOff}</p>
-        <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? 'SSH host key' : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
-        {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
+        <p className="tt-paragraph">{`${asks} ${putOff}`}</p>
+        <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? t`SSH host key` : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
+        {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? t`Key passphrase` : t`SSH password`}</label>
           <input ref={answerRef} id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
       </div>} />
   }
@@ -102,24 +108,30 @@ export function HostQuestionDialog({ bridge = window.sotto?.hosts }: { readonly 
   // An admin connection's sign-in (ADR-0053) is for a press the user made, not the host's own connect: stopping it
   // changes nothing on the host and leaves the switch alone.
   const admin = host.adminSignIn === true
-  const why = admin ? `Sotto is signing in to ${host.name} for a change you asked for there` : `Sotto is connecting to ${host.name}`
+  const name = host.name
+  const asks = admin
+    ? hostKey ? t`Sotto is signing in to ${name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue.`
+      : prompt.kind === 'passphrase' ? t`Sotto is signing in to ${name} for a change you asked for there, and SSH needs your key passphrase to sign in.`
+        : t`Sotto is signing in to ${name} for a change you asked for there, and SSH needs your password to sign in.`
+    : hostKey ? t`Sotto is connecting to ${name}, and SSH has not seen this host before. Check its key, then trust it to continue.`
+      : prompt.kind === 'passphrase' ? t`Sotto is connecting to ${name}, and SSH needs your key passphrase to sign in.`
+        : t`Sotto is connecting to ${name}, and SSH needs your password to sign in.`
   return <ConfirmationDialog key={savedKey} danger={false} confirmFirst submitOnEnter={!hostKey} initialFocus={hostKey ? hostKeyRef : answerRef} fallbackFocusRef={fallbackFocusRef}
-    title={hostKey ? `Trust the SSH host ${host.name}?` : `Unlock the SSH connection to ${host.name}`}
-    confirmLabel={hostKey ? 'Trust host' : 'Continue'} cancelLabel={admin ? 'Stop signing in' : 'Switch it off'}
+    title={hostKey ? t`Trust the SSH host ${name}?` : t`Unlock the SSH connection to ${name}`}
+    confirmLabel={hostKey ? t`Trust host` : t`Continue`} cancelLabel={admin ? t`Stop signing in` : t`Switch it off`}
     onDismiss={dismiss}
     onCancel={() => {
       setAnswer('')
-      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, `Sotto could not stop signing in to ${host.name}. Try again in Settings > Hosts.`)
-      else void run({ type: 'set-enabled', id: host.id, enabled: false }, `${host.name} could not be switched off. Try again in Settings > Hosts.`)
+      if (admin) void run({ type: 'stop-admin-sign-in', id: host.id }, msg`Sotto could not stop signing in to ${name}. Try again in Settings > Hosts & phones.`)
+      else void run({ type: 'set-enabled', id: host.id, enabled: false }, msg`${name} could not be switched off. Try again in Settings > Hosts & phones.`)
     }}
     // The dialog stays until main clears the question, which it does once SSH has the answer.
-    onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, 'SSH did not take the answer. Switch the host off and on to try again.'); setAnswer(''); return false }}
-    {...(error ? { failureMessage: error } : {})}
+    onConfirm={async () => { await run({ type: 'ssh-answer', id: host.id, promptId: prompt.id, answer: hostKey ? 'yes' : answer }, msg`SSH did not take the answer. Switch the host off and on to try again.`); setAnswer(''); return false }}
+    {...(error ? { failureMessage: shownWords(error) } : {})}
     description={<div className="hosts-dialog__fields">
-      <p>{hostKey ? `${why}, and SSH has not seen this host before. Check its key, then trust it to continue.`
-        : `${why}, and SSH needs your ${prompt.kind === 'passphrase' ? 'key passphrase' : 'password'} to sign in.`}</p>
-      <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? 'SSH host key' : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
-      {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? 'Key passphrase' : 'SSH password'}</label>
+      <p className="tt-paragraph">{asks}</p>
+      <pre ref={hostKeyRef} className="hosts-challenge" role={hostKey ? 'region' : undefined} aria-label={hostKey ? t`SSH host key` : undefined} tabIndex={hostKey ? 0 : undefined}>{prompt.text}</pre>
+      {!hostKey && <div className="tt-field"><label className="tt-field__label" htmlFor="hosts-prompt-answer">{prompt.kind === 'passphrase' ? t`Key passphrase` : t`SSH password`}</label>
         <input ref={answerRef} id="hosts-prompt-answer" className="tt-input tt-focusable" type="password" autoComplete="off" value={answer} onChange={event => setAnswer(event.target.value)} /></div>}
     </div>} />
 }

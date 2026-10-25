@@ -162,6 +162,26 @@ describe('resolved thread permissions through the real socket and coordinator', 
     expect(service.shell().host.threads.find(item => item.id === thread.id)?.runtimeMode).toBe('approval-required')
   })
 
+  it('lets any paired client turn Muse’s shell sandbox back on, and none turn it off (ADR-0079)', async () => {
+    const { client, allowAnswers, service, identity } = await fixture()
+    const saved = () => service.shell().configuration.museDisableSandbox
+    const off = { type: 'configure', patch: { museDisableSandbox: true } } as const
+    await expect(client.command(off)).rejects.toMatchObject({ code: 'forbidden' })
+    expect(saved()).toBe(false)
+    // Only this computer's own Settings turn it off; a client that may answer is refused all the same.
+    await allowAnswers(true)
+    await expect(client.command(off)).rejects.toMatchObject({ code: 'forbidden' })
+    expect(saved()).toBe(false)
+    // Behind the host's allow-list, the coordinator refuses it from a paired client too.
+    expect((await service.command(off, identity)).error).toBe(REMOTE_PERMISSION_DENIED)
+    expect(saved()).toBe(false)
+    expect((await service.command(off, local)).error).toBeNull()
+    expect(saved()).toBe(true)
+    await allowAnswers(false)
+    expect((await client.command({ type: 'configure', patch: { museDisableSandbox: false } })).error).toBeNull()
+    expect(saved()).toBe(false)
+  })
+
   it('keeps unset and asking defaults usable without a grant', async () => {
     const { client, create, service } = await fixture()
     for (const newThreadRuntimeMode of [undefined, 'approval-required'] as const) {

@@ -13,6 +13,7 @@ import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useAgents, useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { SidebarChromeProvider } from '../../../src/renderer/src/agents/SidebarFrame'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { cursorModeLine } from '../../../src/renderer/src/agents/ThreadOptions'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { WatcherRoomProvider, targetForThread, watchedTargets } from '../../../src/renderer/src/watcher/watcherRoom'
 import { roomView } from '../../../src/renderer/src/watcher/WatcherBeside'
@@ -62,7 +63,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
     current: identity, currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true }, history: [],
     runtimeMode: 'approval-required', standingWatches: [{ id: WATCH, target: target('footer-links'), createdAt: at, generation: 0 }], ownChanges: [],
     requests: [], watchedThreads: [row('footer-links', 'Footer links')],
-    inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at, ...patch,
+    receipts: [], recoveryNotice: null, observedAt: at, ...patch,
   }
 }
 
@@ -77,7 +78,6 @@ function fakeBridge(initial: WatcherRoomState, legacy = false) {
   const bridge = {
     get: vi.fn(async () => ({ status: 'ok' as const, state })),
     open: vi.fn(async () => ok({ ...state, current: identity })),
-    setLimit: vi.fn(async ({ limit }: { limit: number }) => ok({ ...state, inFlightLimit: limit })),
     prepareStopAll: vi.fn(),
     stopAll: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
@@ -216,6 +216,19 @@ describe('Watcher’s permissions chip', () => {
     expect(options.slice(1).map(option => option.querySelector('span')?.firstChild?.textContent)).toEqual(['Ask for approval', 'Allow edits', 'Full access'])
   })
 
+  it('offers a Watcher on Cursor exactly Cursor’s three modes, each with the line a Cursor thread’s menu gives it', async () => {
+    const state = stateWithWatcher()
+    const model = state.host.models.find(entry => entry.id === 'codex:gpt')!
+    model.providerId = 'cursor'; model.runtimeModes = ['approval-required', 'auto', 'full-access']
+    renderRoom(roomState(), { state })
+    fireEvent.click(within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' }))
+    const options = within(screen.getByRole('listbox', { name: 'Watcher’s permissions' })).getAllByRole('option')
+    expect(options.map(option => option.textContent)).toEqual([
+      `Ask for approval${cursorModeLine('approval-required')}`, `Auto${cursorModeLine('auto')}`, `Full access${cursorModeLine('full-access')}`])
+    expect(options[0]).toHaveTextContent('It edits files inside the project without asking.')
+    expect(options[1]).toHaveTextContent('Its classifier runs on Cursor’s servers')
+  })
+
   it('is chosen before Watcher exists, and a new Watcher starts on the remembered mode', async () => {
     const { bridge } = renderRoom(roomState({ current: null, currentOptions: null, runtimeMode: 'auto-accept-edits', watchedThreads: [], standingWatches: [] }))
     const choice = await screen.findByRole('group', { name: 'Watcher’s model' })
@@ -238,7 +251,7 @@ describe('Watcher’s permissions chip', () => {
     const { bridge } = renderRoom(roomState(), { state })
     const chip = within(await watcherPane()).getByRole('combobox', { name: 'Watcher’s permissions' })
     expect(chip).toBeDisabled()
-    expect(chip).toHaveAttribute('title', 'Watcher’s permissions. Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.')
+    expect(chip).toHaveAttribute('title', 'Watcher’s permissions: Ask for approval. Fixed while Watcher works. It can change once Watcher finishes and nothing waits on you.')
     fireEvent.click(chip)
     expect(screen.queryByRole('listbox', { name: 'Watcher’s permissions' })).toBeNull()
     expect(bridge.setPermission).not.toHaveBeenCalled()
@@ -327,9 +340,9 @@ describe('watching a thread', () => {
     expect(bridge.watchThread).toHaveBeenCalledWith({ target: target('footer-links') })
     await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
     expect(watch).toHaveFocus()
-    // The owl follows the logo, the composer says what watching means, and the toast says it was done.
+    // The owl follows the logo and the toast says it was done; nothing stays under the composer.
     expect(within(pane).getByRole('img', { name: 'Watched by Watcher' })).toBeInTheDocument()
-    expect(within(pane).getByText(/It keeps this thread going/)).toBeInTheDocument()
+    expect(within(pane).queryByText(/Watched by Watcher\./)).toBeNull()
     const toast = document.querySelector('.watch-toast')
     expect(toast).toHaveAttribute('role', 'status')
     expect(toast).toHaveTextContent('Watcher is watching Footer links.')
@@ -342,14 +355,15 @@ describe('watching a thread', () => {
     expect(prompt).toHaveFocus()
   })
 
-  it('keeps the keyboard in the composer when Stop watching or a toast’s Dismiss goes away', async () => {
+  it('keeps the keyboard in the composer when a toast’s Dismiss goes away', async () => {
     const user = userEvent.setup()
     const { bridge } = renderThreads(roomState())
     const pane = await screen.findByRole('region', { name: 'Footer links' })
     const prompt = within(pane).getByRole('textbox', { name: 'Prompt' })
-    await user.click(await within(pane).findByRole('button', { name: 'Stop watching Footer links' }))
-    await waitFor(() => expect(within(pane).queryByRole('button', { name: 'Stop watching Footer links' })).toBeNull())
-    expect(prompt).toHaveFocus()
+    const watch = within(pane).getByRole('button', { name: 'Watch Footer links' })
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
+    await user.click(watch)
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'false'))
     // A refused press says why, with Dismiss; Dismiss takes the toast away and hands the keyboard back to the composer.
     bridge.watchThread.mockResolvedValueOnce({ status: 'refused', code: 'HOST_DISCONNECTED', message: 'Sotto Site’s host is not connected, so Footer links is not watched.', retryable: true })
     await user.click(within(pane).getByRole('button', { name: 'Watch Footer links' }))
@@ -360,28 +374,25 @@ describe('watching a thread', () => {
     expect(prompt).toHaveFocus()
   })
 
-  it('stops watching from under the composer, and says a refusal in main’s words', async () => {
+  it('stops watching from the pane header, and says a refusal in main’s words', async () => {
     const { bridge } = renderThreads(roomState())
     const pane = await screen.findByRole('region', { name: 'Footer links' })
     bridge.unwatchThread.mockResolvedValueOnce({ status: 'refused', code: 'HOST_DISCONNECTED', message: 'Sotto Site’s host is not connected, so Footer links is still watched.', retryable: true })
-    fireEvent.click(await within(pane).findByRole('button', { name: 'Stop watching Footer links' }))
+    const watch = within(pane).getByRole('button', { name: 'Watch Footer links' })
+    await waitFor(() => expect(watch).toHaveAttribute('aria-pressed', 'true'))
+    fireEvent.click(watch)
     expect(await screen.findByRole('alert')).toHaveTextContent('Sotto Site’s host is not connected, so Footer links is still watched.')
     expect(within(pane).getByRole('button', { name: 'Watch Footer links' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('promises a thread watched only for a request nothing past the user’s own send, under its composer and over Watched', async () => {
+  it('promises a thread watched only for a request nothing past the user’s own send, over Watched', async () => {
     const user = userEvent.setup()
     // Footer links takes part in Watcher's request, with no standing watch.
     const participant = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 0, state: 'participating' as const, target: target('footer-links'), promptCount: 1 }
     const room = roomState({ standingWatches: [], requests: [{ id: REQUEST, watcher: identity.target, rootUserMessageId: 'watcher-1', state: 'active', createdAt: at, closedAt: null, participants: [participant] }],
       watchedThreads: [row('footer-links', 'Footer links', { participation: [participant] })] })
-    renderThreads(room)
-    const pane = await screen.findByRole('region', { name: 'Footer links' })
-    expect(await within(pane).findByText('Watched by Watcher. If you send here, Watcher stops sending to it.')).toBeInTheDocument()
-    expect(within(pane).queryByText(/keeps this thread going/)).toBeNull()
-    cleanup()
     renderRoom(room)
     const room1 = await watcherPane()
     await user.click(within(room1).getByRole('tab', { name: 'Watched, 1 thread' }))
@@ -389,12 +400,6 @@ describe('watching a thread', () => {
       'Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.')
     expect(within(room1).queryByText(/until you stop it/)).toBeNull()
     expect(watchedLead(3, 1)).toBe('Watcher keeps these 3 threads going on its own and brings you their questions and permissions. A thread you watch stays watched until you stop it. One watched for a request stops when you send to it yourself.')
-  })
-
-  it('says a paused watch waits for the user’s own turn', async () => {
-    renderThreads(roomState({ watchedThreads: [row('footer-links', 'Footer links', { paused: true })] }))
-    const pane = await screen.findByRole('region', { name: 'Footer links' })
-    expect(await within(pane).findByText('Watched by Watcher. It waits while your own turn here runs, then keeps this thread going.')).toBeInTheDocument()
   })
 
   it('puts the owl among each sidebar row’s actions, pressed while watched', async () => {
@@ -484,7 +489,7 @@ describe('watching a thread', () => {
   it('says how long a watch has run with nothing sent, or that the user’s turn holds it', () => {
     const state = roomState()
     expect(watchedDoing(row('footer-links', 'Footer links'), state)).toMatch(/^Watching since .+\. Nothing sent yet\.$/u)
-    expect(watchedDoing(row('footer-links', 'Footer links', { paused: true }), state)).toBe('You sent here yourself. Watcher waits until that turn ends.')
+    expect(watchedDoing(row('footer-links', 'Footer links', { paused: true }), state)).toBe('You sent here yourself. Until that turn ends, Watcher can only steer it.')
     expect(watchedDoing(row('weekly-note', 'Weekly note'), state)).toBeNull()
   })
 

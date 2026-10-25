@@ -64,7 +64,8 @@ async function coordinator(host: ThreeClients, run: (executable: string, args: r
 
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
-    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'),
+    // Windows' npm layout, a launcher beside the package rather than a link into it.
+    clients: new ProviderClients({ run, npmPath: async () => join(prefix, 'npm-cli.js'), platform: 'win32',
       fetchImpl: async url => new Response(JSON.stringify({ version: PUBLISHED[IDS.find(id => url.includes(encodeURIComponent(CLIENT_PACKAGES[id]!.split('/')[0]!)))!] }), { status: 200 }) }),
     locateClient: async provider => join(prefix, `${provider}.exe`),
     reasoner: {},
@@ -309,6 +310,34 @@ describe('the client update line', () => {
       next()
       expect((await update).error).toBe('mise installed Grok Build 1.0.43, but its install step did not finish (EACCES: permission denied). Sotto still starts 1.0.41, and your threads kept working.')
       expect(grok()).toMatchObject({ state: 'failed', step: 2, failure: 'install-step', installed: '1.0.41' })
+    } finally { control.dispose() }
+  })
+
+  it('asks for the published version by name, and says so when mise does not list it yet', async () => {
+    const host = new ThreeClients()
+    const asked: (string | undefined)[] = []
+    const clients = new (class extends ProviderClients {
+      override async check(provider: ProviderId, installed: string): Promise<ProviderClientUpdate> {
+        return { id: provider, installed, published: PUBLISHED[provider]!, behind: true, channel: 'mise', command: `mise install ${provider}@${PUBLISHED[provider]!}`,
+          steps: 1, canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }
+      }
+      override async install(_provider: ProviderId, _executable: string | undefined, _environment: NodeJS.ProcessEnv, onStep?: (step: number) => void, version?: string) {
+        onStep?.(1)
+        asked.push(version)
+        return { ok: false, step: 1, failure: 'not-listed' as const, detail: 'mise does not list Claude Code yet.' }
+      }
+    })()
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-client-not-listed-')); roots.push(directory)
+    const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
+    const control = createAgentControl({ schedule: immediatePublishScheduler, directory, host, credentials, clients, locateClient: async () => undefined, reasoner: {} })
+    await control.start()
+    try {
+      await control.command({ type: 'connect' })
+      await control.command({ type: 'check-client-updates' })
+      const update = await control.command({ type: 'update-client', provider: 'claude' })
+      expect(asked).toEqual([PUBLISHED.claude])
+      expect(update.error).toBe(`mise does not list Claude Code ${PUBLISHED.claude} yet, so Sotto did not install it. ${host.installed.claude} is still installed, and your threads kept working. Try again later.`)
+      expect(control.get().clientUpdates?.find(item => item.id === 'claude')).toMatchObject({ state: 'failed', failure: 'not-listed' })
     } finally { control.dispose() }
   })
 

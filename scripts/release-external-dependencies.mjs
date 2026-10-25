@@ -19,10 +19,14 @@ const reviewedInventories = Object.freeze({
       'http',
       'node:child_process',
       'node:crypto',
+      // Git and gh launch on a worker thread, which streams their output back through an emitter of its own.
+      'node:events',
       'node:fs',
       'node:fs/promises',
       'node:http',
       'node:https',
+      // Record a minute profiles main through an in-process inspector session, with no port (ADR-0098).
+      'node:inspector',
       // The SSH launcher listens on a loopback port it picks and validates host addresses (#181).
       'node:net',
       'node:os',
@@ -35,6 +39,8 @@ const reviewedInventories = Object.freeze({
       'node:timers/promises',
       'node:url',
       'node:util',
+      // The Git launcher's worker thread, built beside the main bundle from Node builtins alone.
+      'node:worker_threads',
       // Open VSX imports inflate VSIX entries with a bounded output size.
       'node:zlib',
       'os',
@@ -112,10 +118,12 @@ export function verifyExternalDependencyInventories(
 
 // The Linux host currently needs only pure JavaScript zod. Adding a native module requires
 // an explicit platform build/ABI strategy; never copy the desktop's node-pty into this archive.
+// `node:zlib` compresses a desktop's socket messages (ADR-0025, October 18 amendment).
+// The host launches Git on a worker thread too (node:events, node:worker_threads), as the desktop does.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
-  'node:child_process', 'node:crypto', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
+  'node:child_process', 'node:crypto', 'node:events', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
   'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises',
-  'node:url', 'node:util', 'zod',
+  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'zod',
 ])
 
 export function verifyHostExternalDependencies(inventory, packagedDependencies, availableBuiltinModules = builtinModules) {

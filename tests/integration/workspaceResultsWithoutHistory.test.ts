@@ -23,7 +23,7 @@ it('hands the workspace a thread refresh and a settings result without held hist
   const f = await claudeFixture(undefined, 10_000)
   const registry = new ThreadRegistry(f.root)
   const providers = new ConfiguredProviderHost({ hosts: { codex: new FakeProviderHost(), claude: new SottoThreadHost('claude', f.host, registry),
-    grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost() }, provider: () => 'claude' })
+    grok: new FakeProviderHost(), devin: new FakeProviderHost(), muse: new FakeProviderHost(), opencode: new FakeProviderHost(), cursor: new FakeProviderHost(), deepseek: new FakeProviderHost() }, provider: () => 'claude' })
   const workspace = new WorkspaceHost(providers, f.root)
   cleanup.push(async () => { workspace.disconnect(); await f.adapter.closed(); await workspace.close(); await registry.flush(); await f.cleanup() })
   await workspace.connect('claude')

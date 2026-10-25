@@ -55,7 +55,8 @@ struct HostRefusal: Error, LocalizedError {
     /// The computer's answer to `stage-attachment` and `preview`, given the request's image or preview fields.
     static var stageHandler: ((JSONValue) async throws -> JSONValue)?
     static var previewHandler: ((JSONValue) async throws -> JSONValue)?
-    static var terminalHandler: ((String, [String: JSONValue], String) async throws -> JSONValue)?
+    /// The computer's answer to `stage-file-part` and `attachment-file`, given the operation and its part or request fields.
+    static var fileHandler: ((String, JSONValue) async throws -> JSONValue)?
     /// The photo load limit the photo tests give the model: never passing, unless a test says otherwise.
     static var photoLoadLimit: @Sendable () async throws -> Void = { try await Task.sleep(nanoseconds: 3_600_000_000_000) }
     static var receipts: [String: JSONValue] = [:]
@@ -67,7 +68,6 @@ struct HostRefusal: Error, LocalizedError {
     var onDisconnect: (() -> Void)?
     var operations: [String] = []
     var commands: [JSONValue] = []
-    var terminalCalls: [[String: JSONValue]] = []
     /// Every Watcher operation this connection carried, with its request ID.
     var watcherCalls: [(operation: [String: JSONValue], id: String)] = []
     var hostID = ""
@@ -104,12 +104,6 @@ struct HostRefusal: Error, LocalizedError {
         let op = operation["op"]?.string ?? ""
         operations.append(op)
 
-        if ["terminal-approval", "answer-terminal", "observe-terminals"].contains(op) {
-            terminalCalls.append(operation)
-            if let handler = Self.terminalHandler { return try await handler(op, operation, id) }
-            return .null
-        }
-
         if op.hasPrefix("watcher-phone-") {
             watcherCalls.append((operation, id))
             if let handler = Self.watcherHandler { return try await handler(op, operation, id) }
@@ -142,6 +136,8 @@ struct HostRefusal: Error, LocalizedError {
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
         if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }
         if op == "preview", let handler = Self.previewHandler { return try await handler(operation["request"] ?? .null) }
+        if op == "stage-file-part", let handler = Self.fileHandler { return try await handler(op, operation["part"] ?? .null) }
+        if op == "attachment-file", let handler = Self.fileHandler { return try await handler(op, operation["request"] ?? .null) }
         return .null
     }
     func disconnect() { disconnects += 1 }

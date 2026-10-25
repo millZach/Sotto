@@ -2,7 +2,12 @@ import { z } from 'zod'
 import { OMARCHY_THEME_ID, omarchyThemeSchema, type OmarchyTheme } from './themes/omarchy'
 
 import { DEFAULT_HOTKEY } from './constants'
+import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
+import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
+import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
+import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
+import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -19,6 +24,14 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Appearance = 'system' | 'light' | 'dark'
 export const APPEARANCES = ['system', 'light', 'dark'] as const satisfies readonly Appearance[]
 export type ReducedMotion = 'system' | 'on'
+/** Night falls' two looks (ADR-0119, decision 6): the shipped band, or a line of stars. */
+export type RoomTransitionLook = 'band' | 'stars'
+export const ROOM_TRANSITION_LOOKS = ['band', 'stars'] as const satisfies readonly RoomTransitionLook[]
+/**
+ * Compact Watcher at, in tokens: the slider's ends, its step and where it starts. Watcher's conversation is compacted at
+ * its next rest once it passes this point (#1189). 400K was Zach's first pick; he asked for the slider in October 2026.
+ */
+export const WATCHER_COMPACT_AT = { min: 200_000, max: 1_000_000, step: 50_000, default: 400_000 } as const
 /**
  * The effort colourway: the colour a thread's effort control turns at a model's highest level, in the
  * composer and in Settings. `ember` and `accent` derive from theme roles; the rest are fixed palettes (ADR-0019).
@@ -26,6 +39,13 @@ export type ReducedMotion = 'system' | 'on'
 export type EffortColor = 'ember' | 'cyberpunk' | 'rainbow' | 'aurora' | 'plasma' | 'accent'
 export const EFFORT_COLORS = ['ember', 'cyberpunk', 'rainbow', 'aurora', 'plasma', 'accent'] as const satisfies readonly EffortColor[]
 export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember', cyberpunk: 'Cyberpunk', rainbow: 'Rainbow', aurora: 'Aurora', plasma: 'Plasma', accent: 'Theme accent' }
+/**
+ * The little pixel character that stands above a thread's composer while it watches, works or waits: Sotto's own, or
+ * Claude bot. It is the same character in every pose, and a choice about how Sotto looks, never about what it claims.
+ */
+export type Creature = 'sotto' | 'claude'
+export const CREATURES = ['sotto', 'claude'] as const satisfies readonly Creature[]
+export const CREATURE_LABELS: Record<Creature, string> = { sotto: 'Sotto', claude: 'Claude bot' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 
 /**
@@ -35,6 +55,9 @@ export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
  * `merged` means GitHub reports the branch's pull request merged; `onSettle` reclaims when the
  * thread is settled. Each applies only to a clean folder with nothing in it but installed dependencies.
  */
+export type LlmMode = 'default' | 'nitro' | 'floor'
+export const LLM_MODES = ['default', 'nitro', 'floor'] as const satisfies readonly LlmMode[]
+
 export interface WorktreeCleanupRules {
   afterDays: WorktreeCleanupDays
   merged: boolean
@@ -85,6 +108,10 @@ export function mergeMethodChosenPatch(settings: Pick<AppSettings, 'defaultMerge
   return settings.defaultMergeMethod === 'last' && settings.lastMergeMethod !== method ? { lastMergeMethod: method } : null
 }
 
+/** The bounds of Settings, Dictation, Typing speed, in words per minute. */
+export const TYPING_SPEED_MIN_WPM = 10
+export const TYPING_SPEED_MAX_WPM = 150
+
 export const SETTINGS_VERSION = 1 as const
 
 /**
@@ -109,6 +136,19 @@ export interface AppSettings {
   appearanceContrast: number
   /** The colour the effort control turns at a model's highest level. */
   effortColor: EffortColor
+  /** The colour of the menu bar owl's body on a Mac running an Owl build (ADR-0114); kept whole where the feature is off. */
+  menuBarOwlBody: MenuBarOwlBody
+  /** The colour its eyes glow. */
+  menuBarOwlEyes: MenuBarOwlEyes
+  /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
+  creature: Creature
+  /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
+  showCreature: boolean
+  /**
+   * The interface language (ADR-0123): `system` follows the computer's language, a code chooses one. Read only while its
+   * Owl feature is on; elsewhere Sotto is English and the choice is kept for when the feature returns.
+   */
+  interfaceLanguage: InterfaceLanguageSetting
   /** Themes the user created, duplicated or imported, already canonical. */
   customThemes: ThemeDefinition[]
   /** Linux-only, read-only palette supplied by main. Never saved or patched. */
@@ -133,13 +173,32 @@ export interface AppSettings {
    * restart of the computer, is sent a resume note when Sotto opens again. Asked once at start.
    */
   resumeThreadsAfterRestart: boolean
-  /** Computer-wide watcher capacity; lowering it holds admission and stops nothing. */
-  watcherInFlightLimit: number
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /**
+   * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
+   * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
+   */
+  watcherSettlesFinishedThreads: boolean
+  /**
+   * Where new workers start (#1032), under Settings, Watcher, part of the Owl feature `cross-machine-work`: This computer
+   * by default, Watcher's own choice, or a connected machine by its saved host ID. A start that names a machine or a
+   * system overrides it for that start. Read when a start or a delegation is placed.
+   */
+  newWorkerMachine: WorkerMachineSetting
+  /**
+   * Compact Watcher at, under Settings, Watcher: the size in tokens past which Watcher's conversation is compacted at its
+   * next rest, 200K to 1M on a 50K step ({@link WATCHER_COMPACT_AT}). Part of Watcher's Owl feature. Read at every look.
+   */
+  watcherCompactAtTokens: number
+  /**
+   * On by default (ADR-0127): a Claude thread with a large context, quiet for 54 minutes, is compacted while its prompt
+   * cache is still warm, so the next message re-reads a summary instead of the whole conversation. Read at every sweep.
+   */
+  compactIdleThreads: boolean
   /** Applies only to new threads; existing provider sessions keep their working folder. */
   threadWorkingCopyDefault: 'shared' | 'independent'
   /** Explicit project overrides; an absent key inherits the global default. */
@@ -183,8 +242,24 @@ export interface AppSettings {
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
   proactivePanels: boolean
   reducedMotion: ReducedMotion
+  /** On by default. Moving between Dictate or Threads and Watcher's room plays the night falls transition; off, the window swaps in one frame. */
+  roomTransition: boolean
+  /** How fast that transition plays: 0.5 is half speed, 2 is twice as fast. */
+  roomTransitionSpeed: number
+  /** How that transition looks: `band`, a band of flickering text characters, or `stars`, a line of stars with a faint trail (ADR-0119, decision 6). */
+  roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
+  /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
+  pressShortcuts: string[]
+  /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
+  holdShortcuts: string[]
+  /**
+   * The keyboard shortcuts for working in threads the user changed under Settings › Keyboard (ADR-0133), by
+   * shortcut. A row left out follows its default (`threadShortcuts.ts`); a row set to null has no shortcut.
+   * Read live, so a change in Settings reaches every button and listener at once.
+   */
+  threadShortcuts: ThreadShortcutChoices
   /** Text size in every terminal, in pixels; changed from the focused terminal's zoom chords. */
   terminalFontSize: number
   /**
@@ -194,6 +269,13 @@ export interface AppSettings {
    */
   maxRecordingSeconds: MaxRecordingSeconds
   soundCues: boolean
+  /** How fast the user types, in words per minute: the Dictate room counts time saved against it. */
+  typingSpeedWpm: number
+  /**
+   * The model that transcribes dictation, by its picker id, or null until the user chooses one.
+   * Nothing downloads before then. Main writes it when the user chooses on the picker or in setup.
+   */
+  speechModel: string | null
   formatWhitespace: boolean
   autoCopy: true
   autoPaste: boolean
@@ -202,6 +284,12 @@ export interface AppSettings {
   launchAtStartup: boolean
   startMinimized: boolean
   showWidgetWhenIdle: boolean
+  /** Off when the user dictates with another app: no hotkey, speech model, widget or Dictate room (Owl, ADR-0107). */
+  dictationEnabled: boolean
+  /** A notification when a thread asks a question or for permission and the window is not showing it (Owl, macOS, ADR-0117). */
+  notifyNeedsYou: boolean
+  /** A notification when a thread has wrapped up: finished everything, nothing left running or waiting (Owl, macOS, ADR-0117). */
+  notifyFinished: boolean
   /** Linux-only, read-only, supplied by main: the shell pill has taken the floating widget's place. Never saved or patched. */
   shellPillInUse?: boolean | undefined
   historyEnabled: boolean
@@ -224,16 +312,39 @@ export interface AppSettings {
   llmTimeoutMs: number
   llmMinWords: number
   /**
+   * The OpenRouter model that cleans up dictation, by its slug, or null for Sotto's own choice
+   * (ADR-0069's Claude Haiku 5.5). An Owl feature (ADR-0122): stable ignores it and keeps it.
+   */
+  llmModel: string | null
+  /** How OpenRouter picks a host for the cleanup model: its own way, the fastest host (`:nitro`) or the cheapest (`:floor`). */
+  llmMode: LlmMode
+  /**
+   * A model on one of the user's own model servers that cleans up dictation instead of `llmModel`, by the server's and the
+   * model's saved IDs, or null. An Owl feature (ADR-0136): with it off the choice is kept and ignored.
+   */
+  llmOwnModel: OwnCleanupChoice | null
+  /**
    * Off stops thread-title and temporary-worktree-branch naming requests. Sotto's short writing is a
    * side call to the thread's own provider (ADR-0026); the OpenRouter writing model and its
    * `writingModel` setting are gone, and a settings file that still carries the key parses and drops it.
    */
   threadTitles: boolean
+  /**
+   * After each turn that ends with an answer, ask the thread's own provider for a next prompt (ADR-0132): one short side
+   * call per turn. Read only while the `next-prompt` Owl feature is on; off, nothing is asked.
+   */
+  nextPromptSuggestions: boolean
   /** Off stops every pull request draft; the form opens with the fields it would have had anyway. */
   pullRequestText: boolean
   /** Off stops every generated commit message; a commit whose dialog message was left empty takes the stand-in subject. */
   commitMessages: boolean
   autoUpdateCheck: boolean
+  /**
+   * The notice beside the window controls while Sotto's main process is frozen (#1233, ADR-0098). Part of the
+   * `main-freeze` Owl feature: stable never shows it, whatever this says. Off hides only the notice; Settings >
+   * Performance keeps the numbers and Record a minute.
+   */
+  mainFreezeNotice: boolean
   /**
    * Whether the agent runtime runs on this computer at all. Read once at
    * startup; off starts no local host after the next restart. Remote hosts
@@ -267,7 +378,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -287,6 +398,11 @@ const fieldSchemas = {
   darkTheme: z.string().refine(value => isThemeId(value) || value === OMARCHY_THEME_ID),
   appearanceContrast: z.number().int().min(APPEARANCE_CONTRAST.min).max(APPEARANCE_CONTRAST.max).refine(value => value % APPEARANCE_CONTRAST.step === 0),
   effortColor: z.enum(EFFORT_COLORS),
+  menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
+  menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
+  creature: z.enum(CREATURES),
+  showCreature: z.boolean(),
+  interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
   omarchyTheme: omarchyThemeSchema.nullable().optional(),
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
@@ -296,14 +412,25 @@ const fieldSchemas = {
   visualsInThreads: z.boolean(),
   babysitPullRequests: z.boolean(),
   resumeThreadsAfterRestart: z.boolean(),
-  watcherInFlightLimit: z.number().int().min(1).max(8),
   workerRoles: workerRoleChoicesSchema,
+  watcherSettlesFinishedThreads: z.boolean(),
+  newWorkerMachine: workerMachineSettingSchema,
+  watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
+  compactIdleThreads: z.boolean(),
   reducedMotion: z.enum(['system', 'on']),
+  roomTransition: z.boolean(),
+  roomTransitionSpeed: z.number().min(0.5).max(2),
+  roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
+  holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
+  threadShortcuts: threadShortcutChoicesSchema,
   terminalFontSize: z.number().int().min(8).max(32),
   maxRecordingSeconds: z.union([z.literal(30), z.literal(60), z.literal(120), z.literal(300)]),
   soundCues: z.boolean(),
+  typingSpeedWpm: z.number().int().min(TYPING_SPEED_MIN_WPM).max(TYPING_SPEED_MAX_WPM),
+  speechModel: z.string().min(1).max(128).nullable(),
   formatWhitespace: z.boolean(),
   autoCopy: z.literal(true),
   autoPaste: z.boolean(),
@@ -312,6 +439,9 @@ const fieldSchemas = {
   launchAtStartup: z.boolean(),
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
+  dictationEnabled: z.boolean(),
+  notifyNeedsYou: z.boolean(),
+  notifyFinished: z.boolean(),
   shellPillInUse: z.boolean().optional(),
   historyEnabled: z.boolean(),
   historyRetention: z.union([
@@ -327,7 +457,11 @@ const fieldSchemas = {
   llmDictionary: z.string().max(4_000),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
+  llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
+  llmMode: z.enum(LLM_MODES),
+  llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
+  nextPromptSuggestions: z.boolean(),
   threadWorkingCopyDefault: z.enum(['shared', 'independent']),
   projectThreadWorkingCopyDefaults: z.record(z.string().min(1).max(256), z.enum(['shared', 'independent'])),
   worktreeCleanup: worktreeCleanupRulesSchema,
@@ -346,6 +480,7 @@ const fieldSchemas = {
   pullRequestText: z.boolean(),
   commitMessages: z.boolean(),
   autoUpdateCheck: z.boolean(),
+  mainFreezeNotice: z.boolean(),
   localHostEnabled: z.boolean(),
   phoneAccess: z.boolean(),
   phoneAccessName: z.string().trim().max(63),
@@ -369,6 +504,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearanceContrast: APPEARANCE_CONTRAST.default,
   // Ember is the warning role's gold: the colour the effort control turned before it became a choice.
   effortColor: 'ember',
+  menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
+  menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
+  creature: 'sotto',
+  showCreature: true,
+  interfaceLanguage: 'system',
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
@@ -377,14 +517,26 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visualsInThreads: true,
   babysitPullRequests: true,
   resumeThreadsAfterRestart: true,
-  watcherInFlightLimit: 4,
   workerRoles: {},
+  watcherSettlesFinishedThreads: true,
+  newWorkerMachine: DEFAULT_WORKER_MACHINE,
+  watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
+  compactIdleThreads: true,
   reducedMotion: 'system',
+  roomTransition: true,
+  roomTransitionSpeed: 1,
+  roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  pressShortcuts: [],
+  holdShortcuts: [],
+  // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
+  threadShortcuts: {},
   terminalFontSize: 13,
   maxRecordingSeconds: 60,
   soundCues: true,
+  typingSpeedWpm: 40,
+  speechModel: null,
   formatWhitespace: true,
   autoCopy: true,
   autoPaste: true,
@@ -393,6 +545,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtStartup: false,
   startMinimized: false,
   showWidgetWhenIdle: true,
+  dictationEnabled: true,
+  notifyNeedsYou: true,
+  notifyFinished: true,
   historyEnabled: true,
   historyRetention: 100,
   onboardingComplete: false,
@@ -402,9 +557,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   llmDictionary: '',
   llmTimeoutMs: 2_500,
   llmMinWords: 5,
+  llmModel: null,
+  llmMode: 'default',
+  llmOwnModel: null,
   // On by default: the thread's own provider names it, on the account the thread
   // already uses, and a provider that writes nothing (Devin) keeps the stand-in.
   threadTitles: true,
+  nextPromptSuggestions: true,
   threadWorkingCopyDefault: 'shared',
   projectThreadWorkingCopyDefaults: {},
   // Off, every rule: a folder is removed only when the user asks or has said in advance that Sotto may.
@@ -435,6 +594,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // fix. The check asks GitHub for a version number and sends nothing else,
   // and turning it off stops the request entirely.
   autoUpdateCheck: true,
+  // On by default: a freeze is worth hearing about until the owner says otherwise.
+  mainFreezeNotice: true,
   // On by default: this computer is still the host until the owner pairs a
   // remote one and chooses to run clients only.
   localHostEnabled: true,
@@ -451,11 +612,18 @@ export const DEFAULT_SETTINGS: AppSettings = {
 }
 
 /**
- * The defaults for one platform. Only the hotkey differs today, and the caller
- * supplies it from the platform profile so this module stays platform-free.
+ * The defaults for one platform. Only the shortcuts differ today, and the caller
+ * supplies them from the platform profile so this module stays platform-free.
  */
-export function defaultSettings(defaultHotkey: string): AppSettings {
-  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey }
+export function defaultSettings(defaultHotkey: string, defaultHoldShortcuts: readonly string[] = []): AppSettings {
+  return { ...DEFAULT_SETTINGS, hotkey: defaultHotkey, holdShortcuts: [...defaultHoldShortcuts] }
+}
+
+/** Entry by entry, so one damaged shortcut costs only itself; a damaged list holds nothing rather than a default. */
+function parseShortcutList(input: unknown, max: number): string[] {
+  if (!Array.isArray(input)) return []
+  const entries = input.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0 && entry.length <= 64)
+  return [...new Set(entries)].slice(0, max)
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -471,8 +639,16 @@ function parseField<Key extends keyof AppSettings>(
   return result.success ? (result.data as AppSettings[Key]) : defaults[key]
 }
 
+/** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0097). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
+  // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys, and so
+  // does one an unreleased build of the recorder saved with the old, unused default and nothing held: Linux's rows
+  // can't produce that pair, since only Owl removes the hold and Linux has no Owl build.
+  const untouchedLinux = Array.isArray(persisted.holdShortcuts) && persisted.holdShortcuts.length === 0 &&
+    persisted.hotkey === 'CommandOrControl+Shift+Space' && (persisted.pressShortcuts === undefined || Array.isArray(persisted.pressShortcuts) && persisted.pressShortcuts.length === 0)
+  const linuxBeforeRecorder = allowOmarchy && (persisted.holdShortcuts === undefined || untouchedLinux)
   // The library is read leniently, one theme at a time, so a single damaged
   // entry never costs the user the rest of their themes. A half naming a theme
   // that is gone, or that cannot paint that half, lands on the default.
@@ -484,6 +660,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     return allowOmarchy && id === OMARCHY_THEME_ID ? id : resolveThemeHalfId(id, key === 'lightTheme' ? 'light' : 'dark', customThemes)
   }
 
+  // Only the keys named here are read. One a version of Sotto no longer has, such as `watcherInFlightLimit`, the Threads
+  // in flight limit removed in #1183, is left behind here and gone from the file at the next save.
   return {
     version: parseField(persisted, 'version', defaults),
     theme: parseField(persisted, 'theme', defaults),
@@ -492,6 +670,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     darkTheme: half('darkTheme'),
     appearanceContrast: parseField(persisted, 'appearanceContrast', defaults),
     effortColor: parseField(persisted, 'effortColor', defaults),
+    menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
+    menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
+    creature: parseField(persisted, 'creature', defaults),
+    showCreature: parseField(persisted, 'showCreature', defaults),
+    interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
@@ -500,15 +683,31 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
-    watcherInFlightLimit: parseField(persisted, 'watcherInFlightLimit', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
+    newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
+    watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),
+    compactIdleThreads: parseField(persisted, 'compactIdleThreads', defaults),
     reducedMotion: parseField(persisted, 'reducedMotion', defaults),
+    roomTransition: parseField(persisted, 'roomTransition', defaults),
+    roomTransitionSpeed: parseField(persisted, 'roomTransitionSpeed', defaults),
+    roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
-    hotkey: parseField(persisted, 'hotkey', defaults),
+    hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
+    // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
+    // Linux is the exception above: its existing profiles already held F9.
+    holdShortcuts: linuxBeforeRecorder || persisted.holdShortcuts === undefined && Object.keys(persisted).length === 0
+      ? [...defaults.holdShortcuts]
+      : parseShortcutList(persisted.holdShortcuts, 4),
+    // Row by row, so one damaged shortcut falls back to its own default and no other.
+    threadShortcuts: persisted.threadShortcuts === undefined ? { ...defaults.threadShortcuts } : parseThreadShortcutChoices(persisted.threadShortcuts),
     terminalFontSize: parseField(persisted, 'terminalFontSize', defaults),
     maxRecordingSeconds: parseField(persisted, 'maxRecordingSeconds', defaults),
     soundCues: parseField(persisted, 'soundCues', defaults),
+    typingSpeedWpm: parseField(persisted, 'typingSpeedWpm', defaults),
+    speechModel: parseField(persisted, 'speechModel', defaults),
     formatWhitespace: parseField(persisted, 'formatWhitespace', defaults),
     autoCopy: parseField(persisted, 'autoCopy', defaults),
     autoPaste: parseField(persisted, 'autoPaste', defaults),
@@ -517,6 +716,9 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     launchAtStartup: parseField(persisted, 'launchAtStartup', defaults),
     startMinimized: parseField(persisted, 'startMinimized', defaults),
     showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
+    dictationEnabled: parseField(persisted, 'dictationEnabled', defaults),
+    notifyNeedsYou: parseField(persisted, 'notifyNeedsYou', defaults),
+    notifyFinished: parseField(persisted, 'notifyFinished', defaults),
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
     historyRetention: parseField(persisted, 'historyRetention', defaults),
     onboardingComplete: parseField(persisted, 'onboardingComplete', defaults),
@@ -526,7 +728,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     llmDictionary: parseField(persisted, 'llmDictionary', defaults),
     llmTimeoutMs: parseField(persisted, 'llmTimeoutMs', defaults),
     llmMinWords: parseField(persisted, 'llmMinWords', defaults),
+    llmModel: parseField(persisted, 'llmModel', defaults),
+    llmMode: parseField(persisted, 'llmMode', defaults),
+    llmOwnModel: parseField(persisted, 'llmOwnModel', defaults),
     threadTitles: parseField(persisted, 'threadTitles', defaults),
+    nextPromptSuggestions: parseField(persisted, 'nextPromptSuggestions', defaults),
     threadWorkingCopyDefault: parseField(persisted, 'threadWorkingCopyDefault', defaults),
     projectThreadWorkingCopyDefaults: parseField(persisted, 'projectThreadWorkingCopyDefaults', defaults),
     worktreeCleanup: parseField(persisted, 'worktreeCleanup', defaults),
@@ -545,6 +751,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     pullRequestText: parseField(persisted, 'pullRequestText', defaults),
     commitMessages: parseField(persisted, 'commitMessages', defaults),
     autoUpdateCheck: parseField(persisted, 'autoUpdateCheck', defaults),
+    mainFreezeNotice: parseField(persisted, 'mainFreezeNotice', defaults),
     localHostEnabled: parseField(persisted, 'localHostEnabled', defaults),
     phoneAccess: parseField(persisted, 'phoneAccess', defaults),
     phoneAccessName: parseField(persisted, 'phoneAccessName', defaults),
@@ -553,4 +760,9 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),
   }
+}
+
+/** Whether Sotto dictates: the setting counts only while its Owl feature is on, so stable always dictates (ADR-0107). */
+export function dictationOn(settings: Pick<AppSettings, 'dictationEnabled'>, owlFeatureOn: boolean): boolean {
+  return !owlFeatureOn || settings.dictationEnabled
 }

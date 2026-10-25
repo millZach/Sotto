@@ -36,6 +36,7 @@ jobs:
     outputs:
       host: ${{ steps.areas.outputs.host }}
       ios: ${{ steps.areas.outputs.ios }}
+      coreml: ${{ steps.areas.outputs.coreml }}
       package: ${{ steps.areas.outputs.package }}
       desktop: ${{ steps.areas.outputs.desktop }}
       tests: ${{ steps.areas.outputs.tests }}
@@ -54,6 +55,8 @@ jobs:
         run: |
           # The iOS job reads only the native client, the host protocol its wire types mirror and this file.
           ios_paths='^(apps/ios/|src/shared/hostProtocol\.ts$|\.github/workflows/ci\.yml$)'
+          # The Core ML speech helper job reads only the Swift helper, its build script and this file.
+          coreml_paths='^(native/coreml-asr/|scripts/build-coreml-asr\.mjs$|\.github/workflows/ci\.yml$)'
           if [ "$EVENT" = "push" ]; then
             # A push to main runs every job, the backstop for two pull requests that break each other, except the
             # iOS job when nothing it reads changed since the last push run on main that finished green: no pair of
@@ -68,25 +71,26 @@ jobs:
               unproven=$(git diff --no-renames --name-only "$passed" HEAD)
               if ! grep -qE "$ios_paths" <<< "$unproven"; then ios=false; fi
             fi
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"
             echo "Push to main: every job runs. iOS job: $ios (changes since ${passed:-no passing run})."
             exit 0
           fi
           if [ "$EVENT" != "pull_request" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # A pull request checks out its merge commit; its first parent is the base branch.
           # --no-renames lists a moved file at both paths, so moving one into a skipped area still counts its old area.
           files=$(git diff --no-renames --name-only HEAD^1 HEAD)
           if [ -z "$files" ]; then
-            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
+            echo "host=true" >> "$GITHUB_OUTPUT"; echo "ios=true" >> "$GITHUB_OUTPUT"; echo "coreml=true" >> "$GITHUB_OUTPUT"; echo "package=true" >> "$GITHUB_OUTPUT"; echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "tests=full" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          host=false; ios=false; package=false
+          host=false; ios=false; coreml=false; package=false
           # Each test reads the list from a here-string, not a pipe: the step runs under pipefail, and grep -q stops
           # at its first match, so on a long list printf dies writing to the closed pipe and the test reads as false.
           if grep -qvE '^(src/renderer/|src/preload/|apps/ios/|docs/|artifacts/|design/|handoff/|tests/e2e/|tests/unit/renderer/|tests/perf/|[^/]+\.md$)' <<< "$files" \
             || grep -qxE 'THIRD_PARTY_NOTICES\.md' <<< "$files"; then host=true; fi
           if grep -qE "$ios_paths" <<< "$files"; then ios=true; fi
+          if grep -qE "$coreml_paths" <<< "$files"; then coreml=true; fi
           # Packaging reads everything but the documents, the tests and the native phone clients, except the root
           # README, licence and notices that the package ships.
           if grep -qvE '^(docs/|artifacts/|design/|handoff/|tests/|apps/ios/|apps/android/|[^/]+\.md$)' <<< "$files" \
@@ -99,8 +103,8 @@ jobs:
           # evidence notes, notices, file encoding). Anything else, including a new top-level file, runs it all.
           tests=docs
           if grep -qvE '^(docs/|artifacts/|design/|handoff/|[^/]+\.md$|\.gitignore$)' <<< "$files"; then tests=full; fi
-          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
-          echo "Host job: $host. iOS job: $ios. Package job: $package. Desktop job: $desktop. Tests: $tests."
+          echo "host=$host" >> "$GITHUB_OUTPUT"; echo "ios=$ios" >> "$GITHUB_OUTPUT"; echo "coreml=$coreml" >> "$GITHUB_OUTPUT"; echo "package=$package" >> "$GITHUB_OUTPUT"; echo "desktop=$desktop" >> "$GITHUB_OUTPUT"; echo "tests=$tests" >> "$GITHUB_OUTPUT"
+          echo "Host job: $host. iOS job: $ios. Core ML helper job: $coreml. Package job: $package. Desktop job: $desktop. Tests: $tests."
 
   # The gates that are not the test suite. Every pull request and every push to main runs them.
   checks:
@@ -126,7 +130,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
 
       - name: Install dependencies
@@ -180,7 +184,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
 
       - name: Install dependencies
@@ -214,7 +218,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
 
       - name: Install dependencies
@@ -296,7 +300,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
 
       - name: Install dependencies
@@ -308,7 +312,7 @@ jobs:
       - name: Build and verify the unpacked Windows app
         run: npm run package:dir
 
-  # Trial only (#899): exercise the built app on the hosted desktop without publishing or becoming a required check.
+  # Exercise the built app on the hosted desktop without publishing (#899). The ruleset requires Desktop result, not this job.
   desktop:
     name: Desktop check (Windows)
     needs: changes
@@ -330,7 +334,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
 
       - name: Install dependencies
@@ -342,7 +346,7 @@ jobs:
       - name: Exercise the Windows desktop
         run: npm run test:desktop-smoke
 
-      # Keep passing captures during the trial too, so its actual hosted desktop can be inspected.
+      # Keep passing captures too, so the hosted desktop each run used can be inspected.
       - name: Retain desktop journeys and screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -375,8 +379,8 @@ jobs:
           if [ "$WANTED" = "true" ] && [ "$PACKAGE" != "success" ]; then echo "Package (Windows) was needed and ended $PACKAGE."; exit 1; fi
           echo "Package (Windows) needed: $WANTED. Result: $PACKAGE."
 
-  # The owner can require this guard after the desktop trial: a skipped Desktop check (Windows) alone would
-  # count as passing even if Changed areas failed. Keep the packaging guard's independent contract.
+  # The ruleset requires this guard because a skipped Desktop check (Windows) alone would count as passing even
+  # if Changed areas failed. Keep the packaging guard's independent contract.
   desktop-result:
     name: Desktop result
     needs: [changes, desktop]
@@ -410,7 +414,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.22.1'
           cache: npm
       - name: Install dependencies
         run: npm ci
@@ -481,3 +485,32 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
+
+  # The Mac app's Core ML speech helper (built on FluidAudio) builds on Apple silicon and answers protocol 2.
+  coreml-asr:
+    name: Core ML speech helper (macOS)
+    needs: changes
+    if: needs.changes.outputs.coreml == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Record native toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Build the helper and check its protocol version
+        shell: bash
+        run: |
+          helper=$(node scripts/build-coreml-asr.mjs | tail -n 1)
+          test -x "$helper"
+          version=$("$helper" --version)
+          echo "$version"
+          test "$version" = '{"protocol":2}'

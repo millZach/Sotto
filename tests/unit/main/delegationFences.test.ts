@@ -52,7 +52,7 @@ async function service(delegations: Record<string, unknown>[], threads: AgentThr
     deliverWakeUp: async (_threadId, news) => (options.deliver ?? (async () => undefined))(news),
   }
   const delegation = new DelegationService({ directory: root, control,
-    host: { setDelegatedBy: options.setDelegatedBy ?? (async () => undefined), threadMessage: () => undefined }, historyEnabled: () => true, limit: () => 4 })
+    host: { setDelegatedBy: options.setDelegatedBy ?? (async () => undefined), threadMessage: () => undefined }, historyEnabled: () => true })
   await delegation.recover()
   ;(delegation as unknown as { records: unknown[] }).records = structuredClone(delegations)
   const internals = delegation as unknown as { queuedBriefs: Map<string, string>; fenced: Set<string> }
@@ -68,6 +68,13 @@ function gate() {
 const brief = (patch: Record<string, unknown>) => ({ id: randomUUID(), delegatingThreadId: 'parent', delegatedThreadId: 'child', action: 'start', work: 'code-review',
   rootUserMessageId: 'root', inputDigest: 'a'.repeat(64), draftId: randomUUID(), messageId: randomUUID(), expectedLastUserMessageId: null,
   deliveryState: 'accepted', outcome: 'working', told: 'working', charged: true, createdAt: at, updatedAt: at, ...patch })
+
+it('owns the message IDs of its own briefs, so a watcher never takes one for the user', async () => {
+  const sent = brief({})
+  const f = await service([sent], [thread('parent'), thread('child')])
+  expect(f.hooks.ownsMessage?.(sent.messageId)).toBe(true)
+  expect(f.hooks.ownsMessage?.(randomUUID())).toBe(false)
+})
 
 it('fences a brief already on its way to the writer when the user stops the thread that delegated it', async () => {
   const sending = brief({ deliveryState: 'dispatching', outcome: undefined, told: undefined })

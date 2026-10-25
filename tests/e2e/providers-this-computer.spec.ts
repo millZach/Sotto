@@ -62,7 +62,7 @@ test('Settings > Providers shows and acts on this computer’s clients while for
 
     // Add forge, then select it for new work, as opening one of its threads does.
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await expect(form.getByRole('combobox', { name: 'Device' })).toBeFocused()
@@ -81,12 +81,13 @@ test('Settings > Providers shows and acts on this computer’s clients while for
 
     // Settings > Providers shows this computer's Codex, connected, and none of forge's error.
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-    const list = page.getByRole('navigation', { name: 'Thread providers' })
-    await list.getByRole('button', { name: 'Codex', exact: true }).click()
+    const list = page.getByRole('list', { name: 'Thread providers' })
+    // Codex's row is the one open to begin with.
+    await expect(list.getByRole('button', { name: 'Codex', exact: true })).toHaveAttribute('aria-expanded', 'true')
     await expect(list.getByRole('button', { name: 'Codex', exact: true })).toContainText('Connected')
-    const detail = page.getByRole('region', { name: 'Provider configuration' })
+    const detail = page.getByRole('region', { name: 'Codex details' })
     await expect(detail.getByRole('button', { name: 'Disconnect Codex' })).toBeVisible()
-    await expect(detail.getByRole('alert')).toHaveCount(0)
+    await expect(list.getByRole('alert')).toHaveCount(0)
     if (OUT) await page.screenshot({ path: join(OUT, 'providers-with-forge-selected.png') })
 
     // Disconnect and Connect act on this computer's Codex; forge's stays as it was and stays selected.
@@ -99,8 +100,8 @@ test('Settings > Providers shows and acts on this computer’s clients while for
     expect(await codex(page)).toMatchObject({ selected: 'remote', remote: { connection: 'error' } })
     await expect(detail.getByRole('alert')).toHaveCount(0)
 
-    // Forge's own Codex is on its tile in Settings > Hosts.
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    // Forge's own Codex is on its tile in Settings > Hosts & phones.
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     const row = page.getByRole('region', { name: 'forge', exact: true })
     await row.getByRole('button', { name: 'Show providers on forge' }).click()
     const tile = row.getByRole('list', { name: 'Providers on forge' }).getByRole('listitem').filter({ has: page.getByRole('heading', { name: 'Codex', exact: true }) })

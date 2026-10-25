@@ -183,7 +183,7 @@ describe('FolderBrowserDialog', () => {
     const computers = await screen.findByRole('group', { name: 'Computers' })
     expect(within(computers).getByRole('button', { name: /studio/ })).toHaveTextContent('Off')
     await user.click(within(computers).getByRole('button', { name: /studio/ }))
-    expect(screen.getByRole('alert')).toHaveTextContent('studio is switched off, so its folders can\'t be listed. Nothing was changed. Switch it on in Settings > Hosts, then try again.')
+    expect(screen.getByRole('alert')).toHaveTextContent('studio is switched off, so its folders can\'t be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again.')
     expect(hostFolders).not.toHaveBeenCalled()
   })
 
@@ -435,7 +435,7 @@ describe('Add project', () => {
   })
 })
 
-describe('a folder chosen in New thread or New terminal', () => {
+describe('a folder chosen in New thread', () => {
   function Chooser({ onChoose }: { readonly onChoose: (choice: ProjectChoice) => void }) {
     const chooser = useProjectChooser(twoHosts(), onChoose, { hostId: FORGE })
     return <>{chooser.choices}</>

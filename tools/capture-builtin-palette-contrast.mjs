@@ -1,4 +1,4 @@
-// After build: mise exec node@24.21.0 -- node tools/capture-builtin-palette-contrast.mjs <output-root> [main-entry]
+// After build: mise exec node@24.22.1 -- node tools/capture-builtin-palette-contrast.mjs <output-root> [main-entry]
 // The captures land in <output-root>/builtin-palette-contrast/, through SOTTO_E2E_ARTIFACT_ROOT (docs/ci.md, E2e evidence).
 // Captures the surfaces #936 fixed in every built-in half. The live session tiles an owned nested Hyprland (A) at
 // whatever size its layout allows, so a second one (B) runs inside A, floated at an exact size; the app runs on B

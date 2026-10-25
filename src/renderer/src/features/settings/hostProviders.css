@@ -9,17 +9,18 @@
 .hosts-settings .host-providers__foot { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 12px; }
 
 /* One provider: its mark and name, a state line with a dot, a detail line and one action. */
-.host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); padding: 12px; }
-.host-provider[data-kind='not-installed'] { border-style: dashed; background: transparent; }
+.host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card); padding: 12px; }
+.host-provider[data-kind='not-installed'] { border: 1px dashed var(--tt-hairline); background: transparent; }
 .host-provider__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: 14px; font-weight: 600; }
-.host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-text-2); }
+.host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-text-2); }
 .host-provider__mark .provider-mark { fill: currentColor; }
 .host-provider__mark .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
 .host-provider__mark .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
 .host-provider__mark .provider-mark[data-provider='grok'] { color: var(--tt-provider-grok); }
 .host-provider__mark .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
 .host-provider__mark .provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
+.host-provider__mark .provider-mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
 .hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: 13px; }
 .hosts-settings .host-provider__detail { margin: 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .host-provider__act { align-self: end; min-width: 0; }
@@ -74,7 +75,7 @@
 
 /* A host's client updates (#480): the chip beside Show providers, and what a tile says about its client's update. */
 .host-providers__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; justify-self: start; min-width: 0; }
-.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: var(--tt-radius-pill); background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; }
+.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: 5px; background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; }
 .host-client-updates__chip:hover, .host-client-updates__chip[aria-expanded='true'] { border-color: var(--tt-update); }
 .host-client-updates__chip[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .host-client-updates__chip[data-tone='error']:hover, .host-client-updates__chip[data-tone='error'][aria-expanded='true'] { border-color: var(--tt-error); }
@@ -118,3 +119,6 @@
 .host-client-updates__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 @media (max-width: 700px) { .host-providers { padding-left: 0; } .host-providers__toggle.tt-button { margin-left: 0; } }
+
+/* A connected OpenCode's Model sources on this host (#1107): the block this computer's OpenCode tile has, under the tiles. */
+.host-providers__panel .oc-sources { margin-top: 0; padding: 14px 0; }

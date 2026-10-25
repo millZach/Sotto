@@ -5,6 +5,8 @@ import { watcherMessageRequests, watcherMessagesAsTyped, watcherRequestLine, wat
   type WatcherMessageRequest } from '../../../src/main/agents/watcherRequestNote'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../../src/shared/agents'
 import type { WatcherRequest } from '../../../src/shared/watcher'
+import { WATCHER_COMPACTED_NOTE } from '../../../src/main/agents/watcherRequestNote'
+import { watcherWaitsOn } from '../../../src/main/agents/watcherState'
 
 /** The footer exactly as main appended it to the user's text before the request note existed. */
 const footer = ({ requestId, hostId }: WatcherMessageRequest, projects = ['native:claude:project:' + randomUUID(), 'native:codex:project:' + randomUUID()]) =>
@@ -93,5 +95,27 @@ describe('Watcher request note', () => {
       // The provider's same message, handed over again, is shown as the same copy.
       expect(watcherMessagesAsTyped({ ...snapshot }, requests).threads[0]!.messages[0]).toBe(shown.threads[0]!.messages[0])
     })
+  })
+})
+
+describe('the note after a compaction (#1189)', () => {
+  it('tells Watcher to read its state back, and a Grok or Muse line carrying it comes off whole', () => {
+    const requestId = randomUUID(), hostId = randomUUID()
+    expect(watcherRequestNote(requestId, hostId, true)).toBe(`${watcherRequestNote(requestId, hostId)} ${WATCHER_COMPACTED_NOTE}`)
+    for (const compacted of [false, true]) {
+      const sent = `Watch the release thread${watcherRequestLine(watcherRequestNote(requestId, hostId, compacted))}`
+      expect(watcherTextAsTyped(sent, { requestId, hostId })).toBe('Watch the release thread')
+    }
+  })
+  it('says what a watched thread waits on in Sotto’s words', () => {
+    const thread = { status: 'idle' as const, connected: true, settled: false, backgroundWorkCount: 0, waitsOn: [] as { kind: 'question' | 'permission' }[], paused: false }
+    expect(watcherWaitsOn(thread)).toBe('Nothing. It is at rest.')
+    expect(watcherWaitsOn({ ...thread, status: 'running' })).toBe('Its turn to finish.')
+    expect(watcherWaitsOn({ ...thread, backgroundWorkCount: 2 })).toBe('The background work or sub-agents its last turn left running to end.')
+    expect(watcherWaitsOn({ ...thread, waitsOn: [{ kind: 'permission' }] })).toBe('The user’s answer to its permission request.')
+    expect(watcherWaitsOn({ ...thread, connected: false })).toBe('Its computer or provider to connect again.')
+    // A prototype waiting for review is the user's to open (ADR-0108); a card it waits on is said first.
+    expect(watcherWaitsOn({ ...thread, prototypeReady: true })).toBe('The user’s review of the prototype it made. Only the user can review it.')
+    expect(watcherWaitsOn({ ...thread, prototypeReady: true, waitsOn: [{ kind: 'question' }] })).toBe('The user’s answer to its question.')
   })
 })

@@ -57,7 +57,7 @@ function roomState(patch: Partial<WatcherRoomState> = {}): WatcherRoomState {
   return {
     current: identity, currentOptions: { modelId: 'claude:sonnet', reasoningEffort: null, runtimeMode: 'approval-required', status: 'idle', connected: true },
     history: [{ ...identity, target: target('watcher-old'), provider: 'codex' }], runtimeMode: 'approval-required', standingWatches: [], ownChanges: [],
-    requests: [], watchedThreads: [], inFlight: 0, inFlightLimit: 4, receipts: [], recoveryNotice: null, observedAt: at,
+    requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at,
     handover: { source: target('watcher-old'), provider: 'codex', counts }, ...patch,
   }
 }
@@ -69,7 +69,7 @@ function fakeBridge(initial: WatcherRoomState, options: { readonly handover?: bo
   const bridge = {
     get: vi.fn(async () => ({ status: 'ok' as const, state })),
     open: vi.fn(async ({ provider }: { provider: 'codex' | 'claude' | 'grok' }) => ok({ ...state, current: { ...identity, provider } })),
-    setLimit: vi.fn(), prepareStopAll: vi.fn(), stopAll: vi.fn(), setPermission: vi.fn(),
+    prepareStopAll: vi.fn(), stopAll: vi.fn(), setPermission: vi.fn(),
     onChanged: vi.fn((listener: (next: WatcherRoomState) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } }),
     ...options.handover === false ? {} : {
       readHandover: vi.fn(async (): Promise<WatcherHandoverRead> => ({ status: 'ok', text: WORDS, counts })),
@@ -195,6 +195,20 @@ describe('the handover over the new Watcher’s composer', () => {
     await waitFor(() => expect(bridge.dismissHandover).toHaveBeenCalledTimes(1))
     expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toHaveFocus()
     expect(sends(command)).toHaveLength(0)
+  })
+
+  it('puts the offer away even when the prompt editor’s own keymap takes Escape, unless a composer menu is open', async () => {
+    const { bridge } = renderRoom(roomState())
+    const pane = await watcherPane()
+    const box = within(pane).getByRole('textbox', { name: 'Watcher message' })
+    // The built editor's keymap prevents every Escape; the test editor does not, so this one stands in for it.
+    box.addEventListener('keydown', event => { if (event.key === 'Escape') event.preventDefault() })
+    box.setAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(bridge.dismissHandover).not.toHaveBeenCalled()
+    box.setAttribute('aria-expanded', 'false')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    await waitFor(() => expect(bridge.dismissHandover).toHaveBeenCalledTimes(1))
   })
 
   it('leaves the offer when Escape closes something open in the composer', async () => {

@@ -1,4 +1,4 @@
-// After build: mise exec node@24.21.0 -- node scripts/verify-omarchy-shell-integration.mjs
+// After build: mise exec node@24.22.1 -- node scripts/verify-omarchy-shell-integration.mjs
 // Real Electron + the installed plugin, in one isolated Omarchy session. No live input or config writes.
 import assert from 'node:assert/strict'
 import console from 'node:console'

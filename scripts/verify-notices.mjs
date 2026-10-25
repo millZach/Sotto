@@ -25,13 +25,16 @@ export const COMPOSER_NOTICE_COMPONENTS = Object.freeze([
 ])
 
 export const NOTICE_COMPONENTS = Object.freeze([
-  packageComponent('Electron', '43.1.0', 'MIT', 'Electron contributors', 'node_modules/electron'),
-  Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.1.0 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
+  packageComponent('Electron', '43.8.3', 'MIT', 'Electron contributors', 'node_modules/electron'),
+  Object.freeze({ name: 'Chromium and bundled third-party code', version: 'Electron 43.8.3 distribution', license: 'Multiple', attribution: 'Chromium authors and third-party contributors' }),
   packageComponent('react', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('react-dom', '19.2.7', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('scheduler', '0.27.0', 'MIT', 'Meta Platforms, Inc. and affiliates'),
   packageComponent('lucide-react', '1.24.0', 'ISC and MIT', 'Lucide Icons and Contributors; Cole Bemis'),
   ...COMPOSER_NOTICE_COMPONENTS,
+  // The interface language (ADR-0123), compiled into main and both windows.
+  packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
+  packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('zod', '4.4.3', 'MIT', 'Colin McDonnell'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
@@ -43,11 +46,20 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('node-pty', '1.1.0', 'MIT', 'Christopher Jeffrey; Daniel Imms; Microsoft Corporation'),
   packageComponent('node-addon-api', '7.1.1', 'MIT', 'Node.js API collaborators'),
   // Dictation's speech engine (ADR-0071). The native code is one package per platform, so it and the
-  // ONNX Runtime inside it are listed without a package path; the model downloads on first run.
+  // ONNX Runtime inside it are listed without a package path; the model downloads once the user chooses it.
   packageComponent('sherpa-onnx-node', '1.13.8', 'Apache-2.0', 'Xiaomi Corporation and the k2-fsa sherpa-onnx contributors'),
   Object.freeze({ name: 'sherpa-onnx', nameSuffix: ' (native package for this platform: win-x64, darwin-arm64 or linux-x64)', version: '1.13.8', license: 'Apache-2.0', attribution: 'Xiaomi Corporation and the k2-fsa sherpa-onnx contributors' }),
   Object.freeze({ name: 'ONNX Runtime', nameSuffix: ' (inside the sherpa-onnx native package)', version: '1.28.2', license: 'MIT', attribution: 'Microsoft Corporation' }),
-  Object.freeze({ name: 'Parakeet TDT 0.6B v3', nameSuffix: ' (speech model, 8-bit; downloaded on first run, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
+  // The macOS Core ML speech helper (native/coreml-asr) links FluidAudio and what FluidAudio compiles in.
+  Object.freeze({ name: 'FluidAudio', nameSuffix: ' (inside the macOS Core ML speech helper)', version: '0.17.7', license: 'Apache-2.0', attribution: 'FluidInference and the FluidAudio contributors' }),
+  Object.freeze({ name: 'NemoTextProcessing', nameSuffix: ' (text-processing-rs, inside FluidAudio)', version: '0.3.1', license: 'Apache-2.0', attribution: 'FluidInference; NVIDIA Corporation and affiliates' }),
+  Object.freeze({ name: 'rustfst', nameSuffix: ' (inside NemoTextProcessing)', version: 'as linked by text-processing-rs 0.3.1', license: 'MIT OR Apache-2.0', attribution: 'Alexandre Caulier and the rustfst contributors' }),
+  Object.freeze({ name: 'flate2', nameSuffix: ' (inside NemoTextProcessing)', version: 'as linked by text-processing-rs 0.3.1', license: 'MIT OR Apache-2.0', attribution: 'Alex Crichton and the flate2 contributors' }),
+  Object.freeze({ name: 'fastcluster', nameSuffix: ' (inside FluidAudio)', version: 'as vendored in FluidAudio 0.17.7', license: 'BSD-2-Clause', attribution: 'Daniel Müllner; Google Inc.' }),
+  // Sotto's downloadable speech models (ADR-0071, ADR-0094): none is in the installer.
+  Object.freeze({ name: 'Parakeet TDT 0.6B v3', nameSuffix: ' (speech model, 8-bit; downloaded when chosen, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
+  Object.freeze({ name: 'Parakeet Ultra', nameSuffix: ' (speech model, 8-bit; converted by Sotto; downloaded when chosen, not in the installer)', version: 'Sotto int8 export, speech-model-parakeet-ultra-int8-1', license: 'CC-BY-4.0', attribution: 'Moondream; NVIDIA Corporation' }),
+  Object.freeze({ name: 'Parakeet TDT 0.6B v2', nameSuffix: ' (speech model, 8-bit; downloaded when chosen, not in the installer)', version: 'sherpa-onnx int8 export', license: 'CC-BY-4.0', attribution: 'NVIDIA Corporation' }),
   // Compiled into the main-process bundle, so their code ships inside app.asar
   // even though npm records them as development dependencies.
   packageComponent('electron-updater', '6.8.9', 'MIT', 'Loopline Systems and electron-builder contributors'),
@@ -279,6 +291,8 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## Manrope SIL Open Font License 1.1',
     '## Spline Sans Mono SIL Open Font License 1.1',
     '## Figtree SIL Open Font License 1.1',
+    '## Interface language MIT licenses',
+    'Copyright (c) 2017-2022 Tomáš Ehrlich, (c) 2022-2023 Crowdin.',
     '## Markdown rendering MIT licenses',
     'Copyright (c) Espen Hovlandsdal',
     '## Markdown rendering ISC license',
@@ -293,6 +307,8 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## T3 Code MIT license',
     '## xterm.js MIT licenses',
     '## Native terminal MIT licenses',
+    '## Core ML speech helper licenses',
+    'https://github.com/FluidInference/FluidAudio',
     'Copyright (c) 2011-2016 Ryan Prichard',
     'Copyright (c) 2016, Daniel Imms',
     'Copyright (c) 2017 [Node.js API collaborators]',

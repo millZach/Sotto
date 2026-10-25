@@ -2,6 +2,7 @@ import { cloudIphoneBridgeFixture, cloudStatus } from '../../fixtures/renderer/c
 import React from 'react'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { i18n } from '@lingui/core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CloudIphoneSettings } from '../../../src/renderer/src/features/settings/CloudIphoneSettings'
 import { CloudIphoneStore } from '../../../src/renderer/src/tools/cloudIphoneStore'
@@ -95,6 +96,20 @@ describe('Settings > Cloud iPhone', () => {
     expect(meter).toHaveAttribute('aria-valuenow', '38')
     expect(meter).toHaveAttribute('aria-valuemax', '750')
     expect(meter).toHaveAttribute('aria-valuetext', '38 of 750 minutes')
+  })
+
+  it('writes English minutes past 999 ungrouped, as before, and another language groups them', async () => {
+    setup(status({ monthMinutes: 1234, capMinutes: 2000 }))
+    await screen.findByText('1234 of 2000 minutes')
+    cleanup()
+    i18n.loadAndActivate({ locale: 'de', messages: {} })
+    try {
+      setup(status({ monthMinutes: 1234, capMinutes: 2000 }))
+      // No German draft yet, so the words stay English; the numbers are German's.
+      await screen.findByText('1.234 of 2.000 minutes')
+    } finally {
+      i18n.activate('en')
+    }
   })
 
   it('rejects an out-of-range monthly cap without saving', async () => {

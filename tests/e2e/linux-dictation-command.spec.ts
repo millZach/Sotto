@@ -50,8 +50,9 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await expect(page.getByText(/Hold F9 to talk after installing/)).toBeVisible()
     await checkOnboardingLayout(page, /Hold F9 to talk after installing/, 'Get started')
     await reachFirstRunStep(page, 'speech-model', { microphone: 'skip' })
-    // An E2E run reports the speech model ready without downloading it.
-    await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+    // An E2E run offers Sotto's own model as already here and reports it ready without downloading it.
+    await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+    await page.getByRole('button', { name: 'Use Parakeet v3' }).click()
     await page.getByRole('button', { name: 'Continue', exact: true }).click()
     await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
     await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, /^(Continue|Skip for now)$/)
@@ -101,7 +102,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await expect(page.getByText('Compositor bindings', { exact: true })).toBeVisible()
     await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
     await expect(page.getByLabel('Global shortcut', { exact: true })).toHaveCount(0)
-    await page.getByRole('tab', { name: 'Output', exact: true }).click()
+    await page.locator('#settings-output').scrollIntoViewIfNeeded()
     await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
     for (const appearance of ['dark', 'light'] as const) {
@@ -111,7 +112,7 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
         await page.setViewportSize({ width, height })
         expect(await page.evaluate(() => innerWidth)).toBe(width)
         await expect(page.getByText(/Compositor bindings live in Hyprland/)).toBeVisible()
-        await page.getByRole('tab', { name: 'Output', exact: true }).click()
+        await page.locator('#settings-output').scrollIntoViewIfNeeded()
         await expect(page.getByText(/Pastes into the focused window, terminals included/)).toBeVisible()
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
         if (width === 820 && appearance === 'dark') await capture('settings-820x560-dark.png')

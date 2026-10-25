@@ -1,6 +1,10 @@
-import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg, plural, t } from '@lingui/core/macro'
+
+import { isTerminalActivity, THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -21,13 +25,26 @@ export interface ActivityGroup {
 
 export interface ActivityPlacement {
   readonly after: ReadonlyMap<string, readonly ActivityGroup[]>
+  /**
+   * The work of an unshown turn, by the first reply it wrote: a turn whose own message the conversation leaves out, such as
+   * Watcher's news wake-up (`watcherWakeUpsAsShown`). That reply opens a turn of its own in the transcript.
+   */
+  readonly unshown: ReadonlyMap<string, readonly ActivityGroup[]>
+  /** The work of an unshown turn that wrote no reply, by the message that came next. */
+  readonly before: ReadonlyMap<string, readonly ActivityGroup[]>
   /** Precedes the first message: work from before every turn the messages show, when nothing earlier can be loaded. */
   readonly leading: readonly ActivityGroup[]
   /** Follows the last message: records with no anchor Sotto can show. */
   readonly trailing: readonly ActivityGroup[]
+  /**
+   * The newest turn of the messages the window holds, drawn or not, ended, and another turn is running: its own lifecycle
+   * completed, failed or stopped, and a lifecycle record of a turn that is not its own says it runs. Only then is the work
+   * going on not the newest turn's, such as Watcher's news turn, whose wake-up the conversation leaves out. Absent otherwise.
+   */
+  readonly newestTurnEnded?: true
 }
 
-const EMPTY: ActivityPlacement = { after: new Map(), leading: [], trailing: [] }
+const EMPTY: ActivityPlacement = { after: new Map(), unshown: new Map(), before: new Map(), leading: [], trailing: [] }
 
 /** The provider's turn lifecycle, as opposed to a status notice such as a retry. */
 export function isTurnRecord(record: AgentActivity): boolean {
@@ -48,6 +65,12 @@ const bySequence = (a: AgentActivity, b: AgentActivity): number => a.sequence - 
  * give it its places once loaded, and otherwise leads the conversation. Either way a turn's work never
  * lands under the answer of a turn that came after it. Main already keeps back the work it can place above
  * the loaded window, so this is the rule for work it could not place.
+ *
+ * Before either rule, a turn whose own message is left out of the conversation, an unshown turn, sits where it happened
+ * when the messages say where: its reply is the message that names the turn (`turnMessageId`), else, for a turn that began
+ * inside the window, the first one written after it began, before the next turn began and before it ended. With a reply,
+ * the work goes with it (`unshown`); without one, it goes before the next turn the transcript starts (`before`). This holds
+ * even when it began before every placed turn, since the records keep only the newest turns' work.
  */
 export function placeActivities(
   messages: readonly AgentMessage[],
@@ -56,10 +79,11 @@ export function placeActivities(
   historyLoading = false,
   earlierAvailable = false,
 ): ActivityPlacement {
-  if (!activities?.length) return EMPTY
   const known = new Set(messages.map(message => message.id))
-  const order = new Map(messages.map((message, index) => [message.id, index]))
+  const named = namingUnshown(messages, known)
   const visible = new Set(rendered.map(message => message.id))
+  if (!activities?.length) return named.size ? { ...EMPTY, unshown: new Map([...named].filter(id => visible.has(id)).map(id => [id, []])) } : EMPTY
+  const order = new Map(messages.map((message, index) => [message.id, index]))
   const sorted = [...activities].sort(bySequence)
 
   const anchors = new Map<AgentActivity, string | null>()
@@ -132,19 +156,142 @@ export function placeActivities(
     ;(reading.find(draft => draft.records.length && !draft.boundary) ?? reading.find(draft => !draft.boundary) ?? reading[0]!).turn = turn
   }
 
+  const places = historyLoading ? new Map<string, { readonly reply?: string; readonly next?: string }>() : unshownPlaces(messages, sorted, anchors)
   const after = new Map<string, ActivityGroup[]>()
+  const unshown = new Map<string, ActivityGroup[]>()
+  const before = new Map<string, ActivityGroup[]>()
   const leading: ActivityGroup[] = []
   const trailing: ActivityGroup[] = []
+  const put = (map: Map<string, ActivityGroup[]>, id: string, group: ActivityGroup): void => { if (visible.has(id)) map.set(id, [...map.get(id) ?? [], group]) }
   // Work that leads the conversation is only in view while nothing sits above the first message.
   const leads = !historyLoading && !earlierAvailable && rendered[0] !== undefined && rendered[0].id === messages[0]?.id
   for (const draft of [...drafts.values()].sort((a, b) => a.first - b.first)) {
     if (!shouldShow(draft)) continue
     const group: ActivityGroup = { key: draft.key, turnId: draft.turnId, anchorMessageId: draft.anchorMessageId, records: draft.records, ...(draft.turn ? { turn: draft.turn } : {}) }
-    if (draft.anchorMessageId !== null) { if (visible.has(draft.anchorMessageId)) after.set(draft.anchorMessageId, [...after.get(draft.anchorMessageId) ?? [], group]) }
+    const place = places.get(draft.turnId)
+    if (draft.anchorMessageId !== null) put(after, draft.anchorMessageId, group)
+    else if (place?.reply !== undefined) put(unshown, place.reply, group)
+    else if (place?.next !== undefined) put(before, place.next, group)
     else if (shownFrom !== undefined && began.get(draft.turnId)! < shownFrom) { if (leads) leading.push(group) }
     else if (!historyLoading) trailing.push(group)
   }
-  return { after, leading, trailing }
+  // A reply opens its unshown turn even when none of the turn's work is shown, or the work is gone from the records.
+  for (const id of [...named, ...[...places.values()].flatMap(place => place.reply ?? [])]) if (visible.has(id) && !unshown.has(id)) unshown.set(id, [])
+  return { after, unshown, before, leading, trailing, ...newestTurnEnded(messages, sorted, anchors, named, places) ? { newestTurnEnded: true as const } : {} }
+}
+
+/**
+ * Whether the newest turn ended while another runs (`ActivityPlacement.newestTurnEnded`), read over every message the
+ * window holds, so a window that starts inside the turn still finds the records that follow its first message. The turn
+ * runs from its opening, the last user message or reply that opens an unshown turn, to the end. Its own turns are the ones
+ * whose records follow those messages, the unshown turn a reply of it opens, and the ones its messages' IDs, or the message
+ * its replies name as the start of their turn, stand for. Only lifecycle records count: work a provider leaves running
+ * after its turn ended, such as a background agent or a plan, says nothing about which turn is going.
+ */
+function newestTurnEnded(messages: readonly AgentMessage[], sorted: readonly AgentActivity[], anchors: ReadonlyMap<AgentActivity, string | null>,
+  named: ReadonlySet<string>, places: ReadonlyMap<string, { readonly reply?: string; readonly next?: string }>): boolean {
+  const opens = new Set([...named, ...[...places.values()].flatMap(place => place.reply ?? [])])
+  const from = Math.max(0, messages.findLastIndex(message => message.role === 'user' || opens.has(message.id)))
+  const ids = new Set(messages.slice(from).flatMap(message => message.turnMessageId === undefined ? [message.id] : [message.id, message.turnMessageId]))
+  const own = new Set(ids)
+  for (const record of sorted) { const anchor = anchors.get(record); if (anchor && ids.has(anchor)) own.add(record.turnId) }
+  for (const [turnId, place] of places) if (place.reply !== undefined && ids.has(place.reply)) own.add(turnId)
+  const lifecycles = new Map(sorted.filter(isTurnRecord).map(record => [record.turnId, record.status] as const))
+  let ended = false, going = false, another = false
+  for (const [turnId, status] of lifecycles) {
+    if (own.has(turnId)) { if (status === 'running') going = true; else if (isTerminalActivity(status)) ended = true }
+    else if (status === 'running') another = true
+  }
+  return ended && !going && another
+}
+
+
+/**
+ * The first reply of each turn whose message the conversation leaves out, told by the turn the reply names (`turnMessageId`).
+ * Replies before the first user message the window holds may name one above the window instead, so they are not read.
+ */
+function namingUnshown(messages: readonly AgentMessage[], known: ReadonlySet<string>): ReadonlySet<string> {
+  const replies = new Set<string>()
+  const seen = new Set<string>()
+  const first = messages.findIndex(item => item.role === 'user')
+  if (first < 0) return replies
+  for (const message of messages.slice(first + 1)) {
+    const turn = message.role === 'user' ? undefined : message.turnMessageId
+    if (turn === undefined || known.has(turn) || seen.has(turn)) continue
+    seen.add(turn)
+    replies.add(message.id)
+  }
+  return replies
+}
+
+/** When a record says it began, or NaN. */
+const startedAt = (record: AgentActivity): number => record.startedAt ? Date.parse(record.startedAt) : Number.NaN
+
+/** How long after a turn ended its reply may still be stamped, for clocks that disagree a little. */
+const REPLY_SLACK_MS = 2_000
+
+/**
+ * Where each unshown turn sits: the reply it wrote, or the message that came after it. A turn is unshown when the
+ * messages give it no place, or when its first record names a message they leave out and its later records follow a
+ * reply it wrote, as Codex and Grok Build anchor them. A reply that names the turn, or that the turn's own records
+ * follow, is its own; failing that, the first message written after the turn began is its reply when it is not a
+ * user's, names no other turn, and came before another turn began and before this one ended. Turns are matched in the
+ * order they began, so each reply has one turn. A turn Sotto cannot date, or one that began before the first message the
+ * window holds, has no place here; nor does a reply before the first user message, which may belong above the window.
+ */
+function unshownPlaces(messages: readonly AgentMessage[], sorted: readonly AgentActivity[],
+  anchors: ReadonlyMap<AgentActivity, string | null>): ReadonlyMap<string, { readonly reply?: string; readonly next?: string }> {
+  const places = new Map<string, { reply?: string; next?: string }>()
+  const index = new Map(messages.map((message, at) => [message.id, at]))
+  const firstUser = messages.findIndex(message => message.role === 'user')
+  interface Turn { readonly ids: Set<string>; start?: number; ended?: number; running: boolean; first?: AgentActivity; followed?: string; placed: boolean }
+  const turns = new Map<string, Turn>()
+  for (const record of sorted) {
+    const turn = turns.get(record.turnId) ?? { ids: new Set([record.turnId]), running: false, placed: false }
+    turns.set(record.turnId, turn)
+    turn.first ??= record
+    const anchor = anchors.get(record)
+    if (anchor !== null && anchor !== undefined) { turn.placed = true; turn.followed ??= anchor }
+    if (record.afterMessageId !== undefined) turn.ids.add(record.afterMessageId)
+    const start = startedAt(record)
+    if (Number.isFinite(start) && (turn.start === undefined || start < turn.start)) turn.start = start
+    const done = record.completedAt ? Date.parse(record.completedAt) : Number.NaN
+    if (Number.isFinite(done) && (turn.ended === undefined || done > turn.ended)) turn.ended = done
+    if (record.status === 'running') turn.running = true
+  }
+  const opensTurn = (message: AgentMessage | undefined): message is AgentMessage =>
+    message !== undefined && message.role !== 'user' && firstUser >= 0 && index.get(message.id)! > firstUser
+  const claimed = new Set<string>()
+  const claim = (turnId: string, reply: AgentMessage): void => { claimed.add(reply.id); places.set(turnId, { reply: reply.id }) }
+  for (const [turnId, turn] of turns) {
+    const own = turn.first?.afterMessageId
+    // Placed, but begun from a message the conversation leaves out: the reply its records follow opens it.
+    if (turn.placed) {
+      const reply = own !== undefined && !index.has(own) && !index.has(turnId) && turn.followed !== undefined ? messages[index.get(turn.followed)!] : undefined
+      if (opensTurn(reply) && !claimed.has(reply.id)) claim(turnId, reply)
+      continue
+    }
+    // A reply that names the turn it answers is the turn's, whatever the clocks say.
+    const named = messages.find(message => message.role !== 'user' && message.turnMessageId !== undefined && turn.ids.has(message.turnMessageId) && !claimed.has(message.id))
+    if (named) claim(turnId, named)
+  }
+  const opened = messages[0] ? Date.parse(messages[0].createdAt) : Number.NaN
+  const dated = [...turns].filter(([turnId, turn]) => !turn.placed && !places.has(turnId) && turn.start !== undefined && turn.start >= opened)
+    .sort(([, a], [, b]) => a.start! - b.start!)
+  for (const [turnId, turn] of dated) {
+    let next = Number.POSITIVE_INFINITY
+    for (const [other, { start }] of turns) if (other !== turnId && start !== undefined && start > turn.start! && start < next) next = start
+    const end = Math.min(next, !turn.running && turn.ended !== undefined ? turn.ended + REPLY_SLACK_MS : Number.POSITIVE_INFINITY)
+    const first = messages.find(message => Date.parse(message.createdAt) >= turn.start!)
+    if (first && first.role !== 'user' && first.turnMessageId === undefined && Date.parse(first.createdAt) < end && !claimed.has(first.id)) claim(turnId, first)
+  }
+  // A turn that wrote nothing goes before the next turn the transcript starts: a user's message or an unshown turn's reply.
+  for (const [turnId, turn] of dated) {
+    if (places.has(turnId)) continue
+    const next = messages.find(message => (message.role === 'user' || claimed.has(message.id)) && Date.parse(message.createdAt) >= turn.start!)
+    if (next) places.set(turnId, { next: next.id })
+  }
+  return places
 }
 
 /** A lone lifecycle record is shown only when it says something the answer does not: the turn stopped or failed. The live row covers a running turn. */
@@ -164,6 +311,16 @@ export function liveTurnId(thread: Pick<AgentThread, 'status' | 'activities' | '
   const turns = (thread.activities ?? []).filter(record => isTurnRecord(record) && record.status === 'running').sort(bySequence)
   return turns.at(-1)?.turnId ?? thread.messages.findLast(message => message.role === 'user')?.id ?? null
 }
+
+/**
+ * A turn's steps: every record its work draws as a row, in the order they were reported. Its lifecycle record says how
+ * the turn went rather than what it did, and a compaction is a boundary drawn across the transcript, so neither counts.
+ */
+export function turnSteps(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity[] {
+  return (thread.activities ?? []).filter(record => record.turnId === turnId && isStep(record)).sort(bySequence)
+}
+export const isStep = (record: AgentActivity): boolean => !isTurnRecord(record) && record.kind !== 'compaction'
+export const stepsLabel = (count: number): string => plural(count, { one: `${{ stepCount: shownCount(count) }} step`, other: `${{ stepCount: shownCount(count) }} steps` })
 
 /** The most recent record of the live turn that is still running: the current action. */
 export function currentAction(thread: Pick<AgentThread, 'activities'>, turnId: string): AgentActivity | undefined {
@@ -229,7 +386,7 @@ export function heldLongEnough(action: Pick<AgentActivity, 'startedAt'>, now: nu
 
 /** What the readout calls the action: the command as it was run, else the provider's own title. */
 export function heldLabel(action: Pick<AgentActivity, 'command' | 'title'>): string {
-  return oneLine(action.command ?? '') || oneLine(action.title) || 'Running'
+  return oneLine(action.command ?? '') || oneLine(action.title) || t({ message: 'Running', comment: 'An action that is running, when it has no name of its own.' })
 }
 
 export function formatDuration(ms: number): string {
@@ -258,17 +415,17 @@ function recordDuration(record: Pick<AgentActivity, 'durationMs' | 'startedAt' |
 export function timingNote(record: AgentActivity, provider: string): string {
   if (record.status === 'running') return ''
   const duration = recordDuration(record)
-  if (duration === undefined) return 'Time not recorded'
-  if (record.timingSource === 'provider') return `Reported by ${provider}`
+  if (duration === undefined) return t`Time not recorded`
+  const reported = t({ message: `Reported by ${provider}`, comment: 'Where an action\'s time came from; {provider} is the provider\'s name.' })
+  if (record.timingSource === 'provider') return reported
   const span = record.startedAt && record.completedAt ? recordDuration({ startedAt: record.startedAt, completedAt: record.completedAt }) : undefined
-  return record.timingSource === 'observed' && span !== undefined && (record.durationMs === undefined || record.durationMs === span) ? 'Timed by Sotto' : `Reported by ${provider}`
+  return record.timingSource === 'observed' && span !== undefined && (record.durationMs === undefined || record.durationMs === span) ? t`Timed by Sotto` : reported
 }
 
 const firstLine = (value: string | undefined): string => (value ?? '').split(/\r?\n/u).map(line => line.trim()).find(Boolean) ?? ''
 /** A one-line preview reads as words: heading marks, emphasis and code ticks belong to the Markdown, not the text. */
 const plainLine = (value: string | undefined): string => firstLine(value).replace(/^#{1,6}\s+/u, '').replace(/(\*\*|__)(.+?)\1/gu, '$2').replace(/`([^`]+)`/gu, '$1')
 const oneLine = (value: string): string => value.replace(/\s+/gu, ' ').trim()
-const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`
 
 /** "spawnAgent" and "wait_agents" read as words; anything else stays as the provider named it. */
 function toolName(title: string): string {
@@ -290,8 +447,12 @@ export interface ActivityLabel {
 /** An open multi-file change lists every file below, so its row names the count instead of repeating the first path. */
 export function openActivityLabel(record: AgentActivity): ActivityLabel {
   const changes = record.changes ?? []
-  return record.kind === 'file-change' && changes.length > 1
-    ? { lead: 'Changed', subject: plural(changes.length, 'file', 'files'), mono: false, preview: '' }
+  const count = changes.length
+  return activityLeadKind(record, true) === 'changed'
+    ? {
+        lead: t({ message: 'Changed', comment: 'Before a count of files: Changed 3 files.' }),
+        subject: plural(count, { one: `${{ files: shownCount(count) }} file`, other: `${{ files: shownCount(count) }} files` }), mono: false, preview: '',
+      }
     : { ...activityLabel(record), preview: '' }
 }
 
@@ -325,12 +486,56 @@ function inputPreview(input: Record<string, unknown> | null): string {
   return ''
 }
 
-const CHANGE_VERBS: Record<string, string> = {
-  add: 'Created', create: 'Created', delete: 'Deleted', update: 'Edited', edit: 'Edited', move: 'Moved',
-  Write: 'Wrote', Edit: 'Edited', MultiEdit: 'Edited', NotebookEdit: 'Edited',
+type ChangeVerb = 'created' | 'deleted' | 'edited' | 'moved' | 'wrote'
+const CHANGE_VERBS: Record<string, ChangeVerb> = {
+  add: 'created', create: 'created', delete: 'deleted', update: 'edited', edit: 'edited', move: 'moved',
+  Write: 'wrote', Edit: 'edited', MultiEdit: 'edited', NotebookEdit: 'edited',
+}
+/** Before a file's path, such as "Edited src/app.ts". */
+const CHANGE_VERB_WORDS: Record<ChangeVerb, MessageDescriptor> = {
+  created: msg({ message: 'Created', comment: 'A file change, before the file\'s path.' }),
+  deleted: msg({ message: 'Deleted', context: 'file change', comment: 'A file change, before the file\'s path.' }),
+  edited: msg({ message: 'Edited', comment: 'A file change, before the file\'s path.' }),
+  moved: msg({ message: 'Moved', comment: 'A file change, before the file\'s path.' }),
+  wrote: msg({ message: 'Wrote', comment: 'A file change, before the file\'s path.' }),
+}
+const changeVerbOf = (kind: string): ChangeVerb | undefined => Object.hasOwn(CHANGE_VERBS, kind) ? CHANGE_VERBS[kind] : undefined
+
+/** The verb that leads a row's subject: a file change's, or "Changed" over an open change of several files. */
+export type ActivityLeadKind = ChangeVerb | 'changed'
+
+/**
+ * Which verb leads a row, if any, so the window draws the verb and its subject as one message: a language puts the
+ * path where its grammar wants it (ADR-0123). `open` is the row of an open change, which names its count instead.
+ */
+export function activityLeadKind(record: AgentActivity, open = false): ActivityLeadKind | null {
+  if (record.kind !== 'file-change') return null
+  const changes = record.changes ?? []
+  if (!changes.length) return null
+  if (open && changes.length > 1) return 'changed'
+  const verbs = new Set(changes.map(change => changeVerbOf(change.kind) ?? change.kind))
+  const only = verbs.size === 1 ? [...verbs][0]! : ''
+  return only === 'created' || only === 'deleted' || only === 'wrote' || only === 'moved' ? only : 'edited'
+}
+
+/** A row's verb and subject as one sentence to read aloud, such as "Edited src/app.ts". */
+export function spokenActivity(kind: ActivityLeadKind | null, label: Pick<ActivityLabel, 'lead' | 'subject'>): string {
+  const subject = label.subject
+  switch (kind) {
+    case 'created': return t({ message: `Created ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'deleted': return t({ message: `Deleted ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'edited': return t({ message: `Edited ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'moved': return t({ message: `Moved ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'wrote': return t({ message: `Wrote ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'changed': return t({ message: `Changed ${subject}`, comment: 'An open change of several files; {subject} is how many, such as 3 files.' })
+    default: return label.lead ? `${label.lead} ${subject}` : subject
+  }
 }
 /** Codex, Claude and Grok name the same changes differently; an unrecognized kind is shown as reported. */
-export const changeVerb = (kind: string): string => CHANGE_VERBS[kind] ?? kind
+export const changeVerb = (kind: string): string => {
+  const verb = changeVerbOf(kind)
+  return verb === undefined ? kind : i18n._(CHANGE_VERB_WORDS[verb])
+}
 
 const BEFORE = '--- before\n'
 const AFTER = '\n+++ after\n'
@@ -384,9 +589,10 @@ export function inputDetail(record: AgentActivity): string {
 /** What a compaction reclaimed, naming only the sides the provider actually reported. */
 export function compactionSummary(record: AgentActivity): string {
   const before = record.context?.before, after = record.context?.after
-  if (before !== undefined && after !== undefined) return `${formatTokenCount(before)} → ${formatTokenCount(after)} tokens`
-  if (after !== undefined) return `now ${formatTokenCount(after)} tokens`
-  if (before !== undefined) return `was ${formatTokenCount(before)} tokens`
+  const from = before === undefined ? '' : formatTokenCount(before), to = after === undefined ? '' : formatTokenCount(after)
+  if (before !== undefined && after !== undefined) return t({ message: `${from} → ${to} tokens`, comment: 'The context\'s size before and after a compaction, such as 120k → 30k tokens.' })
+  if (after !== undefined) return t({ message: `now ${to} tokens`, comment: 'The context\'s size after a compaction.' })
+  if (before !== undefined) return t({ message: `was ${from} tokens`, comment: 'The context\'s size before a compaction.' })
   return ''
 }
 
@@ -403,10 +609,10 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
     case 'file-change': {
       const changes = record.changes ?? []
       if (!changes.length) return { lead: '', subject: record.title, mono: false, preview: '' }
-      const verbs = new Set(changes.map(change => changeVerb(change.kind)))
-      const only = verbs.size === 1 ? [...verbs][0]! : ''
-      const lead = ['Created', 'Deleted', 'Wrote', 'Moved'].includes(only) ? only : 'Edited'
-      return { lead, subject: changes[0]!.path, mono: true, preview: changes.length > 1 ? `and ${plural(changes.length - 1, 'more file', 'more files')}` : '' }
+      const kind = activityLeadKind(record)
+      const lead = i18n._(CHANGE_VERB_WORDS[kind === null || kind === 'changed' ? 'edited' : kind])
+      const more = changes.length - 1
+      return { lead, subject: changes[0]!.path, mono: true, preview: more > 0 ? plural(more, { one: `and ${{ files: shownCount(more) }} more file`, other: `and ${{ files: shownCount(more) }} more files` }) : '' }
     }
     case 'subagent': {
       const input = activityInput(record)
@@ -414,12 +620,13 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
       const agents = record.agents?.filter(agent => agent.kind !== 'workflow').length ?? 0
       const described = typeof input?.description === 'string' && input.description.trim() ? oneLine(input.description) : ''
       return { lead: '', subject: described || toolName(record.title), mono: false,
-        preview: agents ? plural(agents, 'agent', 'agents') : input ? '' : plainLine(record.text) }
+        preview: agents ? plural(agents, { one: '# agent', other: '# agents' }) : input ? '' : plainLine(record.text) }
     }
     case 'plan': {
       const steps = record.steps ?? []
+      const done = steps.filter(step => step.status === 'completed').length, total = steps.length
       return { lead: '', subject: record.title, mono: false,
-        preview: steps.length ? `${steps.filter(step => step.status === 'completed').length} of ${steps.length} done` : plainLine(record.text) }
+        preview: total ? t({ message: `${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`, comment: 'A plan\'s steps: 2 of 5 done.' }) : plainLine(record.text) }
     }
     case 'compaction':
       return { lead: '', subject: record.title, mono: false, preview: compactionSummary(record) }
@@ -460,10 +667,13 @@ export function nestActivities(records: readonly AgentActivity[]): readonly Acti
 /** The one fact beside a row. Running rows add their clock separately. */
 export function statusText(record: AgentActivity, connected: boolean): string {
   switch (record.status) {
-    case 'running': return connected ? 'Running' : 'Last seen running'
-    case 'failed': return record.exitCode !== undefined && record.exitCode !== 0 ? `Exit ${record.exitCode}` : 'Failed'
-    case 'interrupted': return 'Stopped'
-    case 'unknown': return 'Outcome unknown'
+    case 'running': return connected ? t({ message: 'Running', comment: 'An action that is running, beside its row.' }) : t`Last seen running`
+    case 'failed': {
+      const code = record.exitCode
+      return code !== undefined && code !== 0 ? t({ message: `Exit ${code}`, comment: 'A command that ended with this exit code.' }) : t({ message: 'Failed', comment: 'An action or turn that failed.' })
+    }
+    case 'interrupted': return t({ message: 'Stopped', comment: 'An action or turn that was stopped.' })
+    case 'unknown': return t`Outcome unknown`
     default: {
       const duration = recordDuration(record)
       return duration === undefined ? '' : formatDuration(duration)
@@ -471,11 +681,19 @@ export function statusText(record: AgentActivity, connected: boolean): string {
   }
 }
 
-const AGENT_STATUS: Record<string, string> = {
-  pendingInit: 'Starting', running: 'Running', active: 'Running', completed: 'Completed', errored: 'Failed', failed: 'Failed',
-  shutdown: 'Closed', notFound: 'Not found', interrupted: 'Stopped', unknown: 'Unknown',
+const AGENT_STATUS: Record<string, MessageDescriptor> = {
+  pendingInit: msg({ message: 'Starting', comment: 'A background agent\'s status.' }),
+  running: msg({ message: 'Running', comment: 'An action that is running, beside its row.' }),
+  active: msg({ message: 'Running', comment: 'An action that is running, beside its row.' }),
+  completed: msg({ message: 'Completed', comment: 'A background agent\'s status.' }),
+  errored: msg({ message: 'Failed', comment: 'An action or turn that failed.' }),
+  failed: msg({ message: 'Failed', comment: 'An action or turn that failed.' }),
+  shutdown: msg({ message: 'Closed', comment: 'A background agent\'s status.' }),
+  notFound: msg({ message: 'Not found', comment: 'A background agent\'s status.' }),
+  interrupted: msg({ message: 'Stopped', comment: 'An action or turn that was stopped.' }),
+  unknown: msg({ message: 'Unknown', comment: 'A background agent\'s status.' }),
 }
-export const agentStatusLabel = (status: string): string => AGENT_STATUS[status] ?? status
+export const agentStatusLabel = (status: string): string => Object.hasOwn(AGENT_STATUS, status) ? i18n._(AGENT_STATUS[status]!) : status
 
 /** "Ran 3 commands, changed 2 files": counts of what the provider reported, nothing estimated. */
 export function groupSummary(records: readonly AgentActivity[]): string {
@@ -484,20 +702,26 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   // Thinking a provider streamed and Codex's reasoning summaries share a row, but not a name.
   const thoughts = count('reasoning').filter(record => record.title === THINKING_TITLE).length
   const summaries = count('reasoning').length - thoughts
+  const commands = count('command').length, changed = files.size, tools = count('tool').length, actions = count('subagent').length
+  const notices = count('status').length
+  // Each part starts lowercase: they are joined with commas, and the first letter of the whole is made a capital.
   const parts = [
-    count('command').length ? `ran ${plural(count('command').length, 'command', 'commands')}` : '',
-    files.size ? `changed ${plural(files.size, 'file', 'files')}` : '',
-    count('tool').length ? `used ${plural(count('tool').length, 'tool', 'tools')}` : '',
-    count('subagent').length ? plural(count('subagent').length, 'agent action', 'agent actions') : '',
-    count('plan').length ? 'updated the plan' : '',
-    summaries ? plural(summaries, 'reasoning summary', 'reasoning summaries') : '',
-    thoughts ? thoughts === 1 ? 'thought once' : `thought ${thoughts} times` : '',
-    count('status').length ? plural(count('status').length, 'notice', 'notices') : '',
-    count('compaction').length ? 'compacted the context' : '',
+    commands ? plural(commands, { one: `ran ${{ commandCount: shownCount(commands) }} command`, other: `ran ${{ commandCount: shownCount(commands) }} commands` }) : '',
+    changed ? plural(changed, { one: `changed ${{ fileCount: shownCount(changed) }} file`, other: `changed ${{ fileCount: shownCount(changed) }} files` }) : '',
+    tools ? plural(tools, { one: `used ${{ toolCount: shownCount(tools) }} tool`, other: `used ${{ toolCount: shownCount(tools) }} tools` }) : '',
+    actions ? plural(actions, { one: `${{ actionCount: shownCount(actions) }} agent action`, other: `${{ actionCount: shownCount(actions) }} agent actions` }) : '',
+    count('plan').length ? t({ message: 'updated the plan', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
+    summaries ? plural(summaries, { one: `${{ summaryCount: shownCount(summaries) }} reasoning summary`, other: `${{ summaryCount: shownCount(summaries) }} reasoning summaries` }) : '',
+    thoughts ? plural(thoughts, { one: 'thought once', other: `thought ${{ times: shownCount(thoughts) }} times` }) : '',
+    notices ? plural(notices, { one: `${{ noticeCount: shownCount(notices) }} notice`, other: `${{ noticeCount: shownCount(notices) }} notices` }) : '',
+    count('compaction').length ? t({ message: 'compacted the context', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
   ].filter(Boolean)
   const text = parts.join(', ')
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
+
+/** The record and change a turn's diff came from, when its host sent the diff cut (ADR-0025, October 18 amendment). */
+export interface TurnDiffSource { readonly record: AgentActivity; readonly index: number }
 
 export interface TurnChange {
   readonly path: string
@@ -505,21 +729,50 @@ export interface TurnChange {
   readonly verb: string
   /** Every diff reported for the path, in the order they happened. */
   readonly diffs: readonly string[]
+  /** Beside `diffs`, where each cut diff came from; only a change with a cut diff has it. */
+  readonly sources?: readonly (TurnDiffSource | undefined)[]
+}
+
+/**
+ * Whether the diff a record's change shows is cut: the host sent the diff itself cut, or the change has none and the row
+ * draws it from the record's tool input, which was cut.
+ */
+export function changeDiffIsCut(record: AgentActivity, index: number): boolean {
+  if (record.cut === undefined) return false
+  if (record.cut.diffs?.some(item => item.index === index)) return true
+  return record.cut.text !== undefined && record.changes?.[index]?.diff === undefined
 }
 
 /** Every file a turn changed, first touched first, so a finished turn can say what it left behind. */
 export function turnChanges(groups: readonly ActivityGroup[]): readonly TurnChange[] {
-  const files = new Map<string, { path: string; verb: string; diffs: string[] }>()
+  const files = new Map<string, { path: string; verb: string; diffs: string[]; sources?: (TurnDiffSource | undefined)[] }>()
+  const seenByPath = new Map<string, Set<string>>()
   const records = groups.flatMap(group => [...group.records]).sort(bySequence)
   for (const record of records) {
     if (record.kind !== 'file-change') continue
-    for (const change of activityChanges(record)) {
+    for (const [index, change] of activityChanges(record).entries()) {
       const file = files.get(change.path) ?? { path: change.path, verb: changeVerb(change.kind), diffs: [] }
-      if (change.diff && !file.diffs.includes(change.diff)) file.diffs.push(change.diff)
+      const seenDiffs = seenByPath.get(change.path) ?? new Set<string>()
+      seenByPath.set(change.path, seenDiffs)
+      // A cut diff is only its start, so two edits that open alike are told apart by how long each was whole.
+      const seen = change.diff && changeDiffIsCut(record, index) ? `${change.diff}\u0000${cutDiffBytes(record, index)}` : change.diff
+      if (change.diff && seen && !seenDiffs.has(seen)) {
+        seenDiffs.add(seen)
+        file.diffs.push(change.diff)
+        if (changeDiffIsCut(record, index)) {
+          file.sources ??= file.diffs.slice(0, -1).map(() => undefined)
+          file.sources.push({ record, index })
+        } else file.sources?.push(undefined)
+      }
       files.set(change.path, file)
     }
   }
   return [...files.values()]
+}
+
+/** How long a cut diff was whole: its own size when the host cut it, else the size of the tool input it is drawn from. */
+function cutDiffBytes(record: AgentActivity, index: number): number | undefined {
+  return record.cut?.diffs?.find(item => item.index === index)?.bytes ?? record.cut?.text
 }
 
 /** The header of a settled group: how the turn ended and, when recorded, how long it took. */
@@ -528,14 +781,13 @@ export function turnHeadline(turn: AgentActivity | undefined, threadRunning: boo
   const duration = recordDuration(turn)
   const took = duration === undefined ? '' : formatDuration(duration)
   switch (turn.status) {
-    case 'completed': return took ? `Worked for ${took}` : 'Worked'
-    case 'failed': return took ? `Failed after ${took}` : 'Failed'
-    case 'interrupted': {
-      const ended = turn.steered === true ? 'Steered' : 'Stopped'
-      return took ? `${ended} after ${took}` : ended
-    }
-    case 'running': return threadRunning ? 'Working' : 'Last seen working'
-    default: return 'Outcome unknown'
+    case 'completed': return took ? t`Worked for ${took}` : t({ message: 'Worked', comment: 'A turn that finished, when its time was not recorded.' })
+    case 'failed': return took ? t`Failed after ${took}` : t({ message: 'Failed', comment: 'An action or turn that failed.' })
+    case 'interrupted':
+      if (turn.steered === true) return took ? t`Steered after ${took}` : t({ message: 'Steered', comment: 'A turn the user redirected with a new message while it ran.' })
+      return took ? t`Stopped after ${took}` : t({ message: 'Stopped', comment: 'An action or turn that was stopped.' })
+    case 'running': return threadRunning ? t({ message: 'Working', comment: 'A turn that is running.' }) : t`Last seen working`
+    default: return t`Outcome unknown`
   }
 }
 
@@ -551,13 +803,19 @@ export interface TranscriptTurn {
   readonly key: string
   readonly user?: AgentMessage
   readonly replies: readonly AgentMessage[]
+  /** The turn's own message is left out of the conversation; its first reply opens it (`ActivityPlacement.unshown`). */
+  readonly unshown?: true
 }
 
-/** Splits rendered messages at each user message. Messages before the first one (a page that starts mid-turn) form their own turn. */
-export function splitTurns(messages: readonly AgentMessage[]): TranscriptTurn[] {
-  const turns: { key: string; user?: AgentMessage; replies: AgentMessage[] }[] = []
+/**
+ * Splits rendered messages at each user message, and at each reply that opens an unshown turn, so that reply never reads
+ * as the answer to the message before it. Messages before the first one (a page that starts mid-turn) form their own turn.
+ */
+export function splitTurns(messages: readonly AgentMessage[], unshown: ReadonlyMap<string, unknown> = new Map()): TranscriptTurn[] {
+  const turns: { key: string; user?: AgentMessage; replies: AgentMessage[]; unshown?: true }[] = []
   for (const message of messages) {
     if (message.role === 'user') turns.push({ key: message.id, user: message, replies: [] })
+    else if (unshown.has(message.id)) turns.push({ key: `unshown:${message.id}`, replies: [message], unshown: true })
     else if (turns.length) turns.at(-1)!.replies.push(message)
     else turns.push({ key: `before:${message.id}`, replies: [message] })
   }
@@ -565,13 +823,33 @@ export function splitTurns(messages: readonly AgentMessage[]): TranscriptTurn[] 
 }
 
 /**
+ * The label of a Watcher reply to news: the work its turn did, folded into the reply's header. A finished turn says
+ * how long it took; one that failed or stopped says so.
+ */
+export function newsWorkLabel(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
+  const durationMs = workDuration(turn, startedAt, moments)
+  if ((turn?.status ?? 'completed') === 'completed') {
+    if (durationMs === undefined) return t({ message: 'After news', comment: 'Watcher\'s work in reply to news Sotto told it.' })
+    const took = formatDuration(durationMs)
+    return t({ message: `After news · ${took}`, comment: 'Watcher\'s work in reply to news Sotto told it, and how long it took.' })
+  }
+  const full = workHeadline(turn, threadRunning, startedAt, moments)
+  const headline = `${full.charAt(0).toLowerCase()}${full.slice(1)}`
+  return t({ message: `After news · ${headline}`, comment: 'Watcher\'s work in reply to news, and how it ended, such as "failed after 4s", starting lowercase.' })
+}
+
+/**
  * The line a finished turn folds its work under. A lifecycle record's outcome and duration win; without one (Claude
  * and Grok report none), the turn ran from the user's message to the latest moment recorded for it.
  */
 export function workHeadline(turn: AgentActivity | undefined, threadRunning: boolean, startedAt: string | undefined, moments: readonly (string | undefined)[]): string {
+  const durationMs = workDuration(turn, startedAt, moments)
+  return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
+}
+
+function workDuration(turn: AgentActivity | undefined, startedAt: string | undefined, moments: readonly (string | undefined)[]): number | undefined {
   const start = startedAt ? Date.parse(startedAt) : Number.NaN
   const end = Math.max(...moments.map(moment => moment ? Date.parse(moment) : Number.NaN).filter(Number.isFinite))
   const spanned = Number.isFinite(start) && Number.isFinite(end) && end > start ? end - start : undefined
-  const durationMs = (turn ? recordDuration(turn) : undefined) ?? spanned
-  return turnHeadline({ ...turn, status: turn?.status ?? 'completed', ...(durationMs === undefined ? {} : { durationMs }) } as AgentActivity, threadRunning)
+  return (turn ? recordDuration(turn) : undefined) ?? spanned
 }

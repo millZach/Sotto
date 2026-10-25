@@ -187,13 +187,13 @@ test('an agent asks for a cloud iPhone, the user starts it in the thread, and th
     await expect(page.locator('html')).not.toHaveAttribute('data-reduced-motion', 'on')
     // Unless the computer itself asks for less motion, the page arrives as every Settings page does.
     if (!await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)) {
-      await sections.getByRole('tab', { name: 'Phones', exact: true }).click()
+      await sections.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
       await sections.getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
       expect((await arrivals())[0]).toBe('settings-arrive')
     }
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
-    await sections.getByRole('tab', { name: 'Phones', exact: true }).click()
+    await sections.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await sections.getByRole('tab', { name: 'Cloud iPhone', exact: true }).click()
     expect(await arrivals()).toEqual(['none'])
     expect(await settingsLayoutProblems(page, 'settings-cloud-iphone', CLOUD_CONTROLS), 'reduced motion').toEqual({ pageOverflow: false, formOverflow: false, clipped: [] })

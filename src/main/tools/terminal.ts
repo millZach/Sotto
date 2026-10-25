@@ -9,9 +9,9 @@ import { terminalCreateSchema, terminalRequestSchema, terminalWriteSchema, termi
 import { saveTerminalImage, terminalImageInput } from '../terminals/clipboard'
 import type { FilesService } from '../files/service'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { ToolOperations, fail, parse, workspace } from './common'
+import { INVALID_REQUEST, ToolOperations, fail, parse, workspace } from './common'
+import { terminalInputFor } from '../../shared/runnableCommand'
 import { TerminalShell } from '../terminals/shell'
-import { checkoutIdentity } from '../agents/threadWorktrees'
 import { CheckoutSendRefusal } from '../agents/checkoutMutations'
 
 export interface TerminalDependencies {
@@ -26,8 +26,16 @@ export interface TerminalDependencies {
   executableExists?: (path: string) => Promise<boolean>
   /** Prevents a new shell from starting while the desktop removes its checkout. */
   acquireStart?: (workspace: FileWorkspace) => Promise<() => void>
+  /** Whether a drawer shell may start with a command from a reply (ADR-0139, an Owl feature), read once at start. */
+  runCommandEnabled?: boolean
 }
-interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[] }
+interface PendingRun { output(): void; arm(): void; cancel(): void }
+interface LiveTerminal { session: TerminalSession; pty?: IPty | undefined; cwd?: string; reopening?: boolean; output: string; sequence: number; subscriptions: { dispose(): void }[]; pendingRun?: PendingRun | undefined }
+
+/** A reply's command waits for the new shell to go quiet this long after it last printed, so its prompt is drawn. */
+export const RUN_QUIET_MS = 150
+/** However busy a shell's start-up is, the command is typed this long after it spawned. */
+export const RUN_START_CAP_MS = 3_000
 
 /** Main owns live PTYs. Disk records are reopen hints, never process-resumption claims. */
 export class TerminalService extends ToolOperations {
@@ -60,19 +68,6 @@ export class TerminalService extends ToolOperations {
   hasRunningTerminal(threadId: string): boolean {
     return [...this.sessions.values()].some(record => record.session.workspace.threadId === threadId && record.pty !== undefined)
   }
-  /** Includes a shell left in an older binding, even when its thread no longer names that checkout. */
-  async hasRunningTerminalInCheckout(folder: string): Promise<boolean> {
-    const identity = await checkoutIdentity(folder)
-    for (const record of this.sessions.values()) {
-      if (!record.pty) continue
-      try {
-        if (await checkoutIdentity(record.session.workspace.workingDirectory) === identity) return true
-        if (record.cwd && await checkoutIdentity(record.cwd) === identity) return true
-      }
-      catch { return true } // An unavailable live shell's folder cannot safely be ruled out.
-    }
-    return false
-  }
   private snapshot(record: LiveTerminal): TerminalSnapshot { return { session: { ...record.session }, output: record.output, sequence: record.sequence } }
   private async owned(request: z.infer<typeof terminalRequestSchema>, validateDirectory = true): Promise<LiveTerminal> {
     await this.ready
@@ -91,11 +86,13 @@ export class TerminalService extends ToolOperations {
   }) }
   create(payload: unknown) { return this.run(async () => {
     const request = parse(terminalCreateSchema, payload)
+    // A command runs only in a new drawer shell, and only while the feature is on; the command itself is never logged.
+    if (request.run !== undefined && (request.place !== 'drawer' || !this.dependencies.runCommandEnabled)) return fail('invalid-request', INVALID_REQUEST)
     await this.ready
     const owner = await workspace(this.dependencies.files, request.threadId, request.workspaceId)
-    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools'))
+    return this.snapshot(await this.start(owner, request.cols ?? 80, request.rows ?? 24, request.place ?? 'tools', undefined, request.run))
   }) }
-  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal): Promise<LiveTerminal> {
+  private async start(owner: FileWorkspace, cols: number, rows: number, place: TerminalPlace, replacing?: LiveTerminal, run?: string): Promise<LiveTerminal> {
     // Reserve synchronously before importing/spawning so concurrent create calls respect limits.
     if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
     if (!replacing && this.sessions.size >= TERMINAL_SESSIONS_MAX) return fail('busy', TERMINAL_LIMIT_MESSAGE)
@@ -135,6 +132,7 @@ export class TerminalService extends ToolOperations {
       record.pty = pty
       record.subscriptions.push(pty.onData(data => {
         if (record.pty !== pty || this.disposed) return
+        record.pendingRun?.output()
         for (let offset = 0; offset < data.length;) {
           let end = Math.min(offset + 65536, data.length)
           if (end < data.length && /[\uD800-\uDBFF]/.test(data[end - 1]!)) end--
@@ -147,14 +145,22 @@ export class TerminalService extends ToolOperations {
         }
       }), pty.onExit(({ exitCode }) => {
         if (record.pty !== pty) return
+        record.pendingRun?.cancel()
         record.pty = undefined
         record.session.status = 'exited'
         record.session.exitCode = exitCode
         this.publish(record)
         void this.save().catch(() => { record.session.status = 'unavailable'; this.publish(record) })
       }))
+      // Main types the command, so no window replay can drop it; it waits for the shell's prompt (typeWhenSettled).
+      // The tab names the command.
+      if (run !== undefined) {
+        record.session.title = run.split('\n')[0]!.slice(0, 256)
+        record.pendingRun = this.typeWhenSettled(record, pty, run)
+      }
       await this.save()
       if (this.disposed) return fail('unavailable', 'Terminal is shutting down.')
+      record.pendingRun?.arm()
       this.publish(record)
       return record
     } catch (error) {
@@ -165,6 +171,34 @@ export class TerminalService extends ToolOperations {
       if (error instanceof CheckoutSendRefusal) return fail('busy', error.terminalMessage())
       return fail('unavailable', 'The terminal could not start or save its session. Check that the shell is available and app storage is writable.')
     } finally { for (const release of releases.reverse()) release() }
+  }
+  /**
+   * Types a reply's command into a new shell once it is ready to read it: after its first output and then RUN_QUIET_MS
+   * with none, or RUN_START_CAP_MS after it spawned, whichever comes first. Typed sooner, a shell still running its
+   * profile can drop the text or echo it twice. A shell that ended or was closed meanwhile receives nothing. Nothing
+   * is typed before `arm`, which follows the session's save: a shell whose record could not be saved is stopped, so
+   * "did not start" means the command did not run.
+   */
+  private typeWhenSettled(record: LiveTerminal, pty: IPty, run: string): PendingRun {
+    let quiet: ReturnType<typeof setTimeout> | undefined
+    let armed = false
+    let due = false
+    const cancel = (): void => {
+      clearTimeout(quiet); clearTimeout(cap)
+      if (record.pendingRun === pending) record.pendingRun = undefined
+    }
+    const type = (): void => {
+      if (!armed) { due = true; return }
+      cancel()
+      if (record.pty === pty && !this.disposed) pty.write(terminalInputFor(run))
+    }
+    const cap = setTimeout(type, RUN_START_CAP_MS)
+    const pending: PendingRun = {
+      output: () => { if (due) return; clearTimeout(quiet); quiet = setTimeout(type, RUN_QUIET_MS) },
+      arm: () => { armed = true; if (due) type() },
+      cancel,
+    }
+    return pending
   }
   /** The project folder, or the thread's working copy when the project folder is gone or cannot be opened. */
   private async projectFolder(owner: FileWorkspace): Promise<string> {
@@ -246,6 +280,7 @@ export class TerminalService extends ToolOperations {
     return this.snapshot(replacement)
   }) }
   private stop(record: LiveTerminal): void {
+    record.pendingRun?.cancel()
     const pty = record.pty; record.pty = undefined
     for (const subscription of record.subscriptions.splice(0)) subscription.dispose()
     try { pty?.kill() } catch { /* Already exited. */ }

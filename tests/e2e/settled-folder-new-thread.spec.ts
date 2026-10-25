@@ -32,9 +32,11 @@ test('new work reopens only its folder while older threads remain settled', asyn
     await dialog.getByRole('button', { name: /^Sotto test/ }).click()
     await expect(dialog).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
+    // An unsent thread is listed once its composer holds text, under that text.
+    await page.getByRole('textbox', { name: 'Prompt' }).fill('Plan the release')
     const check = async () => {
       await expect(projects.getByRole('button', { name: 'Sotto test 1 thread', exact: true })).toBeVisible()
-      await expect(projects.getByRole('button', { name: 'New thread', exact: true })).toBeVisible()
+      await expect(projects.getByRole('button', { name: 'Plan the release', exact: true })).toBeVisible()
       await expect(projects.getByRole('button', { name: 'Workshop', exact: true })).toHaveCount(0)
       await expect(settled.getByRole('button', { name: 'Workshop', exact: true })).toBeVisible()
       await expect(settled.getByRole('button', { name: 'Docs', exact: true })).toBeVisible()

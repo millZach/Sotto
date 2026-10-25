@@ -15,7 +15,8 @@ export function isAgentThreadDetailDelta(update: AgentThreadDetailUpdate): updat
 /**
  * What "this activity record changed" means on the detail stream: its identity, its state, and the size
  * of every field that can grow. A same-length replacement of a field's text is not distinguished — the
- * same trade the revision itself makes, and the reason this is cheap enough to run on every frame.
+ * same trade the revision itself makes, and the reason this is cheap enough to run on every frame. A record with a cut
+ * body adds the whole sizes its `cut` names; a record without one has the signature it always had.
  */
 export function agentActivitySignature(record: AgentActivity): string {
   return [record.turnId, record.sequence, record.afterMessageId ?? '', record.parentId ?? '', record.kind, record.status,
@@ -25,6 +26,10 @@ export function agentActivitySignature(record: AgentActivity): string {
     (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
+    // A cut body's kept part can stay the same length as its whole grows, so its whole size is part of what changed.
+    ...record.cut ? [`${record.cut.output ?? ''}:${record.cut.text ?? ''}:${(record.cut.diffs ?? []).map(item => `${item.index}=${item.bytes}`).join(',')}`] : [],
+    // A turn on one of the user's own servers (ADR-0124) changes its try and its failure while its status stays the same.
+    ...record.ownServer ? [`${record.ownServer.name.length}:${record.ownServer.model.length}:${record.ownServer.host.length}:${record.ownServer.attempt ?? ''}:${record.ownServer.attempts ?? ''}:${record.ownServer.failure ?? ''}`] : [],
   ].join('|')
 }
 function size(value: string | undefined): number { return value === undefined ? -1 : value.length }
@@ -118,6 +123,49 @@ export function mergeAgentThreadDetailUpdates(pending: AgentThreadDetailUpdate, 
   if (!isAgentThreadDetailDelta(pending)) return applyAgentThreadDetailDelta(pending, next)
   if (pending.revision !== next.baseRevision) return null
   if (removes(pending) || removes(next)) return null
+  const activityDeltas = [...pending.activityDeltas]
+  for (const item of next.activityDeltas) {
+    const position = activityDeltas.findIndex(held => activityDeltaId(held) === activityDeltaId(item))
+    if (position === -1) activityDeltas.push(item)
+    else activityDeltas[position] = item
+  }
+  return { threadId: pending.threadId, baseRevision: pending.baseRevision, revision: next.revision, messageDeltas: foldMessageDeltas(pending, next), activityDeltas }
+}
+
+/**
+ * Two updates for one thread as one, removals included: applying the result is applying both in turn. A record's
+ * entries keep only what still matters, an upsert replacing the one before it in place and a removal dropping an upsert
+ * it follows, so a record has at most a removal and then an upsert, and a fold of any number of deltas is bounded by the
+ * records they name. A host folds what it holds for a socket client that reads slowly this way (ADR-0025, October 21
+ * amendment), where a long thread's deltas remove a record as often as they add one. Null when the two do not follow
+ * each other, or a whole cannot take the delta.
+ */
+export function foldAgentThreadDetailUpdates(pending: AgentThreadDetailUpdate, next: AgentThreadDetailUpdate): AgentThreadDetailUpdate | null {
+  if (pending.threadId !== next.threadId) return null
+  if (!isAgentThreadDetailDelta(next)) return next
+  if (!isAgentThreadDetailDelta(pending)) return applyAgentThreadDetailDelta(pending, next)
+  if (pending.revision !== next.baseRevision) return null
+  const activityDeltas = [...pending.activityDeltas]
+  for (const item of next.activityDeltas) {
+    const id = activityDeltaId(item)
+    const last = activityDeltas.findLastIndex(held => activityDeltaId(held) === id)
+    const held = last === -1 ? undefined : activityDeltas[last]!
+    if (held === undefined) { activityDeltas.push(item); continue }
+    if (!('removed' in item)) {
+      if ('removed' in held) activityDeltas.push(item)
+      else activityDeltas[last] = item
+      continue
+    }
+    if ('removed' in held) continue
+    activityDeltas.splice(last, 1)
+    // With no removal before it, the record may be one the client holds, so the removal still goes.
+    if (!activityDeltas.some(entry => activityDeltaId(entry) === id)) activityDeltas.push(item)
+  }
+  return { threadId: pending.threadId, baseRevision: pending.baseRevision, revision: next.revision, messageDeltas: foldMessageDeltas(pending, next), activityDeltas }
+}
+
+/** Both deltas' message changes as one list: a whole message replaces the one before it, and appended text joins it. */
+function foldMessageDeltas(pending: AgentThreadDetailDelta, next: AgentThreadDetailDelta): AgentMessageDelta[] {
   const messageDeltas = [...pending.messageDeltas]
   for (const item of next.messageDeltas) {
     const position = messageDeltas.findIndex(held => messageDeltaId(held) === messageDeltaId(item))
@@ -127,13 +175,7 @@ export function mergeAgentThreadDetailUpdates(pending: AgentThreadDetailUpdate, 
     messageDeltas[position] = 'appendText' in held ? { id: held.id, appendText: held.appendText + item.appendText }
       : { message: { ...held.message, text: held.message.text + item.appendText } }
   }
-  const activityDeltas = [...pending.activityDeltas]
-  for (const item of next.activityDeltas) {
-    const position = activityDeltas.findIndex(held => activityDeltaId(held) === activityDeltaId(item))
-    if (position === -1) activityDeltas.push(item)
-    else activityDeltas[position] = item
-  }
-  return { threadId: pending.threadId, baseRevision: pending.baseRevision, revision: next.revision, messageDeltas, activityDeltas }
+  return messageDeltas
 }
 
 function removes(delta: AgentThreadDetailDelta): boolean { return delta.activityDeltas.some(item => 'removed' in item) }

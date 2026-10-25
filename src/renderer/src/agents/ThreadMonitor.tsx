@@ -1,64 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { plural } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentBackgroundWork, AgentMonitoringTask } from '../../../shared/agentMonitoring'
 import type { AgentThread } from '../../../shared/agents'
+import type { Creature } from '../../../shared/settings'
+import { useCreature, useCreatureShown } from '../state/creature'
 import { formatDuration, heldAction, heldLabel, heldLongEnough, HELD_AFTER_MS, type HeldAction } from './threadActivityView'
 import { babysitReadout } from './babysitting'
+import { ClaudeBotBabysitting } from './ClaudeBotBabysitting'
+import { ClaudeBotHeld } from './ClaudeBotHeld'
+import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
+import { ClaudeBotWorking } from './ClaudeBotWorking'
+import { EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, BOTTOM_ROWS, sandPath, TOP_ROWS } from './hourglass'
+import { usePixelLoop } from './pixelLoop'
+import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
-
-/** One frame of a pixel pose: seconds since the pose appeared, whether motion is held, and the track it stands on. */
-interface PixelFrame {
-  readonly time: number
-  readonly still: boolean
-  readonly width: number
-}
-
-/**
- * The loop every pixel pose shares: 30fps, held in a single pose under system or app reduced motion,
- * and stopped entirely while the window is hidden. The painter reads its own refs and writes no state.
- * `repaintOn` names what the pose draws from its props: a change paints one frame at once, because a
- * held pose has no next frame to pick it up on.
- */
-function usePixelLoop(actor: RefObject<HTMLDivElement | null>, paint: (frame: PixelFrame) => void, repaintOn?: unknown): void {
-  const painter = useRef(paint)
-  const repaint = useRef<() => void>(() => undefined)
-  // Assigned after the commit rather than during render, so a double-rendered pass cannot install a
-  // painter whose render was thrown away. The loop below only ever reads it from a frame callback.
-  useEffect(() => { painter.current = paint })
-  useEffect(() => {
-    const node = actor.current
-    const track = node?.parentElement
-    if (!node || !track) return
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const began = performance.now()
-    let reduced = false, frame = 0, width = track.clientWidth, previous = -Infinity
-    const render = (now: number): void => { painter.current({ time: (now - began) / 1000, still: reduced, width }) }
-    repaint.current = () => render(performance.now())
-    const tick = (now: number): void => {
-      frame = 0
-      if (now - previous >= 1000 / 30) { render(now); previous = now }
-      if (!reduced && !document.hidden) frame = requestAnimationFrame(tick)
-    }
-    const refresh = (): void => {
-      cancelAnimationFrame(frame)
-      reduced = preference.matches || document.documentElement.dataset.reducedMotion === 'on'
-      render(performance.now())
-      if (!reduced && !document.hidden) frame = requestAnimationFrame(tick)
-    }
-    const resize = new ResizeObserver(() => { width = track.clientWidth; render(performance.now()) })
-    const motion = new MutationObserver(refresh)
-    resize.observe(track)
-    motion.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
-    preference.addEventListener('change', refresh)
-    document.addEventListener('visibilitychange', refresh)
-    refresh()
-    return () => {
-      cancelAnimationFrame(frame); resize.disconnect(); motion.disconnect(); repaint.current = () => undefined
-      preference.removeEventListener('change', refresh)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [actor])
-  useEffect(() => { repaint.current() }, [repaintOn])
-}
 
 /** The body every pose shares, so both read as the same creature. Ears, tail and belly never animate. */
 const BODY = 'M9 8h4v8H9z M21 7h4v9h-4z M11 6h2v5h-2z M23 5h2v5h-2z M9 13h17v15H9z M7 16h21v9H7z M11 11h12v18H11z M5 23h4v4H5z'
@@ -66,7 +22,7 @@ const OPEN_EYES = 'M15 17h2v3h-2z M22 17h2v3h-2z M20 22h2v1h-2z'
 const SHUT_EYES = 'M15 17h2v1h-2z M22 17h2v1h-2z M20 22h2v1h-2z'
 
 /** Original pixel art on a 40 × 32 grid, following the approved process-perch prototype. */
-function MonitoringCreature(): ReactNode {
+export function MonitoringCreature(): ReactNode {
   const actor = useRef<HTMLDivElement>(null)
   const facing = useRef<SVGGElement>(null)
   const body = useRef<SVGGElement>(null)
@@ -113,20 +69,6 @@ function MonitoringCreature(): ReactNode {
 }
 
 /**
- * Three grains of sand, top chamber and bottom, each row top to bottom. The glass is held out clear of
- * the body (which reaches x=28): a translucent vessel over a solid body would be the same colour as it,
- * so like the loupe's ring it reads by sitting against the surface with a bright outline.
- */
-const TOP_ROWS = [[31, 10, 5], [31, 11, 5], [32, 12, 3]] as const
-const BOTTOM_ROWS = [[32, 16, 3], [31, 17, 5], [31, 18, 5]] as const
-/** A path that draws nothing, for a chamber with no sand in it and a grain that is not falling. */
-const EMPTY_PATH = 'M0 0h0v0z'
-const sandPath = (rows: readonly (readonly [number, number, number])[]): string =>
-  rows.map(([x, y, width]) => `M${x} ${y}h${width}v1h-${width}z`).join(' ') || EMPTY_PATH
-/** A full turn of the glass, and the part of it spent flipping rather than running. */
-const GLASS_PERIOD = 6, GLASS_FLIP = 0.5
-
-/**
  * The same creature stood still, holding an hourglass. It says only that time is passing on work the
  * thread started; nothing here claims the provider is watching, and it grants no authority.
  */
@@ -151,10 +93,10 @@ function HeldCreature(): ReactNode {
     // rotated group, so a half turn that outlasted the flip would empty the chamber the reader sees
     // filling, and the sand would climb. Because the vessel is symmetric, ending a flip at half a turn
     // looks exactly like starting the next cycle upright, so the full chamber stays where the eye left it.
-    glass.current?.setAttribute('transform', `rotate(${spin * 180} 33.5 14.5)`)
+    glass.current?.setAttribute('transform', `rotate(${spin * 180} ${HOURGLASS_CENTRE})`)
     topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
     bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-    grain.current?.setAttribute('d', drain < 1 && !still ? `M33 ${13 + Math.floor(time * 8) % 3}h1v1h-1z` : EMPTY_PATH)
+    grain.current?.setAttribute('d', drain < 1 && !still ? grainPath(time) : EMPTY_PATH)
   })
   return <div className="thread-monitor__actor" ref={actor} aria-hidden="true">
     <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">
@@ -167,12 +109,12 @@ function HeldCreature(): ReactNode {
         {/* The arm holding it out past the body, then the glass, whose sand reads against the surface. */}
         <path className="thread-monitor__color" d="M28 14h2v2h-2z" />
         <g ref={glass}>
-          <path className="thread-monitor__color" opacity=".28" d="M31 10h5v2h-5z M32 12h3v1h-3z M33 13h1v3h-1z M32 16h3v1h-3z M31 17h5v2h-5z" />
+          <path className="thread-monitor__color" opacity=".28" d={HOURGLASS_VESSEL} />
           <path ref={topSand} className="thread-monitor__color thread-monitor__sand" d={sandPath(TOP_ROWS)} />
           <path ref={bottomSand} className="thread-monitor__color thread-monitor__sand" d={EMPTY_PATH} />
           <path ref={grain} className="thread-monitor__color" d={EMPTY_PATH} />
           {/* Caps and tapering walls last, so the outline holds the shape over body or surface alike. */}
-          <path className="thread-monitor__shine" d="M30 9h7v1h-7z M30 19h7v1h-7z M30 10h1v2h-1z M36 10h1v2h-1z M31 12h1v1h-1z M35 12h1v1h-1z M32 13h1v3h-1z M34 13h1v3h-1z M31 16h1v1h-1z M35 16h1v1h-1z M30 17h1v2h-1z M36 17h1v2h-1z" />
+          <path className="thread-monitor__shine" d={HOURGLASS_OUTLINE} />
         </g>
         <path className="thread-monitor__color" d="M25 25h5v2h-5z" />
       </g>
@@ -309,8 +251,10 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
-function ThreadOrnament({ kind, creature, label, title, status, wide = false, quiet }: {
+function ThreadOrnament({ kind, character, creature, label, title, status, wide = false, quiet }: {
   readonly kind: 'monitoring' | 'working' | 'held' | 'babysitting'
+  /** Which character the setting chose; `creature` is already drawn as it. The stylesheet reads it for the bot's colours. */
+  readonly character: Creature
   readonly creature: ReactNode
   readonly label: string
   readonly title: string
@@ -323,8 +267,10 @@ function ThreadOrnament({ kind, creature, label, title, status, wide = false, qu
    */
   readonly quiet?: string
 }): ReactNode {
+  const shown = useCreatureShown()
+  if (!shown) return null
   const named = quiet === undefined ? { role: 'status', 'aria-live': 'polite', 'aria-atomic': true } as const : { role: 'img', 'aria-label': quiet } as const
-  return <div className="thread-monitor" data-ornament={kind} data-readout={wide ? 'wide' : undefined} {...named}>
+  return <div className="thread-monitor" data-ornament={kind} data-creature={character} data-readout={wide ? 'wide' : undefined} {...named}>
     <div className="thread-monitor__track">{creature}</div>
     <div className="thread-monitor__task" title={title}>
       <span className="thread-monitor__label">{label}</span>
@@ -335,18 +281,22 @@ function ThreadOrnament({ kind, creature, label, title, status, wide = false, qu
 
 /** Observational only. The caller supplies live, eligible tasks from this thread's adapter. */
 export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitoringTask[] }): ReactNode {
+  const { t } = useLingui()
+  const character = useCreature()
   const first = tasks[0]
   if (!first) return null
-  return <ThreadOrnament kind="monitoring" creature={<MonitoringCreature key={first.id} />}
+  const taskCount = tasks.length
+  return <ThreadOrnament kind="monitoring" character={character}
+    creature={character === 'claude' ? <ClaudeBotMonitoring key={first.id} /> : <MonitoringCreature key={first.id} />}
     label={first.label} title={tasks.map(task => task.label).join('\n')}
-    status={tasks.length === 1 ? 'Monitoring' : `Monitoring ${tasks.length} tasks`} />
+    status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${{ taskCount: shownCount(taskCount) }} tasks`} />
 }
 
-const commandCount = (count: number): string => `${count} command${count === 1 ? '' : 's'}`
+const commandCount = (count: number): string => plural(count, { one: '# command', other: '# commands' })
 
 /** The readout's second line: the word for the state, how many agents when there is more than one, and any commands beside them. */
-const workingStatus = (agents: number, commands: number): string =>
-  ['Working', ...agents > 1 ? [`${agents} agents`] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
+const workingStatus = (working: string, agents: number, commands: number): string =>
+  [working, ...agents > 1 ? [plural(agents, { one: '# agent', other: '# agents' })] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
 
 /**
  * Observational only. The caller supplies this thread's live background work, provider-confirmed, and has
@@ -354,12 +304,15 @@ const workingStatus = (agents: number, commands: number): string =>
  * counted rather than drawn. Every task is named in the hover title.
  */
 export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroundWork[] }): ReactNode {
+  const { t } = useLingui()
+  const character = useCreature()
   const agents = work.filter(task => task.type !== 'command')
   const commands = work.filter(task => task.type === 'command')
   const first = agents[0]
   if (!first) return null
-  return <ThreadOrnament kind="working" creature={<WorkingCreature agents={agents.length} />}
-    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(agents.length, commands.length)}
+  return <ThreadOrnament kind="working" character={character}
+    creature={character === 'claude' ? <ClaudeBotWorking agents={agents.length} /> : <WorkingCreature agents={agents.length} />}
+    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length, commands.length)}
     wide={commands.length > 0} />
 }
 
@@ -369,11 +322,14 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
  * because a command is waited on rather than worked, and counts from when Sotto saw it start.
  */
 export function ThreadWaitingCommand({ commands, now }: { readonly commands: readonly AgentBackgroundWork[]; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
+  const character = useCreature()
   const first = commands[0]
   if (!first) return null
-  return <ThreadOrnament kind="held" creature={<HeldCreature key={first.id} />} label={first.label}
+  return <ThreadOrnament kind="held" character={character}
+    creature={character === 'claude' ? <ClaudeBotHeld key={first.id} /> : <HeldCreature key={first.id} />} label={first.label}
     title={commands.map(task => task.label).join('\n')} wide={commands.length > 1}
-    status={<>Waiting{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
+    status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
       {first.startedAt ? <WaitedFor startedAt={first.startedAt} now={now} /> : null}</>} />
 }
 
@@ -382,9 +338,12 @@ export function ThreadWaitingCommand({ commands, now }: { readonly commands: rea
  * The reader is told "Waiting", which is the plain word for it whatever the code calls the record.
  */
 export function ThreadHeld({ action, now }: { readonly action: HeldAction; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
+  const character = useCreature()
   const label = heldLabel(action)
-  return <ThreadOrnament kind="held" creature={<HeldCreature key={action.id} />} label={label} title={label}
-    status={<>Waiting<WaitedFor startedAt={action.startedAt} now={now} /></>} />
+  return <ThreadOrnament kind="held" character={character}
+    creature={character === 'claude' ? <ClaudeBotHeld key={action.id} /> : <HeldCreature key={action.id} />} label={label} title={label}
+    status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}<WaitedFor startedAt={action.startedAt} now={now} /></>} />
 }
 
 /**
@@ -393,11 +352,15 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
  * the thread babysits on hover.
  */
 export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<AgentThread, 'babysitting' | 'pullRequests' | 'worktree'>; readonly now: number | undefined }): ReactNode {
+  const { t } = useLingui()
+  const character = useCreature()
   const readout = babysitReadout(thread, new Date(now ?? Date.now()))
   if (!readout) return null
+  const { label, since } = readout
   // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
   // (threadMonitor.css); the hover title and the Pull request surface still say it.
-  return <ThreadOrnament kind="babysitting" creature={<BabysittingCreature />} label={readout.label} title={readout.title}
-    quiet={`Babysitting ${readout.label}${readout.since ? ` since ${readout.since}` : ''}`}
-    status={<>Babysitting{readout.since ? <span className="thread-monitor__since">{` since ${readout.since}`}</span> : null}</>} />
+  return <ThreadOrnament kind="babysitting" character={character}
+    creature={character === 'claude' ? <ClaudeBotBabysitting /> : <BabysittingCreature />} label={readout.label} title={readout.title}
+    quiet={since ? t`Babysitting ${label} since ${since}` : t`Babysitting ${label}`}
+    status={<>{t({ message: 'Babysitting', comment: 'The readout beside the creature: Sotto is babysitting a pull request.' })}{since ? <span className="thread-monitor__since">{` ${t`since ${since}`}`}</span> : null}</>} />
 }

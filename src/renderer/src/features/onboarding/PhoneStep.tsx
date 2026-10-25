@@ -1,10 +1,13 @@
 import { Check, ExternalLink } from 'lucide-react'
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { Toggle } from '../../components/Toggle'
+import { shownWords, type LaterWords } from '../settings/laterWords'
 import { phonesFailure } from '../settings/PhonesSettings'
 import { countdown } from '../settings/phoneParts'
 
@@ -18,13 +21,14 @@ export interface PhoneStepProps {
 
 /**
  * Setup's iPhone step: get the beta from TestFlight, then let phones reach this computer and show a pairing code.
- * Phone access is the same setting and the same code as Settings › Phones, which keeps the steps, the paired phones and
+ * Phone access is the same setting and the same code as Settings › Hosts & phones, which keeps the steps, the paired phones and
  * the name phones show; this step shows only what a first pairing needs.
  */
 export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, bridge = window.sotto?.phones }: PhoneStepProps): ReactNode {
+  const { t } = useLingui()
   const [state, setState] = useState<PhonesState | null>(null)
   const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const [saveFailed, setSaveFailed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   const showButton = useRef<HTMLButtonElement>(null)
@@ -33,7 +37,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError('Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Phones.') })
+    void bridge.get().then(value => { if (alive) setState(value) }).catch(() => { if (alive) setError(msg`Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones.`) })
     const off = bridge.onChanged(value => { if (alive) setState(value) })
     return () => { alive = false; off() }
   }, [bridge])
@@ -46,7 +50,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
     return () => clearInterval(timer)
   }, [code])
   // Show a pairing code gives way to the code, so focus goes to the code; when the code closes, focus that went with
-  // it comes back to the button, as on Settings › Phones.
+  // it comes back to the button, as on Settings › Hosts & phones.
   const codeShown = code?.code ?? null
   const previousCode = useRef<string | null>(null)
   useEffect(() => {
@@ -62,7 +66,7 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
     if (!bridge) return
     setError(null)
     try { setState(await bridge.command(command)) }
-    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : 'Phone access could not be changed. Nothing was changed. Try again.') }
+    catch (failure) { setError(failure instanceof Error ? failure.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : msg`Phone access could not be changed. Nothing was changed. Try again.`) }
   }
 
   const openBeta = async (): Promise<void> => {
@@ -73,8 +77,11 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
   const on = state?.phase === 'on' && state.enabled
   const failure = state && phoneAccess ? phonesFailure(state) : null
   const left = code ? countdown(code.expiresAt, now) : null
+  const expiresIn = left?.text ?? ''
+  const spokenCode = code ? [...code.code].join(' ') : ''
   // The name the iPhone app's Add computer step asks for: this computer's name on the tailnet.
   const machine = state?.tailscale.status === 'ok' ? state.tailscale.dnsName.split('.')[0]! : null
+  const betaAddress = IPHONE_BETA_URL.replace(/^https:\/\//u, '')
 
   return (
     <section aria-labelledby="onboarding-heading">
@@ -83,46 +90,48 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
         <li>
           <span className="onboarding-phone__number" aria-hidden="true">1</span>
           <div>
-            <strong>Install the beta</strong>
-            <span>Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first.</span>
-            {beta === 'opened' ? <span className="onboarding-ready" role="status"><Check aria-hidden="true" size={15} />Opened in your browser</span> : null}
-            {beta === 'failed' ? <span className="onboarding-recovery" role="alert">Your browser did not open. On your iPhone, go to {IPHONE_BETA_URL.replace(/^https:\/\//u, '')} instead.</span> : null}
+            <strong><Trans>Install the beta</Trans></strong>
+            <span><Trans>Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first.</Trans></span>
+            {beta === 'opened' ? <span className="onboarding-ready" role="status"><Check aria-hidden="true" size={15} /><Trans>Opened in your browser</Trans></span> : null}
+            {beta === 'failed' ? <span className="onboarding-recovery" role="alert"><Trans>Your browser did not open. On your iPhone, go to {betaAddress} instead.</Trans></span> : null}
           </div>
           <Button variant={beta === 'opened' ? 'secondary' : 'primary'} onClick={() => void openBeta()}>
             <ExternalLink aria-hidden="true" size={15} />
-            Get the iPhone beta
+            <Trans>Get the iPhone beta</Trans>
           </Button>
         </li>
         <li>
           <span className="onboarding-phone__number" aria-hidden="true">2</span>
           <div>
             <Toggle
-              label="Let phones connect"
+              label={t`Let phones connect`}
               checked={phoneAccess}
               disabled={!bridge || (!localHostRunning && !phoneAccess)}
-              description="Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
+              description={t`Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect.`}
               onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setSaveFailed(!saved)) }}
             />
-            {!localHostRunning ? <span className="onboarding-recovery">Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts, then restart Sotto.</span> : null}
-            {saveFailed ? <span className="onboarding-recovery" role="alert">Phone access could not be saved. Nothing was changed. Try again.</span> : null}
-            {phoneAccess && state?.phase === 'starting' ? <span role="status">Checking Tailscale on this computer…</span> : null}
+            {!localHostRunning ? <span className="onboarding-recovery"><Trans>Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto.</Trans></span> : null}
+            {saveFailed ? <span className="onboarding-recovery" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></span> : null}
+            {phoneAccess && state?.phase === 'starting' ? <span role="status"><Trans>Checking Tailscale on this computer…</Trans></span> : null}
             {failure ? <span className="onboarding-recovery" role="alert">{failure}</span> : null}
-            {failure ? <Button variant="secondary" onClick={() => void run({ type: 'retry' })}>Try again</Button> : null}
+            {failure ? <Button variant="secondary" onClick={() => void run({ type: 'retry' })}><Trans>Try again</Trans></Button> : null}
             {on && code && left ? (
-              <div ref={codeBox} className="onboarding-phone__code" role="group" aria-label="Pairing code" tabIndex={-1}
+              <div ref={codeBox} className="onboarding-phone__code" role="group" aria-label={t`Pairing code`} tabIndex={-1}
                 onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void run({ type: 'cancel-code' }) } }}>
                 <b aria-hidden="true">{code.code.slice(0, 4)} {code.code.slice(4)}</b>
-                <span className="tt-visually-hidden">Pairing code {[...code.code].join(' ')}</span>
-                <span>In the app, tap Add computer, enter {machine ?? 'this computer’s name on your tailnet'}, then this code. It works once and expires in {left.text}.</span>
-                <Button variant="ghost" onClick={() => void run({ type: 'cancel-code' })}>Cancel code</Button>
+                <span className="tt-visually-hidden"><Trans>Pairing code {spokenCode}</Trans></span>
+                <span>{machine === null
+                  ? t`In the app, tap Add computer, enter this computer’s name on your tailnet, then this code. It works once and expires in ${expiresIn}.`
+                  : t`In the app, tap Add computer, enter ${machine}, then this code. It works once and expires in ${expiresIn}.`}</span>
+                <Button variant="ghost" onClick={() => void run({ type: 'cancel-code' })}><Trans>Cancel code</Trans></Button>
               </div>
             ) : null}
-            {on && !code ? <Button ref={showButton} variant="secondary" onClick={() => void run({ type: 'show-code' })}>Show a pairing code</Button> : null}
-            {error ? <span className="onboarding-recovery" role="alert">{error}</span> : null}
+            {on && !code ? <Button ref={showButton} variant="secondary" onClick={() => void run({ type: 'show-code' })}><Trans>Show a pairing code</Trans></Button> : null}
+            {error ? <span className="onboarding-recovery" role="alert">{shownWords(error)}</span> : null}
           </div>
         </li>
       </ol>
-      <p className="onboarding-aside">Paired phones, and the name they show for this computer, are in Settings › Phones.</p>
+      <p className="onboarding-aside tt-paragraph"><Trans>Paired phones, and the name they show for this computer, are in Settings › Hosts & phones.</Trans></p>
     </section>
   )
 }

@@ -1,11 +1,12 @@
 import type { AppSettings } from '../../shared/settings'
 import { settingsGatedWriter, type ShortTextRequest, type ShortTextWriter } from './shortTextWriter'
 
-/** A sidebar row and a pane heading both have to hold the whole title. */
-export const THREAD_TITLE_MAX_CHARACTERS = 60
+import { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../shared/threadTitle'
+
+export { firstMessageTitle, THREAD_TITLE_MAX_CHARACTERS } from '../../shared/threadTitle'
 
 /** Each half of the exchange is cut to this before it is sent; a title needs the opening, not the whole reply. */
-const EXCHANGE_EXCERPT_CHARACTERS = 2_000
+export const EXCHANGE_EXCERPT_CHARACTERS = 2_000
 
 /** The first exchange of a thread: what the user asked, and what the agent answered. */
 export interface ThreadTitleExchange {
@@ -49,22 +50,6 @@ export function threadTitleWriter(
 }
 
 /**
- * A thread's first-message title: the opening words of its first message, on one line, cut at a word so the
- * whole name fits a sidebar row and ending in an ellipsis when it was cut. Null for a message with no words.
- */
-export function firstMessageTitle(prompt: string): string | null {
-  const text = prompt.replace(/\s+/gu, ' ').trim()
-  if (text.length === 0) return null
-  if (text.length <= THREAD_TITLE_MAX_CHARACTERS) return text
-  // One character is left for the ellipsis. A word that ends exactly there is kept whole.
-  const room = THREAD_TITLE_MAX_CHARACTERS - 1
-  const boundary = text[room] === ' ' ? room : text.lastIndexOf(' ', room)
-  // A long unbroken run is cut mid-word, never between the halves of an emoji's surrogate pair.
-  const cut = boundary > THREAD_TITLE_MAX_CHARACTERS / 2 ? text.slice(0, boundary) : text.slice(0, room).replace(/[\uD800-\uDBFF]$/u, '')
-  return `${cut.trimEnd()}…`
-}
-
-/**
  * What the coordinator calls to name a thread the moment its first message is sent. Nothing is asked of any
  * provider; the same off switch as a generated title stops it, and the generated title replaces it when it lands.
  */
@@ -76,7 +61,7 @@ export function firstMessageTitleWriter(getSettings: () => AppSettings | Promise
   }
 }
 
-function excerpt(text: string): string {
-  const trimmed = text.trim()
-  return trimmed.length <= EXCHANGE_EXCERPT_CHARACTERS ? trimmed : trimmed.slice(0, EXCHANGE_EXCERPT_CHARACTERS)
+/** The opening of a side call's text, trimmed and cut to `EXCHANGE_EXCERPT_CHARACTERS` (the next prompt's material uses it too). */
+export function excerpt(text: string): string {
+  return text.trim().slice(0, EXCHANGE_EXCERPT_CHARACTERS)
 }

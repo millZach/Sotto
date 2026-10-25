@@ -1,0 +1,624 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Open this file in a browser.
+
+  Question (issue #1183): the Threads in flight limit (1–8, refused with IN_FLIGHT_LIMIT) is going away. In its place
+  Sotto warns, without refusing or holding back anything, once more than 10 threads are working on this computer at
+  the same time. Where does that warning show, and does it repeat?
+
+  Variants (?variant=A|B|C|D, or ← → when focus is not in a field):
+    A  Sidebar line.     A quiet line in the Threads sidebar while more than 10 are working. Sub-choice: under the
+                         search field (the slot SidebarFrame already gives Add project's error) or above the sidebar foot.
+    B  One-time notice.  Appears when the 11th thread starts; Dismiss or Escape closes it. Shows again only after the
+                         count drops to 10 or fewer and climbs past 10 again. Sub-choice: above the focused composer
+                         (the Watch toast's place) or the window's toast corner.
+    C  Title-row mark.   A small "11 working" button in the pane header row, by the window controls, while more than
+                         10 are working. Hover or focus shows the sentence; a press opens a popover; Escape closes it.
+                         (The Threads page has no strip: its top is the sidebar top row and the pane header.)
+    D  Agent-facing.     No new UI. Watcher's and delegation's start replies carry the sentence; Watcher tells the user.
+                         Can be combined with B or C (Watcher's room has no sidebar, so A cannot reach it).
+
+  Colours mirror src/renderer/src/styles/tokens.css (Sotto theme, both halves). Everything stateful is in memory.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto — working threads warning, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+
+/* ---- Theme roles: first-paint Sotto defaults from tokens.css ---- */
+:root {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265);
+  --theme-surface: oklch(0.145 0.008 265);
+  --theme-surface-raised: oklch(0.185 0.008 265);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --theme-text: oklch(0.985 0.005 280);
+  --theme-text-muted: oklch(0.72 0.014 265);
+  --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265);
+  --theme-focus: oklch(0.714403 0.104089 183.092);
+  --theme-accent: oklch(0.714403 0.104089 183.092);
+  --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-secondary: oklch(0.155 0.008 265);
+  --theme-muted: oklch(0.155 0.008 265);
+  --theme-muted-foreground: oklch(0.72 0.014 265);
+  --theme-placeholder: oklch(0.675 0.012 270);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.829017 0.171221 81.038);
+  --theme-warning-surface: oklch(0.315 0.032 80);
+  --theme-update-foreground: oklch(0.83 0.08 183);
+  --theme-accent-surface: oklch(0.32 0.05 185);
+  --theme-message-surface: oklch(0.205 0.014 265);
+  --theme-message-foreground: oklch(0.985 0.005 280);
+  --theme-message-action: oklch(0.714403 0.104089 183.092);
+  --theme-message-action-foreground: oklch(0.16 0.012 190);
+  --theme-code-background: oklch(0.155 0.008 265);
+  --theme-sidebar: oklch(0.235 0.003 265);
+  --theme-sidebar-foreground: oklch(0.985 0.005 280);
+  --theme-sidebar-muted-foreground: oklch(0.72 0.014 265);
+  --theme-sidebar-row-selected: oklch(0.355 0.035 188);
+  --theme-sidebar-border: oklch(0.355 0.012 265);
+  --theme-terminal-scrollbar: oklch(0.315 0.008 265);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-provider-codex: #d7dbe1;
+  --tt-provider-claude: #e3b58e;
+  --tt-provider-grok: #c9baff;
+  --tt-provider-ink: #080b0a;
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-shadow-color: rgb(0 0 0 / 73%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85);
+  --theme-surface: oklch(0.99 0.003 85);
+  --theme-surface-raised: oklch(0.955 0.006 85);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --theme-text: oklch(0.235 0.014 75);
+  --theme-text-muted: oklch(0.5 0.014 75);
+  --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80);
+  --theme-focus: oklch(0.53 0.095 186);
+  --theme-accent: oklch(0.53 0.095 186);
+  --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-secondary: oklch(0.93 0.01 85);
+  --theme-muted: oklch(0.945 0.008 85);
+  --theme-muted-foreground: oklch(0.5 0.014 75);
+  --theme-placeholder: oklch(0.525 0.015 78);
+  --theme-warning: oklch(0.772406 0.172798 65.367);
+  --theme-warning-foreground: oklch(0.530927 0.155556 45.359);
+  --theme-warning-surface: oklch(0.955 0.018 80);
+  --theme-update-foreground: oklch(0.43 0.08 186);
+  --theme-accent-surface: oklch(0.92 0.03 186);
+  --theme-message-surface: oklch(0.93 0.012 85);
+  --theme-message-foreground: oklch(0.235 0.014 75);
+  --theme-message-action: oklch(0.53 0.095 186);
+  --theme-message-action-foreground: oklch(0.99 0.003 85);
+  --theme-code-background: oklch(0.96 0.005 85);
+  --theme-sidebar: oklch(0.955 0.008 85);
+  --theme-sidebar-foreground: oklch(0.235 0.014 75);
+  --theme-sidebar-muted-foreground: oklch(0.5 0.014 75);
+  --theme-sidebar-row-selected: oklch(0.895 0.028 188);
+  --theme-sidebar-border: oklch(0.87 0.012 82);
+  --theme-terminal-scrollbar: oklch(0.84 0.01 85);
+  --tt-success: oklch(0.445 0.11 158);
+  --tt-provider-codex: #c9ced6;
+  --tt-provider-claude: #e2ad80;
+  --tt-provider-grok: #bfaefc;
+  --tt-provider-ink: #0b0d0c;
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-shadow-color: rgb(20 24 22 / 18%);
+}
+/* ---- Derived --tt-* tokens (Contrast at 100%) ---- */
+:root {
+  --tt-canvas: var(--theme-canvas);
+  --tt-surface: var(--theme-surface);
+  --tt-surface-elevated: var(--theme-surface-raised);
+  --tt-surface-overlay: var(--theme-surface-overlay);
+  --tt-surface-sunken: var(--theme-muted);
+  --tt-sidebar: var(--theme-sidebar);
+  --tt-field: var(--theme-surface);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-bubble: var(--theme-message-surface);
+  --tt-bubble-text: var(--theme-message-foreground);
+  --tt-warning: var(--theme-warning-foreground);
+  --tt-warning-text: var(--tt-warning);
+  --tt-attention: var(--tt-warning);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-focus-ring: var(--theme-focus);
+  --tt-primary: var(--theme-message-action);
+  --tt-primary-contrast: var(--theme-message-action-foreground);
+  --tt-selected: var(--theme-sidebar-row-selected);
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-sidebar-text: var(--theme-sidebar-foreground);
+  --tt-sidebar-text-muted: var(--theme-sidebar-muted-foreground);
+  --tt-sidebar-border: var(--theme-sidebar-border);
+  --tt-code-bg: var(--theme-code-background);
+  --tt-glass: var(--theme-surface-overlay);
+  --tt-scrollbar: var(--theme-terminal-scrollbar);
+  --tt-radius-sm: 6px;
+  --tt-radius-md: 10px;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: #1b1b1f; font-family: var(--tt-font-ui); }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+svg.i { flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---- Prototype chrome: deliberately not Sotto's look ---- */
+.proto-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 16px; background: #fffbe6; color: #1d1d1d; border-bottom: 2px solid #e2b100; font: 13px/1.3 system-ui, 'Segoe UI', sans-serif; }
+.proto-bar b.tag { padding: 2px 7px; border-radius: 4px; background: #1d1d1d; color: #ffe066; font-size: 11px; letter-spacing: .06em; }
+.proto-group { display: inline-flex; align-items: center; gap: 6px; }
+.proto-group > span.lbl { color: #555; }
+.proto-seg { display: inline-flex; border: 1px solid #b9b39a; border-radius: 6px; overflow: hidden; }
+.proto-seg button { padding: 4px 10px; border: 0; border-right: 1px solid #b9b39a; background: #fff; color: #1d1d1d; font: inherit; cursor: pointer; }
+.proto-seg button:last-child { border-right: 0; }
+.proto-seg button[aria-pressed='true'] { background: #1d1d1d; color: #ffe066; }
+.proto-step { display: inline-flex; align-items: center; gap: 6px; }
+.proto-step button { width: 26px; height: 26px; border: 1px solid #b9b39a; border-radius: 6px; background: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.proto-step output { min-width: 2ch; font-weight: 700; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+.proto-step input { width: 130px; }
+.proto-sub { display: none; }
+.proto-sub[data-on] { display: inline-flex; }
+.proto-notes { flex: none; display: flex; flex-wrap: wrap; gap: 4px 22px; padding: 7px 16px; background: #f3efd9; color: #2b2b2b; border-bottom: 1px solid #d9d2b0; font: 12.5px/1.4 system-ui, 'Segoe UI', sans-serif; }
+.proto-notes strong { font-weight: 650; }
+.proto-notes code { font: 12px ui-monospace, Consolas, monospace; background: #fff; padding: 0 4px; border-radius: 3px; }
+.proto-bar :focus-visible, .proto-notes :focus-visible { outline: 2px solid #0a64d8; outline-offset: 1px; }
+.proto-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; padding: 16px; }
+.proto-scale { transform-origin: center; }
+
+/* ---- The window ---- */
+.win { position: relative; display: flex; overflow: hidden; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-canvas); color: var(--tt-text); font-family: var(--tt-font-ui); font-size: 14px; box-shadow: 0 30px 80px rgb(0 0 0 / 50%); }
+.tt-focusable:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+button { font-family: inherit; }
+
+/* Sidebar (threadSidebar.css) */
+.nav { position: relative; display: flex; flex-direction: column; flex: none; min-height: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); color: var(--tt-sidebar-text); }
+.nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; }
+.nav__brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 14px; font-weight: 600; }
+.nav__brand svg { width: 18px; height: 18px; }
+.nav[data-narrow] .nav__wordmark { display: none; }
+.seg { display: inline-flex; flex: none; padding: 2px; border-radius: 8px; background: var(--tt-surface-sunken); }
+.seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.seg button[aria-checked='true'], .seg button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 1px 2px var(--tt-shadow-color); }
+.act { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.act:hover { background: var(--tt-hover); color: var(--tt-text); }
+.search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.search svg { position: absolute; left: 9px; }
+.search input { width: 100%; height: 100%; padding: 0 10px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.search input::placeholder { color: var(--tt-text-faint); }
+.nav__scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 0 8px 12px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.folder { margin: 0 0 14px; }
+.folder__toggle { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 26px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; }
+.folder__toggle svg { color: var(--tt-text-muted); }
+.folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; }
+.rows { margin: 0; padding: 0; list-style: none; }
+.row { margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.row:hover { background: var(--tt-hover); }
+.row[data-current] { background: var(--tt-selected); border-color: var(--tt-selected-border); }
+.row__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; width: 100%; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
+.row__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; line-height: 1.4; }
+.row[data-current] .row__title { color: var(--tt-text); }
+.row__time { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.row__status { margin-left: auto; white-space: nowrap; }
+.row__status[data-state='working'] { color: var(--tt-activity); }
+.ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.ring[data-state='done'] { border-color: var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
+@keyframes ring { to { rotate: 1turn; } }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .ring[data-state='working'] { animation: ring 1.5s linear infinite; } }
+.mark { display: inline-grid; place-items: center; flex: none; width: 15px; height: 15px; border-radius: 4px; color: var(--tt-provider-ink); font-size: 9.5px; font-weight: 800; }
+.mark[data-p='claude'] { background: var(--tt-provider-claude); }
+.mark[data-p='codex'] { background: var(--tt-provider-codex); }
+.mark[data-p='grok'] { background: var(--tt-provider-grok); }
+.nav__foot { display: flex; flex: none; align-items: center; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--tt-sidebar-border); }
+.nav__pages { display: flex; gap: 0; margin-left: auto; }
+.update { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--tt-hairline); border-radius: 50%; background: transparent; color: var(--tt-text-muted); }
+
+/* Variant A: the sidebar line. Same box as .thread-nav__error, quiet tone, no dismiss, no live region. */
+.busy-line { display: flex; flex: none; align-items: flex-start; gap: 8px; margin: 0 14px 10px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--tt-sidebar-text-muted); font-size: 12.5px; line-height: 1.45; }
+.busy-line svg { margin-top: 1px; color: var(--tt-attention); }
+.busy-line strong { color: var(--tt-sidebar-text); font-weight: 500; }
+.busy-line[data-place='foot'] { margin: 0 10px 8px; }
+
+/* Workspace (threads.css) */
+.ws { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.ws__head { display: flex; flex: none; align-items: center; gap: 4px; height: 44px; padding: 0 0 0 18px; }
+.ws__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.ws__title h1 { margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+.ws__project { flex: none; color: var(--tt-text-muted); font-size: 13px; }
+.winctl { display: flex; flex: none; margin-left: 6px; }
+.winctl span { display: grid; place-items: center; width: 44px; height: 44px; color: var(--tt-text-muted); }
+.ws__body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px max(24px, calc((100% - 760px) / 2)) 10px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.bubble { width: fit-content; max-width: 80%; margin: 0 0 22px auto; padding: 10px 14px; border-radius: 16px; background: var(--tt-bubble); color: var(--tt-bubble-text); font-size: 16px; line-height: 1.5; }
+.reply { margin: 0 0 18px; color: var(--tt-text); font-size: 16px; line-height: 1.6; }
+.reply p { margin: 0 0 12px; }
+.reply code { font: 14px var(--tt-font-mono); padding: 1px 5px; border-radius: 5px; background: var(--tt-code-bg); }
+.sign { margin: -6px 0 14px; color: var(--tt-text-muted); font-size: 12px; }
+.working-line { display: flex; align-items: center; gap: 8px; color: var(--tt-activity); font-size: 13px; }
+.compose { flex: none; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
+.prompt { border: 1px solid var(--tt-field-border); border-radius: 16px; background: var(--tt-field); }
+.prompt__text { min-height: 52px; padding: 14px 16px 6px; color: var(--tt-text-faint); font-size: 16px; }
+.prompt__foot { display: flex; align-items: center; gap: 4px; padding: 6px 8px 8px 10px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 13px; white-space: nowrap; }
+.send { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; border: 0; border-radius: 50%; background: var(--tt-primary); color: var(--tt-primary-contrast); }
+
+/* Activity row (a tool result, as Thread activity shows it) */
+.activity { margin: 0 0 16px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); font-size: 13px; }
+.activity__head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--tt-text-2); }
+.activity__head b { color: var(--tt-text); font-weight: 500; }
+.activity pre { margin: 0; padding: 10px 12px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font: 12.5px/1.55 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.activity pre mark { background: transparent; color: var(--tt-warning-text); }
+
+/* Variant B: Watch toast above the composer (watcher.css 52–68) or the window's toast corner (global.css 463–490). */
+.toast-anchor { position: relative; flex: none; height: 0; }
+.notice { display: flex; align-items: flex-start; gap: 10px; padding: 8px 6px 8px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+.notice > svg { margin-top: 2px; color: var(--tt-attention); }
+.notice strong { color: var(--tt-text); font-weight: 600; }
+.notice__x { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.notice__x:hover { background: var(--tt-hover); color: var(--tt-text); }
+.toast-anchor .notice { position: absolute; bottom: 8px; left: 50%; z-index: 25; width: max-content; max-width: min(560px, calc(100% - 32px)); transform: translateX(-50%); }
+.toast-corner { position: absolute; right: 20px; bottom: 20px; z-index: 30; width: min(360px, calc(100% - 40px)); }
+.toast-corner .notice { border-left: 2px solid var(--tt-attention); border-radius: var(--tt-radius-sm); background: var(--tt-glass); }
+@keyframes rise { from { opacity: 0; translate: 0 6px; } }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .notice { animation: rise 160ms cubic-bezier(.2,.8,.2,1); } }
+
+/* Variant C: a mark in the header row, by the window controls. */
+.busy-mark { position: relative; flex: none; }
+.busy-mark > button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.busy-mark > button svg { color: var(--tt-attention); }
+.busy-mark > button:hover, .busy-mark > button[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.tip { position: absolute; top: 36px; right: 0; z-index: 40; width: 280px; padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm); background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; pointer-events: none; opacity: 0; visibility: hidden; }
+.busy-mark > button:is(:hover, :focus-visible):not([aria-expanded='true']) + .tip { opacity: 1; visibility: visible; transition: opacity .12s .35s; }
+.pop { position: absolute; top: 38px; right: 0; z-index: 40; width: 300px; padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); font-size: 13px; line-height: 1.5; }
+.pop h2 { margin: 0 0 6px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.pop p { margin: 0; color: var(--tt-text-2); }
+
+/* Variant D: Watcher's room (watcher.css 108–121, receipt cards 333–345). */
+.room { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.room__sky { position: absolute; inset: 0 auto auto 0; width: 420px; max-width: 100%; height: 96px; background: radial-gradient(120px 60px at 30px 22px, color-mix(in srgb, var(--tt-accent) 11%, transparent), transparent), linear-gradient(to bottom, oklch(from var(--tt-canvas) calc(l + .04) min(calc(c + .028), .055) 265), transparent); pointer-events: none; }
+:root[data-theme='light'] .room__sky { background: radial-gradient(120px 60px at 30px 22px, color-mix(in srgb, var(--tt-accent) 8%, transparent), transparent), linear-gradient(to bottom, color-mix(in oklab, var(--tt-canvas) 90%, oklch(from var(--tt-accent) 1 c h)), transparent); }
+.room .ws__head { position: relative; padding-left: 14px; }
+.room__tile { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 6px; }
+.room__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.room__list span { color: var(--tt-text-muted); }
+.tabs { display: inline-flex; flex: none; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--tt-hairline); border-radius: 9px; }
+.tabs button { height: 24px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font-size: 12.5px; }
+.tabs button[aria-selected='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); }
+.stopall { height: 30px; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; }
+.receipts { display: grid; gap: 8px; margin: -4px 0 18px; padding: 0; list-style: none; }
+.receipt { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 11px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); font-size: 14px; }
+.receipt__lead { flex: none; color: var(--tt-text-2); }
+.receipt__name { min-width: 0; overflow: hidden; color: var(--tt-text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.receipt__out { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; color: var(--tt-text-2); font-size: 13px; }
+.floatswitch { position: absolute; left: 50%; bottom: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-glass); box-shadow: var(--tt-shadow-overlay); transform: translateX(-50%); }
+.room .compose { padding-bottom: 72px; }
+</style>
+</head>
+<body>
+
+<header class="proto-bar" aria-label="Prototype controls">
+  <b class="tag">PROTOTYPE</b>
+  <span class="proto-group"><span class="lbl">Variant</span>
+    <span class="proto-seg" id="variants" role="group" aria-label="Variant">
+      <button type="button" data-v="A">A Sidebar line</button>
+      <button type="button" data-v="B">B One-time notice</button>
+      <button type="button" data-v="C">C Header mark</button>
+      <button type="button" data-v="D">D Agent-facing</button>
+    </span>
+  </span>
+  <span class="proto-group proto-sub" id="sub-A"><span class="lbl">Line</span>
+    <span class="proto-seg" role="group" aria-label="Where the line sits"><button type="button" data-a="top">Under search</button><button type="button" data-a="foot">Above the foot</button></span></span>
+  <span class="proto-group proto-sub" id="sub-B"><span class="lbl">Notice</span>
+    <span class="proto-seg" role="group" aria-label="Where the notice shows"><button type="button" data-b="composer">Above composer</button><button type="button" data-b="corner">Toast corner</button></span></span>
+  <span class="proto-group proto-sub" id="sub-D"><span class="lbl">Combine with</span>
+    <span class="proto-seg" role="group" aria-label="Combine D with"><button type="button" data-d="none">Nothing</button><button type="button" data-d="B">B</button><button type="button" data-d="C">C</button></span></span>
+  <span class="proto-group proto-step"><span class="lbl">Threads working</span>
+    <button type="button" id="dec" aria-label="One thread finishes">−</button>
+    <input type="range" id="count" min="8" max="16" step="1" aria-label="Threads working on this computer">
+    <button type="button" id="inc" aria-label="Another thread starts">+</button>
+    <output id="countOut" for="count"></output>
+  </span>
+  <span class="proto-group"><span class="lbl">Look</span>
+    <span class="proto-seg" role="group" aria-label="Appearance"><button type="button" data-t="dark">Dark</button><button type="button" data-t="light">Light</button></span>
+    <span class="proto-seg" role="group" aria-label="Motion"><button type="button" data-m="off">Motion</button><button type="button" data-m="on">Reduced</button></span></span>
+  <span class="proto-group"><span class="lbl">Window</span>
+    <span class="proto-seg" role="group" aria-label="Window size"><button type="button" data-s="1600x1000">1600×1000</button><button type="button" data-s="1280x800">1280×800</button><button type="button" data-s="820x560">820×560</button></span>
+    <span id="scaleOut" class="lbl"></span></span>
+</header>
+<div class="proto-notes" id="notes" aria-live="off"></div>
+
+<main class="proto-stage" id="stage"><div class="proto-scale" id="scale"><div class="win" id="win"></div></div></main>
+
+<script>
+const LIMIT = 10
+const icon = (d, size = 16) => `<svg class="i" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`
+const I = {
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9a2 2 0 0 1-.85.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z"/>',
+  collapse: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+  gauge: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  term: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>',
+  history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  settings: '<path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  panel: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+  minus: '<path d="M5 12h14"/>',
+  square: '<rect width="14" height="14" x="5" y="5" rx="1"/>',
+  play: '<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  tool: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+}
+const owl = (size = 18) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#47b8a9"/><path d="M5 8.2 8.2 5l3.8 2 3.8-2L19 8.2V15a7 7 0 0 1-14 0Z" fill="#0b0f0e"/><circle cx="9.2" cy="12" r="2.1" fill="#47b8a9"/><circle cx="14.8" cy="12" r="2.1" fill="#47b8a9"/><path d="m12 14.4-1 1.5h2z" fill="#47b8a9"/></svg>`
+const mark = p => `<span class="mark" data-p="${p}" aria-hidden="true">${{ claude: 'C', codex: 'X', grok: 'G' }[p]}</span>`
+
+// The threads on this computer, in the order they start working. The first `count` are working.
+const POOL = [
+  ['Remove the in-flight limit', 'Sotto', 'claude', '4m 12s'],
+  ['Fix the flaky upload test', 'Sotto', 'codex', '3m 50s'],
+  ['Write the release notes', 'sotto-site', 'grok', '3m 02s'],
+  ['Bound failed diff reads', 'Sotto', 'codex', '2m 41s'],
+  ['Tidy the host launcher', 'forge-tools', 'claude', '2m 30s'],
+  ['Settle compaction at once', 'Sotto', 'claude', '2m 12s'],
+  ['Port the pairing screen', 'Sotto', 'codex', '1m 58s'],
+  ['Check the Omarchy keys', 'forge-tools', 'grok', '1m 40s'],
+  ['Speed up thread open', 'Sotto', 'codex', '1m 22s'],
+  ['Update the guide', 'sotto-site', 'claude', '1m 05s'],
+  ['Measure sidebar renders', 'Sotto', 'codex', '0m 48s'],
+  ['Retry ssh on wake', 'forge-tools', 'codex', '0m 31s'],
+  ['Rename the queue states', 'Sotto', 'claude', '0m 20s'],
+  ['Replace the hero image', 'sotto-site', 'grok', '0m 12s'],
+  ['Audit token contrast', 'Sotto', 'claude', '0m 07s'],
+  ['Answer issue 1172', 'Sotto', 'codex', '0m 03s'],
+  ['Review pull request 1180', 'Sotto', 'codex', ''],
+  ['Clean up old artifacts', 'forge-tools', 'claude', ''],
+]
+const PROJECTS = ['Sotto', 'forge-tools', 'sotto-site']
+const VARIANTS = ['A', 'B', 'C', 'D']
+const SIZES = { '1600x1000': [1600, 1000, 320], '1280x800': [1280, 800, 300], '820x560': [820, 560, 260] }
+
+const params = new URLSearchParams(location.search)
+const S = {
+  variant: VARIANTS.includes(params.get('variant')) ? params.get('variant') : 'A',
+  aPlace: 'top', bPlace: 'composer', dWith: 'none',
+  count: 11, theme: 'dark', reduced: 'off', size: '1280x800',
+  // B's state machine: armed means the next climb past 10 shows the notice.
+  bArmed: false, bVisible: true, cOpen: false,
+}
+const over = () => S.count > LIMIT
+const threadsWord = n => `${n} ${n === 1 ? 'thread is' : 'threads are'} working`
+const sentence = n => `${n} threads are working. This computer may slow down or use its battery faster.`
+
+function setCount(next) {
+  next = Math.max(8, Math.min(16, next))
+  const before = S.count
+  S.count = next
+  if (next <= LIMIT) { S.bArmed = true; S.bVisible = false; S.cOpen = false }
+  else if (before <= LIMIT && S.bArmed) { S.bVisible = true; S.bArmed = false }
+  render()
+}
+
+// ---------- The Threads page ----------
+function sidebar(width) {
+  const working = S.count
+  const rows = POOL.map((t, i) => ({ title: t[0], project: t[1], p: t[2], time: i < working ? t[3] : ['2h', '3h', '5h', 'Yesterday'][i % 4], state: i < working ? 'working' : 'done', current: i === 0 }))
+  const folders = PROJECTS.map(name => {
+    const list = rows.filter(r => r.project === name)
+    return `<div class="folder"><button type="button" class="folder__toggle tt-focusable" aria-expanded="true" aria-label="${name} ${list.length} threads">${icon(I.folder, 14)}<span>${name}</span><span class="folder__count" aria-hidden="true">${list.length}</span></button>
+      <ul class="rows">${list.map(r => `<li class="row" ${r.current ? 'data-current' : ''}><button type="button" class="row__item tt-focusable" aria-label="${r.title}" ${r.current ? 'aria-current="page"' : ''}>
+        <span class="ring" data-state="${r.state}" aria-hidden="true"></span><span class="row__title">${r.title}</span><time class="row__time">${r.time}</time>
+        <span class="row__meta">${mark(r.p)}<span class="row__status" data-state="${r.state}">${r.state === 'working' ? 'Working' : 'Done'}</span></span></button></li>`).join('')}</ul></div>`
+  }).join('')
+  const line = place => S.variant === 'A' && S.aPlace === place && over()
+    ? `<p class="busy-line" data-place="${place}">${icon(I.gauge, 15)}<span><strong>${S.count} threads are working.</strong> This computer may slow down or use its battery faster.</span></p>` : ''
+  return `<aside class="nav" aria-label="Thread sidebar" style="width:${width}px" ${width < 286 ? 'data-narrow' : ''}>
+    <div class="nav__top">
+      <span class="nav__brand" aria-label="Sotto application">${owl()}<span class="nav__wordmark">Sotto</span></span>
+      <span class="seg" role="radiogroup" aria-label="Sidebar mode"><button type="button" role="radio" aria-checked="true" class="tt-focusable" title="Threads">${icon(I.chat, 15)}<span class="vh">Threads</span></button><button type="button" role="radio" aria-checked="false" class="tt-focusable" title="Terminal">${icon(I.term, 15)}<span class="vh">Terminal</span></button></span>
+      <button type="button" class="act tt-focusable" aria-label="Add project" title="Add project">${icon(I.folderPlus)}</button>
+      <button type="button" class="act tt-focusable" aria-label="New thread" title="New thread">${icon(I.pen)}</button>
+      <button type="button" class="act tt-focusable" aria-label="Collapse sidebar" title="Collapse sidebar">${icon(I.collapse)}</button>
+    </div>
+    <label class="search"><span class="vh">Search threads</span>${icon(I.search, 15)}<input class="tt-focusable" type="search" placeholder="Search threads"></label>
+    ${line('top')}
+    <div class="nav__scroll"><section aria-label="Projects">${folders}</section></div>
+    ${line('foot')}
+    <div class="nav__foot">
+      <span class="seg" role="tablist" aria-label="Page"><button type="button" role="tab" aria-selected="false" tabindex="-1" class="tt-focusable" title="Dictate">${icon(I.mic, 15)}<span class="vh">Dictate</span></button><button type="button" role="tab" aria-selected="true" class="tt-focusable" title="Threads">${icon(I.chat, 15)}<span class="vh">Threads</span></button></span>
+      <nav class="nav__pages" aria-label="Pages">${[['History', I.history], ['Settings', I.settings], ['Help', I.help]].map(([l, d]) => `<a href="#" class="act tt-focusable" title="${l}">${icon(d)}<span class="vh">${l}</span></a>`).join('')}</nav>
+      <span class="update" title="Check for updates">${icon(I.refresh, 14)}</span>
+    </div>
+  </aside>`
+}
+
+function busyMark() {
+  if (!over()) return ''
+  const n = S.count
+  return `<span class="busy-mark">
+    <button type="button" id="busyMark" class="tt-focusable" aria-label="${n} threads working. Show what this means" aria-expanded="${S.cOpen}" aria-controls="busyPop" aria-describedby="busyTip">${icon(I.gauge, 15)}${n} working</button>
+    <span class="tip" id="busyTip" role="tooltip">${sentence(n)}</span>
+    ${S.cOpen ? `<div class="pop" id="busyPop" role="dialog" aria-label="${n} threads working"><h2>${n} threads are working on this computer</h2><p>It may slow down or use its battery faster. Nothing is held back; every thread keeps going.</p></div>` : ''}
+  </span>`
+}
+
+function notice(where) {
+  if (!S.bVisible || !over()) return ''
+  const body = `<div class="notice" role="status" id="bNotice">${icon(I.gauge, 15)}<span><strong>${S.count} threads are working.</strong> This computer may slow down or use its battery faster.</span>
+    <button type="button" class="notice__x tt-focusable" id="bDismiss" aria-label="Dismiss the busy computer notice" title="Dismiss">${icon(I.x, 14)}</button></div>`
+  return where === 'composer' ? `<div class="toast-anchor">${body}</div>` : `<div class="toast-corner" aria-live="polite">${body}</div>`
+}
+const windowControls = () => `<span class="winctl" aria-hidden="true"><span>${icon(I.minus, 14)}</span><span>${icon(I.square, 12)}</span><span>${icon(I.x, 14)}</span></span>`
+const composer = (placeholder, chips) => `<div class="compose"><div class="prompt"><div class="prompt__text">${placeholder}</div>
+  <div class="prompt__foot">${chips}<button type="button" class="send tt-focusable" aria-label="Send">${icon(I.up)}</button></div></div></div>`
+
+function threadsPage(width) {
+  const showB = S.variant === 'B'
+  const showC = S.variant === 'C'
+  return `${sidebar(width)}
+  <section class="ws" aria-label="Remove the in-flight limit">
+    <div class="ws__head">
+      <div class="ws__title">${mark('claude')}<h1>Remove the in-flight limit</h1><span class="ws__project">Sotto</span></div>
+      ${showC ? busyMark() : ''}
+      <button type="button" class="act tt-focusable" aria-label="Show tools" title="Tools">${icon(I.panel)}</button>
+      <button type="button" class="act tt-focusable" aria-label="More thread actions" title="More">${icon(I.more)}</button>
+      ${windowControls()}
+    </div>
+    <div class="ws__body">
+      <div class="bubble">Take out the Threads in flight setting and the IN_FLIGHT_LIMIT refusal. Nothing should be refused any more.</div>
+      <div class="reply"><p>I’ve removed <code>watcherInFlightLimit</code> from the settings schema and the patch allow-list, and dropped the refusal from delegation and Watcher’s start path.</p>
+        <p>Next I’m updating the tests that expected the refusal, then the glossary entry for Watcher’s room.</p></div>
+      <div class="working-line"><span class="ring" data-state="working" aria-hidden="true"></span>Working · 4m 12s</div>
+    </div>
+    ${showB && S.bPlace === 'composer' ? notice('composer') : ''}
+    ${composer('Ask for follow-up changes', `<span class="chip">${mark('claude')}Opus 5.5</span><span class="chip">High</span><span class="chip">Ask before edits</span>`)}
+  </section>
+  ${showB && S.bPlace === 'corner' ? notice('corner') : ''}`
+}
+
+// ---------- Watcher's room (variant D) ----------
+function watcherRoom() {
+  const n = S.count
+  const warn = over()
+  const result = (title) => `Started “${title}” on this computer.${warn ? `\n<mark>${n} threads are now working on this computer. It may slow down or use its battery faster. Nothing was held back.</mark>` : ''}`
+  return `<section class="room" aria-label="Watcher">
+    <div class="room__sky" aria-hidden="true"></div>
+    <div class="ws__head">
+      <span class="room__tile">${owl(24)}</span>
+      <div class="ws__title" style="margin-right:0"><h1>Watcher</h1></div>
+      <button type="button" class="room__list tt-focusable" aria-label="All threads, ${POOL.length}. Show the list">All threads <span>${POOL.length}</span></button>
+      <span class="tabs" role="tablist" aria-label="Watcher’s view"><button type="button" role="tab" aria-selected="true">Conversation</button><button type="button" role="tab" aria-selected="false" tabindex="-1">Watched 6</button></span>
+      <span style="margin-left:auto"></span>
+      ${S.dWith === 'C' ? busyMark() : ''}
+      <button type="button" class="stopall tt-focusable">Stop all</button>
+      <button type="button" class="act tt-focusable" aria-label="More Watcher actions" title="More">${icon(I.more)}</button>
+      ${windowControls()}
+    </div>
+    <div class="ws__body">
+      <div class="bubble">Start the last two issues from this morning’s list.</div>
+      <div class="activity"><div class="activity__head">${icon(I.tool, 14)}<b>start_thread</b> Fix the flaky upload test</div><pre>${result('Fix the flaky upload test')}</pre></div>
+      <div class="reply"><p>I started <strong>Fix the flaky upload test</strong> and <strong>Write the release notes</strong>.${warn ? ` Sotto says ${n} threads are now working on this computer, so it may slow down or use its battery faster.` : ''}</p></div>
+      <div class="sign">Watcher</div>
+      <ul class="receipts">
+        <li class="receipt">${icon(I.play, 15)}<span class="receipt__lead">Started</span><span class="receipt__name">Fix the flaky upload test</span><span class="receipt__out"><span class="ring" data-state="working"></span>Working</span></li>
+        <li class="receipt">${icon(I.play, 15)}<span class="receipt__lead">Started</span><span class="receipt__name">Write the release notes</span><span class="receipt__out"><span class="ring" data-state="working"></span>Working</span></li>
+      </ul>
+    </div>
+    ${composer('Message Watcher', `<span class="chip">${mark('claude')}Opus 5.5</span><span class="chip">High</span><span class="chip">Watcher’s permissions</span>`)}
+    <div class="floatswitch">
+      <span class="seg" role="tablist" aria-label="Page"><button type="button" role="tab" aria-selected="false" tabindex="-1" title="Dictate">${icon(I.mic, 15)}</button><button type="button" role="tab" aria-selected="true" title="Watcher">${owl(15)}</button><button type="button" role="tab" aria-selected="false" tabindex="-1" title="Threads">${icon(I.chat, 15)}</button></span>
+      ${[I.history, I.settings, I.help].map(d => `<span class="act">${icon(d)}</span>`).join('')}<span class="update">${icon(I.refresh, 14)}</span>
+    </div>
+    ${S.dWith === 'B' ? notice('corner') : ''}
+  </section>`
+}
+
+// ---------- Notes, bar and render ----------
+const NOTES = {
+  A: ['A — Sidebar line', 'Shown while more than 10 are working, gone at 10. Not dismissible, never announced: a screen reader finds it under the search field like any text. It does not appear in the collapsed rail.'],
+  B: ['B — One-time notice', 'Appears when the 11th starts, says the live count while up, goes at 10 or fewer. Dismiss or Escape closes it; it returns only after a drop to 10 or fewer and a climb past 10. Announced once (role="status"). Never takes focus. At 820×560 the toast corner covers the composer’s send button; above the composer does not.'],
+  C: ['C — Header mark', 'Sits in the pane header (the Threads page has no strip), by the window controls, while more than 10 are working. Opts out of the drag region. Hover or focus shows the sentence; a press opens it; Escape closes it.'],
+  D: ['D — Agent-facing', 'No new UI. start_thread and delegate replies carry the sentence when the start makes it more than 10; Watcher says it in its reply. At 10 or fewer the reply carries nothing extra. Combine with B or C to also show it in the window.'],
+}
+function renderBar() {
+  document.querySelectorAll('#variants button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.variant)))
+  document.querySelectorAll('[data-a]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.a === S.aPlace)))
+  document.querySelectorAll('[data-b]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.b === S.bPlace)))
+  document.querySelectorAll('[data-d]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.d === S.dWith)))
+  document.querySelectorAll('[data-t]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === S.theme)))
+  document.querySelectorAll('[data-m]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === S.reduced)))
+  document.querySelectorAll('[data-s]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.s === S.size)))
+  for (const v of ['A', 'B', 'D']) document.getElementById(`sub-${v}`).toggleAttribute('data-on', S.variant === v)
+  document.getElementById('count').value = S.count
+  document.getElementById('countOut').textContent = S.count
+  const usesB = S.variant === 'B' || (S.variant === 'D' && S.dWith === 'B')
+  const status = [
+    `<strong>${NOTES[S.variant][0]}.</strong> ${NOTES[S.variant][1]}`,
+    `<span>State: ${S.count} working · warning ${over() ? 'applies' : 'does not apply (10 or fewer)'}${usesB ? ` · notice ${S.bVisible && over() ? 'showing' : S.bArmed ? 'armed for the next climb past 10' : 'dismissed until the count drops to 10 or fewer'}` : ''}</span>`,
+    `<span>Copy: <code>${sentence(S.count)}</code></span>`,
+  ]
+  document.getElementById('notes').innerHTML = status.join('')
+}
+function fit() {
+  const [w, h] = SIZES[S.size]
+  const stage = document.getElementById('stage')
+  const scale = Math.min(1, (stage.clientWidth - 32) / w, (stage.clientHeight - 32) / h)
+  const box = document.getElementById('scale')
+  box.style.transform = `scale(${scale})`
+  box.style.width = `${w}px`; box.style.height = `${h}px`
+  document.getElementById('scaleOut').textContent = scale < 1 ? `shown at ${Math.round(scale * 100)}%` : 'actual size'
+}
+function render() {
+  const focusId = document.activeElement?.id
+  document.documentElement.dataset.theme = S.theme
+  document.documentElement.dataset.reducedMotion = S.reduced
+  const [w, h, sw] = SIZES[S.size]
+  const win = document.getElementById('win')
+  win.style.width = `${w}px`; win.style.height = `${h}px`
+  win.innerHTML = S.variant === 'D' ? watcherRoom() : threadsPage(sw)
+  if (focusId) document.getElementById(focusId)?.focus()
+  renderBar(); fit()
+  const p = new URLSearchParams(location.search); p.set('variant', S.variant); history.replaceState(null, '', `?${p}`)
+}
+function setVariant(v) {
+  S.variant = v; S.cOpen = false
+  // Entering a variant that uses B shows it as if the 11th thread had just started, so it can be seen.
+  if (v === 'B' || (v === 'D' && S.dWith === 'B')) { S.bVisible = over(); S.bArmed = !over() }
+  render()
+}
+
+document.getElementById('variants').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.v; if (v) setVariant(v) })
+document.querySelector('.proto-bar').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.a) { S.aPlace = b.dataset.a; render() }
+  if (b.dataset.b) { S.bPlace = b.dataset.b; S.bVisible = over(); S.bArmed = !over(); render() }
+  if (b.dataset.d) { S.dWith = b.dataset.d; S.cOpen = false; if (S.dWith === 'B') { S.bVisible = over(); S.bArmed = !over() } render() }
+  if (b.dataset.t) { S.theme = b.dataset.t; render() }
+  if (b.dataset.m) { S.reduced = b.dataset.m; render() }
+  if (b.dataset.s) { S.size = b.dataset.s; render() }
+})
+document.getElementById('dec').addEventListener('click', () => setCount(S.count - 1))
+document.getElementById('inc').addEventListener('click', () => setCount(S.count + 1))
+document.getElementById('count').addEventListener('input', e => setCount(Number(e.target.value)))
+document.getElementById('win').addEventListener('click', e => {
+  if (e.target.closest('#bDismiss')) { S.bVisible = false; render(); return }
+  if (e.target.closest('#busyMark')) { S.cOpen = !S.cOpen; render(); return }
+  if (S.cOpen && !e.target.closest('#busyPop')) { S.cOpen = false; render() }
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (S.cOpen) { S.cOpen = false; render(); document.getElementById('busyMark')?.focus(); return }
+    if (S.bVisible) { S.bVisible = false; render(); return }
+  }
+  const t = e.target
+  if (t.closest('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const i = VARIANTS.indexOf(S.variant)
+    setVariant(VARIANTS[(i + (e.key === 'ArrowRight' ? 1 : VARIANTS.length - 1)) % VARIANTS.length])
+  }
+})
+window.addEventListener('resize', fit)
+setVariant(S.variant)
+</script>
+</body>
+</html>

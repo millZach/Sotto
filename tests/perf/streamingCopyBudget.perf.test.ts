@@ -16,20 +16,60 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { copyBudgetPipeline } from '../fixtures/copyBudgetPipeline'
 
-const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, kinds: new Map<string, number>() }))
+const counter = vi.hoisted(() => ({ threads: Number.POSITIVE_INFINITY, calls: 0, whole: 0, watcherRecord: 0, kinds: new Map<string, number>(),
+  record: undefined as (() => unknown) | undefined, measuring: false, objects: 0, objectKinds: new Map<string, number>(), parses: 0, hiddenProjections: 0 }))
 function count(kind: string, value: unknown): void {
   counter.calls++
+  // Watcher's whole record, which grows with every prompt Watcher is sent and every wake-up it has had.
+  if (counter.record && value === counter.record()) counter.watcherRecord++
   const holder = value as { host?: { threads?: unknown }; threads?: unknown } | null
   const threads = Array.isArray(holder?.host?.threads) ? holder.host.threads : Array.isArray(holder?.threads) ? holder.threads : undefined
   if (threads && threads.length >= counter.threads) { counter.whole++; counter.kinds.set(kind, (counter.kinds.get(kind) ?? 0) + 1) }
 }
+/** The objects a copy made: those in the copy that are not the very objects of what it copied. Shared trees cost nothing. */
+const { fresh, freshEachOver } = await vi.hoisted(() => import('./support/copyAccounting'))
+/** Every copier main has, counted where it makes the objects, so a copy made inside another is counted once. */
+const made = vi.hoisted(() => (kind: string, copy: unknown, original: unknown): number => {
+  if (!counter.measuring) return 0
+  const objects = fresh(copy, original)
+  counter.objects += objects; counter.objectKinds.set(kind, (counter.objectKinds.get(kind) ?? 0) + objects)
+  return objects
+})
 vi.mock('../../src/main/agents/cloneHostSnapshot', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/cloneHostSnapshot')>()
-  return { ...original, cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); return original.cloneHostSnapshot(snapshot) } }
+  return { ...original,
+    cloneHostSnapshot: (snapshot: Parameters<typeof original.cloneHostSnapshot>[0]) => { count('cloneHostSnapshot', snapshot); const copy = original.cloneHostSnapshot(snapshot); made('cloneHostSnapshot', copy, snapshot); return copy },
+    clonePlainData: <T>(value: T): T => { count('clonePlainData', value); const copy = original.clonePlainData(value); made('clonePlainData', copy, value); return copy },
+    copyUnshared: <T>(value: T, shared: (value: object) => boolean, seal?: (copy: object) => void): T => {
+      const copy = original.copyUnshared(value, shared, seal); made(seal ? 'certified copy' : 'activity snapshot', copy, value); return copy
+    },
+    // The thread records the workspace publishes again, copied only where they changed since its last publication (#1326).
+    // It is one copy when it made anything, and none when it kept every record.
+    copyOver: <T>(values: readonly T[], previous: readonly (T | undefined)[], shared: (value: object) => boolean, seal: (copy: object) => void): T[] => {
+      const copy = original.copyOver(values, previous, shared, seal)
+      if (!counter.measuring) return copy
+      const objects = freshEachOver(copy, values, previous)
+      if (objects) {
+        count('publication update', values)
+        counter.objects += objects; counter.objectKinds.set('publication update', (counter.objectKinds.get('publication update') ?? 0) + objects)
+      }
+      return copy
+    } }
+})
+// A shown thread's history without its hidden delegation news (ADR-0081): made again only when that history changed, never
+// for another thread's update. Each one is a new array of every message, so each is counted.
+vi.mock('../../src/main/agents/hiddenWakeUpDisplay', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/main/agents/hiddenWakeUpDisplay')>()
+  return { ...original, withoutHiddenWakeUps: (messages: Parameters<typeof original.withoutHiddenWakeUps>[0]) => { if (counter.measuring) counter.hiddenProjections++; return original.withoutHiddenWakeUps(messages) } }
 })
 vi.mock('../../src/main/agents/activitySnapshots', async importOriginal => {
   const original = await importOriginal<typeof import('../../src/main/agents/activitySnapshots')>()
   return { ...original, cloneActivitySnapshot: (snapshot: Parameters<typeof original.cloneActivitySnapshot>[0]) => { count('cloneActivitySnapshot', snapshot); return original.cloneActivitySnapshot(snapshot) } }
+})
+// Reading the provider out of a public model or project ID. Asked once per thread on every publish, it was a second of a busy minute.
+vi.mock('../../src/shared/agents', async importOriginal => {
+  const original = await importOriginal<typeof import('../../src/shared/agents')>()
+  return { ...original, parsePublicProviderEntityId: (id: string) => { if (counter.measuring) counter.parses++; return original.parsePublicProviderEntityId(id) } }
 })
 
 const sleep = (ms: number) => new Promise<void>(done => { setTimeout(done, ms) })
@@ -51,19 +91,32 @@ async function measure(threads: number, owl: boolean) {
     pipeline.adapter.log.add(stream.id, { id: 'reply', role: 'assistant', text: 'First', createdAt: at })
     pipeline.adapter.publish(true)
     await sleep(300)
-    globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); return native(value, options) }) as typeof structuredClone
-    counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.kinds.clear(); pipeline.resetCounts()
+    globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => { count('structuredClone', value); const copy = native(value, options); made('structuredClone', copy, undefined); return copy }) as typeof structuredClone
+    counter.record = owl ? () => pipeline.control.watcherRecordView() : undefined
+    counter.threads = threads; counter.calls = 0; counter.whole = 0; counter.watcherRecord = 0; counter.kinds.clear(); pipeline.resetCounts()
+    counter.objects = 0; counter.objectKinds.clear(); counter.parses = 0; counter.hiddenProjections = 0; counter.measuring = true
+    // The thread that delegated is shown without its hidden news, before the stream and while it runs.
+    const parentShown = pipeline.control.threadDetail(pipeline.parentId)!.messages.map(message => message.id)
+    if (!parentShown.includes('parent-reply') || parentShown.includes('parent-news')) throw new Error(`The delegating thread is not shown as its window would show it: ${JSON.stringify(parentShown)}`)
+    // The workspace saves once a window while the stream changes it; held here and made once at the end, the stream is
+    // counted with one save whatever the machine's speed, rather than one to three.
+    const releaseSaves = pipeline.holdSaves()
     for (let chunk = 0; chunk < CHUNKS; chunk++) {
       pipeline.adapter.log.appendText(stream.id, 'reply', ` word${chunk}`)
       pipeline.adapter.publish(true)
       await sleep(5)
     }
     await sleep(400)
+    await releaseSaves()
+    counter.measuring = false
     const broadcasts = Math.max(1, pipeline.broadcasts())
-    return { broadcasts, copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
+    const per = (total: number, by: number) => Math.round(total / by * 100) / 100
+    return { broadcasts, hiddenProjectionsPerUpdate: per(counter.hiddenProjections, broadcasts), objectsPerFrame: per(counter.objects, CHUNKS), objectsPerThreadPerUpdate: per(counter.objects, broadcasts * threads),
+      objectsByKind: Object.fromEntries([...counter.objectKinds].map(([kind, n]) => [kind, per(n, CHUNKS)])), parsesPerUpdate: per(counter.parses, broadcasts), copiesPerUpdate: counter.calls / broadcasts, wholeStateCopiesPerUpdate: counter.whole / broadcasts, watcherRecordCopiesPerUpdate: counter.watcherRecord / broadcasts, wholeByKind: Object.fromEntries([...counter.kinds].map(([kind, n]) => [kind, Math.round(n / broadcasts * 100) / 100])) }
   } finally {
     globalThis.structuredClone = native
-    counter.threads = Number.POSITIVE_INFINITY
+    counter.measuring = false
+    counter.threads = Number.POSITIVE_INFINITY; counter.record = undefined
     await pipeline.stop()
   }
 }
@@ -73,17 +126,90 @@ async function measure(threads: number, owl: boolean) {
  * Measured October 15, 2026 after the fixes: Owl 20.5 copies and 2.9 whole-state copies, stable 8.9 and 2.95; the main
  * branch before them grew with the threads on Owl and copied the whole state 7.9 times per update. The whole-state copies
  * left are the coordinator's shell for the broadcast and the workspace's activity snapshots (#925). A change that lowers
- * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first.
+ * a count lowers its budget in the same PR; a change that needs more copies on this path asks Zach first. The October 17
+ * Watcher recovery follow-up removed two more copies per Owl update (matched parent 21.4, candidate 19.4).
+ *
+ * October 17, 2026: Owl copied Watcher's whole record 11 times per update. The record grows with every prompt and
+ * wake-up Watcher has had, so the cost grew with use rather than with threads, and the owner's 373 KB record cost main
+ * about 26 ms an update. Reading it without the copy left Owl at 12.4 copies and one copy of the record, in the observe
+ * pass's operations change, per update; the room still copies the records it hands out. Stable reads 9.8.
+ */
+/*
+ * October 19, 2026: counting calls missed the copies that cost the most. The adapter's subscribers each took a copy of
+ * every thread inside the module that made it, where no call is seen, and the provider switch copied what it had just
+ * been handed. So this also counts the objects each copier makes, wherever it is called from, per thread per update.
+ * With 200 threads it was 40 on Owl and 43 on stable, five copies of every thread on every update. A publication is now
+ * copied once for all its subscribers, the switch keeps an adapter's publication and hands on its aggregate as they are,
+ * and the shell a broadcast carries shares the coordinator's thread records: 17 and 19, the adapter's copy and the
+ * workspace's. It also counts reading a provider out of a public ID, about 2,400 times per update with 200 threads on
+ * Owl, where a held provider makes the workspace ask about every thread and model; it reads each ID once now.
+ */
+/*
+ * October 20, 2026: Watcher's observe pass now changes the record only when something changed (#1231), so an update
+ * while a thread streams copies Watcher's record no times at all, and Owl makes 10.4 to 10.7 copies per update, from
+ * 12.4. The Owl budget is 11 copies and no copy of the record.
+ */
+/*
+ * October 22, 2026 (#1327): each Watcher room publish copied the room's records twice, once in the room state and again
+ * in the desktop room's capture for its publish window. The room state now hands out the record's own records, which
+ * every change replaces rather than edits, so only the capture copies them: Owl makes 9.4 to 9.8 copies per update, from
+ * 10.4 to 10.7. The Owl budget is 10 copies.
+ */
+/*
+ * October 22, 2026: the workspace's activity publication hands out a thread that has not changed since the last one as
+ * the very record that one carried, frozen, and copies again only what changed (#1326). It was the last whole-state copy
+ * on this path. With 200 threads, Owl copies 7.7 objects per thread per update, from 16.8, and stable 9.7, from 18.9, and
+ * no update copies the whole state. The copier calls stay where they were: the whole copy became one copy of what
+ * changed. What is left is the adapter's copy of every thread for its subscribers (#925).
+ */
+/*
+ * October 22, 2026, with #1327 and #1326 together: Owl makes 9.3 to 9.7 copies per update and 7.5 to 8.0 objects per
+ * thread per update, depending on how many broadcasts a run makes, and stable 8.8 to 8.9 copies and 9.7 to 9.8 objects.
+ * The budgets stay at 10 copies and 9 objects on Owl and 9.5 and 11 on stable: anything tighter is within a run's
+ * spread.
+ */
+/*
+ * October 23, 2026 (#1334): the coordinator's broadcast shell copied everything but the threads on every broadcast, in two
+ * calls, and it now reads that part against the last broadcast's frozen copy and copies only what changed. Owl makes 7.3 to
+ * 7.8 copies per update, from 9.3 to 9.7, and stable 6.8 to 6.9, from 8.9; Owl's objects per thread per update stay within
+ * their spread (7.5 to 8.0) and stable's are 9.2 to 9.4, from 9.5 to 9.8. The budgets are 8.5 copies on Owl and 7.5 on
+ * stable, and 10 objects on stable.
+ */
+/*
+ * October 23, 2026 (#1450): Watcher's room is built when the window's update goes, at most once a publish window, and
+ * copied for none of them, where the desktop room copied every room it kept for its window. With #1334 in, Owl makes 6.3
+ * to 6.75 copies per update, from 7.3 to 7.8, and its budget is 7.5. The workspace's saves are held through the stream
+ * and made once at its end: it saves at most once a 250 ms window while anything changes, so one to three saves fell
+ * inside a stream as the machine was fast or slow, and on stable each copies the saved organization. Stable read 8.6 to
+ * 9.6 objects per thread per update by how many saves fell in, near its budget of 10; with one it reads 8.6 every run,
+ * and its budget is 9.5.
+ */
+/*
+ * October 24, 2026 (#925, step 3): the identity wrapper and the provider switch read thread changes, so nothing reads the
+ * adapter's activity snapshots and its copy of its whole view for them is gone. That copy was 611 objects a frame on Owl
+ * and 570 on stable, and objects per thread per update fall from 7.73 to 0.11 on Owl and from 8.64 to 1.06 on stable
+ * (the workspace's one save, a copy of the organization, is most of what is left there). It made no copy call here, being
+ * counted by its objects alone; the adapter's thread changes, which the wrapper now reads, copy the records that changed
+ * once an update in a call that is counted, so copies read 3 per update on Owl, from 2, and 3.07 on stable, from 2.13. The
+ * budgets are 3.5 copies on both, and 0.5 objects per thread on Owl and 1.5 on stable.
+ */
+/*
+ * October 25, 2026 (#925, step 4): the workspace reads the provider switch's thread changes, so nothing reads the switch's
+ * activity snapshot and the switch no longer builds it for each update, with its copy of every provider's status. Copies
+ * read 2.07 per update on Owl, from 3, and 2.13 on stable, from 3.07, and objects per thread per update fall from 0.11 to
+ * 0.04 on Owl and from 1.06 to 0.99 on stable, which is mostly the workspace's one save. The budgets are 2.5 copies on
+ * both, and 0.25 objects per thread on Owl; stable's stays at 1.5, since how many saves fall in a stream moves it.
  */
 const BUDGET = {
-  Owl: { copiesPerUpdate: 23.5, wholeStateCopiesPerUpdate: 3.5 },
-  stable: { copiesPerUpdate: 10.5, wholeStateCopiesPerUpdate: 3.5 },
+  Owl: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 0.25, parsesPerUpdate: 5 },
+  stable: { copiesPerUpdate: 2.5, wholeStateCopiesPerUpdate: 0, watcherRecordCopiesPerUpdate: 0, objectsPerThreadPerUpdate: 1.5, parsesPerUpdate: 5 },
 } as const
 
 describe.each([['Owl', true], ['stable', false]] as const)('what one streaming update copies on %s', (track, owl) => {
   it('does not grow with the number of threads, and stays within its budget', async () => {
     const few = await measure(20, owl), many = await measure(200, owl)
     const seen = JSON.stringify({ few, many })
+    if (process.env.SOTTO_PERF_BENCH === '1') console.log(`Streaming copy budget ${track}: ${seen}`)
     expect(many.broadcasts, `the stream produced no updates to count: ${seen}`).toBeGreaterThan(1)
     expect(many.copiesPerUpdate, `an update copies more with 200 threads than with 20, so something copies per thread on every update: ${seen}`)
       .toBeLessThanOrEqual(few.copiesPerUpdate * 1.2 + 1)
@@ -91,5 +217,15 @@ describe.each([['Owl', true], ['stable', false]] as const)('what one streaming u
       .toBeLessThanOrEqual(BUDGET[track].wholeStateCopiesPerUpdate)
     expect(many.copiesPerUpdate, `an update makes more copies than its budget: ${seen}`)
       .toBeLessThanOrEqual(BUDGET[track].copiesPerUpdate)
+    expect(many.watcherRecordCopiesPerUpdate, `an update copies Watcher's whole record more often than its budget: ${seen}`)
+      .toBeLessThanOrEqual(BUDGET[track].watcherRecordCopiesPerUpdate)
+    expect(many.objectsPerThreadPerUpdate, `an update copies more of every thread than its budget, so a layer copies what another already copied: ${seen}`)
+      .toBeLessThanOrEqual(BUDGET[track].objectsPerThreadPerUpdate)
+    expect(many.parsesPerUpdate, `an update reads a provider out of public IDs more often with 200 threads than with 20: ${seen}`)
+      .toBeLessThanOrEqual(few.parsesPerUpdate * 1.2 + 1)
+    expect(many.parsesPerUpdate, `an update reads a provider out of public IDs more often than its budget: ${seen}`)
+      .toBeLessThanOrEqual(BUDGET[track].parsesPerUpdate)
+    // October 19, 2026: a shown thread with hidden delegation news is projected again only when its own history changes.
+    expect(many.hiddenProjectionsPerUpdate, `another thread's update made the delegating thread's history again without its hidden news: ${seen}`).toBe(0)
   }, 120_000)
 })

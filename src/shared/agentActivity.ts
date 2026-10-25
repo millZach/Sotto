@@ -10,6 +10,24 @@ const count = z.number().int().nonnegative()
  */
 export const workflowProgressSchema = z.object({ total: count, working: count, completed: count, failed: count, interrupted: count, queued: count.optional() })
 export type WorkflowProgress = z.infer<typeof workflowProgressSchema>
+/**
+ * How one of the user's own model servers let a turn down (ADR-0124, October 24 amendment): it did not answer after
+ * OpenCode's tries, did not start answering within OpenCode's five minutes, turned down its key, no longer has the model,
+ * or the thread is longer than the model takes.
+ */
+export const ownServerTurnFailures = ['unreachable', 'timeout', 'key-refused', 'model-gone', 'too-long'] as const
+export type OwnServerTurnFailure = typeof ownServerTurnFailures[number]
+/**
+ * A turn on one of the user's own model servers, as its words need it: the server's and the model's names, and the
+ * address's host and port. While OpenCode tries the server again, the try it is on and how many it makes; once the turn
+ * failed, how the server let it down. Display words only; nothing here reaches the server.
+ */
+export const ownServerTurnSchema = z.object({
+  name: z.string().max(80), model: z.string().max(200), host: z.string().max(400),
+  attempt: count.max(1_000).optional(), attempts: count.max(1_000).optional(),
+  failure: z.enum(ownServerTurnFailures).optional(),
+})
+export type OwnServerTurn = z.infer<typeof ownServerTurnSchema>
 export const agentActivitySchema = z.object({
   id: z.string(), turnId: z.string(), sequence: z.number().int().nonnegative(),
   afterMessageId: z.string().optional(),
@@ -45,7 +63,19 @@ export const agentActivitySchema = z.object({
   taskUpdatesExcluded: z.boolean().optional(),
   /** An interrupted turn a steer ended: the provider cut the step it was on so the steer could run next (ADR-0075). */
   steered: z.boolean().optional(),
+  /** A turn record's own server (ADR-0124): set only on a turn whose model is one of the user's own model servers. */
+  ownServer: ownServerTurnSchema.optional(),
   truncated: z.boolean().optional(),
+  /**
+   * Bodies the host sent cut, whose whole is still on the host (ADR-0025, October 18 amendment): each one's whole size in
+   * UTF-8 bytes, a diff's by the index of its change. Only a desktop that accepts `activity-bodies` is sent it, and only on
+   * a record from a remote host; it reads the whole record with `activity-body` when the row opens. Not `truncated`,
+   * which says details were not kept anywhere.
+   */
+  cut: z.object({
+    output: count.optional(), text: count.optional(),
+    diffs: z.array(z.object({ index: count.max(199), bytes: count })).max(200).optional(),
+  }).optional(),
 })
 export type AgentActivity = z.infer<typeof agentActivitySchema>
 export type ObservedAgent = NonNullable<AgentActivity['agents']>[number]

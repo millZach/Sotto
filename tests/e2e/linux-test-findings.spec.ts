@@ -5,7 +5,6 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { AGENT_STATE } from '../../src/shared/agents'
 import { closeSotto, firstRunForwardButton, firstSottoWindow, openPage, skipThreadsTour, type LaunchedSotto } from './support/sottoLaunch'
-import { forceDomTerminalRenderer } from './support/terminal'
 import { OMARCHY_SETUP_CHANGED } from '../../src/shared/omarchySetup'
 import { evidenceDirectory } from '../fixtures/evidence'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
@@ -35,19 +34,13 @@ async function capture(page: Page, name: string) {
   await page.screenshot({ path: join(evidence, file), animations: 'disabled' })
   proofs.push({ file, size: await page.evaluate(() => [innerWidth, innerHeight]) })
 }
-async function nativeZoomKey(launched: LaunchedSotto, key: string, shift = false) {
-  await launched.app.evaluate(({ BrowserWindow }, { key, shift }) => {
-    const contents = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents
-    const modifiers: Array<'control' | 'shift'> = shift ? ['control', 'shift'] : ['control']
-    contents.sendInputEvent({ type: 'keyDown', keyCode: key, modifiers })
-    contents.sendInputEvent({ type: 'keyUp', keyCode: key, modifiers })
-  }, { key, shift })
-}
 async function clientNotice(launched: LaunchedSotto, ready = false) {
   const state = await launched.page.evaluate(() => window.sotto!.agents!.get())
   delete state.clientUpdatesDismissedAt
+  // A complete thread list (ADR-0028's October 22 amendment). The read above told main to send its next broadcast
+  // complete too, so revision 0, which main never uses, is never taken as the base of one of main's.
   const broadcast = { ...state,
-    host: { ...state.host, models: { revision: 0, models: state.host.models },
+    host: { ...state.host, models: { revision: 0, models: state.host.models }, threads: { revision: 0, base: null, changed: state.host.threads },
       clientHosts: state.host.clientHosts?.map(host => ({ ...host, models: { revision: 0, models: host.models } })) },
     clientUpdates: [{ id: 'grok', installed: '1.0.50', published: '1.0.52', behind: true, channel: 'npm',
       command: 'npm install -g @xai-official/grok@latest', canInstall: true, checkedAt: new Date().toISOString(), state: 'idle' }],
@@ -73,7 +66,7 @@ async function clientNotice(launched: LaunchedSotto, ready = false) {
   }, { state: broadcast, channel: AGENT_STATE, ready })
 }
 
-test('outside changes, removal, corner notice, launch environments and terminal Plus on Omarchy', async () => {
+test('outside changes, removal, corner notice and launch environments on Omarchy', async () => {
   test.skip(!enabled, 'Requires the private Omarchy shell and nested display wrapper')
   test.setTimeout(240_000)
   expect(home.startsWith(resolve('.cache'))).toBe(true)
@@ -255,61 +248,6 @@ test('outside changes, removal, corner notice, launch environments and terminal 
         Object.fromEntries(['OMARCHY_PATH', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'HYPRLAND_INSTANCE_SIGNATURE'].map(key => [key, process.env[key] ?? null]))) })
       await closeSotto(launched); launched = undefined
     }
-    // A real shell, all three terminal zoom chords and the external-link modifier.
-    launched = await launch('terminal'); ({ page, app } = launched)
-    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await fit(launched, 1280, 800); await forceDomTerminalRenderer(page)
-    if (packaged) {
-      await page.evaluate(() => window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, enabledProviders: ['claude'], provider: 'claude', checkClientUpdates: false } }))
-      await page.evaluate(() => window.sotto!.agents!.command({ type: 'connect', provider: 'claude' }))
-    }
-    const project = await page.evaluate(path => window.sotto!.agents!.command({ type: 'create-project', title: 'Zoom proof', path, useExisting: true }), root)
-    expect(project.error ?? null).toBeNull()
-    await page.getByRole('radio', { name: 'Terminal', exact: true }).click()
-    await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
-    const dialog = page.getByRole('dialog', { name: 'New terminal', exact: true })
-    if (await dialog.getByRole('textbox', { name: 'Terminal name', exact: true }).count() === 0) {
-      await dialog.locator('.new-thread-choice').filter({ hasText: 'Zoom proof' }).click()
-    }
-    await dialog.getByRole('textbox', { name: 'Terminal name', exact: true }).fill('Zoom check')
-    await dialog.getByRole('combobox', { name: 'Terminal provider' }).selectOption('')
-    await dialog.getByRole('button', { name: 'Open terminal', exact: true }).click()
-    const input = page.locator('.terminal-pane .xterm-helper-textarea')
-    await input.click()
-    const zoom = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.webContents.getURL().endsWith('/index.html'))!.webContents.getZoomFactor())
-    const font = () => page.evaluate(async () => (await window.sotto!.getSettings()).terminalFontSize)
-    for (const [key, shift, expected] of [['=', true, 14], ['+', false, 15], ['-', false, 14], ['0', false, 13]] as const) {
-      await nativeZoomKey(launched, key, shift); await expect.poll(font).toBe(expected); expect(await zoom()).toBe(1)
-    }
-    await input.pressSequentially("printf 'https://example.com/terminal\\n'"); await input.press('Enter')
-    await expect(page.locator('.xterm-rows')).toContainText('https://example.com/terminal')
-    await app.evaluate(({ shell }) => { shell.openExternal = async url => { (globalThis as typeof globalThis & { proofLink?: string }).proofLink = url } })
-    const link = page.locator('.xterm-rows > div').filter({ hasText: /^https:\/\/example.com\/terminal$/ }).last()
-    const point = await link.evaluate(element => {
-      const range = document.createRange(); range.selectNodeContents(element)
-      const r = range.getBoundingClientRect(); return { x: r.x + 6, y: r.y + r.height / 2 }
-    })
-    await page.mouse.move(point.x, point.y)
-    await page.mouse.click(point.x, point.y)
-    expect(await app.evaluate(() => (globalThis as typeof globalThis & { proofLink?: string }).proofLink)).toBeUndefined()
-    await page.keyboard.down('Control')
-    try { await page.mouse.click(point.x, point.y) } finally { await page.keyboard.up('Control') }
-    await expect.poll(() => app.evaluate(() => (globalThis as typeof globalThis & { proofLink?: string }).proofLink)).toBe('https://example.com/terminal')
-    await capture(page, 'terminal-1280x800-dark')
-    await fit(launched, 820, 560)
-    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
-    await capture(page, 'terminal-820x560-light')
-    await input.press('Control+f')
-    await page.getByRole('textbox', { name: 'Find in terminal' }).press('Escape')
-    // Move focus out of the terminal, then the same Plus shortcut still zooms the interface.
-    await page.getByRole('button', { name: 'New terminal', exact: true }).first().focus()
-    await expect(page.getByRole('button', { name: 'New terminal', exact: true }).first()).toBeFocused()
-    proofs.push({ menuRoles: await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.flatMap(item => item.submenu?.items.map(item => item.role) ?? []) ?? []) })
-    await nativeZoomKey(launched, '+')
-    await expect.poll(zoom).toBeGreaterThan(1)
-    await nativeZoomKey(launched, '0')
-    await expect.poll(zoom).toBe(1)
-    proofs.push({ terminalZoom: true, appZoom: true, modifierLink: true })
   } finally {
     if (launched) await closeSotto(launched)
     await rm(join(root, 'hold-keys'), { force: true })

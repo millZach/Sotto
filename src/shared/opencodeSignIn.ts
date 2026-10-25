@@ -9,6 +9,11 @@ import { z } from 'zod'
 
 /** Passed to the main window's preload only while OpenCode's Owl feature is on; without it there is no bridge. */
 export const OPENCODE_RENDERER_ARGUMENT = '--sotto-opencode-enabled'
+/**
+ * Passed to the main window's preload while OpenCode's Owl feature is on, whether or not this computer runs its local host:
+ * a host's OpenCode is signed in from Settings > Hosts & phones through its own bridge (#1107).
+ */
+export const OPENCODE_HOSTS_RENDERER_ARGUMENT = '--sotto-opencode-hosts'
 export const OPENCODE_SOURCES_READ = 'sotto:opencode:sources'
 export const OPENCODE_SIGN_IN_KEY = 'sotto:opencode:sign-in-key'
 export const OPENCODE_SIGN_IN_BROWSER = 'sotto:opencode:sign-in-browser'
@@ -23,6 +28,9 @@ export const OPENCODE_SIGN_OUT = 'sotto:opencode:sign-out'
 export const COMMON_MODEL_SOURCES = ['anthropic', 'openai', 'openrouter', 'github-copilot', 'google', 'xai'] as const
 /** The sentence under every key field. */
 export const KEY_SENTENCE = 'Sotto’s OpenCode keeps the key in its own folder, and Sotto keeps no copy.'
+/** The same for a host's OpenCode (#1107): the key crosses the host connection once and is kept only there. */
+export const hostKeySentence = (host: string): string =>
+  `The key goes to Sotto’s OpenCode on ${host} once, which keeps it in its own folder there. Sotto keeps no copy on either computer.`
 /** The longest key Sotto passes on. Real keys are well under this; a longer paste is something else. */
 export const OPENCODE_KEY_MAX = 4_096
 
@@ -83,7 +91,16 @@ export const signInAttemptSchema = z.object({
   page: z.string().min(1).max(300), expiresAt: z.number().int().nonnegative().optional(),
 }).strict()
 export type SignInAttempt = z.infer<typeof signInAttemptSchema>
-const refused = z.object({ status: z.literal('refused'), message: words }).strict()
+/**
+ * Why a refusal was made, where the window acts on it and not only shows its words: `code-refused` is a pasted code the
+ * source did not accept, and the dialog asks for another; `finishes-on-host` is a browser sign-in that sends the browser back
+ * to OpenCode on the host's own machine, which the dialog then stops offering (#1107); `answer-lost` is a host that did not
+ * answer, which may have signed in or out all the same, so the window reads its model sources again and shows them. A refusal
+ * without one is told in its words alone, and a reason this build does not know reads as none.
+ */
+export const signInRefusalReasonSchema = z.enum(['code-refused', 'finishes-on-host', 'answer-lost'])
+export type SignInRefusalReason = z.infer<typeof signInRefusalReasonSchema>
+const refused = z.object({ status: z.literal('refused'), message: words, reason: signInRefusalReasonSchema.optional().catch(undefined) }).strict()
 /** The sign-ins changed. `warning` says what did not follow them, such as a model list that could not be read again. */
 const changed = z.object({ status: z.literal('ok'), sources: modelSourcesSchema, warning: words.optional() }).strict()
 export const signInResultSchema = z.discriminatedUnion('status', [changed, refused])
@@ -105,6 +122,44 @@ export type SignInWait = z.infer<typeof signInWaitSchema>
 export const signInDoneSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok') }).strict(), refused,
   z.object({ status: z.literal('not-opened'), message: words, address: z.string().max(4_096).regex(/^https:\/\//u) }).strict()])
 export type SignInDone = z.infer<typeof signInDoneSchema>
+
+/**
+ * A host's OpenCode signed in from this computer (#1107, ADR-0037): one `opencode-sign-in` request per call, each the same
+ * call the desktop's own dialog makes of main, answered by the host's own sign-in on its own Sotto OpenCode folder. `page`
+ * stands in for opening the page: the host has no browser, so it answers with the page's address, which this computer's
+ * main checks and opens, and never hands the window. A key crosses the connection once, in `key`, and goes no further than
+ * the host's OpenCode.
+ */
+/**
+ * The calls the window's request to main (`hostOpenCodeCallSchema`) and main's request to the host share, one schema each, so
+ * the two cannot drift apart. Each boundary adds its own way to open a waiting sign-in's page: the window has main `reopen`
+ * it, and main asks the host for its address with `page`.
+ */
+export const OPENCODE_SIGN_IN_CALLS = [
+  z.object({ action: z.literal('sources') }).strict(),
+  z.object({ action: z.literal('key'), request: signInKeyRequestSchema }).strict(),
+  z.object({ action: z.literal('browser'), request: signInMethodRequestSchema }).strict(),
+  z.object({ action: z.literal('external'), request: signInMethodRequestSchema }).strict(),
+  z.object({ action: z.literal('wait'), request: signInAttemptRequestSchema }).strict(),
+  z.object({ action: z.literal('finish'), request: signInFinishRequestSchema }).strict(),
+  z.object({ action: z.literal('cancel'), request: signInAttemptRequestSchema }).strict(),
+  z.object({ action: z.literal('sign-out'), request: signOutRequestSchema }).strict(),
+] as const
+export const opencodeHostCallSchema = z.discriminatedUnion('action', [...OPENCODE_SIGN_IN_CALLS,
+  z.object({ action: z.literal('page'), request: signInAttemptRequestSchema }).strict()])
+export type OpenCodeHostCall = z.infer<typeof opencodeHostCallSchema>
+/** A waiting sign-in's page as a host answers `page`: its https address, for this computer's main to open, or a refusal. */
+export const signInPageSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok'), address: z.string().max(4_096).regex(/^https:\/\//u) }).strict(), refused])
+export type SignInPage = z.infer<typeof signInPageSchema>
+/** What each shared call is answered with, by action, at both boundaries. */
+export const OPENCODE_SIGN_IN_ANSWERS = {
+  sources: modelSourcesSchema, key: signInResultSchema, browser: signInStartSchema, external: signInResultSchema, wait: signInWaitSchema,
+  finish: signInWaitSchema, cancel: signInDoneSchema, 'sign-out': signInResultSchema,
+} as const satisfies Record<z.infer<(typeof OPENCODE_SIGN_IN_CALLS)[number]>['action'], z.ZodType>
+/** What a host answers each call with, by action: the shared answers, and the page's address for `page`. */
+export const OPENCODE_HOST_ANSWERS = { ...OPENCODE_SIGN_IN_ANSWERS, page: signInPageSchema } as const satisfies Record<OpenCodeHostCall['action'], z.ZodType>
+export type OpenCodeHostAnswer<A extends OpenCodeHostCall['action']> = z.infer<(typeof OPENCODE_HOST_ANSWERS)[A]>
 
 export interface OpenCodeSignInBridge {
   sources(): Promise<ModelSources>
@@ -143,3 +198,52 @@ export const SIGN_IN_WORDS = {
   keyUnchecked: (source: string) => `OpenCode tries the key the first time a thread uses one of its models. If ${source} refuses it then, sign out here and paste the key again.`,
   signedOut: (source: string, key: boolean) => `Signed out of ${source}. Its ${key ? 'key' : 'sign-in'} is gone from Sotto’s OpenCode.`,
 } as const
+
+/**
+ * A host whose answer to a sign-in call was lost (#1107): it may have saved the key, finished the sign-in or signed out all
+ * the same, so this computer never says nothing changed. Where the call names a source, main reads the host's model sources
+ * again and says what they show; otherwise the window reads them again and shows them.
+ */
+export const HOST_ANSWER_LOST = {
+  /** The list read again shows the change took. */
+  took: (host: string, source: string, signedIn: boolean): string =>
+    `${host} did not answer at first, so Sotto read its model sources again: ${source} is signed ${signedIn ? 'in' : 'out'} there.`,
+  /** The list read again shows it did not. */
+  notTaken: (host: string, source: string, signingIn: boolean): string => signingIn
+    ? `${host} did not answer, so Sotto read its model sources again: ${source} is not signed in there, so nothing was saved. Try again.`
+    : `${host} did not answer, so Sotto read its model sources again: ${source} is still signed in there. Try again.`,
+  /** A call that names no source: the window reads the list again under the tiles. */
+  untold: (host: string): string =>
+    `${host} did not answer, so Sotto could not tell whether anything was signed in or out there. It is reading ${host}’s model sources again; look under them before you try again.`,
+  /** The list could not be read again either. */
+  unknown: (host: string): string =>
+    `${host} did not answer, so Sotto could not tell whether anything was signed in or out there, and could not read its model sources to find out. Check that ${host} is connected, then look under its model sources before you try again.`,
+  /** Reading the list itself got no answer; a read changes nothing. */
+  unread: (host: string): string => `${host} did not answer, so Sotto could not read its model sources. Nothing was changed. Check that ${host} is connected, then try again.`,
+  /** A pasted code whose answer was lost while the sign-in still waits: the host may never have had it, so it is asked for again. */
+  code: (host: string): string => `${host} did not answer, so Sotto could not tell whether it took the code. The sign-in is still waiting. Paste the code again.`,
+  /** Asking for a waiting sign-in's page got no answer, so the page did not open. */
+  page: (host: string): string => `${host} did not answer, so the sign-in page did not open. Nothing was saved. Press Open the page again.`,
+} as const
+
+/**
+ * A host that sends no OpenCode row, one from before #1107 or one whose OpenCode is held: it has no OpenCode tile, and this
+ * says what would give it one. This computer's version of the host is an Owl one whenever this computer offers OpenCode.
+ */
+export const opencodeNotOnHost = (host: string): string =>
+  `OpenCode does not run on ${host}’s host. To use it there, put this computer’s version of the host on ${host}, stop the host and connect again.`
+/** A host from before #1107 does not list `opencode-sign-in`: its tile says so, and nothing is sent to it. */
+export const opencodeHostNeedsUpdate = (host: string): string =>
+  `The host on ${host} cannot sign OpenCode in to model sources from here. Nothing was changed. Put this computer’s version of the host on ${host}, stop the host and connect again.`
+/**
+ * A browser sign-in OpenCode finishes by sending the browser back to its own machine (checked against 2.0.31: every `auto`
+ * sign-in without a code, whose page names a `localhost` or `127.0.0.1` address to come back to). A browser on this
+ * computer cannot reach OpenCode on the host, so on a host it is cancelled as it starts, and only a key, a pasted code or
+ * a device code signs in.
+ */
+export const opencodeSignInComesBack = (host: string): string =>
+  `This way of signing in finishes by sending your browser back to OpenCode on ${host}, which the browser on this computer cannot reach. Nothing was saved. Choose another way to sign in, such as a key.`
+/** Whether an address OpenCode gave is one Sotto opens: https, with a host name and no user name or password in it. */
+export function isOpenCodeSignInPage(address: string): boolean {
+  try { const url = new URL(address); return url.protocol === 'https:' && !url.username && !url.password && Boolean(url.hostname) } catch { return false }
+}

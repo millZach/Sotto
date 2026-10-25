@@ -57,7 +57,7 @@ test('completed dictation survives clipboard failure, navigation and later dicta
     await recovered.getByRole('button', { name: 'Dismiss text' }).click()
     await expect(text).toHaveCount(1)
     await dictate()
-    await expect(page.getByRole('heading', { name: 'Pasted.', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
     await expect(text).toHaveValue(E2E_TRANSCRIPT)
     expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ pasteAttempts: 1 })
     expect(await page.evaluate(() => window.sotto!.listHistory())).toEqual([])

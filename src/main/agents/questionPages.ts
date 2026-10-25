@@ -2,8 +2,9 @@ import { randomBytes } from 'node:crypto'
 import { readdir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isVisualMessage, QUESTION_PAGES_MAX, type AgentHostSnapshot, type AgentMessage, type AgentRequest, type AgentThread, type QuestionPage } from '../../shared/agents'
+import { AGENT_THREAD_EXCERPT_MAX, isVisualMessage, QUESTION_PAGES_MAX, type AgentHostSnapshot, type AgentMessage, type AgentRequest, type AgentThread, type QuestionPage } from '../../shared/agents'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { replySource, requestSource } from './prototypeSources'
 import { isSottoRequest } from './sottoRequests'
 
 /**
@@ -161,20 +162,69 @@ export function requestWords(request: AgentRequest): string[] {
     ...(request.questions ?? []).flatMap(question => [question.question, question.header ?? '', ...question.options.flatMap(option => [option.label, option.description ?? ''])])]
 }
 
+const PROTOTYPE_WORDS = /\b(?:prototypes?|mock[-‐‑ ]?ups?)\b/iu
+
+/** Whether words say prototype or mock-up (ADR-0108): what makes a question about a prototype. */
+export const saysPrototype = (words: string): boolean => PROTOTYPE_WORDS.test(words)
+
 /** The agent's newest words a thread holds: its last reply that is not a visual. */
 export function newestReply(messages: readonly AgentMessage[] | undefined): string | undefined {
   return messages?.findLast(message => message.role === 'assistant' && !isVisualMessage(message))?.text
 }
 
+/** How long a loopback page has to answer before it counts as not working (ADR-0108). */
+export const PAGE_ANSWER_TIMEOUT_MS = 1_500
+
+/**
+ * Whether a loopback page answers (ADR-0108): one GET to its address, a redirect not followed, that comes back within a
+ * moment with a status below 400. Its body is not read.
+ */
+export async function pageAnswers(url: string, timeoutMs = PAGE_ANSWER_TIMEOUT_MS): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { method: 'GET', redirect: 'manual', signal: controller.signal })
+    void response.body?.cancel().catch(() => undefined)
+    return response.status > 0 && response.status < 400
+  } catch { return false } finally { clearTimeout(timer) }
+}
+
+/**
+ * A reply whose pages are looked for (ADR-0108): its message ID and its words, or, when the snapshot carries only the
+ * thread's summary, the summary's excerpt of them. An excerpt cut at its limit is read whole from the thread's store, and
+ * so is a reply named by its ID alone that the thread's messages do not hold.
+ */
+export interface ReplyToSearch { readonly id: string; readonly text?: string; readonly summary?: string }
+
+/**
+ * Where a search stands (ADR-0108). `finished` once it has found pages or will not look again; `pages` are every page it
+ * found, as a question carries them; `working` are the ones that opened when Sotto looked, with the same tokens.
+ * `aboutPrototype` once any of the words it read say prototype or mock-up: a question's own, and the whole reply before it
+ * from the thread's store when the snapshot carries only its cut summary.
+ */
+export interface PageSearch { readonly finished: boolean; readonly pages: readonly QuestionPage[]; readonly working: readonly QuestionPage[]; readonly aboutPrototype: boolean }
+
+/** A search is kept by its thread and its source: `request:<request ID>` for a question, `reply:<message ID>` for a reply. */
+const keyOf = (threadId: string, source: string): string => `${threadId}\n${source}`
+
 interface Entry {
   readonly threadId: string
+  readonly source: string
+  /** How many times it is looked for while nothing is found: a question's reply may reach the store late; a reply's words do not. */
+  readonly tries: number
   /** Undefined while a search runs; empty when the searches so far found none. */
   pages: QuestionPage[] | undefined
+  /** The pages among them that work, with the same tokens: what a published mark shares, never changed once settled. */
+  working: readonly QuestionPage[]
+  /** Whether the words any of its searches read say prototype or mock-up. */
+  aboutPrototype: boolean
   searches: number
   searchedAt: number
-  /** When the question left its thread; its pages close a while after. */
+  /** When the question left its thread, or the reply stopped being looked for; its pages close a while after. */
   goneAt?: number
 }
+
+const NO_PAGES: readonly QuestionPage[] = []
 
 export interface QuestionPagesOptions {
   /** The thread's stored messages, when its snapshot carries none. */
@@ -183,24 +233,41 @@ export interface QuestionPagesOptions {
   readonly changed: () => void
   readonly now?: () => number
   readonly token?: () => string
+  /** Whether a loopback page answers; `pageAnswers` unless a test stands in for the network. */
+  readonly live?: (url: string) => Promise<boolean>
 }
 
 /**
- * The pages of every question the host holds (ADR-0085). The first snapshot a question appears in starts the search:
- * its words and the agent's newest reply in that thread at that moment, so a reply the agent writes after asking does not
- * move them. Each page found gets an unguessable token that the host's page route serves, while the question waits and
- * for an hour after. Every snapshot then carries the pages on its questions; a provider never supplies them.
+ * The pages of every question the host holds (ADR-0085), and of the replies the coordinator asks about (ADR-0108). The
+ * first snapshot a question appears in starts the search: its words and the agent's newest reply in that thread at that
+ * moment, so a reply the agent writes after asking does not move them. A reply's search reads that reply alone, once.
+ * Each page found gets an unguessable token that the host's page route serves, while the question waits or the reply is
+ * looked for, and for an hour after. Every snapshot then carries the pages on its questions; a provider never supplies
+ * them. A loopback page is asked once whether it answers, so the coordinator knows which pages work.
  */
 export class QuestionPages {
   private readonly entries = new Map<string, Entry>()
+  /** Each thread's searches by key, so a snapshot holding only the threads that changed sweeps only theirs (#925). */
+  private readonly byThread = new Map<string, Set<string>>()
+  /** The searches whose question or reply has gone and whose pages are closing, which a prune reads rather than every search. */
+  private readonly lingering = new Set<string>()
+  /** The question searches that found none and will look again on a later snapshot. */
+  private readonly retrying = new Set<string>()
   private readonly targets = new Map<string, { target: QuestionPageTarget; key: string }>()
   private readonly now: () => number
   private readonly token: () => string
+  private readonly live: (url: string) => Promise<boolean>
+  /** Reply searches run one at a time, so a start that finds many replies naming pages does not walk every folder at once. */
+  private replySearches: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: QuestionPagesOptions) {
     this.now = options.now ?? Date.now
     this.token = options.token ?? (() => randomBytes(24).toString('base64url'))
+    this.live = options.live ?? (url => pageAnswers(url))
   }
+
+  /** How many searches are kept, for tests that hold the count to the replies and questions still looked for. */
+  get searchCount(): number { return this.entries.size }
 
   /** What a token opens, while its question waits or lingers. */
   target(token: string): QuestionPageTarget | undefined {
@@ -208,42 +275,137 @@ export class QuestionPages {
     return this.targets.get(token)?.target
   }
 
-  /** The snapshot with each question's pages on it. Threads with nothing to change keep their own object. */
-  decorate(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  /** The thread and source a token's page was found for, while it is served. */
+  source(token: string): { readonly threadId: string; readonly source: string } | undefined {
+    this.prune()
+    const key = this.targets.get(token)?.key
+    const entry = key === undefined ? undefined : this.entries.get(key)
+    return entry && { threadId: entry.threadId, source: entry.source }
+  }
+
+  /**
+   * The threads with a question whose search found none and is due to look again, which the next snapshot naming them
+   * does. A snapshot holding only the threads that changed names these too (#925), as every snapshot once named every thread.
+   */
+  retriesDue(): string[] {
+    if (!this.retrying.size) return []
+    const now = this.now(), due: string[] = []
+    for (const key of this.retrying) {
+      const entry = this.entries.get(key)
+      if (entry && entry.goneAt === undefined && entry.pages?.length === 0 && entry.searches < entry.tries && now - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) due.push(entry.threadId)
+    }
+    return due
+  }
+
+  /** Where the search for a thread's question (`request:<ID>`) or reply (`reply:<ID>`) stands; undefined when there is none. */
+  searched(threadId: string, source: string): PageSearch | undefined {
+    const entry = this.entries.get(keyOf(threadId, source))
+    if (!entry) return undefined
+    return { finished: entry.pages !== undefined && (entry.pages.length > 0 || entry.searches >= entry.tries), pages: entry.pages ?? NO_PAGES, working: entry.working, aboutPrototype: entry.aboutPrototype }
+  }
+
+  /**
+   * The snapshot with each question's pages on it. Threads with nothing to change keep their own object. `replyOf` names
+   * the replies of a thread whose pages are wanted, each looked for once and kept while it is named.
+   *
+   * With `gone`, the snapshot holds only the threads that changed (#925), and `gone` names the threads that went: only the
+   * searches of those threads are read for what is still asked or looked for. Every other thread's are as the last
+   * snapshot left them, which is what reading it again would leave them.
+   */
+  decorate(snapshot: AgentHostSnapshot, replyOf?: (thread: AgentThread) => ReplyToSearch | readonly ReplyToSearch[] | undefined, gone?: ReadonlySet<string>): AgentHostSnapshot {
     const present = new Set<string>()
     let changed = false
+    const look = (thread: AgentThread, reply: ReplyToSearch): void => {
+      const key = keyOf(thread.id, replySource(reply.id))
+      present.add(key)
+      if (!this.entries.has(key)) this.searchReply(key, thread, snapshot, reply)
+    }
     const threads = snapshot.threads.map(thread => {
-      let threadChanged = false
-      const requests = thread.requests.map(request => {
-        const asked = request.kind === 'question' && !isSottoRequest(request.id)
-        const key = `${thread.id}\n${request.id}`
-        if (asked) {
-          present.add(key)
-          const entry = this.entries.get(key)
-          if (!entry) this.search(key, thread, snapshot, request)
-          else if (entry.pages?.length === 0 && entry.searches < QUESTION_PAGE_SEARCHES && this.now() - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) {
-            this.search(key, thread, snapshot, request, entry)
-          }
-        }
-        const pages = asked ? this.entries.get(key)?.pages : undefined
-        const carried = request.pages
-        if (pages?.length ? JSON.stringify(carried) === JSON.stringify(pages) : carried === undefined) return request
-        threadChanged = true
-        const { pages: _carried, ...rest } = request
-        void _carried
-        return pages?.length ? { ...rest, pages: structuredClone(pages) } : rest
-      })
-      if (!threadChanged) return thread
-      changed = true
-      return { ...thread, requests }
+      const named = replyOf?.(thread)
+      if (Array.isArray(named)) for (const reply of named as readonly ReplyToSearch[]) look(thread, reply)
+      else if (named) look(thread, named as ReplyToSearch)
+      const paged = this.paged(thread, { snapshot, present })
+      if (paged !== thread) changed = true
+      return paged
     })
     const now = this.now()
-    for (const [key, entry] of this.entries) {
-      if (present.has(key)) delete entry.goneAt
-      else entry.goneAt ??= now
+    if (!gone) for (const [key, entry] of this.entries) this.sweep(key, entry, present, now)
+    else {
+      for (const ids of [snapshot.threads.map(thread => thread.id), gone]) for (const id of ids) {
+        const keys = this.byThread.get(id)
+        if (keys) for (const key of [...keys]) this.sweep(key, this.entries.get(key)!, present, now)
+      }
     }
     this.prune()
     return changed ? { ...snapshot, threads } : snapshot
+  }
+
+  /**
+   * The snapshot's threads with each question's pages on it, as `decorate` gives them, without looking at anything: no
+   * search starts or is tried again, and nothing is read for what is still asked or let go. For a thread whose searches
+   * stand as the last snapshot left them (#925).
+   */
+  view(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+    let changed = false
+    const threads = snapshot.threads.map(thread => { const paged = this.paged(thread); if (paged !== thread) changed = true; return paged })
+    return changed ? { ...snapshot, threads } : snapshot
+  }
+
+  /**
+   * A thread with each question's pages on it. With `looking`, each question is noted as still asked, and its search
+   * starts, or is tried again when it is due.
+   */
+  private paged(thread: AgentThread, looking?: { readonly snapshot: AgentHostSnapshot; readonly present: Set<string> }): AgentThread {
+    // Most threads ask nothing: they are read without making anything, on every snapshot.
+    if (!thread.requests.length) return thread
+    let threadChanged = false
+    const requests = thread.requests.map(request => {
+      const asked = request.kind === 'question' && !isSottoRequest(request.id)
+      const key = keyOf(thread.id, requestSource(request.id))
+      if (asked && looking) {
+        looking.present.add(key)
+        const entry = this.entries.get(key)
+        if (!entry) this.search(key, thread, looking.snapshot, request)
+        else if (entry.pages?.length === 0 && entry.searches < entry.tries && this.now() - entry.searchedAt >= QUESTION_PAGE_SEARCH_GAP_MS) {
+          this.search(key, thread, looking.snapshot, request, entry)
+        }
+      }
+      const pages = asked ? this.entries.get(key)?.pages : undefined
+      const carried = request.pages
+      if (pages?.length ? JSON.stringify(carried) === JSON.stringify(pages) : carried === undefined) return request
+      threadChanged = true
+      const { pages: _carried, ...rest } = request
+      void _carried
+      return pages?.length ? { ...rest, pages: structuredClone(pages) } : rest
+    })
+    return threadChanged ? { ...thread, requests } : thread
+  }
+
+  /** One search read against what the snapshot still asks or looks for. */
+  private sweep(key: string, entry: Entry, present: ReadonlySet<string>, now: number): void {
+    if (present.has(key)) { delete entry.goneAt; this.lingering.delete(key) }
+    // A reply no longer looked for that gave no page a token has nothing to serve: it goes at once, so the replies that
+    // named nothing, most of them, leave nothing behind. One with pages lingers like a question's (ADR-0085).
+    else if (entry.tries === 1 && !entry.pages?.length) this.forget(key)
+    else { entry.goneAt ??= now; this.lingering.add(key) }
+  }
+
+  private put(key: string, entry: Entry): void {
+    this.entries.set(key, entry)
+    let keys = this.byThread.get(entry.threadId)
+    if (!keys) this.byThread.set(entry.threadId, keys = new Set())
+    keys.add(key)
+  }
+
+  private forget(key: string): void {
+    const entry = this.entries.get(key)
+    if (!entry) return
+    this.entries.delete(key)
+    this.lingering.delete(key)
+    this.retrying.delete(key)
+    const keys = this.byThread.get(entry.threadId)
+    keys?.delete(key)
+    if (keys?.size === 0) this.byThread.delete(entry.threadId)
   }
 
   /**
@@ -251,40 +413,85 @@ export class QuestionPages {
    * all, two seconds apart; a timer brings that snapshot when no other does. Once found, a question's pages stay as they are.
    */
   private search(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, request: AgentRequest, previous?: Entry): void {
-    const entry: Entry = previous ?? { threadId: thread.id, pages: undefined, searches: 0, searchedAt: 0 }
-    entry.pages = undefined
-    entry.searches++
-    entry.searchedAt = this.now()
-    this.entries.set(key, entry)
-    const settle = (pages: QuestionPage[]): void => {
-      entry.pages = pages
-      if (pages.length) this.options.changed()
-      else if (entry.searches < QUESTION_PAGE_SEARCHES) setTimeout(() => { if (this.entries.get(key) === entry) this.options.changed() }, QUESTION_PAGE_SEARCH_GAP_MS).unref?.()
-    }
-    let folder: string | undefined
-    try { folder = resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId)) } catch { folder = undefined }
+    const entry = this.begin(key, thread.id, requestSource(request.id), QUESTION_PAGE_SEARCHES, previous)
     const summary = thread.summary?.lastAssistant?.text
-    void (async () => {
+    this.find(key, entry, thread, snapshot, async () => {
       const stored = thread.messages.length ? undefined : await this.options.messages?.(thread.id)
       const reply = newestReply(thread.messages.length ? thread.messages : stored)
-      const found = await foundPages(pageMentions([...requestWords(request), reply ?? '', summary ?? '']), folder)
-      if (this.entries.get(key) !== entry) return
-      settle(found.map(({ page, target }) => {
-        const token = this.token()
-        this.targets.set(token, { target, key })
-        return { ...page, token }
-      }))
-    })().catch(() => {
-      // A page that cannot be read is a question without pages for now; the question itself is unaffected.
-      if (this.entries.get(key) === entry) settle([])
+      return [...requestWords(request), reply ?? '', summary ?? '']
     })
   }
 
+  /** Looks for a reply's pages, once, after the reply searches asked before it: a reply's words do not change. */
+  private searchReply(key: string, thread: AgentThread, snapshot: AgentHostSnapshot, reply: ReplyToSearch): void {
+    const entry = this.begin(key, thread.id, replySource(reply.id), 1)
+    const known = reply.text ?? (reply.summary !== undefined && reply.summary.length < AGENT_THREAD_EXCERPT_MAX ? reply.summary : undefined)
+    // A reply that names no page settles at once, without waiting its turn: most replies name none.
+    if (known !== undefined && pageMentions([known]).length === 0) { this.settle(key, entry, [], []); return }
+    this.replySearches = this.replySearches.then(() => new Promise<void>(resolve => {
+      if (this.entries.get(key) !== entry) { resolve(); return }
+      this.find(key, entry, thread, snapshot, async () => {
+        if (known !== undefined) return [known]
+        const carried = thread.messages.find(message => message.id === reply.id)?.text
+        const stored = carried ?? (await this.options.messages?.(thread.id))?.find(message => message.id === reply.id)?.text
+        return [stored ?? reply.summary ?? '']
+      }, resolve)
+    }))
+  }
+
+  private begin(key: string, threadId: string, source: string, tries: number, previous?: Entry): Entry {
+    const entry: Entry = previous ?? { threadId, source, tries, pages: undefined, working: NO_PAGES, aboutPrototype: false, searches: 0, searchedAt: 0 }
+    entry.pages = undefined
+    entry.searches++
+    entry.searchedAt = this.now()
+    this.retrying.delete(key)
+    this.put(key, entry)
+    return entry
+  }
+
+  /** Finds the pages the words name, asks each loopback page once whether it answers, and gives each page a token. */
+  private find(key: string, entry: Entry, thread: AgentThread, snapshot: AgentHostSnapshot, words: () => Promise<string[]>, done?: () => void): void {
+    let folder: string | undefined
+    try { folder = resolveThreadWorkingDirectory(thread, snapshot.projects.find(project => project.id === thread.projectId)) } catch { folder = undefined }
+    void (async () => {
+      const read = await words()
+      if (this.entries.get(key) !== entry) return
+      if (read.some(saysPrototype)) entry.aboutPrototype = true
+      const found = await foundPages(pageMentions(read), folder)
+      if (this.entries.get(key) !== entry) return
+      const answers = await Promise.all(found.map(({ page, target }) => target.kind === 'file' ? true : this.live(`${target.origin}/${page.start}`).catch(() => false)))
+      if (this.entries.get(key) !== entry) return
+      const pages = found.map(({ page, target }) => {
+        const token = this.token()
+        this.targets.set(token, { target, key })
+        return { ...page, token }
+      })
+      this.settle(key, entry, pages, pages.filter((_page, index) => answers[index]))
+    })().catch(() => {
+      // A page that cannot be read is a question without pages for now; the question itself is unaffected.
+      if (this.entries.get(key) === entry) this.settle(key, entry, [], [])
+    }).finally(() => done?.())
+  }
+
+  private settle(key: string, entry: Entry, pages: QuestionPage[], working: readonly QuestionPage[]): void {
+    entry.pages = pages
+    entry.working = working.length ? working : NO_PAGES
+    if (!pages.length && entry.searches < entry.tries) this.retrying.add(key)
+    if (pages.length) this.options.changed()
+    else if (entry.searches < entry.tries) setTimeout(() => { if (this.entries.get(key) === entry) this.options.changed() }, QUESTION_PAGE_SEARCH_GAP_MS).unref?.()
+    // A question's last search that finds none is news as well: a prototype question held for it waits on nothing else
+    // (ADR-0108). A reply is searched once, and one that names no page needs no snapshot.
+    else if (entry.tries > 1) this.options.changed()
+  }
+
   private prune(): void {
+    if (!this.lingering.size) return
     const now = this.now()
-    for (const [key, entry] of this.entries) {
-      if (entry.goneAt === undefined || now - entry.goneAt < QUESTION_PAGE_LINGER_MS) continue
-      this.entries.delete(key)
+    for (const key of [...this.lingering]) {
+      const entry = this.entries.get(key)
+      if (entry?.goneAt === undefined) { this.lingering.delete(key); continue }
+      if (now - entry.goneAt < QUESTION_PAGE_LINGER_MS) continue
+      this.forget(key)
       for (const [token, item] of this.targets) if (item.key === key) this.targets.delete(token)
     }
   }

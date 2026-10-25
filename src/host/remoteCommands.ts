@@ -64,7 +64,10 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // (ADR-0061 decisions 4 and 11), so neither needs a remote-answer policy record.
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
   'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode'],
-  'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId'],
+  'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
+  // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a
+  // permission or a question is never marked, so pairing is enough.
+  'dismiss-failures': ['failures'],
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
@@ -78,6 +81,13 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  * the same trust as `connect`, which pairing already gives, and the iPhone client does not send them.
  */
 export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
+/**
+ * The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107): the same trust as a
+ * provider's sign-in above. It answers no permission request and signs in the user's own account, finished in the user's
+ * own browser on that desktop, so pairing is enough. Only a host whose OpenCode runs lists `opencode-sign-in`, only a
+ * desktop is offered it, and only the client that started a browser sign-in reads, finishes or cancels it.
+ */
+export const REMOTE_OPENCODE_SIGN_IN_OPERATIONS = ['opencode-sign-in'] as const
 /** Usage reads grant nothing. Clearing numeric history takes the authenticated client's remote-answer policy. */
 export const REMOTE_USAGE_OPERATIONS = ['usage-read', 'usage-refresh', 'usage-clear'] as const
 export function remoteUsageRefusal(operation: typeof REMOTE_USAGE_OPERATIONS[number], mayAnswer: boolean): 'forbidden' | null {
@@ -98,10 +108,12 @@ export function remoteHostUpdateRefusal(client: { readonly desktop: boolean; rea
  * The account and thread defaults a paired client may change. Keys stay on the host. The projects directory is only
  * where a new project goes, and `create-project` already takes a path from a paired client, so a desktop sets it from
  * its own Settings (ADR-0074). A new-thread permission default that lets threads act without asking is a grant, so it
- * needs the same remote-answer policy a thread's own permission does (see `remoteCommandNeedsAnswerPolicy`).
+ * needs the same remote-answer policy a thread's own permission does (see `remoteCommandNeedsAnswerPolicy`). A paired
+ * client may turn the host's Muse shell sandbox back on, which grants nothing, but never off: that stays the host's own
+ * Settings' to do, whatever the client's answer policy (ADR-0079, `remoteCommandRefusal`).
  */
 export const REMOTE_CONFIGURATION_FIELDS: readonly (keyof AgentConfiguration)[] = ['provider', 'enabledProviders', 'enabled', 'defaultModelId',
-  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode']
+  'reasoning', 'reasoningModel', 'reasoningEffort', 'projectsDirectory', 'newThreadModelId', 'newThreadReasoningEffort', 'newThreadRuntimeMode', 'museDisableSandbox']
 
 /**
  * Whether a remote command changes what a thread may do without asking, or discards work the user has
@@ -144,6 +156,8 @@ export function remoteCommandRefusal(command: AgentCommand, context: { readonly 
   if (startsThread(command) && context.threadStarts !== true) return 'forbidden'
   if (Object.keys(command).some(key => key !== 'type' && !fields.includes(key))) return 'forbidden'
   if (command.type === 'configure' && Object.keys(command.patch).some(key => !(REMOTE_CONFIGURATION_FIELDS as readonly string[]).includes(key))) return 'forbidden'
+  // Muse without its shell sandbox is the host's own Settings' to choose, even for a client that may answer (ADR-0079).
+  if (command.type === 'configure' && command.patch.museDisableSandbox === true) return 'forbidden'
   if (command.type === 'compose' && command.threadId !== undefined && command.threadId !== context.selectedThreadId) return 'forbidden'
   if (command.type === 'send' && command.draft && (command.draft.threadId !== context.selectedThreadId
     || Object.keys(command.draft).some(key => !['threadId', 'text', 'attachments', 'binding', 'draftId'].includes(key))

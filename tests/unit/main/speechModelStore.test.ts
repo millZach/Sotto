@@ -3,18 +3,35 @@ import { createHash } from 'node:crypto'
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SpeechModelStore } from '../../../src/main/asr/speechModelStore'
 import type { SpeechEngine } from '../../../src/main/asr/speechEngine'
-import type { SpeechModelManifest, SpeechModelStatus } from '../../../src/shared/speechModel'
+import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, speechModelBytes, speechModelFileUrl, type SottoSpeechModel, type SpeechModelStatus } from '../../../src/shared/speechModel'
+
+/** When set, every download sink fails its first write with this error code, as a full or over-quota disk does. */
+const sinkFault = vi.hoisted(() => ({ code: null as string | null }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  const createWriteStream = ((...args: Parameters<typeof actual.createWriteStream>) => {
+    const code = sinkFault.code
+    if (code === null) return actual.createWriteStream(...args)
+    return new Writable({ write: (_chunk, _encoding, callback) => callback(Object.assign(new Error('Synthetic storage fault'), { code })) })
+  }) as typeof actual.createWriteStream
+  return { ...actual, createWriteStream, default: { ...actual, createWriteStream } }
+})
 
 const bytes = (seed: number, length: number): Buffer => Buffer.from(Array.from({ length }, (_, index) => (seed * 31 + index * 7) % 256))
 const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex')
 
 const FILES = { 'encoder.int8.onnx': bytes(1, 4_000), 'decoder.int8.onnx': bytes(2, 1_200), 'tokens.txt': bytes(3, 300) } as const
-const MODEL: SpeechModelManifest = {
+const MODEL: SottoSpeechModel = {
   id: 'test-model',
+  name: 'Test model',
+  maker: 'Sotto',
+  languages: 'English only',
+  releaseTag: 'speech-model-test',
   files: Object.entries(FILES).map(([name, data]) => ({ name, bytes: data.length, sha256: sha256(data) })),
 }
 const TOTAL = MODEL.files.reduce((total, file) => total + file.bytes, 0)
@@ -73,7 +90,10 @@ const engine: SpeechEngine = { transcribe: async () => 'hello' }
 describe('SpeechModelStore', () => {
   let directory: string
   beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'sotto-speech-model-')) })
-  afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
+  afterEach(async () => {
+    sinkFault.code = null
+    await rm(directory, { recursive: true, force: true })
+  })
 
   function createStore(fetchFn: typeof fetch, loadEngine = vi.fn(async () => engine)) {
     const statuses: SpeechModelStatus[] = []
@@ -131,6 +151,14 @@ describe('SpeechModelStore', () => {
     expect(store.currentEngine()).toBeNull()
   })
 
+  it.each(['ENOSPC', 'EDQUOT'])('says the model could not be saved when writing it fails with %s, not that GitHub could not be reached', async (code) => {
+    sinkFault.code = code
+    const { store } = createStore(fakeGitHub().fetchFn)
+    await store.ensure()
+    expect(store.get()).toMatchObject({ state: 'failed', reason: 'disk', totalBytes: TOTAL })
+    expect(store.currentEngine()).toBeNull()
+  })
+
   it('never follows GitHub to a host it does not know', async () => {
     const github = fakeGitHub({ assetHost: 'example.com' })
     const { store } = createStore(github.fetchFn)
@@ -179,5 +207,74 @@ describe('SpeechModelStore', () => {
     expect(store.get()).toEqual({ state: 'ready' })
     expect(github.requests.some((request) => request.url.endsWith('tokens.txt'))).toBe(true)
     expect(await readFile(join(directory, 'test-model', 'tokens.txt'))).toEqual(FILES['tokens.txt'])
+  })
+
+  it('says whether the model is downloaded without hashing or loading it', async () => {
+    const { store, loadEngine } = createStore(fakeGitHub().fetchFn)
+    expect(await store.isDownloaded()).toBe(false)
+    await store.ensure()
+    expect(await store.isDownloaded()).toBe(true)
+    await writeFile(join(directory, 'test-model', 'tokens.txt'), 'changed')
+    expect(await store.isDownloaded()).toBe(false)
+    expect(loadEngine).toHaveBeenCalledTimes(1)
+  })
+
+  it('unloads the engine and goes back to missing, keeping the files', async () => {
+    const dispose = vi.fn()
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, vi.fn(async () => ({ ...engine, dispose })))
+    await store.ensure()
+    store.unload()
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(statuses.at(-1)).toEqual({ state: 'missing' })
+    expect(store.currentEngine()).toBeNull()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(await store.isDownloaded()).toBe(true)
+  })
+
+  it('never brings back a model unloaded while it was loading, and loads again when asked', async () => {
+    let finish!: (value: SpeechEngine) => void
+    const stale = { transcribe: async () => 'old', dispose: vi.fn() }
+    const loadEngine = vi.fn(async () => engine).mockImplementationOnce(() => new Promise<SpeechEngine>((resolve) => { finish = resolve }))
+    await createStore(fakeGitHub().fetchFn).store.ensure()
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, loadEngine)
+    const first = store.ensure()
+    await vi.waitFor(() => expect(loadEngine).toHaveBeenCalledTimes(1))
+    store.unload()
+    finish(stale)
+    await first
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(store.currentEngine()).toBeNull()
+    expect(stale.dispose).toHaveBeenCalledTimes(1)
+    expect(statuses).toEqual([{ state: 'loading' }, { state: 'missing' }])
+
+    await store.ensure()
+    expect(store.currentEngine()).toBe(engine)
+  })
+
+  it('stops a download unloaded part way and publishes nothing more from it', async () => {
+    const github = fakeGitHub({ drop: new Set(['encoder.int8.onnx']) })
+    const subscribed: SpeechModelStatus[] = []
+    const { store, statuses } = createStore(github.fetchFn)
+    store.subscribe((status) => subscribed.push(status))
+    const attempt = store.ensure()
+    await vi.waitFor(() => expect(statuses[0]).toMatchObject({ state: 'downloading' }))
+    store.unload()
+    await attempt
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(statuses.at(-1)).toEqual({ state: 'missing' })
+    expect(subscribed).toEqual(statuses)
+  })
+
+  it('fetches each of Sotto\'s models from its own release tag, into its own folder', async () => {
+    for (const model of [PARAKEET_V3, PARAKEET_ULTRA, PARAKEET_V2]) {
+      const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }))
+      const statuses: SpeechModelStatus[] = []
+      const store = new SpeechModelStore({ directory, model, fetchFn, loadEngine: vi.fn(async () => engine), onStatus: (status) => statuses.push(status) })
+      await store.ensure()
+      expect(String(fetchFn.mock.calls[0]![0])).toBe(`https://github.com/millZach/Sotto-releases/releases/download/${model.releaseTag}/encoder.int8.onnx`)
+      expect(String(fetchFn.mock.calls[0]![0])).toBe(speechModelFileUrl(model, model.files[0]!))
+      expect(statuses.at(-1)).toEqual({ state: 'failed', reason: 'network', receivedBytes: 0, totalBytes: speechModelBytes(model) })
+      expect(await readdir(directory)).toContain(model.id)
+    }
   })
 })

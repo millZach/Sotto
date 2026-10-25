@@ -24,7 +24,7 @@ import { CommandReceipts } from './commandReceipts'
 import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
-import { owlFeaturesForTrack } from '../shared/owlFeatures'
+import { owlFeaturesForTrack, type OwlFeatureStates } from '../shared/owlFeatures'
 import { heldProvidersOf } from '../shared/heldProviders'
 import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
@@ -48,6 +48,11 @@ export interface HeadlessHostOptions {
   signInCommand?: ProviderSignInOptions['command']
   /** Tests stand in for a host of another Sotto version; the host advertises its own. */
   sottoVersion?: string
+  /**
+   * Tests stand in for a host whose version still holds a feature, as hosts before 0.1.40 do: these answers are laid over
+   * its version's. A host reads its own version's answers; the command line never passes this.
+   */
+  owlFeatures?: Partial<OwlFeatureStates>
   /** Tests stand in for the registry, the installers and where each client is; the host finds and runs the real ones. */
   clients?: AgentRuntimeOptions['clients']
   locateClient?: AgentRuntimeOptions['locateClient']
@@ -99,14 +104,24 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // Headless hosts enforce admitted workers on either release track; they never create a master.
   const watcherEnabled = true
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
-  const owlFeatures = owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion))
+  const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
-  // Its Owl answers, and every provider hosts do not take yet: OpenCode until #1107 adds it to HOST_PROVIDERS.
+  // Its Owl answers, and every provider hosts do not take yet (none since #1107 added OpenCode to HOST_PROVIDERS).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
   const streamingPublishCost = owlFeatures['streaming-publish-cost']
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
-  const repositories = createStorageRepositories(directory, recovery, Date.now, undefined, undefined, watcherEnabled)
+  const pullRequestViewEnabled = owlFeatures['iphone-pull-request-view']
+  // A host starts no delegation itself, but a thread's link to the thread that delegated to it reaches clients only on Owl.
+  const delegation = owlFeatures['thread-delegation']
+  const agentsViewEnabled = owlFeatures['iphone-agents-view']
+  // Work across machines (ADR-0082) only where the host's Owl answer turns it on: the host names its projects' GitHub
+  // origins to a desktop placing work (#1032), and reads its live load and counts its work placed but not started
+  // (#1311); otherwise its facts are what they were.
+  const crossMachineEnabled = owlFeatures['cross-machine-work']
+  // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
+  const attachAnyFile = owlFeatures['attach-any-file']
+  const repositories = createStorageRepositories(directory, recovery, Date.now)
   const settings = new SecureSettings(repositories.settings, credentials)
   if ((await repositories.settings.get()).llmApiKey && !credentials.available()) {
     throw new HostKeyMigrationError('A key saved by an older version of Sotto needs secure storage. Pass --key-file <file> and start the host again. The saved key has not been changed.')
@@ -126,7 +141,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, settings: () => startup, writingSettings: () => settings.get(),
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, settings: () => startup, writingSettings: () => settings.get(),
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       ...(policy ? { authority: policy } : {}),
@@ -147,7 +162,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     })
     const pairing = new PairedClients(directory)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
-    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}),
+    const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
         const client = { clientId, user: pairing.list().find(item => item.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' as const }
         const state = await runtime.hostService.command({ type: 'connect', provider }, client)
@@ -194,12 +209,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           ...(options.releasesUrl ? { releasesUrl: options.releasesUrl } : {}), ...(options.log ? { log: options.log } : {}) }) : undefined
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
+        // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
+        const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, watcherDesktops: desktops, clientUpdates: true, receipts, about, ...hostUpdate, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, about, delegation, ...hostUpdate, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
-        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, clientUpdates: true, phones: tailnet.administration,
-          watcherDesktops: desktops, ...hostUpdate,
+        listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
+          watcherDesktops: desktops, delegation, ...hostUpdate,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,

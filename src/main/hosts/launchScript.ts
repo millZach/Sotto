@@ -1,4 +1,4 @@
-import { HOST_NODE_MAJOR } from './sshFailure'
+import { HOST_NODE_MAJOR, HOST_NODE_MINIMUM } from './sshFailure'
 import { quoteRemoteArgument, type ValidatedSshHostConfiguration } from './sshConfiguration'
 import { desktopAnswerSetupSql } from '../memory/migrations.mjs'
 import { DESKTOP_CLIENTS_FILE, DESKTOP_CLIENTS_MAX, DESKTOP_CLIENT_ID_MAX } from '../../shared/desktopClients'
@@ -916,8 +916,10 @@ process.stdin.on('end', () => output.end(() => {
 /**
  * Node's version check, run by each Node the probe finds. Old syntax on purpose, so a Node too old to run
  * the launch script still answers. Prints the version and exits 0 when it satisfies the archive's
- * `runtime-manifest.json` range (the desktop's range for an archive without one), 3 when too old and 4
- * when too new. The archive is the version `current` names when the folder holds versions side by side.
+ * `runtime-manifest.json` range (the desktop's range for an archive without one) and the desktop's own
+ * floor, 3 when too old and 4 when too new. The floor holds even when an older archive's manifest asks for
+ * less, so a host never starts on a Node the desktop has stopped accepting. The desktop's upper bound does
+ * not hold, so the archive's own range still decides how new a Node it runs on. The archive is the version `current` names when the folder holds versions side by side.
  */
 export const NODE_CHECK_SOURCE = String.raw`var v = process.versions.node, c = {}, r = '';
 try { c = JSON.parse(process.argv[1]); r = String(c.nodeRange || ''); } catch (e) {}
@@ -926,8 +928,8 @@ try { var path = require('path'), fs = require('fs'), p = String(c.installPath |
   var m = JSON.parse(fs.readFileSync(path.join(p, 'runtime-manifest.json'), 'utf8')); if (typeof m.node === 'string') r = m.node; } catch (e) {}
 function parts(s) { var a = String(s).split('.'); return [parseInt(a[0], 10) || 0, parseInt(a[1], 10) || 0, parseInt(a[2], 10) || 0]; }
 function compare(a, b) { for (var i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }
-var have = parts(v), code = 0;
-r.split(/\s+/).forEach(function (t) { var x = /^(>=|<)(\d+(?:\.\d+){0,2})$/.exec(t); if (!x) return; var d = compare(have, parts(x[2])); if (x[1] === '>=' && d < 0) code = 3; else if (x[1] === '<' && d >= 0 && code === 0) code = 4; });
+var have = parts(v), code = 0, floor = String(c.nodeRange || '').split(/\s+/).filter(function (t) { return t.slice(0, 2) === '>='; }).join(' ');
+(r + ' ' + floor).split(/\s+/).forEach(function (t) { var x = /^(>=|<)(\d+(?:\.\d+){0,2})$/.exec(t); if (!x) return; var d = compare(have, parts(x[2])); if (x[1] === '>=' && d < 0) code = 3; else if (x[1] === '<' && d >= 0 && code === 0) code = 4; });
 process.exitCode = code; process.stdout.write(v);
 `
 
@@ -975,7 +977,7 @@ fi
 `
 
 /** The range a host archive declares in its manifest; the desktop sends it for an archive without one. */
-export const HOST_NODE_RANGE = `>=${HOST_NODE_MAJOR} <${HOST_NODE_MAJOR + 1}`
+export const HOST_NODE_RANGE = `>=${HOST_NODE_MINIMUM} <${HOST_NODE_MAJOR + 1}`
 export { HOST_ARCHIVE_LIMIT_BYTES, HOST_DOWNLOAD_TIMEOUT_MS, HOST_READY_TIMEOUT_MS, HOST_STOP_DRAIN_MS } from '../../shared/hostLaunchTimings'
 /**
  * How long the desktop gives a stop once SSH is signed in: the drain, the kill and the reply's trip back

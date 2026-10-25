@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { EMPTY_AGENT_HOST, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
+import { attachmentReferences, EMPTY_AGENT_HOST, agentRuntimeModeSchema, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { designThreadsFixture, type E2EScenario, type SottoE2EBridge } from '../../shared/e2e'
 import { resolveModel } from '../../shared/modelCatalog'
 import type { AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ThreadForkRequest } from '../agents/host'
@@ -154,7 +154,7 @@ export class E2EAgentHost implements AgentHost {
         thread.settledAt = null; thread.settledOverride = null; thread.updatedAt = new Date().toISOString()
         if (this.checkpointFixture && command.type === 'send') thread.lastTurn = { id: randomUUID(), status: 'running' }
         thread.messages.push({ id: command.messageId, role: 'user', text: command.text, createdAt: new Date().toISOString(), commandId: command.commandId,
-          ...(command.attachments?.length ? { attachments: command.attachments.map(attachment => ({ id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes })) } : {}) }); thread.status = 'running'
+          ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }); thread.status = 'running'
       } else if (command.type === 'answer') { thread.requests = thread.requests.filter(r => r.id !== command.requestId); thread.status = 'running' }
       else thread.status = 'idle'
     }
@@ -188,6 +188,12 @@ export class E2EAgentHost implements AgentHost {
     if (event.type === 'fork-refuse') { this.forkRefusal = event.text; return }
     const thread = this.state.threads.find(t => t.id === event.threadId)
     if (!thread) throw new Error('E2E_THREAD_UNAVAILABLE')
+    if (event.type === 'pull-requests') {
+      // Links only: the thread's turn and status stay as they are.
+      thread.pullRequests = structuredClone(event.pullRequests ?? [])
+      this.emit()
+      return
+    }
     if (event.type === 'monitoring') {
       if (!event.monitoring) throw new Error('E2E_MONITORING_REQUIRED')
       thread.monitoring = structuredClone(event.monitoring)

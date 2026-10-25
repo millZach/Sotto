@@ -1,5 +1,9 @@
+// @vitest-environment node
+import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { isRecordedServer, loopbackServerUrl, OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants, parseProcessStart } from '../../../src/main/agents/opencodeServer'
+import { endServersLeftBehind, isRecordedServer, loopbackServerUrl, OpenCodeTooOld, opencodeVersionRefusal, orphanedDescendants, parseProcessStart, recordOpenCodeServer } from '../../../src/main/agents/opencodeServer'
 
 describe('which OpenCode Sotto drives (ADR-0087)', () => {
   it.each([
@@ -64,6 +68,86 @@ describe('a server a crash left, as the next connect knows it', () => {
     // A command line the system will not show is no proof.
     expect(isRecordedServer(record, { started: startedAt })).toBe(false)
     expect(isRecordedServer(record, undefined)).toBe(false)
+  })
+  it('matches the start ps reported when Sotto started it, however far ps reads from the clock', () => {
+    // Linux's ps adds ticks since boot to a boot time kept in whole seconds, then drops the fraction again: on a machine
+    // measured for this, it read up to 1.8 s before the clock Sotto wrote down, and a stepped clock moves it further.
+    const reported = Date.parse('2026-10-16T21:48:01')
+    const written = { ...record, started: reported }
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 ' + command))).toBe(true)
+    // ps reads a second later or earlier than it did: the boot time it adds to was rounded the other way.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:02 2026 ' + command))).toBe(true)
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:00 2026 ' + command))).toBe(true)
+    // Further from both what ps said then and Sotto's clock, and it is another process that took the PID.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:47:59 2026 ' + command))).toBe(false)
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:14 2026 ' + command))).toBe(false)
+    // The command line still has to be OpenCode's server.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:01 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+  })
+  it('knows its server by the record written at once, before ps answered, however far behind the clock ps reads', () => {
+    // A crash while ps was still answering leaves the first record only. Linux's ps reads up to two seconds behind the
+    // clock Sotto wrote down: 1.8 s on a machine measured for this, read here as the whole second before it.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:01 2026 ' + command))).toBe(true)
+    // Further behind than ps ever reads, it is not the server's start.
+    expect(isRecordedServer(record, parseProcessStart('Fri Oct 16 21:48:00 2026 ' + command))).toBe(false)
+  })
+  it('still knows its server after the clock steps forward, by Sotto’s clock', () => {
+    // ps read 1.4 s behind Sotto's clock when the server was written down. Then the wall clock stepped 2 s forward, as
+    // NTP or a WSL2 resync steps it, and what ps reads moved with it, since it adds ticks since boot to the wall clock's boot time.
+    const written = { ...record, started: Date.parse('2026-10-16T21:48:02') }
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:04 2026 ' + command))).toBe(true)
+    // Up to ten seconds after Sotto's clock said it started the server.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:13 2026 ' + command))).toBe(true)
+    // A step past that leaves both rules behind, and the server is not ended.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:14 2026 ' + command))).toBe(false)
+    // Either rule needs OpenCode's server on the command line.
+    expect(isRecordedServer(written, parseProcessStart('Fri Oct 16 21:48:04 2026 /usr/bin/python3 -m http.server'))).toBe(false)
+    expect(isRecordedServer(written, { started: Date.parse('2026-10-16T21:48:04') })).toBe(false)
+  })
+})
+
+describe('the record of each server, while Sotto writes it and a sweep reads it', () => {
+  const ledgerFolder = (): Promise<string> => mkdtemp(join(tmpdir(), 'sotto-opencode-ledger-'))
+  it('loses no record while records are written and swept at once', { timeout: 60_000 }, async () => {
+    const ledger = await ledgerFolder()
+    try {
+      // Records of this Sotto's servers, each written twice as a start writes it, while other connects sweep the folder.
+      const pids = Array.from({ length: 40 }, (_, index) => 900_000 + index)
+      let writing = true
+      const writes = (async () => {
+        try {
+          for (let round = 0; round < 10; round++) {
+            await Promise.all(pids.map(async pid => {
+              await recordOpenCodeServer(ledger, { pid, startedAt: Date.now(), owner: process.pid })
+              await recordOpenCodeServer(ledger, { pid, startedAt: Date.now(), started: Date.now() - 1_000, owner: process.pid })
+            }))
+          }
+        } finally { writing = false }
+      })()
+      const sweeps = (async () => { while (writing) await Promise.all([endServersLeftBehind(ledger), endServersLeftBehind(ledger)]) })()
+      await Promise.all([writes, sweeps])
+      expect((await readdir(ledger)).sort()).toEqual(pids.map(pid => `${pid}.json`).sort())
+    } finally { await rm(ledger, { recursive: true, force: true }) }
+  })
+  it('keeps a record it cannot read while it may still be being written, and clears one long left', async () => {
+    const ledger = await ledgerFolder()
+    try {
+      // A Sotto that has gone: no process ever has this PID. Windows PIDs are multiples of four, Linux's stop at 2^22 and macOS's below 100,000.
+      const owner = 2 ** 31 - 1
+      await writeFile(join(ledger, '900101.json'), '{"pid":900101,"start')
+      await writeFile(join(ledger, '900102.json'), '{"pid":900102,"start')
+      const long = new Date(Date.now() - 60_000)
+      await utimes(join(ledger, '900102.json'), long, long)
+      // A write a Sotto that has gone never finished, and one this Sotto is still making.
+      await writeFile(join(ledger, `900103.json.${owner}.1.tmp`), '{"pid":900103')
+      await writeFile(join(ledger, `900104.json.${process.pid}.1.tmp`), '{"pid":900104')
+      // Nothing runs at these PIDs. The real table is PowerShell's CIM query, which on a loaded Windows runner took the
+      // whole 15 s test limit to answer (#1356, #1376); what this tests is the records, so the table is scripted.
+      let tableReads = 0
+      await endServersLeftBehind(ledger, undefined, () => { tableReads++; return Promise.resolve([]) })
+      expect((await readdir(ledger)).sort()).toEqual(['900101.json', `900104.json.${process.pid}.1.tmp`])
+      expect(tableReads).toBe(process.platform === 'win32' ? 1 : 0)
+    } finally { await rm(ledger, { recursive: true, force: true }) }
   })
 })
 

@@ -1,5 +1,6 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
 import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentModel, AgentState, AgentWireBridge } from '../../../shared/agents'
+import { createThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
   revision: number
@@ -22,6 +23,8 @@ const wrapped = new WeakMap<AgentWireBridge, AgentBridge>()
  * boundary, so putting the catalog back together on the preload side would clone the whole thing again on
  * the way out — exactly the cost omitting it was for. Only the small `{ revision, omitted: true }` marker
  * needs to make that crossing; this wrapper turns it back into the array every consumer already expects.
+ * A broadcast's threads are put back here too, for the same reason: main sends the thread records that changed
+ * since this subscription's last broadcast (issue #1330), and `createThreadReassembly` rebuilds the whole array.
  *
  * Broadcasts and receipts share one cache, because their revisions come from the same counter in main: a
  * catalog the broadcast sent in full is what a receipt resolves from, and a catalog recovered for a receipt
@@ -206,23 +209,28 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
 function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void): (raw: unknown) => void {
   let recovering = false
   let pending: unknown = null
+  // The thread records this subscription was broadcast, which each broadcast's changed records are applied to (#1330).
+  const threads = createThreadReassembly()
 
-  /** Caches whatever catalogs a broadcast carried in full, without delivering it. */
+  /** Caches whatever catalogs a broadcast carried in full, and applies its threads, without delivering it. */
   const seed = (raw: unknown): void => {
     if (!isStateLike(raw)) return
+    threads(raw.host.threads)
     resolveCatalog(catalogs, hostCatalogKey(raw.host.hostId), raw.host.models)
     for (const client of raw.host.clientHosts ?? []) resolveCatalog(catalogs, clientCatalogKey(client.hostId), client.models)
   }
 
   const process = (raw: unknown): void => {
     if (!isStateLike(raw)) return
+    // Both are looked at before either is found missing, so what the broadcast carried is kept either way.
+    const list = threads(raw.host.threads)
     const assembled = assembleState(catalogs, raw)
-    if (assembled !== undefined) { listener(assembled); return }
-    // This window cannot name every catalog the broadcast referred to: a fresh window, a reload, or a
-    // revision it never received. `get()` always answers in full, so recovering there restores what the
-    // broadcast could not carry, tagged with the revision that sent us looking so an immediate repeat of
-    // it is read from cache instead of asking again. Every catalog the broadcast carried in full is cached
-    // by the attempt above.
+    if (assembled !== undefined && list !== undefined) { listener({ ...assembled, host: { ...assembled.host, threads: list } }); return }
+    // This window cannot name every catalog the broadcast referred to, or cannot apply its threads: a fresh
+    // window, a reload, or a broadcast it never received. `get()` always answers in full, so recovering there
+    // restores what the broadcast could not carry, tagged with the revision that sent us looking so an
+    // immediate repeat of it is read from cache instead of asking again, and main lists every thread record in
+    // the broadcast after it. Every catalog the broadcast carried in full is cached by the attempt above.
     recovering = true
     bridge.get().then(full => {
       rememberRecovered(catalogs, raw, full)

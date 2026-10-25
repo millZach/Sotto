@@ -113,7 +113,7 @@ test('Add host shows each step, waits for Tailscale approval, shows a failure on
     const errors: string[] = []
     page.on('pageerror', error => errors.push(error.message))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
 
     // Failed: forge's Node is too new. The failure shows on its own step, with what to do.
     await writeFile(modeFile, 'node-new')
@@ -125,7 +125,7 @@ test('Add host shows each step, waits for Tailscale approval, shows a failure on
     await expect(failed).toBeVisible({ timeout: 60_000 })
     await expect(failed.getByText('forge · user and port from your SSH configuration')).toBeVisible()
     await expect(titles(page)).toHaveText(['Reached forge', 'Signed in', 'The host cannot run on forge yet', 'Start the host', 'Pair this computer', 'Reach forge over your tailnet'])
-    await expect(steps(page).nth(2).getByRole('alert')).toHaveText('The SSH host runs Node 26.1.0, which is newer than this host release supports. Nothing was saved. Install Node 24 for that SSH account, then add the host again.')
+    await expect(steps(page).nth(2).getByRole('alert')).toHaveText('The SSH host runs Node 26.1.0, which is newer than this host release supports. Nothing was saved. Install Node 24.22.1 or a later Node 24 for that SSH account, then add the host again.')
     await expect(failed.getByRole('button', { name: 'Try again', exact: true })).toBeEnabled()
     await capture(launched, 'host-setup-failed')
     // Escape closes the dialog and keeps nothing.

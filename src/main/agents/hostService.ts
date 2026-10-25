@@ -1,11 +1,13 @@
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import { startHandoverPrefix } from '../../shared/threadStarts'
+import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
 import type { WatcherHostControl, WatcherHostRead, WatcherHostProjection, WatcherRoomThreadInput } from '../../shared/watcherHost'
-import type { WatcherIdentity } from '../../shared/watcher'
+import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watcher'
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -14,13 +16,14 @@ import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFol
 import type { FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
+import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
-import { hostMachineReport, type HostFactsSource } from './hostFacts'
+import type { ProjectOrigins } from '../../shared/workerMachine'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
 
@@ -72,7 +75,8 @@ export interface HostService {
   /** Numeric usage belongs to this host and exists only when its own startup gate is on. */
   readonly supportsUsage?: boolean
   usageRead?(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  usageRefresh?(providerIds?: ProviderId[]): Promise<UsageLocalHostRead>
+  /** `background` is a refresh Usage made on its own when it opened, which may be answered from a recent reading. */
+  usageRefresh?(providerIds?: ProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   usageClear?(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult>
   readonly supportsWatcherControl?: boolean
   readonly supportsWatcherReads?: boolean
@@ -83,11 +87,13 @@ export interface HostService {
   readonly supportsWatcherOutcomes?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
+  /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
+  readonly supportsWatcherCursor?: boolean
   subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
-  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown>
-  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown>
+  watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown>
+  watcherRead?(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown>
   watcherProjection?(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection
   /** This service admits and sends an optional `send.draft` payload together, and saves a targeted Compose. */
   readonly supportsAtomicSend?: boolean
@@ -98,19 +104,49 @@ export interface HostService {
   /** The host reports its machine's host facts and how many of its threads are running (#1031); without it they read unknown. */
   readonly supportsHostFacts?: boolean
   hostFacts?(): Promise<HostMachineReport>
+  /**
+   * The host reports the GitHub repository of each of its projects (#1032), present only when its Owl answer turns on Work
+   * across machines; without it a desktop cannot match this machine's projects by repository.
+   */
+  readonly supportsProjectOrigins?: boolean
+  projectOrigins?(): Promise<ProjectOrigins>
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
+  /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
+   * threads say Needs attention until their next turn. */
+  readonly supportsFailureSeen?: boolean
+  /** The host offers phones the pull request sheet (#1281, ADR-0102), present only when its Owl answer turns it on. */
+  readonly supportsPullRequestView?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
   startHandover?(threadId: string): Promise<{ readonly text: string } | null>
+  /**
+   * Every message the user sent before `beforeMessageId`, from the thread's store, for the message scrubber (ADR-0109).
+   * Null when the host cannot read its store, or keeps none.
+   */
+  threadPrompts?(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
   /** One thread's kind as the host holds it now, read without copying any state (#917). Undefined for an unknown thread. */
   threadKind?(threadId: string): AgentThread['kind']
+  /** One thread's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown thread. */
+  threadProvider?(threadId: string): ProviderId | undefined
+  /** One project's provider as the host holds it now, read without copying any state (#1107). Undefined for an unknown project. */
+  projectProvider?(projectId: string): ProviderId | undefined
+  /**
+   * One activity record of a thread whole, read without copying the thread's history, for `activity-body`. Never edited by
+   * the caller. Without it, the host reads the record from the thread's detail.
+   */
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   /** The whole published state, history included. */
   state(): AgentState
   /** The published state without any thread's history: what every client needs on every frame. */
   shell(): AgentState
+  /**
+   * The shell as the host last published it or would publish it now, for a caller that only reads it: no copy of the
+   * host's own state is made for it, so what it holds must never be written into. Absent, read `shell()`.
+   */
+  view?(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
    * error is its own command outcome; it is independent of the published shell's shared error. */
@@ -121,7 +157,11 @@ export interface HostService {
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /** What a question page's token opens on this host, while its question waits and for an hour after (ADR-0085). */
   questionPage?(token: string): QuestionPageTarget | undefined
+  /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
+  questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a composer restoring a chip it has no copy of; null once the host no longer keeps it. */
@@ -146,6 +186,12 @@ export interface HostService {
   subagentPage?(request: SubagentPageRequest): Promise<SubagentPage>
   /** One agent's assignments, for Agents. */
   subagentAssignments?(request: SubagentAssignmentsRequest): Promise<SubagentAssignmentsPage>
+  /** The host offers the iPhone's Agents view (ADR-0103): its Owl answer turns it on. */
+  readonly supportsAgentsView?: boolean
+  /** The host keeps attached files that are not images (`file-staging`, ADR-0131): its Owl answer turns it on. */
+  readonly supportsFileStaging?: boolean
+  /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
+  threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
 
 export interface RequestAnswerRecovery {
@@ -161,7 +207,7 @@ export interface ThreadEventSource {
 /** A numeric archive and cached native allowance reads, without provider handles or message text. */
 export interface HostUsageReads {
   read(query: UsageLocalQuery): Promise<UsageLocalHostRead>
-  refresh(providerIds?: UsageProviderId[]): Promise<UsageLocalHostRead>
+  refresh(providerIds?: UsageProviderId[], background?: boolean): Promise<UsageLocalHostRead>
   clear(request: UsageLocalClearRequest): Promise<UsageLocalClearResult>
 }
 
@@ -181,7 +227,12 @@ export interface LocalHostControl {
   get(): AgentState
   watcherPhoneExclusions?(): { threadIds: string[]; projectIds: string[] }
   shell(): AgentState
+  /** The shell a broadcast carries: its thread records hold the coordinator's own, so it is read and never written into. */
+  broadcastShell?(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
+  threadProvider?(threadId: string): ProviderId | undefined
+  projectProvider?(projectId: string): ProviderId | undefined
+  threadActivity?(threadId: string, activityId: string): AgentActivity | null
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
   /** Runs one client's command and answers with the shell, without copying any history. */
@@ -190,7 +241,9 @@ export interface LocalHostControl {
   checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
   subscribeThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   questionPage?(token: string): QuestionPageTarget | undefined
+  questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
@@ -214,13 +267,16 @@ export class LocalHostService implements HostService {
   get supportsWatcherControl(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherReads(): boolean { return this.options.watcher !== undefined }
   get supportsWatcherStandingWatch(): boolean { return this.options.watcher !== undefined }
-  watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void): Promise<unknown> { return this.options.watcher!.admitRemote(request, client.clientId, guard) }
-  watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void): Promise<unknown> { return this.options.watcher!.readRemote(request, client.clientId, guard) }
+  // Answered as host protocol version 1 has them, so a desktop from before #1183 still reads them.
+  async watcherControl(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.admitRemote(request, client.clientId, guard, mayAnswer)) }
+  async watcherRead(request: WatcherHostRead, client: ClientIdentity, guard?: () => void, mayAnswer?: () => boolean): Promise<unknown> { return watcherResultForHostV1(await this.options.watcher!.readRemote(request, client.clientId, guard, mayAnswer)) }
   watcherProjection(request: WatcherHostRead, client: ClientIdentity): WatcherHostProjection { return this.options.watcher!.remoteProjection(request.master, client.clientId) }
   readonly supportsAtomicSend = true
   readonly supportsDraftRevisions = true
   readonly supportsBabysitting: boolean
   private readonly observations = new Map<string, string[]>()
+  /** Of each client's observed threads, the ones it shows, where it said that is fewer (`shownThreadIds`). */
+  private readonly shownBy = new Map<string, string[]>()
   /**
    * Whether this computer's own window has the focus. Its panes show their threads only while it does (ADR-0046): a
    * thread that finishes behind another app, minimised or hidden to the tray is finished unread. A host with no window
@@ -234,10 +290,23 @@ export class LocalHostService implements HostService {
   private readonly mayClearUsage: (client: ClientIdentity) => boolean
 
   /** `tools` are the runtime's reads of its threads' Files, Changes and Agents, for a paired client (ADR-0025, October 5 amendment). */
-  /** `facts` is this machine's host facts, read the same way on the desktop and on a headless host (#1031). */
-  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: HostFactsSource
+  /** `facts` reads this machine's report, the same way on the desktop and on a headless host (#1031). */
+  constructor(private readonly options: { control: LocalHostControl; events?: ThreadEventSource; tools?: HostThreadToolReads; babysitting?: boolean; usage?: HostUsageReads; mayClearUsage?: (client: ClientIdentity) => boolean; watcher?: WatcherService; watcherPhone?: WatcherPhoneService; facts?: () => Promise<HostMachineReport>
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
-    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined } }) {
+    threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
+    /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
+    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null }
+    /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
+    pullRequestView?: boolean
+    /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
+    fileStaging?: boolean
+    /**
+     * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
+     * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
+     */
+    agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
+    /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
+    projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins> }) {
     this.control = options.control
     this.supportsBabysitting = options.babysitting === true
     this.eventSource = options.events
@@ -249,23 +318,43 @@ export class LocalHostService implements HostService {
 
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
+  get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  /** Read from the projects as the host last published them, without copying them. */
+  projectOrigins(): Promise<ProjectOrigins> {
+    if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
+    return this.options.projectOrigins(this.view().host.projects)
+  }
+  get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
+  get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
+  get supportsFileStaging(): boolean { return this.options.fileStaging === true }
+  /** Reads the threads as the host last published them, without copying them. */
+  async threadDelegations(threadId: string): Promise<HostThreadDelegations> {
+    if (!this.options.agentsView) throw new Error('The Agents view is unavailable on this host.')
+    return this.options.agentsView.delegations?.(threadId, this.view().host.threads) ?? { threadId, threads: [] }
+  }
+  /** Every coordinator keeps the failures its clients have seen (ADR-0092). */
+  readonly supportsFailureSeen = true
   async startHandover(threadId: string): Promise<{ readonly text: string } | null> {
     if (!this.options.threadStarts) throw new Error('Continuing an agent as a thread is unavailable on this host.')
     const built = this.options.threadStarts.startHandover(threadId)
     return built ? { text: startHandoverPrefix(built.text).trimEnd() } : null
   }
+  async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
+    return this.options.prompts?.threadPrompts(threadId, beforeMessageId) ?? null
+  }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))
-    return hostMachineReport(this.options.facts, this.control.shell().host.threads)
+    return this.options.facts()
   }
 
   usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
     return this.usage.read(usageLocalQuerySchema.parse(query))
   }
-  usageRefresh(providerIds?: ProviderId[]): Promise<UsageLocalHostRead> {
+  usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    return this.usage.refresh(providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds))
+    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    return background ? this.usage.refresh(named, true) : this.usage.refresh(named)
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
@@ -289,7 +378,7 @@ export class LocalHostService implements HostService {
       changedAt = ++sequence
       if (waiting) return
       waiting = true
-      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.shell()) })
+      queueMicrotask(() => { waiting = false; if (!closed && changedAt > broadcastAt) listener(this.view()) })
     }
     const watcherOff = this.options.watcher?.subscribe(forward)
     const phoneOff = this.watcherPhone?.subscribe(forward)
@@ -297,17 +386,26 @@ export class LocalHostService implements HostService {
   }
   state(): AgentState { return this.control.get() }
   shell(): AgentState { return this.control.shell() }
+  /** What a broadcast would carry now. A Watcher change handed on with a whole copy of the shell cost what a broadcast did. */
+  view(): AgentState { return this.control.broadcastShell?.() ?? this.control.shell() }
   threadKind(threadId: string): AgentThread['kind'] {
     return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
   }
+  threadProvider(threadId: string): ProviderId | undefined { return this.control.threadProvider?.(threadId) }
+  projectProvider(projectId: string): ProviderId | undefined { return this.control.projectProvider?.(projectId) }
   threadDetail(threadId: string): AgentThreadDetail | null { return this.control.threadDetail(threadId) }
+  threadActivity(threadId: string, activityId: string): AgentActivity | null {
+    return this.control.threadActivity ? this.control.threadActivity(threadId, activityId) : this.control.threadDetail(threadId)?.activities?.find(record => record.id === activityId) ?? null
+  }
   async checkRequestAnswer(target: HostAnswerTarget, client: ClientIdentity): Promise<void> {
     if (!this.control.checkRequestAnswer) throw new RequestAnswerCheckRefusal('unsupported')
     await this.control.checkRequestAnswer(target, client)
   }
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
+  questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
     return this.control.stageAttachment(image)
@@ -346,6 +444,8 @@ export class LocalHostService implements HostService {
     if (command.type !== 'observe-threads') return answerDecisionId ? this.control.commandShell(command, client, answerDecisionId) : this.control.commandShell(command, client)
     if (command.threadIds.length) this.observations.set(client.clientId, command.threadIds)
     else this.observations.delete(client.clientId)
+    if (command.threadIds.length && command.shownThreadIds !== undefined) this.shownBy.set(client.clientId, command.shownThreadIds)
+    else this.shownBy.delete(client.clientId)
     // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
     const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
     return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
@@ -356,8 +456,12 @@ export class LocalHostService implements HostService {
     this.windowFocused = focused
     this.control.showThreads?.(this.shownThreads())
   }
-  /** The threads some client shows: every client's observed threads, the window's only while it has the focus. */
+  /**
+   * The threads some client shows: every client's observed threads, the window's only while it has the focus, and a
+   * client that said which of its threads it shows (the socket server, for paired desktops behind another app) only those.
+   */
   private shownThreads(): string[] {
-    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? [] : ids))]
+    return [...new Set([...this.observations].flatMap(([clientId, ids]) => clientId === DESKTOP_WINDOW_CLIENT_ID && !this.windowFocused ? []
+      : this.shownBy.get(clientId) ?? ids))]
   }
 }

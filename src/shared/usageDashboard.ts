@@ -15,12 +15,32 @@ export const USAGE_QUOTA_WINDOWS_MAX = 8
 export const USAGE_CLIENT_ROWS_MAX = 64
 export const USAGE_HISTORY_BATCH_MAX = 2_048
 
-const providers = ['codex', 'claude', 'grok', 'devin'] as const satisfies readonly ProviderId[]
+const providers = ['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'] as const satisfies readonly ProviderId[]
 export const usageProviderIdSchema = z.enum(providers)
 export type UsageProviderId = z.infer<typeof usageProviderIdSchema>
-/** Numeric collection and native quotas are verified only for these providers. */
+/** Numeric collection is verified only for these providers. */
 export function isUsageProviderId(value: unknown): value is UsageProviderId {
   return usageProviderIdSchema.safeParse(value).success
+}
+/**
+ * The providers Usage asks for account limits. OpenCode reports none through anything Sotto may use (ADR-0087), so it is
+ * left off Subscriptions entirely: no reading, no gauge and no line saying it cannot be read.
+ */
+export const USAGE_LIMIT_PROVIDERS = ['codex', 'claude', 'grok', 'devin', 'muse'] as const satisfies readonly UsageProviderId[]
+export type UsageLimitProviderId = typeof USAGE_LIMIT_PROVIDERS[number]
+export function reportsUsageLimits(value: unknown): value is UsageLimitProviderId {
+  return (USAGE_LIMIT_PROVIDERS as readonly unknown[]).includes(value)
+}
+/**
+ * The providers Usage knew before Muse and OpenCode were counted (October 21, 2026). A desktop or host from before then
+ * reads provider IDs against this list and refuses a whole read or query naming another, so neither is sent one; a peer
+ * that knows the rest says so with the `usage-muse-opencode` host feature.
+ */
+export const USAGE_PROVIDERS_BEFORE_MUSE = ['codex', 'claude', 'grok', 'devin'] as const satisfies readonly UsageProviderId[]
+const knownBeforeMuse = (id: UsageProviderId): boolean => (USAGE_PROVIDERS_BEFORE_MUSE as readonly UsageProviderId[]).includes(id)
+/** A provider filter an earlier peer can read: the providers it names that it knows, and every one it knows when it names none. */
+export function usageProvidersBeforeMuse(providerIds: readonly UsageProviderId[] | undefined): UsageProviderId[] {
+  return providerIds === undefined ? [...USAGE_PROVIDERS_BEFORE_MUSE] : providerIds.filter(knownBeforeMuse)
 }
 
 /** Where the work ran: a Sotto thread, or the same provider client used outside Sotto on this computer. */
@@ -216,18 +236,23 @@ export function usageWindowLength(minutes: number | undefined): { label: string;
   return { label: plural(minutes, '1 minute', `${minutes} minutes`), noun: `${minutes}-minute window` }
 }
 export const usageQuotaReadSchema = z.object({
-  providerId: usageProviderIdSchema, status: z.enum(['available', 'unavailable', 'error']),
+  providerId: z.enum(USAGE_LIMIT_PROVIDERS), status: z.enum(['available', 'unavailable', 'error']),
   windows: z.array(usageQuotaWindowSchema).max(USAGE_QUOTA_WINDOWS_MAX), observedAt: timestamp.optional(), refreshable: z.boolean(),
   reason: z.enum(['unsupported', 'not-connected', 'not-read', 'not-reported', 'refresh-unavailable', 'read-failed']).optional(),
 }).strict()
 export type UsageQuotaRead = z.infer<typeof usageQuotaReadSchema>
 export const usageRefreshQuerySchema = z.object({
   hostIds: z.array(identity).max(USAGE_HOSTS_MAX).optional(), providerIds: z.array(usageProviderIdSchema).max(providers.length).optional(),
+  /**
+   * A refresh Usage made on its own when it opened. A provider whose read is costly may answer it from a reading of the
+   * last few minutes (#1456). Read again leaves it out and always reads afresh.
+   */
+  background: z.literal(true).optional(),
 }).strict()
 export type UsageRefreshQuery = z.infer<typeof usageRefreshQuerySchema>
 export const usageLocalHostReadSchema = z.object({
   status: z.enum(['ready', 'error']), activity: usageLocalReadSchema.optional(),
-  quotas: z.array(usageQuotaReadSchema).max(providers.length), persistence: z.enum(['saved', 'failed']).optional(),
+  quotas: z.array(usageQuotaReadSchema).max(USAGE_LIMIT_PROVIDERS.length), persistence: z.enum(['saved', 'failed']).optional(),
 }).strict()
 export type UsageLocalHostRead = z.infer<typeof usageLocalHostReadSchema>
 /**
@@ -241,6 +266,21 @@ export function usageReadBeforeHistory(read: UsageLocalHostRead): UsageLocalHost
     providers: read.activity.providers.map(withoutDay), models: read.activity.models.map(withoutDay), daily: read.activity.daily.map(withoutDay) }
   delete activity.clients; delete activity.metadata.history
   return { ...read, activity }
+}
+/**
+ * A read for a desktop from before Muse and OpenCode were counted. The host has already read only the providers it knows,
+ * so this only makes sure: no provider, model, quota or place row names one it would refuse.
+ */
+export function usageReadBeforeMuse(read: UsageLocalHostRead): UsageLocalHostRead {
+  const quotas = read.quotas.filter(quota => knownBeforeMuse(quota.providerId))
+  if (read.activity === undefined) return { ...read, quotas }
+  const activity = { ...read.activity,
+    providers: read.activity.providers.filter(row => knownBeforeMuse(row.providerId)),
+    models: read.activity.models.filter(row => knownBeforeMuse(row.providerId)) }
+  if (read.activity.clients !== undefined) activity.clients = read.activity.clients
+    .flatMap(row => row.providerIds === undefined ? [row] : row.providerIds.some(knownBeforeMuse) || row.providerIds.length === 0
+      ? [{ ...row, providerIds: row.providerIds.filter(knownBeforeMuse) }] : [])
+  return { ...read, quotas, activity }
 }
 export const usageHostReadSchema = usageLocalHostReadSchema.extend({
   hostId: identity, status: z.enum(['ready', 'unsupported', 'offline', 'error']),

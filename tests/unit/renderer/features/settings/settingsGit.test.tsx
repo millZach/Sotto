@@ -12,12 +12,13 @@ describe('SettingsView', () => {
     const user = userEvent.setup()
     const update = vi.fn(async () => true)
     render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
-    await selectCategory('Cleanup')
-
+    // Titles sit with the threads they name; commit messages and pull request text with the Git they write.
+    await selectCategory('Threads')
     expect(screen.queryByRole('combobox', { name: 'Writing model' })).toBeNull()
     expect(screen.getByRole('switch', { name: 'Generated thread titles' })).toHaveAccessibleDescription(/thread's own model/u)
     await user.click(screen.getByRole('switch', { name: 'Generated thread titles' }))
     expect(update).toHaveBeenCalledWith({ threadTitles: false })
+    await selectCategory('Git & worktrees')
     await user.click(screen.getByRole('switch', { name: 'Generated commit messages' }))
     expect(update).toHaveBeenCalledWith({ commitMessages: false })
     await user.click(screen.getByRole('switch', { name: 'Generated pull request text' }))
@@ -30,7 +31,7 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update })
     const rendered = render(<SettingsView {...props} />)
-    await selectCategory('Git')
+    await selectCategory('Git & worktrees')
     const style = screen.getByRole('combobox', { name: 'Commit and pull request style' })
     expect(style).toHaveValue('repository')
     expect(style).toHaveAccessibleDescription(/Follows each repository's recent commits and AGENTS.md/u)
@@ -54,10 +55,10 @@ describe('SettingsView', () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith({ gitWritingInstructions: 'Subjects in the past tense.' }))
   })
 
-  it('says under the style when nothing will be drafted, because both Generated switches under Cleanup are off', async () => {
+  it('says under the style when nothing will be drafted, because both Generated switches are off', async () => {
     render(<SettingsView {...baseProps({ settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, commitMessages: false, pullRequestText: false } })} />)
-    await selectCategory('Git')
-    expect(screen.getByRole('combobox', { name: 'Commit and pull request style' })).toHaveAccessibleDescription(/Drafting is off under Cleanup/u)
+    await selectCategory('Git & worktrees')
+    expect(screen.getByRole('combobox', { name: 'Commit and pull request style' })).toHaveAccessibleDescription(/Nothing is drafted while Generated commit messages and Generated pull request text are off\./u)
   })
 
   it('tries a failed save of custom instructions again when the field is next left', async () => {
@@ -65,7 +66,7 @@ describe('SettingsView', () => {
     let accept = false
     const update = vi.fn(async (patch: object) => !('gitWritingInstructions' in patch) || accept)
     render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })} />)
-    await selectCategory('Git')
+    await selectCategory('Git & worktrees')
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
     await user.type(instructions, 'Name the issue.')
     await user.tab()
@@ -85,7 +86,7 @@ describe('SettingsView', () => {
     const answers: Array<(saved: boolean) => void> = []
     const update = vi.fn((patch: object) => 'gitWritingInstructions' in patch ? (() => { const pending = deferred<boolean>(); answers.push(pending.resolve); return pending.promise })() : Promise.resolve(true))
     render(<SettingsView {...baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })} />)
-    await selectCategory('Git')
+    await selectCategory('Git & worktrees')
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
     const saves = () => update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object)).map(([patch]) => (patch as { gitWritingInstructions: string }).gitWritingInstructions)
     // "abc" is sent and still in flight when "abcd" is sent.
@@ -110,7 +111,7 @@ describe('SettingsView', () => {
     const update = vi.fn<Parameters<typeof SettingsView>[0]['onUpdateSettings']>(async () => true)
     const props = baseProps({ onUpdateSettings: update, settings: { ...DEFAULT_SETTINGS, onboardingComplete: true, gitWritingStyle: 'custom' } })
     const rendered = render(<SettingsView {...props} />)
-    await selectCategory('Git')
+    await selectCategory('Git & worktrees')
     const instructions = screen.getByRole('textbox', { name: 'Custom instructions' })
     // Typed and, before the pause, the style switched away: the field goes, and its text is saved as it goes.
     fireEvent.change(instructions, { target: { value: 'Mention the issue number.' } })
@@ -122,25 +123,26 @@ describe('SettingsView', () => {
     expect(update.mock.calls.filter(([patch]) => 'gitWritingInstructions' in (patch as object))).toHaveLength(1)
   })
 
-  it('groups every Git setting under the moment it acts, in one Git section', async () => {
+  it('groups every Git setting under the moment it acts, in one Git & worktrees section', async () => {
     render(<SettingsView {...baseProps()} />)
-    await selectCategory('Git')
-    const panel = screen.getByRole('tabpanel', { name: 'Git' })
+    await selectCategory('Git & worktrees')
+    const panel = screen.getByRole('tabpanel', { name: 'Git & worktrees' })
     const groups = within(panel).getAllByRole('region')
-    expect(groups.map(group => within(group).getByRole('heading', { level: 3 }).textContent)).toEqual(['When a thread commits', 'When a pull request is made or merged', 'When you read Changes', 'In the background'])
+    expect(groups.map(group => within(group).getByRole('heading', { level: 3 }).textContent)).toEqual(['Removing worktrees', 'When a thread commits', 'When a pull request is made or merged', 'When you read Changes', 'In the background'])
     // The controls of each group in the order the eye meets them.
     const names = (group: HTMLElement): string[] => [...group.querySelectorAll<HTMLElement>('select, [role="switch"], [role="radiogroup"]')]
       .map(control => control.getAttribute('aria-label') ?? (control as HTMLSelectElement).labels?.[0]?.textContent ?? '')
-    expect(names(groups[0]!)).toEqual(['Commit and pull request style'])
-    expect(names(groups[1]!)).toEqual(['Follow pull request templates', 'Default merge method', 'Auto-settle merged threads'])
-    expect(names(groups[2]!)).toEqual(['Diff layout', 'Hide whitespace changes', 'Default diff file state', 'Proactive panels'])
-    expect(names(groups[3]!)).toEqual(['Git fetch interval', 'Automatically pull'])
-    // Moved, not copied: Application and Cleanup keep none of them.
-    for (const section of ['Application', 'Cleanup']) {
+    expect(names(groups[0]!)).toEqual(['Remove idle worktrees after', 'Remove a worktree when its thread is settled', 'Remove a worktree once its commits are in the default branch', 'Remove a worktree when its pull request is merged'])
+    expect(names(groups[1]!)).toEqual(['Commit and pull request style', 'Generated commit messages'])
+    expect(names(groups[2]!)).toEqual(['Generated pull request text', 'Follow pull request templates', 'Default merge method', 'Auto-settle merged threads', 'Let agents babysit pull requests'])
+    expect(names(groups[3]!)).toEqual(['Diff layout', 'Hide whitespace changes', 'Default diff file state', 'Proactive panels'])
+    expect(names(groups[4]!)).toEqual(['Git fetch interval', 'Automatically pull'])
+    // Moved, not copied: Application, Threads and Cleanup keep none of them.
+    for (const section of ['Application', 'Threads', 'Cleanup']) {
       await selectCategory(section)
       const other = screen.getByRole('tabpanel', { name: section })
       for (const name of ['Git fetch interval', 'Default merge method', 'Commit and pull request style']) expect(within(other).queryByRole('combobox', { name })).toBeNull()
-      for (const name of ['Automatically pull', 'Auto-settle merged threads', 'Proactive panels', 'Follow pull request templates', 'Hide whitespace changes']) expect(within(other).queryByRole('switch', { name })).toBeNull()
+      for (const name of ['Automatically pull', 'Auto-settle merged threads', 'Proactive panels', 'Follow pull request templates', 'Hide whitespace changes', 'Generated commit messages', 'Remove a worktree when its thread is settled']) expect(within(other).queryByRole('switch', { name })).toBeNull()
     }
   })
 
@@ -149,7 +151,7 @@ describe('SettingsView', () => {
     const update = vi.fn(async () => true)
     const props = baseProps({ onUpdateSettings: update })
     const rendered = render(<SettingsView {...props} />)
-    await selectCategory('Git')
+    await selectCategory('Git & worktrees')
     for (const name of ['Automatically pull', 'Auto-settle merged threads', 'Proactive panels']) expect(screen.getByRole('switch', { name })).not.toBeChecked()
     expect(screen.getByRole('switch', { name: 'Automatically pull' })).toHaveAccessibleDescription(/leaves the pull to you/u)
     await user.click(screen.getByRole('switch', { name: 'Automatically pull' }))

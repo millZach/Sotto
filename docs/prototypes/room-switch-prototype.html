@@ -1,0 +1,235 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: what should the room switch at the foot of the Threads sidebar (Dictate | owl | Threads) look like?
+  Ten variants, each clickable and arrow-key driven. Toggles: light/dark, Watcher on/off, sidebar width.
+  Picked: 5, Icon dock (October 24, 2026).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Room switch: ten mock-ups</title>
+<style>
+  :root {
+    --canvas:#121211; --surface:#1a1a19; --raised:#232321; --sunk:#0c0c0b; --line:#2e2e2b;
+    --text:#ecebe6; --muted:#9a9890; --accent:#e8c547; --on-accent:#1a1600; --accent-soft:rgba(232,197,71,.14);
+    --ease:cubic-bezier(.2,.8,.2,1);
+  }
+  body.light {
+    --canvas:#f6f5f0; --surface:#ffffff; --raised:#ecebe5; --sunk:#e3e2db; --line:#d6d4cc;
+    --text:#1c1b17; --muted:#5f5d55; --accent:#8a6d00; --on-accent:#fffbe6; --accent-soft:rgba(138,109,0,.12);
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; animation:none !important; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--canvas); color:var(--text); font:14px/1.4 Figtree, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position:sticky; top:0; z-index:5; display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:14px 24px; background:var(--canvas); border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; font-weight:600; margin:0 12px 0 0; }
+  header label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+  header button, header select { font:inherit; color:var(--text); background:var(--raised); border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
+  main { display:grid; grid-template-columns:repeat(auto-fill, minmax(calc(var(--w) + 48px), 1fr)); gap:20px; padding:24px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 24px 20px; }
+  .card h2 { font-size:13px; font-weight:600; margin:0 0 2px; }
+  .card p { font-size:12px; color:var(--muted); margin:0 0 16px; min-height:34px; }
+  .foot { width:var(--w); max-width:100%; padding-top:12px; border-top:1px solid var(--line); }
+  [role=tab] { font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; }
+  [role=tab]:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  body:not(.watcher) [data-room=watcher] { display:none !important; }
+  svg.px { shape-rendering:crispEdges; }
+  .owl { width:18px; height:18px; fill:currentColor; display:block; }
+
+  /* 1 Sliding thumb */
+  .v1 { position:relative; display:flex; background:var(--sunk); border-radius:10px; padding:4px; }
+  .v1 .thumb { position:absolute; top:4px; bottom:4px; background:var(--raised); border-radius:7px; box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 1px 3px rgba(0,0,0,.35); transition:left .28s var(--ease), width .28s var(--ease); }
+  .v1 [role=tab] { position:relative; flex:1; height:36px; color:var(--muted); transition:color .2s; }
+  .v1 [data-room=watcher] { flex:0 0 44px; display:grid; place-items:center; }
+  .v1 [aria-selected=true] { color:var(--text); }
+
+  /* 2 Underline */
+  .v2 { position:relative; display:flex; gap:4px; border-bottom:1px solid var(--line); }
+  .v2 [role=tab] { flex:1; height:38px; color:var(--muted); font-weight:500; }
+  .v2 [data-room=watcher] { flex:0 0 40px; display:grid; place-items:center; }
+  .v2 [aria-selected=true] { color:var(--text); }
+  .v2 .bar { position:absolute; bottom:-1px; height:2px; background:var(--accent); border-radius:2px; transition:left .28s var(--ease), width .28s var(--ease); }
+
+  /* 3 Icon + label segments */
+  .v3 { display:flex; gap:4px; }
+  .v3 [role=tab] { flex:1; height:40px; display:flex; gap:8px; align-items:center; justify-content:center; border-radius:8px; color:var(--muted); border:1px solid var(--line); transition:background .2s, color .2s, border-color .2s; }
+  .v3 [data-room=watcher] { flex:0 0 40px; }
+  .v3 [role=tab]:hover { background:var(--raised); }
+  .v3 [aria-selected=true] { background:var(--accent-soft); color:var(--accent); border-color:transparent; }
+  .v3 svg.i { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* 4 Owl hub */
+  .v4 { position:relative; display:flex; align-items:center; height:44px; }
+  .v4 [data-room=dictate], .v4 [data-room=threads] { flex:1; height:36px; background:var(--sunk); color:var(--muted); transition:background .2s, color .2s; }
+  .v4 [data-room=dictate] { border-radius:18px 0 0 18px; padding-right:22px; }
+  .v4 [data-room=threads] { border-radius:0 18px 18px 0; padding-left:22px; }
+  body:not(.watcher) .v4 [data-room=dictate] { padding-right:0; margin-right:2px; }
+  body:not(.watcher) .v4 [data-room=threads] { padding-left:0; }
+  .v4 [data-room=watcher] { position:absolute; left:50%; transform:translateX(-50%); width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:var(--surface); color:var(--muted); box-shadow:0 0 0 4px var(--surface), 0 0 0 5px var(--line); transition:color .2s, background .2s; }
+  .v4 [data-room=dictate][aria-selected=true], .v4 [data-room=threads][aria-selected=true] { background:var(--raised); color:var(--text); }
+  .v4 [data-room=watcher][aria-selected=true] { background:var(--accent); color:var(--on-accent); }
+
+  /* 5 Icon dock, label grows on the lit one */
+  .v5 { display:flex; gap:6px; justify-content:center; background:var(--sunk); border-radius:12px; padding:5px; }
+  .v5 [role=tab] { height:36px; min-width:36px; padding:0 10px; border-radius:8px; display:flex; align-items:center; gap:0; color:var(--muted); transition:background .25s, color .25s, gap .25s; }
+  .v5 [role=tab] span { max-width:0; overflow:hidden; white-space:nowrap; opacity:0; transition:max-width .3s var(--ease), opacity .2s; }
+  .v5 [aria-selected=true] { background:var(--accent); color:var(--on-accent); gap:8px; }
+  .v5 [aria-selected=true] span { max-width:90px; opacity:1; }
+  .v5 svg.i { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+  /* 6 Pixel */
+  .v6 { display:flex; gap:6px; }
+  .v6 [role=tab] { flex:1; height:40px; display:flex; gap:8px; align-items:center; justify-content:center; color:var(--muted); background:var(--sunk);
+    font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:12px; letter-spacing:.06em; text-transform:uppercase;
+    clip-path:polygon(0 4px,4px 4px,4px 0,calc(100% - 4px) 0,calc(100% - 4px) 4px,100% 4px,100% calc(100% - 4px),calc(100% - 4px) calc(100% - 4px),calc(100% - 4px) 100%,4px 100%,4px calc(100% - 4px),0 calc(100% - 4px)); }
+  .v6 [data-room=watcher] { flex:0 0 44px; }
+  .v6 [aria-selected=true] { background:var(--accent); color:var(--on-accent); }
+  .v6 svg.px { width:20px; height:20px; fill:currentColor; }
+  .v6 [aria-selected=true] svg.px { animation:hop .5s steps(2) 1; }
+  @keyframes hop { 50% { transform:translateY(-2px); } }
+
+  /* 7 Quiet text with a dot */
+  .v7 { display:flex; align-items:center; justify-content:space-around; height:40px; }
+  .v7 [role=tab] { display:flex; align-items:center; gap:8px; color:var(--muted); padding:6px 10px; border-radius:6px; font-weight:500; }
+  .v7 [role=tab]::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--accent); transform:scale(0); transition:transform .25s var(--ease); }
+  .v7 [data-room=watcher]::before { display:none; }
+  .v7 [role=tab]:hover { color:var(--text); }
+  .v7 [aria-selected=true] { color:var(--text); }
+  .v7 [aria-selected=true]::before { transform:scale(1); }
+  .v7 [data-room=watcher][aria-selected=true] { color:var(--accent); }
+  .v7 .sep { width:1px; height:16px; background:var(--line); }
+  body:not(.watcher) .v7 .sep:last-of-type { display:none; }
+
+  /* 8 Perched owl that looks at the lit room */
+  .v8 { position:relative; display:flex; gap:8px; padding-top:14px; }
+  .v8 [data-room=dictate], .v8 [data-room=threads] { flex:1; height:40px; border-radius:8px; background:var(--sunk); color:var(--muted); border:1px solid transparent; transition:all .2s; }
+  .v8 [data-room=dictate][aria-selected=true], .v8 [data-room=threads][aria-selected=true] { background:var(--raised); color:var(--text); border-color:var(--line); }
+  .v8 [data-room=watcher] { position:absolute; left:50%; top:0; transform:translateX(-50%); width:34px; height:30px; display:grid; place-items:center; color:var(--muted); z-index:1; }
+  .v8 [data-room=watcher] svg { width:28px; height:28px; }
+  .v8 [data-room=watcher] .body { fill:currentColor; }
+  .v8 [data-room=watcher] .eye { fill:var(--surface); }
+  .v8 [data-room=watcher] .pupil { fill:currentColor; transition:transform .3s var(--ease); }
+  .v8 [data-room=watcher][aria-selected=true] { color:var(--accent); }
+  .v8[data-lit="0"] .pupil { transform:translateX(-1.2px); }
+  .v8[data-lit="2"] .pupil { transform:translateX(1.2px); }
+  .v8[data-lit="1"] .pupil { transform:translateY(.8px); }
+  .v8 [data-room=watcher]:hover svg { animation:blink .3s 1; }
+  @keyframes blink { 50% { transform:scaleY(.15); } }
+
+  /* 9 Keycaps */
+  .v9 { display:flex; gap:8px; }
+  .v9 [role=tab] { flex:1; height:40px; border-radius:7px; color:var(--muted); background:var(--raised); box-shadow:0 3px 0 var(--sunk), 0 3px 0 1px var(--line); transform:translateY(-1px); transition:transform .08s, box-shadow .08s, color .15s; }
+  .v9 [data-room=watcher] { flex:0 0 44px; display:grid; place-items:center; }
+  .v9 [aria-selected=true] { color:var(--text); transform:translateY(2px); box-shadow:0 0 0 var(--sunk), 0 0 0 1px var(--accent); }
+
+  /* 10 Ring */
+  .v10 { position:relative; display:flex; height:40px; }
+  .v10 .ring { position:absolute; top:0; bottom:0; border:1px solid var(--accent); border-radius:20px; background:var(--accent-soft); transition:left .3s var(--ease), width .3s var(--ease); }
+  .v10 [role=tab] { position:relative; flex:1; color:var(--muted); font-weight:500; transition:color .2s; }
+  .v10 [data-room=watcher] { flex:0 0 40px; display:grid; place-items:center; }
+  .v10 [aria-selected=true] { color:var(--accent); }
+</style>
+</head>
+<body class="watcher">
+<header>
+  <h1>Room switch: ten mock-ups</h1>
+  <button id="theme" type="button">Light</button>
+  <label><input id="watch" type="checkbox" checked> Watcher's owl</label>
+  <label>Sidebar width <select id="width"><option>260</option><option selected>320</option><option>470</option></select></label>
+  <span style="color:var(--muted)">Click or use arrow keys. Reduced motion is respected.</span>
+</header>
+<main id="grid"></main>
+
+<template id="owl"><svg class="owl" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8ZM1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z"/><circle cx="5.29" cy="8.22" r="1.19"/><circle cx="10.79" cy="8.87" r="1.19"/></svg></template>
+
+<script>
+const OWL = document.getElementById('owl').innerHTML
+const MIC = '<svg class="i" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>'
+const THREADS = '<svg class="i" viewBox="0 0 24 24"><path d="M4 6h11M4 11h16M4 16h8"/><circle cx="18" cy="17" r="2.2"/></svg>'
+
+// Pixel art drawn at 1x on a 10x10 grid and shown doubled.
+function pixel(rows) {
+  const rects = []
+  rows.forEach((r, y) => [...r].forEach((c, x) => { if (c === '#') rects.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`) }))
+  return `<svg class="px" viewBox="0 0 ${rows[0].length} ${rows.length}" aria-hidden="true">${rects.join('')}</svg>`
+}
+const PX_OWL = pixel(['#........#','##......##','##########','#..####..#','#..####..#','#.#####.##','##########','.########.','..######..','..#....#..'])
+const PX_MIC = pixel(['...####...','...#..#...','...#..#...','...#..#...','.#.#..#.#.','.#.####.#.','..#....#..','...####...','.....#....','...#####..'])
+const PX_THR = pixel(['..........','########..','..........','##########','..........','#####.....','.......###','.......###','..........','..........'])
+
+// Perched owl with eyes that can move.
+const PERCH = '<svg viewBox="0 0 28 28" aria-hidden="true"><path class="body" d="M5 9C4 6 4.5 3.5 6 2c.4 2 1.6 3.5 4 3.5 2.5-1 5.5-1 8 0 2.4 0 3.6-1.5 4-3.5 1.5 1.5 2 4 1 7 1 1.5 1.5 4 1.5 7 0 6-4 9-10.5 9S3.5 22 3.5 16c0-3 .5-5.5 1.5-7z"/><circle class="eye" cx="10" cy="14" r="3.6"/><circle class="eye" cx="18" cy="14" r="3.6"/><circle class="pupil" cx="10" cy="14" r="1.7"/><circle class="pupil" cx="18" cy="14" r="1.7"/></svg>'
+
+const VARIANTS = [
+  ['1. Sliding thumb', 'Today\'s pill, but the lit tile slides between rooms and the owl gets a fixed square slot.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }, '<span class="thumb"></span>'],
+  ['2. Underline', 'Plain text tabs on a hairline; a short accent bar travels under the lit room. Lightest weight.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }, '<span class="bar"></span>'],
+  ['3. Icon and label', 'Each room gets a glyph. The lit one is tinted with the theme accent instead of a grey block.',
+    { dictate:MIC + 'Dictate', watcher:OWL, threads:THREADS + 'Threads' }],
+  ['4. Owl hub', 'The owl is a round button the two halves meet at, like a hinge. Turns accent when Watcher is open.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }],
+  ['5. Icon dock', 'Icons only; the lit room grows to show its name. Compact, reads well at narrow widths.',
+    { dictate:MIC + '<span>Dictate</span>', watcher:OWL + '<span>Watcher</span>', threads:THREADS + '<span>Threads</span>' }],
+  ['6. Pixel', 'Pixel-doubled glyphs, notched corners, monospace caps. Lit block hops once.',
+    { dictate:PX_MIC + 'Dictate', watcher:PX_OWL, threads:PX_THR + 'Threads' }],
+  ['7. Quiet text', 'No container at all. An accent dot marks the room you are in; hairline dividers between.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }, '', true],
+  ['8. Perched owl', 'The owl sits on top of the switch and looks at whichever room is open. Blinks on hover.',
+    { dictate:'Dictate', watcher:PERCH, threads:'Threads' }],
+  ['9. Keycaps', 'Raised keys; the lit one is pressed down with an accent edge. Tactile, a bit playful.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }],
+  ['10. Ring', 'Transparent row; an accent outline glides to the lit room and tints its name.',
+    { dictate:'Dictate', watcher:OWL, threads:'Threads' }, '<span class="ring"></span>'],
+]
+
+const grid = document.getElementById('grid')
+VARIANTS.forEach(([title, note, labels, extra = '', seps = false], n) => {
+  const card = document.createElement('section')
+  card.className = 'card'
+  const order = ['dictate', 'watcher', 'threads']
+  const tabs = order.map((id, i) => `${seps && i ? '<span class="sep"></span>' : ''}<button role="tab" data-room="${id}" aria-selected="${id === 'threads'}" ${id === 'watcher' ? 'aria-label="Watcher" title="Watcher"' : ''} tabindex="${id === 'threads' ? 0 : -1}">${labels[id]}</button>`).join('')
+  card.innerHTML = `<h2>${title}</h2><p>${note}</p><div class="foot"><div class="v${n + 1}" role="tablist" aria-label="Page" data-lit="2">${extra}${tabs}</div></div>`
+  grid.append(card)
+})
+
+function visible(list) { return [...list.querySelectorAll('[role=tab]')].filter(t => t.offsetParent !== null) }
+function place(list) {
+  const lit = list.querySelector('[aria-selected=true]')
+  const mover = list.querySelector('.thumb, .bar, .ring')
+  if (!mover || !lit) return
+  const inset = mover.classList.contains('bar') ? 10 : 0
+  mover.style.left = lit.offsetLeft + inset + 'px'
+  mover.style.width = lit.offsetWidth - inset * 2 + 'px'
+}
+function select(list, tab) {
+  list.querySelectorAll('[role=tab]').forEach(t => { t.setAttribute('aria-selected', t === tab); t.tabIndex = t === tab ? 0 : -1 })
+  list.dataset.lit = ['dictate', 'watcher', 'threads'].indexOf(tab.dataset.room)
+  place(list)
+}
+document.querySelectorAll('[role=tablist]').forEach(list => {
+  list.addEventListener('click', e => { const t = e.target.closest('[role=tab]'); if (t) select(list, t) })
+  list.addEventListener('keydown', e => {
+    const tabs = visible(list), i = tabs.indexOf(document.activeElement)
+    const next = { ArrowRight:i + 1, ArrowDown:i + 1, ArrowLeft:i - 1, ArrowUp:i - 1, Home:0, End:tabs.length - 1 }[e.key]
+    if (next === undefined || i < 0) return
+    e.preventDefault()
+    const t = tabs[(next + tabs.length) % tabs.length]; t.focus(); select(list, t)
+  })
+})
+const all = () => document.querySelectorAll('[role=tablist]').forEach(list => {
+  const lit = list.querySelector('[aria-selected=true]')
+  if (lit.offsetParent === null) select(list, list.querySelector('[data-room=threads]')); else place(list)
+})
+
+document.getElementById('theme').onclick = e => { const light = document.body.classList.toggle('light'); e.target.textContent = light ? 'Dark' : 'Light' }
+document.getElementById('watch').onchange = e => { document.body.classList.toggle('watcher', e.target.checked); all() }
+const width = document.getElementById('width')
+const setWidth = () => { document.documentElement.style.setProperty('--w', width.value + 'px'); all() }
+width.onchange = setWidth
+window.addEventListener('resize', all)
+setWidth()
+</script>
+</body>
+</html>

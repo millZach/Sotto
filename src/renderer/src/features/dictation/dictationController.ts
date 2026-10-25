@@ -1,3 +1,6 @@
+import { i18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+
 import {
   initialDictationState,
   isTranscriptionErrorCode,
@@ -13,7 +16,7 @@ import {
   type WidgetErrorCode,
   type WidgetSnapshot,
 } from '../../../../shared/dictation'
-import type { HistoryEntry } from '../../../../shared/history'
+import type { FinishedDictation, HistoryEntry } from '../../../../shared/history'
 import type {
   OutputDeliveryRequest,
   TranscriptPolishAsrContext,
@@ -30,6 +33,7 @@ import {
   type AudioRecordingResult,
 } from '../../audio/audioRecorder'
 import { calculateRms } from '../../audio/audioMath'
+import { isSilentTail } from '../../audio/silentTail'
 import type {
   LoadOptions,
   TranscribeOptions,
@@ -75,7 +79,8 @@ export interface DictationControllerDependencies {
   readonly deliverOutput: (
     request: OutputDeliveryRequest,
   ) => DictationOutputResult | Promise<DictationOutputResult>
-  readonly addHistory: (entry: HistoryEntry) => unknown | Promise<unknown>
+  /** Reports every finished dictation; main keeps its record, and its transcript while Keep local history is on (ADR-0100). */
+  readonly addHistory: (entry: FinishedDictation) => unknown | Promise<unknown>
   /** Completed words that output could not deliver. Kept by the app in memory until dismissed. */
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
@@ -148,21 +153,28 @@ function roundRms(rms: number): number {
   return Number.isFinite(rms) ? Math.round(rms * 1_000) / 1_000 : 0
 }
 
+/** What each failure says, as a message read in the interface language when the failure is shown. */
 const ERROR_MESSAGES = Object.freeze({
-  MIC_PERMISSION_DENIED: 'Microphone permission was denied.',
-  MIC_DEVICE_NOT_FOUND: 'The selected microphone is unavailable.',
-  MIC_START_FAILED: 'The microphone could not be started.',
+  MIC_PERMISSION_DENIED: msg`Microphone permission was denied.`,
+  MIC_DEVICE_NOT_FOUND: msg`The selected microphone is unavailable.`,
+  MIC_START_FAILED: msg`The microphone could not be started.`,
   MIC_NOT_SET_UP: MICROPHONE_NOT_SET_UP_DETAIL,
   SPEECH_MODEL_NOT_READY: SPEECH_MODEL_NOT_READY_DETAIL,
-  RECORDING_FAILED: 'The recording could not be completed.',
-  NO_SPEECH: 'No speech was detected.',
+  RECORDING_FAILED: msg`The recording could not be completed.`,
+  NO_SPEECH: msg`No speech was detected.`,
   ...TRANSCRIPTION_ERROR_DETAIL,
-  OUTPUT_UNAVAILABLE: 'Output is unavailable.',
-  OUTPUT_FAILED: 'The transcript could not be delivered.',
-  DESKTOP_CLIPBOARD_UNAVAILABLE: 'The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it.',
-  HISTORY_FAILED: 'The transcript was delivered but history could not be updated.',
-  SETTINGS_UNAVAILABLE: 'Settings are unavailable.',
+  OUTPUT_UNAVAILABLE: msg`Output is unavailable.`,
+  OUTPUT_FAILED: msg`The transcript could not be delivered.`,
+  DESKTOP_CLIPBOARD_UNAVAILABLE: msg`The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it.`,
+  HISTORY_FAILED: msg`The transcript was delivered but history could not be updated.`,
+  SETTINGS_UNAVAILABLE: msg`Settings are unavailable.`,
 } as const)
+
+/** A failure's words; the shared module's own details are still plain English strings. */
+function errorMessage(code: ControllerErrorCode): string {
+  const message: string | MessageDescriptor = ERROR_MESSAGES[code]
+  return typeof message === 'string' ? message : i18n._(message)
+}
 
 type ControllerErrorCode = WidgetErrorCode
 
@@ -604,15 +616,18 @@ export class DictationController {
     recording: AudioRecordingResult,
   ): Promise<void> {
     if (!this.isCurrent(session)) return
-    if (recording.samples.length === 0 && session.parts.length === 0) {
+    // A short tail that never rises above a pause holds no speech; the speech model
+    // would only make a filler word of it, so it is left out like an empty one.
+    const tail = isSilentTail(recording) ? new Float32Array() : recording.samples
+    if (tail.length === 0 && session.parts.length === 0) {
       this.fail(session, 'NO_SPEECH')
       return
     }
 
     session.durationMs = recording.durationMs
-    if (recording.samples.length > 0) {
-      const result = this.sendPart(session, recording.samples, true)
-      session.parts.push({ audio: recording.samples, rms: roundRms(calculateRms(recording.samples)), result })
+    if (tail.length > 0) {
+      const result = this.sendPart(session, tail, true)
+      session.parts.push({ audio: tail, rms: roundRms(calculateRms(tail)), result })
     }
     await this.finishRecording(session)
   }
@@ -721,7 +736,7 @@ export class DictationController {
     session.progress = 1
     this.publish(session)
 
-    const entry: HistoryEntry = {
+    const entry: FinishedDictation = {
       id: session.id,
       text,
       createdAt: Math.round(finiteTimestamp(this.now())),
@@ -736,6 +751,7 @@ export class DictationController {
         text,
         autoPaste: session.settings.autoPaste,
         pasteDelayMs: session.settings.pasteDelayMs,
+        dictationId: session.id,
       })
     } catch {
       outputFailure = 'OUTPUT_FAILED'
@@ -746,15 +762,17 @@ export class DictationController {
     else if (output === 'clipboard-unavailable') outputFailure = 'DESKTOP_CLIPBOARD_UNAVAILABLE'
     if (outputFailure) this.dependencies.retainOutput?.(entry)
 
-    if (session.settings.historyEnabled) {
-      try {
-        await this.dependencies.addHistory(entry)
-      } catch {
+    // Every finished dictation is reported: main keeps its numbers always and its text only while history is on.
+    // With history off there is no transcript to lose, so a record that could not be kept does not fail the dictation.
+    try {
+      await this.dependencies.addHistory(entry)
+    } catch {
+      if (session.settings.historyEnabled) {
         if (this.isCurrent(session)) this.fail(session, outputFailure ?? 'HISTORY_FAILED')
         return
       }
-      if (!this.isCurrent(session)) return
     }
+    if (!this.isCurrent(session)) return
 
     if (outputFailure) { this.fail(session, outputFailure); return }
     if (typeof output === 'object' || output === 'empty' || output === 'clipboard-unavailable') return
@@ -811,7 +829,7 @@ export class DictationController {
         type: 'FAILED',
         sessionId: session.id,
         code,
-        message: kept ? TRANSCRIPTION_KEPT_DETAIL[code] : ERROR_MESSAGES[code],
+        message: kept ? TRANSCRIPTION_KEPT_DETAIL[code] : errorMessage(code),
         ...(kept ? { kept: true } : {}),
         ...(kept && session.retried ? { retried: true } : {}),
       },

@@ -9,7 +9,7 @@ const modalsChanged = (change: number): void => { openModals += change; for (con
 export const useHostsModalOpen = (): boolean => useSyncExternalStore(subscribeModals, () => openModals > 0)
 
 /**
- * A modal for Settings > Hosts: focus starts inside it (on `data-autofocus` when a control has it), Tab stays inside it, Escape answers it (after
+ * A modal for Settings > Hosts & phones: focus starts inside it (on `data-autofocus` when a control has it), Tab stays inside it, Escape answers it (after
  * anything open inside has answered first) and focus goes back to what opened it.
  */
 export function HostsModal({ title, onClose, busy = false, children, footer, className = '' }: {

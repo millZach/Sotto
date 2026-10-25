@@ -89,7 +89,7 @@ test('Linux saves a key in Settings and explains Hyprland paste', async () => {
     await expect(page.getByText('Launch at sign-in could not be updated.')).toHaveCount(0)
     await openPage(page, 'Help')
     await expect(page.getByText(/Sotto .*Linux\. No account/)).toBeVisible()
-    await expect(page.getByText(/Compositor bindings live in Hyprland, not in Sotto\. Once Sotto’s bindings are installed, hold F9 to talk/)).toBeVisible()
+    await expect(page.getByText(/Compositor bindings live in Hyprland, not in Sotto\. Once Sotto’s bindings are installed, change them in Settings › Dictation/)).toBeVisible()
     await expect(page.getByText(/Hold F9 to talk, or press Super\+Ctrl\+X to start and stop/)).toBeVisible()
     await expect(page.getByText(/Sotto copies your text, then pastes into the focused window on Hyprland, terminals included/)).toBeVisible()
     await expect(page.getByText(/use Super\+V, Omarchy’s universal paste for apps and terminals/)).toBeVisible()
@@ -99,7 +99,7 @@ test('Linux saves a key in Settings and explains Hyprland paste', async () => {
     await expect(page.locator('.app-room__top')).toBeEmpty()
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
     await page.getByRole('button', { name: 'Stop', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Pasted.', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /^Pasted( into .+)?\.$/ })).toBeVisible()
     await expect(page.getByText(/With Sotto’s compositor bindings: hold F9 to talk/)).toBeVisible()
     expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({ clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1 })
   } finally { await closeSotto(launched) }

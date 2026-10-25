@@ -65,7 +65,7 @@ export function isTranscriptionErrorCode(code: string): code is TranscriptionErr
  */
 export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model stopped before it could transcribe. The recording was not kept. Check Settings → Transcription, then dictate again.',
+    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model stopped before it could transcribe. The recording was not kept. Check the speech model in Settings → Dictation, then dictate again.',
     TRANSCRIPTION_FAILED: 'The speech model could not transcribe this recording. The recording was not kept. Dictate again.',
   })
 
@@ -76,16 +76,16 @@ export const TRANSCRIPTION_ERROR_DETAIL: Readonly<Record<TranscriptionErrorCode,
  */
 export const TRANSCRIPTION_KEPT_DETAIL: Readonly<Record<TranscriptionErrorCode, string>> =
   Object.freeze({
-    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model is not ready. Your recording is kept until you try again or discard it. Check Settings → Transcription, then try again.',
+    TRANSCRIPTION_MODEL_NOT_READY: 'The speech model is not ready. Your recording is kept until you try again or discard it. Check the speech model in Settings → Dictation, then try again.',
     TRANSCRIPTION_FAILED: 'The speech model could not transcribe this recording. Your recording is kept until you try again or discard it.',
   })
 
 /**
  * What every surface says when dictation starts before the speech model is
- * ready: nothing is recorded, and the one place that shows the download says
- * how far along it is.
+ * ready: nothing is recorded, and the one place to choose a model says where
+ * the chosen one stands.
  */
-export const SPEECH_MODEL_NOT_READY_DETAIL = 'The speech model is not ready yet, so nothing was recorded. Settings → Transcription shows where its download stands.'
+export const SPEECH_MODEL_NOT_READY_DETAIL = 'The speech model is not ready yet, so nothing was recorded. Choose one, or see where it stands, in Settings → Dictation.'
 
 /**
  * What every surface says when setup was finished without a microphone. The

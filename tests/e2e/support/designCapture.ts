@@ -23,7 +23,7 @@ type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'dictate' | 'history' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
+  readonly category: 'onboarding' | 'dictate' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -74,6 +74,8 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
     const tolerance = 1
     const documentRoot = document.documentElement
     if (documentRoot.scrollWidth > documentRoot.clientWidth + tolerance) problems.push('document-horizontal-overflow')
+    // Only rooms and panes scroll. A document taller than the window lets a wheel lift the whole shell off its foot.
+    if (documentRoot.scrollHeight > documentRoot.clientHeight + tolerance) problems.push('document-vertical-overflow')
     if (document.body.scrollWidth > document.body.clientWidth + tolerance) problems.push('body-horizontal-overflow')
 
     for (const selector of ['.app-room', '.thread-workspace']) {
@@ -138,13 +140,13 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
       if (shortcut.scrollWidth > shortcut.clientWidth + tolerance) problems.push('shortcut-horizontal-overflow')
     }
 
-    // The Dictate room's last-transcript row must sit inside the room, not scroll away.
-    const lastTranscript = document.querySelector('.dictate__last')
+    // The Dictate room's bar must sit inside the room, never scrolled or pushed out of it.
+    const bar = document.querySelector('.dictate__bar')
     const contentBounds = document.querySelector('.app-room')?.getBoundingClientRect()
-    if (lastTranscript !== null && contentBounds !== undefined) {
-      const rowBounds = lastTranscript.getBoundingClientRect()
-      if (rowBounds.bottom > contentBounds.bottom + tolerance || rowBounds.top < contentBounds.top - tolerance) {
-        problems.push('dictate-last-transcript-not-fully-visible')
+    if (bar !== null && contentBounds !== undefined) {
+      const barBounds = bar.getBoundingClientRect()
+      if (barBounds.right > contentBounds.right + tolerance || barBounds.left < contentBounds.left - tolerance) {
+        problems.push('dictate-bar-outside-room')
       }
     }
     return [...new Set(problems)]

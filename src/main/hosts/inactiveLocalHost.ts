@@ -52,7 +52,7 @@ export async function inactiveLocalHost(directory: string,
     if (retentionError) throw new Error('Saved thread ownership could not be read. Your saved answers have not changed.')
     return [...retained]
   }
-  const unavailable = (): never => { throw new Error('The local host is off. Turn it on in Settings > Hosts and restart Sotto.') }
+  const unavailable = (): never => { throw new Error('The local host is off. Turn it on in Settings > Hosts & phones and restart Sotto.') }
   const idle = () => undefined
   const unsubscribe = () => idle
   const shell = () => structuredClone(state)
@@ -96,5 +96,5 @@ export async function inactiveLocalHost(directory: string,
 
 /** Refuse an explicit privacy change before saving settings if its local cleanup cannot run. */
 export function requireLocalHistoryCleanup(localHostRunning: boolean, historyEnabled: boolean, requestedHistoryEnabled: boolean | undefined): void {
-  if (!localHostRunning && historyEnabled && requestedHistoryEnabled === false) throw new Error('Turn on the local host in Settings > Hosts and restart Sotto before turning off local history. Your saved history has not changed.')
+  if (!localHostRunning && historyEnabled && requestedHistoryEnabled === false) throw new Error('Turn on the local host in Settings > Hosts & phones and restart Sotto before turning off local history. Your saved history has not changed.')
 }

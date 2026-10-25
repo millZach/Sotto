@@ -42,7 +42,7 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expect(page.getByRole('link', { name: 'Chats', exact: true })).toHaveCount(0)
-        await expect(page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link')).toHaveText(['History', 'Settings', 'Help'])
+        await expect(page.getByRole('navigation', { name: 'Pages', exact: true }).getByRole('link')).toHaveText(['Settings', 'Help'])
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight)).toBe(true)
         await page.screenshot({ path: `${shots}/threads-${width}x${height}-${appearance}.png` })
       }
@@ -52,23 +52,21 @@ test('removes standalone Chats while keeping desktop navigation, thread requests
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Expand sidebar', exact: true })).toBeFocused()
-    const history = page.getByRole('link', { name: 'History', exact: true })
-    await history.focus()
-    await page.keyboard.press('Tab')
+    await page.getByRole('link', { name: 'Help', exact: true }).focus()
+    await page.keyboard.press('Shift+Tab')
     await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('tablist', { name: 'Settings sections' })).toBeVisible()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Agents', exact: true }).click()
+    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'New threads', exact: true })).toBeVisible()
     await expect(page.getByRole('group', { name: 'New threads start with', exact: true })).toBeVisible()
     await expect(page.getByText('Reasoning', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Personal chats and reasoning', { exact: true })).toHaveCount(0)
     await page.screenshot({ path: `${shots}/settings-820x560-light-reduced-motion.png` })
 
-    for (const name of ['Help', 'History'] as const) {
-      await openPage(page, name)
-      await expect(page.getByRole('link', { name: 'Chats', exact: true })).toHaveCount(0)
-    }
+    // Help is the page beside the collapsed sidebar now that History is gone (#1293).
+    await openPage(page, 'Help')
+    await expect(page.getByRole('link', { name: 'Chats', exact: true })).toHaveCount(0)
     await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
     await openPage(page, 'Dictate')
     await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()

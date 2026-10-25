@@ -9,7 +9,6 @@ import { PairedClients } from '../agents/pairing'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { PHONE_ACCESS_SERVE_PORTS, type PhoneAccessServePort, type PhonesCommand, type PhonesState, type ServeCheck, type TailscaleCheck } from '../../shared/phones'
 import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResult, type TailscaleStatus } from './tailscale'
-import type { PhoneTerminals } from '../../shared/phoneTerminals'
 
 /**
  * Phone access (ADR-0033): while the `phoneAccess` setting is on and the local host runs, the desktop
@@ -69,7 +68,6 @@ export interface PhoneAccessOptions {
    */
   readonly settings: () => { readonly phoneAccess: boolean; readonly phoneAccessName: string; readonly tailnetConnections?: boolean | undefined }
   readonly policy?: PhoneAccessPolicy | undefined
-  readonly terminals?: PhoneTerminals
   readonly openExternal: (url: string) => Promise<void>
   readonly hostname?: () => string
   /** Stable event names only; nothing a phone or the owner typed. */
@@ -93,7 +91,7 @@ export interface PhoneAccessOptions {
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    */
-  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate'>
+  readonly listener?: Pick<SocketServerOptions, 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
@@ -344,6 +342,14 @@ export class PhoneAccess {
   settled(): Promise<void> { return this.queue }
 
   /**
+   * The loopback port the listener serves question pages on while it runs, for Sotto's browser to open a page's file
+   * through (ADR-0108), since that browser opens no `file://` pages. Undefined while phone access is off.
+   */
+  pagePort(): number | undefined {
+    return this.listener && !this.listenerStopped && this.listenerWanted() ? this.listener.descriptor.port : undefined
+  }
+
+  /**
    * The parts of `get()` health and hello read, without the per-phone policy lookups: whether phone access is on, the
    * phase and address as `get()` reports them, and how many phones are paired.
    */
@@ -544,7 +550,6 @@ export class PhoneAccess {
       ...listener,
       ...(desktops ? { tailnet: { desktops, phonesAdmitted: () => this.phonesWanted() } } : {}),
       service: this.options.service!, pairing: this.pairing, admin: false,
-      ...(this.options.terminals ? { terminals: this.options.terminals } : {}),
       // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.
       observationKey: 'tailnet-observations',
       name: () => this.computerName(),

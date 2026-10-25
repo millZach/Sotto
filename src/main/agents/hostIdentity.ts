@@ -3,7 +3,7 @@ import { link, mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { agentHostSnapshotSchema, type AgentHostSnapshot } from '../../shared/agents'
+import { agentHostSnapshotSchema, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 
 const identitySchema = z.object({ hostId: z.uuid() }).strict()
 const missing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT'
@@ -36,6 +36,11 @@ export function stampHostSnapshot(snapshot: AgentHostSnapshot, hostId: string): 
   return { ...snapshot, hostId,
     projects: snapshot.projects.map(project => ({ ...project, hostId })),
     threads: snapshot.threads.map(thread => ({ ...thread, hostId })) }
+}
+
+/** One thread stamped as `stampHostSnapshot` stamps each, for a caller that handles only the threads that changed (#925). */
+export function stampHostThread(thread: AgentThread, hostId: string): AgentThread {
+  return { ...thread, hostId }
 }
 
 /** Validate the complete old snapshot before the atomic replacement; preserve every other field. */

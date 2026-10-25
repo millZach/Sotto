@@ -1,17 +1,21 @@
 import React, { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
-import { MessagesSquare } from 'lucide-react'
+import { MessagesSquare, Mic } from 'lucide-react'
+import { i18n as interfaceI18n, type MessageDescriptor } from '@lingui/core'
+import { msg } from '@lingui/core/macro'
+import { useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import type { AppNavigation } from '../state/AppContext'
+import { useDictationOn } from '../state/dictationFeature'
 import { useMemoryEnabled } from '../state/memoryFeature'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { useOwlFeature } from '../state/owlFeature'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import { SottoMark } from './SottoMark'
-import { VoiceWave } from './VoiceWave'
 import { WindowControls } from './WindowControls'
+import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -28,7 +32,7 @@ export interface AppShellProps {
    * hands the whole window to a page that owns its own chrome (Threads,
    * Settings): its navigation, its window controls and the update
    * control live inside it. `sidebar` seats the Threads sidebar beside the
-   * page (Dictate, History, Help), with the window controls on the room's top
+   * page (Dictate, Usage, Help), with the window controls on the room's top
    * edge and the page's sentence at its foot.
    */
   readonly layout?: AppLayout
@@ -48,17 +52,20 @@ export interface AppShellProps {
 
 export interface Room { readonly id: AppRoom; readonly label: string; readonly destination: ManagementNavigation }
 
-const dictate: Room = { id: 'dictate', label: 'Dictate', destination: 'home' }
+// Dictate and Threads are written as the switch is drawn, in the interface language; Watcher is a name.
+const dictate = (): Room => ({ id: 'dictate', label: interfaceI18n._(msg({ message: 'Dictate', comment: 'The room switch: the page you dictate on' })), destination: 'home' })
 const watcher: Room = { id: 'watcher', label: 'Watcher', destination: 'watcher' }
-const threads: Room = { id: 'threads', label: 'Threads', destination: 'threads' }
+const threads = (): Room => ({ id: 'threads', label: interfaceI18n._(msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' })), destination: 'threads' })
 
 /**
  * The room switch, the one definition every switch draws: Dictate | Threads, with Watcher's owl between them
- * while the Watcher gate is on (ADR-0072, ADR-0073).
+ * while the Watcher gate is on (ADR-0072, ADR-0073). Dictate leaves while dictation is off (ADR-0107). A switch
+ * left with one room is not drawn.
  */
-export function appRooms(watcherEnabled: boolean): ReadonlyArray<Room> {
-  return watcherEnabled ? [dictate, watcher, threads] : [dictate, threads]
+export function appRooms({ watcher: watcherOn, dictation }: { readonly watcher: boolean; readonly dictation: boolean }): ReadonlyArray<Room> {
+  return [...(dictation ? [dictate()] : []), ...(watcherOn ? [watcher] : []), threads()]
 }
+
 
 /**
  * The room a switch press opened, so the switch in the page that opens can take focus back: each page draws its
@@ -87,11 +94,24 @@ export function roomKeyTarget(key: string, index: number, count: number): number
 /** What `useRoomSwitch` puts on each tab: its selection, its place in the Tab order, its name and what it answers. */
 export interface RoomTabProps {
   readonly 'aria-selected': boolean
-  readonly 'aria-label': string | undefined
+  readonly 'aria-label': string
   readonly title: string | undefined
   readonly tabIndex: 0 | -1
   readonly onClick: () => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+}
+
+/**
+ * What a room's tab shows in every switch: its icon, and its name beside it while it is the open room. The name is
+ * the tab's accessible name and, on a closed room, its tooltip (`useRoomSwitch`), so the icon alone never has to be
+ * guessed. Drake's pick on October 24, 2026: G, the no-tray dock, in docs/prototypes/room-switch-dock-prototype.html.
+ * The sidebar foot draws it without the name (`named` false), the lit tile an icon like the rest.
+ */
+export function RoomTabFace({ room, named = true }: { readonly room: Room; readonly named?: boolean }): ReactNode {
+  return <>
+    {room.id === 'dictate' ? <Mic size={16} aria-hidden="true" /> : room.id === 'watcher' ? <WatcherOwl size={16} /> : <MessagesSquare size={16} aria-hidden="true" />}
+    {named ? <span className="room-tab__name" aria-hidden="true">{room.label}</span> : null}
+  </>
 }
 
 /**
@@ -115,8 +135,8 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
   const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); navigate(target.destination) }
   const tab = (target: Room, index: number): RoomTabProps => ({
     'aria-selected': target.id === room,
-    'aria-label': target.id === 'watcher' ? target.label : undefined,
-    title: target.id === 'watcher' ? target.label : undefined,
+    'aria-label': target.label,
+    title: target.id === room ? undefined : target.label,
     tabIndex: target.id === focusable ? 0 : -1,
     onClick: () => enter(target),
     onKeyDown: event => {
@@ -130,13 +150,12 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
   return { ref, tab }
 }
 
-const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: string }> = [
-  { id: 'threads', label: 'Threads' },
-  { id: 'history', label: 'History' },
-  { id: 'usage', label: 'Usage' },
-  { id: 'memory', label: 'Memory' },
-  { id: 'settings', label: 'Settings' },
-  { id: 'help', label: 'Help' },
+const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: MessageDescriptor }> = [
+  { id: 'threads', label: msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' }) },
+  { id: 'usage', label: msg({ message: 'Usage', comment: 'The page link: the Usage page' }) },
+  { id: 'memory', label: msg({ message: 'Memory', comment: 'The page link: the Memory page' }) },
+  { id: 'settings', label: msg({ message: 'Settings', comment: 'The page link: the Settings page' }) },
+  { id: 'help', label: msg({ message: 'Help', comment: 'The page link: the Help page' }) },
 ]
 
 /** Which switch tab a page lights: Memory belongs to the Threads room. */
@@ -149,13 +168,13 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 
 /**
  * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
- * sidebar's frame; Dictate, History and Help stand beside the Threads sidebar itself; the strip and footer remain
+ * sidebar's frame; Dictate, Usage and Help stand beside the Threads sidebar itself; the strip and footer remain
  * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
  * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'history' || navigation === 'usage' || navigation === 'help') return 'sidebar'
+  if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 
@@ -186,19 +205,21 @@ export function AppShell({
   onClose,
   children,
 }: AppShellProps): ReactNode {
+  const { t, i18n } = useLingui()
   const nativeWindowControls = platform === 'darwin'
-  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does.
+  // A Sotto Owl build shows the mark alone in the strip, as the sidebar's top row does. On macOS no mark sits
+  // beside the traffic lights, in either track.
   const owl = useReleaseTrack() === 'owl'
   const management = navigation !== null
   const room = roomFor(navigation)
-  const rooms = appRooms(useWatcherEnabled())
+  const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   // Memory is hidden for the beta: its link goes with it.
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
   const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage))
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
   // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
-  const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management)
+  const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management && rooms.length > 1)
 
   const followLink = (event: MouseEvent<HTMLAnchorElement>, destination: ManagementNavigation): void => {
     event.preventDefault()
@@ -216,18 +237,18 @@ export function AppShell({
     <div className={shellClass} data-platform={platform}>
       {page || beside ? null : (
         <header className={nativeWindowControls ? 'app-strip app-strip--mac' : 'app-strip'}>
-          {owl ? (
+          {nativeWindowControls ? <span /> : owl ? (
             <div className="app-mark" role="img" aria-label={releaseTrackName('owl')}>
               <SottoMark className="app-mark__tile" />
             </div>
           ) : (
-            <div className="app-mark" aria-label="Sotto application">
+            <div className="app-mark" aria-label={t`Sotto application`}>
               <SottoMark className="app-mark__glyph" />
               <span>Sotto</span>
             </div>
           )}
-          {management ? (
-            <div ref={roomSwitch.ref} className="app-switch" role="tablist" aria-label="Mode">
+          {management && rooms.length > 1 ? (
+            <div ref={roomSwitch.ref} className="app-switch" role="tablist" aria-label={t({ message: 'Mode', comment: 'The room switch between Dictate, Watcher and Threads' })}>
               {rooms.map((target, index) => (
                 <button
                   key={target.id}
@@ -237,23 +258,21 @@ export function AppShell({
                   data-room={target.id}
                   {...roomSwitch.tab(target, index)}
                 >
-                  {target.id === 'dictate' ? <VoiceWave stage="idle" value={0} label="" size="switch" /> : null}
-                  {target.id === 'threads' ? <MessagesSquare size={16} aria-hidden="true" /> : null}
-                  {target.id === 'watcher' ? <WatcherOwl size={16} /> : target.label}
+                  <RoomTabFace room={target} />
                 </button>
               ))}
             </div>
           ) : <span />}
-          {platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : <span />}
+          <div className="app-strip__end"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div>
         </header>
       )}
       {beside ? sidebar : null}
-      {beside ? <div className="app-room__top">{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
+      {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (
         <footer className="app-footer">
-          <nav aria-label="Pages">
+          <nav aria-label={t`Pages`}>
             {links.map(({ id, label }) => (
               <a
                 key={id}
@@ -262,7 +281,7 @@ export function AppShell({
                 aria-current={navigation === id ? 'page' : undefined}
                 onClick={(event) => followLink(event, id)}
               >
-                {label}
+                {i18n._(label)}
               </a>
             ))}
           </nav>

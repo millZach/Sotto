@@ -1,11 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { defaultHotkey } from '../../../src/shared/platform'
+import { defaultHoldShortcuts, defaultHotkey } from '../../../src/shared/platform'
 import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
+import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
 import {
+  dictationOn,
   APPEARANCES,
+  CREATURES,
   DEFAULT_SETTINGS,
   EFFORT_COLORS,
   GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS,
@@ -28,6 +31,11 @@ const customSettings = {
   darkTheme: aurora.id,
   appearanceContrast: 135,
   effortColor: 'aurora',
+  menuBarOwlBody: 'ink',
+  menuBarOwlEyes: 'amber',
+  creature: 'claude',
+  showCreature: false,
+  interfaceLanguage: 'ja',
   customThemes: [aurora],
   webLinkDestination: 'embedded',
   responseStreaming: 'complete',
@@ -36,14 +44,25 @@ const customSettings = {
   visualsInThreads: false,
   babysitPullRequests: false,
   resumeThreadsAfterRestart: false,
-  watcherInFlightLimit: 6,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
+  watcherSettlesFinishedThreads: false,
+  newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
+  watcherCompactAtTokens: 650_000,
+  compactIdleThreads: false,
   reducedMotion: 'on',
+  roomTransition: false,
+  roomTransitionSpeed: 1.5,
+  roomTransitionLook: 'stars',
   microphoneId: 'microphone-1',
   terminalFontSize: 17,
   hotkey: 'Alt+D',
+  pressShortcuts: ['Alt+Shift+D'],
+  holdShortcuts: ['Fn', 'Control+Alt'],
+  threadShortcuts: { settle: 'mod+alt+e', restore: null },
   maxRecordingSeconds: 300,
   soundCues: false,
+  typingSpeedWpm: 55,
+  speechModel: null,
   formatWhitespace: false,
   autoCopy: true,
   autoPaste: false,
@@ -52,6 +71,9 @@ const customSettings = {
   launchAtStartup: true,
   startMinimized: true,
   showWidgetWhenIdle: false,
+  dictationEnabled: true,
+  notifyNeedsYou: false,
+  notifyFinished: false,
   historyEnabled: false,
   historyRetention: 'unlimited',
   onboardingComplete: true,
@@ -61,7 +83,11 @@ const customSettings = {
   llmDictionary: 'Sotto\nMoonshine',
   llmTimeoutMs: 3_000,
   llmMinWords: 4,
+  llmModel: 'google/gemini-3.1-flash-lite',
+  llmMode: 'nitro',
+  llmOwnModel: { server: 'own-sparks', model: 'deepseek-v4.1-flash' },
   threadTitles: false,
+  nextPromptSuggestions: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
@@ -80,6 +106,7 @@ const customSettings = {
   pullRequestText: false,
   commitMessages: false,
   autoUpdateCheck: false,
+  mainFreezeNotice: false,
   localHostEnabled: false,
   phoneAccess: true,
   phoneAccessName: 'Studio',
@@ -90,6 +117,13 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('counts time saved against 40 words a minute for older profiles, keeps a chosen typing speed, and refuses one out of bounds', () => {
+    expect(parseSettings({}).typingSpeedWpm).toBe(40)
+    expect(parseSettings({ typingSpeedWpm: 72 }).typingSpeedWpm).toBe(72)
+    for (const unusable of [9, 151, 40.5, '60']) expect(parseSettings({ typingSpeedWpm: unusable }).typingSpeedWpm).toBe(40)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(150).success).toBe(true)
+    expect(settingsSchema.shape.typingSpeedWpm.safeParse(10).success).toBe(true)
+  })
   it('defaults older profiles to the shared checkout and retains explicit global and project choices', () => {
     expect(parseSettings({})).toMatchObject({ threadWorkingCopyDefault: 'shared', projectThreadWorkingCopyDefaults: {} })
     expect(parseSettings({ threadWorkingCopyDefault: 'independent', projectThreadWorkingCopyDefaults: { project: 'shared' } }))
@@ -122,16 +156,28 @@ describe('settings', () => {
     expect(parseSettings({ resumeThreadsAfterRestart: false }).resumeThreadsAfterRestart).toBe(false)
     expect(parseSettings({ resumeThreadsAfterRestart: 'no' }).resumeThreadsAfterRestart).toBe(true)
   })
-  it('defaults watcher capacity to four and accepts only integers from one to eight', () => {
-    expect(parseSettings({}).watcherInFlightLimit).toBe(4)
-    for (const watcherInFlightLimit of [1, 4, 8]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(watcherInFlightLimit)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(true)
-    }
-    for (const watcherInFlightLimit of [0, 9, 2.5, '4', null]) {
-      expect(parseSettings({ watcherInFlightLimit }).watcherInFlightLimit).toBe(4)
-      expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherInFlightLimit }).success).toBe(false)
-    }
+  it('starts new workers on This computer for older profiles, keeps Watcher\'s choice or a machine, and recovers anything else (#1032)', () => {
+    expect(parseSettings({}).newWorkerMachine).toBe('this-computer')
+    expect(parseSettings({ newWorkerMachine: 'watcher' }).newWorkerMachine).toBe('watcher')
+    const forge = '6b8f1c2d-3e4a-4b5c-8d6e-7f8091a2b3c4'
+    expect(parseSettings({ newWorkerMachine: forge }).newWorkerMachine).toBe(forge)
+    for (const damaged of ['forge', 7, null, '../hosts']) expect(parseSettings({ newWorkerMachine: damaged }).newWorkerMachine).toBe('this-computer')
+  })
+  it('compacts idle threads for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0127)', () => {
+    expect(parseSettings({}).compactIdleThreads).toBe(true)
+    expect(parseSettings({ compactIdleThreads: false }).compactIdleThreads).toBe(false)
+    expect(parseSettings({ compactIdleThreads: 'no' }).compactIdleThreads).toBe(true)
+  })
+  it('suggests a next prompt for older profiles, keeps it off once turned off, and recovers an unusable value (ADR-0132)', () => {
+    expect(parseSettings({}).nextPromptSuggestions).toBe(true)
+    expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
+    expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
+  })
+  it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
+    expect(parsed).toEqual(DEFAULT_SETTINGS)
+    expect('watcherInFlightLimit' in parsed).toBe(false)
+    expect('watcherInFlightLimit' in settingsSchema.shape).toBe(false)
   })
   it('starts every worktree cleanup rule off and recovers an unusable rule set to the defaults', () => {
     expect(parseSettings({}).worktreeCleanup).toEqual({ afterDays: null, merged: false, onSettle: false, unchanged: false })
@@ -225,10 +271,10 @@ describe('settings', () => {
   it('opens a settings file written before appearance existed in dark Sotto, whatever its widget theme', () => {
     for (const theme of ['system', 'light', 'dark'] as const) {
       const legacy = { ...customSettings, theme } as Record<string, unknown>
-      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'customThemes']) delete legacy[key]
+      for (const key of ['appearance', 'lightTheme', 'darkTheme', 'appearanceContrast', 'effortColor', 'creature', 'showCreature', 'customThemes']) delete legacy[key]
       const parsed = parseSettings(legacy)
       // The widget keeps the scheme it already had; appearance never rewrites it.
-      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', customThemes: [] })
+      expect(parsed).toEqual({ ...customSettings, theme, appearance: 'dark', lightTheme: 't3-code', darkTheme: 't3-code', appearanceContrast: 100, effortColor: 'ember', creature: 'sotto', showCreature: true, customThemes: [] })
     }
   })
 
@@ -267,6 +313,23 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, effortColor: 'neon' }).success).toBe(false)
   })
 
+  it('keeps every menu bar owl body and eye colour and recovers an unknown one as the shipped default', () => {
+    for (const menuBarOwlBody of MENU_BAR_OWL_BODIES) expect(parseSettings({ menuBarOwlBody }).menuBarOwlBody).toBe(menuBarOwlBody)
+    for (const menuBarOwlEyes of MENU_BAR_OWL_EYES) expect(parseSettings({ menuBarOwlEyes }).menuBarOwlEyes).toBe(menuBarOwlEyes)
+    expect(parseSettings({ menuBarOwlBody: 'chrome', menuBarOwlEyes: 'pink' })).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(parseSettings({})).toMatchObject({ menuBarOwlBody: 'slate', menuBarOwlEyes: 'teal' })
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlBody: 'chrome' }).success).toBe(false)
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, menuBarOwlEyes: 'pink' }).success).toBe(false)
+  })
+
+  it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
+    expect(DEFAULT_SETTINGS.creature).toBe('sotto')
+    for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
+    expect(parseSettings({ creature: 'dragon' }).creature).toBe('sotto')
+    expect(parseSettings({}).creature).toBe('sotto')
+    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, creature: 'dragon' }).success).toBe(false)
+  })
+
   it('chooses each half independently and falls back when its theme is gone or cannot paint that half', () => {
     const lightOnly = parseThemeFile({ version: 1, name: 'Paper', appearance: 'light', colors: { canvas: '#fffdf8' } })
     expect(parseSettings({ lightTheme: 'hush', darkTheme: 'linen' })).toMatchObject({ lightTheme: 'hush', darkTheme: 'linen' })
@@ -291,8 +354,10 @@ describe('settings', () => {
   it('defines the complete versioned defaults', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
-      watcherInFlightLimit: 4,
       workerRoles: {},
+      watcherSettlesFinishedThreads: true,
+      newWorkerMachine: 'this-computer',
+      watcherCompactAtTokens: 400_000,
       terminalFontSize: 13,
       memoryEnabled: false,
       webLinkDestination: 'external',
@@ -302,6 +367,7 @@ describe('settings', () => {
       visualsInThreads: true,
       babysitPullRequests: true,
       resumeThreadsAfterRestart: true,
+      compactIdleThreads: true,
       version: 1,
       theme: 'system',
       appearance: 'dark',
@@ -309,12 +375,25 @@ describe('settings', () => {
       darkTheme: 't3-code',
       appearanceContrast: 100,
       effortColor: 'ember',
+      menuBarOwlBody: 'slate',
+      menuBarOwlEyes: 'teal',
+      creature: 'sotto',
+      showCreature: true,
+      interfaceLanguage: 'system',
       customThemes: [],
       reducedMotion: 'system',
+      roomTransition: true,
+      roomTransitionSpeed: 1,
+      roomTransitionLook: 'band',
       microphoneId: null,
       hotkey: 'CommandOrControl+Shift+Space',
+      pressShortcuts: [],
+      holdShortcuts: [],
+      threadShortcuts: {},
       maxRecordingSeconds: 60,
       soundCues: true,
+      typingSpeedWpm: 40,
+      speechModel: null,
       formatWhitespace: true,
       autoCopy: true,
       autoPaste: true,
@@ -323,6 +402,9 @@ describe('settings', () => {
       launchAtStartup: false,
       startMinimized: false,
       showWidgetWhenIdle: true,
+      dictationEnabled: true,
+      notifyNeedsYou: true,
+      notifyFinished: true,
       historyEnabled: true,
       historyRetention: 100,
       onboardingComplete: false,
@@ -332,7 +414,11 @@ describe('settings', () => {
       llmDictionary: '',
       llmTimeoutMs: 2_500,
       llmMinWords: 5,
+      llmModel: null,
+      llmMode: 'default',
+      llmOwnModel: null,
       threadTitles: true,
+      nextPromptSuggestions: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },
@@ -351,6 +437,7 @@ describe('settings', () => {
       pullRequestText: true,
       commitMessages: true,
       autoUpdateCheck: true,
+      mainFreezeNotice: true,
       localHostEnabled: true,
       phoneAccess: false,
       phoneAccessName: '',
@@ -394,12 +481,48 @@ describe('settings', () => {
 
 
 
-  it('builds per-platform defaults that differ only in the hotkey', () => {
+  it('builds per-platform defaults that differ only in the shortcuts', () => {
     expect(defaultSettings(defaultHotkey('win32'))).toEqual(DEFAULT_SETTINGS)
-    expect(defaultSettings(defaultHotkey('darwin'))).toEqual({
+    expect(defaultSettings(defaultHotkey('darwin'), defaultHoldShortcuts('darwin'))).toEqual({
       ...DEFAULT_SETTINGS,
       hotkey: 'Control+Shift+Space',
+      holdShortcuts: ['Fn'],
     })
+    expect(defaultSettings(defaultHotkey('win32'), defaultHoldShortcuts('win32')).holdShortcuts).toEqual(['CommandOrControl+Super'])
+    expect(defaultHoldShortcuts('linux')).toEqual(['F9'])
+  })
+
+  it('keeps saved hold and extra press shortcuts whole and drops damaged entries', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    const saved = parseSettings({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn', 'Control+Alt'] }, macDefaults)
+    expect(saved.pressShortcuts).toEqual(['Alt+Shift+D'])
+    expect(saved.holdShortcuts).toEqual(['Fn', 'Control+Alt'])
+    const damaged = parseSettings({ pressShortcuts: 'Alt+D', holdShortcuts: ['', 'Fn', 'Fn', 7] }, macDefaults)
+    expect(damaged.pressShortcuts).toEqual([])
+    expect(damaged.holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ holdShortcuts: 'Fn' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('gives the hold default to new installs only', () => {
+    const macDefaults = defaultSettings('Control+Shift+Space', ['Fn'])
+    expect(parseSettings({}, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings(undefined, macDefaults).holdShortcuts).toEqual(['Fn'])
+    expect(parseSettings({ hotkey: 'Alt+D', theme: 'dark' }, macDefaults).holdShortcuts).toEqual([])
+  })
+
+  it('reads a Linux profile from before the recorder as the keys its Hyprland bindings always had', () => {
+    const linuxDefaults = defaultSettings(defaultHotkey('linux'), defaultHoldShortcuts('linux'))
+    // Wayland never registered `hotkey`, so whatever it said, F9 and Super+Ctrl+X were the keys.
+    const before = parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: ['Alt+D'], theme: 'dark' }, linuxDefaults, true)
+    expect(before).toMatchObject({ hotkey: 'Super+CommandOrControl+X', pressShortcuts: [], holdShortcuts: ['F9'], theme: 'dark' })
+    expect(parseSettings({}, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // An unreleased recorder build saved the old unused default with nothing held; Linux's rows can't make that pair.
+    expect(parseSettings({ hotkey: 'CommandOrControl+Shift+Space', pressShortcuts: [], holdShortcuts: [] }, linuxDefaults, true)).toMatchObject({ hotkey: 'Super+CommandOrControl+X', holdShortcuts: ['F9'] })
+    // Once saved by this version, the Linux shortcuts are the user's, an empty hold row included.
+    const chosen = parseSettings({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] }, linuxDefaults, true)
+    expect(chosen).toMatchObject({ hotkey: 'Super+Alt+D', pressShortcuts: ['Super+Alt+E'], holdShortcuts: [] })
+    // Windows and macOS read the same profile as before.
+    expect(parseSettings({ hotkey: 'Alt+Shift+D', theme: 'dark' }, DEFAULT_SETTINGS)).toMatchObject({ hotkey: 'Alt+Shift+D', holdShortcuts: [] })
   })
 
   it('drops the retired widget style key from persisted settings', () => {
@@ -422,6 +545,22 @@ describe('settings', () => {
     expect(parseSettings({}).showWidgetWhenIdle).toBe(true)
     expect(parseSettings({ showWidgetWhenIdle: false }).showWidgetWhenIdle).toBe(false)
     expect(parseSettings({ showWidgetWhenIdle: 'sometimes' }).showWidgetWhenIdle).toBe(true)
+    expect(parseSettings({}).dictationEnabled).toBe(true)
+    expect(parseSettings({ dictationEnabled: false }).dictationEnabled).toBe(false)
+    expect(parseSettings({ dictationEnabled: 'no' }).dictationEnabled).toBe(true)
+  })
+
+  it('reads the two notification switches on by default and keeps a saved off, recovering anything else (ADR-0117)', () => {
+    expect(parseSettings({}).notifyNeedsYou).toBe(true)
+    expect(parseSettings({}).notifyFinished).toBe(true)
+    expect(parseSettings({ notifyNeedsYou: false, notifyFinished: false })).toMatchObject({ notifyNeedsYou: false, notifyFinished: false })
+    expect(parseSettings({ notifyNeedsYou: 'no', notifyFinished: 0 })).toMatchObject({ notifyNeedsYou: true, notifyFinished: true })
+  })
+
+  it('counts dictation off only while its Owl feature is on', () => {
+    expect(dictationOn({ dictationEnabled: false }, false)).toBe(true)
+    expect(dictationOn({ dictationEnabled: false }, true)).toBe(false)
+    expect(dictationOn({ dictationEnabled: true }, true)).toBe(true)
   })
 
   it('recovers invalid fields without discarding valid fields', () => {
@@ -498,5 +637,53 @@ describe('settings', () => {
     first.theme = 'light'
     expect(second.theme).toBe('dark')
     expect(DEFAULT_SETTINGS.theme).toBe('system')
+  })
+})
+
+describe('Compact Watcher at', () => {
+  it('compacts Watcher at 400K by default and keeps a saved point from 200K to 1M on a 50K step', () => {
+    expect(DEFAULT_SETTINGS.watcherCompactAtTokens).toBe(400_000)
+    for (const tokens of [200_000, 250_000, 650_000, 1_000_000]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens).toBe(tokens)
+    }
+  })
+
+  it('falls back to 400K for a point off the slider, or a saved file from before it', () => {
+    for (const tokens of [150_000, 199_999, 1_050_000, 425_000, Number.NaN, '600000', null]) {
+      expect(parseSettings({ ...DEFAULT_SETTINGS, watcherCompactAtTokens: tokens }).watcherCompactAtTokens, String(tokens)).toBe(400_000)
+    }
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.watcherCompactAtTokens
+    expect(parseSettings(older).watcherCompactAtTokens).toBe(400_000)
+  })
+})
+
+describe('night falls settings', () => {
+  it('defaults to on at speed 1 and keeps a saved choice', () => {
+    expect(DEFAULT_SETTINGS.roomTransition).toBe(true)
+    expect(DEFAULT_SETTINGS.roomTransitionSpeed).toBe(1)
+    const parsed = parseSettings({ ...DEFAULT_SETTINGS, roomTransition: false, roomTransitionSpeed: 0.5 })
+    expect(parsed.roomTransition).toBe(false)
+    expect(parsed.roomTransitionSpeed).toBe(0.5)
+  })
+
+  it('looks like the band by default and keeps Stars once chosen', () => {
+    expect(DEFAULT_SETTINGS.roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' }).roomTransitionLook).toBe('stars')
+    expect(parseSettings(JSON.parse(JSON.stringify(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'stars' })))).roomTransitionLook).toBe('stars')
+  })
+
+  it('falls back to the band for a look it does not know, or a saved file from before the look', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 'wing' }).roomTransitionLook).toBe('band')
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionLook: 1 }).roomTransitionLook).toBe('band')
+    const older: Record<string, unknown> = { ...DEFAULT_SETTINGS }
+    delete older.roomTransitionLook
+    expect(parseSettings(older).roomTransitionLook).toBe('band')
+  })
+
+  it('falls back to the default for a speed outside the dial', () => {
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 3 }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransitionSpeed: 'fast' }).roomTransitionSpeed).toBe(1)
+    expect(parseSettings({ ...DEFAULT_SETTINGS, roomTransition: 'yes' }).roomTransition).toBe(true)
   })
 })

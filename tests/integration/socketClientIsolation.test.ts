@@ -13,7 +13,7 @@ import { desktopWindowClient, type HostService } from '../../src/main/agents/hos
 import { PairedClients, SESSION_LIFETIME_MS } from '../../src/main/agents/pairing'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { rawPeer } from '../fixtures/rawHostPeer'
-import { useSocketHostFixture } from '../fixtures/socketHostFixture'
+import { SAME_VERSION_HELD, useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
 
@@ -114,6 +114,64 @@ describe('socket client isolation and reconnect', () => {
     fixture.native.event({ type: 'ready', threadId: 'workshop', text: 'Synthetic reply' })
     await expect.poll(() => workshop()?.status).toBe('idle')
     expect(marked(desktop.client)).toBeUndefined()
+  })
+  it('counts a paired desktop\'s panes as shown only while its window has the focus, for a failure and a finish alike (ADR-0092)', async () => {
+    const desktop = await pair('Desktop'), phone = await pair('Phone')
+    await desktop.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await desktop.client.command({ type: 'connect', provider: 'codex' })
+    await expect.poll(() => desktop.client.shell().host.threads.find(thread => thread.title === 'Docs')).toBeDefined()
+    const ids = Object.fromEntries(['Workshop', 'Docs'].map(title => [title, desktop.client.shell().host.threads.find(thread => thread.title === title)!.id]))
+    const on = (id: string) => desktop.client.shell().host.threads.find(thread => thread.id === id)
+    // The desktop's window goes behind another app with both threads in its panes: they stay observed, not shown.
+    await desktop.client.observe([ids.Workshop!, ids.Docs!], false)
+    // The host reads the provider's snapshots coalesced, so each turn is seen running before it ends.
+    const turn = async (native: string, id: string, end: 'failure' | 'ready'): Promise<void> => {
+      fixture.native.event({ type: 'manual', threadId: native, text: 'Synthetic prompt' })
+      await expect.poll(() => on(id)?.status).toBe('running')
+      fixture.native.event({ type: end, threadId: native, text: end === 'ready' ? 'Synthetic reply' : 'Synthetic failure' })
+    }
+    await turn('workshop', ids.Workshop!, 'failure')
+    await turn('docs', ids.Docs!, 'ready')
+    await expect.poll(() => on(ids.Docs!)?.finishedUnread).toBe(true)
+    await expect.poll(() => on(ids.Workshop!)?.status).toBe('error')
+    expect(on(ids.Workshop!)?.failureSeen).toBeUndefined()
+    // Their history still streams to the window behind the app.
+    await expect.poll(() => desktop.client.threadDetail(ids.Docs!)?.messages.some(message => message.text === 'Synthetic reply')).toBe(true)
+    // The window comes back to the front: both are shown, so the failure is seen and the finish read.
+    await desktop.client.observe([ids.Workshop!, ids.Docs!], true)
+    await expect.poll(() => on(ids.Workshop!)?.failureSeen).toBe(true)
+    await expect.poll(() => on(ids.Docs!)?.finishedUnread).toBeUndefined()
+    // A phone shows what it has open, whatever a desktop's window does.
+    await desktop.client.observe([ids.Docs!], false)
+    await turn('docs', ids.Docs!, 'failure')
+    await expect.poll(() => on(ids.Docs!)?.status).toBe('error')
+    expect(on(ids.Docs!)?.failureSeen).toBeUndefined()
+    await phone.client.observe([ids.Docs!])
+    await expect.poll(() => on(ids.Docs!)?.failureSeen).toBe(true)
+  })
+  it('carries a seen failure to every paired client, from a client opening the thread or one pressing Dismiss all (ADR-0092)', async () => {
+    const phone = await pair('Phone'), desktop = await pair('Desktop')
+    await phone.client.command({ type: 'configure', patch: { enabledProviders: ['codex'], provider: 'codex' } })
+    await phone.client.command({ type: 'connect', provider: 'codex' })
+    await expect.poll(() => phone.client.shell().host.threads.find(thread => thread.title === 'Docs')).toBeDefined()
+    const ids = Object.fromEntries(['Workshop', 'Docs'].map(title => [title, phone.client.shell().host.threads.find(thread => thread.title === title)!.id]))
+    const seen = (client: SocketHostService, id: string) => client.shell().host.threads.find(thread => thread.id === id)?.failureSeen
+    expect(desktop.client.supportsFailureSeen).toBe(true)
+    for (const native of ['workshop', 'docs']) {
+      fixture.native.event({ type: 'manual', threadId: native, text: 'Synthetic prompt' })
+      fixture.native.event({ type: 'failure', threadId: native, text: 'Synthetic failure' })
+    }
+    await expect.poll(() => desktop.client.shell().host.threads.find(thread => thread.id === ids.Docs)?.status).toBe('error')
+    expect(seen(desktop.client, ids.Workshop!)).toBeUndefined()
+    // Opening a failed thread on the phone sees it on the desktop too.
+    await phone.client.observe([ids.Workshop!])
+    await expect.poll(() => seen(desktop.client, ids.Workshop!)).toBe(true)
+    expect(seen(desktop.client, ids.Docs!)).toBeUndefined()
+    // Dismiss all from the desktop sees the rest, on the phone too.
+    const failure = desktop.client.shell().host.threads.find(thread => thread.id === ids.Docs)?.failureId
+    expect(failure).toEqual(expect.any(String))
+    expect((await desktop.client.command({ type: 'dismiss-failures', failures: [{ threadId: ids.Docs!, failure: failure! }] })).error).toBeNull()
+    await expect.poll(() => seen(phone.client, ids.Docs!)).toBe(true)
   })
   it('lists a temp folder\'s subfolders over the socket for the Add project dialog\'s folder browser', async () => {
     const { client } = await pair()
@@ -228,7 +286,7 @@ it('drains a pushed catch-up page even when the host never publishes another she
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Catch-up')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     rows = Array.from({ length: 300 }, (_, index) => ({ seq: index + 1, threadId: 'synthetic', event: { kind: 'messages-reset', at: new Date().toISOString() } }))
@@ -330,7 +388,7 @@ it('frees a permission mode by what it allows, not by being listed first', async
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Modes')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     await expect(client.command({ type: 'create-thread', projectId: 'project', title: 'Smart', modelId: model.id, providerMode: 'smart' })).rejects.toMatchObject({ code: 'forbidden' })
@@ -351,7 +409,7 @@ it('keeps no receipts for selections and drops settled ones, so a long-running h
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing, receipts: new CommandReceipts({ lifetimeMs: 1000, limit: 2, now: () => now }) })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Receipts')
-  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+  const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token, heldProviders: SAME_VERSION_HELD }); fixture.clients.push(client)
   try {
     await client.connect()
     // More selections than the cap holds, and none of them counts against it.
@@ -378,14 +436,19 @@ it('coalesces a burst of shell changes and answers a thread or an event page too
   let publish = (): void => undefined
   const huge = { threadId: 'huge', revision: 1, messages: [{ id: 'm', role: 'assistant' as const, text: 'x'.repeat(17 * 1024 * 1024), createdAt: new Date().toISOString() }] }
   let fits = false
+  // Each publish changes the shell, as a streaming thread's do: a push the client already has is not sent again (ADR-0025,
+  // October 18 amendment), so a burst of identical shells would have no trailing push to count.
+  let version = 0
+  const changed = (state: ReturnType<HostService['shell']>): ReturnType<HostService['shell']> => ({ ...state, host: { ...state.host,
+    threads: state.host.threads.map((thread, index) => index === 0 ? { ...thread, title: 'Burst ' + version } : thread) } })
   const service: HostService = {
-    shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
+    shell: () => changed(fixture.host.service.shell()), state: () => fixture.host.service.state(),
     threadDetail: id => id === 'huge' ? (fits ? { ...huge, revision: 2, messages: [] } : huge) : fixture.host.service.threadDetail(id),
     command: (command, identity) => fixture.host.service.command(command, identity),
     events: (afterSeq, threadId, limit) => threadId === 'huge'
       ? [{ seq: afterSeq + 1, threadId, event: { kind: 'message-text-appended' as const, at: new Date().toISOString(), messageId: 'm', appendText: 'x'.repeat(17 * 1024 * 1024) } }]
       : fixture.host.service.events(afterSeq, threadId, limit),
-    subscribe: listener => { publish = () => listener(fixture.host.service.shell()); return () => undefined },
+    subscribe: listener => { publish = () => { version++; listener(service.shell()) }; return () => undefined },
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing })
   const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Bursts')

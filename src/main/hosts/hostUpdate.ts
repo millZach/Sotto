@@ -284,7 +284,7 @@ export class HostUpdates {
     if (entry.phase !== 'needs' && entry.phase !== 'failed') return
     if (!entry.owned) throw new Error(`Sotto did not start the host on ${entry.name}, so it cannot restart it. Nothing was changed. Update it on ${entry.name} with the commands below.`)
     const candidate = this.options.hosts.candidates().find(item => item.id === entry.id)
-    if (!candidate) { entry.error = `${entry.name} is not connected, so nothing was updated. Switch it on in Settings > Hosts, then try again.`; return }
+    if (!candidate) { entry.error = `${entry.name} is not connected, so nothing was updated. Switch it on in Settings > Hosts & phones, then try again.`; return }
     this.refresh(entry, candidate)
     if (!this.needsUpdate(candidate)) { this.entries.delete(entry.id); return }
     if (this.workingNow(entry).length) { entry.phase = 'confirm'; delete entry.failure; return }
@@ -433,12 +433,12 @@ export class HostUpdates {
       case 'update-version-conflict': return say(`The existing versions/${to} folder on ${name} differs from the release. Sotto kept it unchanged.`, `Use a newer Sotto build, or stop the host on ${name}, keep that folder as a backup and move it aside before trying again.`)
       case 'node-unsupported': return say(`Sotto ${to}'s host needs Node ${stopped.detail.range ?? 'another version'}, and ${name} runs Node ${stopped.detail.node ?? 'another version'}, so nothing was installed.`, `Install that Node for the SSH account on ${name}, then try again.`)
       case 'update-busy': return say(`Another Sotto is updating the host on ${name} right now, so this one stopped before changing anything.`, 'Wait a minute, then try again.')
-      case 'update-not-owned': return say(`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, `Stop the host on ${name}, then connect to it again from Settings > Hosts, and Sotto starts ${to}.`)
-      case 'restart-not-sent': return say(`Sotto could not ask ${name}'s host to restart, so ${to} is installed beside ${from}, which still runs.`, `Try again, or press Stop host for ${name} in Settings > Hosts and switch it on again, which starts ${to}.`)
+      case 'update-not-owned': return say(`Sotto did not start the host now running on ${name}, so it did not restart it. ${to} is installed beside ${from}.`, `Stop the host on ${name}, then connect to it again from Settings > Hosts & phones, and Sotto starts ${to}.`)
+      case 'restart-not-sent': return say(`Sotto could not ask ${name}'s host to restart, so ${to} is installed beside ${from}, which still runs.`, `Try again, or press Stop host for ${name} in Settings > Hosts & phones and switch it on again, which starts ${to}.`)
       case 'update-stop-failed': return say(`${name}'s host did not stop, so Sotto left ${from} running.`, `Try again, or stop the host on ${name} by hand, then connect to it again.`)
       case 'update-start-failed': return stopped.detail.restarted
-        ? say(`${to} installed on ${name}, but its host did not start, so Sotto started ${from} again.`, `Try again, or see what the new host says: press Stop host for ${name} in Settings > Hosts, then run the commands below on ${name}.`, `${name}'s threads are back. Nothing was lost.`)
-        : say(`${to} installed on ${name}, but its host did not start, and ${from} did not start again either.`, `Run the commands below on ${name} to see what the host says, then connect to it again from Settings > Hosts.`, `Nothing on ${name} was lost: its threads are saved there.`)
+        ? say(`${to} installed on ${name}, but its host did not start, so Sotto started ${from} again.`, `Try again, or see what the new host says: press Stop host for ${name} in Settings > Hosts & phones, then run the commands below on ${name}.`, `${name}'s threads are back. Nothing was lost.`)
+        : say(`${to} installed on ${name}, but its host did not start, and ${from} did not start again either.`, `Run the commands below on ${name} to see what the host says, then connect to it again from Settings > Hosts & phones.`, `Nothing on ${name} was lost: its threads are saved there.`)
       case 'update-wrong-version': return say(`${name} restarted, but its host says it runs ${stopped.detail.version ?? from}.`, byHand, `${name}'s threads are back. Nothing was lost.`)
       case 'update-lost':
         if (stopped.step !== 'restart') return say(`The connection to ${name} closed during the update, before anything was switched.`)
@@ -464,8 +464,8 @@ export class HostUpdates {
     const url = `${this.releasesUrl.replace(/\/+$/u, '')}/v${to}/${file}`
     return [`# On ${entry.name}:`, `cd ${install}`, `curl -fLO ${url}`, `curl -fLO ${url}.sha256`, `${file.includes('-darwin-') ? 'shasum -a 256 -c' : 'sha256sum -c'} ${file}.sha256`,
       `mkdir -p versions/${to} && tar -xzf ${file} -C versions/${to}`, `printf '${to}\\n' > current`,
-      entry.owned ? `# Then press Stop host for ${entry.name} in Settings > Hosts, and switch ${entry.name} on again.`
-        : `# Then stop the host on ${entry.name}, and connect to it again from Settings > Hosts.`].join('\n')
+      entry.owned ? `# Then press Stop host for ${entry.name} in Settings > Hosts & phones, and switch ${entry.name} on again.`
+        : `# Then stop the host on ${entry.name}, and connect to it again from Settings > Hosts & phones.`].join('\n')
   }
   private view(entry: Entry): HostUpdateState {
     const withdrawn = entry.phase === 'done' && entry.withdrawn

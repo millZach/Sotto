@@ -184,18 +184,27 @@ artifacts/devin-local-provider/
 artifacts/thread-sidebar/
 
 artifacts/terminal-loading/
-artifacts/terminal-agent-states/
-artifacts/phone-terminals/
 
 artifacts/activity-performance/
 artifacts/process-creature/
 artifacts/held-action/
 artifacts/working-creature/
+artifacts/claude-bot-creature/
 artifacts/background-command/
 artifacts/queued-steering/
 
 # Question panel verification captures
 artifacts/question-choices/
+# Floating composer verification captures; the cited ones are committed
+artifacts/composer-float/
+# Slim composer and Watcher column verification captures; the cited ones are committed
+artifacts/composer-shrink/
+artifacts/needs-you-queue/
+artifacts/watcher-column/
+artifacts/composer-slim-steady/
+artifacts/scene-under-column/
+# Reply quote verification captures; the cited ones are committed
+artifacts/reply-quote/
 
 /artifacts/settled-folder-new-thread/
 artifacts/agents-view/
@@ -218,6 +227,7 @@ artifacts/codex-questions-thread-agents/
 artifacts/git-settings/
 artifacts/question-message-links/
 artifacts/question-prototype-pages/
+artifacts/prototype-ready/
 artifacts/phase-three-themes/
 artifacts/thread-browser-player/
 artifacts/new-thread-defaults/
@@ -525,19 +535,6 @@ artifacts/linux-shutdown-drain/*
 !artifacts/linux-shutdown-drain/result.json
 !artifacts/linux-shutdown-drain/before-quit.png
 
-# Codex terminal state proof; retain only the cited captures and metadata.
-artifacts/codex-terminal-state/*
-!artifacts/codex-terminal-state/built-working.png
-!artifacts/codex-terminal-state/built-idle-1600x1000-dark.png
-!artifacts/codex-terminal-state/built-idle-1280x800-dark.png
-!artifacts/codex-terminal-state/built-idle-820x560-light.png
-!artifacts/codex-terminal-state/built-result.json
-!artifacts/codex-terminal-state/packaged-working.png
-!artifacts/codex-terminal-state/packaged-idle-1600x1000-dark.png
-!artifacts/codex-terminal-state/packaged-idle-1280x800-dark.png
-!artifacts/codex-terminal-state/packaged-idle-820x560-light.png
-!artifacts/codex-terminal-state/packaged-result.json
-
 # New-thread defaults on every host (ADR-0074); retain only the captures its verification note cites.
 artifacts/new-thread-defaults-every-host/*
 !artifacts/new-thread-defaults-every-host/dark-1600.png
@@ -601,6 +598,16 @@ artifacts/opencode-model-menu/*
 !artifacts/opencode-model-menu/sources-1280-dark-motion.png
 !artifacts/opencode-model-menu/contrast.json
 !artifacts/opencode-model-menu/journey.json
+artifacts/cursor-provider/*
+!artifacts/cursor-provider/signed-out-1600-dark.png
+!artifacts/cursor-provider/signing-in-1280-dark.png
+!artifacts/cursor-provider/connected-820-light.png
+!artifacts/cursor-provider/makers-1280-dark.png
+!artifacts/cursor-provider/anthropic-820-light.png
+!artifacts/cursor-provider/permissions-1280-dark.png
+!artifacts/cursor-provider/stable-providers.png
+!artifacts/cursor-provider/contrast.json
+!artifacts/cursor-provider/journey.json
 artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/overview-dark-1600.png
 !artifacts/usage-dashboard/tokens-dark-1280.png
@@ -621,6 +628,15 @@ artifacts/usage-dashboard/*
 !artifacts/usage-dashboard/host-version-conflict-dark-1600.png
 !artifacts/usage-dashboard/host-version-conflict-light-820.png
 
+# The split Per day chart's journey writes seven captures; commit only those the verification note cites.
+artifacts/usage-chart-split/*
+!artifacts/usage-chart-split/prompts-by-model-lines-dark-1600.png
+!artifacts/usage-chart-split/prompts-by-model-bars-light-1280.png
+!artifacts/usage-chart-split/prompts-by-model-lines-dark-820.png
+!artifacts/usage-chart-split/tokens-by-provider-bars-light-820.png
+!artifacts/usage-chart-split/prompts-by-model-providers-dark-820.png
+!artifacts/usage-chart-split/verified.json
+
 # Full Omarchy test findings; commit only evidence cited in the verification note.
 artifacts/linux-test-findings/*
 
@@ -637,6 +653,11 @@ artifacts/linux-test-findings/*
 !artifacts/linux-test-findings/packaged-inspection-retry-820x560-light.png
 !artifacts/linux-test-findings/packaged-terminal-1280x800-dark.png
 !artifacts/linux-test-findings/packaged-terminal-820x560-light.png
+
+# Continue after an unconfirmed prompt; retain the two cited captures.
+artifacts/unconfirmed-send/*
+!artifacts/unconfirmed-send/watcher-recovery-dark-1280x800.png
+!artifacts/unconfirmed-send/watcher-set-aside-light-820x560.png
 
 # Linux stable release command; retain only the cited rehearsal evidence.
 artifacts/linux-release-command/*
@@ -669,3 +690,127 @@ artifacts/starting-screen/*
 !artifacts/starting-screen/late-820x560-light.png
 !artifacts/starting-screen/late-long-name-820x560-dark.png
 !artifacts/starting-screen/providers-1280x800-dark.png
+artifacts/watcher-room-polish/*
+!artifacts/watcher-room-polish/polish-receipts-dark-1280x800.png
+!artifacts/watcher-room-polish/polish-receipts-light-1600x1000.png
+!artifacts/watcher-room-polish/polish-receipts-light-820x560.png
+!artifacts/watcher-room-polish/polish-receipts-dark-1280x800-reduced-motion.png
+!artifacts/watcher-room-polish/polish-stop-ask-dark-820x560.png
+!artifacts/watcher-room-polish/polish-stop-done-light-820x560.png
+!artifacts/watcher-room-polish/readings.json
+artifacts/watcher-header-overlap/*
+!artifacts/watcher-header-overlap/header-before-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-before-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-no-stop-all-dark-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-no-stop-all-light-540px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-dark-570px-1280x800.png
+!artifacts/watcher-header-overlap/header-stop-all-counts-100-light-570px-1280x800.png
+!artifacts/watcher-header-overlap/readings.json
+artifacts/watcher-answer/*
+!artifacts/watcher-answer/answer-main-card-dark-1280x800.png
+!artifacts/watcher-answer/answer-main-line-dark-1280x800.png
+!artifacts/watcher-answer/answer-forge-card-dark-1280x800.png
+!artifacts/watcher-answer/answer-forge-line-dark-1280x800.png
+!artifacts/watcher-answer/answer-card-light-820x560.png
+!artifacts/watcher-answer/answer-line-light-1600x1000.png
+!artifacts/watcher-answer/readings.json
+artifacts/watcher-news-turns/*
+!artifacts/watcher-news-turns/news-folded-dark-1280x800.png
+!artifacts/watcher-news-turns/news-open-dark-820x560.png
+!artifacts/watcher-news-turns/news-open-light-1280x800.png
+
+# The Core ML speech helper's SwiftPM build (ADR-0071 follow-up)
+native/coreml-asr/.build/
+# macOS key listener helper, built by scripts/build-key-listener.mjs
+native/key-listener/build/
+artifacts/macos-traffic-light-room/*
+!artifacts/macos-traffic-light-room/mac-header-before-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-light-400px-820x560.png
+!artifacts/macos-traffic-light-room/mac-header-dark-559px-1600x1000.png
+!artifacts/macos-traffic-light-room/mac-header-light-718px-1600x1000.png
+!artifacts/macos-traffic-light-room/readings.json
+artifacts/draft-save-reply-priority/*
+!artifacts/draft-save-reply-priority/gate-alone-on-screen.json
+!artifacts/draft-save-reply-priority/gate-alone-minimized.json
+!artifacts/draft-save-reply-priority/both-fixes-on-screen.json
+!artifacts/draft-save-reply-priority/both-fixes-minimized.json
+!artifacts/draft-save-reply-priority/both-fixes-and-reply-priority-on-screen.json
+!artifacts/draft-save-reply-priority/screenshot-run-on-screen.json
+!artifacts/draft-save-reply-priority/typing-three-threads-streaming-1280x800.png
+artifacts/working-threads-warning/*
+!artifacts/working-threads-warning/line-11-dark-1280x800.png
+!artifacts/working-threads-warning/line-11-light-820x560.png
+!artifacts/working-threads-warning/line-10-light-820x560.png
+# Main freeze notice (#1233); commit only the captures docs/verification/main-freeze-notice.md cites.
+artifacts/main-freeze-notice/*
+!artifacts/main-freeze-notice/pill-1280x800-dark.png
+!artifacts/main-freeze-notice/pill-1280x800-light.png
+!artifacts/main-freeze-notice/pill-820x560-dark.png
+!artifacts/main-freeze-notice/pill-820x560-light.png
+!artifacts/main-freeze-notice/popover-1280x800-dark.png
+!artifacts/main-freeze-notice/popover-1280x800-light.png
+!artifacts/main-freeze-notice/popover-820x560-dark.png
+!artifacts/main-freeze-notice/popover-820x560-light.png
+!artifacts/main-freeze-notice/settings-1280x800-dark.png
+!artifacts/main-freeze-notice/settings-1280x800-light.png
+!artifacts/main-freeze-notice/settings-820x560-dark.png
+!artifacts/main-freeze-notice/settings-820x560-light.png
+!artifacts/main-freeze-notice/saved-1280x800-dark.png
+!artifacts/main-freeze-notice/saved-1280x800-light.png
+!artifacts/main-freeze-notice/saved-820x560-dark.png
+!artifacts/main-freeze-notice/saved-820x560-light.png
+!artifacts/main-freeze-notice/popover-1600x1000-dark.png
+!artifacts/main-freeze-notice/popover-1600x1000-light.png
+!artifacts/main-freeze-notice/settings-1600x1000-dark.png
+!artifacts/main-freeze-notice/settings-1600x1000-light.png
+!artifacts/main-freeze-notice/popover-1280x800-dark-reduced-motion.png
+!artifacts/main-freeze-notice/attached-1280x800-dark.png
+artifacts/message-scrubber/*
+!artifacts/message-scrubber/hover-dark-1280x800.png
+!artifacts/message-scrubber/hover-dark-1600x1000.png
+!artifacts/message-scrubber/hover-dark-820x560.png
+!artifacts/message-scrubber/hover-light-1280x800.png
+!artifacts/message-scrubber/hover-light-1600x1000.png
+!artifacts/message-scrubber/hover-light-820x560.png
+!artifacts/message-scrubber/hover-reduced-dark-1280x800.png
+!artifacts/message-scrubber/keys-light-1280x800.png
+!artifacts/message-scrubber/rest-dark-1280x800.png
+!artifacts/message-scrubber/stored-dark-1280x800.png
+!artifacts/message-scrubber/rest-light-820x560.png
+!artifacts/message-scrubber/watcher-hover-dark-1280x800.png
+!artifacts/message-scrubber/watcher-hover-dark-1600x1000.png
+!artifacts/message-scrubber/watcher-hover-dark-820x560.png
+!artifacts/message-scrubber/watcher-owls-dark-1280x800.png
+!artifacts/message-scrubber/watcher-owls-dark-1600x1000.png
+!artifacts/message-scrubber/watcher-owls-dark-820x560.png
+!artifacts/message-scrubber/watcher-owls-light-1280x800.png
+!artifacts/message-scrubber/watcher-owls-light-1600x1000.png
+!artifacts/message-scrubber/watcher-owls-light-820x560.png
+
+# Terminal mode removed (ADR-0111); retain only the capture its verification note cites.
+artifacts/remove-terminal-mode/*
+!artifacts/remove-terminal-mode/threads-populated-after.png
+artifacts/sidebar-crossing/*
+!artifacts/sidebar-crossing/before-threads-foot-dark.png
+!artifacts/sidebar-crossing/before-settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-foot-dark.png
+!artifacts/sidebar-crossing/settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-foot-light.png
+!artifacts/sidebar-crossing/settings-foot-light.png
+!artifacts/sidebar-crossing/owl-threads-foot-dark.png
+!artifacts/sidebar-crossing/owl-settings-foot-dark.png
+!artifacts/sidebar-crossing/threads-820x560-dark.png
+!artifacts/sidebar-crossing/settings-820x560-dark.png
+artifacts/watcher-picture-owls/*
+!artifacts/watcher-picture-owls/sotto-dark-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-dark-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-blob-1280x800.png
+!artifacts/watcher-picture-owls/sotto-dark-card-820x560.png
+!artifacts/watcher-picture-owls/sotto-dark-reduced-motion-1280x800.png
+!artifacts/watcher-picture-owls/sotto-light-1600x1000.png
+!artifacts/watcher-picture-owls/sotto-light-820x560.png
+!artifacts/watcher-picture-owls/tropic-dark-1280x800.png

@@ -5,7 +5,24 @@
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
 .screenshot-previews figcaption { margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--tt-text-muted); font-size: 10px; }
 .screenshot-previews__resized { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: 10px; }
-.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 50%; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
+.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 4px; background: var(--tt-hover-strong); color: var(--tt-text); cursor: pointer; }
+/* Attached files that are not images (ADR-0131): one-line pills under the image tiles, the name cut in the middle. */
+.attached-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.screenshot-previews + .attached-files { margin-top: 10px; }
+.attached-file { display: flex; align-items: center; gap: 7px; max-width: min(100%, 240px); height: 32px; padding: 0 4px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); font-size: 12.5px; }
+.attached-file > svg { flex: none; color: var(--tt-text-muted); }
+.attached-file__name { display: flex; min-width: 0; color: var(--tt-text); white-space: nowrap; }
+.attached-file__head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.attached-file__tail { flex: none; }
+.attached-file__size { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.attached-file button { position: relative; display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.attached-file button::before { content: ''; position: absolute; inset: -5px; }
+.attached-file button:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.attached-file button:disabled { opacity: .5; cursor: default; }
+/* Drag-over: a quiet dashed edge in the focus colour and one line, over the whole composer. */
+.screenshot-input__drop { position: absolute; inset: -1px; z-index: 3; display: grid; place-items: center; border: 1.5px dashed var(--tt-focus-ring); border-radius: inherit; background: color-mix(in oklab, var(--tt-card) 80%, transparent); pointer-events: none; }
+.screenshot-input__drop span { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; background: var(--tt-card); color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.screenshot-input__drop svg { color: var(--tt-accent-text); }
 .screenshot-input__tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .screenshot-input__tools .tt-button { width: 26px; min-height: 26px; padding: 0; color: var(--tt-text-muted); }
 .screenshot-input__tools small { color: var(--tt-text-muted); font-size: 11px; }

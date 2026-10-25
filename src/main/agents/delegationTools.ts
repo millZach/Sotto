@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { CANCEL_DELEGATION_TOOL, cancelDelegationInputSchema, DELEGATE_MCP_SERVER, DELEGATE_TOOL, delegateInputSchema, DELEGATION_PROMPTS_PER_THREAD,
-  DELEGATION_WAIT_MAX_SECONDS, READ_DELEGATION_TOOL, readDelegationInputSchema } from '../../shared/delegation'
+  DELEGATION_WAIT_MAX_SECONDS, LIST_MACHINES_TOOL, READ_DELEGATION_TOOL, readDelegationInputSchema } from '../../shared/delegation'
+import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
 import { NOT_ADMITTED, type DelegationService } from './delegation'
 import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from './threadToolServer'
 
@@ -16,26 +17,38 @@ const delegateByRoleSchema = delegateInputSchema.extend({
 const NEW_THREAD_BY_NAME = `For a new thread name the provider, model, effort and permission; call ${READ_DELEGATION_TOOL} with no delegation to see what is ready. The permission may be no wider than this thread's or the user's new-thread default.`
 const NEW_THREAD_BY_ROLE = `For a new thread name the kind of work and leave out provider, model, effort and permission: Sotto starts the thread on what the user's Settings give that worker role, within what this thread and the user's new-thread default allow. Name them only when the user asked for something else for this request; what you name overrides the role for this delegation, and the result says so. Call ${READ_DELEGATION_TOOL} with no delegation to see what each role starts on.`
 
-/** The tools a delegating thread is offered: with worker roles on, a new thread's model comes from its kind of work. */
-export function delegationToolDefinitions(roles: boolean): readonly ThreadToolDefinition[] {
+/** With Work across machines on (#1032), a new thread may name a machine or a system, and the thread may list the machines. */
+const WHERE = `A new thread starts on This computer. Name machine, from ${LIST_MACHINES_TOOL}, or os (windows, macos or linux) when the work needs one: a delegated thread starts only on This computer for now, so another machine is refused, and a system never falls back to another. The result's placement says where it started.`
+const LIST_MACHINES_INPUT = z.object({}).strict()
+
+/**
+ * The tools a delegating thread is offered: with worker roles on, a new thread's model comes from its kind of work; with
+ * Work across machines on (#1032), a new thread may name a machine or a system, and the machines can be listed.
+ */
+export function delegationToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
+  const delegate = roles ? delegateByRoleSchema : delegateInputSchema
   return [
-    { name: DELEGATE_TOOL, inputSchema: schema(roles ? delegateByRoleSchema : delegateInputSchema), description: [
+    { name: DELEGATE_TOOL, inputSchema: schema(machines ? delegate : delegate.omit({ machine: true, os: true })), description: [
       'Hand work to another thread on this computer: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.',
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
-      `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up when the outcome changes: end your turn or carry on, and do not poll.`,
-      `New threads share the computer's limit on threads in flight with Watcher's. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
+      `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
+      `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
+      ...machines ? [WHERE] : [],
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
       `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     { name: CANCEL_DELEGATION_TOOL, inputSchema: schema(cancelDelegationInputSchema), description:
       'Cancel one of this thread\'s delegations: a brief still waiting is dropped, and a delegated thread working on it is stopped, with any thread it delegated to. Nothing is deleted.' },
+    ...machines ? [{ name: LIST_MACHINES_TOOL, inputSchema: schema(LIST_MACHINES_INPUT), description:
+      'List This computer and each connected machine: its operating system, architecture, memory and CPUs, and how many threads it is running, and newWorkersStart, where new workers start. A machine that does not report these reads unknown; one not connected says so. Reading charges nothing.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [],
   ]
 }
 export const DELEGATION_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = delegationToolDefinitions(false)
 // Grok asks before a call it cannot tie to a server, and a call by the bare name is one (#800): the full names are given.
-const INSTRUCTIONS = `These tools let this thread hand work to threads it starts on this computer (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends a wake-up when the outcome changes, carrying none of the delegated thread's words, and ${READ_DELEGATION_TOOL} reads its reply. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
+const INSTRUCTIONS = `These tools let this thread hand work to threads it starts on this computer (ADR-0081), such as a review on another provider. Sotto starts the thread, sends your brief and tells you its outcome. A delegated thread is the user's: it asks the user, never you, and nothing you send approves anything. When ${DELEGATE_TOOL} returns working, end your turn or carry on; Sotto sends this thread a wake-up when the outcome changes, which carries the reply once answered, labelled as the delegated thread's words. The user is not shown that wake-up, so tell them what you learned. ${READ_DELEGATION_TOOL} reads a delegation again. Where tools are found by search and called through use_tool, call them by their full names, such as ${DELEGATE_MCP_SERVER}__${DELEGATE_TOOL}.`
 
 /**
  * `sotto_delegate`: the loopback MCP server through which an ordinary thread on this computer delegates work to threads
@@ -48,8 +61,9 @@ export class DelegationToolServer implements ScopedThreadTools {
   /** Above the longest wait, so the call returns working before Codex's and Claude Code's clients give up on it (decision 8). */
   readonly timeoutMs = (DELEGATION_WAIT_MAX_SECONDS + 30) * 1000
   private readonly server: ThreadToolServer
-  constructor(private readonly service: DelegationService, options: { roles?: boolean } = {}) {
-    this.definitions = options.roles === true ? delegationToolDefinitions(true) : DELEGATION_TOOL_DEFINITIONS
+  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean } = {}) {
+    const roles = options.roles === true, machines = options.machines === true
+    this.definitions = roles || machines ? delegationToolDefinitions(roles, machines) : DELEGATION_TOOL_DEFINITIONS
     this.server = new ThreadToolServer({ name: DELEGATE_MCP_SERVER, serverName: 'sotto-delegate', instructions: INSTRUCTIONS,
       unavailable: 'Sotto\'s delegation tools are unavailable. Nothing was started.', failed: 'Sotto could not complete this delegation call. Call read_delegation to see where it stands before trying again.',
       maxRequestBytes: 256 * 1024 },
@@ -66,7 +80,8 @@ export class DelegationToolServer implements ScopedThreadTools {
     // A delegate call goes to admission even from a thread that may not delegate, so its refusal is recorded with its rule.
     const result = name === DELEGATE_TOOL ? await this.service.delegate(threadId, args, context)
       : !this.service.admits(threadId) ? { status: 'refused', code: 'NOT_ADMITTED', message: NOT_ADMITTED }
-        : name === READ_DELEGATION_TOOL ? await this.service.read(threadId, args) : await this.service.cancel(threadId, args)
+        : name === READ_DELEGATION_TOOL ? await this.service.read(threadId, args)
+          : name === LIST_MACHINES_TOOL && this.definitions.some(tool => tool.name === LIST_MACHINES_TOOL) ? await this.service.machines(threadId) : await this.service.cancel(threadId, args)
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result as Record<string, unknown>,
       ...((result as { status: string }).status === 'refused' ? { isError: true } : {}) }
   }

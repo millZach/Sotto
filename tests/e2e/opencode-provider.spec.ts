@@ -15,7 +15,7 @@ type Frame = { method?: string; params?: Record<string, unknown> }
 async function providerPanel(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  return page.getByRole('region', { name: 'Provider configuration', exact: true })
+  return page.getByRole('region', { name: 'OpenCode details', exact: true })
 }
 
 /** Connects OpenCode unless it already is, once the startup connect has had its say. */
@@ -71,11 +71,11 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     await page.getByRole('button', { name: 'OpenCode', exact: true }).focus()
     await page.keyboard.press('Enter')
     await expect(panel).toContainText('Sotto runs its own OpenCode, with its own folder and its own sign-ins.')
-    await expect(panel.locator('svg[data-provider="opencode"]')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'OpenCode', exact: true }).locator('.provider-badge svg[data-provider="opencode"]')).toBeVisible()
     await activate(page, panel.getByRole('button', { name: 'Connect OpenCode' }))
     await expect(panel.getByRole('button', { name: 'Disconnect OpenCode' })).toBeVisible()
     await expect(panel.getByRole('group', { name: 'Model sources' })).toContainText('Sign in to a model source, such as Anthropic, OpenAI or OpenRouter')
-    await expect(panel).toContainText('2.0.31')
+    await expect(page.getByRole('button', { name: 'OpenCode', exact: true })).toContainText('2.0.31')
     const deferUpdates = page.getByRole('button', { name: 'Not now', exact: true })
     if (await deferUpdates.count()) await deferUpdates.click()
     for (const [width, height] of sizes) {
@@ -93,10 +93,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     }
     await resizeWindow(launched, 1280, 800)
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
-    await panel.getByRole('tab', { name: 'Configuration' }).focus()
-    await page.keyboard.press('ArrowRight')
-    await expect(panel.getByRole('tab', { name: 'Models' })).toBeFocused()
-    await expect(panel.getByRole('tabpanel')).toContainText('Fixture Model')
+    await expect(panel.getByRole('list', { name: 'OpenCode available models' })).toContainText('Fixture Model')
 
     // A new OpenCode thread on an OpenCode Zen model.
     const prepared = await page.evaluate(async path => {
@@ -112,9 +109,11 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
     await page.getByRole('button', { name: 'New thread in OpenCode project', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
     const projects = page.getByRole('region', { name: 'Projects' })
-    await projects.getByRole('button', { name: 'New thread', exact: true }).hover()
-    await projects.getByRole('button', { name: 'Rename New thread', exact: true }).click()
-    await page.getByLabel('Rename New thread').fill('OpenCode UI check')
+    // An unsent thread is listed once its composer holds text, under that text.
+    await page.getByRole('textbox', { name: 'Prompt' }).fill('OpenCode draft')
+    await projects.getByRole('button', { name: 'OpenCode draft', exact: true }).hover()
+    await projects.getByRole('button', { name: 'Rename OpenCode draft', exact: true }).click()
+    await page.getByLabel('Rename OpenCode draft').fill('OpenCode UI check')
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: 'OpenCode UI check', exact: true })).toBeVisible()
     const model = page.getByRole('combobox', { name: 'Thread model', exact: true })

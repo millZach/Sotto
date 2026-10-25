@@ -9,6 +9,8 @@ import type { ThreadUsage } from '../../../src/shared/threadUsage'
 import { deferred } from '../../fixtures/deferred'
 
 type Archive = Record<string, { view: ThreadUsage; entries: Record<string, unknown> }>
+/** A write hands the store the file's text, or its encoded pieces (#1451). */
+const writtenText = (written: string | readonly Uint8Array[]): string => typeof written === 'string' ? written : Buffer.concat(written).toString('utf8')
 const roots: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -109,7 +111,7 @@ it('holds one immutable in-flight archive and coalesces 100 changing observation
   usage.claude('a', frame(0))
   await Promise.resolve()
   expect(write).toHaveBeenCalledTimes(1)
-  const snapshot = JSON.parse(write.mock.calls[0]![0]) as Archive
+  const snapshot = JSON.parse(writtenText(write.mock.calls[0]![0])) as Archive
   let drained = false
   const drain = usage.flushed().then(() => { drained = true })
   for (let i = 1; i <= 100; i++) usage.claude(i % 2 ? 'a' : 'b', frame(i))
@@ -121,7 +123,7 @@ it('holds one immutable in-flight archive and coalesces 100 changing observation
   await Promise.resolve()
   expect(write).toHaveBeenCalledTimes(2)
   expect(drained).toBe(false)
-  const latest = JSON.parse(write.mock.calls[1]![0]) as Archive
+  const latest = JSON.parse(writtenText(write.mock.calls[1]![0])) as Archive
   expect(latest.a!.view.total!.output).toBe(5100)
   expect(latest.b!.view.total!.output).toBe(5000)
   second.resolve(); await drain
@@ -217,7 +219,7 @@ it('writes a streaming reply at most once an interval, and the end of its turn a
   const write = vi.spyOn(AtomicJsonStore.prototype, 'writeSerialized').mockResolvedValue(undefined)
   const clone = vi.spyOn(globalThis, 'structuredClone')
   const message = { ...frame(0).message, id: 'streamed', usage: { ...frame(0).message.usage, output_tokens: 0 } }
-  const written = (call: number) => (JSON.parse(write.mock.calls[call]![0]) as Archive).thread!.entries.streamed as { tokens: { output: number } }
+  const written = (call: number) => (JSON.parse(writtenText(write.mock.calls[call]![0])) as Archive).thread!.entries.streamed as { tokens: { output: number } }
   usage.claude('thread', { type: 'stream_event', event: { type: 'message_start', message } })
   await vi.advanceTimersByTimeAsync(0)
   expect(write).toHaveBeenCalledTimes(1)
@@ -248,4 +250,23 @@ it('drains a write the interval is still holding back when the adapter closes', 
   await usage.flushed()
   const reopened = new NativeUsage(root, 'claude'); await reopened.load(); await reopened.flushed()
   expect(reopened.get('thread')).toMatchObject({ total: { output: 200 } })
+})
+
+// The whole ledger is written about once a second while a reply streams. Only the thread that changed is serialized
+// again, and the file reads exactly as a whole serialization would (October 19, 2026).
+it('serializes only the ledgers that changed since the last write, and writes the same text as before', async () => {
+  const { root, usage } = await fixture()
+  for (let thread = 0; thread < 30; thread++) for (let entry = 0; entry < 5; entry++) usage.claude(`thread-${thread}`, frame(entry))
+  await usage.flushed()
+  const stringify = vi.spyOn(JSON, 'stringify')
+  usage.claude('thread-7', frame(9, 300))
+  await usage.flushed()
+  const ledgers = stringify.mock.calls.filter(([value]) => typeof value === 'object' && value !== null && 'entries' in value && 'view' in value)
+  stringify.mockRestore()
+  expect(ledgers).toHaveLength(1)
+  const written = await readFile(join(root, 'claude-usage.json'), 'utf8')
+  const archive = JSON.parse(written) as Archive
+  expect(Object.keys(archive)).toHaveLength(30)
+  expect(written.trimEnd()).toBe(JSON.stringify(archive))
+  expect(archive['thread-7']!.entries['message-9']).toBeDefined()
 })

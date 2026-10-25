@@ -1,8 +1,10 @@
 import React, { type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { Minus, Square, Copy, X } from 'lucide-react'
 
 import { useOptionalApp } from '../state/AppContext'
 import { Button } from './Button'
+import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 
 export interface WindowControlsProps {
   readonly maximized?: boolean
@@ -19,15 +21,16 @@ export interface WindowControlsProps {
  * lights, and Linux leaves closing to the compositor, so callers draw this only on Windows.
  */
 export function WindowControls({ maximized = false, onMaximize, onMinimize, onClose, className }: WindowControlsProps): ReactNode {
+  const { t } = useLingui()
   return (
     <div className={className ? `app-controls ${className}` : 'app-controls'}>
-      <Button iconOnly variant="ghost" aria-label="Minimize Sotto" onClick={() => void onMinimize()}>
+      <Button iconOnly variant="ghost" aria-label={t`Minimize Sotto`} onClick={() => void onMinimize()}>
         <Minus size={18} />
       </Button>
-      <Button iconOnly variant="ghost" className="app-controls__maximize" aria-label={maximized ? 'Restore Sotto' : 'Maximize Sotto'} title={maximized ? 'Restore' : 'Maximize'} onClick={() => void onMaximize()}>
+      <Button iconOnly variant="ghost" className="app-controls__maximize" aria-label={maximized ? t`Restore Sotto` : t`Maximize Sotto`} title={maximized ? t({ message: 'Restore', context: 'window size' }) : t({ message: 'Maximize', context: 'window size' })} onClick={() => void onMaximize()}>
         {maximized ? <Copy size={16} /> : <Square size={16} />}
       </Button>
-      <Button iconOnly variant="ghost" aria-label="Close Sotto to tray" onClick={() => void onClose()}>
+      <Button iconOnly variant="ghost" aria-label={t`Close Sotto to tray`} onClick={() => void onClose()}>
         <X size={18} />
       </Button>
     </div>
@@ -41,8 +44,12 @@ export function WindowControls({ maximized = false, onMaximize, onMinimize, onCl
  */
 export function PageWindowControls(): ReactNode {
   const app = useOptionalApp()
-  if (app === null || app.platform !== 'win32') return null
+  if (app === null) return null
+  // The main freeze notice (an Owl feature, ADR-0098) sits left of the controls on Windows, and alone in the corner
+  // where the system draws or omits them.
+  if (app.platform !== 'win32') return <MainFreezeNotice frame="threads-view__winctl" />
   return <div className="threads-view__winctl">
+    <MainFreezeNotice />
     <WindowControls maximized={app.windowMaximized} onMaximize={app.actions.toggleMaximizeApp} onMinimize={app.actions.minimizeApp} onClose={app.actions.hideApp} />
   </div>
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
+import { watcherProviderIds } from './providerProfile'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
 
@@ -110,9 +111,9 @@ export const RUNTIME_MODE_WORDS: Readonly<Record<AgentRuntimeMode, string>> = {
 
 /**
  * The providers Watcher runs on, as `watcherProviderSchema` names them (ADR-0073, ADR-0079): Orchestrating's model is one
- * of theirs. A provider is named here once Watcher runs on it; one that is not is never Orchestrating's.
+ * of theirs. Each provider's profile says whether Watcher runs on it; one that does not is never Orchestrating's.
  */
-export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['codex', 'claude', 'grok', 'muse'])
+export const WATCHER_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(watcherProviderIds())
 /**
  * Watcher's providers in words, less those held to Owl on this run (ADR-0072): "Codex, Claude Code or Grok Build" on
  * stable, with Muse added on Owl. Every sentence that names where Watcher can run asks this.
@@ -125,7 +126,7 @@ export function watcherProvidersInWords(held: ReadonlySet<ProviderId>): string {
  * The order a role with no ready default looks through for one of a provider's own models. OpenCode comes last: a fresh
  * one offers only OpenCode Zen's free models, which no role names as a default.
  */
-const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode'])
+const PROVIDER_ORDER = everyProvider(['claude', 'codex', 'grok', 'muse', 'devin', 'opencode', 'cursor', 'deepseek'])
 /** Whether a role can run on a model: Orchestrating only on a provider Watcher can run on. */
 export function roleCanUse(role: WorkerRoleId, model: Pick<AgentModel, 'providerId'>): boolean {
   return role !== 'orchestrating' || (model.providerId !== undefined && WATCHER_PROVIDERS.has(model.providerId))

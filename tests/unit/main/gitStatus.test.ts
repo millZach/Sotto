@@ -197,6 +197,57 @@ describe('Git status the way T3 reads it', () => {
     expect(await after).toMatchObject({ branch: 'main' })
     expect(await older).toMatchObject({ branch: 'feature' })
   })
+  it('lets a finished read answer a caller only when it began after the moment the caller names, and no Git action has run since', async () => {
+    const f = await fixture({ remote: false })
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const round = performance.now()
+    const first = await f.reader.read(f.repo, { remote: false, startedAfter: round })
+    // A thread of the same round, after the first read has finished: the read began after the round, so it answers.
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toBe(first)
+    expect(statusReads()).toBe(1)
+    // A later round reads again: the finished read began before it.
+    git(f.repo, 'switch', '-q', '-c', 'feature')
+    const later = performance.now()
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: later })).toMatchObject({ branch: 'feature' })
+    expect(statusReads()).toBe(2)
+    // A Git action after the read: the same round reads again rather than take a read from before it.
+    git(f.repo, 'switch', '-q', 'main')
+    f.reader.invalidate(f.repo)
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: later })).toMatchObject({ branch: 'main' })
+    expect(statusReads()).toBe(3)
+    // Without a moment named, a finished read answers nobody, as before.
+    await f.reader.read(f.repo, { remote: false })
+    expect(statusReads()).toBe(4)
+  })
+  it('holds a running read to what a round needs, as it holds a finished one', async () => {
+    const f = await fixture({ remote: false })
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const early = f.reader.read(f.repo, { remote: false })
+    await new Promise(resolve => setTimeout(resolve, 1))
+    // A round that fires after the early read began is not handed it while it still runs.
+    const round = performance.now()
+    const later = f.reader.read(f.repo, { remote: false, startedAfter: round })
+    expect(later).not.toBe(early)
+    await Promise.all([early, later])
+    expect(statusReads()).toBe(2)
+  })
+  it('never lets a round take a read older than the folder\'s newest, or one begun before a fetch landed', async () => {
+    const f = await fixture()
+    const statusReads = () => f.calls.filter(call => call[0] === 'git' && call.includes('status')).length
+    const round = performance.now()
+    await f.reader.read(f.repo, { remote: false, startedAfter: round })
+    // A fresh read after it, as a thread's read after its remote half makes, is the one a round takes from then on.
+    const fresh = await f.reader.read(f.repo, { remote: false, fresh: true })
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toBe(fresh)
+    expect(statusReads()).toBe(2)
+    // The remote moves and a fetch brings it: a read begun before the fetch landed is not taken.
+    await writeFile(join(f.other, 'other.txt'), 'remote\n'); commit(f.other, 'Remote commit'); git(f.other, 'push', '-q')
+    await f.reader.read(f.repo, { remote: true })
+    expect(f.fetches()).toBe(1)
+    const reads = statusReads()
+    expect(await f.reader.read(f.repo, { remote: false, startedAfter: round })).toMatchObject({ behind: 1 })
+    expect(statusReads()).toBe(reads + 1)
+  })
 })
 
 describe('the remote half of a read, on its own', () => {
@@ -257,6 +308,28 @@ await pending3.promise }
     await remote; await waited
     expect(idle).toBe(true)
     unhold()
+  })
+  it('holds Git that Sotto runs beside its own remote half, such as an early origin fetch, for a folder being removed', async () => {
+    const f = await fixture()
+    const inside = join(f.repo, 'app'); await mkdir(inside)
+    // Running in the folder: the removal's wait includes it.
+    const { promise: fetched, resolve: finish } = deferred<string>()
+    expect(f.reader.runInFolder(inside, () => fetched)).toBe(fetched)
+    const unhold = f.reader.hold(f.repo)
+    let idle = false
+    const waited = f.reader.idle(f.repo).then(() => { idle = true })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(idle).toBe(false)
+    // Held: nothing more starts there or in a folder inside it.
+    let started = 0
+    expect(f.reader.runInFolder(inside, async () => { started++ })).toBeUndefined()
+    expect(f.reader.runInFolder(f.repo, async () => { started++ })).toBeUndefined()
+    expect(started).toBe(0)
+    finish('fetched'); await waited
+    expect(idle).toBe(true)
+    unhold()
+    await f.reader.runInFolder(inside, async () => { started++ })
+    expect(started).toBe(1)
   })
   it('fetches without the FETCH_HEAD flag from then on when Git does not know it', async () => {
     let refusals = 0

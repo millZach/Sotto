@@ -11,6 +11,8 @@ import { composerEnterIntent } from '../../../src/renderer/src/agents/composerKe
 import { sendThreadRevision } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore, submissionStatus } from '../../../src/renderer/src/agents/threadDraftStore'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { MessageRows } from '../../../src/renderer/src/agents/readingPlace'
+import { WatcherConversationContext, type WatcherConversation } from '../../../src/renderer/src/watcher/WatcherReceipts'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItem } from '../../fixtures/renderer/paneMenu'
@@ -55,6 +57,81 @@ describe('composer Enter intent', () => {
 })
 
 describe('Threads manual composer', () => {
+  it('lets the user set an unconfirmed prompt aside after checking so a newer message is not trapped', async () => {
+    const state = manualState()
+    const threadId = state.activeThreadId!
+    const draftId = crypto.randomUUID()
+    state.deliveries = [{ threadId, draftId, status: 'uncertain', createdAt: SETTLED_AT, updatedAt: SETTLED_AT }]
+    state.threadDrafts = [{ threadId, draftId: crypto.randomUUID(), text: 'My next message', attachments: [], requestId: null, updatedAt: SETTLED_AT }]
+    const { live, prompt } = mount(state)
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(live.command).toHaveBeenLastCalledWith({ type: 'refresh' })
+    expect(screen.getByRole('button', { name: 'Continue with a new message' })).toBeEnabled()
+    expect(promptText(prompt())).toBe('My next message')
+    expect(live.manualSends()).toBe(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(live.command).toHaveBeenCalledWith({ type: 'set-aside-send', threadId, draftId })
+    expect(live.state.deliveredDrafts).toEqual([])
+    expect(screen.getByLabelText('Pending message')).toHaveTextContent('Set aside · Unconfirmed')
+    expect(promptText(prompt())).toBe('My next message')
+    expect(live.manualSends()).toBe(0)
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.manualSends()).toBe(1))
+    expect(live.command).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'manual-send', threadId, text: 'My next message' }))
+  })
+
+  it.each(['null', 'throw', 'refused'] as const)('keeps a %s set-aside result held and preserves newer typing', async outcome => {
+    const state = manualState()
+    const threadId = state.activeThreadId!
+    const draftId = crypto.randomUUID()
+    state.deliveries = [{ threadId, draftId, status: 'uncertain', createdAt: SETTLED_AT, updatedAt: SETTLED_AT }]
+    const { live, prompt } = mount(state)
+    const command = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => {
+      if (request.type !== 'set-aside-send') return command(request)
+      if (outcome === 'throw') throw new Error('Lost reply')
+      return outcome === 'null' ? null : { ...live.state, error: 'Recovery could not be saved. Nothing was sent.' }
+    })
+    setPromptText(prompt(), 'Keep this newer draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByLabelText('Pending message').querySelector('[role="alert"]')).not.toBeNull())
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
+    expect(promptText(prompt())).toBe('Keep this newer draft')
+    expect(live.manualSends()).toBe(0)
+  })
+
+  it('releases a locally unconfirmed send only when main publishes its exact set-aside record', async () => {
+    const { live, prompt } = mount(manualState())
+    setPromptText(prompt(), 'Old prompt')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await waitFor(() => expect(live.manualSends()).toBe(1))
+    act(() => live.deliver(live.state.activeThreadId!, 'uncertain'))
+    await screen.findByRole('button', { name: 'Continue with a new message' })
+    setPromptText(prompt(), 'Newer prompt')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(promptText(prompt())).toBe('Newer prompt')
+    expect(live.manualSends()).toBe(1)
+  })
+
+  it('recovers a lost IPC send reply even when main has no delivery record for it', async () => {
+    const { live, prompt } = mount(manualState())
+    const command = live.command.getMockImplementation()!
+    live.command.mockImplementation(async request => request.type === 'manual-send' ? null : command(request))
+    setPromptText(prompt(), 'Possibly never reached main')
+    fireEvent.keyDown(prompt(), { key: 'Enter' })
+    await screen.findByRole('button', { name: 'Continue with a new message' })
+    expect(live.state.deliveries).toEqual([])
+    setPromptText(prompt(), 'Preserve my next draft')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue with a new message' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled())
+    expect(promptText(prompt())).toBe('Preserve my next draft')
+    expect(live.state.deliveredDrafts).toEqual([])
+    expect(live.manualSends()).toBe(1)
+  })
+
   it.each([
     ['row', false], ['receipt', false], ['row', true], ['receipt', true],
     ['wrong-thread', false], ['wrong-draft', false], ['refused', false], ['unconfirmed', false],
@@ -526,6 +603,246 @@ describe('Thread transcript scrolling', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New messages' }))
     expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
+  })
+
+  describe('a reader above the end (#1452)', () => {
+    // Lays each message out one row for each paragraph of an answer, so an answer can be read from its middle, and counts
+    // each message the transcript reads: its box, its ID, or its place in a list of every message drawn.
+    const select = Element.prototype.querySelectorAll
+    const rows = (message: Element): number => Math.max(1, (message.textContent ?? '').split('Answer paragraph').length - 1)
+    // The layout's own reading of the page is not the transcript's, and is not counted.
+    let laying = false
+    const drawnIn = (element: Element): Element[] => {
+      const outer = laying
+      laying = true
+      try { return [...select.call(element, '.thread-message')] } finally { laying = outer }
+    }
+    const height = (element: HTMLElement): number => drawnIn(element).reduce((sum, message) => sum + rows(message), 0) * ROW
+    let visits = 0
+    beforeEach(() => {
+      visits = 0
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) })
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) - VIEW))) })
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const log = this.closest<HTMLElement>('.thread-workspace__transcript')
+        const drawn = log === null ? [] : drawnIn(log)
+        const index = drawn.indexOf(this)
+        if (index >= 0) visits++
+        const top = index < 0 ? 0 : drawn.slice(0, index).reduce((sum, message) => sum + rows(message), 0) * ROW - log!.scrollTop
+        const tall = index < 0 ? VIEW : rows(this) * ROW
+        return { top, bottom: top + tall, left: 0, right: 600, width: 600, height: tall, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+      })
+      const dataset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'dataset')!.get!
+      vi.spyOn(HTMLElement.prototype, 'dataset', 'get').mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('thread-message')) visits++
+        return dataset.call(this) as DOMStringMap
+      })
+      // A search of the transcript for messages walks every message drawn, however few it returns.
+      const walks = (element: Element, selectors: string): void => {
+        if (laying || !/message/u.test(selectors)) return
+        const log = element.closest('.thread-workspace__transcript') ?? (() => { laying = true; try { return select.call(element, '.thread-workspace__transcript')[0] } finally { laying = false } })()
+        if (log) visits += drawnIn(log).length
+      }
+      vi.spyOn(Element.prototype, 'querySelectorAll').mockImplementation(function (this: Element, selectors: string) {
+        walks(this, selectors)
+        return select.call(this, selectors)
+      })
+      const one = Element.prototype.querySelector
+      vi.spyOn(Element.prototype, 'querySelector').mockImplementation(function (this: Element, selectors: string) {
+        walks(this, selectors)
+        return one.call(this, selectors)
+      })
+      // Each row the transcript reads through its rows, by its message's ID or by its place among the rows drawn.
+      for (const name of ['element', 'inOrder'] as const) {
+        const read = (MessageRows.prototype as unknown as Record<string, ((...args: unknown[]) => unknown) | undefined>)[name]
+        if (read === undefined) continue
+        vi.spyOn(MessageRows.prototype as unknown as Record<string, (...args: unknown[]) => unknown>, name).mockImplementation(function (this: MessageRows, ...args: unknown[]) {
+          visits++
+          return read.apply(this, args)
+        })
+      }
+      const byClass = Element.prototype.getElementsByClassName
+      vi.spyOn(Element.prototype, 'getElementsByClassName').mockImplementation(function (this: Element, names: string) {
+        walks(this, names)
+        return byClass.call(this, names)
+      })
+    })
+    const at = (minute: number): string => new Date(NOW - (30 - minute) * 60_000).toISOString()
+    /** Your message, three replies on the way and a ten-paragraph answer, folded under the turn's line once it ended. */
+    function answered(earlier = 0, steps = 3): AgentState {
+      const state = manualState()
+      const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+      thread.status = 'idle'
+      thread.messages = [
+        ...Array.from({ length: earlier }, (_, index) => ({ id: `earlier-${index}`, role: 'user' as const, text: `Earlier ${index}.`, createdAt: at(0) })),
+        { id: 'ask', role: 'user', text: 'Review the footer links.', createdAt: at(0) },
+        ...Array.from({ length: steps }, (_, index) => ({ id: `step-${index + 1}`, role: 'assistant' as const, text: `Looking at part ${index + 1}.`, createdAt: at(1 + index / steps) })),
+        { id: 'answer', role: 'assistant', text: Array.from({ length: 10 }, (_, n) => `Answer paragraph ${n + 1}.`).join('\n\n'), createdAt: at(5) },
+      ]
+      thread.activities = [
+        { id: 'turn-ask', turnId: 'ask', afterMessageId: 'ask', sequence: 0, kind: 'turn', status: 'completed', title: 'Turn', startedAt: at(0), completedAt: at(5) },
+        { id: 'ask-tool', turnId: 'ask', afterMessageId: 'ask', sequence: 1, kind: 'tool', status: 'completed', title: 'read_file', startedAt: at(0), completedAt: at(1) },
+      ]
+      return state
+    }
+    type Thread = AgentState['host']['threads'][number]
+    function mountWith(state: AgentState, responseStreaming: 'live' | 'complete' = 'live', keptInView: readonly string[] = []) {
+      const live = liveAgentState(state)
+      vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), responseStreaming }))
+      const conversation = { receipts: new Map(keptInView.map(id => [id, []])), takeovers: new Map() } as unknown as WatcherConversation
+      render(keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />)
+      const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+      const update = (change: (thread: Thread) => Partial<Thread>): void => act(() => {
+        live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, ...change(item) } : item) } })
+      })
+      const scrollTo = (top: number): void => { transcript.scrollTop = top; fireEvent.scroll(transcript) }
+      return { transcript, update, scrollTo }
+    }
+
+    it('stays where they are reading while the turn above opens and folds again, and the end is still followed', () => {
+      const { transcript, update, scrollTo } = mountWith(answered())
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+      // Reading the answer's third paragraph: the answer begins two rows above the view's top.
+      scrollTo(3 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      // The thread runs again with nothing new of its own (as Claude does to report background work): its last turn opens.
+      update(() => ({ status: 'running' }))
+      expect(transcript.querySelector('[data-message-id="step-1"]')).not.toBeNull()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'idle' }))
+      expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      // At the end, the transcript still follows what arrives.
+      fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
+      update(item => ({ messages: [...item.messages, { id: 'later', role: 'user' as const, text: 'Now the header links.', createdAt: at(6) }] }))
+      expect(transcript.scrollHeight).toBe(12 * ROW)
+      expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+    })
+
+    it('comes back to where they were reading when the answer is held back while written and then shown whole', () => {
+      // With replies shown once complete, the reopened turn's answer reads "Writing a reply…": the transcript grows too short
+      // to keep the place, and the window can only scroll to its top. When the answer is whole again, so is the place.
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(3 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(screen.getByText('Writing a reply…')).toBeInTheDocument()
+      expect(transcript.scrollTop).toBe(0)
+      // The window says it scrolled, to the end the transcript was cut to: that is neither the reader's scroll nor following.
+      fireEvent.scroll(transcript)
+      update(() => ({ status: 'idle' }))
+      expect(screen.queryByText('Writing a reply…')).not.toBeInTheDocument()
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    })
+
+    it('lets a held place go for a scroll the reader made while the transcript was cut short', () => {
+      // Eight messages above: cut short, the transcript can still scroll, only not as far as the place.
+      const { transcript, update, scrollTo } = mountWith(answered(8), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(11 * ROW)
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(8 * ROW)
+      // The reader scrolls up before their scroll is heard; the answer comes back with the next update.
+      tops.set(transcript, 6 * ROW)
+      update(() => ({ status: 'idle' }))
+      expect(transcript.scrollTop).toBe(6 * ROW)
+    })
+
+    it('keeps a scroll the reader made while an update was on its way', () => {
+      const LATE = '2026-07-12T19:39:59.999Z'
+      const { transcript, update, scrollTo } = mountWith(answered())
+      scrollTo(5 * ROW)
+      // The update is drawn, and before it is put on screen the reader scrolls on: while its new message is drawn, after the
+      // transcript itself was.
+      const parse = Date.parse
+      let armed = true
+      vi.spyOn(Date, 'parse').mockImplementation((value: string) => {
+        if (armed && value === LATE && new Error().stack?.includes('MessageArticle')) { armed = false; tops.set(transcript, 7 * ROW) }
+        return parse(value)
+      })
+      update(item => ({ messages: [...item.messages, { id: 'late', role: 'user' as const, text: 'And the header?', createdAt: LATE }] }))
+      expect(armed).toBe(false)
+      expect(transcript.scrollTop).toBe(7 * ROW)
+    })
+
+    it('keeps the message the reader sees first, in the order the transcript shows them, not the order they were written', () => {
+      // A reply that carries receipt cards stays in view after the open fold, so the fold shows step 1 and step 3, then step 2.
+      const { transcript, update, scrollTo } = mountWith(answered(), 'live', ['step-2'])
+      fireEvent.click(screen.getByRole('button', { name: /^Worked for/u }))
+      const order = drawnIn(transcript).map(message => message.getAttribute('data-message-id'))
+      expect(order).toEqual(['ask', 'step-1', 'step-3', 'step-2', 'answer'])
+      const step = (): Element => transcript.querySelector('[data-message-id="step-3"]')!
+      // Reading step 3, which starts half a row above the view.
+      scrollTo(2.5 * ROW)
+      expect(step().getBoundingClientRect().top).toBe(-ROW / 2)
+      // Step 3 grows below where the reader is reading.
+      update(item => ({ messages: item.messages.map(message => message.id === 'step-3' ? { ...message, text: 'Answer paragraph 1. Answer paragraph 2.' } : message) }))
+      expect(step().getBoundingClientRect().top).toBe(-ROW / 2)
+    })
+
+    it('keeps the hold through Space and the arrow keys typed into a field in the transcript', () => {
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      const answer = (): Element => transcript.querySelector('[data-message-id="answer"]')!
+      scrollTo(3 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(0)
+      // A field inside the transcript, as a request card's answer is.
+      const field = document.createElement('textarea')
+      transcript.querySelector('.thread-transcript__content')!.append(field)
+      for (const key of [' ', 'ArrowDown', 'ArrowUp', 'PageDown']) fireEvent.keyDown(field, { key })
+      update(() => ({ status: 'idle' }))
+      expect(answer().getBoundingClientRect().top).toBe(-2 * ROW)
+    })
+
+    it('lets the hold go for a scrolling key pressed on the transcript itself', () => {
+      const { transcript, update, scrollTo } = mountWith(answered(), 'complete')
+      scrollTo(3 * ROW)
+      update(() => ({ status: 'running' }))
+      expect(transcript.scrollTop).toBe(0)
+      // The reader took the scroll back where it was: the answer comes back below them, and nothing scrolls them to it.
+      fireEvent.keyDown(transcript, { key: 'PageDown' })
+      update(() => ({ status: 'idle' }))
+      expect(transcript.scrollTop).toBe(0)
+      expect(transcript.querySelector('[data-message-id="answer"]')!.getBoundingClientRect().top).toBe(ROW)
+    })
+
+    it('reads no more rows for an update when the drawn turn folds many more replies', () => {
+      // Your message and the answer are drawn; the replies on the way fold under the turn's line, however many there are.
+      const visitsFolding = (steps: number): number => {
+        const { transcript, update, scrollTo } = mountWith(answered(0, steps))
+        while (screen.queryByRole('button', { name: /^Show earlier messages/u })) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
+        expect(drawnIn(transcript).map(message => message.getAttribute('data-message-id'))).toEqual(['ask', 'answer'])
+        scrollTo(3 * ROW)
+        visits = 0
+        update(item => ({ title: `${item.title}.` }))
+        cleanup()
+        return visits
+      }
+      const few = visitsFolding(60)
+      const many = visitsFolding(600)
+      expect(many - few).toBeLessThanOrEqual(2)
+    })
+
+    it('reads no more messages for an update when more of the history is drawn', () => {
+      const state = manualState()
+      state.host.threads.find(item => item.id === 'grok-previews')!.messages = Array.from({ length: 300 }, (_, index) => ({
+        id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: new Date(NOW).toISOString() }))
+      const { transcript, update, scrollTo } = mountWith(state)
+      const visitsForAnUpdate = (): number => {
+        scrollTo(Math.round(transcript.scrollHeight / 2))
+        visits = 0
+        update(item => ({ status: item.status === 'running' ? 'idle' : 'running' }))
+        return visits
+      }
+      const few = visitsForAnUpdate()
+      for (let page = 0; page < 3; page++) fireEvent.click(screen.getByRole('button', { name: /^Show earlier messages/u }))
+      expect(drawnIn(transcript)).toHaveLength(300)
+      const many = visitsForAnUpdate()
+      expect(many - few).toBeLessThanOrEqual(8)
+    })
   })
 
   it('asks main for earlier messages when the window holds all it was given and the store has more', async () => {

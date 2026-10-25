@@ -26,7 +26,7 @@ struct MainTabs: View {
                     .background(TabItemAccessibility(title: "Watcher", value: watcher.spoken))
             }
                 .tabItem { Label("Threads", systemImage: "bubble.left") }
-                .badge(waitingCount + unreadFinishedCount)
+                .badge(model.threadsBadge)
                 .tag(Tab.threads)
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone. Its owl carries a dot
             // while Watcher works, and its badge counts what needs the user that only Watcher's page shows.
@@ -66,12 +66,6 @@ struct MainTabs: View {
         tab = .watcher
         watcherPath = NavigationPath()
     }
-    private var waitingCount: Int { ThreadGroups.waiting(model.lists).count + model.terminalRows.filter { $0.reachable && $0.terminal.state == .needsYou }.count }
-    /// Recent threads that finished while nothing showed them and have not been opened on either device (ADR-0046).
-    private var unreadFinishedCount: Int {
-        FocusThreads(model.lists, opened: model.selected).unreadFinishedCount
-            + model.terminalRows.filter { $0.finishedUnread && $0.ref != model.selectedTerminal }.count
-    }
 }
 
 /// SwiftUI's tab items take a title, an image and a badge, and nothing VoiceOver can read for the Watcher tab's working
@@ -110,16 +104,13 @@ struct TabItemAccessibility: UIViewControllerRepresentable {
 
 /// A thread, named with its computer: two computers can hold the same thread ID.
 struct ThreadRoute: Hashable { let ref: ThreadRef }
-struct TerminalRoute: Hashable { let ref: TerminalRef }
 extension View {
     func threadDestination() -> some View {
         navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
-            .navigationDestination(for: TerminalRoute.self) { TerminalView(ref: $0.ref) }
     }
 }
 
 enum Words {
-    static func terminalProvider(_ id: String?) -> String { id == nil ? "Shell" : provider(id) }
     static func provider(_ id: String?) -> String {
         AgentNames.name(id)
     }

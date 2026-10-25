@@ -280,3 +280,59 @@ describe('the attachment store (ADR-0031)', () => {
     expect(await readdir(folder(root))).toEqual([])
   })
 })
+
+describe('a sent file read a part at a time (ADR-0131, October 25 amendment)', () => {
+  const MiB = 1024 * 1024
+  function zip(size: number) {
+    const bytes = Buffer.alloc(size)
+    for (let index = 0; index < bytes.length; index += 997) bytes[index] = index % 253
+    return { name: 'build-output.zip', mimeType: 'application/zip', bytes }
+  }
+
+  it('reads and hashes the whole file once, then reads each later part alone', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const file = zip(20 * MiB)
+    const handle = await store.stage(file)
+    vi.mocked(readFile).mockClear()
+    const parts = [0, 8 * MiB, 16 * MiB].map(start => store.readPart(handle.digest, start, 8 * MiB))
+    const read = await Promise.all(parts)
+    expect(Buffer.concat(read.map(part => part!)).equals(file.bytes)).toBe(true)
+    expect(read.map(part => part!.length)).toEqual([8 * MiB, 8 * MiB, 4 * MiB])
+    // Opened again later in this run, it is not read whole again either.
+    expect((await store.readPart(handle.digest, 8 * MiB, 8 * MiB))!.equals(file.bytes.subarray(8 * MiB, 16 * MiB))).toBe(true)
+    expect(vi.mocked(readFile).mock.calls.filter(([path]) => String(path).endsWith('.bin'))).toHaveLength(1)
+    expect(await store.readPart(handle.digest, 20 * MiB, 8 * MiB)).toBeNull()
+  })
+
+  it('checks the whole file again after a restart, and lets a damaged one go', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const file = zip(9 * MiB)
+    const handle = await store.stage(file)
+    const path = join(folder(root), `${handle.digest}.bin`)
+    const damaged = Buffer.from(file.bytes); damaged[damaged.length - 1] = 255 - (damaged[damaged.length - 1] ?? 0)
+    await writeFile(path, damaged)
+    const restarted = new AttachmentStore(root, { acceptsFiles: true }); await restarted.load()
+    // Its first part is unchanged, but the file is not the one staged, so none of it is handed out.
+    await expect(restarted.readPart(handle.digest, 0, 8 * MiB)).resolves.toBeNull()
+    expect(restarted.has(handle.digest)).toBe(false)
+  })
+
+  it('reads the whole file again when it no longer has its size, and lets it go when it is not the file staged', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true }); await store.load()
+    const file = zip(9 * MiB)
+    const handle = await store.stage(file)
+    expect(await store.readPart(handle.digest, 0, 8 * MiB)).not.toBeNull()
+    await writeFile(join(folder(root), `${handle.digest}.bin`), file.bytes.subarray(0, 8 * MiB))
+    await expect(store.readPart(handle.digest, 8 * MiB, 8 * MiB)).resolves.toBeNull()
+    expect(store.has(handle.digest)).toBe(false)
+  })
+
+  it('cuts a file kept in memory while history is off without touching disk', async () => {
+    const root = await directory(); const store = new AttachmentStore(root, { acceptsFiles: true, historyEnabled: () => false }); await store.load()
+    const file = zip(9 * MiB)
+    const handle = await store.stage(file)
+    vi.mocked(readFile).mockClear()
+    expect((await store.readPart(handle.digest, 8 * MiB, 8 * MiB))!.equals(file.bytes.subarray(8 * MiB))).toBe(true)
+    expect(readFile).not.toHaveBeenCalled()
+  })
+})

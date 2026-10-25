@@ -37,7 +37,7 @@ test('opening a thread on a paired host shows its composer with no error or perm
       return state.host.threads.find(thread => thread.title === 'Workshop')!.id
     })
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     await page.getByRole('button', { name: 'Add host', exact: true }).click()
     const form = page.getByRole('dialog', { name: 'Add host' })
     await form.getByRole('combobox', { name: 'Device' }).focus()

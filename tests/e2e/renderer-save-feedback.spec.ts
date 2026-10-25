@@ -31,7 +31,7 @@ test('Phones and Hosts explain real failed saves beside the affected control and
       }, { width, height })
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance, phoneAccess: false, phoneAccessName: '', localHostEnabled: true }), appearance)
-        await page.getByRole('tab', { name: 'Phones', exact: true }).click()
+        await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
         const toggle = page.getByRole('switch', { name: 'Let phones connect' })
         await block()
         await toggle.focus()
@@ -55,7 +55,7 @@ test('Phones and Hosts explain real failed saves beside the affected control and
         await expect(page.locator('.phones-name .tt-field__error')).toHaveCount(0)
         expect((await page.evaluate(() => window.sotto!.getSettings())).phoneAccessName).toBe('My computer')
 
-        await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+        await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
         const host = page.getByRole('switch', { name: 'Run the local host' })
         await block()
         await host.focus()

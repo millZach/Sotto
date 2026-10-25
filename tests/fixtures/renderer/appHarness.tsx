@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { App } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
 import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
-import { AppProvider, useApp, type AppControllerFactory, type AppNavigation } from '../../../src/renderer/src/state/AppContext'
+import { AppProvider, useApp, type AppActions, type AppControllerFactory, type AppNavigation } from '../../../src/renderer/src/state/AppContext'
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 
@@ -24,6 +24,8 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     searchHistory: vi.fn(async () => []),
     deleteHistory: vi.fn(async () => true),
     clearHistory: vi.fn(async () => undefined),
+    listDictationRecords: vi.fn(async () => []),
+    getDictationRecord: vi.fn(async () => null),
     getHotkey: vi.fn(async () => DEFAULT_SETTINGS.hotkey),
     replaceHotkey: vi.fn(async () => OK),
     requestDictation: vi.fn(async () => OK),
@@ -33,9 +35,12 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     transcribe: vi.fn(async () => ({ ok: false as const, reason: 'model-not-ready' as const })),
     cancelTranscription: vi.fn(async () => OK),
     checkOpenRouterKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
+    listOpenRouterModels: vi.fn(async () => ({ ok: false as const, reason: 'network' as const })),
     getSpeechModelStatus: vi.fn(async () => ({ state: 'ready' as const })),
     downloadSpeechModel: vi.fn(async () => OK),
     onSpeechModelStatus: vi.fn(() => () => undefined),
+    listSpeechModels: vi.fn(async () => []),
+    chooseSpeechModel: vi.fn(async () => OK),
     ensureMicrophoneAccess: vi.fn(async () => true),
     polishTranscript: vi.fn(async (request) => ({ text: request.text, applied: false })),
     deliverOutput: vi.fn(async () => 'copied' as const),
@@ -77,7 +82,7 @@ const createController: AppControllerFactory = () => ({
  */
 const shell = {
   navigation: null as AppNavigation | null,
-  navigate: ((): void => undefined) as (destination: AppNavigation) => void,
+  navigate: ((): void => undefined) as AppActions['navigate'],
 }
 
 function NavigationProbe(): null {
@@ -135,7 +140,7 @@ async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Pro
   await user.click(screen.getByRole('button', { name: /test microphone/i }))
   await waitFor(() => expect(screen.getByText(/Sotto heard you/i)).toBeVisible())
   await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByText(/download the speech model/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByRole('heading', { name: /choose a speech model/i })).toBeVisible())
   await finishRemainingSteps(user)
   await user.click(screen.getByRole('button', { name: /finish setup/i }))
 }

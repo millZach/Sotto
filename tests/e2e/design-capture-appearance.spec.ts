@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { DESIGN_CAPTURE_BUILT_IN_THEMES, DESIGN_CAPTURE_DEFAULT_THEME, DESIGN_CAPTURE_MINIMUM_WIDTH } from '../../scripts/design-capture-matrix.mjs'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { appThemes, assertDictateState, assertFocusPresentation, assertRenderedRoom, captureFullSurface, capturePage, captureSection, setAppearance, setMainWindowWidth, startSettingsAtHeading } from './support/designCapture'
-import { openPage } from './support/sottoLaunch'
+import { openJournalRow, openPage } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -21,7 +21,7 @@ test.describe('authoritative design-review captures', () => {
       await page.getByRole('button', { name: /test microphone/i }).click()
       await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
       await forward.click()
-      await expect(page.getByRole('heading', { name: 'Download the speech model' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
       await captureSection(page, onboarding, 'onboarding-step-4-speech-model-light.png', { theme: 'light' })
     })
 
@@ -32,13 +32,13 @@ test.describe('authoritative design-review captures', () => {
       await capturePage(page, 'dictate-ready-light.png', { theme: 'light' })
       await assertFocusPresentation(page.getByRole('tab', { name: 'Threads' }))
       await capturePage(page, 'focus-switch-tab-light.png', { focusTarget: 'tab', focus: true, theme: 'light' })
-      await assertFocusPresentation(page.getByRole('link', { name: 'History' }))
+      await assertFocusPresentation(page.getByRole('link', { name: 'Settings' }))
       await capturePage(page, 'focus-navigation-light.png', { focusTarget: 'navigation', focus: true, theme: 'light' })
       await page.getByRole('button', { name: 'Start dictation' }).click()
       await assertDictateState(page, 'listening', /^listening\./i)
       await capturePage(page, 'dictate-listening-light.png', { theme: 'light' })
       await page.getByRole('button', { name: 'Stop', exact: true }).click()
-      await assertDictateState(page, 'success', /^pasted\.$/i)
+      await assertDictateState(page, 'success', /^pasted into sotto\.$/i)
       await capturePage(page, 'dictate-pasted-light.png', { theme: 'light' })
     })
 
@@ -58,21 +58,21 @@ test.describe('authoritative design-review captures', () => {
     })
 
     await withSotto({ onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
-      await page.getByRole('link', { name: 'History' }).click()
+      await openPage(page, 'Dictate')
       await expect(page.getByText(populatedHistory[0]!.text).first()).toBeVisible()
       await assertFocusPresentation(page.getByRole('searchbox', { name: 'Search transcripts' }))
       await capturePage(page, 'focus-input-light.png', { focusTarget: 'input', focus: true, theme: 'light' })
-      await assertFocusPresentation(page.getByRole('button', { name: 'Clear history' }))
+      await openJournalRow(page)
+      await assertFocusPresentation(page.getByRole('button', { name: 'Delete saved transcript' }))
       await capturePage(page, 'focus-destructive-light.png', { focusTarget: 'destructive', focus: true, theme: 'light' })
-      await page.locator('.history-entry__toggle').first().click()
       await page.getByRole('button', { name: 'Copy transcript' }).first().click()
-      await expect(page.getByRole('status')).toContainText('Transcript copied')
-      await capturePage(page, 'history-populated-light.png', { theme: 'light' })
+      await expect(page.getByRole('status').filter({ hasText: 'Transcript copied' })).toBeAttached()
+      await capturePage(page, 'dictate-journal-open-light.png', { theme: 'light' })
 
       await page.getByRole('link', { name: 'Settings' }).click()
       await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
       await assertRenderedRoom(page, 'light')
-      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       const pasteSwitch = page.getByRole('switch', { name: 'Automatic paste' })
       await pasteSwitch.scrollIntoViewIfNeeded()
       await assertFocusPresentation(pasteSwitch)
@@ -88,13 +88,16 @@ test.describe('authoritative design-review captures', () => {
         ['Dictation', 'capture'],
         ['Appearance', 'appearance'],
         ['Application', 'application-privacy'],
-        ['Git', 'git'],
+        ['Git & worktrees', 'git'],
       ] as const) {
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: heading, exact: true }).click()
         const section = page.locator('.settings-section').filter({ has: page.getByRole('heading', { name: heading, exact: true }) })
+        // Appearance's Creature previews walk on a frame loop the capture's settling step cannot freeze: hold them still.
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: 'reduce' })
         await captureSection(page, section, `settings-${state}-light.png`, { category: 'settings', state, theme: 'light' })
+        if (state === 'appearance') await page.emulateMedia({ reducedMotion: null })
       }
-      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Output', exact: true }).click()
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Dictation', exact: true }).click()
       await page.getByLabel('Paste delay').fill('10')
       await page.getByLabel('Paste delay').press('Tab')
       await expect(page.getByText('Enter a whole number between 50 and 1000.')).toBeVisible()
@@ -121,6 +124,8 @@ test.describe('authoritative design-review captures', () => {
       await setAppearance(page, { appearance: 'system', lightTheme: DESIGN_CAPTURE_DEFAULT_THEME, darkTheme: DESIGN_CAPTURE_DEFAULT_THEME }, 'light')
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
       const section = page.locator('#settings-appearance')
+      // The Creature previews walk on a frame loop the capture's settling step cannot freeze: hold them still.
+      await page.emulateMedia({ reducedMotion: 'reduce' })
       for (const theme of ['dark', 'light'] as const) {
         await page.emulateMedia({ colorScheme: theme })
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)

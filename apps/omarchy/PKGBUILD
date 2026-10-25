@@ -1,6 +1,6 @@
 # The release owner updates pkgver and the archive checksum after verifying a release on forge.
 pkgname=sotto-bin
-pkgver=0.1.37
+pkgver=0.1.40
 pkgrel=1
 pkgdesc='Dictation and manual coding threads'
 arch=('x86_64')
@@ -15,9 +15,13 @@ depends=('alsa-lib' 'at-spi2-core' 'cairo' 'dbus' 'expat' 'gcc-libs'
          'xdg-utils' 'wl-clipboard' 'wtype' 'libsecret')
 optdepends=('gnome-keyring: unlock and save credentials through Secret Service')
 options=('!strip')
-_archive="Sotto-${pkgver}-linux-x64.tar.gz"
+# Stable's release version is pkgver. A Sotto Owl build sets the Owl version and its archive name here, because pacman
+# cannot hold the Owl's hyphen (scripts/linux-release.mjs, ADR-0099).
+_version="${pkgver}"
+_archive_name="Sotto-${_version}-linux-x64"
+_archive="${_archive_name}.tar.gz"
 # Local verification uses an absolute path and the same checksum checks as a release download.
-_source_url="https://github.com/millZach/Sotto-releases/releases/download/v${pkgver}/${_archive}"
+_source_url="https://github.com/millZach/Sotto-releases/releases/download/v${_version}/${_archive}"
 if [[ -n ${SOTTO_TARBALL:-} ]]; then
   _source_url="file://${SOTTO_TARBALL}"
 fi
@@ -25,7 +29,7 @@ source=("${_archive}::${_source_url}"
         'sotto' 'sotto.desktop' 'install.sh'
         'sotto-48.png' 'sotto-128.png' 'sotto-256.png')
 # Filled from the verified archive and package sources; never use SKIP for the release archive.
-sha256sums=('b05b066ae238b50a8ab62c4e07d6d333a8faac99a43d1a02b3e617bba6ca8848'
+sha256sums=('b5318f736c8b5e7130c0f270c3109ca7d9481622dde412aafc8e629897bb5f64'
             'b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86'
             '79b1f65a213d781994e77d887a451e19ad6282cc352e91507aaf8b6ca97d92d0'
             '35c949114cc26f1e34500cd853b8e0aee2fe770789b19247002095df07d394e6'
@@ -35,7 +39,7 @@ sha256sums=('b05b066ae238b50a8ab62c4e07d6d333a8faac99a43d1a02b3e617bba6ca8848'
 
 package() {
   install -d "${pkgdir}/opt/sotto"
-  cp -a "${srcdir}/Sotto-${pkgver}-linux-x64/." "${pkgdir}/opt/sotto/"
+  cp -a "${srcdir}/${_archive_name}/." "${pkgdir}/opt/sotto/"
   chown root:root "${pkgdir}/opt/sotto/chrome-sandbox"
   chmod 4755 "${pkgdir}/opt/sotto/chrome-sandbox"
   install -Dm755 "${srcdir}/sotto" "${pkgdir}/opt/sotto/bin/sotto"

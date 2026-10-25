@@ -6,17 +6,18 @@ import { join } from 'node:path'
 import type { IPty } from 'node-pty'
 import { FilesService } from '../../../src/main/files/service'
 import { CheckoutMutations } from '../../../src/main/agents/checkoutMutations'
-import { TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
+import { RUN_QUIET_MS, RUN_START_CAP_MS, TerminalService, type TerminalDependencies } from '../../../src/main/tools/terminal'
 import * as clipboard from '../../../src/main/terminals/clipboard'
 import { TERMINAL_MAX_OUTPUT, type TerminalEvent } from '../../../src/shared/terminal'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
+import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import { initializeGitRepository } from '../../fixtures/gitRepository'
 
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { for (const dispose of cleanup.splice(0).reverse()) await dispose() })
-async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart' | 'projectFolder'> = {}) {
+async function fixture(options: Pick<TerminalDependencies, 'env' | 'platform' | 'executableExists' | 'acquireStart' | 'projectFolder' | 'runCommandEnabled'> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-terminal-unit-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const other = join(directory, 'other'); await mkdir(other)
@@ -102,14 +103,6 @@ describe('persistent terminal service', () => {
     unwrap(await f.service.create(f.target))
     expect(acquireStart).toHaveBeenCalledWith(expect.objectContaining({ threadId: 'a' }))
     expect(release).toHaveBeenCalledOnce()
-  })
-  it('protects a running shell in its original checkout after the thread binding changes', async () => {
-    const f = await fixture()
-    const { session } = unwrap(await f.service.create(f.target))
-    f.change()
-    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(true)
-    unwrap(await f.service.close({ ...f.target, sessionId: session.id }))
-    expect(await f.service.hasRunningTerminalInCheckout(session.workspace.workingDirectory)).toBe(false)
   })
   it('reports the total across both places and all threads, including ended shells', async () => {
     const f = await fixture()
@@ -290,17 +283,10 @@ describe('persistent terminal service', () => {
     await initializeGitRepository(project)
     await initializeGitRepository(f.directory)
     const tools = unwrap(await f.service.create(f.target))
-    const drawer = unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
+    unwrap(await f.service.create({ ...f.target, place: 'drawer' }))
     expect(f.spawn).toHaveBeenNthCalledWith(1, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: tools.session.workspace.workingDirectory }))
     expect(f.spawn).toHaveBeenNthCalledWith(2, expect.any(String), expect.any(Array), expect.objectContaining({ cwd: project }))
     expect(projectFolder).toHaveBeenCalledWith('project')
-    unwrap(await f.service.close({ ...f.target, sessionId: tools.session.id }))
-    f.change()
-    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(true)
-    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(true)
-    unwrap(await f.service.close({ ...f.target, sessionId: drawer.session.id }))
-    expect(await f.service.hasRunningTerminalInCheckout(project)).toBe(false)
-    expect(await f.service.hasRunningTerminalInCheckout(drawer.session.workspace.workingDirectory)).toBe(false)
   })
   it.each(['project', 'working-copy'] as const)('refuses a drawer start while its %s folder is reserved and releases every start reservation', async folder => {
     const project = await mkdtemp(join(tmpdir(), 'sotto-terminal-project-'))
@@ -338,6 +324,116 @@ describe('persistent terminal service', () => {
     expect(replacement.session.place).toBe('drawer')
     expect(unwrap(await restored.list(f.target)).sessions).toEqual([])
     expect(unwrap(await restored.list({ ...f.target, place: 'drawer' })).sessions.map(s => s.id)).toEqual([replacement.session.id])
+  })
+  it('types a reply\'s command into a new drawer shell once it goes quiet, and names the tab after its first line (ADR-0139)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'npm run typecheck' }))
+    const shell = f.processes[0]!
+    // The profile is still printing: nothing is typed until its output has stopped for RUN_QUIET_MS.
+    expect(shell.pty.write).not.toHaveBeenCalled()
+    shell.emit('Last login: today\r\n')
+    vi.advanceTimersByTime(RUN_QUIET_MS - 1)
+    shell.emit('~/work ❯ ')
+    vi.advanceTimersByTime(RUN_QUIET_MS - 1)
+    expect(shell.pty.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(vi.mocked(shell.pty.write).mock.calls).toEqual([['npm run typecheck\r']])
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(shell.pty.write).toHaveBeenCalledOnce()
+    expect(created.session).toMatchObject({ place: 'drawer', title: 'npm run typecheck', status: 'running' })
+    const block = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `santactl status\nosqueryi --version${' x'.repeat(200)}` }))
+    f.processes[1]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_QUIET_MS)
+    expect(vi.mocked(f.processes[1]!.pty.write).mock.calls).toEqual([[`santactl status\rosqueryi --version${' x'.repeat(200)}\r`]])
+    expect(block.session.title).toBe('santactl status')
+    const long = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: `echo ${'y'.repeat(400)}` }))
+    expect(long.session.title).toHaveLength(256)
+    // The saved record and the published session carry the same title, so a reload names the tab the same way.
+    expect(f.events.some(event => event.type === 'session' && event.session.id === created.session.id && event.session.title === 'npm run typecheck')).toBe(true)
+  })
+  it('types the command RUN_START_CAP_MS after spawning when the shell never goes quiet, or prints nothing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' }))
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' }))
+    const [chatty, silent] = f.processes
+    for (let elapsed = 0; elapsed < RUN_START_CAP_MS - 100; elapsed += 100) { chatty!.emit('.'); vi.advanceTimersByTime(100) }
+    expect(chatty!.pty.write).not.toHaveBeenCalled()
+    expect(silent!.pty.write).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(100)
+    expect(chatty!.pty.write).toHaveBeenCalledWith('git status\r')
+    expect(silent!.pty.write).toHaveBeenCalledWith('git log\r')
+  })
+  it('types nothing into a shell that exits or is closed before it is ready', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' }))
+    const closed = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' }))
+    f.processes[0]!.emit('zsh: profile error\r\n')
+    f.processes[0]!.exit(1)
+    unwrap(await f.service.close({ ...f.target, sessionId: closed.session.id }))
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
+  })
+  it('types the command only after the session is saved, and never when the save fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    cleanup.push(async () => { vi.useRealTimers() })
+    const f = await fixture({ runCommandEnabled: true })
+    const saving = Promise.withResolvers<void>()
+    const write = vi.spyOn(AtomicJsonStore.prototype, 'write').mockImplementationOnce(() => saving.promise)
+    cleanup.push(async () => { write.mockRestore() })
+    const created = f.service.create({ ...f.target, place: 'drawer', run: 'git status' })
+    await vi.waitFor(() => expect(f.processes).toHaveLength(1))
+    f.processes[0]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[0]!.pty.write).not.toHaveBeenCalled()
+    saving.resolve()
+    unwrap(await created)
+    expect(f.processes[0]!.pty.write).toHaveBeenCalledExactlyOnceWith('git status\r')
+
+    write.mockRejectedValueOnce(new Error('disk full'))
+    expect(await f.service.create({ ...f.target, place: 'drawer', run: 'git log' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    f.processes[1]!.emit('$ ')
+    vi.advanceTimersByTime(RUN_START_CAP_MS)
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
+    expect(f.processes[1]!.pty.kill).toHaveBeenCalled()
+  })
+  it('names a reopened shell after its shell again, not the command it was started with', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    const created = unwrap(await f.service.create({ ...f.target, place: 'drawer', run: 'npm run dev' }))
+    f.processes[0]!.exit(0)
+    const reopened = unwrap(await f.service.reopen({ ...f.target, sessionId: created.session.id }))
+    const shellName = reopened.session.shell.split(/[\\/]/u).at(-1)
+    expect(reopened.session.title).toBe(shellName)
+    expect(unwrap(await f.service.list({ ...f.target, place: 'drawer' })).sessions.map(session => session.title)).toEqual([shellName])
+    expect(f.processes[1]!.pty.write).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['a Tools shell', { runCommandEnabled: true }, { place: 'tools' as const }],
+    ['a request with no place', { runCommandEnabled: true }, {}],
+    ['the feature off', { runCommandEnabled: false }, { place: 'drawer' as const }],
+    ['the feature unset', {}, { place: 'drawer' as const }],
+  ])('refuses a command for %s without starting a shell', async (_name, options, request) => {
+    const f = await fixture(options)
+    expect(await f.service.create({ ...f.target, ...request, run: 'git status' })).toEqual({ ok: false, error: { code: 'invalid-request', message: 'This tool request is invalid. Refresh the tools panel.' } })
+    expect(f.spawn).not.toHaveBeenCalled()
+    expect(unwrap(await f.service.list(f.target)).capacity.count).toBe(0)
+  })
+  it('refuses a command carrying control characters', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    for (const run of ['git status\r', 'echo \u001b[2J', '']) expect(await f.service.create({ ...f.target, place: 'drawer', run })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(f.spawn).not.toHaveBeenCalled()
+  })
+  it('refuses a command at the shared limit with the usual words, typing nothing', async () => {
+    const f = await fixture({ runCommandEnabled: true })
+    for (let index = 0; index < 32; index++) unwrap(await f.service.create(f.target))
+    expect(await f.service.create({ ...f.target, place: 'drawer', run: 'git status' })).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('share 32 terminals') } })
+    expect(f.spawn).toHaveBeenCalledTimes(32)
   })
   it('reads an older record with no place as a Tools shell', async () => {
     const f = await fixture()

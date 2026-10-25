@@ -11,9 +11,23 @@ export const HISTORY_ADD = 'sotto:history:add' as const
 export const HISTORY_SEARCH = 'sotto:history:search' as const
 export const HISTORY_DELETE = 'sotto:history:delete' as const
 export const HISTORY_CLEAR = 'sotto:history:clear' as const
+/** Every dictation record (ADR-0100), for the window to count from. */
+export const DICTATION_RECORDS_LIST = 'sotto:dictation-records:list' as const
+/** One dictation record by its dictation's id, or null. */
+export const DICTATION_RECORD_GET = 'sotto:dictation-records:get' as const
 
 export const HOTKEY_GET = 'sotto:hotkey:get' as const
 export const HOTKEY_REPLACE = 'sotto:hotkey:replace' as const
+export const DICTATION_SHORTCUTS_REPLACE = 'sotto:dictation-shortcuts:replace' as const
+export const DICTATION_SHORTCUTS_SUSPEND = 'sotto:dictation-shortcuts:suspend' as const
+export const DICTATION_KEYS_RECORD = 'sotto:dictation-keys:record' as const
+export const DICTATION_KEYS_RECORD_CANCEL = 'sotto:dictation-keys:record-cancel' as const
+export const DICTATION_KEYS_HELD = 'sotto:dictation-keys:held' as const
+/** Linux: a Sotto binding fired while Settings recorded keys, so Hyprland kept the keys; carries the row it belongs to. */
+export const DICTATION_KEYS_TAKEN = 'sotto:dictation-keys:taken' as const
+export const KEY_LISTENER_PERMISSION_GET = 'sotto:key-listener:permission' as const
+export const KEY_LISTENER_PERMISSION_REQUEST = 'sotto:key-listener:permission-request' as const
+export const KEY_LISTENER_PERMISSION_CHANGED = 'sotto:key-listener:permission-changed' as const
 
 export const DICTATION_REQUEST = 'sotto:dictation:request' as const
 export const DICTATION_COMMAND = 'sotto:dictation:command' as const
@@ -33,10 +47,16 @@ export const TRANSCRIPT_POLISH = 'sotto:transcript:polish' as const
 export const TRANSCRIPTION_TRANSCRIBE = 'sotto:transcription:transcribe' as const
 export const TRANSCRIPTION_CANCEL = 'sotto:transcription:cancel' as const
 export const SPEECH_MODEL_GET_STATUS = 'sotto:speech-model:get-status' as const
-/** Starts the speech model download, or retries one that failed; answers at once, progress follows on SPEECH_MODEL_STATUS. */
+/** Retries the chosen model: resumes its download or starts it again. Nothing chosen does nothing. Progress follows on SPEECH_MODEL_STATUS. */
 export const SPEECH_MODEL_DOWNLOAD = 'sotto:speech-model:download' as const
+/** Every model the user can choose on this computer, looked for again on each call. */
+export const SPEECH_MODEL_LIST = 'sotto:speech-model:list' as const
+/** Makes a model the one dictation uses; Sotto's own downloads now if it is not here yet. */
+export const SPEECH_MODEL_CHOOSE = 'sotto:speech-model:choose' as const
 export const SPEECH_MODEL_STATUS = 'sotto:speech-model:status' as const
 export const OPENROUTER_CHECK_KEY = 'sotto:openrouter:check-key' as const
+/** OpenRouter's text models for the cleanup model picker (ADR-0122). */
+export const OPENROUTER_LIST_MODELS = 'sotto:openrouter:list-models' as const
 export const MICROPHONE_ENSURE_ACCESS = 'sotto:microphone:ensure-access' as const
 
 export const UPDATE_GET_STATUS = 'sotto:update:get-status' as const

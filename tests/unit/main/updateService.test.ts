@@ -6,6 +6,7 @@ import {
   UPDATE_STARTUP_DELAY_MS,
   UpdateService,
   describeProblem,
+  newVersionListener,
   waitingVersion,
   type UpdaterAdapter,
   type UpdaterEvent,
@@ -15,9 +16,10 @@ import type { UpdateStatus } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { deferred } from '../../fixtures/deferred'
 import { e2eUpdater } from '../../../src/main/updates/e2eUpdater'
+import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
 
-/** Stable answers every Owl feature off. */
-const STABLE_FEATURES = { watcher: false, muse: false, usage: false, 'resume-after-restart': false, 'update-all': false, 'streaming-publish-cost': false, 'thread-delegation': false, 'worker-roles': false, 'continue-on-provider': false, 'continue-agent-thread': false, opencode: false }
+/** Stable's answers, as the Owl feature list gives them. */
+const STABLE_FEATURES = owlFeaturesForTrack('stable')
 
 type Emit = (event: UpdaterEvent) => void
 
@@ -117,7 +119,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: available,
       checkedAt: 1_000,
     })
@@ -144,7 +146,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'up-to-date' },
       checkedAt: 5_000,
     })
@@ -286,7 +288,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -307,7 +309,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'unsupported' },
       checkedAt: null,
     })
@@ -325,7 +327,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'failed', problem: 'net::ERR_NAME_NOT_RESOLVED' },
       checkedAt: 1_000,
     })
@@ -510,6 +512,106 @@ describe('UpdateService', () => {
     expect(service.status().phase).toEqual({ phase: 'downloaded', version: '3.5.0', problem: 'The installer could not be started.' })
   })
 
+  describe('a restart', () => {
+    async function stagedUpdate(overrides: Partial<UpdateServiceDependencies> = {}, installer?: (emit: Emit) => void) {
+      const order: string[] = []
+      const updater = createFakeUpdater({
+        check: offersUpdate,
+        quitAndInstall: (send) => { order.push('installer'); installer?.(send) },
+      })
+      const { service } = createService({
+        createUpdater: () => updater.adapter,
+        restartRefused: () => { order.push('restartRefused') },
+        ...overrides,
+      })
+      await service.check('manual')
+      await service.download()
+      return { order, service, updater }
+    }
+
+    it('is called off when the installer throws', async () => {
+      const { order, service } = await stagedUpdate({}, () => { throw new Error('INSTALLER_MISSING') })
+
+      expect(service.install()).toEqual({ ok: false, reason: 'unavailable' })
+
+      expect(order).toEqual(['installer', 'restartRefused'])
+      expect(service.status().phase).toEqual({ phase: 'downloaded', version: '3.5.0', problem: 'INSTALLER_MISSING' })
+    })
+
+    it('is called off once when an error event and a throw both refuse it', async () => {
+      const { order, service } = await stagedUpdate({}, (send) => {
+        send({ type: 'error', message: 'first' })
+        throw new Error('second')
+      })
+
+      expect(service.install()).toEqual({ ok: false, reason: 'unavailable' })
+
+      expect(order).toEqual(['installer', 'restartRefused'])
+    })
+
+    it('is called off when the refusal arrives after the installer call has returned', async () => {
+      const { order, service, updater } = await stagedUpdate()
+
+      // On a Mac the call returns while Squirrel fetches the update, and its refusal can come after every window has closed.
+      expect(service.install()).toEqual({ ok: true })
+      expect(order).toEqual(['installer'])
+      updater.emit({ type: 'error', message: 'No update available, can\'t quit and install' })
+
+      expect(order).toEqual(['installer', 'restartRefused'])
+      expect(service.status().phase).toEqual({ phase: 'downloaded', version: '3.5.0', problem: 'No update available, can\'t quit and install' })
+      // An error that arrives once nothing is under way is not a refusal.
+      updater.emit({ type: 'error', message: 'unrelated' })
+      expect(order).toEqual(['installer', 'restartRefused'])
+    })
+
+    it('is still recorded as refused when the hook that puts Sotto back fails', async () => {
+      const failing = vi.fn(() => { throw new Error('hook failed') })
+      const { order, service } = await stagedUpdate({ restartRefused: failing }, () => { throw new Error('INSTALLER_MISSING') })
+
+      expect(service.install()).toEqual({ ok: false, reason: 'unavailable' })
+
+      expect(order).toEqual(['installer'])
+      expect(failing).toHaveBeenCalledOnce()
+      expect(service.status().phase).toEqual({ phase: 'downloaded', version: '3.5.0', problem: 'INSTALLER_MISSING' })
+    })
+
+    it('starts the installer once while it is under way, and again after a refusal', async () => {
+      const { order, service, updater } = await stagedUpdate()
+
+      expect(service.install()).toEqual({ ok: true })
+      // A second press while the installer is still fetching would make its second fetch fail, and that failure would
+      // read as a refusal of the restart that is still going ahead.
+      expect(service.install()).toEqual({ ok: true })
+      expect(updater.calls.install).toBe(1)
+
+      updater.emit({ type: 'error', message: 'The installer refused.' })
+      expect(order).toEqual(['installer', 'restartRefused'])
+      expect(service.install()).toEqual({ ok: true })
+      expect(updater.calls.install).toBe(2)
+    })
+
+    it('says it is restarting from the hand-off until a refusal, and not otherwise', async () => {
+      const { service, updater } = await stagedUpdate()
+      expect(service.restarting()).toBe(false)
+
+      expect(service.install()).toEqual({ ok: true })
+      expect(service.restarting()).toBe(true)
+
+      updater.emit({ type: 'error', message: 'The installer refused.' })
+      expect(service.restarting()).toBe(false)
+    })
+
+    it('does not say it is restarting when the installer throws or the restart is held', async () => {
+      const { service } = await stagedUpdate({}, () => { throw new Error('INSTALLER_MISSING') })
+      expect(service.install()).toEqual({ ok: false, reason: 'unavailable' })
+      expect(service.restarting()).toBe(false)
+
+      const { service: held } = await stagedUpdate({ restartHold: () => 'A host update is under way.' })
+      expect(held.install()).toEqual({ ok: false, reason: 'unavailable' })
+      expect(held.restarting()).toBe(false)
+    })
+  })
+
   it('leaves a staged download alone when another check comes due', async () => {
     const updater = createFakeUpdater({ check: offersUpdate })
     const { service } = createService({ createUpdater: () => updater.adapter })
@@ -574,7 +676,7 @@ describe('UpdateService', () => {
       currentVersion: '3.4.0',
       releaseTrack: 'stable',
       owlFeatures: STABLE_FEATURES,
-      watcherEnabled: false,
+      watcherEnabled: STABLE_FEATURES.watcher,
       phase: { phase: 'idle' },
       checkedAt: null,
     })
@@ -612,6 +714,31 @@ describe('describeProblem', () => {
   })
 })
 
+describe('a new version of Sotto has every machine check its clients afresh (ADR-0077)', () => {
+  it('hears each version once, when it is first offered, and not for its download or the checks after it', () => {
+    const found = vi.fn()
+    const hear = newVersionListener(found)
+    hear({ phase: 'checking' })
+    hear({ phase: 'up-to-date' })
+    expect(found).not.toHaveBeenCalled()
+    hear({ phase: 'available', version: '0.1.38', problem: null })
+    for (const percent of [10, 40, 90]) hear({ phase: 'downloading', version: '0.1.38', percent })
+    hear({ phase: 'downloaded', version: '0.1.38', problem: null })
+    hear({ phase: 'checking' })
+    hear({ phase: 'available', version: '0.1.38', problem: 'offline', failedStep: 'download' })
+    expect(found.mock.calls).toEqual([['0.1.38']])
+    // A newer release found later is new again.
+    hear({ phase: 'available', version: '0.1.39', problem: null })
+    expect(found.mock.calls).toEqual([['0.1.38'], ['0.1.39']])
+  })
+
+  it('hears a download already under way when Sotto starts as a version found', () => {
+    const found = vi.fn()
+    newVersionListener(found)({ phase: 'downloading', version: '0.1.40', percent: 5 })
+    expect(found).toHaveBeenCalledWith('0.1.40')
+  })
+})
+
 describe('the version a host may run before Sotto restarts (ADR-0077 decision 6)', () => {
   it('follows an offer, its download and the downloaded update, and keeps it through the next check', () => {
     expect(waitingVersion({ phase: 'available', version: '0.1.38', problem: null }, undefined)).toBe('0.1.38')
@@ -646,5 +773,19 @@ describe('the version a host may run before Sotto restarts (ADR-0077 decision 6)
     await updater.download()
     expect(events.map(event => event.type)).toEqual(['checking', 'available', 'progress', 'progress', 'progress', 'downloaded'])
     expect(() => updater.quitAndInstall()).toThrow('A test run does not install updates.')
+  })
+
+  it('closes every window for a development run\'s restart and only then refuses it, as a Mac\'s installer can', async () => {
+    const order: string[] = []
+    const closed = deferred<void>()
+    const updater = e2eUpdater('0.1.38-owl.20261014.2', 0, () => { order.push('close windows'); return closed.promise })
+    updater.subscribe(event => order.push(event.type))
+
+    expect(() => updater.quitAndInstall()).not.toThrow()
+    expect(order).toEqual(['close windows'])
+
+    closed.resolve()
+    await flush()
+    expect(order).toEqual(['close windows', 'error'])
   })
 })

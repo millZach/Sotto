@@ -11,7 +11,7 @@ import { fakeSystemd } from '../fixtures/fakeSystemd'
 import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
 
 /**
- * Start at boot from Settings > Hosts (ADR-0054) in the built app, over a scripted ssh that runs the real launch script and
+ * Start at boot from Settings > Hosts & phones (ADR-0054) in the built app, over a scripted ssh that runs the real launch script and
  * a real headless host, with fake `systemctl --user` and `loginctl` first on the path (tests/fixtures/fakeSystemd.ts). Add
  * host's connected card offers it; linger needing an administrator changes nothing and shows the command; the More menu
  * stops it after the busy-host question, and starts it again; Stop host and Forget say what the unit means for them.
@@ -49,7 +49,7 @@ test('starts a host at boot from Add host’s card once linger is on, stops it a
     const { page } = launched
     page.on('pageerror', error => errors.push(error.message))
     await openPage(page, 'Settings')
-    await page.getByRole('tab', { name: 'Hosts', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hosts & phones', exact: true }).click()
     const row = page.getByRole('region', { name: 'forge', exact: true })
     const menu = async (): Promise<Locator> => {
       await row.getByRole('button', { name: 'More for forge' }).focus()
