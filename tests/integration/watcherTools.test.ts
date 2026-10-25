@@ -2010,9 +2010,9 @@ it('keeps news and checkpoint evidence from restarting a worker stopped by Watch
  * (ADR-0016, October 22), so the record is replaced in the copy's own thread list rather than written into.
  */
 function reshow(f: Awaited<ReturnType<typeof fixture>>, threadId: string, change: (thread: AgentThread) => AgentThread): void {
-  const threads = f.control.watcherSnapshot().threads
-  const at = threads.findIndex(thread => thread.id === threadId)
-  threads[at] = change(threads[at]!)
+  // The coordinator's thread list is replaced, never written into: it finds a thread by an index of the list (#925).
+  const host = f.control.watcherSnapshot()
+  host.threads = host.threads.map(thread => thread.id === threadId ? change(thread) : thread)
 }
 const showLinks = (f: Awaited<ReturnType<typeof fixture>>, threadId: string, links: NonNullable<AgentThread['pullRequests']>): void =>
   reshow(f, threadId, thread => ({ ...thread, pullRequests: links }))

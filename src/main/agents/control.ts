@@ -39,6 +39,8 @@ import type { AgentHost, AgentHostCommand, PromptImage, StartHandoverSent, Threa
 import type { AgentReasoner } from './reasoning'
 import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
+import { noteThreadsReplaced } from '../../shared/threadListPatches'
+import { ThreadChangesDrift, ThreadMap, verifyingThreadChanges, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
@@ -88,6 +90,27 @@ const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
 const EMPTY_THREADS: AgentThread[] = []
+/**
+ * The host snapshot's threads by ID and by position, for the very list they were read from (#925). An accept of thread
+ * changes keeps it up to date as it patches the list; any other list is indexed afresh the first time it is read.
+ */
+interface HostThreadIndex {
+  /** The list the host snapshot carries. */
+  list: readonly AgentThread[]
+  /** The same threads in a list of the index's own, which a change copies and replaces threads in. */
+  raw: AgentThread[]
+  readonly byId: Map<string, AgentThread>
+  readonly at: Map<string, number>
+  /** Threads that carry hidden wake-ups, which the detail broadcast keeps projections for. */
+  readonly hidden: Set<string>
+  /** Watcher's conversations, shown again whenever Watcher's requests move. */
+  readonly watcherKinds: Set<string>
+}
+const isWatcherKind = (thread: AgentThread): boolean => thread.kind === 'watcher' || thread.kind === 'watcher-history'
+function noteIndexed(index: HostThreadIndex, thread: AgentThread): void {
+  if (thread.hiddenWakeUpMessageIds?.length) index.hidden.add(thread.id); else index.hidden.delete(thread.id)
+  if (isWatcherKind(thread)) index.watcherKinds.add(thread.id); else index.watcherKinds.delete(thread.id)
+}
 /** The history every thread record a broadcast lists stands on: frozen, as the records that share it are. */
 const BROADCAST_MESSAGES = Object.freeze([]) as unknown as AgentMessage[]
 const BROADCAST_ACTIVITIES = Object.freeze([]) as unknown as AgentActivity[]
@@ -734,6 +757,38 @@ export class AgentControl {
   private readonly failuresSeen: FailuresSeen
   /** The sends whose reply's first output the coordinator is watching for, to time it. */
   private readonly firstOutputs = new FirstOutputWatches()
+  /**
+   * The host's thread changes as this coordinator holds them (ADR-0016, #925 step 5): the workspace's publication, a record
+   * per thread in its order, applied a change at a time. Undefined while the host publishes only snapshots.
+   */
+  private incoming: ThreadMap | undefined
+  private incomingSubscription: ActivityChangesSubscription | undefined
+  /** The host snapshot the last accept from thread changes made. Anything else that replaced it makes the next change whole. */
+  private hostFromChanges: AgentHostSnapshot | undefined
+  /**
+   * Threads whose shown record is worked out again at the next accept of changes, whatever the change names: something
+   * the shown record is made from moved without a snapshot being taken again.
+   */
+  private readonly reshow = new Set<string>()
+  /** The Watcher requests the shown records were made with: when they move, Watcher's conversations are shown again. */
+  private shownRequests: WatcherRecord['requests'] | undefined
+  /** Set by a test before `start`: every publication is taken whole, as before #925, to hold the changes path to it. */
+  private acceptsWhole = false
+  private readonly verifyingChanges = verifyingThreadChanges()
+  /** How many accepts of thread changes verifying mode checked against the whole path, for a test that asks it ran. */
+  verifiedChanges = 0
+  private hostIndex: HostThreadIndex | undefined
+  /**
+   * What the last broadcast's thread list was made from and what it made, and what changed in the host's threads since:
+   * the threads replaced in place between the list it was made from and the list now (`undefined` when nothing changed,
+   * `null` when the list changed some other way), and the threads whose finish or failure mark moved (#925).
+   */
+  private broadcastLast: { readonly from: readonly AgentThread[]; readonly shown: readonly AgentThread[]; readonly display: unknown; readonly revision: number; readonly hostId: string | undefined
+    host?: AgentState['host'] } | undefined
+  /** The positions the last broadcast's list replaced in the one before it, or undefined when it listed every thread again. */
+  private broadcastReplaced: number[] | undefined
+  private broadcastPatch: { readonly from: readonly AgentThread[]; to: readonly AgentThread[]; readonly ids: Set<string> } | null | undefined = null
+  private readonly marksMoved = new Set<string>()
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
@@ -839,6 +894,8 @@ export class AgentControl {
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
+    this.finishedUnread.onMoved = id => { this.marksMoved.add(id) }
+    this.failuresSeen.onMoved = id => { this.marksMoved.add(id) }
     this.clients = dependencies.clients ?? new ProviderClients({ opencodeFolders: opencodeFolders(join(dependencies.directory, 'opencode')), cursorConfigDirectory: join(dependencies.directory, 'cursor', 'config') })
     this.state = {
       configuration: defaultAgentConfiguration(), connection: 'disconnected', host: structuredClone(EMPTY_AGENT_HOST),
@@ -995,7 +1052,7 @@ export class AgentControl {
     await options.beforeConnect?.()
     // Subscribe before the first observe: telling the workspace which threads are open now makes it
     // load their history, and that publish has to reach this coordinator (issue #119).
-    this.unsubscribe = subscribeActivitySnapshots(this.dependencies.host, snapshot => this.acceptSnapshot(snapshot))
+    this.subscribeHost()
     this.observe()
     if (this.state.configuration.enabled || (this.dependencies.host.concurrentProviders && this.state.configuration.enabledProviders?.length)) {
       const connection = this.commandShell(this.automaticConnect())
@@ -1003,6 +1060,23 @@ export class AgentControl {
       // Independent native discovery must not delay constructing the desktop IPC surface.
       else void connection
     }
+  }
+  /**
+   * Hears the host: its thread changes when it publishes them (#925), its activity snapshots otherwise. A change is taken
+   * in at a cost that follows it; a whole one, one that carries the rest of the snapshot, and the first after anything
+   * else set the host snapshot, are taken in whole, as every snapshot was.
+   */
+  private subscribeHost(): void {
+    const host = this.dependencies.host
+    if (!host.subscribeActivityChanges || this.acceptsWhole) {
+      this.unsubscribe = subscribeActivitySnapshots(host, snapshot => this.acceptSnapshot(snapshot))
+      return
+    }
+    const map = new ThreadMap({ verify: false })
+    this.incoming = map
+    const subscription = host.subscribeActivityChanges(changes => this.acceptChanges(map, changes))
+    this.incomingSubscription = subscription
+    this.unsubscribe = () => { subscription(); if (this.incoming === map) { this.incoming = undefined; this.incomingSubscription = undefined } }
   }
   /**
    * Requests Sotto itself puts in a thread, such as the host setup thread's "Add forge as a host?" (ADR-0035). They
@@ -1020,7 +1094,12 @@ export class AgentControl {
    * each question on it (ADR-0085), and each thread's prototype waiting for review (ADR-0108), without a prototype
    * question Sotto holds while it looks for that question's pages (ADR-0108).
    */
-  private shownSnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  private shownSnapshot(snapshot: AgentHostSnapshot, gone?: Set<string>): AgentHostSnapshot {
+    // With `gone`, the snapshot holds only the threads a change named (#925), over the rest of the host snapshot as shown,
+    // and `gone` the threads that went; a thread it holds that is not shown goes into `gone` too. Each step reads only
+    // those threads, which is what reading every thread again would have done to them, and lets go of what it kept for
+    // the threads that went.
+    const given = gone ? snapshot.threads : undefined
     // The coordinator's own published snapshot, taken again, still has the questions it held: they are the provider's.
     snapshot = this.prototypeQuestions.restore(snapshot)
     if (this.dependencies.watcherEnabled !== true) {
@@ -1032,18 +1111,23 @@ export class AgentControl {
         if (!thread.providerId || !this.held.has(thread.providerId)) continue
         this.dormantThreadIds.add(thread.id); this.dormantThreadProviders.set(thread.id, thread.providerId)
       }
-      snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)), ...catalogWithoutHeld(snapshot, this.held) }
+      // The rest of a change's snapshot is the host snapshot as shown, whose catalog is already without them.
+      snapshot = { ...snapshot, threads: snapshot.threads.filter(thread => this.threadAvailable(thread.id)), ...gone ? {} : catalogWithoutHeld(snapshot, this.held) }
     }
+    if (gone && given && given.length !== snapshot.threads.length) for (const thread of given) if (!this.threadAvailable(thread.id)) gone.add(thread.id)
     // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
     snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
-    if (this.dependencies.threadStartsEnabled === true) snapshot = startHandoversShown(snapshot)
+    if (this.dependencies.threadStartsEnabled === true) {
+      const incoming = this.incoming
+      snapshot = startHandoversShown(snapshot, gone && incoming ? id => this.threadAvailable(id) ? incoming.get(id) : undefined : undefined)
+    }
     if (this.sottoRequests) snapshot = withSottoRequests(snapshot, this.sottoRequests.requests())
     // A prototype waiting for review is marked from the pages found for its question or its newest reply (ADR-0108).
     // A question about a prototype is held last, so both of those still read it while no client sees it.
-    return this.prototypeQuestions.decorate(this.prototypeReady.decorate(this.questionPages.decorate(snapshot, this.prototypeReady.replies(snapshot))))
+    return this.prototypeQuestions.decorate(this.prototypeReady.decorate(this.questionPages.decorate(snapshot, this.prototypeReady.replies(snapshot), gone), gone), gone)
   }
   /** What a question page's token opens, for the host's page route and this computer's window (ADR-0085). */
   questionPage(token: string): QuestionPageTarget | undefined { return this.questionPages.target(token) }
@@ -1133,10 +1217,10 @@ export class AgentControl {
    */
   hostId(): string | undefined { return this.state.host.hostId }
   /** One thread's kind as it is now, for the router's Watcher check on every detail; `shell()` would copy the whole state. */
-  threadKind(threadId: string): AgentThread['kind'] { return this.state.host.threads.find(thread => thread.id === threadId)?.kind }
+  threadKind(threadId: string): AgentThread['kind'] { return this.threadById(threadId)?.kind }
   /** One thread's provider as this coordinator holds it, read without copying any state (#1107). */
   threadProvider(threadId: string): ProviderId | undefined {
-    const thread = this.state.host.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return thread ? threadProviderOf(thread) : undefined
   }
   /**
@@ -1144,7 +1228,7 @@ export class AgentControl {
    * that was sent the record with a cut body (`activity-body`). The caller only serializes it. Null when it is not there.
    */
   threadActivity(threadId: string, activityId: string): AgentActivity | null {
-    const thread = this.state.host.threads.find(item => item.id === threadId)
+    const thread = this.threadById(threadId)
     return (thread && this.paneActivities(thread)?.find(record => record.id === activityId)) ?? null
   }
   /** One project's provider as this coordinator holds it, or as its scoped ID names it, read without copying any state (#1107). */
@@ -1271,7 +1355,12 @@ export class AgentControl {
       // so the broadcasts that share it are read and never written into, as their thread records already are.
       const [base] = immutableUpdates([bare], [this.broadcastBase])
       this.broadcastBase = base
+      const previous = this.broadcastLast
       state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: this.broadcastThreads(threads) } }
+      // A list made from the last broadcast's in place says so, for the router to remake only those threads (#925).
+      const replaced = this.broadcastReplaced
+      if (replaced && previous?.host) noteThreadsReplaced(state.host, previous.host, replaced)
+      this.broadcastLast!.host = state.host
     } else {
       // Every other shell is its caller's to change: it copies containers and keeps strings, several times faster than structuredClone.
       state = clonePlainData(bare)
@@ -1305,24 +1394,57 @@ export class AgentControl {
    * every broadcast, and the router and the window's encoder then worked out again that most had not changed.
    */
   private broadcastThreads(threads: readonly AgentThread[]): AgentThread[] {
-    const records = this.broadcastRecords
     const display = this.continuationDisplay, revision = this.watcherMessageDisplay?.revision ?? 0, hostId = this.state.host.hostId
-    const shown = threads.map(thread => {
-      let held = records.get(thread.id)
-      if (!held || held.source !== thread || held.display !== display || held.revision !== revision || held.hostId !== hostId) {
-        held = { source: thread, display, revision, hostId, record: Object.freeze(this.shellThread(thread, BROADCAST_MESSAGES, BROADCAST_ACTIVITIES)) }
-        records.set(thread.id, held)
+    const last = this.broadcastLast, patch = this.broadcastPatch
+    // A list that is the last broadcast's, or that list with threads replaced in place, is made from the last list: only the
+    // threads replaced and those whose marks moved are listed again, each as the whole walk below would list it (#925).
+    const patched = last !== undefined && last.display === display && last.revision === revision && last.hostId === hostId
+      && (threads === last.from ? patch === undefined : patch != null && patch.from === last.from && patch.to === threads)
+    let shown: AgentThread[]
+    let replaced: number[] | undefined
+    if (patched) {
+      shown = last.shown.slice()
+      replaced = []
+      const at = this.indexed().at
+      for (const ids of [patch?.ids, this.marksMoved]) if (ids) for (const id of ids) {
+        const position = at.get(id)
+        if (position === undefined) continue
+        const record = this.broadcastRecord(threads[position]!, display, revision, hostId)
+        if (record !== shown[position]) { shown[position] = record; replaced.push(position) }
       }
-      // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
-      const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
-      if (marked !== held.record) held.record = Object.freeze(marked)
-      return held.record
-    })
-    if (records.size > threads.length) {
-      const present = new Set(threads.map(thread => thread.id))
-      for (const id of records.keys()) if (!present.has(id)) records.delete(id)
+      if (this.verifyingChanges) this.verifyBroadcast(threads, shown, display, revision, hostId)
+    } else {
+      shown = threads.map(thread => this.broadcastRecord(thread, display, revision, hostId))
+      const records = this.broadcastRecords
+      if (records.size > threads.length) {
+        const present = new Set(threads.map(thread => thread.id))
+        for (const id of records.keys()) if (!present.has(id)) records.delete(id)
+      }
     }
+    this.broadcastLast = { from: threads, shown, display, revision, hostId }
+    this.broadcastReplaced = replaced
+    this.broadcastPatch = undefined
+    this.marksMoved.clear()
     return shown
+  }
+  /** Verifying mode: a list made from the last broadcast's, against the whole walk's. A thread listed as an earlier record is found here. */
+  private verifyBroadcast(threads: readonly AgentThread[], shown: readonly AgentThread[], display: unknown, revision: number, hostId: string | undefined): void {
+    const walked = threads.map(thread => this.broadcastRecord(thread, display, revision, hostId))
+    const stale = walked.flatMap((record, position) => record === shown[position] ? [] : [`thread "${record.id}" was listed as an earlier record, a missed change`])
+    if (stale.length) throw new ThreadChangesDrift(stale)
+  }
+  /** One thread as a broadcast lists it, reusing the record the last broadcast listed while nothing it is made from moved. */
+  private broadcastRecord(thread: AgentThread, display: unknown, revision: number, hostId: string | undefined): AgentThread {
+    const records = this.broadcastRecords
+    let held = records.get(thread.id)
+    if (!held || held.source !== thread || held.display !== display || held.revision !== revision || held.hostId !== hostId) {
+      held = { source: thread, display, revision, hostId, record: Object.freeze(this.shellThread(thread, BROADCAST_MESSAGES, BROADCAST_ACTIVITIES)) }
+      records.set(thread.id, held)
+    }
+    // Marking is the coordinator's: the record already carrying the marks it should is handed back as it is.
+    const marked = this.failuresSeen.publish(this.finishedUnread.publish(held.record))
+    if (marked !== held.record) held.record = Object.freeze(marked)
+    return held.record
   }
   /**
    * One thread's history — its messages and the activity beside them — for a window looking at it.
@@ -1472,7 +1594,7 @@ export class AgentControl {
       ...(this.state.deliveries ?? []).filter(item => item.status !== 'accepted').map(item => item.threadId),
       ...this.queuedThreadIds(),
       ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []),
-    ])].filter(id => this.state.host.threads.some(thread => thread.id === id))
+    ])].filter(id => this.threadById(id) !== undefined)
   }
   /**
    * A revision that changes exactly when a thread's messages do. Built from identity and length rather
@@ -2024,7 +2146,7 @@ export class AgentControl {
   private watchedThreadOpened(): boolean {
     if (!this.detailListeners.size) return false
     for (const [threadId, held] of this.detailSnapshots) {
-      const thread = this.state.host.threads.find(item => item.id === threadId)
+      const thread = this.threadById(threadId)
       if (!thread) continue
       if (thread.messages.at(-1)?.id !== held.messages.at(-1)?.id) return true
       const activities = this.paneActivities(thread)
@@ -2060,7 +2182,7 @@ export class AgentControl {
    */
   private broadcastDetail(): void {
     // Which threads' hidden-news projections may be kept follows what is shown, even when no window listens for detail.
-    const shownHidden = this.state.host.threads.some(thread => thread.hiddenWakeUpMessageIds?.length)
+    const shownHidden = this.indexed().hidden.size > 0
     if (!this.detailListeners.size && !this.watcherMessageDisplay && this.dependencies.streamingPublishCost !== true) {
       if (shownHidden || this.hiddenShown.size) this.retainHiddenShown(this.detailTargets())
       return
@@ -2078,7 +2200,7 @@ export class AgentControl {
     }
     if (!this.detailListeners.size) return
     for (const threadId of targets) {
-      const thread = this.state.host.threads.find(item => item.id === threadId)!
+      const thread = this.threadById(threadId)!
       // The pane's activity is read once and handed on: the host decides it a turn at a time, against every thread.
       const pane = this.paneActivities(thread)
       const revision = this.detailRevision(thread, pane)
@@ -2398,7 +2520,7 @@ export class AgentControl {
     this.dependencies.host.observeThreads?.([...new Set([
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
-      ...this.viewedThreadIds.filter(id => this.state.host.threads.some(thread => thread.id === id)),
+      ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined),
       ...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.threadAvailable(id)))
   }
   /**
@@ -2420,7 +2542,7 @@ export class AgentControl {
     for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
     for (const item of items) {
       if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
-      const thread = this.state.host.threads.find(candidate => candidate.id === item.threadId)
+      const thread = this.threadById(item.threadId)
       if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
     }
     return waiting
@@ -2428,7 +2550,8 @@ export class AgentControl {
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
       || this.watcher.current?.target.hostId !== target.hostId || this.watcher.current.target.threadId !== target.threadId) return false
-    const thread = this.state.host.threads.find(item => item.id === target.threadId && (item.hostId ?? this.state.host.hostId) === target.hostId)
+    const found = this.threadById(target.threadId)
+    const thread = found && (found.hostId ?? this.state.host.hostId) === target.hostId ? found : undefined
     return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
       && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
   }
@@ -4468,7 +4591,11 @@ export class AgentControl {
         if (this.state.draftThreadId === command.threadId && this.state.draftRequestId === command.requestId
           && this.manualDraftId === legacyAnswerDraftId) this.clearDraft()
         // The user answering a question replies to the prototype waiting before it (ADR-0108); its leaving alone does not.
-        if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) void this.persist().catch(() => undefined)
+        if (request.kind === 'question' && this.prototypeReady.answered(command.threadId)) {
+          // What the thread is shown with moved: the next change shows it again, as the next snapshot did (#925).
+          this.reshow.add(command.threadId)
+          void this.persist().catch(() => undefined)
+        }
         this.say(`Answered ${thread.title}.`)
         return
       }
@@ -5198,30 +5325,169 @@ export class AgentControl {
     this.watcherHooks?.observe(snapshot, { has: id => (known ??= new Set([...this.outbox.flatMap(item => item.messageId ? [item.messageId] : []),
       ...(this.state.deliveries ?? []).flatMap(item => item.messageId ? [item.messageId] : [])])).has(id) })
   }
-  private acceptSnapshot(incoming: AgentHostSnapshot): void {
+  /**
+   * Takes a whole host snapshot in: a publication of a host without thread changes, a command's read, the coordinator's
+   * own snapshot taken again, or (`fromChanges`) the host's thread changes taken in whole. Only that last leaves the next
+   * change to be taken in as a change; after any other, the next is taken in whole, as every publication was before
+   * #925, since this snapshot may say what the publication has not.
+   */
+  private acceptSnapshot(incoming: AgentHostSnapshot, fromChanges = false): void {
     if (this.disposed) return
     this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
+    this.shownRequests = this.watcher.requests
+    this.reshow.clear()
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
     const snapshot = this.shownSnapshot(incoming)
     this.state.host = snapshot
+    this.hostFromChanges = fromChanges ? snapshot : undefined
+    this.broadcastPatch = null
+    this.accepted(snapshot, connecting)
+  }
+  /**
+   * Takes one publication of the host's thread changes in (ADR-0016, #925 step 5). An ordinary change is taken in at a
+   * cost that follows it: only the threads it names, and those whose shown record must be worked out again (`reshow`),
+   * are shown, tracked and listed again, each exactly as taking the whole publication in would treat it, and every other
+   * thread keeps the record it was shown as. Taken in whole, as every publication was: a whole publication, one carrying
+   * the rest of the snapshot, the first after anything else set the host snapshot (a read, a disconnect, the coordinator's
+   * own snapshot taken again), and, while threads may begin from others, one bringing or removing a thread or changing one's
+   * provider, which a thread that began from it shows.
+   */
+  private acceptChanges(map: ThreadMap, changes: AgentHostChanges): void {
+    if (this.disposed || map !== this.incoming) return
+    const starts = this.dependencies.threadStartsEnabled === true && !changes.whole
+    const before = starts ? changes.upserts.map(record => map.get(record.id)?.providerId ?? null) : undefined
+    const applied = map.apply(changes)
+    if (applied === 'resync') { this.incomingSubscription?.resync(); return }
+    if (applied === 'stale') return
+    if (changes.whole || changes.rest !== undefined || this.state.host !== this.hostFromChanges
+      || before !== undefined && (changes.removals.length > 0 || before.some((provider, at) => provider === null || provider !== changes.upserts[at]!.providerId))) {
+      this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot, true)
+      return
+    }
+    const index = this.indexed()
+    this.firstOutputs.observe(id => map.get(id))
+    const connecting = this.state.connection === 'connecting'
+    // Watcher's conversations are shown through Watcher's requests, and a question whose search found none looks again.
+    if (this.shownRequests !== this.watcher.requests) { for (const id of index.watcherKinds) this.reshow.add(id); this.shownRequests = this.watcher.requests }
+    for (const id of this.questionPages.retriesDue()) this.reshow.add(id)
+    const named = new Set<string>()
+    for (const record of changes.upserts) named.add(record.id)
+    for (const id of this.reshow) named.add(id)
+    this.reshow.clear()
+    const gone = new Set<string>()
+    for (const id of changes.removals) if (!map.has(id)) gone.add(id)
+    const sources: AgentThread[] = []
+    for (const id of named) { const source = map.get(id); if (source) sources.push(source) }
+    const shown = this.shownSnapshot({ ...this.state.host, threads: sources }, gone)
+    const list = this.patchHostThreads(index, map, named, shown.threads, gone, changes.placements !== undefined && changes.placements.length > 0)
+    this.state.host = { ...this.state.host, threads: list }
+    this.hostFromChanges = this.state.host
+    this.accepted(this.state.host, connecting, { threads: shown.threads, gone })
+    if (this.verifyingChanges) this.verifyChanges(map)
+  }
+  /**
+   * The host's thread list with the threads a change named shown again and the threads that went taken out, keeping the
+   * index up to date. A change that replaces threads in place replaces them in a copy of the list; any other change, one
+   * removing, adding or moving a thread, or making one no longer shown, lists every thread again in the host's order.
+   */
+  private patchHostThreads(index: HostThreadIndex, map: ThreadMap, named: ReadonlySet<string>, shown: readonly AgentThread[], gone: ReadonlySet<string>, placed: boolean): AgentThread[] {
+    const previous = index.list
+    // A thread that went, or is no longer shown, takes nothing out of the list unless the list held it.
+    let inPlace = !placed
+    if (inPlace) for (const id of gone) if (index.at.has(id)) { inPlace = false; break }
+    if (inPlace) for (const thread of shown) if (!index.at.has(thread.id)) { inPlace = false; break }
+    let list: AgentThread[]
+    if (inPlace) {
+      const raw = index.raw.slice()
+      for (const thread of shown) { raw[index.at.get(thread.id)!] = thread; index.byId.set(thread.id, thread); noteIndexed(index, thread) }
+      list = this.hostThreadList(raw)
+      index.raw = raw; index.list = list
+      // The broadcast that follows lists again only the threads replaced since the list it was made from.
+      const patch = this.broadcastPatch
+      if (patch === undefined && previous === this.broadcastLast?.from) this.broadcastPatch = { from: previous, to: list, ids: new Set(shown.map(thread => thread.id)) }
+      else if (patch && patch.to === previous) { patch.to = list; for (const thread of shown) patch.ids.add(thread.id) }
+      else this.broadcastPatch = null
+      return list
+    }
+    const records = new Map(shown.map(thread => [thread.id, thread]))
+    const raw: AgentThread[] = []
+    const rebuilt: HostThreadIndex = { list: raw, raw, byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    for (const id of map.ids()) {
+      const thread = named.has(id) ? records.get(id) : gone.has(id) ? undefined : index.byId.get(id)
+      if (!thread || rebuilt.byId.has(id)) continue
+      rebuilt.byId.set(id, thread); rebuilt.at.set(id, raw.length); noteIndexed(rebuilt, thread)
+      raw.push(thread)
+    }
+    list = this.hostThreadList(raw)
+    rebuilt.list = list
+    this.hostIndex = rebuilt
+    this.broadcastPatch = null
+    return list
+  }
+  /** The thread list a host snapshot made from thread changes carries: the list itself, which a test counts the reads of. */
+  private hostThreadList(list: AgentThread[]): AgentThread[] { return list }
+  /**
+   * Verifying mode (`SOTTO_VERIFY_THREAD_CHANGES=1`): the host snapshot an accept of changes made, against the one taking
+   * the whole publication in makes from the same publication. A thread shown from a record or a display that moved
+   * without anything naming it is found here.
+   */
+  private verifyChanges(map: ThreadMap): void {
+    this.verifiedChanges++
+    const whole = this.shownSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot)
+    const held = this.state.host
+    const differences: string[] = []
+    if (whole.threads.length !== held.threads.length) differences.push(`the host snapshot lists ${held.threads.length} threads where the whole path lists ${whole.threads.length}`)
+    for (let at = 0; at < Math.min(whole.threads.length, held.threads.length); at++) {
+      const expected = whole.threads[at]!, actual = held.threads[at]!
+      if (expected.id !== actual.id) { differences.push(`the threads are in another order from position ${at}`); break }
+      if (expected !== actual && !isDeepStrictEqual(expected, actual)) differences.push(`thread "${actual.id}" is shown unlike the whole path shows it, a missed change`)
+    }
+    const { threads: _whole, ...wholeRest } = whole, { threads: _held, ...heldRest } = held
+    void _whole; void _held
+    if (!isDeepStrictEqual(wholeRest, heldRest)) differences.push('the rest of the host snapshot differs from the whole path\'s')
+    if (differences.length) throw new ThreadChangesDrift(differences)
+  }
+  /** The host's threads by ID and position, for the host snapshot's list as it is now. */
+  private indexed(): HostThreadIndex {
+    const list = this.state.host.threads
+    if (this.hostIndex?.list === list) return this.hostIndex
+    const index: HostThreadIndex = { list, raw: [], byId: new Map(), at: new Map(), hidden: new Set(), watcherKinds: new Set() }
+    for (let position = 0; position < list.length; position++) {
+      const thread = list[position]!
+      index.raw.push(thread)
+      if (index.byId.has(thread.id)) continue
+      index.byId.set(thread.id, thread); index.at.set(thread.id, position); noteIndexed(index, thread)
+    }
+    this.hostIndex = index
+    return index
+  }
+  /** One of the host's threads, as the host snapshot lists it now, found by its ID rather than by a walk of the list. */
+  private threadById(threadId: string): AgentThread | undefined { return this.indexed().byId.get(threadId) }
+  /**
+   * What taking a host snapshot in does once the snapshot is shown, whole or by a change. `changed` names, for a change,
+   * the threads it showed again and the threads that went: only those are tracked, every other being as it was.
+   */
+  private accepted(snapshot: AgentHostSnapshot, connecting: boolean, changed?: { readonly threads: readonly AgentThread[]; readonly gone: ReadonlySet<string> }): void {
     this.observeWatcher(snapshot)
     if (!this.disposed) this.delegationHooks?.observe(snapshot)
-    if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !snapshot.threads.some(thread => thread.id === this.state.activeThreadId)) {
+    const shownThread = (id: string): AgentThread | undefined => snapshot === this.state.host ? this.threadById(id) : snapshot.threads.find(thread => thread.id === id)
+    if (snapshot.connected && this.state.activeThreadId && this.threadAvailable(this.state.activeThreadId) && !shownThread(this.state.activeThreadId)) {
       const selected = snapshot.threads.find(thread => thread.id === this.state.draftThreadId) ?? snapshot.threads.find(thread => !isThreadClosed(thread))
       this.state.activeThreadId = selected?.id ?? null
       this.state.activeProjectId = selected?.projectId ?? null
     }
     for (const threadId of this.emptyDraftRevisions.keys()) {
-      if (!snapshot.threads.some(thread => thread.id === threadId && !isThreadClosed(thread))) {
+      const thread = shownThread(threadId)
+      if (!thread || isThreadClosed(thread)) {
         this.clearEmptyDraftBinding(threadId)
         if (this.state.draftThreadId === threadId && !this.hasDraft()) this.clearDraft()
       }
     }
     // Saved with the persist below. A disconnected snapshot changes no finished mark, but it can see a failure: a thread
     // shown as it fails, or a failure that moves to a later turn, so its early return saves the failures it changed.
-    this.finishedUnread.track(snapshot)
-    const failuresChanged = this.failuresSeen.track(snapshot)
+    if (changed) this.finishedUnread.trackChanged(snapshot, changed.threads, changed.gone); else this.finishedUnread.track(snapshot)
+    const failuresChanged = changed ? this.failuresSeen.trackChanged(snapshot, changed.threads, changed.gone) : this.failuresSeen.track(snapshot)
     this.scheduleProviderReconnects()
     if (this.state.activeProjectId) this.state.activeProjectId = this.dependencies.host.resolveProjectId?.(this.state.activeProjectId) ?? this.state.activeProjectId
     if (this.state.configuration.defaultModelId) this.state.configuration.defaultModelId = this.dependencies.host.resolveModelId?.(this.state.configuration.defaultModelId) ?? this.state.configuration.defaultModelId
@@ -5240,13 +5506,13 @@ export class AgentControl {
     this.reconnect = null
     for (const item of [...this.outbox]) {
       if (!this.threadAvailable(item.threadId)) continue
-      const thread = snapshot.threads.find(t => t.id === item.threadId)
+      const thread = item.threadId ? shownThread(item.threadId) : undefined
       if (item.provider && snapshot.providers && snapshot.providers.find(provider => provider.id === item.provider)?.connection !== 'connected') continue
       if (thread && !isThreadProviderConnected(snapshot, thread)) continue
       const message = thread?.messages.find(m => m.role === 'user' && m.id === item.messageId)
       const confirmed = (item.type === 'send' || item.type === 'steer') ? Boolean(message) : item.type === 'create-project'
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
-          ? snapshot.threads.some(t => t.id === item.entityId) : item.type === 'compact-thread'
+          ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
             ? thread?.compaction?.commandId === item.id && ['completed', 'failed'].includes(thread.compaction.status) : item.type === 'configure-thread'
             ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
