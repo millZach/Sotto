@@ -241,9 +241,9 @@ export interface AppSettings {
    */
   autoSettleMergedThreads: boolean
   /**
-   * Never (null) by default. A number of days, and this computer's settled threads quiet longer than that are cleared on
-   * their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0126). Saved on every track;
-   * only Owl acts on it until the feature goes to stable.
+   * 30 days by default; null is Never. A number of days, and this computer's settled threads quiet longer than that are
+   * cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). Saved on every
+   * track; only Owl acts on it until the feature goes to stable.
    */
   clearSettledThreadsAfterDays: ClearSettledThreadsAfterDays
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
@@ -592,8 +592,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   followPullRequestTemplates: true,
   // Off: nothing moves in the sidebar on its own until the user asks for it.
   autoSettleMergedThreads: false,
-  // Never: nothing is deleted on its own until the user asks for it (ADR-0126).
-  clearSettledThreadsAfterDays: null,
+  // 30 days, Zach's pick on October 25, 2026 (ADR-0140); Never stays a choice.
+  clearSettledThreadsAfterDays: 30,
   // Off: nothing opens on its own until the user asks for it (ADR-0027).
   proactivePanels: false,
   pullRequestText: true,

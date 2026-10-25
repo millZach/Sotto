@@ -12,7 +12,7 @@ import type { ThreadClearPreview, ThreadClearResult } from '../../../../../src/s
 import { agentContextFixture } from '../../../../fixtures/agentContext'
 import { threadsStateFixture } from '../../../../fixtures/agentState'
 
-// Clearing threads is an Owl feature (ADR-0126): only `clear-threads` is turned on here, and the stable test turns it off.
+// Clearing threads is an Owl feature (ADR-0140): only `clear-threads` is turned on here, and the stable test turns it off.
 const owl = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/state/owlFeature')>(),
@@ -56,14 +56,14 @@ describe('Settings → Threads, Clearing threads', () => {
     expect(screen.queryByRole('button', { name: 'Clear now…' })).toBeNull()
   })
 
-  it('saves Clear settled threads after, Never by default', async () => {
+  it('saves Clear settled threads after, 30 days by default and Never still a choice', async () => {
     withAgents()
     const update = vi.fn(async () => true)
     const user = userEvent.setup()
     const rendered = render(<SettingsView {...baseProps({ onUpdateSettings: update })} />)
     await selectCategory('Threads')
     const after = screen.getByRole('combobox', { name: 'Clear settled threads after' })
-    expect(after).toHaveValue('never')
+    expect(after).toHaveValue('30')
     expect(within(after).getAllByRole('option').map(option => option.textContent)).toEqual(['Never', '30 days', '90 days', '180 days'])
     expect(after).toHaveAccessibleDescription(/Never clears one with uncommitted work or an open pull request. Checked every hour./u)
     await user.selectOptions(after, '90')

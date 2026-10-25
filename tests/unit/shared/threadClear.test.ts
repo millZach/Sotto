@@ -7,7 +7,7 @@ import { quietLongerThan, THREAD_CLEAR_KEPT_REASONS, threadClearKeptWords, threa
 
 const DAY = 86_400_000
 
-describe('clearing settled threads (ADR-0126)', () => {
+describe('clearing settled threads (ADR-0140)', () => {
   it('words every kept reason as a short lower-case clause', () => {
     for (const reason of THREAD_CLEAR_KEPT_REASONS) {
       const words = threadClearKeptWords(reason)
@@ -54,10 +54,11 @@ describe('clearing settled threads (ADR-0126)', () => {
     expect(agentStateSchema.shape.threadDeletePreview.parse({ threadId: 't', kept: null, worktree: null })).toEqual({ threadId: 't', kept: null, worktree: null })
   })
 
-  it('is Never by default, kept on every track, and an Owl feature until it is sent to stable', () => {
-    expect(DEFAULT_SETTINGS.clearSettledThreadsAfterDays).toBeNull()
+  it('is 30 days by default, kept on every track, and an Owl feature until it is sent to stable', () => {
+    expect(DEFAULT_SETTINGS.clearSettledThreadsAfterDays).toBe(30)
     expect(parseSettings({ clearSettledThreadsAfterDays: 180 }).clearSettledThreadsAfterDays).toBe(180)
-    expect(parseSettings({ clearSettledThreadsAfterDays: 14 }).clearSettledThreadsAfterDays).toBeNull()
+    expect(parseSettings({ clearSettledThreadsAfterDays: null }).clearSettledThreadsAfterDays).toBeNull()
+    expect(parseSettings({ clearSettledThreadsAfterDays: 14 }).clearSettledThreadsAfterDays).toBe(30)
     expect(OWL_FEATURES.find(feature => feature.id === 'clear-threads')?.sentToStable).toBe(false)
     expect(isOwlFeatureEnabled('clear-threads', 'owl')).toBe(true)
     expect(isOwlFeatureEnabled('clear-threads', 'stable')).toBe(false)

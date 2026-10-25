@@ -4,6 +4,8 @@
 
 Accepted October 23, 2026, as an Owl feature (`clear-threads`). Zach's picks on October 23, 2026 from `docs/prototypes/clear-threads-prototype.html`: variant C (Settings only), no undo, a cleared thread's own clean worktree goes and every branch stays, Owl first. Amends [ADR-0041](0041-a-worktree-has-an-end.md), which refused a command that deletes a thread, and gives [ADR-0016](0016-sotto-owned-history-on-an-event-store.md)'s `ThreadStore.forget` its first caller. **Number provisional until merge** (docs/agents/domain.md).
 
+Amended October 25, 2026: Zach chose 30 days as the default for **Clear settled threads after**, in place of Never, which stays a choice. See decision 2.
+
 ## Context
 
 Zach asked for "a way to clear old threads from Sotto history", the way T3 Code has one. Nothing in Sotto removes a thread. Settle files it away, and the Settled shelf only grows. ADR-0041 refused a delete because "Sotto's threads are its history and there is no delete", and gave back the disk by reclaiming worktree folders instead. What remains is the history: a long Settled shelf to scroll past, and words kept on disk that the user no longer wants kept.
@@ -19,7 +21,9 @@ Sotto keeps a thread in more places than its history: the organization record in
 **2. Three ways to clear, all in Owl.**
 - **Delete thread…** in a settled thread's pane menu (**⋯**) deletes that one thread.
 - **Clear now…** in Settings → Threads, **Clearing threads**, clears this computer's settled threads that have been quiet longer than an age the user picks (7, 30 or 90 days, or any age). It opens **Clear settled threads**, which lists the threads that go and the threads kept with the reason for each, and clears on **Clear N threads**.
-- **Clear settled threads after** in the same section (Never, 30, 90 or 180 days; Never by default) clears them on its own. It runs at start, every hour, and when the setting changes, beside the worktree sweep (ADR-0041), on the computer whose setting it is.
+- **Clear settled threads after** in the same section (Never, 30, 90 or 180 days; 30 days by default) clears them on its own. It runs at start, every hour, and when the setting changes, beside the worktree sweep (ADR-0041), on the computer whose setting it is.
+
+An Owl user who never chose has no saved value, so the first start with the feature takes 30 days and its first run clears what has been quiet that long. That run keeps back everything decision 3 keeps back, as every run does, and starts only once the coordinator, Watcher and delegation have recovered what they hold, so a thread queued, babysat or watched before the restart is still kept.
 
 A thread's age here is the time since the later of its settle and its last activity, so a thread that is settled but still being written to is not old.
 

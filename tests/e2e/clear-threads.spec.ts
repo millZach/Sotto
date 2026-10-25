@@ -1,5 +1,5 @@
 /**
- * Clearing settled threads (ADR-0126) in the built app with the `clear-threads` Owl feature on: Settings → Threads,
+ * Clearing settled threads (ADR-0140) in the built app with the `clear-threads` Owl feature on: Settings → Threads,
  * Clearing threads, lists what goes and what is kept and clears it; Delete thread… in a settled thread's pane menu asks
  * first and deletes it. The real controller, workspace, store and IPC run; only the provider is the E2E fixture. A stable
  * build shows neither.
@@ -89,7 +89,7 @@ test('an Owl build clears settled threads from Settings and deletes one from its
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
     const threads = page.locator('#settings-agents')
     const after = threads.getByRole('combobox', { name: 'Clear settled threads after' })
-    await expect(after).toHaveValue('never')
+    await expect(after).toHaveValue('30')
     const age = threads.getByRole('combobox', { name: 'Settled threads on this computer quiet longer than' })
     await age.selectOption('0')
     await shoot(sotto, 'settings-clearing-threads', async () => { await threads.getByRole('group', { name: 'Clear now' }).evaluate(row => row.scrollIntoView({ block: 'end' })) })

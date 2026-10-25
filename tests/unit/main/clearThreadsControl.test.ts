@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The coordinator's side of clearing settled threads (ADR-0126): the Owl gate, what it keeps back, the plain words of its
+ * The coordinator's side of clearing settled threads (ADR-0140): the Owl gate, what it keeps back, the plain words of its
  * answers and notices, the automatic rule, and what of a deleted thread it lets go.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -11,8 +11,8 @@ import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost } from '../../../src/main/agents/host'
 import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { DEFAULT_WORKTREE_CLEANUP } from '../../../src/shared/settings'
+import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
+import { DEFAULT_SETTINGS, DEFAULT_WORKTREE_CLEANUP, parseSettings } from '../../../src/shared/settings'
 import type { ThreadClearKeptReason } from '../../../src/shared/threadClear'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { testCredentials } from '../../fixtures/testCredentials'
@@ -39,6 +39,11 @@ class ClearingHost extends E2EAgentHost {
   folderHold = new Map<string, ThreadClearKeptReason>()
   private get snapshotState(): AgentHostSnapshot { return (this as unknown as { state: AgentHostSnapshot }).state }
   private publishState(): void { (this as unknown as { emit(): void }).emit() }
+  /** A thread of the fixture's project, settled long ago unless `extra` says otherwise. */
+  add(id: string, extra: Partial<AgentThread> = {}): void {
+    this.snapshotState.threads.push({ id, title: id, projectId: 'project', modelId: 'claude:test', status: 'idle', messages: [], requests: [],
+      workspaceSettledAt: LONG_AGO, updatedAt: LONG_AGO, ...extra })
+  }
   settle(id: string, at = LONG_AGO): void {
     const thread = this.snapshotState.threads.find(item => item.id === id)!
     thread.workspaceSettledAt = at; thread.updatedAt = at
@@ -76,7 +81,7 @@ async function start(options: { enabled?: boolean } = {}) {
   return { host, control, logged }
 }
 
-describe('clearing settled threads in the coordinator (ADR-0126)', () => {
+describe('clearing settled threads in the coordinator (ADR-0140)', () => {
   it('refuses every clearing command and runs no rule while the Owl feature is off', async () => {
     const { host, control } = await start({ enabled: false })
     host.settle('workshop')
@@ -160,8 +165,51 @@ describe('clearing settled threads in the coordinator (ADR-0126)', () => {
   })
 })
 
-describe('the automatic rule beside the worktree sweep (ADR-0126 decision 2)', () => {
+describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', () => {
   const host = { workspaceSnapshot: (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, threads: [] }), reclaimThreadWorktree: async () => undefined, subscribe: () => () => undefined }
+  it('takes 30 days on an upgrade with no saved value, and its first sweep clears only what nothing keeps back', async () => {
+    // An Owl user who never chose has no saved value; Never stays a choice they can save.
+    expect(DEFAULT_SETTINGS.clearSettledThreadsAfterDays).toBe(30)
+    const afterDays = parseSettings({ onboardingComplete: true }).clearSettledThreadsAfterDays
+    expect(afterDays).toBe(30)
+    expect(parseSettings({ clearSettledThreadsAfterDays: null }).clearSettledThreadsAfterDays).toBeNull()
+
+    const { host: threads, control, logged } = await start()
+    const open = { url: 'https://github.com/o/r/pull/1', number: 1, state: 'open' } as NonNullable<AgentThread['pullRequests']>[number]
+    const recent = new Date(Date.now() - 29 * 86_400_000).toISOString()
+    threads.add('old')
+    threads.add('recent', { workspaceSettledAt: recent, updatedAt: recent })
+    threads.add('recently-active', { updatedAt: recent })
+    threads.add('unsettled', { workspaceSettledAt: null })
+    threads.add('working', { status: 'running' })
+    threads.add('waiting', { requests: [{ id: 'r', kind: 'question', text: 'Which?', options: [] }] })
+    threads.add('pull-request', { pullRequests: [open] })
+    threads.add('babysat', { babysitting: [{ url: open.url, number: 1, startedBy: 'user', startedAt: LONG_AGO }] as AgentThread['babysitting'] })
+    threads.add('delegator')
+    threads.add('delegated', { delegatedBy: 'delegator', status: 'running', workspaceSettledAt: null })
+    threads.add('watched')
+    threads.add('uncommitted'); threads.folderHold.set('uncommitted', 'uncommitted')
+    threads.add('ignored-files'); threads.folderHold.set('ignored-files', 'worktree-files')
+    threads.add('in-use'); threads.folderHold.set('in-use', 'worktree-in-use')
+    threads.add('watcher', { kind: 'watcher' })
+    await control.command({ type: 'refresh' })
+    // Watcher's hooks as far as clearing reads them: the threads it watches.
+    control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined, guardOperation: () => undefined,
+      preserveUserQueue: () => false, watchedThreadIds: () => ['watched'] })
+
+    const sweep = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, intervalMs: 60_000_000,
+      clearSettledThreads: { afterDays: () => afterDays, clear: days => control.clearSettledThreads(days) } })
+    await sweep.sweep()
+    expect(threads.deleted.flat()).toEqual(['old'])
+    expect(control.shell().host.threads.map(thread => thread.id)).not.toContain('old')
+    for (const id of ['recent', 'recently-active', 'unsettled', 'working', 'waiting', 'pull-request', 'babysat', 'delegator', 'delegated', 'watched', 'uncommitted', 'ignored-files', 'in-use', 'watcher']) {
+      expect(control.shell().host.threads.map(thread => thread.id), id).toContain(id)
+    }
+    // The hour after keeps the same threads back and logs nothing more.
+    await sweep.sweep()
+    expect(threads.deleted.flat()).toEqual(['old'])
+    expect(logged).toEqual(['threads-cleared 1'])
+  })
   it('clears nothing while the setting is Never, and the chosen age once it is set', async () => {
     let days: number | null = null
     const clear = vi.fn(async () => undefined)

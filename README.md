@@ -71,7 +71,7 @@ Saved question answers clear when the computer running the thread confirms recei
 
 If a provider asks the same question again after restarting, its earlier receipt does not answer the new request. **Check again** reads the provider before allowing a fresh answer. It sends nothing; you choose and send again yourself. An older remote host may need an update to support this check.
 
-New threads open in Unsettled with the defaults saved in Settings → Threads. An existing empty thread is reused only while it is unsettled, its known model, effort and permission choices match those defaults, and no setting change is pending. On Owl, settled threads can be cleared for good, one from its menu or all past an age from Settings → Threads; clearing keeps branches, Usage's numbers and the provider's own session files, and never takes a thread with uncommitted work or an open pull request.
+New threads open in Unsettled with the defaults saved in Settings → Threads. An existing empty thread is reused only while it is unsettled, its known model, effort and permission choices match those defaults, and no setting change is pending. On Owl, settled threads can be cleared for good, one from its menu or all past an age from Settings → Threads, and on their own once quiet 30 days unless you choose otherwise; clearing keeps branches, Usage's numbers and the provider's own session files, and never takes a thread with uncommitted work or an open pull request.
 
 In Settings, **Test microphone** checks the same input selected for dictation. **Stop test**, hiding the window, or leaving Dictation closes the microphone. Changing the input clears the previous test. A quiet test asks you to check that the microphone is not muted.
 

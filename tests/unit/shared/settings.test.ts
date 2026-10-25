@@ -434,7 +434,7 @@ describe('settings', () => {
       gitWritingInstructions: '',
       followPullRequestTemplates: true,
       autoSettleMergedThreads: false,
-      clearSettledThreadsAfterDays: null,
+      clearSettledThreadsAfterDays: 30,
       proactivePanels: false,
       pullRequestText: true,
       commitMessages: true,
