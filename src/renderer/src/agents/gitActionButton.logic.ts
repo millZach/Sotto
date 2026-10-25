@@ -1,8 +1,9 @@
-import { plural, t } from '@lingui/core/macro'
+import { ph, plural, t } from '@lingui/core/macro'
 
 import type { GitActionProgress, GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
+import { leftToRight, shownCount } from './interfaceWords'
 
 /**
  * T3 Code's Git action, decided from the status alone (ADR-0027): what the button says, what a press
@@ -124,9 +125,9 @@ export function defaultBranchQuestion(action: GitStackedAction, branch: string):
   return {
     title: t`Push to default ref?`,
     description: pr
-      ? t({ message: `This creates a pull request from ${branch}, the default branch. Push there, or check out a feature branch and continue on it.`, comment: '{branch} is a Git branch name.' })
-      : t({ message: `This pushes from ${branch}, the default branch. Push there, or check out a feature branch and continue on it.`, comment: '{branch} is a Git branch name.' }),
-    confirm: t({ message: `Push to ${branch}`, comment: '{branch} is a Git branch name.' }),
+      ? t({ message: `This creates a pull request from ${ph({ branch: leftToRight(branch) })}, the default branch. Push there, or check out a feature branch and continue on it.`, comment: '{branch} is a Git branch name.' })
+      : t({ message: `This pushes from ${ph({ branch: leftToRight(branch) })}, the default branch. Push there, or check out a feature branch and continue on it.`, comment: '{branch} is a Git branch name.' }),
+    confirm: t({ message: `Push to ${ph({ branch: leftToRight(branch) })}`, comment: '{branch} is a Git branch name.' }),
   }
 }
 
@@ -146,11 +147,11 @@ export function noticeFor(progress: GitActionProgress): GitNotice {
   }
   if (progress.status === 'failed') return { tone: 'error', title: t`Action failed`, ...(progress.error ? { detail: progress.error } : {}) }
   const toast = progress.result?.toast
-  if (!toast) return { tone: 'success', title: t({ message: 'Done', comment: 'A Git action finished.' }) }
+  if (!toast) return { tone: 'success', title: t({ message: 'Done', context: 'git action finished', comment: 'A Git action finished.' }) }
   return { tone: 'success', title: toast.title, ...(toast.description ? { detail: toast.description } : {}), ...(toast.cta.kind === 'none' ? {} : { cta: toast.cta }) }
 }
 
-export const fileCount = (count: number): string => plural(count, { one: '# file', other: '# files' })
+export const fileCount = (count: number): string => plural(count, { one: `${{ files: shownCount(count) }} file`, other: `${{ files: shownCount(count) }} files` })
 
 /** `+12 −3`, or nothing for a file whose lines were not counted. */
 export function lineCounts(file: Pick<GitChangedFile, 'insertions' | 'deletions'>): string | null {
@@ -161,8 +162,8 @@ export function lineCounts(file: Pick<GitChangedFile, 'insertions' | 'deletions'
 /** Git's letter for a changed file, and its name in the interface language, read when shown. */
 export const STATUS_LETTER: Record<GitChangedFile['status'], { readonly letter: string; readonly label: string }> = {
   modified: { letter: 'M', get label() { return t({ message: 'Modified', comment: 'A changed file\'s Git status.' }) } },
-  added: { letter: 'A', get label() { return t({ message: 'Added', comment: 'A changed file\'s Git status.' }) } },
-  deleted: { letter: 'D', get label() { return t({ message: 'Deleted', comment: 'A changed file\'s Git status.' }) } },
+  added: { letter: 'A', get label() { return t({ message: 'Added', context: 'git status', comment: 'A changed file\'s Git status.' }) } },
+  deleted: { letter: 'D', get label() { return t({ message: 'Deleted', context: 'git status', comment: 'A changed file\'s Git status.' }) } },
   renamed: { letter: 'R', get label() { return t({ message: 'Renamed', comment: 'A changed file\'s Git status.' }) } },
   untracked: { letter: 'U', get label() { return t({ message: 'Untracked', comment: 'A changed file\'s Git status.' }) } },
   conflicted: { letter: 'C', get label() { return t({ message: 'Conflicted', comment: 'A changed file\'s Git status.' }) } },

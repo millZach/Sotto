@@ -13,6 +13,7 @@ import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
 import { EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, BOTTOM_ROWS, sandPath, TOP_ROWS } from './hourglass'
 import { usePixelLoop } from './pixelLoop'
+import { shownCount } from './interfaceWords'
 import './threadMonitor.css'
 
 /** The body every pose shares, so both read as the same creature. Ears, tail and belly never animate. */
@@ -288,7 +289,7 @@ export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitor
   return <ThreadOrnament kind="monitoring" character={character}
     creature={character === 'claude' ? <ClaudeBotMonitoring key={first.id} /> : <MonitoringCreature key={first.id} />}
     label={first.label} title={tasks.map(task => task.label).join('\n')}
-    status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${taskCount} tasks`} />
+    status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${{ taskCount: shownCount(taskCount) }} tasks`} />
 }
 
 const commandCount = (count: number): string => plural(count, { one: '# command', other: '# commands' })

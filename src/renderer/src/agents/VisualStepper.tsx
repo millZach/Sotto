@@ -1,5 +1,6 @@
 import React, { useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
+import { shownCount } from './interfaceWords'
 import './visualStepper.css'
 
 export interface VisualStepperProps {
@@ -47,12 +48,12 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
   const number = current + 1
   return <div className="visual-stepper" role="group" aria-label={t`Walkthrough`} onKeyDown={onKeyDown}>
     <div className="visual-stepper__head">
-      <span className="visual-stepper__count">{t`Step ${number} of ${count}`}</span>
+      <span className="visual-stepper__count">{t`Step ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`}</span>
       <div className="visual-stepper__dots" role="group" aria-label={t`Steps`}>
         {steps.map((_, step) => {
           const stepNumber = step + 1
           return <button key={step} ref={element => { dots.current[step] = element }} type="button"
-            tabIndex={step === current ? 0 : -1} className="visual-stepper__dot tt-focusable" aria-label={t`Go to step ${stepNumber}`}
+            tabIndex={step === current ? 0 : -1} className="visual-stepper__dot tt-focusable" aria-label={t`Go to step ${{ stepNumber: shownCount(stepNumber) }}`}
             aria-current={step === current ? 'step' : undefined} data-state={step === current ? 'current' : step < current ? 'done' : undefined}
             onClick={() => go(step)} />
         })}
@@ -60,9 +61,9 @@ export function VisualStepper({ steps, index, onStep }: VisualStepperProps): Rea
       <div className="visual-stepper__nav">
         {/* Back stays focusable on the first step, so a press there does not drop the focus. */}
         <button type="button" className="tt-button visual-stepper__button tt-focusable" aria-disabled={first || undefined}
-          onClick={() => go(current - 1)}>{t({ message: 'Back', comment: 'Goes to the previous step of a walkthrough.' })}</button>
+          onClick={() => go(current - 1)}>{t({ message: 'Back', context: 'walkthrough', comment: 'Goes to the previous step of a walkthrough.' })}</button>
         <button type="button" className="tt-button tt-button--primary visual-stepper__button tt-focusable"
-          onClick={() => last ? onStep(0) : go(current + 1)}>{last ? t`Start over` : t({ message: 'Next', comment: 'Goes to the next step of a walkthrough.' })}</button>
+          onClick={() => last ? onStep(0) : go(current + 1)}>{last ? t`Start over` : t({ message: 'Next', context: 'walkthrough', comment: 'Goes to the next step of a walkthrough.' })}</button>
       </div>
     </div>
     <p className="visual-stepper__text" aria-live="polite">{steps[current]!.text}</p>

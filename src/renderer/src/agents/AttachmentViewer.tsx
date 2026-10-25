@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Copy, Scan, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentAttachmentReference } from '../../../shared/agents'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
@@ -8,7 +9,8 @@ import { usePanZoom } from './diagrams/usePanZoom'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
 import type { SottoPlatform } from '../../../shared/platform'
-import { COPIED_IMAGE, useCopyImage } from './richActions'
+import { useCopyImage } from './richActions'
+import { shownCount } from './interfaceWords'
 import './diagrams/diagrams.css'
 
 export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'preview'>> {
@@ -27,7 +29,7 @@ function StripThumb({ image, origin, index, count, current, onSelect }: {
   const { t } = useLingui()
   const { source } = useAttachmentSource(image, origin)
   const name = image.name, number = index + 1
-  return <button type="button" className="attachment-viewer__thumb tt-focusable" aria-label={t({ message: `Show ${name}, ${number} of ${count}`, comment: '{name} is the file name of an image.' })}
+  return <button type="button" className="attachment-viewer__thumb tt-focusable" aria-label={t({ message: `Show ${name}, ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`, comment: '{name} is the file name of an image.' })}
     aria-current={current || undefined} data-index={index} onClick={() => onSelect(index)}>
     {source ? <img src={source} alt="" decoding="async" draggable={false} /> : null}
   </button>
@@ -55,7 +57,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const size = measured?.id === image.id ? measured : null
   // A screenshot is shown no larger than it is when it fits; zooming in is still possible.
   const zoom = usePanZoom(size?.width ?? 0, size?.height ?? 0, 1)
-  const [feedback, copyImage, say] = useCopyImage()
+  const [feedback, copyImage, say, copied] = useCopyImage()
   const root = useRef<HTMLDivElement>(null)
   const strip = useRef<HTMLDivElement>(null)
   const titleId = useId()
@@ -108,7 +110,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   }
   const copy = (): void => {
     if (source) copyImage(source)
-    else say(awaiting ? t`The image is still loading. Try again in a moment.` : t`This image is no longer available to copy.`)
+    else say(awaiting ? msg`The image is still loading. Try again in a moment.` : msg`This image is no longer available to copy.`)
   }
 
   const onKeyDown = (event: React.KeyboardEvent): void => {
@@ -134,9 +136,8 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     if (!inStrip) zoom.onKeyDown(event)
   }
 
-  const copied = feedback === t(COPIED_IMAGE)
   const number = index + 1, total = images.length
-  const position = several ? ` · ${t({ message: `${number} of ${total}`, comment: 'Which image of the message this is.' })}` : ''
+  const position = several ? ` · ${t({ message: `${{ number: shownCount(number) }} of ${{ total: shownCount(total) }}`, comment: 'Which image of the message this is.' })}` : ''
   const chord = platform === 'darwin' ? 'Command+C' : 'Ctrl+C'
   return createPortal(<div ref={root} className="attachment-viewer" data-scope={inPane ? 'pane' : 'window'} role="dialog" aria-labelledby={titleId} onKeyDown={onKeyDown}>
     <header className="attachment-viewer__bar">
@@ -164,7 +165,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
     {several ? <div ref={strip} className="attachment-viewer__strip" role="group" aria-label={t`Images in this message`}>
       {images.map((item, itemIndex) => <StripThumb key={item.id} image={item} origin={origin} index={itemIndex} count={images.length} current={itemIndex === index} onSelect={select} />)}
     </div> : null}
-    <p id={hintId} className="rich-diagram-viewer__hint">{several
+    <p id={hintId} className="rich-diagram-viewer__hint tt-paragraph">{several
       ? t`Drag to move · Scroll or +/− to zoom · 0 to fit · ← → for the next image`
       : t`Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit`}</p>
   </div>, container)

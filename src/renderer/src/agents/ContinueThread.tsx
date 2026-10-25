@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, CornerDownRight, CornerUpLeft, Laptop, X } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg, ph, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { hostForThread, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread, type HandoverCounts,
   type ProviderId, type ThreadContinuedIn } from '../../../shared/agents'
@@ -14,6 +14,7 @@ import { usesProviderModes } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
 import { clockLabel } from './threadFacts'
 import { ChoiceChip, effortChoices, modeChoices, PERMISSIONS_ICON, RUNTIME_LABELS, startingProviderMode } from './ThreadOptions'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { continueChoiceFor, continuedSince, continueModels, continueStore, lastLimitStop, providerDefaults, unavailableProviders,
   sameFolderOffered, useContinueChoice, useContinueEnabled, useContinueLinks, type ContinueChoice } from './continuations'
 import './continueThread.css'
@@ -86,7 +87,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
   const target = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider
     ?? t({ message: 'the other provider', comment: 'Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.' })
   const [counts, setCounts] = useState<HandoverCounts | null>(null)
-  const [readError, setReadError] = useState<string | null>(null)
+  const [readError, setReadError] = useState<LaterWords | null>(null)
   const [text, setText] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [reading, setReading] = useState(false)
@@ -103,7 +104,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
     bridge.read({ threadId: thread.id }).then(read => {
       if (!live) return
       if (read.status === 'ok') { setCounts(read.counts); setReadError(null) } else setReadError(read.message)
-    }, () => { if (live) setReadError(t`Sotto could not read what the handover carries. It is built again when you send.`) })
+    }, () => { if (live) setReadError(msg`Sotto could not read what the handover carries. It is built again when you send.`) })
     return () => { live = false }
   }, [bridge, thread.id, messageCount])
   // Escape from the composer under the strip puts the continuation away too, once nothing open there has taken the key.
@@ -133,21 +134,21 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
     try {
       const read = await bridge.read({ threadId: thread.id, words: true })
       if (read.status === 'ok' && read.text !== undefined) { setText(read.text); setCounts(read.counts); setOpen(true); setReadError(null) }
-      else setReadError(read.status === 'refused' ? read.message : t`Sotto could not read the handover. Press Read it to try again.`)
-    } catch { setReadError(t`Sotto could not read the handover. Nothing was sent. Press Read it to try again.`) }
+      else setReadError(read.status === 'refused' ? read.message : msg`Sotto could not read the handover. Press Read it to try again.`)
+    } catch { setReadError(msg`Sotto could not read the handover. Nothing was sent. Press Read it to try again.`) }
     finally { setReading(false) }
   }
   const ledger = counts === null ? null : handoverLedger(counts)
   const branch = thread.worktree?.branch ?? thread.worktree?.git?.branch ?? undefined
   const worktree = thread.worktree?.mode === 'independent'
   const sameDescription = worktree
-    ? branch ? t`This thread’s worktree, on ${branch}. Both threads change the same files.` : t`This thread’s worktree. Both threads change the same files.`
-    : branch ? t`This thread’s project folder, on ${branch}. Both threads change the same files.` : t`This thread’s project folder. Both threads change the same files.`
+    ? branch ? t`This thread’s worktree, on ${ph({ branch: leftToRight(branch) })}. Both threads change the same files.` : t`This thread’s worktree. Both threads change the same files.`
+    : branch ? t`This thread’s project folder, on ${ph({ branch: leftToRight(branch) })}. Both threads change the same files.` : t`This thread’s project folder. Both threads change the same files.`
   const sameFolder = t({ message: 'Same folder', comment: 'Where a continued thread works: the folder this thread works in.' })
   // A worktree that was put away offers only a new one until a send to this thread brings it back (ADR-0041).
   const copies = [
     ...(sameFolderOffered(thread) ? [{ id: 'same', label: sameFolder, description: sameDescription }] : []),
-    ...(branch ? [{ id: 'new-worktree', label: t`New worktree from ${branch}`, description: t`Starts from ${branch}’s last commit. Uncommitted changes stay where they are.` }] : []),
+    ...(branch ? [{ id: 'new-worktree', label: t`New worktree from ${ph({ branch: leftToRight(branch) })}`, description: t`Starts from ${ph({ branch: leftToRight(branch) })}’s last commit. Uncommitted changes stay where they are.` }] : []),
   ]
   const continueTarget = target
   const carried = ledger?.carried
@@ -172,7 +173,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
         : copies[0] ? <span className="continue-strip__fact" title={copies[0].description}>{copies[0].label}</span> : null}
       <span className="continue-strip__fact" title={t`Starting on another machine isn’t available yet.`}><Laptop size={14} aria-hidden="true" />{t`This computer`}</span>
     </div>
-    <p className="continue-strip__ledger">
+    <p className="continue-strip__ledger tt-paragraph">
       {counts?.historyKept === false ? <>{t`Keep local history is off, so it holds only what Sotto kept since it last started.`}{' '}</> : null}
       {carried === undefined ? readError === null ? <>{t`Reading what the handover carries…`}{' '}</> : null
         : <>{leftOut === null ? t`Handover first: it carries ${carried}.` : t`Handover first: it carries ${carried} and leaves out ${leftOut}.`}{' '}</>}
@@ -180,9 +181,9 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
         disabled={reading || bridge === undefined} onClick={() => void toggle()}>{open ? t`Hide it` : reading ? t`Reading it…` : t`Read it`}</button>
     </p>
     {open && text !== null ? <div id={regionId} className="continue-strip__text tt-focusable" tabIndex={0} role="region" aria-label={t`The handover, word for word`}>{text}</div> : null}
-    {choice.narrowed && choice.runtimeMode ? <p className="continue-strip__permission">{narrowedWords(choice.runtimeMode, choice.narrowed, target, model?.name)}</p> : null}
-    {readError === null ? null : <p className="continue-strip__error" role="alert">{readError}</p>}
-    {choice.error === null ? null : <p className="continue-strip__error" role="alert">{choice.error}</p>}
+    {choice.narrowed && choice.runtimeMode ? <p className="continue-strip__permission tt-paragraph">{narrowedWords(choice.runtimeMode, choice.narrowed, target, model?.name)}</p> : null}
+    {readError === null ? null : <p className="continue-strip__error tt-paragraph" role="alert">{shownWords(readError)}</p>}
+    {choice.error === null ? null : <p className="continue-strip__error tt-paragraph" role="alert">{shownWords(choice.error)}</p>}
   </section>
 }
 
@@ -262,6 +263,6 @@ export function ContinueComposerNote({ thread }: { readonly thread: AgentThread 
   const owner = stop ? LIMIT_OWNER[stop.provider] : undefined
   const provider = PROVIDER_LABELS[newest.provider]
   const resetsAt = stop?.resetsAt
-  return <p className="continue-composer-note"><CornerDownRight size={13} aria-hidden="true" />
+  return <p className="continue-composer-note tt-paragraph"><CornerDownRight size={13} aria-hidden="true" />
     <span>{resetsAt && owner ? t`Continued in a ${provider} thread. You can still send here once ${owner}’s limit resets at ${resetsAt}.` : t`Continued in a ${provider} thread. You can still send here.`}</span></p>
 }

@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState, useSyncExternalStore, type ReactNod
 import type { AgentCapabilities, AgentCommand, AgentThread } from '../../../shared/agents'
 import { compactionPending } from '../../../shared/compaction'
 import { providerRecommendsCompaction } from '../../../shared/providerProfile'
+import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { Button } from '../components/Button'
 import './threadCompaction.css'
 
@@ -38,7 +40,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
   const { t } = useLingui()
   const [now, setNow] = useState(Date.now)
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<LaterWords>('')
   const sending = useRef(false)
   const usage = thread.usage
   const snapshot = JSON.stringify([thread.id, usage?.contextUpdatedAt])
@@ -57,7 +59,7 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     if (sending.current || busy || !connected) return
     sending.current = true; setSubmitting(true); setError('')
     try { await command({ type: 'compact-thread', threadId: thread.id }) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : t`Native compaction could not start.`) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : msg`Native compaction could not start.`) }
     finally { sending.current = false; setSubmitting(false) }
   }
   if (!supported) return null
@@ -69,6 +71,6 @@ export function ThreadCompaction({ thread, supported, connected, command, blocke
     {/* A running compaction is said in the thread, where it would otherwise read as the agent working; what stays here is its result. */}
     {thread.compaction && thread.compaction.status !== 'running' ? <p className="tt-paragraph" role="status">{thread.compaction.status === 'completed' ? t`Context compacted`
       : thread.compaction.error ?? (thread.compaction.status === 'failed' ? t`Native compaction failed.` : t`Native compaction is unconfirmed. Reconnect to observe its result.`)}</p> : null}
-    {error ? <p role="alert">{error}</p> : null}
+    {error ? <p className="tt-paragraph" role="alert">{shownWords(error)}</p> : null}
   </div>
 }

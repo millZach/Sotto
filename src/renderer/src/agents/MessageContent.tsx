@@ -3,7 +3,7 @@ import type { Element, ElementContent, Root } from 'hast'
 import { Check, Copy, FileText, Image as ImageIcon } from 'lucide-react'
 import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from 'react-markdown'
 import { i18n } from '@lingui/core'
-import { msg, plural } from '@lingui/core/macro'
+import { msg, ph, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import remarkGfm from 'remark-gfm'
 import type { AgentAttachmentReference } from '../../../shared/agents'
@@ -15,6 +15,7 @@ import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import { useOwlFeature } from '../state/owlFeature'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import './rich-messages.css'
@@ -165,7 +166,8 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
   readonly anchorEnd?: boolean | undefined
 }) {
   const { t } = useLingui()
-  const [feedback, showFeedback] = useTransientFlag()
+  // The flag holds what happened, and its words are read when shown, in the interface language.
+  const [outcome, showOutcome] = useTransientFlag()
   const [highlighter, setHighlighter] = useState(highlighterNow)
   const scroll = useRef<HTMLPreElement>(null)
   /** How far the reader is from the end, kept so the whole body lands with the same lines in view. */
@@ -182,19 +184,20 @@ export const CodeBlock = memo(function CodeBlock({ code, language, cut, anchorEn
   }, [anchorEnd, code, cut?.keep])
   const highlighted = useMemo(() => highlight(code, language, highlighter), [code, language, highlighter])
   const label = language ? language.slice(0, 24) : t({ message: 'Code', comment: 'A code block\'s label when it names no language.' })
-  const copiedWord = t`Copied`
-  const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showFeedback(copiedWord), () => showFeedback(t`Copy failed`)) }
+  const copied = outcome === 'copied'
+  const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
+  const copy = (): void => { if (!cut) void writeClipboard(code).then(() => showOutcome('copied'), () => showOutcome('failed')) }
   const marker = cut ? <span className="activity-body__cut">{cut.line}</span> : null
   return <div className="rich-code" data-language={language} data-cut={cut?.keep}>
     <div className="rich-code__bar">
       <span className="rich-code__language">{label}</span>
       <span className="rich-code__status" role="status" aria-live="polite">{feedback || cut?.status}</span>
-      <button type="button" className="rich-code__copy tt-focusable" data-copied={feedback === copiedWord || undefined} aria-disabled={cut ? true : undefined}
+      <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-disabled={cut ? true : undefined}
         aria-label={cut
           ? language ? t({ message: `Copy ${label} code, once the rest arrives`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code, once the rest arrives`
           : language ? t({ message: `Copy ${label} code`, comment: '{label} is the code\'s language, such as TypeScript.' }) : t`Copy code`}
         title={cut ? t`Copy works once the rest arrives` : t`Copy code`} onClick={copy}>
-        {feedback === copiedWord ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+        {copied ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
       </button>
     </div>
     <pre ref={scroll} className="rich-code__scroll" tabIndex={0} aria-label={t({ message: `${label} code block`, comment: '{label} is the code\'s language, such as TypeScript, or the word "Code".' })}
@@ -218,8 +221,8 @@ function MarkdownLink({ href, title, children }: { href?: string | undefined; ti
   const file = !url && reveal ? localFilePath(href) : null
   const manager = fileManager()
   // No href: a file path never becomes something the window could navigate to.
-  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${file}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
-    aria-label={t({ message: `Show ${file} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
+    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
     onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</a>
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
   if (!url) return <span className="rich-link rich-link--inert" title={href ? t`Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden">{' '}{t`(link not opened: not a web address)`}</span> : null}</span>
@@ -272,7 +275,7 @@ const components: Components = {
   table: ({ children }) => <div className="rich-table tt-focusable" role="region" aria-label={i18n._(msg`Table`)} tabIndex={0}><table>{children}</table></div>,
   input: ({ type, checked }) => type === 'checkbox'
     ? <input className="rich-task" type="checkbox" checked={checked === true} disabled readOnly aria-label={checked
-      ? i18n._(msg({ message: 'Done', comment: 'A ticked task in a Markdown task list.' }))
+      ? i18n._(msg({ message: 'Done', context: 'ticked task', comment: 'A ticked task in a Markdown task list.' }))
       : i18n._(msg({ message: 'Not done', comment: 'An unticked task in a Markdown task list.' }))} />
     : null,
   h1: heading(3, 1), h2: heading(4, 2), h3: heading(5, 3), h4: heading(6, 4), h5: heading(6, 5), h6: heading(6, 6),
@@ -357,9 +360,11 @@ const MarkdownSegment = memo(function MarkdownSegment({ source, streaming }: { s
 export const MessageContent = memo(function MessageContent({ text, streaming = false, onOpenLink }: MessageContentProps): ReactNode {
   const { t } = useLingui()
   const [failedLink, setFailedLink] = useState<string | null>(null)
-  const [linkNotice, setLinkNotice] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown; main's as written.
+  const [linkNotice, setLinkNotice] = useState<LaterWords | null>(null)
   const [linkMenu, setLinkMenu] = useState<{ url: string; anchor: HTMLElement; at: { x: number; y: number } } | null>(null)
-  const [copyFeedback, showCopyFeedback] = useTransientFlag()
+  const [copyOutcome, showCopyOutcome] = useTransientFlag<'copied' | 'failed'>()
+  const copyFeedback = copyOutcome === 'copied' ? t`Link copied` : copyOutcome === 'failed' ? t`Could not copy the link` : null
   const router = useWebLinkRouter()
   const revealLinks = useOwlFeature('reveal-linked-files')
   const opener = useRef<(url: string, destination?: WebLinkDestination) => Promise<WebLinkResult> | WebLinkResult>(openWithBridge)
@@ -378,21 +383,21 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     reveal: revealLinks && router.revealFile ? path => {
       setFailedLink(null)
       setLinkNotice(null)
-      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(t`Sotto could not show this file. Nothing was opened.`))
+      void router.revealFile?.(path).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(msg`Sotto could not show this file. Nothing was opened.`))
     } : undefined,
-  }), [router, revealLinks, t])
+  }), [router, revealLinks])
   const menuItems = (url: string): LinkMenuItem[] => {
     const web = !url.startsWith('mailto:')
     return [
       ...(web && router.canEmbed && !onOpenLink ? [{ id: 'embedded', label: t`Open in Sotto browser`, run: () => context.open(url, 'embedded') }] : []),
       { id: 'external', label: web ? t`Open in system browser` : t`Open in mail app`, run: () => context.open(url, 'external') },
-      { id: 'copy', label: web ? t`Copy link` : t`Copy address`, run: () => { void writeClipboard(web ? url : linkLabel(url)).then(() => showCopyFeedback(t`Link copied`), () => showCopyFeedback(t`Could not copy the link`)) } },
+      { id: 'copy', label: web ? t`Copy link` : t`Copy address`, run: () => { void writeClipboard(web ? url : linkLabel(url)).then(() => showCopyOutcome('copied'), () => showCopyOutcome('failed')) } },
     ]
   }
   const closeLinkMenu = useMemo(() => () => setLinkMenu(null), [])
   const copyFailedLink = (): void => {
     if (!failedLink) return
-    void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyFeedback(t`Link copied`) }, () => showCopyFeedback(t`Could not copy the link`))
+    void writeClipboard(failedLink).then(() => { setFailedLink(null); showCopyOutcome('copied') }, () => showCopyOutcome('failed'))
   }
   // A deferred copy can be repeatedly interrupted by incoming snapshots, leaving
   // a running answer stale even after its latest text has reached the renderer.
@@ -404,7 +409,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
     <div className="rich-message" data-streaming={streaming || undefined} aria-busy={streaming || undefined}>
       {segments.map((source, index) => <MarkdownSegment key={index} source={source} streaming={streaming && index === segments.length - 1} />)}
       <div className="rich-message__feedback" role="status" aria-live="polite">
-        {failedLink ? <><span>{linkNotice ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : linkNotice ?? copyFeedback}
+        {failedLink ? <><span>{shownWords(linkNotice) ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : shownWords(linkNotice) ?? copyFeedback}
       </div>
     </div>
     {linkMenu ? <LinkMenu at={linkMenu.at} label={t`Link: ${menuHost}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}

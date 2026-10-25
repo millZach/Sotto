@@ -7,6 +7,7 @@ import { limitStopOf, type LimitStop } from '../../../shared/limitStops'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { useOwlFeature } from '../state/owlFeature'
 import { newestModelsFirst } from './ModelPicker'
+import type { LaterWords } from './interfaceWords'
 
 /**
  * Continuing a thread on another provider in the window (ADR-0089, Zach's pick B of the continue prototype, in place):
@@ -30,7 +31,8 @@ export interface ContinueChoice {
   /** The continued thread's Sotto thread ID, minted once when the continuation begins, so a retry finds the same thread. */
   readonly newThreadId: string
   readonly sending: boolean
-  readonly error: string | null
+  /** Sotto's words kept as a message and read when shown; main's refusal as written. */
+  readonly error: LaterWords | null
   /** The model picker opens on the strip as it appears, from the error's More. */
   readonly pick?: true | undefined
   /** Why the permission it started on is narrower than the source's, until the user chooses one. */

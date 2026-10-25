@@ -1,5 +1,4 @@
-import { i18n } from '@lingui/core'
-import { msg, t } from '@lingui/core/macro'
+import { msg } from '@lingui/core/macro'
 
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
 import { defaultNewThreadModelId, hostForThread, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
@@ -8,6 +7,7 @@ import { hostNewThreadPermission, nearestReasoningEffort } from '../../../shared
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
+import type { LaterWords } from './interfaceWords'
 import { pendingSettingsStore, unconfirmedKinds } from './pendingSettings'
 
 /** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
@@ -131,12 +131,12 @@ function newThreadOptions(state: AgentState, project: AgentProject) { return new
  * mints the thread's ID here so the caller can show it before main answers; a refusal resolves `created`
  * with the reason. The draft uses the same option helpers as main, so its chips show the defaults immediately.
  */
-export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: string }> {
+export async function beginNewThread(state: AgentState, command: AgentConnection['command'], project: AgentProject): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
   const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
-  if (!modelId) return { error: t`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
+  if (!modelId) return { error: msg`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
   let workingCopy: 'independent' | 'shared'
   try { workingCopy = await projectWorkingCopy(state, project) }
-  catch { return { error: i18n._(WORKING_COPY_READ_ERROR) } }
+  catch { return { error: WORKING_COPY_READ_ERROR } }
   const worktreeChoices = workingCopy === 'independent' ? { startFromOrigin: true } : {}
   const threadId = hostEntityKey(projectHostId(state, project), crypto.randomUUID())
   // The title is the thread's own, saved and sent to main, so it stays in English as main writes it.

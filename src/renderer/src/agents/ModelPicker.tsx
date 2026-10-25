@@ -295,7 +295,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
         {continuing ? <p className="model-picker__heading">{continueOn!.heading(selectedProvider!.name)}</p> : null}
         {!sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {filtered.map(option)}
-          {selectedProvider?.reason !== undefined ? <p className="model-picker__empty" role="note">{selectedProvider.reason}</p>
+          {selectedProvider?.reason !== undefined ? <p className="model-picker__empty tt-paragraph" role="note">{selectedProvider.reason}</p>
             : !filtered.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
           : found ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
@@ -330,7 +330,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
               </button>
             })}
           </div>}
-        {continuing ? <p className="model-picker__note">{continueOn!.note}</p> : note ? <p className="model-picker__note">{note}</p> : null}
+        {continuing ? <p className="model-picker__note tt-paragraph">{continueOn!.note}</p> : note ? <p className="model-picker__note tt-paragraph">{note}</p> : null}
       </div>
     </dialog>}
   </div>

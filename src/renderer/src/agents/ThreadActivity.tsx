@@ -10,10 +10,12 @@ import { isTerminalActivity } from '../../../shared/agentActivity'
 import {
   activityChanges, activityInput, activityLabel, agentStatusLabel, changeDiffIsCut, changeVerb, compactionSummary, currentAction, displayDiff, fenced, formatDuration, groupSummary, inputDetail,
   isTurnRecord, liveTurnId, nestActivities, openActivityLabel, statusText, timingNote, turnHeadline, type ActivityGroup, type ActivityNode, type TurnChange,
+  activityLeadKind, spokenActivity, type ActivityLabel, type ActivityLeadKind,
 } from './threadActivityView'
 import { useActivityBodies, useActivityBody } from './activityBodies'
 import { CutCode, CutProse } from './ActivityBody'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
+import { shownCount } from './interfaceWords'
 import './activity.css'
 
 /** A running turn shows its newest rows; older ones stay one click away. */
@@ -107,7 +109,7 @@ export function TurnChangedFiles({ changes, onDisclosure }: {
   const views = new Map(useActivityBodies(sources, open).map(view => [view.sent, view]))
   if (!changes.length) return null
   const count = changes.length
-  const label = plural(count, { one: 'Changed # file', other: 'Changed # files' })
+  const label = plural(count, { one: `Changed ${{ files: shownCount(count) }} file`, other: `Changed ${{ files: shownCount(count) }} files` })
   return <div className="thread-changes" data-expanded={open || undefined} onKeyDown={foldOnEscape(open, summary => { onDisclosure?.(summary); setOpen(false) })}>
     <button type="button" className="thread-changes__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
       onClick={event => { onDisclosure?.(event.currentTarget); setOpen(value => !value) }}>
@@ -189,7 +191,7 @@ function hasDetails(record: AgentActivity): boolean {
 }
 
 const STEP_LABELS: Record<string, MessageDescriptor> = {
-  completed: msg({ message: 'Done', comment: 'A plan step\'s state.' }),
+  completed: msg({ message: 'Done', context: 'plan step', comment: 'A plan step\'s state.' }),
   running: msg({ message: 'In progress', comment: 'A plan step\'s state.' }),
   pending: msg({ message: 'To do', comment: 'A plan step\'s state.' }),
 }
@@ -199,7 +201,7 @@ function PlanSteps({ record }: { readonly record: AgentActivity }): ReactNode {
   const { t } = useLingui()
   const steps = record.steps ?? []
   const done = steps.filter(step => step.status === 'completed').length, total = steps.length
-  return <ol className="thread-activity__steps" aria-label={t`Plan, ${done} of ${total} done`}>
+  return <ol className="thread-activity__steps" aria-label={t`Plan, ${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`}>
     {steps.map((step, index) => <li key={`${index}:${step.text}`} data-status={step.status}>
       <span className="thread-activity__step-mark" aria-hidden="true" />
       <span className="thread-activity__step-text">{step.text}</span>
@@ -229,7 +231,7 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
   return <div className="thread-activity__details">
     {record.steps?.length ? <PlanSteps record={record} /> : null}
     {record.command ? <MessageContent text={fenced(record.command, 'command')} /> : null}
-    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code>{cwd}</code></Trans></p> : null}
+    {cwd ? <p className="thread-activity__fact tt-paragraph"><Trans comment="Before the folder a command ran in.">In <code dir="ltr">{cwd}</code></Trans></p> : null}
     {cutText ? record.kind === 'reasoning' || !json
       ? <CutProse view={body} kind={record.kind === 'reasoning' ? 'thinking' : 'text'} text={text ?? ''} cut />
       : <CutCode view={body} kind="input" text={text ?? ''} language="json" cut />
@@ -248,7 +250,7 @@ function ActivityDetails({ record: sent, provider, connected }: { readonly recor
       {record.agents.filter(agent => agent.kind !== 'workflow').map((agent, index) => {
         const number = index + 1
         return <li key={agent.id} data-status={agent.status}>
-          <span className="thread-activity__agent">{t({ message: `Agent ${number}`, comment: 'One of the background agents a step started, numbered from 1.' })}</span>
+          <span className="thread-activity__agent">{t({ message: `Agent ${{ number: shownCount(number) }}`, comment: 'One of the background agents a step started, numbered from 1.' })}</span>
           <span className="thread-activity__agent-status">{agentStatusLabel(agent.status)}</span>
           {agent.message ? <span className="thread-activity__agent-message">{agent.message}</span> : null}
         </li>
@@ -275,7 +277,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const detailId = useId()
   const { record, children } = node
   const count = children.length
-  const steps = count ? plural(count, { one: '# step', other: '# steps' }) : ''
+  const steps = count ? plural(count, { one: `${{ files: shownCount(count) }} step`, other: `${{ files: shownCount(count) }} steps` }) : ''
   const base = activityLabel(record)
   const label = steps ? { ...base, preview: [base.preview, steps].filter(Boolean).join(' · ') } : base
   const shown = open ? { ...openActivityLabel(record), preview: steps } : label
@@ -283,14 +285,13 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
   const Icon = record.status === 'failed' ? CircleAlert : ICONS[record.kind]
   const running = record.status === 'running'
   const expandable = hasDetails(record) || children.length > 0
-  const spoken = [`${label.lead ? `${label.lead} ` : ''}${label.subject}`, label.preview,
+  const spoken = [spokenActivity(activityLeadKind(record), label), label.preview,
     record.status === 'completed' ? status ? t({ message: `completed in ${status}`, comment: 'Read aloud after an action\'s name: how long it took.' }) : t({ message: 'completed', comment: 'Read aloud after an action\'s name.' }) : status].filter(Boolean).join(', ')
   const subject = label.subject
   const body = <>
     <Icon className="thread-activity__icon" size={15} strokeWidth={1.8} aria-hidden="true" />
     <span className="thread-activity__label">
-      {shown.lead ? <span className="thread-activity__lead">{shown.lead} </span> : null}
-      <span className={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'}>{shown.subject}</span>
+      <ActivityWords kind={activityLeadKind(record, open)} label={shown} subjectClass={shown.mono ? 'thread-activity__subject thread-activity__subject--mono' : 'thread-activity__subject'} />
       {shown.preview ? <span className="thread-activity__preview"> {shown.preview}</span> : null}
     </span>
     <span className="thread-activity__meta" data-status={record.status} data-connected={connected || undefined}>
@@ -397,7 +398,29 @@ export function LiveActivity({ thread, connected, adjacentRecordId, sendingSince
           : label ? t({ message: 'Working', comment: 'A turn that is running.' }) : <WorkingWord />}
     </span>
     {label ? <span className="thread-activity-live__action">
-      {label.lead ? `${label.lead} ` : null}<span className={label.mono ? 'thread-activity__subject--mono' : undefined}>{label.subject}</span>
+      <ActivityWords kind={action ? activityLeadKind(action) : null} label={label} subjectClass={label.mono ? 'thread-activity__subject--mono' : undefined} plain />
     </span> : null}
   </div>
+}
+
+/**
+ * A row's verb and subject as one message, so a language puts the path where its grammar wants it (ADR-0123). A path
+ * or command keeps its own left-to-right box inside the sentence. `plain` leaves the verb in the line's own colour.
+ */
+function ActivityWords({ kind, label, subjectClass, plain = false }: {
+  readonly kind: ActivityLeadKind | null
+  readonly label: Pick<ActivityLabel, 'lead' | 'subject' | 'mono'>
+  readonly subjectClass: string | undefined
+  readonly plain?: boolean
+}): ReactNode {
+  const subject = <span className={subjectClass} {...(label.mono ? { dir: 'ltr' } : {})}>{label.subject}</span>
+  const words = kind === 'created' ? <Trans comment="A file change; {subject} is the file's path.">Created {subject}</Trans>
+    : kind === 'deleted' ? <Trans comment="A file change; {subject} is the file's path.">Deleted {subject}</Trans>
+      : kind === 'edited' ? <Trans comment="A file change; {subject} is the file's path.">Edited {subject}</Trans>
+        : kind === 'moved' ? <Trans comment="A file change; {subject} is the file's path.">Moved {subject}</Trans>
+          : kind === 'wrote' ? <Trans comment="A file change; {subject} is the file's path.">Wrote {subject}</Trans>
+            : kind === 'changed' ? <Trans comment="An open change of several files; {subject} is how many, such as 3 files.">Changed {subject}</Trans>
+              : null
+  if (words === null) return <>{label.lead ? plain ? `${label.lead} ` : <span className="thread-activity__lead">{label.lead} </span> : null}{subject}</>
+  return plain ? words : <span className="thread-activity__lead">{words}</span>
 }

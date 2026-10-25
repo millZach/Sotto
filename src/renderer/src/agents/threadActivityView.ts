@@ -4,6 +4,7 @@ import { msg, plural, t } from '@lingui/core/macro'
 import { THINKING_TITLE, type AgentActivity } from '../../../shared/agentActivity'
 import { isVisualMessage, type AgentMessage, type AgentThread } from '../../../shared/agents'
 import { formatTokenCount } from '../../../shared/threadUsage'
+import { shownCount } from './interfaceWords'
 
 /**
  * Where a thread's activity records sit in its transcript and how they read. Provider neutral:
@@ -405,10 +406,10 @@ export interface ActivityLabel {
 export function openActivityLabel(record: AgentActivity): ActivityLabel {
   const changes = record.changes ?? []
   const count = changes.length
-  return record.kind === 'file-change' && count > 1
+  return activityLeadKind(record, true) === 'changed'
     ? {
         lead: t({ message: 'Changed', comment: 'Before a count of files: Changed 3 files.' }),
-        subject: plural(count, { one: '# file', other: '# files' }), mono: false, preview: '',
+        subject: plural(count, { one: `${{ files: shownCount(count) }} file`, other: `${{ files: shownCount(count) }} files` }), mono: false, preview: '',
       }
     : { ...activityLabel(record), preview: '' }
 }
@@ -451,12 +452,43 @@ const CHANGE_VERBS: Record<string, ChangeVerb> = {
 /** Before a file's path, such as "Edited src/app.ts". */
 const CHANGE_VERB_WORDS: Record<ChangeVerb, MessageDescriptor> = {
   created: msg({ message: 'Created', comment: 'A file change, before the file\'s path.' }),
-  deleted: msg({ message: 'Deleted', comment: 'A file change, before the file\'s path.' }),
+  deleted: msg({ message: 'Deleted', context: 'file change', comment: 'A file change, before the file\'s path.' }),
   edited: msg({ message: 'Edited', comment: 'A file change, before the file\'s path.' }),
   moved: msg({ message: 'Moved', comment: 'A file change, before the file\'s path.' }),
   wrote: msg({ message: 'Wrote', comment: 'A file change, before the file\'s path.' }),
 }
 const changeVerbOf = (kind: string): ChangeVerb | undefined => Object.hasOwn(CHANGE_VERBS, kind) ? CHANGE_VERBS[kind] : undefined
+
+/** The verb that leads a row's subject: a file change's, or "Changed" over an open change of several files. */
+export type ActivityLeadKind = ChangeVerb | 'changed'
+
+/**
+ * Which verb leads a row, if any, so the window draws the verb and its subject as one message: a language puts the
+ * path where its grammar wants it (ADR-0123). `open` is the row of an open change, which names its count instead.
+ */
+export function activityLeadKind(record: AgentActivity, open = false): ActivityLeadKind | null {
+  if (record.kind !== 'file-change') return null
+  const changes = record.changes ?? []
+  if (!changes.length) return null
+  if (open && changes.length > 1) return 'changed'
+  const verbs = new Set(changes.map(change => changeVerbOf(change.kind) ?? change.kind))
+  const only = verbs.size === 1 ? [...verbs][0]! : ''
+  return only === 'created' || only === 'deleted' || only === 'wrote' || only === 'moved' ? only : 'edited'
+}
+
+/** A row's verb and subject as one sentence to read aloud, such as "Edited src/app.ts". */
+export function spokenActivity(kind: ActivityLeadKind | null, label: Pick<ActivityLabel, 'lead' | 'subject'>): string {
+  const subject = label.subject
+  switch (kind) {
+    case 'created': return t({ message: `Created ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'deleted': return t({ message: `Deleted ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'edited': return t({ message: `Edited ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'moved': return t({ message: `Moved ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'wrote': return t({ message: `Wrote ${subject}`, comment: 'A file change; {subject} is the file\'s path.' })
+    case 'changed': return t({ message: `Changed ${subject}`, comment: 'An open change of several files; {subject} is how many, such as 3 files.' })
+    default: return label.lead ? `${label.lead} ${subject}` : subject
+  }
+}
 /** Codex, Claude and Grok name the same changes differently; an unrecognized kind is shown as reported. */
 export const changeVerb = (kind: string): string => {
   const verb = changeVerbOf(kind)
@@ -535,11 +567,10 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
     case 'file-change': {
       const changes = record.changes ?? []
       if (!changes.length) return { lead: '', subject: record.title, mono: false, preview: '' }
-      const verbs = new Set(changes.map(change => changeVerbOf(change.kind) ?? change.kind))
-      const only = verbs.size === 1 ? [...verbs][0]! : ''
-      const lead = i18n._(CHANGE_VERB_WORDS[only === 'created' || only === 'deleted' || only === 'wrote' || only === 'moved' ? only : 'edited'])
+      const kind = activityLeadKind(record)
+      const lead = i18n._(CHANGE_VERB_WORDS[kind === null || kind === 'changed' ? 'edited' : kind])
       const more = changes.length - 1
-      return { lead, subject: changes[0]!.path, mono: true, preview: more > 0 ? plural(more, { one: 'and # more file', other: 'and # more files' }) : '' }
+      return { lead, subject: changes[0]!.path, mono: true, preview: more > 0 ? plural(more, { one: `and ${{ files: shownCount(more) }} more file`, other: `and ${{ files: shownCount(more) }} more files` }) : '' }
     }
     case 'subagent': {
       const input = activityInput(record)
@@ -553,7 +584,7 @@ export function activityLabel(record: AgentActivity): ActivityLabel {
       const steps = record.steps ?? []
       const done = steps.filter(step => step.status === 'completed').length, total = steps.length
       return { lead: '', subject: record.title, mono: false,
-        preview: total ? t({ message: `${done} of ${total} done`, comment: 'A plan\'s steps: 2 of 5 done.' }) : plainLine(record.text) }
+        preview: total ? t({ message: `${{ done: shownCount(done) }} of ${{ total: shownCount(total) }} done`, comment: 'A plan\'s steps: 2 of 5 done.' }) : plainLine(record.text) }
     }
     case 'compaction':
       return { lead: '', subject: record.title, mono: false, preview: compactionSummary(record) }
@@ -633,14 +664,14 @@ export function groupSummary(records: readonly AgentActivity[]): string {
   const notices = count('status').length
   // Each part starts lowercase: they are joined with commas, and the first letter of the whole is made a capital.
   const parts = [
-    commands ? plural(commands, { one: 'ran # command', other: 'ran # commands' }) : '',
-    changed ? plural(changed, { one: 'changed # file', other: 'changed # files' }) : '',
-    tools ? plural(tools, { one: 'used # tool', other: 'used # tools' }) : '',
-    actions ? plural(actions, { one: '# agent action', other: '# agent actions' }) : '',
+    commands ? plural(commands, { one: `ran ${{ commandCount: shownCount(commands) }} command`, other: `ran ${{ commandCount: shownCount(commands) }} commands` }) : '',
+    changed ? plural(changed, { one: `changed ${{ fileCount: shownCount(changed) }} file`, other: `changed ${{ fileCount: shownCount(changed) }} files` }) : '',
+    tools ? plural(tools, { one: `used ${{ toolCount: shownCount(tools) }} tool`, other: `used ${{ toolCount: shownCount(tools) }} tools` }) : '',
+    actions ? plural(actions, { one: `${{ actionCount: shownCount(actions) }} agent action`, other: `${{ actionCount: shownCount(actions) }} agent actions` }) : '',
     count('plan').length ? t({ message: 'updated the plan', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
-    summaries ? plural(summaries, { one: '# reasoning summary', other: '# reasoning summaries' }) : '',
-    thoughts ? plural(thoughts, { one: 'thought once', other: 'thought # times' }) : '',
-    notices ? plural(notices, { one: '# notice', other: '# notices' }) : '',
+    summaries ? plural(summaries, { one: `${{ summaryCount: shownCount(summaries) }} reasoning summary`, other: `${{ summaryCount: shownCount(summaries) }} reasoning summaries` }) : '',
+    thoughts ? plural(thoughts, { one: 'thought once', other: `thought ${{ times: shownCount(thoughts) }} times` }) : '',
+    notices ? plural(notices, { one: `${{ noticeCount: shownCount(notices) }} notice`, other: `${{ noticeCount: shownCount(notices) }} notices` }) : '',
     count('compaction').length ? t({ message: 'compacted the context', comment: 'One part of a list of what a turn did, starting lowercase.' }) : '',
   ].filter(Boolean)
   const text = parts.join(', ')

@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentRequest } from '../../../shared/agents'
 import { clockLabel } from './threadFacts'
 import { nearestTick, plainOpening, scrubberAfter, scrubberLane, scrubberShown, swell, tickPlaces, type ScrubberMark } from './messageScrubberMarks'
+import { shownCount } from './interfaceWords'
 import './messageScrubber.css'
 
 /** How close the pointer must come to a tick to reach it. */
@@ -304,7 +305,7 @@ function ScrubberCard({ ref, id, mark, index, count, who, running, requests, key
   const after = scrubberAfter(mark, requests)
   const number = index + 1, more = after.kind === 'asked' ? after.more : 0
   return <div ref={ref} id={id} role="tooltip" className="message-scrubber__card" style={{ top: `${top}px`, left: `${place.left}px`, width: `${place.width}px` }} onClick={onPress} onPointerEnter={onEnter} onPointerLeave={onLeave}>
-    <div className="message-scrubber__head"><b>{t({ message: 'You', comment: 'Who wrote a message: the user.' })}</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>{t`Message ${number} of ${count}`}</span></div>
+    <div className="message-scrubber__head"><b>{t({ message: 'You', comment: 'Who wrote a message: the user.' })}</b><span>{clockLabel(Date.parse(mark.message.createdAt))}</span><span>{t`Message ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`}</span></div>
     <p className="message-scrubber__said">{opening(mark, 400)}</p>
     {after.kind === 'reply' ? <><p className="message-scrubber__who"><Trans comment="{who} is the provider or Watcher.">{who} replied</Trans></p><p className="message-scrubber__then">{after.text}</p></>
       : after.kind === 'asked' ? <><p className="message-scrubber__who"><Trans comment="{who} is the provider or Watcher.">{who} asked</Trans></p><p className="message-scrubber__then">{after.question}</p>

@@ -209,7 +209,7 @@ function describe(state: AgentState, thread: AgentThread, now: number, continued
     sentence = lastAssistant?.text ?? t`Working in the background.`
   } else {
     state_ = 'done'
-    stateLabel = t({ message: 'Done', comment: 'A thread row\'s state: its turn has finished.' })
+    stateLabel = t({ message: 'Done', context: 'thread state', comment: 'A thread row\'s state: its turn has finished.' })
     if (lastAssistant !== undefined) sentence = lastAssistant.text
     else if (thread.status === 'error') sentence = t`The last turn failed. Open the thread to see why.`
     else if (lastUser !== undefined) {

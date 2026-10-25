@@ -58,8 +58,8 @@ function InteractiveVisualViewer({ visual, threadId, step, fallbackHint, frame }
 }): ReactNode {
   const { t } = useLingui()
   const closeButton = useRef<HTMLButtonElement>(null)
-  const { feedback, copy, close } = frame
-  const title = visual.title, copied = feedback === t`Copied`
+  const { feedback, copied, copy, close } = frame
+  const title = visual.title
   return <ViewerDialog title={t({ message: `Interactive page: ${title}`, comment: '{title} is the title of a page an agent made.' })} className="interactive-visual-viewer" status={feedback} focusOnOpen={closeButton} onClose={close}
     controls={<>
       <button type="button" className="rich-code__copy tt-focusable" data-copied={copied || undefined} aria-label={t`Copy page source`} title={t`Copy source`} onClick={copy}>

@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { RotateCw } from 'lucide-react'
-import { plural } from '@lingui/core/macro'
+import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentFileReference } from '../../../shared/agentFiles'
 import type { FilesBridge } from '../../../shared/files'
 import type { PromptSelection } from './promptSelection'
 import { detectFileTrigger, fileLimitReached, fileQueryParts, MAX_MENTIONED_FILES, searchFileEntries, unmentionableCount, type FileEntry, type FileTrigger } from './composerFiles'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 
 type Listing =
   | { readonly status: 'loading' }
   | { readonly status: 'ready'; readonly entries: readonly FileEntry[]; readonly truncated: boolean }
-  | { readonly status: 'error'; readonly message: string }
+  // Sotto's words kept as a message and read when shown; main's as written.
+  | { readonly status: 'error'; readonly message: LaterWords }
 
 interface Catalog {
   readonly threadId: string
@@ -55,7 +57,6 @@ const empty = (threadId: string): Catalog => ({ threadId, workspaceId: null, lis
 export function useFilePicker({ threadId, bridge, enabled, text }: {
   readonly threadId: string; readonly bridge: FilesBridge | undefined; readonly enabled: boolean; readonly text: string
 }): FilePickerModel {
-  const { t } = useLingui()
   const [selection, setSelection] = useState<{ readonly start: number; readonly end: number } | null>(null)
   const [active, setActive] = useState<{ readonly key: string; readonly index: number } | null>(null)
   const [dismissed, setDismissed] = useState<string | null>(null)
@@ -88,7 +89,7 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
 
   const load = useCallback(async (path: string, workspaceId: string | null): Promise<void> => {
     put(path, { status: 'loading' })
-    if (!bridge) { put(path, { status: 'error', message: t`Files is not available in this window.` }); return }
+    if (!bridge) { put(path, { status: 'error', message: msg`Files is not available in this window.` }); return }
     try {
       // A deeper folder needs the root's workspace token, so the root is always listed first.
       let token = workspaceId
@@ -101,8 +102,8 @@ export function useFilePicker({ threadId, bridge, enabled, text }: {
       const result = await bridge.list({ threadId, path, ...(path === '' || token === null ? {} : { workspaceId: token }) })
       if (!result.ok) { put(path, { status: 'error', message: result.error.message }); return }
       put(path, { status: 'ready', entries: result.value.entries, truncated: result.value.truncated }, result.value.workspace.workspaceId)
-    } catch { put(path, { status: 'error', message: t`Files could not be reached.` }) }
-  }, [bridge, put, threadId, t])
+    } catch { put(path, { status: 'error', message: msg`Files could not be reached.` }) }
+  }, [bridge, put, threadId])
 
   const known = listing !== undefined
   useEffect(() => {
@@ -153,12 +154,12 @@ export function FilePicker({ model, listId, selected = [], onSelect }: {
     list.current?.querySelector<HTMLElement>(`#${CSS.escape(fileOptionId(listId, activeIndex))}`)?.scrollIntoView?.({ block: 'nearest' })
   }, [activeIndex, listId])
   if (!model.open || trigger === null) return null
-  const failed = listing?.status === 'error' ? listing.message : null
+  const failed = listing?.status === 'error' ? shownWords(listing.message) : null
   const { filter } = fileQueryParts(trigger.query)
   const spaced = listing?.status === 'ready' ? unmentionableCount(listing.entries) : 0
   const message = failed !== null ? failed
     : listing === undefined || listing.status !== 'ready' ? t`Loading files…`
-      : listing.entries.length === 0 ? (directory ? t`${directory} has nothing to mention.` : t`This working copy has nothing to mention.`)
+      : listing.entries.length === 0 ? (directory ? t`${ph({ directory: leftToRight(directory) })} has nothing to mention.` : t`This working copy has nothing to mention.`)
         : options.length === 0 ? t`No files match “${filter}”.` : null
   const max = MAX_MENTIONED_FILES
   // The limit is the draft's, not this folder's: entries stay listed, and folders still browse.

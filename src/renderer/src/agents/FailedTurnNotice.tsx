@@ -50,6 +50,6 @@ export function FailedTurnNotice({ explanation }: { readonly explanation: Failed
   if (explanation?.kind !== 'notice') return null
   return <div className="thread-failed-notice">
     <CircleAlert className="thread-failed-notice__icon" size={15} aria-hidden="true" />
-    <p><strong>{explanation.title}</strong> {explanation.body}</p>
+    <p className="tt-paragraph"><strong>{explanation.title}</strong> {explanation.body}</p>
   </div>
 }

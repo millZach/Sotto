@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, Folder, FolderPlus, Search } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentProject, AgentState, ProviderId } from '../../../shared/agents'
 import type { AgentConnection } from './AgentContext'
@@ -8,6 +8,7 @@ import { hostIdOf, listedHostName } from './HostBadge'
 import { FolderBrowserDialog } from './FolderBrowserDialog'
 import { folderKey, folderName, projectAtFolder, projectOnHost } from './projectFolders'
 import { isCompositionKey } from './composerKeys'
+import type { LaterWords } from './interfaceWords'
 
 export { folderKey, folderName } from './projectFolders'
 
@@ -74,7 +75,7 @@ export function useProjectChooser(state: AgentState, onChoose: (choice: ProjectC
       <h3>{t({ message: 'Projects', comment: 'A heading over the projects a new thread can start in.' })}</h3>
       {projects.map((item, index) => <button className="new-thread-choice" type="button" key={item.id} data-highlighted={highlight === index + 1 || undefined} onMouseEnter={() => setHighlight(index + 1)} onClick={() => choose(index + 1)}><Folder size={18} /><span><strong>{item.title}</strong><small>{item.path}</small></span><ChevronRight size={15} /></button>)}
       {!projects.length && <p className="new-thread-dialog__empty tt-paragraph">{query ? t`No matching projects.` : remote ? t`No projects on this host yet.` : t`Choose a folder to start your first project.`}</p>}
-      {error && <p className="agent-error" role="alert">{error}</p>}
+      {error && <p className="agent-error tt-paragraph" role="alert">{error}</p>}
       {browsing ? <FolderBrowserDialog state={state} hostId={browseHostId} heading={t`Choose a folder for the new thread`}
         onUse={choice => chooseFolder(choice.path, choice.isNew === true)} onClose={() => setBrowsing(false)} /> : null}
     </div>,
@@ -95,7 +96,7 @@ export async function projectForFolder({ folder, isNew = false, command, latest,
   readonly providerId: ProviderId | undefined
   /** The host the folder is on, so the same path on another host is not taken for it. */
   readonly hostId?: string | undefined
-}): Promise<{ readonly project: AgentProject; readonly error: null } | { readonly project: null; readonly error: string }> {
+}): Promise<{ readonly project: AgentProject; readonly error: null } | { readonly project: null; readonly error: LaterWords }> {
   const key = folderKey(folder)
   const attemptKey = `${hostId ?? ''}:${providerId ?? ''}:${key}`
   const findProject = (snapshot: AgentState | null): AgentProject | null => snapshot?.host.projects.find(item => (hostId === undefined || projectOnHost(item, hostId)) && folderKey(item.path) === key) ?? null
@@ -109,7 +110,7 @@ export async function projectForFolder({ folder, isNew = false, command, latest,
   if (!project) {
     const refreshed = await command({ type: 'refresh' })
     project = findProject(refreshed) ?? findProject(latest())
-    if (!project) return { project: null, error: refreshed?.error ?? acknowledgement?.error ?? t`Still waiting for this folder’s project. Try again to check its status; the folder will not be added twice.` }
+    if (!project) return { project: null, error: refreshed?.error ?? acknowledgement?.error ?? msg`Still waiting for this folder’s project. Try again to check its status; the folder will not be added twice.` }
   }
   return { project, error: null }
 }

@@ -2,16 +2,17 @@
 // startup bundle. Renders run one at a time because Mermaid keeps global configuration.
 
 import mermaid, { type MermaidConfig } from 'mermaid'
-import { i18n } from '@lingui/core'
-import { msg, t } from '@lingui/core/macro'
+import { msg } from '@lingui/core/macro'
 import type { DiagramPalette } from './diagramPalette'
 import { FIGTREE_FONT_STACK } from '../../../../shared/figtreeFaces'
 import { FIGTREE_FONT_FACES } from '../../../../shared/figtreeFonts'
 import { DIAGRAM_RENDER_TIMEOUT_MS, MAX_DIAGRAM_EDGES, MAX_DIAGRAM_SOURCE_LENGTH, inspectDiagramSource } from '../../../../shared/diagramSource'
 import { keepRecent, readRecent } from '../../../../shared/recentMap'
-import { assertDiagramSafe } from './diagramSafety'
+import { assertDiagramSafe, DiagramRefusal } from './diagramSafety'
+import type { LaterWords } from '../interfaceWords'
 import { diagramStepCss } from './diagramSteps'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
+import { shownCount } from '../interfaceWords'
 
 export type DiagramRenderResult =
   | {
@@ -23,7 +24,8 @@ export type DiagramRenderResult =
     readonly title: string | null
     readonly description: string | null
   }
-  | { readonly ok: false; readonly reason: string }
+  // Sotto's reason is a message read when shown, so a change of language rewords it; Mermaid's own words as written.
+  | { readonly ok: false; readonly reason: LaterWords }
 
 const FONT_FAMILY = FIGTREE_FONT_STACK
 // The image document cannot see the window's fonts, so the label face travels with every drawing.
@@ -147,16 +149,17 @@ function paletteKey(palette: DiagramPalette): string {
  * A short reason from a Mermaid error. Grammar errors name the line only: the parser's list of
  * expected token names means nothing to a reader, and the source is shown right below.
  */
-export function readableDiagramError(error: unknown): string {
+export function readableDiagramError(error: unknown): LaterWords {
+  if (error instanceof DiagramRefusal) return error.reason
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
   const grammar = /^(?:Parse|Lexical) error on line (\d+)/u.exec(message.trim())
   if (grammar) {
-    const line = grammar[1] ?? ''
-    return t`The source has a syntax error on line ${line}.`
+    const line = shownCount(Number(grammar[1]))
+    return msg`The source has a syntax error on line ${line}.`
   }
   const head = message.split(/\r?\n/u).map(line => line.trim()).find(line => line && !/^[-.^\s]+$/u.test(line))
   // Mermaid's own words for any other error are shown as it wrote them.
-  if (!head) return t`Mermaid could not read this diagram.`
+  if (!head) return msg`Mermaid could not read this diagram.`
   const text = /[.!?]$/u.test(head) ? head : `${head.replace(/:$/u, '')}.`
   return text.length > 160 ? `${text.slice(0, 159)}…` : text
 }
@@ -217,7 +220,7 @@ async function renderNow(code: string, palette: DiagramPalette): Promise<Diagram
     sequence += 1
     const { svg } = await mermaid.render(`sotto-diagram-${sequence}`, code, stage)
     const image = toInertDiagramSvg(svg, { trustedCss: LABEL_FONT_CSS + finishingCss(palette), measure: measureOn(stage) })
-    if (!image) return { ok: false, reason: t`Mermaid did not produce a drawing.` }
+    if (!image) return { ok: false, reason: msg`Mermaid did not produce a drawing.` }
     return { ok: true, dataUrl: svgDataUrl(image.svg), width: image.width, height: image.height, title: image.title, description: image.description }
   } catch (error) {
     return { ok: false, reason: readableDiagramError(error) }
@@ -226,7 +229,7 @@ async function renderNow(code: string, palette: DiagramPalette): Promise<Diagram
   }
 }
 
-/** Read in the interface language each time it is used; a result is told slow by these words. */
+/** Read in the interface language each time it is shown; a result is told slow by this message. */
 const TOO_SLOW = msg({ message: 'Took too long to draw.', comment: 'A diagram that took too long to draw.' })
 const results = new Map<string, Promise<DiagramRenderResult>>()
 const MAX_CACHED_RESULTS = 24
@@ -234,29 +237,30 @@ const MAX_CACHED_RESULTS = 24
 /**
  * Renders `code` (already inspected and stripped of configuration) with `palette`. Results are
  * cached per source and palette, so moving between threads or re-mounting a transcript does not
- * redraw. Parsed complexity limits are the synchronous layout admission boundary. The timer
+ * redraw; a failure's reason is a message, read in the language shown (ADR-0123). Parsed complexity limits are the synchronous layout admission boundary. The timer
  * only handles asynchronous stalls; it cannot interrupt synchronous work. Elapsed-time checking
  * prevents a late synchronous completion from reporting success. Neither check preempts layout.
  * The next render still waits for actual completion, so Mermaid never runs twice at once.
  */
 export function renderDiagram(code: string, palette: DiagramPalette, timeoutMs = DIAGRAM_RENDER_TIMEOUT_MS): Promise<DiagramRenderResult> {
   const cacheKey = `${paletteKey(palette)}\n${code}`
+  const tooSlow = (): DiagramRenderResult => ({ ok: false, reason: TOO_SLOW })
   const cached = readRecent(results, cacheKey)
   if (cached) return cached
   const previous = queue
   const run = previous.then(async () => {
     const started = performance.now()
     const result = await renderNow(code, palette)
-    return performance.now() - started > timeoutMs ? { ok: false as const, reason: i18n._(TOO_SLOW) } : result
+    return performance.now() - started > timeoutMs ? tooSlow() : result
   })
   queue = run.catch(() => undefined)
   let timer: ReturnType<typeof setTimeout> | undefined
   // The clock starts when this render starts, not while it waits behind another.
   const settled = previous.then(() => Promise.race([
     run.catch((error: unknown) => ({ ok: false as const, reason: readableDiagramError(error) })),
-    new Promise<DiagramRenderResult>(resolve => { timer = setTimeout(() => resolve({ ok: false, reason: i18n._(TOO_SLOW) }), timeoutMs) }),
+    new Promise<DiagramRenderResult>(resolve => { timer = setTimeout(() => resolve(tooSlow()), timeoutMs) }),
   ])).finally(() => clearTimeout(timer))
   // A slow render is not cached, so a later view can try again once Mermaid is free.
-  void settled.then(result => { if (!result.ok && result.reason === i18n._(TOO_SLOW)) results.delete(cacheKey) })
+  void settled.then(result => { if (!result.ok && result.reason === TOO_SLOW) results.delete(cacheKey) })
   return keepRecent(results, cacheKey, settled, MAX_CACHED_RESULTS)
 }

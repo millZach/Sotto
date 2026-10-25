@@ -1,6 +1,6 @@
 // Pre-layout admission for the pinned Mermaid 11.17.2 databases. These are parsed values, not
 // estimates from source lines/regexes. Keep the real-parser/Electron tests green on upgrades.
-import { i18n } from '@lingui/core'
+import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import type { Diagram } from 'mermaid/dist/Diagram.js'
 import type { FlowDB } from 'mermaid/dist/diagrams/flowchart/flowDb.js'
@@ -13,22 +13,27 @@ const DIAGRAM_LAYOUT_LIMITS = Object.freeze({
   actors: 16, messages: 60, sequenceWork: 600,
   labelLength: 400, labelCharacters: 4000, rows: 120, edgeSpan: 4,
 })
-// Why a diagram is not drawn, shown as the reason: read in the interface language as the check refuses it.
+// Why a diagram is not drawn, shown as the reason: read in the interface language when it is shown.
 const COMPLEX = msg`Too complex to draw safely. This diagram exceeds the node, connection, nesting or label limits; its source is available.`
 const RESOURCES = msg`Image and icon resources are not drawn because they can load files or network resources. The diagram source is available.`
 const UNKNOWN = msg`This diagram uses a structure that cannot be checked safely. The diagram source is available.`
 
+/** Why the checks refuse a diagram, kept as a message so it is read in the interface language when shown. */
+export class DiagramRefusal extends Error {
+  constructor(readonly reason: MessageDescriptor) { super(reason.message ?? reason.id) }
+}
+
 type RecordValue = Record<string, unknown>
 function record(value: unknown): RecordValue {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(i18n._(UNKNOWN))
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new DiagramRefusal(UNKNOWN)
   return value as RecordValue
 }
 function array(value: unknown): unknown[] {
-  if (!Array.isArray(value)) throw new Error(i18n._(UNKNOWN))
+  if (!Array.isArray(value)) throw new DiagramRefusal(UNKNOWN)
   return value
 }
 function limited(condition: boolean): void {
-  if (!condition) throw new Error(i18n._(COMPLEX))
+  if (!condition) throw new DiagramRefusal(COMPLEX)
 }
 
 /** Cycles, missing parents and excessive ancestry all fail closed, with bounded traversal. */
@@ -40,7 +45,7 @@ function nesting(parents: Map<string, string | undefined>): number {
     const seen = new Set([id])
     while (parent !== undefined) {
       limited(!seen.has(parent) && ++depth <= DIAGRAM_LAYOUT_LIMITS.depth)
-      if (!parents.has(parent)) throw new Error(i18n._(UNKNOWN))
+      if (!parents.has(parent)) throw new DiagramRefusal(UNKNOWN)
       seen.add(parent)
       parent = parents.get(parent)
     }
@@ -88,7 +93,7 @@ function resource(node: RecordValue): void {
   // FlowDB has already interpreted YAML, including escapes and aliases, and resolved the shape.
   // Check the raw vertices too: collapsed subgraphs can hide vertices from getData().
   if (node.img !== undefined || node.icon !== undefined ||
-    /image|icon/iu.test(String(node.shape ?? node.type ?? ''))) throw new Error(i18n._(RESOURCES))
+    /image|icon/iu.test(String(node.shape ?? node.type ?? ''))) throw new DiagramRefusal(RESOURCES)
 }
 
 function graph(data: unknown, rawDepth = 0): void {
@@ -99,7 +104,7 @@ function graph(data: unknown, rawDepth = 0): void {
   const parents = new Map<string, string | undefined>()
   for (const node of nodes) {
     resource(node)
-    if (typeof node.id !== 'string' || (node.parentId !== undefined && typeof node.parentId !== 'string')) throw new Error(i18n._(UNKNOWN))
+    if (typeof node.id !== 'string' || (node.parentId !== undefined && typeof node.parentId !== 'string')) throw new DiagramRefusal(UNKNOWN)
     parents.set(node.id, node.parentId as string | undefined)
   }
   const depth = Math.max(rawDepth, nesting(parents))
@@ -171,6 +176,6 @@ export function assertDiagramSafe(diagram: Pick<Diagram, 'type' | 'db'>): void {
       labels([...actors.values(), ...messages, ...db.getBoxes()])
       break
     }
-    default: throw new Error(i18n._(UNKNOWN))
+    default: throw new DiagramRefusal(UNKNOWN)
   }
 }

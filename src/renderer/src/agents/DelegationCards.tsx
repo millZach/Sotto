@@ -64,7 +64,7 @@ function WaitLine({ view, id, world }: { readonly view: DelegatedView; readonly 
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [ticking])
-  return <p id={id} className="delegation-card__wait">{delegationWaitLine(view, world.now ?? now)}</p>
+  return <p id={id} className="delegation-card__wait tt-paragraph">{delegationWaitLine(view, world.now ?? now)}</p>
 }
 
 /** The provider's mark and name, then the machine, under a card's first line. */
@@ -100,7 +100,7 @@ function RefusedDelegationCard({ view, world }: { readonly view: RefusedView; re
       <span className="delegation-card__name" title={title}>{title}</span>
     </div>
     <Where id={`delegation-${view.id}-details`} provider={view.provider ?? thread?.providerId} thread={thread} world={world} />
-    <p className="delegation-card__wait">{delegationRefusalLine(view)}</p>
+    <p className="delegation-card__wait tt-paragraph">{delegationRefusalLine(view)}</p>
   </div>
 }
 
@@ -193,9 +193,9 @@ export function DelegationComposerNote({ thread, state }: { readonly thread: Age
   // Stop shows while the thread works, as the composer decides it; what it also stops is main's rule, a turn still running.
   const working = enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
   if (!enabled) return null
-  if (working) return <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
+  if (working) return <p className="delegation-note tt-paragraph"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
   if (parentId === undefined) return null
   const parent = state.host.threads.find(item => item.id === parentId)
   const note = delegatedNote(parent?.title ?? t`The thread that delegated`, received.at(-1), userTurnRunning(thread, received), isThreadTurnRunning(thread))
-  return note === undefined ? null : <p className="delegation-note"><GitFork size={13} aria-hidden="true" /><span>{note}</span></p>
+  return note === undefined ? null : <p className="delegation-note tt-paragraph"><GitFork size={13} aria-hidden="true" /><span>{note}</span></p>
 }

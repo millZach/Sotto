@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import { ArrowUp, Laptop, ListPlus, MessageSquare, Server, Square, X } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { capabilitiesForThread, hostForThread, isThreadBusy, PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
 import { continueProviderRefusal, continueThreadRefusal, type ContinueStart } from '../../../shared/continueThread'
@@ -39,6 +39,7 @@ import { useDelegationsEnabled } from './delegations'
 import { stopLabel, workingDelegatedThreads } from './delegationWords'
 import { ContinueOptions, ContinueStrip } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
+import { shownWords, type LaterWords } from './interfaceWords'
 import './composer.css'
 import './reviewComments.css'
 
@@ -197,8 +198,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const continuing = begun !== undefined && !watcher && !answering ? begun : undefined
   const continueHost = hostForThread(state.host, row.thread)
   const continueModel = continuing === undefined ? undefined : resolveModel(continueHost.models, continuing.modelId)
-  const continueTarget = continueModel?.providerId ? PROVIDER_LABELS[continueModel.providerId] : continueModel?.provider
-    ?? t({ message: 'the other provider', comment: 'Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.' })
+  const continueTargetWords: LaterWords = continueModel?.providerId ? PROVIDER_LABELS[continueModel.providerId] : continueModel?.provider
+    ?? msg({ message: 'the other provider', comment: 'Stands in for a provider name in "Continue on {continueTarget}" and the like, when the model names none.' })
+  const continueTarget = shownWords(continueTargetWords)
   // Enter behind a prompt on its way queues instead of being refused, so the order typed is the order sent.
   const queueing = continuing === undefined && !answering && (queuesByDefault(row, state, localAdmissions) || sendInFlight && !queueBlocked)
   // While Watcher's handover is offered, a send is the choice to continue with it (ADR-0073).
@@ -252,7 +254,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (bridge === undefined) return
     if (carried.length > 0) store.edit(threadId, { text: composeReviewMessage(store.draft(threadId).text, carried) })
     const written = store.draft(threadId)
-    if (written.text.trim() === '') { continueStore.update(threadId, { error: t`Write what ${continueTarget} should do next. It goes with the handover.` }); return }
+    if (written.text.trim() === '') { continueStore.update(threadId, { error: msg({ message: `Write what ${{ continueTarget: continueTargetWords }} should do next. It goes with the handover.` }) }); return }
     continueStore.update(threadId, { sending: true, error: null })
     let result: ContinueStart
     try {
@@ -263,7 +265,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     } catch {
       // Main's answer was lost, so whether the new thread started is unknown. A retry names the same new thread, which main
       // refuses once it has started, so nothing is sent twice.
-      result = { status: 'refused', message: t`Sotto could not confirm whether the ${continueTarget} thread started. Your message is kept here. If it started, it is in the sidebar; continuing again sends nothing twice.` }
+      continueStore.update(threadId, { sending: false, error: msg({ message: `Sotto could not confirm whether the ${{ continueTarget: continueTargetWords }} thread started. Your message is kept here. If it started, it is in the sidebar; continuing again sends nothing twice.` }) })
+      return
     }
     if (result.status === 'refused') { continueStore.update(threadId, { sending: false, error: result.message }); return }
     continueStore.set(threadId, undefined)

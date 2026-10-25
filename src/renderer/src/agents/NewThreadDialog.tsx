@@ -7,6 +7,8 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './newThread.css'
 import { beginNewThread, type ThreadCreationStart } from './newThread'
+import { creationErrorWords } from './draftThreads'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { projectForFolder, useProjectChooser } from './ProjectChooser'
 import { listedHosts } from './HostBadge'
 
@@ -41,7 +43,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const projectHost = hostForThread(state.host, { hostId: chosenHost?.hostId ?? state.hostId })
   const [creating, setCreating] = useState(false)
   const creationInFlight = useRef(false)
-  const [error, setError] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown; main's refusal as written.
+  const [error, setError] = useState<LaterWords | null>(null)
   const latestState = useRef(state)
   latestState.current = state
   const completed = useRef(false)
@@ -59,7 +62,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
       if (onCreating) { onCreating(start); return }
       void start.created.then(creationError => {
         setCreating(false)
-        if (creationError !== null) { completed.current = false; creationInFlight.current = false; setError(creationError) } else onCreated()
+        if (creationError !== null) { completed.current = false; creationInFlight.current = false; setError(creationErrorWords(creationError)) } else onCreated()
       })
     })
   }
@@ -105,8 +108,8 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
           {item.kind === 'local' ? <Laptop size={15} aria-hidden="true" /> : <Server size={15} aria-hidden="true" />}{item.name}</button>)}
       </div> : null}
       {chooser.choices}
-      {creating ? <p role="status" className="new-thread-dialog__empty">{t`Opening the thread…`}</p> : null}
-      {error && <p className="agent-error" role="alert">{error}</p>}
+      {creating ? <p role="status" className="new-thread-dialog__empty tt-paragraph">{t`Opening the thread…`}</p> : null}
+      {error && <p className="agent-error tt-paragraph" role="alert">{shownWords(error)}</p>}
     <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Select', comment: 'A keyboard hint: Enter picks the highlighted item.' })}</span><span><kbd>Esc</kbd> {t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
   </dialog>
 }

@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { i18n } from '@lingui/core'
-import { msg } from '@lingui/core/macro'
+import { msg, ph } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Check, ChevronDown, Folder, GitBranch, GitMerge, GitPullRequest, GitPullRequestArrow, GitPullRequestClosed, GitPullRequestDraft, Laptop, Plus, Search, Server } from 'lucide-react'
 import type { AgentState } from '../../../shared/agents'
@@ -17,7 +17,7 @@ import { isCompositionKey } from './composerKeys'
 import { branchLabel, branchLabelIsRef, chordClaimed, chordMatches, createRefName, newWorktreeDraft, offersCreate, pickOutcome, pullRequestTitle, refBadges, switchFailure, TOOLBAR_SHORTCUTS, toolbarApplies, workspaceChoice, workspaceLabel, workspaceLocked, workspaceOptionId, workspaceOptions, type ToolbarThread, type WorkspaceChoice } from './branchToolbar.logic'
 import type { ThreadRow } from './threadFacts'
 import { threadHostName } from './HostBadge'
-import { wordsOf } from './interfaceWords'
+import { leftToRight, shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import './branchToolbar.css'
 
 type Command = AgentConnection['command']
@@ -67,7 +67,8 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hotkey = app?.settings?.hotkey
   const opener = useContext(PullRequestOpenerContext)
   const [busy, setBusy] = useState<'workspace' | 'branch' | null>(null)
-  const [notice, setNotice] = useState<{ readonly text: string; readonly tone: 'error' | 'status' } | null>(null)
+  // Sotto's words are kept as messages and read when shown, so a change of language rewords them; main's come as written.
+  const [notice, setNotice] = useState<{ readonly text: LaterWords; readonly tone: 'error' | 'status' } | null>(null)
   const workspaceTrigger = useRef<HTMLButtonElement>(null)
   const branchTrigger = useRef<HTMLButtonElement>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
@@ -78,14 +79,16 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   useEffect(() => { setNotice(null); setWorkspaceOpen(false); setBranchOpen(false); setCheckout(null) }, [thread.id])
   const explained = useRef(onExplainedError)
   explained.current = onExplainedError
-  useEffect(() => { explained.current?.(notice?.tone === 'error' ? notice.text : null) }, [notice])
+  const explainedText = notice?.tone === 'error' ? shownWords(notice.text) : null
+  useEffect(() => { explained.current?.(explainedText) }, [explainedText])
   useEffect(() => () => explained.current?.(null), [])
 
   const locked = workspaceLocked(thread)
   const options = workspaceOptions(thread, state.host.threads)
   const previous = options.find(option => option.choice.kind === 'previous')
 
-  const run = useCallback(async (lane: 'workspace' | 'branch', request: Parameters<Command>[0], failure: (error: string | null | undefined) => string): Promise<boolean> => {
+  const run = useCallback(async (lane: 'workspace' | 'branch', request: Parameters<Command>[0], failure: (error: string | null | undefined) => LaterWords,
+    unconfirmed: LaterWords = msg`Sotto could not confirm this change.`): Promise<boolean> => {
     if (inFlight.current) return false
     inFlight.current = true
     setBusy(lane); setNotice(null)
@@ -93,38 +96,39 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       const result = await command(request)
       if (!result || result.error) { setNotice({ text: failure(result?.error), tone: 'error' }); return false }
       return true
-    } catch { setNotice({ text: failure(t`Sotto could not confirm this change.`), tone: 'error' }); return false }
+    } catch { setNotice({ text: unconfirmed, tone: 'error' }); return false }
     finally { inFlight.current = false; setBusy(null) }
-  }, [command, t])
+  }, [command])
 
   const chooseWorkspace = async (choice: WorkspaceChoice): Promise<void> => {
     const worktree = thread.worktree
     const selection = choice.kind === 'current' ? { workingCopy: 'shared' as const }
       : choice.kind === 'new' ? { workingCopy: 'independent' as const, startFromOrigin: worktree?.startFromOrigin ?? true, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }
         : { workingCopy: 'independent' as const, existingWorktreePath: choice.path }
-    await run('workspace', { type: 'configure-thread-working-copy', threadId: thread.id, ...selection }, error => error ?? t`Could not change the workspace. Your choice is retained.`)
+    await run('workspace', { type: 'configure-thread-working-copy', threadId: thread.id, ...selection }, error => error ?? msg`Could not change the workspace. Your choice is retained.`)
   }
 
   const pick = async (ref: GitRef): Promise<boolean> => {
     const outcome = pickOutcome(ref, thread)
     switch (outcome.kind) {
       case 'refuse': setNotice({ text: outcome.reason, tone: 'error' }); return false
-      case 'repoint': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', existingWorktreePath: outcome.path }, error => error ?? t`Could not use that worktree. Your choice is retained.`)
-      case 'record-base': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', baseBranch: outcome.baseBranch, startFromOrigin: outcome.startFromOrigin }, error => error ?? t`Could not record the starting branch. Your choice is retained.`)
-      case 'switch': return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: outcome.ref }, switchFailure)
+      case 'repoint': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', existingWorktreePath: outcome.path }, error => error ?? msg`Could not use that worktree. Your choice is retained.`)
+      case 'record-base': return run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', baseBranch: outcome.baseBranch, startFromOrigin: outcome.startFromOrigin }, error => error ?? msg`Could not record the starting branch. Your choice is retained.`)
+      case 'switch': return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: outcome.ref }, switchFailure,
+        msg`Failed to switch ref. Sotto could not confirm this change.`)
     }
   }
   const create = async (name: string): Promise<boolean> => {
-    if (newWorktreeDraft(thread)) { setNotice({ text: t`A new worktree starts from a branch that exists. Choose one, or create the branch after the first send.`, tone: 'error' }); return false }
-    return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: name, create: true }, error => error ?? t({ message: `Could not create ${name}.`, comment: '{name} is a Git branch name.' }))
+    if (newWorktreeDraft(thread)) { setNotice({ text: msg`A new worktree starts from a branch that exists. Choose one, or create the branch after the first send.`, tone: 'error' }); return false }
+    return run('branch', { type: 'git-switch-branch', threadId: thread.id, ref: name, create: true }, error => error ?? msg({ message: `Could not create ${ph({ name: leftToRight(name) })}.`, comment: '{name} is a Git branch name.' }))
   }
   const setStartFromOrigin = async (startFromOrigin: boolean): Promise<void> => {
     const worktree = thread.worktree
-    await run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', startFromOrigin, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }, error => error ?? t`Could not change where the worktree starts from.`)
+    await run('branch', { type: 'configure-thread-working-copy', threadId: thread.id, workingCopy: 'independent', startFromOrigin, ...(worktree?.baseBranch ? { baseBranch: worktree.baseBranch } : {}) }, error => error ?? msg`Could not change where the worktree starts from.`)
   }
   const copyName = async (name: string): Promise<void> => {
-    try { await writeClipboard(name); setNotice({ text: t({ message: `Copied ${name}.`, comment: '{name} is a Git branch name.' }), tone: 'status' }) }
-    catch { setNotice({ text: t`Could not copy the branch name. Select it and copy it with Ctrl+C.`, tone: 'error' }) }
+    try { await writeClipboard(name); setNotice({ text: msg({ message: `Copied ${ph({ name: leftToRight(name) })}.`, comment: '{name} is a Git branch name.' }), tone: 'status' }) }
+    catch { setNotice({ text: msg`Could not copy the branch name. Select it and copy it with Ctrl+C.`, tone: 'error' }) }
   }
 
   // The shortcuts: each is claimed only when the dictation hotkey does not already mean the same keys, and only
@@ -163,7 +167,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
-    {notice ? <p className="branch-toolbar__notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p> : null}
+    {notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}</p> : null}
     {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
@@ -331,7 +335,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   /** The query the listed refs answer; Enter waits until it is the one typed. */
   const [loadedQuery, setLoadedQuery] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<LaterWords | null>(null)
   const enterPending = useRef(false)
   const searchEdited = useRef(false)
   const panel = useRef<HTMLDivElement>(null)
@@ -344,7 +348,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   const load = useCallback(async (nextQuery: string, cursor: number | undefined, refresh: boolean): Promise<void> => {
     const bridge = refsBridge()
     const turn = ++generation.current
-    if (!bridge) { setFailure(t`Branches are unavailable in this window.`); return }
+    if (!bridge) { setFailure(msg`Branches are unavailable in this window.`); return }
     setLoading(true); setFailure(null)
     try {
       const result = await bridge({ threadId, ...(nextQuery ? { query: nextQuery } : {}), ...(cursor !== undefined ? { cursor } : {}), limit: PAGE_SIZE, ...(refresh ? { refresh: true } : {}) })
@@ -353,9 +357,9 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
       setRefs(previous => cursor ? [...previous, ...result.refs] : result.refs)
       setLoadedQuery(nextQuery)
     } catch {
-      if (turn === generation.current) setFailure(t`Could not read the branches. Close and open the picker to try again.`)
+      if (turn === generation.current) setFailure(msg`Could not read the branches. Close and open the picker to try again.`)
     } finally { if (turn === generation.current) setLoading(false) }
-  }, [threadId, t])
+  }, [threadId])
   useEffect(() => {
     if (!open) { generation.current++; enterPending.current = false; return }
     enterPending.current = false; searchEdited.current = false
@@ -418,7 +422,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   }, [loadedQuery, query, refs, draftWorktree, pullRequestReference, close, choose, onCheckoutPullRequest, onCreate])
   useEffect(() => { if (open && !disabled && enterPending.current && takeEnter()) enterPending.current = false }, [open, disabled, takeEnter])
   const empty = !loading && answered && refs.length === 0 && !canCreate && !pullRequestReference
-  const checkedOutIn = (path: string): string => t({ message: `Checked out in ${path}`, comment: '{path} is the folder of the worktree that has the branch.' })
+  const checkedOutIn = (path: string): string => t({ message: `Checked out in ${ph({ path: leftToRight(path) })}`, comment: '{path} is the folder of the worktree that has the branch.' })
   const more = page?.nextCursor ?? null
   return <div className="branch-toolbar__picker"
     onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}
@@ -459,8 +463,8 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
           <span className="branch-toolbar__ref-name"><Trans>Create new ref “{createName}”</Trans></span></button> : null}
       </div>
       {more !== null ? <button type="button" className="branch-toolbar__more" disabled={loading} onClick={() => void load(query, more, false)}>{loading ? t`Loading…` : t`Show more`}</button> : null}
-      {empty ? <p className="branch-toolbar__empty tt-paragraph">{failure ?? (page && !page.isRepository ? t`This folder is not a Git repository.` : query ? t`No refs match.` : t`No branches yet.`)}</p> : null}
-      {failure && !empty ? <p className="branch-toolbar__empty" role="alert">{failure}</p> : null}
+      {empty ? <p className="branch-toolbar__empty tt-paragraph">{shownWords(failure) ?? (page && !page.isRepository ? t`This folder is not a Git repository.` : query ? t`No refs match.` : t`No branches yet.`)}</p> : null}
+      {failure && !empty ? <p className="branch-toolbar__empty tt-paragraph" role="alert">{shownWords(failure)}</p> : null}
       {draftWorktree ? <label className="branch-toolbar__switch"><input type="checkbox" role="switch" checked={startFromOrigin} onChange={event => onStartFromOrigin(event.target.checked)} />{t`Start from origin`}<small>{startFromOrigin ? t`Fetches the branch before first send.` : t`Uses the local branch as it is.`}</small></label> : null}
     </div> : null}
   </div>

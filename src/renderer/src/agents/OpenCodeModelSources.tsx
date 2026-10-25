@@ -132,7 +132,7 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
       {!signed.length ? <p className="oc-empty tt-paragraph">{host ? t({ message: `Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads on ${host}. That account pays for them.`, comment: '{host} is the name of a saved host.' }) : t`Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.`}</p> : null}
       <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} aria-label={host ? t({ message: `Add a model source to OpenCode on ${host}`, comment: '{host} is the name of a saved host.' }) : undefined} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />{t`Add a model source`}</Button></div>
     </> : null}
-    <p className="oc-notice" role="status">{notice}</p>
+    <p className="oc-notice tt-paragraph" role="status">{notice}</p>
     {error ? <p className="provider-detail__error" role="alert">{error}</p> : null}
     {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={checked} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
       onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} unreachable={unreachable}
@@ -389,12 +389,12 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         <input data-autofocus className="tt-input" type="password" value={flow.key} placeholder={t`Paste the key`} autoComplete="off" spellCheck={false}
           aria-describedby={[flow.error ? errorId : '', noteId].filter(Boolean).join(' ')} aria-invalid={flow.error ? true : undefined}
           onChange={event => update({ key: event.target.value })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void submitKey() } }} /></label>
-      <p className="oc-keynote" id={noteId}>{host ? hostKeySentence(host) : KEY_SENTENCE}</p>{error}</>
+      <p className="oc-keynote tt-paragraph" id={noteId}>{host ? hostKeySentence(host) : KEY_SENTENCE}</p>{error}</>
     actions = <>{cancel}<Button variant="primary" aria-label={t({ message: `Sign in to ${sourceName} with this key`, comment: '{sourceName} is a model source, such as Anthropic.' })} disabled={busy || !flow.key.trim() || !answered(method, flow.answers)} onClick={() => void submitKey()}>{busy ? t`Signing in…` : t`Sign in`}</Button></>
   } else if (method.kind === 'external') {
     const about = aboutMethod(source, method, host)
     const methodName = method.label.replace(/^\w/u, letter => letter.toLowerCase())
-    body = <>{formFields}<p className="oc-open">{host
+    body = <>{formFields}<p className="oc-open tt-paragraph">{host
       ? t({ message: `${about} Sotto’s OpenCode on ${host} reads it there, and Sotto keeps no copy.`, comment: '{about} is a sentence saying where the sign-in is; {host} is the name of a saved host.' })
       : t({ message: `${about} Sotto’s OpenCode reads it there, and Sotto keeps no copy.`, comment: '{about} is a sentence saying where the sign-in is.' })}</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) || undefined} variant="primary" disabled={busy || !answered(method, flow.answers)} onClick={() => void useExternal()}>{t({ message: `Use ${methodName}`, comment: '{methodName} is a way to sign in, in OpenCode\'s words, such as "ChatGPT account".' })}</Button></>
@@ -408,7 +408,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     const code = attempt.code ?? ''
     body = <><div className="oc-wait" role="group" aria-label={t({ message: `Signing in to ${sourceName}`, comment: '{sourceName} is a model source, such as Anthropic.' })}>
       {attempt.mode === 'code' ? <>
-        <p>{unopened
+        <p className="tt-paragraph">{unopened
           ? t({ message: `Approve on the ${sourceName} page at the address below, then paste the code it shows.`, comment: '{sourceName} is a model source, such as Anthropic.' })
           : t({ message: `Approve on the ${sourceName} page that opened in your browser, then paste the code it shows.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
         {address}
@@ -419,7 +419,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         {flow.taking ? status(t({ message: `Waiting for ${sourceName} to take the code. This updates by itself.`, comment: '{sourceName} is a model source, such as Anthropic.' })) : null}
         {until ? <p className="oc-wait__status tt-paragraph">{t({ message: `The code works until ${until}.`, comment: '{until} is a time of day.' })}</p> : null}
       </> : attempt.code ? <>
-        <p>{unopened
+        <p className="tt-paragraph">{unopened
           ? t({ message: `Enter this code on the ${sourceName} page at the address below.`, comment: '{sourceName} is a model source, such as Anthropic.' })
           : t({ message: `Enter this code on the ${sourceName} page that opened in your browser.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
         <div className="oc-code"><code>{attempt.code}</code>
@@ -429,7 +429,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
           ? t({ message: `Waiting for ${sourceName}. This updates by itself once you enter the code. It expires at ${until}.`, comment: '{sourceName} is a model source; {until} is a time of day.' })
           : t({ message: `Waiting for ${sourceName}. This updates by itself once you enter the code.`, comment: '{sourceName} is a model source, such as Anthropic.' }))}
       </> : <>
-        <p>{unopened
+        <p className="tt-paragraph">{unopened
           ? t({ message: `Finish signing in on the ${sourceName} page at the address below.`, comment: '{sourceName} is a model source, such as Anthropic.' })
           : t({ message: `Finish signing in on the ${sourceName} page that opened in your browser.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
         {address ?? <p className="oc-site">{attempt.page}</p>}
@@ -446,7 +446,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     body = <>{formFields}<p className="provider-detail__error tt-paragraph" role="alert">{flow.error ?? opencodeSignInComesBack(host ?? t({ message: 'the host', comment: 'Stands for a saved host whose name is not known, inside a sentence.' }))}</p></>
     actions = <>{cancel}<Button variant="primary" disabled aria-label={t({ message: `${methodLabel} cannot finish from this computer`, comment: '{methodLabel} is a way to sign in, in OpenCode\'s words.' })}><ExternalLink aria-hidden="true" size={14} />{t`Open sign-in page`}</Button></>
   } else {
-    body = <>{formFields}<p className="oc-open">{host
+    body = <>{formFields}<p className="oc-open tt-paragraph">{host
       ? t({ message: `Opens the ${sourceName} sign-in page in your browser on this computer. Sotto’s OpenCode on ${host} keeps the sign-in in its own folder there, and Sotto keeps no copy.`, comment: '{sourceName} is a model source; {host} is the name of a saved host.' })
       : t({ message: `Opens the ${sourceName} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) && source.methods.length < 2 ? true : undefined} variant="primary" aria-label={t({ message: `Open the ${sourceName} sign-in page in your browser`, comment: '{sourceName} is a model source, such as Anthropic.' })}
@@ -460,7 +460,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
           onClick={() => { leave(); setFlow(null); queueMicrotask(() => searchRef.current?.focus()) }}>
           <ChevronLeft aria-hidden="true" size={14} />{t`Model sources`}</button>
         <h2 id={titleId}>{t({ message: `Sign in to ${sourceName}`, comment: '{sourceName} is a model source, such as Anthropic.' })}</h2>
-        <p className="tt-dialog__description" id={aboutId}>{host
+        <p className="tt-dialog__description tt-paragraph" id={aboutId}>{host
           ? t({ message: `Its models join the model menu under OpenCode on ${host}, billed to your ${sourceName} account.`, comment: '{host} is the name of a saved host; {sourceName} is a model source.' })
           : t({ message: `Its models join the model menu under OpenCode, billed to your ${sourceName} account.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
         {source.methods.length > 1 && flow.phase === 'form' ? <fieldset className="oc-methods"><legend>{t`How to sign in`}</legend>{source.methods.map((choice, index) =>

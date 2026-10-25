@@ -10,6 +10,7 @@ import {
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
   type AxisPlacement, type DividerPlacement, type SplitLayout,
 } from './splitLayout'
+import { shownCount } from './interfaceWords'
 import './splitWorkspace.css'
 
 export type DropTarget = { readonly kind: 'side'; readonly side: 'start' | 'end' } | { readonly kind: 'pane'; readonly index: number } | { readonly kind: 'add' } | { readonly kind: 'open' }
@@ -294,7 +295,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
     event.preventDefault()
     if (next === null) return
     const name = title(threadId), position = next + 1, count = layout.panes.length
-    change(movePane(layout, index, next), t({ message: `${name} moved to pane ${position} of ${count}`, comment: '{name} is a thread\'s title.' }))
+    change(movePane(layout, index, next), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     // Ctrl+Shift+M zooms the focused pane or returns to the arrangement.
@@ -316,7 +317,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
           setMoving(null)
           if (target.kind !== 'pane') return
           const name = title(threadId), position = target.index + 1, count = layout.panes.length
-          change(movePane(layout, layout.panes.indexOf(threadId), target.index), t({ message: `${name} moved to pane ${position} of ${count}`, comment: '{name} is a thread\'s title.' }))
+          change(movePane(layout, layout.panes.indexOf(threadId), target.index), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
         }} />)}
     </div>
     : dragging === null ? null
@@ -354,7 +355,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   placed?.dividers.forEach((divider, position) => {
     const [before, after] = [divider.before.map(index => paneIds[index]!), divider.after.map(index => paneIds[index]!)]
     const first = divider.target.index + 1, second = divider.target.index + 2, beforeName = title(before[0]!), afterName = title(after[0]!)
-    const label = placed.dividers.length === 1 ? t`Resize panes` : divider.target.axis === 'rows' ? t`Resize rows ${first} and ${second}`
+    const label = placed.dividers.length === 1 ? t`Resize panes` : divider.target.axis === 'rows' ? t`Resize rows ${{ first: shownCount(first) }} and ${{ second: shownCount(second) }}`
       : t({ message: `Resize ${beforeName} and ${afterName}`, comment: 'Each name is a thread\'s title.' })
     const last = Math.max(...divider.before)
     dividersAfter.set(last, [...dividersAfter.get(last) ?? [], <PaneDivider key={`${divider.target.axis}-${divider.target.axis === 'columns' ? divider.target.row : 0}-${divider.target.index}`} divider={divider} position={position}

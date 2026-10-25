@@ -17,6 +17,7 @@ import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
+import { shownCount } from './interfaceWords'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
@@ -32,13 +33,13 @@ type Section = 'open' | 'settled'
 export function WorkingThreadsLine({ threads }: { readonly threads: AgentState['host']['threads'] }): ReactNode {
   const count = useMemo(() => countWorkingThreads(threads), [threads])
   if (count <= WORKING_THREADS_QUIET_MAX) return null
-  return <p className="thread-nav__working"><Gauge size={15} aria-hidden="true" /><span><strong>{workingThreadsLead(count)}</strong> {WORKING_THREADS_CAUTION}</span></p>
+  return <p className="thread-nav__working tt-paragraph"><Gauge size={15} aria-hidden="true" /><span><strong>{workingThreadsLead(count)}</strong> {WORKING_THREADS_CAUTION}</span></p>
 }
 
 /** "3 waiting on you": threads that need the user. */
-const waitingOnYou = (needs: number): string => plural(needs, { other: '# waiting on you' })
+const waitingOnYou = (needs: number): string => plural(needs, { other: `${{ needing: shownCount(needs) }} waiting on you` })
 /** "2 working": threads whose agent is working. */
-const workingCount = (working: number): string => plural(working, { other: '# working' })
+const workingCount = (working: number): string => plural(working, { other: `${{ workingThreads: shownCount(working) }} working` })
 
 function Indicators({ working, needs, id }: { readonly working: number; readonly needs: number; readonly id?: string }): ReactNode {
   // Subscribes, so the counts' words follow a change of language.
@@ -240,8 +241,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   const chordAppliesHere = listed !== null && folder.rows.some(row => row.thread.id === listed)
   const projectTitle = folder.title, hostName = host?.name, count = folder.rows.length
   const toggleLabel = hostName === undefined
-    ? plural(count, { one: `${projectTitle} # thread`, other: `${projectTitle} # threads` })
-    : plural(count, { one: `${projectTitle} on ${hostName} # thread`, other: `${projectTitle} on ${hostName} # threads` })
+    ? plural(count, { one: `${projectTitle} ${{ threads: shownCount(count) }} thread`, other: `${projectTitle} ${{ threads: shownCount(count) }} threads` })
+    : plural(count, { one: `${projectTitle} on ${hostName} ${{ threads: shownCount(count) }} thread`, other: `${projectTitle} on ${hostName} ${{ threads: shownCount(count) }} threads` })
   const suffix = newThreadShortcut?.suffix
   return <div className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}>
     <div className="thread-folder__head">
@@ -302,8 +303,8 @@ function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnTy
   }
   return <div ref={line} className="thread-nav__attention">
     <i aria-hidden="true" />
-    <span className="thread-nav__attention-count">{plural(count, { one: '# needs attention', other: '# need attention' })}</span>
-    <button type="button" className="thread-nav__attention-dismiss tt-focusable" aria-label={plural(count, { one: 'Dismiss Needs attention on # thread', other: 'Dismiss Needs attention on # threads' })}
+    <span className="thread-nav__attention-count">{plural(count, { one: `${{ threads: shownCount(count) }} needs attention`, other: `${{ threads: shownCount(count) }} need attention` })}</span>
+    <button type="button" className="thread-nav__attention-dismiss tt-focusable" aria-label={plural(count, { one: `Dismiss Needs attention on ${{ threads: shownCount(count) }} thread`, other: `Dismiss Needs attention on ${{ threads: shownCount(count) }} threads` })}
       aria-disabled={dismissing || undefined} onClick={dismiss}>{t`Dismiss all`}</button>
   </div>
 }
@@ -327,7 +328,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   readonly onDismissNewThreadError?: (() => void) | undefined
   readonly newThreadShortcut?: { readonly suffix: string; readonly keys: string } | undefined
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
@@ -338,7 +339,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
-  const hosts = useMemo(() => listedHosts({ connections }), [connections])
+  // "This computer" is in the interface language, so a change of language names the hosts again.
+  const hosts = useMemo(() => listedHosts({ connections }), [connections, locale])
   const folderView = (section: Section) => (folder: ProjectFolder): ReactNode => {
     const key = folderKey(section, folder.id)
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
@@ -370,7 +372,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       </section>
       <section aria-label={t`Settled`} className="thread-nav__shelf">
         <button ref={settledButton} className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}
-          aria-label={[plural(settledThreads, { one: 'Settled # thread', other: 'Settled # threads' }), settledNeeds ? waitingOnYou(settledNeeds) : '', settledWorking ? workingCount(settledWorking) : ''].filter(Boolean).join(', ')}>
+          aria-label={[plural(settledThreads, { one: `Settled ${{ threads: shownCount(settledThreads) }} thread`, other: `Settled ${{ threads: shownCount(settledThreads) }} threads` }), settledNeeds ? waitingOnYou(settledNeeds) : '', settledWorking ? workingCount(settledWorking) : ''].filter(Boolean).join(', ')}>
           <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span><Trans>Settled</Trans></span>
           {!settledShown ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}

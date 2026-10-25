@@ -2,7 +2,7 @@ import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, u
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
-import { msg, plural } from '@lingui/core/macro'
+import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
@@ -43,6 +43,7 @@ import { DelegationCardProvider, DelegationCards, delegationsByTurn, useDelegati
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
 import { scrubberMarks, SCRUBBER_FEWEST } from './messageScrubberMarks'
+import { shownCount, shownWords, type LaterWords } from './interfaceWords'
 import { compactionOf, liveTurnId, nestActivities, newsWorkLabel, placeActivities, splitTurns, turnChanges, workHeadline, type ActivityGroup, type ActivityPlacement, type TranscriptTurn, type TurnChange } from './threadActivityView'
 
 type Command = AgentConnection['command']
@@ -193,20 +194,22 @@ const drawn = (message: AgentMessage): boolean => message.role === 'user' || mes
  * Markdown; right-click, Shift+F10 or the ContextMenu key offers plain text instead.
  */
 function MessageCopy({ message, article }: { readonly message: AgentMessage; readonly article: React.RefObject<HTMLElement | null> }): ReactNode {
-  const [feedback, showFeedback] = useTransientFlag()
+  // The flag holds what happened, and the words for it are read when shown, in the interface language.
+  const [outcome, showOutcome] = useTransientFlag()
   const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number } | null>(null)
   const button = useRef<HTMLButtonElement>(null)
   const { t } = useLingui()
   const reply = message.role === 'assistant'
   const name = reply ? t`Copy reply as Markdown` : t`Copy message as Markdown`
-  const copyFailed = t`Copy failed`
-  const copied = feedback !== null && feedback !== copyFailed
+  const copied = outcome !== null && outcome !== 'failed'
+  const feedback = outcome === null ? null : outcome === 'failed' ? t`Copy failed` : outcome === 'plain' ? t`Copied as plain text`
+    : reply ? t`Copied reply as Markdown` : t`Copied message as Markdown`
   const copy = (format: 'markdown' | 'plain'): void => {
     const rendered = article.current?.querySelector('.rich-message')
     const text = format === 'markdown' || !rendered ? message.text : renderedPlainText(rendered)
     void writeClipboard(text).then(
-      () => showFeedback(format === 'markdown' ? reply ? t`Copied reply as Markdown` : t`Copied message as Markdown` : t`Copied as plain text`),
-      () => showFeedback(copyFailed))
+      () => showOutcome(format),
+      () => showOutcome('failed'))
   }
   const openMenu = (point: { readonly x: number; readonly y: number } | null): void => {
     const rect = button.current?.getBoundingClientRect()
@@ -490,11 +493,14 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   </>
 })
 
+const UNCONFIRMED_SET_ASIDE = msg`Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.`
+
 /**
  * A message the user sent from this window, drawn where it will sit in the conversation from the press
  * onwards. It says how the delivery went and offers the prompt back when it was refused. A prompt bound for
  * the queue is not drawn here: the queue above the composer holds it, with its controls, until it is sent.
  */
+
 function PendingMessage({ draftId, submission, status, row, state, command, store }: {
   readonly draftId: string; readonly submission?: Submission; readonly status: SubmissionStatus; readonly row: ThreadRow
   readonly state: AgentState; readonly command: Command; readonly store: ThreadDraftStore
@@ -503,7 +509,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
   const { draft } = useThreadComposer(store, row.thread.id)
   const watchActions = useWatchActions()
   const [settingAside, setSettingAside] = useState(false)
-  const [recoveryError, setRecoveryError] = useState<string | null>(null)
+  const [recoveryError, setRecoveryError] = useState<LaterWords | null>(null)
   const restored = submission?.restoredAs !== undefined && draft.draftId === submission.restoredAs
   const provider = state.host.providers && row.providerId ? { provider: row.providerId } : {}
   // The provider's history can show the exact message before Sotto has its confirmation.
@@ -524,10 +530,10 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
       const result = await command({ type: 'set-aside-send', threadId: row.thread.id, draftId })
       const delivery = result && deliveryFor(result, row.thread.id, draftId)
       if (!delivery?.setAside && delivery?.status !== 'accepted') {
-        setRecoveryError(result?.error ?? t`Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.`)
+        setRecoveryError(result?.error ?? UNCONFIRMED_SET_ASIDE)
       } else composer?.focus()
     } catch {
-      setRecoveryError(t`Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing.`)
+      setRecoveryError(UNCONFIRMED_SET_ASIDE)
     } finally { setSettingAside(false) }
   }
   // Only the header's Reconnect acts on a disconnected provider; Check again needs a connection.
@@ -558,7 +564,7 @@ function PendingMessage({ draftId, submission, status, row, state, command, stor
       {status === 'failed' ? <Button variant="ghost" onClick={() => store.dismiss(row.thread.id, draftId)}>{t`Dismiss`}</Button> : null}
     </div>
     {status === 'uncertain' && !setAside && local ? <span>{t`The provider may have received it. Continuing sets it aside without resending it.`}</span> : null}
-    {recoveryError && !setAside && status !== 'accepted' ? <span role="alert">{recoveryError}</span> : null}
+    {recoveryError && !setAside && status !== 'accepted' ? <span role="alert">{shownWords(recoveryError)}</span> : null}
   </div>
   // With no prompt text to show (already in the history, or recovered after a restart),
   // the state is a compact line under the conversation rather than an empty second bubble.
@@ -866,7 +872,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {thread.historyStatus === 'loading' && <div className="thread-history-status" role="status">{t`Loading messages…`}</div>}
         {thread.historyStatus === 'error' && <div className="thread-history-status" role="alert"><span>{thread.historyError || t`Could not load this thread’s messages.`}</span><Button variant="ghost" disabled={state.globalLaneBusy || !row.connected} onClick={() => void command({ type: 'refresh' })}>{t`Retry loading messages`}</Button></div>}
         {hidden > 0
-          ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}><Trans>Show earlier messages ({hidden})</Trans></Button></div>
+          ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={showEarlier}><Trans>Show earlier messages ({ph({ hidden: shownCount(hidden) })})</Trans></Button></div>
           /* Everything the window holds is on screen, and the thread store still has older messages. */
           : thread.earlierAvailable
             ? <div className="thread-transcript__earlier"><Button variant="ghost" onClick={loadEarlier}>{t`Show earlier messages`}</Button></div>

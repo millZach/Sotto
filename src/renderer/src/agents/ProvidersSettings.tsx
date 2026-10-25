@@ -1,6 +1,6 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
@@ -12,6 +12,7 @@ import { newestModelsFirst } from './ModelPicker'
 import { ProviderMark } from './ProviderMark'
 import { OpenCodeModelSources } from './OpenCodeModelSources'
 import { useTransientFlag, writeClipboard } from './richActions'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { localHostId, localProviders } from '../features/onboarding/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../shared/hostProviders'
 import './providers.css'
@@ -63,11 +64,12 @@ export function ProvidersSettings(): ReactNode {
   const [selected, setSelected] = useState<ProviderId>('codex')
   const [tab, setTab] = useState<'configuration' | 'models'>('configuration')
   const [pending, setPending] = useState<Partial<Record<ProviderId, 'connect' | 'disconnect' | 'refresh'>>>({})
-  const [errors, setErrors] = useState<Partial<Record<ProviderId, string | undefined>>>({})
+  // Sotto's words kept as messages and read when shown; the host's as written.
+  const [errors, setErrors] = useState<Partial<Record<ProviderId, LaterWords | undefined>>>({})
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
-  const [loginFeedback, showLoginFeedback] = useTransientFlag()
+  const [loginCopied, showLoginCopied] = useTransientFlag<'copied'>()
   const inFlight = useRef(new Set<ProviderId>())
   const checkInFlight = useRef(false)
   const sandboxActions = useRef<HTMLDivElement>(null)
@@ -83,7 +85,7 @@ export function ProvidersSettings(): ReactNode {
   const local = hasHostConnections ? state.host.clientHosts?.find(host => host.hostId === localHost) : undefined
   const here = hasHostConnections && localHost ? { hostId: localHost } : {}
   // With this computer's host off there are no clients here to show, and nothing on this page may reach another host's.
-  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty">{t`This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there.`}</p>
+  if (hasHostConnections && !local) return <p role="status" className="provider-models__empty tt-paragraph">{t`This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there.`}</p>
   const providers = localProviders(state)
   const hostModels = hasHostConnections ? local?.models ?? [] : state.host.models
   const clientUpdates = hasHostConnections ? local?.clientUpdates : state.clientUpdates
@@ -99,7 +101,7 @@ export function ProvidersSettings(): ReactNode {
     || (!model.providerId && model.provider === PROVIDER_LABELS[selected])))
   const label = PROVIDER_LABELS[selected]
   const clientName = CLIENT_NAMES[selected]
-  const detailError = errors[selected] ?? status.error
+  const detailError = shownWords(errors[selected] ?? null) ?? status.error
   const update = clientUpdates?.find(item => item.id === selected)
   const updating = (clientUpdates ?? []).some(item => item.state === 'updating' || item.state === 'queued') || Object.values(updatePending).some(Boolean)
   const selectedUpdating = Boolean(updatePending[selected]) || update?.state === 'updating' || update?.state === 'queued'
@@ -113,8 +115,8 @@ export function ProvidersSettings(): ReactNode {
       // A provider that needs attention is asked again too: after signing in, Check again is the press that should see it.
       if (statusFor(provider).connection === 'error' && !inFlight.current.has(provider)) await perform(provider, 'refresh')
       const result = await command({ type: 'check-client-updates', ...here })
-      if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? t`Could not check for client updates. Try again.` }))
-    } catch { setErrors(previous => ({ ...previous, [provider]: t`Could not check for client updates. Try again.` })) }
+      if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? msg`Could not check for client updates. Try again.` }))
+    } catch { setErrors(previous => ({ ...previous, [provider]: msg`Could not check for client updates. Try again.` })) }
     finally { checkInFlight.current = false; setCheckingUpdates(false) }
   }
   const runUpdate = async (provider: ProviderId): Promise<void> => {
@@ -123,7 +125,7 @@ export function ProvidersSettings(): ReactNode {
     setUpdatePending(previous => ({ ...previous, [provider]: true }))
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     const providerName = PROVIDER_LABELS[provider]
-    const failed = t({ message: `Could not update ${providerName}. Try again.`, comment: '{providerName} is a provider\'s name.' })
+    const failed = msg({ message: `Could not update ${providerName}. Try again.`, comment: '{providerName} is a provider\'s name.' })
     try {
       const result = await command({ type: 'update-client', provider, ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? failed }))
@@ -144,22 +146,22 @@ export function ProvidersSettings(): ReactNode {
     setErrors(previous => ({ ...previous, opencode: undefined }))
     try {
       const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES.opencode)
-      if (!result?.ok) setErrors(previous => ({ ...previous, opencode: t`The OpenCode guide could not be opened. Try again.` }))
-    } catch { setErrors(previous => ({ ...previous, opencode: t`The OpenCode guide could not be opened. Try again.` })) }
+      if (!result?.ok) setErrors(previous => ({ ...previous, opencode: msg`The OpenCode guide could not be opened. Try again.` }))
+    } catch { setErrors(previous => ({ ...previous, opencode: msg`The OpenCode guide could not be opened. Try again.` })) }
   }
   const copyMuseLogin = async (): Promise<void> => {
     setCopyingLogin(true)
     setErrors(previous => ({ ...previous, muse: undefined }))
-    try { await writeClipboard('muse login'); showLoginFeedback(t`Copied`) }
-    catch { setErrors(previous => ({ ...previous, muse: t`The command could not be copied. Select muse login and copy it yourself.` })) }
+    try { await writeClipboard('muse login'); showLoginCopied('copied') }
+    catch { setErrors(previous => ({ ...previous, muse: msg`The command could not be copied. Select muse login and copy it yourself.` })) }
     finally { setCopyingLogin(false) }
   }
   const openMuseGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
     try {
       const result = await window.sotto?.openExternalLink?.('https://dev.meta.ai/docs/muse-code')
-      if (!result?.ok) setErrors(previous => ({ ...previous, muse: t`The Muse guide could not be opened. Try again.` }))
-    } catch { setErrors(previous => ({ ...previous, muse: t`The Muse guide could not be opened. Try again.` })) }
+      if (!result?.ok) setErrors(previous => ({ ...previous, muse: msg`The Muse guide could not be opened. Try again.` }))
+    } catch { setErrors(previous => ({ ...previous, muse: msg`The Muse guide could not be opened. Try again.` })) }
   }
   const perform = async (provider: ProviderId, type: 'connect' | 'disconnect' | 'refresh'): Promise<void> => {
     if (inFlight.current.has(provider)) return
@@ -168,8 +170,8 @@ export function ProvidersSettings(): ReactNode {
     setErrors(previous => ({ ...previous, [provider]: undefined }))
     try {
       const result = await command({ type, provider, ...here, ...(type === 'connect' ? { notice: false as const } : {}) })
-      if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? t`Could not update this provider. Try again.` }))
-    } catch { setErrors(previous => ({ ...previous, [provider]: t`Could not update this provider. Try again.` })) }
+      if (!result || result.error) setErrors(previous => ({ ...previous, [provider]: result?.error ?? msg`Could not update this provider. Try again.` }))
+    } catch { setErrors(previous => ({ ...previous, [provider]: msg`Could not update this provider. Try again.` })) }
     finally { inFlight.current.delete(provider); setPending(previous => ({ ...previous, [provider]: undefined })) }
   }
   // Muse's shell sandbox is set when each of its hosts starts, so this computer's saved switch and its running hosts
@@ -182,7 +184,7 @@ export function ProvidersSettings(): ReactNode {
   }
   const saveMuseSandbox = async (disable: boolean): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
-    const failed = t`The shell sandbox setting was not saved, so Muse keeps the one it had. Try again.`
+    const failed = msg`The shell sandbox setting was not saved, so Muse keeps the one it had. Try again.`
     try {
       const result = await command({ type: 'configure', patch: { museDisableSandbox: disable }, ...here })
       if (!result || result.error) setErrors(previous => ({ ...previous, muse: result?.error ?? failed }))
@@ -218,7 +220,7 @@ export function ProvidersSettings(): ReactNode {
         <div key={`${selected}-${tab}`} id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} className="provider-detail__body">
           {tab === 'configuration' ? <>
             <div className="provider-connection"><div><h4>{t`Local connection`}</h4><p className="tt-paragraph">{selected === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : selected === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : selected === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
-              {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyMuseLogin()}>{loginFeedback ?? t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginFeedback ? t`Muse login command copied.` : ''}</span></div>}
+              {selected === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyMuseLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Muse login command copied.` : ''}</span></div>}
             </div>
               <Button variant={connected ? 'secondary' : 'primary'} disabled={Boolean(working) || selectedUpdating} aria-label={connected ? t({ message: `Disconnect ${label}`, comment: '{label} is a provider\'s name.' }) : status.connection === 'error' ? t({ message: `Retry ${label}`, comment: '{label} is a provider\'s name; the button connects it again.' }) : t({ message: `Connect ${label}`, comment: '{label} is a provider\'s name.' })}
                 onClick={() => void perform(selected, connected ? 'disconnect' : 'connect')}>{working ? pending[selected] === 'disconnect' ? t`Disconnecting…` : pending[selected] === 'refresh' ? t`Refreshing…` : t`Connecting…` : connected ? t`Disconnect` : status.connection === 'error' ? t`Retry connection` : t`Connect`}</Button>
@@ -241,10 +243,10 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'muse' && <div className="provider-client">
               <div>
                 <h4>{t`Shell sandbox`}</h4>
-                <p>{museDisableSandbox
+                <p className="tt-paragraph">{museDisableSandbox
                   ? t`Muse's shell commands and file tools run as you on this computer, with no sandbox: they can reach files outside the project and the network. Only turn this off where Muse's sandbox cannot be set up. A thread on Ask for approval still asks.`
                   : t`Muse's shell commands and file tools run inside its sandbox on this computer.`}</p>
-                {museSandboxOwed && <p className="provider-client__owed" role="status">{status.sandboxDisabled
+                {museSandboxOwed && <p className="provider-client__owed tt-paragraph" role="status">{status.sandboxDisabled
                   ? t`Muse is still running with its sandbox off. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way.`
                   : t`Muse is still running with its sandbox on. Reconnect Muse to apply the change. Reconnecting stops any Muse reply that is under way.`}</p>}
               </div>
@@ -260,7 +262,7 @@ export function ProvidersSettings(): ReactNode {
             {selected === 'muse' && <details className="provider-support"><summary>{t`Threads with Muse`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
             {selected === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
           </> : models.length ? <ul className="provider-models" aria-label={t({ message: `${label} available models`, comment: '{label} is a provider\'s name.' })}>{models.map(model => <li key={model.id}><span><strong>{model.name}</strong>{model.reasoningEfforts?.length ? <small>{model.reasoningEfforts.join(' · ')}</small> : null}</span><small>{model.ready ? model.id === inheritedEntryId ? t`Agent setting` : t({ message: 'Available', comment: 'Beside a model that can be chosen.' }) : t({ message: 'Unavailable', comment: 'Beside a model that cannot be chosen now.' })}</small></li>)}</ul> : <p className="provider-models__empty tt-paragraph">{connected ? t`No models were returned. Refresh this provider to check again.` : t({ message: `Connect ${label} to load its models.`, comment: '{label} is a provider\'s name.' })}</p>}
-          {detailError && <p role="alert" className="provider-detail__error">{detailError}</p>}
+          {detailError && <p role="alert" className="provider-detail__error tt-paragraph">{detailError}</p>}
         </div>
       </section>
     </div>

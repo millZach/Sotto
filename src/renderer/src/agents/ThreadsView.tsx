@@ -1,5 +1,6 @@
 import { focusedComposerField } from './promptSelection'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useListedRows } from './unsentThreads'
 import type { AgentProject, AgentState } from '../../../shared/agents'
@@ -12,7 +13,8 @@ import { useOwlFeature } from '../state/owlFeature'
 import { visibleWatcherState, withoutRoomWatcher } from './watcherVisibility'
 import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
-import { draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
+import { creationErrorWords, draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
+import { shownWords, type LaterWords } from './interfaceWords'
 import { describeThreads, organizeWorkspace, type ThreadRow } from './threadFacts'
 import { useContinueEnabled } from './continuations'
 import { NewThreadDialog } from './NewThreadDialog'
@@ -84,7 +86,7 @@ export interface ThreadsViewProps {
   readonly paneAreaHeight?: number | undefined
 }
 export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n: { locale } } = useLingui()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
@@ -96,7 +98,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   // button already know their project and skip it, opening the thread at once (issue #347). Opened by New thread
   // with this draft, it carries that draft into the thread it opens, and closing it lets the draft go with it.
   const [chooser, setChooser] = useState<{ readonly carried?: CarriedDraft } | null>(null)
-  const [newThreadError, setNewThreadError] = useState<string | null>(null)
+  // Sotto's words kept as messages and read when shown, so a change of language rewords them; main's as written.
+  const [newThreadError, setNewThreadError] = useState<LaterWords | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   // The pane the user just focused, shown at once while main confirms the selection. Once the command
   // settles, the next published state is the truth, so an older echo cannot pull focus back meanwhile.
@@ -117,14 +120,15 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
   // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
+  // Rows and folders carry words in the interface language, so a change of language describes them again.
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
+  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued, locale]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation), [state, sidebarRows, query, delegation]))
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation), [state, sidebarRows, query, delegation, locale]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -174,12 +178,12 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   // the composer with it, and only if that copy is still the one carried, images included; until then both are kept.
   const placeCarriedDraft = useCallback((threadId: string, carried: CarriedDraft): void => {
     void store.place(threadId, carried).then(placed => {
-      if (placed === 'too-long') { setNewThreadError(t`This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved.`); return }
+      if (placed === 'too-long') { setNewThreadError(msg`This draft is too long to add after what the new thread's composer already holds. Nothing was moved, and the draft is still saved.`); return }
       const latest = publishedRef.current
       const sameImages = (latest?.draftAttachments ?? []).map(image => image.id).join('\n') === carried.attachments.map(image => image.id).join('\n')
       if (placed === 'saved' && latest !== null && latest.draft === carried.text && latest.draftThreadId === carried.threadId && sameImages) void command({ type: 'cancel-draft' })
     })
-  }, [store, command, t])
+  }, [store, command])
   // Callbacks that cross into the memoised sidebar are hoisted: a fresh function each render would undo the memo.
   // The pane and its composer are on screen before the command is answered; main catches up under the same ID.
   // Shared by every instant-creation entry point: the pen, the empty page's button and the chooser.
@@ -190,17 +194,18 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     store.restoreRefusedCreation(start.thread.id, start.thread.projectId)
     if (carried) placeCarriedDraft(start.thread.id, carried)
     focusNewComposer()
-    void start.created.then(creationError => {
-      if (creationError === null) return
+    void start.created.then(refusal => {
+      if (refusal === null) return
+      const creationError = creationErrorWords(refusal)
       // A broadcast can confirm creation and release sends before the command's reply is lost.
       if (publishedRef.current?.host.threads.some(thread => thread.id === start.thread.id)) return
       // The pane is gone and gated sends never left the window; retain all its content, not just unsent text.
       const kept = store.carryRefusedCreation(start.thread.id, start.thread.projectId)
       setNewThreadError(!kept ? creationError : projectTitle === undefined
-        ? t({ message: `${creationError} Your prompt and screenshots are kept. Open New thread in the same project to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' })
-        : t({ message: `${creationError} Your prompt and screenshots are kept. Open New thread in ${projectTitle} to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' }))
+        ? msg({ message: `${{ creationError }} Your prompt and screenshots are kept. Open New thread in the same project to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' })
+        : msg({ message: `${{ creationError }} Your prompt and screenshots are kept. Open New thread in ${projectTitle} to get them back.`, comment: '{creationError} is the sentence that says why the thread could not be made.' }))
     })
-  }, [store, placeCarriedDraft, t])
+  }, [store, placeCarriedDraft])
   // The pen and the empty page's button already know their project: the thread opens at once, on the defaults
   // from Settings → Threads, selected and focused; a refusal shows in the sidebar's own error place.
   // Settles once the thread has opened or been refused.
@@ -309,7 +314,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
     <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
-      newThreadError={newThreadError} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
+      newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} />
     <section className="thread-workspace" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}

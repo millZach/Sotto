@@ -205,7 +205,7 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
       {defaultIndex >= 0 && <button type="button" className="effort-card__default tt-focusable" disabled={disabled || value === defaultValue}
         title={defaultTitle} onClick={() => choose(defaultIndex)}>{t({ message: 'Default', comment: 'A button that sets the model\'s own default reasoning effort.' })}</button>}
     </div>
-    <p id={`${id}-description`} className="effort-card__line">{line}</p>
+    <p id={`${id}-description`} className="effort-card__line tt-paragraph">{line}</p>
     <div className="effort-card__track">
       <div className="effort-card__pill" aria-hidden="true">
         <div className="effort-card__fill" />

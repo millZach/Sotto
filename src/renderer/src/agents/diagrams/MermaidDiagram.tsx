@@ -1,5 +1,4 @@
 import React, { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { DiagramExpanded, VisualActions, VisualCopyStatus, DiagramStage, diagramFrameState, useDiagramFrame } from './DiagramFrame'
@@ -7,6 +6,7 @@ import { useDiagramPalette, type DiagramPalette } from './diagramPalette'
 import type { DiagramRenderResult } from './diagramRenderer'
 import { inspectDiagramSource, type DiagramSourceInspection } from '../../../../shared/diagramSource'
 import { keepRecent } from '../../../../shared/recentMap'
+import { shownWords } from '../interfaceWords'
 import './diagrams.css'
 
 export interface MermaidDiagramProps {
@@ -71,7 +71,7 @@ export function useMermaidRendering(source: string, complete: boolean): MermaidR
     void loadDiagramRenderer()
       .then(renderer => renderer.renderDiagram(code, palette))
       .then(result => { rememberDrawing(key, result); return result })
-      .catch((): DiagramRenderResult => ({ ok: false, reason: i18n._(msg`The diagram renderer could not load.`) }))
+      .catch((): DiagramRenderResult => ({ ok: false, reason: msg`The diagram renderer could not load.` }))
       // A diagram that mounted drawn gets the same cached result back, and that confirmation is not a commit.
       .then(result => { if (live) setSettled(current => current?.code === code && current.result === result ? current : { code, result }) })
     return () => { live = false }
@@ -82,7 +82,7 @@ export function useMermaidRendering(source: string, complete: boolean): MermaidR
   const drawing: MermaidDrawn | null = current?.ok ? current : null
   const label = inspection.label, title = drawing?.title ?? inspection.title
   const name = label && title ? t({ message: `${label}: ${title}`, comment: 'A diagram\'s kind, such as Flowchart, then its title.' }) : label || title || ''
-  const reason = current && !current.ok ? current.reason : ''
+  const reason = current && !current.ok ? shownWords(current.reason) : ''
   const notice = !complete ? t`Draws when the block is complete.`
     : inspection.problem ?? (current && !current.ok ? t({ message: `Couldn't draw this diagram. ${reason}`, comment: '{reason} says why.' }) : !current ? t({ message: 'Drawing…', comment: 'A diagram is being drawn.' }) : null)
   const failed = !!inspection.problem || (current !== null && !current.ok)

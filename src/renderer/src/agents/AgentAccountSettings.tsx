@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
 import { FolderOpen, SlidersHorizontal } from 'lucide-react'
+import { i18n } from '@lingui/core'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentCommand, type AgentConfiguration, type AgentRuntimeMode, type AgentState } from '../../../shared/agents'
@@ -48,7 +49,8 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   const holding = (state.connections ?? []).filter(connection => connection.kind === 'remote' && connection.connected
     && newThreadOptionsOn(state, connection.hostId).permission.heldBack).map(connection => connection.name)
   const count = holding.length
-  const hosts = new Intl.ListFormat('en', { type: 'conjunction' }).format(holding)
+  // The names are joined the interface language's way, "a and b" or its own words for it.
+  const hosts = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format(holding)
   const asking = RUNTIME_LABELS['approval-required']
   const heldNote = count === 0 ? null : plural(count, {
     one: `${hosts} doesn’t let this computer answer permission requests yet, so its new threads start on "${asking}".`,
@@ -65,8 +67,8 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
       <ChoiceChip label={t`Default permissions for new threads`} placeholder={t`Provider default`} value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}
         onChange={mode => save({ newThreadRuntimeMode: (mode || null) as AgentRuntimeMode | null })} />
     </fieldset>
-    {fitNote ? <p className="account-row__note">{fitNote}</p> : null}
-    {heldNote ? <p className="account-row__note">{heldNote}</p> : null}
+    {fitNote ? <p className="account-row__note tt-paragraph">{fitNote}</p> : null}
+    {heldNote ? <p className="account-row__note tt-paragraph">{heldNote}</p> : null}
   </div>
 }
 
@@ -120,6 +122,6 @@ export function AgentSetupFields(): ReactNode {
           : <SavedField label={t`Default projects directory`} value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
       </div>
     </SettingsGroup>
-    {state.error ? <p className="agent-error" role="alert">{state.error}</p> : null}
+    {state.error ? <p className="agent-error tt-paragraph" role="alert">{state.error}</p> : null}
   </div>
 }

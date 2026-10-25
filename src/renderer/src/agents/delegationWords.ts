@@ -3,7 +3,7 @@ import { msg, plural, t } from '@lingui/core/macro'
 import { lastUserMessageIdOf, type AgentThread } from '../../../shared/agents'
 import { delegatedThreadsBelow, DELEGATION_PROMPTS_PER_THREAD, type DelegatedView, type DelegationOutcome, type RefusedView } from '../../../shared/delegation'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
-import { wordsOf } from './interfaceWords'
+import { shownCount, wordsOf } from './interfaceWords'
 import { clockLabel } from './threadFacts'
 
 /**
@@ -11,14 +11,14 @@ import { clockLabel } from './threadFacts'
  * what Stop will stop. Outcomes are worded as Watcher's are, as the placement prototype words them.
  */
 export const DELEGATION_OUTCOME_WORDS: Readonly<Record<DelegationOutcome, string>> = wordsOf({
-  working: msg({ message: 'Working', comment: 'A delegated thread\'s outcome: its turn is running.' }),
-  background: msg`Background work`,
-  answered: msg({ message: 'Answered', comment: 'A delegated thread\'s outcome: it answered the brief.' }),
-  failed: msg({ message: 'Failed', comment: 'A delegated thread\'s outcome.' }),
-  stopped: msg({ message: 'Stopped', comment: 'A delegated thread\'s outcome.' }),
-  paused: msg({ message: 'Paused', comment: 'A delegated thread\'s outcome.' }),
-  unknown: msg({ message: 'Unknown', comment: 'A delegated thread\'s outcome.' }),
-  refused: msg({ message: 'Refused', comment: 'A delegated thread\'s outcome: Sotto turned the delegation down.' }),
+  working: msg({ message: 'Working', context: 'delegation outcome', comment: 'A delegated thread\'s outcome: its turn is running.' }),
+  background: msg({ message: 'Background work', context: 'delegation outcome' }),
+  answered: msg({ message: 'Answered', context: 'delegation outcome', comment: 'A delegated thread\'s outcome: it answered the brief.' }),
+  failed: msg({ message: 'Failed', context: 'delegation outcome', comment: 'A delegated thread\'s outcome.' }),
+  stopped: msg({ message: 'Stopped', context: 'delegation outcome', comment: 'A delegated thread\'s outcome.' }),
+  paused: msg({ message: 'Paused', context: 'delegation outcome', comment: 'A delegated thread\'s outcome.' }),
+  unknown: msg({ message: 'Unknown', context: 'delegation outcome', comment: 'A delegated thread\'s outcome.' }),
+  refused: msg({ message: 'Refused', context: 'delegation outcome', comment: 'A delegated thread\'s outcome: Sotto turned the delegation down.' }),
 })
 
 /** "12 s", "5 min", "1 min 40 s", "1 h 4 min": a wait or an answer's time, to the second under a minute. */
@@ -134,7 +134,7 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     case 'PERMISSION_TOO_WIDE': return t`It asked for more permission than this thread has, or than your new-thread default allows. A delegated thread gets no more than either. ${nothing} To give it more, raise the lower of the two first.`
     // Refused only by versions of Sotto before #1183, which had a Threads in flight limit.
     case 'IN_FLIGHT_LIMIT': return t`This computer already had as many new threads working as Threads in flight allowed, a limit Sotto no longer has. ${nothing}`
-    case 'PROMPT_LIMIT': return t`That thread already had ${limit} briefs from this thread in this turn. Your next message to this thread renews the limit. ${nothing}`
+    case 'PROMPT_LIMIT': return t`That thread already had ${{ limit: shownCount(limit) }} briefs from this thread in this turn. Your next message to this thread renews the limit. ${nothing}`
     case 'PAUSED': return t`You were working in that thread, so it takes no brief until your turn there ends. ${nothing}`
     case 'TARGET_CHANGED': return t`You had sent your own message in that thread since this thread last read it. ${nothing}`
     case 'PENDING_USER_REQUEST': return t`That thread was waiting for your answer on its own card. ${nothing}`

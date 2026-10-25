@@ -14,7 +14,10 @@ export interface FrameControls {
   readonly source: string
   readonly showSource: boolean
   readonly expanded: boolean
+  /** How the last copy went, in the interface language, or null. */
   readonly feedback: string | null
+  /** The last copy went through. */
+  readonly copied: boolean
   readonly expandButton: RefObject<HTMLButtonElement | null>
   toggleSource(): void
   expand(): void
@@ -29,13 +32,16 @@ export function useFrameControls(source: string): FrameControls {
   const { t } = useLingui()
   const [showSource, setShowSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [feedback, showFeedback] = useTransientFlag()
+  // The flag holds what happened, and its words are read when shown, in the interface language.
+  const [outcome, showOutcome] = useTransientFlag()
   const expandButton = useRef<HTMLButtonElement>(null)
+  const copied = outcome === 'copied'
+  const feedback = outcome === null ? null : copied ? t`Copied` : t`Copy failed`
   return {
-    source, showSource, expanded, feedback, expandButton,
+    source, showSource, expanded, feedback, copied, expandButton,
     toggleSource: () => setShowSource(value => !value),
     expand: () => setExpanded(true),
-    copy: () => { void writeClipboard(source).then(() => showFeedback(t`Copied`), () => showFeedback(t`Copy failed`)) },
+    copy: () => { void writeClipboard(source).then(() => showOutcome('copied'), () => showOutcome('failed')) },
     close: () => {
       setExpanded(false)
       requestAnimationFrame(() => expandButton.current?.focus())
@@ -85,7 +91,7 @@ export function VisualActions({ frame, showing, shownTitle, copyLabel, expandLab
 }): ReactNode {
   const { t } = useLingui()
   const drawn = showing
-  const copied = frame.feedback === t`Copied`
+  const copied = frame.copied
   return <>
     {drawn && <button type="button" className="rich-code__copy tt-focusable" aria-pressed={frame.showSource} aria-label={t`Show source`} title={frame.showSource ? shownTitle : t`Show source`}
       onClick={frame.toggleSource}><CodeXml size={16} aria-hidden="true" /></button>}
@@ -118,7 +124,7 @@ export function DiagramStage({ frame, name, sourceLabel, block, stage, picture }
     </div>
   }
   const fallback = <>
-    {notice && <p id={frame.noticeId} className={`${block}__notice`} data-tone={failed ? 'problem' : 'waiting'}>
+    {notice && <p id={frame.noticeId} className={`${block}__notice tt-paragraph`} data-tone={failed ? 'problem' : 'waiting'}>
       {failed && <CircleAlert size={15} aria-hidden="true" />}<span>{notice}</span>
     </p>}
     <pre className={`rich-code__scroll ${block}__source`} tabIndex={0} aria-label={sourceLabel} aria-describedby={notice ? frame.noticeId : undefined}><code>{frame.source}</code></pre>
@@ -131,7 +137,7 @@ export function DiagramExpanded({ frame, name, picture }: { readonly frame: Diag
   const drawn = frame.rendering.drawing
   if (!frame.expanded || !drawn) return null
   return <DiagramViewer dataUrl={picture ?? drawn.dataUrl} width={drawn.width} height={drawn.height} name={name}
-    description={drawn.description} copyFeedback={frame.feedback} onCopy={frame.copy} onClose={frame.close} />
+    description={drawn.description} copyFeedback={frame.feedback} copied={frame.copied} onCopy={frame.copy} onClose={frame.close} />
 }
 
 /** The `data-state` a frame's root carries: drawn, failed, or showing its source while it draws. */

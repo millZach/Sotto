@@ -6,7 +6,7 @@ import { useLingui } from '@lingui/react/macro'
 import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
-import { wordsOf } from './interfaceWords'
+import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
 import { moveListboxFocus } from './listboxKeys'
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { EffortPicker, effortLabel } from './EffortPicker'
@@ -346,14 +346,14 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       : [...new Map([...continuing.models.map(model => [model.provider, model.providerId] as const), ...continuing.unavailable.map(item => [item.name, item.providerId] as const)])]
         .map(([name, providerId]) => ({ name, providerId, reason: continuing.refusal! }))
   const models = others.length > 0 ? [...own, ...others] : continuations.length > 0 ? [...own, ...continuations] : own
-  const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: string | null } | null>(null)
+  const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: LaterWords | null } | null>(null)
   const replace = async (provider: WatcherProvider, modelId: string): Promise<void> => {
     if (open === null || settle === undefined) return
     setReplacing({ provider, refusal: null })
     try {
       const refusal = settle(await open({ provider, modelId }))
       setReplacing(refusal === null ? null : { provider, refusal })
-    } catch { setReplacing({ provider, refusal: t`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
+    } catch { setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
   }
   /** What the window has drawn from main's published state: the confirmed values a press is measured against. */
   const drawn = settingValues(state, thread)
@@ -452,17 +452,17 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions']
   const notices = <>
-    {replacing?.refusal ? <p className="thread-options__notice" role="alert"><span>{replacing.refusal}</span></p> : null}
+    {replacing?.refusal ? <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(replacing.refusal)}</span></p> : null}
     {kinds.map(kind => {
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
-      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : kind === 'model' ? unconfirmedModelId : unconfirmedEffortId} className="thread-options__notice" role="alert">
+      return <p key={`unconfirmed-${kind}`} id={kind === 'permissions' ? unconfirmedId : kind === 'model' ? unconfirmedModelId : unconfirmedEffortId} className="thread-options__notice tt-paragraph" role="alert">
         <span>{unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
     })}
     {kinds.map(kind => {
       const refusal = settings.refusals[kind]
       if (!refusal) return null
-      return <p key={`refused-${kind}`} className="thread-options__notice" role="alert">
+      return <p key={`refused-${kind}`} className="thread-options__notice tt-paragraph" role="alert">
         <span>{settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
         <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>{t`Try again`}</button></p>
     })}

@@ -1,11 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
-import { plural, t } from '@lingui/core/macro'
+import { msg, plural, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useOptionalAgents } from './AgentContext'
 import { ProviderMark } from './ProviderMark'
+import { shownCount, shownWords, type LaterWords } from './interfaceWords'
 import './clientUpdates.css'
 
 function sinceLabel(iso: string): string {
@@ -26,7 +27,7 @@ export function ClientUpdateCard(): ReactNode {
   const agents = useOptionalAgents()
   const card = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<LaterWords | null>(null)
   const state = agents?.state
   const command = agents?.command
   const updates = state?.clientUpdates ?? []
@@ -70,7 +71,7 @@ export function ClientUpdateCard(): ReactNode {
       const ranAt = result?.clientUpdates?.find(update => update.id === provider)?.ranAt
       const ran = type === 'update-client' && ranAt !== undefined && ranAt !== ranBefore
       if (result?.error && !ran) setFailure(result.error)
-    } catch { setFailure(t`Could not reach the update. Try again.`) }
+    } catch { setFailure(msg`Could not reach the update. Try again.`) }
     finally { setBusy(false) }
   }
   const dismiss = (): Promise<void> => run('dismiss-client-updates')
@@ -109,7 +110,7 @@ export function ClientUpdateCard(): ReactNode {
           <Button variant="ghost" iconOnly aria-label={t`Dismiss`} disabled={busy} onClick={() => void dismiss()}><X size={14} /></Button>
         </>}
       </div>
-      {failure === null ? null : <p className="client-updates__error">{failure}</p>}
+      {failure === null ? null : <p className="client-updates__error tt-paragraph">{shownWords(failure)}</p>}
       {details === undefined ? null : <details className="client-updates__details"><summary>{t`Details`}</summary><p className="tt-paragraph">{details}</p></details>}
     </div>
   }
@@ -124,7 +125,7 @@ export function ClientUpdateCard(): ReactNode {
   const under = updating ? t`Your threads keep working`
     : failed.length ? t`Your installed version is unchanged`
     : unchanged.length ? t`The update ran, but the version did not move`
-    : behindCount ? plural(behindCount, { one: `# of ${total} clients has a newer version`, other: `# of ${total} clients have a newer version` })
+    : behindCount ? plural(behindCount, { one: `# of ${{ total: shownCount(total) }} clients has a newer version`, other: `# of ${{ total: shownCount(total) }} clients have a newer version` })
     : undefined
   const installCount = installable.length
   const checkedAt = shown.map(update => update.checkedAt).sort().at(-1) ?? new Date().toISOString()
@@ -160,14 +161,14 @@ export function ClientUpdateCard(): ReactNode {
           : null}
       </div>
     })}
-    {failure === null ? null : <p className="client-updates__error">{failure}</p>}
+    {failure === null ? null : <p className="client-updates__error tt-paragraph">{shownWords(failure)}</p>}
     <div className="client-updates__foot">
       <span>{sinceLabel(checkedAt)}</span>
       <div>
         {installable.length > 1 && !updating
           ? <Button variant="primary" disabled={busy}
             onClick={() => void (async () => { for (const update of installable) await run('update-client', update.id) })()}>
-            {t({ message: `Update all ${installCount}`, comment: '{installCount} is how many clients the press updates.' })}
+            {t({ message: `Update all ${{ installCount: shownCount(installCount) }}`, comment: '{installCount} is how many clients the press updates.' })}
           </Button>
           : null}
         {updating ? null : <Button variant="ghost" disabled={busy} onClick={() => void dismiss()}>{behind.length ? t`Not now` : t`Dismiss`}</Button>}

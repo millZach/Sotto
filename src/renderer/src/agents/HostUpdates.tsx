@@ -7,6 +7,7 @@ import type { HostsBridge } from '../../../shared/hosts'
 import { HOST_UPDATE_STEPS, type HostUpdateAction, type HostUpdatePhase, type HostUpdateState, type HostUpdateStep } from '../../../shared/hostUpdates'
 import { Button } from '../components/Button'
 import { useTransientFlag, writeClipboard } from './richActions'
+import { shownCount } from './interfaceWords'
 import './hostUpdates.css'
 
 /** How long a finished update's note stays before it goes by itself, unless the pointer or focus is on it. */
@@ -45,7 +46,7 @@ export function hostUpdatePillText(updates: readonly HostUpdateState[]): { reado
   const text = top.phase === 'waiting'
     ? top.clientsUpdating ? t({ message: `${name} waits for its clients`, comment: '{name} is the name of a saved host.' }) : t({ message: `${name} waits to update`, comment: '{name} is the name of a saved host.' })
     : top.phase === 'updating'
-      ? top.step === 'restart' && top.clientsUpdating ? t({ message: `Updating ${name} · waits for its clients`, comment: '{name} is the name of a saved host.' }) : t({ message: `Updating ${name} · ${step} of 4`, comment: '{name} is the name of a saved host; {step} is the step it is on, of four.' })
+      ? top.step === 'restart' && top.clientsUpdating ? t({ message: `Updating ${name} · waits for its clients`, comment: '{name} is the name of a saved host.' }) : t({ message: `Updating ${name} · ${{ step: shownCount(step) }} of 4`, comment: '{name} is the name of a saved host; {step} is the step it is on, of four.' })
       : top.phase === 'done' ? t({ message: `${name} updated`, comment: '{name} is the name of a saved host.' })
         : top.phase === 'failed' ? t({ message: `${name} not updated`, comment: '{name} is the name of a saved host.' })
           : t({ message: `Update for ${name}`, comment: '{name} is the name of a saved host.' })
@@ -109,9 +110,9 @@ interface HostProps {
 function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCommands }: HostProps): ReactNode {
   const { t } = useLingui()
   const id = useId()
-  const [copied, showCopied] = useTransientFlag()
+  const [copied, showCopied] = useTransientFlag<'copied' | 'failed'>()
   const { name, from, to, working } = update
-  const copy = (): void => { void writeClipboard(update.commands).then(() => showCopied(t`Copied`), () => showCopied(t`Could not copy`)) }
+  const copy = (): void => { void writeClipboard(update.commands).then(() => showCopied('copied'), () => showCopied('failed')) }
   const key = (action: string): string => `${action}:${update.id}`
   // Each name starts with the button's own words, which is what someone speaking to the app says, and adds what they leave out.
   const button = (action: HostUpdateAction, label: string, variant: 'primary' | 'secondary' | 'ghost', ariaLabel?: string, focus?: string): ReactNode =>
@@ -119,7 +120,7 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
   const notNow = button('not-now', t`Not now`, 'ghost', t`Not now: hide this until Sotto next starts`)
   const leaveOn = t({ message: `Cancel update, and leave ${name} on ${from}`, comment: '{name} is the name of a saved host; {from} is the version it runs now.' })
   const commandsButtons = <>
-    <Button variant="secondary" aria-label={t({ message: `Copy commands that update ${name} by hand`, comment: '{name} is the name of a saved host.' })} onClick={copy}><Copy size={14} aria-hidden="true" />{copied ?? t`Copy commands`}</Button>
+    <Button variant="secondary" aria-label={t({ message: `Copy commands that update ${name} by hand`, comment: '{name} is the name of a saved host.' })} onClick={copy}><Copy size={14} aria-hidden="true" />{copied === 'copied' ? t`Copied` : copied === 'failed' ? t`Could not copy` : t`Copy commands`}</Button>
     <Button variant="ghost" data-focus-key={key('commands')} aria-expanded={showCommands} aria-controls={`${id}-commands`} onClick={onToggleCommands}>{showCommands ? t`Hide commands` : t`Show commands`}</Button>
   </>
   let label = `${from} → ${to}`
@@ -129,7 +130,7 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
     body = <><p className="tt-paragraph">{t({ message: `${name} runs Sotto host ${from}. This computer runs ${to}.`, comment: '{name} is the name of a saved host; {from} and {to} are version numbers.' })}</p><p className="host-update__muted tt-paragraph">{t({ message: `Sotto did not start this host, so it cannot restart it. Update it on ${name} with these commands.`, comment: '{name} is the name of a saved host.' })}</p></>
     actions = <>{commandsButtons}{notNow}</>
   } else if (update.phase === 'needs') {
-    body = <p className="host-update__muted">{update.boot
+    body = <p className="host-update__muted tt-paragraph">{update.boot
       ? t({ message: `${name}’s threads keep working until you update. Updating restarts its host through its systemd unit, so they are unavailable for a few seconds. It still starts at boot after.`, comment: '{name} is the name of a saved host.' })
       : t({ message: `${name}’s threads keep working until you update. Updating restarts its host, so they are unavailable for a few seconds.`, comment: '{name} is the name of a saved host.' })}</p>
     actions = <>{button('update', t({ message: `Update ${name}`, comment: '{name} is the name of a saved host.' }), 'primary', t({ message: `Update ${name}’s host to ${to}`, comment: '{name} is the name of a saved host; {to} is a version number.' }), key('when-idle'))}{notNow}</>
@@ -145,19 +146,19 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
   } else if (update.phase === 'waiting' && update.clientsUpdating) {
     // The host's client update line is running: its restart would cut a client update off (ADR-0077 decision 2).
     label = t`Clients updating`
-    body = <p>{working
+    body = <p className="tt-paragraph">{working
       ? plural(working, { one: `${name} updates once its client updates finish. # thread still working.`, other: `${name} updates once its client updates finish. # threads still working.` })
       : t({ message: `${name} updates once its client updates finish.`, comment: '{name} is the name of a saved host.' })}</p>
     actions = <>{working ? button('stop-threads', plural(working, { one: 'Stop # thread', other: 'Stop # threads' }), 'secondary', plural(working, { one: `Stop # thread on ${name}. It still updates once its client updates finish.`, other: `Stop # threads on ${name}. It still updates once its client updates finish.` })) : null}
       {button('cancel', t`Cancel update`, 'ghost', leaveOn, key('update'))}</>
   } else if (update.phase === 'waiting') {
-    label = t({ message: `${working} working`, comment: '{working} is how many threads are working.' })
-    body = <p className="tt-paragraph">{t({ message: `${name} updates when its threads finish. ${working} still working.`, comment: '{name} is the name of a saved host; {working} is how many threads are working.' })}</p>
+    label = t({ message: `${{ working: shownCount(working) }} working`, comment: '{working} is how many threads are working.' })
+    body = <p className="tt-paragraph">{t({ message: `${name} updates when its threads finish. ${{ working: shownCount(working) }} still working.`, comment: '{name} is the name of a saved host; {working} is how many threads are working.' })}</p>
     actions = <>{button('stop-threads', plural(working, { one: 'Stop # thread and update now', other: 'Stop # threads and update now' }), 'secondary')}
       {button('cancel', t`Cancel update`, 'ghost', leaveOn, key('update'))}</>
   } else if (update.phase === 'updating') {
     const step = HOST_UPDATE_STEPS.indexOf(update.step ?? 'download') + 1
-    label = t({ message: `Step ${step} of 4`, comment: '{step} is the step the update is on, of four.' })
+    label = t({ message: `Step ${{ step: shownCount(step) }} of 4`, comment: '{step} is the step the update is on, of four.' })
     // A client update running on the host holds the restart, however far the update has come (ADR-0077 decision 2).
     body = <><Steps update={update} />{update.clientsUpdating ? <p className="host-update__muted tt-paragraph">{t({ message: `${name} restarts once its client updates finish.`, comment: '{name} is the name of a saved host.' })}</p> : null}</>
     actions = update.step === 'download' || update.step === 'check' ? button('cancel', t`Cancel update`, 'ghost', leaveOn, key('update')) : null
@@ -175,7 +176,7 @@ function HostUpdateSection({ update, showCommands, refusal, onAction, onToggleCo
   return <section className="host-update__host" data-phase={update.phase} data-host={update.id} aria-labelledby={`${id}-name`}>
     <div className="host-update__name"><Server size={16} aria-hidden="true" /><strong id={`${id}-name`} tabIndex={-1} data-focus-key={key('name')}>{name}</strong><small>{label}</small></div>
     <div className="host-update__body" aria-live="polite">{body}</div>
-    {refusal || update.error ? <p className="host-update__refusal" role="alert">{refusal ?? update.error}</p> : null}
+    {refusal || update.error ? <p className="host-update__refusal tt-paragraph" role="alert">{refusal ?? update.error}</p> : null}
     {offersCommands && showCommands ? <pre id={`${id}-commands`} className="host-update__commands" tabIndex={0} aria-label={t({ message: `Commands to update ${name} by hand`, comment: '{name} is the name of a saved host.' })}>{update.commands}</pre> : null}
     {actions ? <div className="host-update__actions">{actions}</div> : null}
   </section>

@@ -1,10 +1,11 @@
 import React, { useEffect, useState, type ReactNode } from 'react'
-import { plural } from '@lingui/core/macro'
+import { ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { CLOUD_IPHONE_PRICE_PER_MINUTE_USD } from '../../../../shared/cloudIphone'
 import { Button } from '../../components/Button'
 import { useOptionalApp } from '../../state/AppContext'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, useCloudStatus, type CloudIphoneBridgeLike, type CloudIphoneStore } from '../../tools/cloudIphoneStore'
+import { shownCount } from '../interfaceWords'
 import './requests.css'
 
 /** "41 MB", "1.2 GB": the build's size in the units a person reads, not bytes. */
@@ -71,13 +72,13 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
     return <section className="agent-request" aria-label={t`Cloud iPhone request for ${threadTitle}`}>
       <div className="agent-request__head"><strong><Trans>{threadTitle} wants to start a cloud iPhone.</Trans></strong></div>
       {session.description ? <p className="agent-request__text">{session.description}</p> : null}
-      <p className="agent-request__text tt-paragraph"><Trans comment="{price} is US dollars a minute; run.cloud is the service's name.">Uploads <code>{buildPath}</code> ({size}) to run.cloud and starts an iPhone simulator. About ${price} a minute. {monthMinutes} of {capMinutes} minutes used this month.</Trans></p>
+      <p className="agent-request__text tt-paragraph"><Trans comment="{price} is US dollars a minute; run.cloud is the service's name.">Uploads <code dir="ltr">{buildPath}</code> ({size}) to run.cloud and starts an iPhone simulator. About ${price} a minute. {ph({ monthMinutes: shownCount(monthMinutes) })} of {ph({ capMinutes: shownCount(capMinutes) })} minutes used this month.</Trans></p>
       <div className="agent-request__actions">
         <Button disabled={answering} onClick={() => answer(true)}><Trans>Start cloud iPhone</Trans></Button>
         <Button variant="secondary" disabled={answering} onClick={() => answer(false)}>{t({ message: 'Deny', comment: 'Answers an agent’s permission request.' })}</Button>
       </div>
       {left !== null && left <= 60_000 ? <p className="agent-request__status tt-paragraph" role="status">{plural(secondsLeft, { other: '# seconds left to answer' })}</p> : null}
-      {problem ? <p className="agent-request__error" role="alert">{problem}</p> : null}
+      {problem ? <p className="agent-request__error tt-paragraph" role="alert">{problem}</p> : null}
     </section>
   }
 
@@ -95,7 +96,7 @@ export function CloudIphoneRequest({ threadId, threadTitle, bridge = bridgeCloud
     const mentionsSettings = /settings/iu.test(text)
     return <section className="agent-request" aria-label={t`Cloud iPhone problem`}>
       <div className="agent-request__head"><strong>{couldNot}</strong></div>
-      <p className="agent-request__error" role="status">{text}</p>
+      <p className="agent-request__error tt-paragraph" role="status">{text}</p>
       {mentionsSettings ? <div className="agent-request__actions">
         <Button variant="ghost" onClick={() => app?.actions.navigate('settings', 'settings-cloud-iphone')}><Trans>Open Settings</Trans></Button>
       </div> : null}

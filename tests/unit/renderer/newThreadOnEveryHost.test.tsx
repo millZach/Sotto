@@ -1,6 +1,7 @@
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { describe, expect, it, vi } from 'vitest'
 import { beginNewThread } from '../../../src/renderer/src/agents/newThread'
+import { shownWords } from '../../../src/renderer/src/agents/interfaceWords'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
 import { defaultAgentConfiguration, type AgentCommand, type AgentConfiguration, type AgentModel, type AgentState } from '../../../src/shared/agents'
 
@@ -24,7 +25,7 @@ function computers(configuration: Partial<AgentConfiguration>, forge: { models?:
 async function create(state: AgentState, hostId: string): Promise<Extract<AgentCommand, { type: 'create-thread' }>> {
   const command = vi.fn(async (_command: AgentCommand) => { void _command; return state })
   const start = await beginNewThread(state, command, { id: hostEntityKey(hostId, 'project'), hostId, title: 'Project', path: '/repo' })
-  if ('error' in start) throw new Error(start.error)
+  if ('error' in start) throw new Error(shownWords(start.error))
   await start.created
   return command.mock.calls[0]![0] as Extract<AgentCommand, { type: 'create-thread' }>
 }

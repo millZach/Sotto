@@ -15,16 +15,17 @@ export interface DiagramViewerProps {
   readonly name: string
   readonly description: string | null
   readonly copyFeedback: string | null
+  /** The last copy went through. */
+  readonly copied: boolean
   readonly onCopy: () => void
   readonly onClose: () => void
 }
 
 /** The expanded drawing: zoom, pan, copy source and close, all from the keyboard or pointer. */
-export function DiagramViewer({ dataUrl, width, height, name, description, copyFeedback, onCopy, onClose }: DiagramViewerProps): ReactNode {
+export function DiagramViewer({ dataUrl, width, height, name, description, copyFeedback, copied, onCopy, onClose }: DiagramViewerProps): ReactNode {
   const { t } = useLingui()
   // A small drawing is enlarged for inspection, but not so far that its strokes turn heavy.
   const zoom = usePanZoom(width, height, 2)
-  const copied = copyFeedback === t`Copied`
   const hintId = useId()
   const descriptionId = useId()
   // Opened before the viewport is measured, so the first painted frame is already fitted.
@@ -44,6 +45,6 @@ export function DiagramViewer({ dataUrl, width, height, name, description, copyF
       <DiagramImage className="rich-diagram-viewer__image" src={dataUrl} alt={name} {...zoom.pictureStyle} />
       {description && <p id={descriptionId} className="tt-visually-hidden">{description}</p>}
     </div>
-    <p id={hintId} className="rich-diagram-viewer__hint">{t`Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit`}</p>
+    <p id={hintId} className="rich-diagram-viewer__hint tt-paragraph">{t`Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit`}</p>
   </ViewerDialog>
 }

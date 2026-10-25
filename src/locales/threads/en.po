@@ -46,8 +46,8 @@ msgid "{about} Sotto’s OpenCode reads it there, and Sotto keeps no copy."
 msgstr "{about} Sotto’s OpenCode reads it there, and Sotto keeps no copy."
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{actions, plural, one {# agent action} other {# agent actions}}"
-msgstr "{actions, plural, one {# agent action} other {# agent actions}}"
+msgid "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
+msgstr "{actions, plural, one {{actionCount} agent action} other {{actionCount} agent actions}}"
 
 #. Lines added to and removed from a changed file.
 #: src/renderer/src/agents/GitActionButton.tsx
@@ -81,46 +81,46 @@ msgid "{behindCount, plural, one {# of {total} clients has a newer version} othe
 msgstr "{behindCount, plural, one {# of {total} clients has a newer version} other {# of {total} clients have a newer version}}"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{changed, plural, one {changed # file} other {changed # files}}"
-msgstr "{changed, plural, one {changed # file} other {changed # files}}"
+msgid "{changed, plural, one {changed {fileCount} file} other {changed {fileCount} files}}"
+msgstr "{changed, plural, one {changed {fileCount} file} other {changed {fileCount} files}}"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{commands, plural, one {ran # command} other {ran # commands}}"
-msgstr "{commands, plural, one {ran # command} other {ran # commands}}"
+msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
+msgstr "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
+
+#: src/renderer/src/agents/gitActionButton.logic.ts
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "{count, plural, one {{files} file} other {{files} files}}"
+msgstr "{count, plural, one {{files} file} other {{files} files}}"
+
+#: src/renderer/src/agents/ThreadActivity.tsx
+msgid "{count, plural, one {{files} step} other {{files} steps}}"
+msgstr "{count, plural, one {{files} step} other {{files} steps}}"
 
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 msgid "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
 msgstr "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{count, plural, one {{projectTitle} # thread} other {{projectTitle} # threads}}"
-msgstr "{count, plural, one {{projectTitle} # thread} other {{projectTitle} # threads}}"
+msgid "{count, plural, one {{projectTitle} {threads} thread} other {{projectTitle} {threads} threads}}"
+msgstr "{count, plural, one {{projectTitle} {threads} thread} other {{projectTitle} {threads} threads}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{count, plural, one {{projectTitle} on {hostName} # thread} other {{projectTitle} on {hostName} # threads}}"
-msgstr "{count, plural, one {{projectTitle} on {hostName} # thread} other {{projectTitle} on {hostName} # threads}}"
+msgid "{count, plural, one {{projectTitle} on {hostName} {threads} thread} other {{projectTitle} on {hostName} {threads} threads}}"
+msgstr "{count, plural, one {{projectTitle} on {hostName} {threads} thread} other {{projectTitle} on {hostName} {threads} threads}}"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{count, plural, one {{threads} needs attention} other {{threads} need attention}}"
+msgstr "{count, plural, one {{threads} needs attention} other {{threads} need attention}}"
 
 #: src/renderer/src/agents/ThreadMonitor.tsx
 msgid "{count, plural, one {# command} other {# commands}}"
 msgstr "{count, plural, one {# command} other {# commands}}"
 
-#: src/renderer/src/agents/gitActionButton.logic.ts
-#: src/renderer/src/agents/threadActivityView.ts
-msgid "{count, plural, one {# file} other {# files}}"
-msgstr "{count, plural, one {# file} other {# files}}"
-
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{count, plural, one {# model} other {# models}}"
 msgstr "{count, plural, one {# model} other {# models}}"
-
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{count, plural, one {# needs attention} other {# need attention}}"
-msgstr "{count, plural, one {# needs attention} other {# need attention}}"
-
-#: src/renderer/src/agents/ThreadActivity.tsx
-msgid "{count, plural, one {# step} other {# steps}}"
-msgstr "{count, plural, one {# step} other {# steps}}"
 
 #: src/renderer/src/agents/threadDraftStore.ts
 msgid "{count, plural, one {A screenshot added before you moved to another thread did not fit in this draft and was not added. Remove an attachment and add it again.} other {# screenshots added before you moved to another thread did not fit in this draft and were not added. Remove an attachment and add them again.}}"
@@ -139,12 +139,12 @@ msgid "{count, plural, one {Attachment} other {# attachments}}"
 msgstr "{count, plural, one {Attachment} other {# attachments}}"
 
 #: src/renderer/src/agents/ThreadActivity.tsx
-msgid "{count, plural, one {Changed # file} other {Changed # files}}"
-msgstr "{count, plural, one {Changed # file} other {Changed # files}}"
+msgid "{count, plural, one {Changed {files} file} other {Changed {files} files}}"
+msgstr "{count, plural, one {Changed {files} file} other {Changed {files} files}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{count, plural, one {Dismiss Needs attention on # thread} other {Dismiss Needs attention on # threads}}"
-msgstr "{count, plural, one {Dismiss Needs attention on # thread} other {Dismiss Needs attention on # threads}}"
+msgid "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
+msgstr "{count, plural, one {Dismiss Needs attention on {threads} thread} other {Dismiss Needs attention on {threads} threads}}"
 
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "{count, plural, one {Update for # host} other {Updates for # hosts}}"
@@ -211,8 +211,8 @@ msgid "{failure} Nothing in the transcript was lost."
 msgstr "{failure} Nothing in the transcript was lost."
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{files, plural, one {{kilobytes} KB, # file, ignored} other {{kilobytes} KB, # files, ignored}}"
-msgstr "{files, plural, one {{kilobytes} KB, # file, ignored} other {{kilobytes} KB, # files, ignored}}"
+msgid "{files, plural, one {{kilobytes} KB, {fileCount} file, ignored} other {{kilobytes} KB, {fileCount} files, ignored}}"
+msgstr "{files, plural, one {{kilobytes} KB, {fileCount} file, ignored} other {{kilobytes} KB, {fileCount} files, ignored}}"
 
 #. Pull request numbers: {first} is one or more numbers joined by commas, {last} the last one.
 #: src/renderer/src/agents/babysitting.ts
@@ -295,6 +295,18 @@ msgstr "{imageCount, plural, one {Image: {imageNames}} other {Images: {imageName
 msgid "{images, plural, one {# image} other {# images}}"
 msgstr "{images, plural, one {# image} other {# images}}"
 
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "{includedCount, plural, one {{files} file (more than Sotto lists)} other {{files} files (more than Sotto lists)}}"
+msgstr "{includedCount, plural, one {{files} file (more than Sotto lists)} other {{files} files (more than Sotto lists)}}"
+
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "{includedCount, plural, one {{files} file of {total} (more than Sotto lists)} other {{files} files of {total} (more than Sotto lists)}}"
+msgstr "{includedCount, plural, one {{files} file of {total} (more than Sotto lists)} other {{files} files of {total} (more than Sotto lists)}}"
+
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "{includedCount, plural, one {{files} file of {total}} other {{files} files of {total}}}"
+msgstr "{includedCount, plural, one {{files} file of {total}} other {{files} files of {total}}}"
+
 #. {installed} is a version number.
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "{installed} is installed, and that is what is published."
@@ -341,28 +353,28 @@ msgid "{installed} is installed. The last update did not finish."
 msgstr "{installed} is installed. The last update did not finish."
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder, including the nested repositories and worktrees’ uncommitted work} other {Delete these # ignored items with the folder, including the nested repositories and worktrees’ uncommitted work}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder, including the nested repositories and worktrees’ uncommitted work} other {Delete these # ignored items with the folder, including the nested repositories and worktrees’ uncommitted work}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repositories and worktrees’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repositories and worktrees’ uncommitted work}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repositories and worktrees’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repositories and worktrees’ uncommitted work}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder, including the nested repositories’ uncommitted work} other {Delete these # ignored items with the folder, including the nested repositories’ uncommitted work}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder, including the nested repositories’ uncommitted work} other {Delete these # ignored items with the folder, including the nested repositories’ uncommitted work}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repositories’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repositories’ uncommitted work}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repositories’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repositories’ uncommitted work}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder, including the nested repository’s uncommitted work} other {Delete these # ignored items with the folder, including the nested repository’s uncommitted work}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder, including the nested repository’s uncommitted work} other {Delete these # ignored items with the folder, including the nested repository’s uncommitted work}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repository’s uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repository’s uncommitted work}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested repository’s uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested repository’s uncommitted work}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder, including the nested worktree’s uncommitted work} other {Delete these # ignored items with the folder, including the nested worktree’s uncommitted work}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder, including the nested worktree’s uncommitted work} other {Delete these # ignored items with the folder, including the nested worktree’s uncommitted work}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested worktree’s uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested worktree’s uncommitted work}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested worktree’s uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested worktree’s uncommitted work}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder, including the nested worktrees’ uncommitted work} other {Delete these # ignored items with the folder, including the nested worktrees’ uncommitted work}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder, including the nested worktrees’ uncommitted work} other {Delete these # ignored items with the folder, including the nested worktrees’ uncommitted work}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested worktrees’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested worktrees’ uncommitted work}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder, including the nested worktrees’ uncommitted work} other {Delete these {itemCount} ignored items with the folder, including the nested worktrees’ uncommitted work}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "{items, plural, one {Delete this # ignored item with the folder} other {Delete these # ignored items with the folder}}"
-msgstr "{items, plural, one {Delete this # ignored item with the folder} other {Delete these # ignored items with the folder}}"
+msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder} other {Delete these {itemCount} ignored items with the folder}}"
+msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder} other {Delete these {itemCount} ignored items with the folder}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "{kilobytes} KB, ignored"
@@ -427,6 +439,10 @@ msgstr "{list} or {item}"
 msgid "{list}, {item}"
 msgstr "{list}, {item}"
 
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
+msgid "{listedCount, plural, one {Only the first {folders} folder here is listed.} other {Only the first {folders} folders here are listed.}}"
+msgstr "{listedCount, plural, one {Only the first {folders} folder here is listed.} other {Only the first {folders} folders here are listed.}}"
+
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "{max, plural, one {A prompt mentions at most # file. Remove one to mention another.} other {A prompt mentions at most # files. Remove one to mention another.}}"
 msgstr "{max, plural, one {A prompt mentions at most # file. Remove one to mention another.} other {A prompt mentions at most # files. Remove one to mention another.}}"
@@ -445,8 +461,8 @@ msgid "{modelCount} · Free with OpenCode Zen"
 msgstr "{modelCount} · Free with OpenCode Zen"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{more, plural, one {and # more file} other {and # more files}}"
-msgstr "{more, plural, one {and # more file} other {and # more files}}"
+msgid "{more, plural, one {and {files} more file} other {and {files} more files}}"
+msgstr "{more, plural, one {and {files} more file} other {and {files} more files}}"
 
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "{more, plural, one {One more choice} other {# more choices}}"
@@ -581,12 +597,12 @@ msgid "{named}. {fixedReason}"
 msgstr "{named}. {fixedReason}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{needs, plural, other {# waiting on you}}"
-msgstr "{needs, plural, other {# waiting on you}}"
+msgid "{needs, plural, other {{needing} waiting on you}}"
+msgstr "{needs, plural, other {{needing} waiting on you}}"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{notices, plural, one {# notice} other {# notices}}"
-msgstr "{notices, plural, one {# notice} other {# notices}}"
+msgid "{notices, plural, one {{noticeCount} notice} other {{noticeCount} notices}}"
+msgstr "{notices, plural, one {{noticeCount} notice} other {{noticeCount} notices}}"
 
 #. Which image of the message this is.
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -765,24 +781,8 @@ msgid "{setLevel} is set. Choose a level this model offers."
 msgstr "{setLevel} is set. Choose a level this model offers."
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{settledThreads, plural, one {Settled # thread} other {Settled # threads}}"
-msgstr "{settledThreads, plural, one {Settled # thread} other {Settled # threads}}"
-
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "{shownCount, plural, one {# file (more than Sotto lists)} other {# files (more than Sotto lists)}}"
-msgstr "{shownCount, plural, one {# file (more than Sotto lists)} other {# files (more than Sotto lists)}}"
-
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "{shownCount, plural, one {# file of {total} (more than Sotto lists)} other {# files of {total} (more than Sotto lists)}}"
-msgstr "{shownCount, plural, one {# file of {total} (more than Sotto lists)} other {# files of {total} (more than Sotto lists)}}"
-
-#: src/renderer/src/agents/GitActionButton.tsx
-msgid "{shownCount, plural, one {# file of {total}} other {# files of {total}}}"
-msgstr "{shownCount, plural, one {# file of {total}} other {# files of {total}}}"
-
-#: src/renderer/src/agents/FolderBrowserDialog.tsx
-msgid "{shownCount, plural, one {Only the first # folder here is listed.} other {Only the first # folders here are listed.}}"
-msgstr "{shownCount, plural, one {Only the first # folder here is listed.} other {Only the first # folders here are listed.}}"
+msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
+msgstr "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "{skipped, plural, one {# skill file couldn’t be read} other {# skill files couldn’t be read}}"
@@ -817,8 +817,8 @@ msgid "{spaced, plural, one {# entry has a space in its name and cannot be menti
 msgstr "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{summaries, plural, one {# reasoning summary} other {# reasoning summaries}}"
-msgstr "{summaries, plural, one {# reasoning summary} other {# reasoning summaries}}"
+msgid "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
+msgstr "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
 
 #. {text} is what the pill says about the hosts' updates.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -831,8 +831,8 @@ msgid "{text}. Show host updates"
 msgstr "{text}. Show host updates"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{thoughts, plural, one {thought once} other {thought # times}}"
-msgstr "{thoughts, plural, one {thought once} other {thought # times}}"
+msgid "{thoughts, plural, one {thought once} other {thought {times} times}}"
+msgstr "{thoughts, plural, one {thought once} other {thought {times} times}}"
 
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "{threadTitle} could not start a cloud iPhone."
@@ -855,8 +855,8 @@ msgid "{title}, interactive page"
 msgstr "{title}, interactive page"
 
 #: src/renderer/src/agents/threadActivityView.ts
-msgid "{tools, plural, one {used # tool} other {used # tools}}"
-msgstr "{tools, plural, one {used # tool} other {used # tools}}"
+msgid "{tools, plural, one {used {toolCount} tool} other {used {toolCount} tools}}"
+msgstr "{tools, plural, one {used {toolCount} tool} other {used {toolCount} tools}}"
 
 #. {who} is the provider or Watcher.
 #: src/renderer/src/agents/MessageScrubber.tsx
@@ -963,8 +963,8 @@ msgid "{working, plural, one {Stop also stops the thread it delegated that is wo
 msgstr "{working, plural, one {Stop also stops the thread it delegated that is working.} other {Stop also stops the # threads it delegated that are working.}}"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "{working, plural, other {# working}}"
-msgstr "{working, plural, other {# working}}"
+msgid "{working, plural, other {{workingThreads} working}}"
+msgstr "{working, plural, other {{workingThreads} working}}"
 
 #. {working} is how many threads are working.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -1099,9 +1099,14 @@ msgid "Add Ultrathink to prompt"
 msgstr "Add Ultrathink to prompt"
 
 #. A changed file's Git status.
-#. Before the message just added to the queue.
 #: src/renderer/src/agents/gitActionButton.logic.ts
+msgctxt "git status"
+msgid "Added"
+msgstr "Added"
+
+#. Before the message just added to the queue.
 #: src/renderer/src/agents/ThreadFollowups.tsx
+msgctxt "queued message"
 msgid "Added"
 msgstr "Added"
 
@@ -1209,6 +1214,7 @@ msgstr "Answer this question"
 
 #. A delegated thread's outcome: it answered the brief.
 #: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Answered"
 msgstr "Answered"
 
@@ -1347,9 +1353,13 @@ msgid "Babysitting since {since}"
 msgstr "Babysitting since {since}"
 
 #. A keyboard hint: Escape goes back to the list of computers.
-#. Goes to the previous step of a walkthrough.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
+msgid "Back"
+msgstr "Back"
+
+#. Goes to the previous step of a walkthrough.
 #: src/renderer/src/agents/VisualStepper.tsx
+msgctxt "walkthrough"
 msgid "Back"
 msgstr "Back"
 
@@ -1366,6 +1376,7 @@ msgid "Back to the list of model sources"
 msgstr "Back to the list of model sources"
 
 #: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Background work"
 msgstr "Background work"
 
@@ -1481,6 +1492,13 @@ msgstr "Change project, now {projectTitle}"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Changed"
 msgstr "Changed"
+
+#. An open change of several files; {subject} is how many, such as 3 files.
+#. An open change of several files; {subject} is how many, such as 3 files.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Changed {subject}"
+msgstr "Changed {subject}"
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Changed files"
@@ -1957,9 +1975,7 @@ msgid "Continued in a {provider} thread. You can still send here."
 msgstr "Continued in a {provider} thread. You can still send here."
 
 #: src/renderer/src/agents/diagrams/DiagramFrame.tsx
-#: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
-#: src/renderer/src/agents/InteractiveVisualCard.tsx
 #: src/renderer/src/agents/MessageContent.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -2291,6 +2307,13 @@ msgstr "Create PR"
 msgid "Created"
 msgstr "Created"
 
+#. A file change; {subject} is the file's path.
+#. A file change; {subject} is the file's path.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Created {subject}"
+msgstr "Created {subject}"
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Created on first send. Choose the workspace and branch under the composer."
 msgstr "Created on first send. Choose the workspace and branch under the composer."
@@ -2365,12 +2388,24 @@ msgstr "Delegated to"
 msgid "Delegated to {title}"
 msgstr "Delegated to {title}"
 
-#. A changed file's Git status.
 #. A file change, before the file's path.
-#: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/threadActivityView.ts
+msgctxt "file change"
 msgid "Deleted"
 msgstr "Deleted"
+
+#. A changed file's Git status.
+#: src/renderer/src/agents/gitActionButton.logic.ts
+msgctxt "git status"
+msgid "Deleted"
+msgstr "Deleted"
+
+#. A file change; {subject} is the file's path.
+#. A file change; {subject} is the file's path.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Deleted {subject}"
+msgstr "Deleted {subject}"
 
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
@@ -2493,16 +2528,33 @@ msgstr "Dismiss why babysitting #{number} ended"
 msgid "Don’t continue: keep writing to this thread"
 msgstr "Don’t continue: keep writing to this thread"
 
-#. A Git action finished.
-#. A plan step's state.
-#. A thread row's state: its turn has finished.
-#. A ticked task in a Markdown task list.
 #. Finish choosing which files to commit.
-#: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/GitActionButton.tsx
-#: src/renderer/src/agents/MessageContent.tsx
+msgctxt "finish choosing"
+msgid "Done"
+msgstr "Done"
+
+#. A Git action finished.
+#: src/renderer/src/agents/gitActionButton.logic.ts
+msgctxt "git action finished"
+msgid "Done"
+msgstr "Done"
+
+#. A plan step's state.
 #: src/renderer/src/agents/ThreadActivity.tsx
+msgctxt "plan step"
+msgid "Done"
+msgstr "Done"
+
+#. A thread row's state: its turn has finished.
 #: src/renderer/src/agents/threadFacts.ts
+msgctxt "thread state"
+msgid "Done"
+msgstr "Done"
+
+#. A ticked task in a Markdown task list.
+#: src/renderer/src/agents/MessageContent.tsx
+msgctxt "ticked task"
 msgid "Done"
 msgstr "Done"
 
@@ -2566,6 +2618,13 @@ msgstr "Edit queued message {position}"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Edited"
 msgstr "Edited"
+
+#. A file change; {subject} is the file's path.
+#. A file change; {subject} is the file's path.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Edited {subject}"
+msgstr "Edited {subject}"
 
 #. The reasoning effort chip, when no level is set.
 #: src/renderer/src/agents/EffortPicker.tsx
@@ -2705,13 +2764,17 @@ msgstr "Expand sidebar"
 msgid "Extra high"
 msgstr "Extra high"
 
-#. A delegated thread's outcome.
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
-#: src/renderer/src/agents/delegationWords.ts
 #: src/renderer/src/agents/threadActivityView.ts
+msgid "Failed"
+msgstr "Failed"
+
+#. A delegated thread's outcome.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Failed"
 msgstr "Failed"
 
@@ -2727,6 +2790,10 @@ msgstr "Failed to switch ref."
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "Failed to switch ref. {detail}"
 msgstr "Failed to switch ref. {detail}"
+
+#: src/renderer/src/agents/BranchToolbar.tsx
+msgid "Failed to switch ref. Sotto could not confirm this change."
+msgstr "Failed to switch ref. Sotto could not confirm this change."
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fast. For small, clear tasks."
@@ -3497,6 +3564,13 @@ msgstr "Move queued message {position} up"
 msgid "Moved"
 msgstr "Moved"
 
+#. A file change; {subject} is the file's path.
+#. A file change; {subject} is the file's path.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Moved {subject}"
+msgstr "Moved {subject}"
+
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Much longer. For stubborn problems."
 msgstr "Much longer. For stubborn problems."
@@ -3568,12 +3642,12 @@ msgid "Needs your approval"
 msgstr "Needs your approval"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "Nested repository · {changes, plural, one {# uncommitted change} other {# uncommitted changes}} · {unpushed, plural, one {# commit not on any remote} other {# commits not on any remote}}"
-msgstr "Nested repository · {changes, plural, one {# uncommitted change} other {# uncommitted changes}} · {unpushed, plural, one {# commit not on any remote} other {# commits not on any remote}}"
+msgid "Nested repository · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}} · {unpushed, plural, one {{commitCount} commit not on any remote} other {{commitCount} commits not on any remote}}"
+msgstr "Nested repository · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}} · {unpushed, plural, one {{commitCount} commit not on any remote} other {{commitCount} commits not on any remote}}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "Nested worktree · {changes, plural, one {# uncommitted change} other {# uncommitted changes}}"
-msgstr "Nested worktree · {changes, plural, one {# uncommitted change} other {# uncommitted changes}}"
+msgid "Nested worktree · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}}"
+msgstr "Nested worktree · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}}"
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "New folder"
@@ -3653,9 +3727,14 @@ msgid "New worktree pending"
 msgstr "New worktree pending"
 
 #. Before the message the queue sends next.
-#. Goes to the next step of a walkthrough.
 #: src/renderer/src/agents/ThreadFollowups.tsx
+msgctxt "queued message"
+msgid "Next"
+msgstr "Next"
+
+#. Goes to the next step of a walkthrough.
 #: src/renderer/src/agents/VisualStepper.tsx
+msgctxt "walkthrough"
 msgid "Next"
 msgstr "Next"
 
@@ -4206,11 +4285,15 @@ msgstr "Paste the code"
 msgid "Paste the key"
 msgstr "Paste the key"
 
-#. A delegated thread's outcome.
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
-#: src/renderer/src/agents/delegationWords.ts
 #: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Paused"
+msgstr "Paused"
+
+#. A delegated thread's outcome.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Paused"
 msgstr "Paused"
 
@@ -4304,13 +4387,21 @@ msgstr "Previous-provider recovery"
 msgid "Private"
 msgstr "Private"
 
-#. A tag on a folder that is already a Sotto project.
 #. Read before a project's name.
-#. Where a skill comes from: skills kept in the project.
-#: src/renderer/src/agents/composerSkills.ts
-#: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/threadFacts.ts
 #: src/renderer/src/agents/ThreadGreeting.tsx
+msgid "Project"
+msgstr "Project"
+
+#. A tag on a folder that is already a Sotto project.
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
+msgctxt "folder tag"
+msgid "Project"
+msgstr "Project"
+
+#. Where a skill comes from: skills kept in the project.
+#: src/renderer/src/agents/composerSkills.ts
+msgctxt "skill source"
 msgid "Project"
 msgstr "Project"
 
@@ -4580,6 +4671,7 @@ msgstr "Refs"
 
 #. A delegated thread's outcome: Sotto turned the delegation down.
 #: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Refused"
 msgstr "Refused"
 
@@ -5303,6 +5395,10 @@ msgstr "Sotto could not confirm this Git command."
 msgid "Sotto could not confirm this steer. Check the message before trying again."
 msgstr "Sotto could not confirm this steer. Check the message before trying again."
 
+#: src/renderer/src/agents/draftThreads.ts
+msgid "Sotto could not confirm this thread was created, so it is gone from here. Check the project before opening another; anything you had typed is kept for it."
+msgstr "Sotto could not confirm this thread was created, so it is gone from here. Check the project before opening another; anything you had typed is kept for it."
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm this was removed. Check the queue before trying again."
 msgstr "Sotto could not confirm this was removed. Check the queue before trying again."
@@ -5588,12 +5684,16 @@ msgstr "Stop agent"
 msgid "Stop babysitting #{number}"
 msgstr "Stop babysitting #{number}"
 
-#. A delegated thread's outcome.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
-#: src/renderer/src/agents/delegationWords.ts
 #: src/renderer/src/agents/threadActivityView.ts
+msgid "Stopped"
+msgstr "Stopped"
+
+#. A delegated thread's outcome.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Stopped"
 msgstr "Stopped"
 
@@ -5635,10 +5735,14 @@ msgstr "Switching…"
 msgid "Sync ref"
 msgstr "Sync ref"
 
-#. Where a skill comes from: built into the provider.
 #. Who wrote a message: the system.
-#: src/renderer/src/agents/composerSkills.ts
 #: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "System"
+msgstr "System"
+
+#. Where a skill comes from: built into the provider.
+#: src/renderer/src/agents/composerSkills.ts
+msgctxt "skill source"
 msgid "System"
 msgstr "System"
 
@@ -6350,9 +6454,13 @@ msgid "Unconfirmed answer"
 msgstr "Unconfirmed answer"
 
 #. A background agent's status.
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Unknown"
+msgstr "Unknown"
+
 #. A delegated thread's outcome.
 #: src/renderer/src/agents/delegationWords.ts
-#: src/renderer/src/agents/threadActivityView.ts
+msgctxt "delegation outcome"
 msgid "Unknown"
 msgstr "Unknown"
 
@@ -6725,18 +6833,22 @@ msgstr "Worked"
 msgid "Worked for {took}"
 msgstr "Worked for {took}"
 
-#. A delegated thread's outcome: its turn is running.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
 #. A turn that is running.
 #. A turn that is running.
 #. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
-#: src/renderer/src/agents/delegationWords.ts
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 #: src/renderer/src/agents/threadFacts.ts
 #: src/renderer/src/agents/ThreadMonitor.tsx
+msgid "Working"
+msgstr "Working"
+
+#. A delegated thread's outcome: its turn is running.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegation outcome"
 msgid "Working"
 msgstr "Working"
 
@@ -6846,6 +6958,13 @@ msgstr "Writing a reply…"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Wrote"
 msgstr "Wrote"
+
+#. A file change; {subject} is the file's path.
+#. A file change; {subject} is the file's path.
+#: src/renderer/src/agents/ThreadActivity.tsx
+#: src/renderer/src/agents/threadActivityView.ts
+msgid "Wrote {subject}"
+msgstr "Wrote {subject}"
 
 #. Who sent a thread's last message.
 #. Who wrote a message: the user.

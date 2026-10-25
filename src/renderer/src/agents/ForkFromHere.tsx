@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { msg, ph } from '@lingui/core/macro'
 import { GitFork, Laptop, Server } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentModel, type AgentWorkingCopyOptions, type AgentCommand, type AgentState, type ProviderId } from '../../../shared/agents'
@@ -7,6 +8,7 @@ import { NATIVE_FORKS, sameFolderForks } from '../../../shared/threadStarts'
 import { Button } from '../components/Button'
 import { Select } from '../components/Select'
 import { clockLabel } from './threadFacts'
+import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
 import './threadStart.css'
 
 /**
@@ -71,7 +73,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
   const [copy, setCopy] = useState<'shared' | 'independent'>('shared')
   const [git, setGit] = useState<{ readonly currentBranch: string | null } | null>(options.sourceBranch ?? null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const start = useRef<HTMLButtonElement>(null)
   const card = useRef<HTMLElement>(null)
   const { workingCopyOptions: read, remote, projectId, sourceBranch } = options
@@ -99,7 +101,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
     try {
       const result = await options.command({ type: 'fork-thread', threadId: options.threadId, messageId, newThreadId: crypto.randomUUID(),
         ...(native ? { modelId } : {}), workingCopy: copy, ...(copy === 'independent' && git?.currentBranch ? { baseBranch: git.currentBranch } : {}) })
-      if (result === null) setError(t`Sotto could not confirm this. Look for the new thread in the list before trying again.`)
+      if (result === null) setError(msg`Sotto could not confirm this. Look for the new thread in the list before trying again.`)
       else if (result.error) setError(result.error)
       else options.open(null)
     } finally { setBusy(false) }
@@ -124,7 +126,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
         </Select> : null}
         <Select aria-label={t`Working copy for the forked thread`} value={copy} onChange={event => setCopy(event.target.value === 'independent' ? 'independent' : 'shared')}>
           <option value="shared">{t({ message: 'Same folder', comment: 'Where a continued thread works: the folder this thread works in.' })}</option>
-          {worktree ? <option value="independent">{branch ? t`New worktree from ${branch}` : t`New worktree`}</option> : null}
+          {worktree ? <option value="independent">{branch ? t`New worktree from ${ph({ branch: leftToRight(branch) })}` : t`New worktree`}</option> : null}
         </Select>
         <span className="agent-continue__where">{options.remote ? <Server size={14} aria-hidden="true" /> : <Laptop size={14} aria-hidden="true" />}{options.where}</span>
       </div>
@@ -134,7 +136,7 @@ function ForkForm({ options, messageId, at }: { readonly options: ForkOptions; r
         <Button ref={start} variant="primary" disabled={busy || !modelId} onClick={() => void fork()}>{busy ? t`Forking…` : native ? t({ message: 'Fork', comment: 'Starts the forked thread.' }) : t`Start the ${name} thread`}</Button>
         <Button variant="ghost" onClick={close}><Trans>Cancel</Trans></Button>
       </div>
-      {error ? <p className="agent-continue__error" role="alert">{error}</p> : null}
+      {error ? <p className="agent-continue__error tt-paragraph" role="alert">{shownWords(error)}</p> : null}
     </section>
     <p className="fork-card__stays tt-paragraph"><Trans>Not carried: this stays in {threadTitle}</Trans></p>
   </>

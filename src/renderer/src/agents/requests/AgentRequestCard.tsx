@@ -8,6 +8,8 @@ import { Button } from '../../components/Button'
 import { LinkedText } from './LinkedText'
 import { linkPlace, webLinks } from './messageLinks'
 import { useWebLinkRouter } from '../../tools/webLinks'
+import { shownCount, shownWords, type LaterWords } from '../interfaceWords'
+import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import {
   answerProgress, blocksSending, EMPTY_SELECTION, isRequired, isUnavailable, legacyPermissionAnswer, permissionAnswer,
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, structuredAnswer, textOnly, useRequestEntry,
@@ -85,13 +87,13 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
     ? <div className="agent-request__hold" role="status"><p className="tt-paragraph"><Trans>Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again.</Trans></p>
       {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
     : entry.phase === 'unconfirmed'
-      ? <div className="agent-request__hold" role="status"><p>{entry.save === 'unsaved' && entry.error ? entry.error
+      ? <div className="agent-request__hold" role="status"><p className="tt-paragraph">{entry.save === 'unsaved' && entry.error ? entry.error
         : t`Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check.`}</p>
         {onCheck ? <Button variant="secondary" disabled={checking} onClick={check}>{checking ? t`Checking…` : t`Check again`}</Button> : null}</div>
-      : entry.phase === 'failed' ? <p className="agent-request__error" role="alert">{entry.error}</p>
+      : entry.phase === 'failed' ? <p className="agent-request__error tt-paragraph" role="alert">{entry.error}</p>
         : entry.phase === 'sending' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Sending…</Trans></p>
           : entry.phase === 'sent' ? <p className="agent-request__status tt-paragraph" role="status"><Trans>Answer sent.</Trans></p>
-            : blocked !== null ? <p className="agent-request__status">{blocked}</p> : null
+            : blocked !== null ? <p className="agent-request__status tt-paragraph">{blocked}</p> : null
 
   const questionCount = questions.length
   return <section className="agent-request" data-kind={request.kind} data-phase={entry.phase} data-save={entry.save} data-uncertain={uncertain || undefined}
@@ -137,7 +139,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
           onChange={selection => store.select(entryOwner, request.id, question.id, selection)} />)}
         <div className="agent-request__footer">
           <span className="agent-request__count" aria-live="polite">{needsProvider ? t`Finish this form in the provider’s app.`
-            : remaining === 0 ? t`Ready to send` : touched ? t`${remaining} left to answer` : t`Choose an answer`}</span>
+            : remaining === 0 ? t`Ready to send` : touched ? t`${{ remaining: shownCount(remaining) }} left to answer` : t`Choose an answer`}</span>
           <Button type="submit" disabled={disabled || entry.save === 'unsaved' || answer === null}>{entry.phase === 'sending' ? t`Sending…` : plural(questionCount, { one: 'Send answer', other: 'Send answers' })}</Button>
         </div>
       </form> : <>
@@ -242,25 +244,26 @@ export const LINK_MISSING = msg`No working link. This question is about a protot
  * latest press went, in plain words, until the next press; a slow earlier press cannot overwrite it.
  */
 export function usePageOpener(owner: PageOwner | undefined): { readonly open: (page: QuestionPage) => void; readonly failure: string | null } {
-  const { t } = useLingui()
-  const [failure, setFailure] = useState<string | null>(null)
+  // Subscribed to the language: Sotto's words are kept as messages and read when shown; main's come as written.
+  useInterfaceLanguageState()
+  const [failure, setFailure] = useState<LaterWords | null>(null)
   const latest = useRef(0)
   const router = useWebLinkRouter()
   const open = (page: QuestionPage): void => {
     if (!owner) return
     const press = ++latest.current
     setFailure(null)
-    const settle = (said: string | null): void => { if (press === latest.current) setFailure(said) }
+    const settle = (said: LaterWords | null): void => { if (press === latest.current) setFailure(said) }
     const input = owner.requestId === undefined ? { threadId: owner.threadId, token: page.token } : { threadId: owner.threadId, requestId: owner.requestId, token: page.token }
     void (window.sotto?.openQuestionPage?.(input) ?? Promise.resolve({ ok: false as const, reason: 'unavailable' as const }))
       .then(result => {
-        if (!result.ok) return settle(t(PAGE_OPEN_FAILURES[result.reason]))
+        if (!result.ok) return settle(PAGE_OPEN_FAILURES[result.reason])
         // Opened in Sotto's browser, as Web links in threads chose: shown where this thread's links show theirs (ADR-0108).
         if (!result.page) return settle(null)
-        settle((router.show ? router.show(result.page).message : t(PAGE_OPENED_UNSEEN)) ?? null)
-      }, () => settle(t(PAGE_OPEN_FAILURES.unavailable)))
+        settle((router.show ? router.show(result.page).message : PAGE_OPENED_UNSEEN) ?? null)
+      }, () => settle(PAGE_OPEN_FAILURES.unavailable))
   }
-  return { open, failure }
+  return { open, failure: shownWords(failure) }
 }
 
 /**
@@ -303,7 +306,7 @@ export function MessageLinks({ links, pages = [], owner, linkMissing = false, la
         <ArrowUpRight size={16} aria-hidden="true" />
       </a>
     })}
-    {failure ? <p className="agent-request__link-failure" role="status">{failure}</p> : null}
+    {failure ? <p className="agent-request__link-failure tt-paragraph" role="status">{failure}</p> : null}
   </div></>
 }
 
@@ -381,7 +384,7 @@ function FormContext({ request }: { readonly request: AgentRequest }): ReactNode
 
 /** The folder a command or form acts in. */
 function InFolder({ cwd }: { readonly cwd: string }): ReactNode {
-  return <p className="agent-request__cwd"><Trans comment="Followed by the folder a command runs in.">in <code>{cwd}</code></Trans></p>
+  return <p className="agent-request__cwd"><Trans comment="Followed by the folder a command runs in.">in <code dir="ltr">{cwd}</code></Trans></p>
 }
 
 const collapse = (value: string): string => value.replace(/\s+/gu, ' ').trim()

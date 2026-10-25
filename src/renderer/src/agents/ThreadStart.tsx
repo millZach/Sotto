@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, CornerUpLeft, GitFork } from 'lucide-react'
-import { t } from '@lingui/core/macro'
+import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentMessageHandover, type AgentThread, type AgentThreadStart, type HandoverCounts, type ProviderId } from '../../../shared/agents'
 import { SottoMark } from '../components/SottoMark'
 import { handoverLedger } from '../watcher/WatcherHandover'
 import { useOwlFeature } from '../state/owlFeature'
 import { clockLabel } from './threadFacts'
+import { shownWords, type LaterWords } from './interfaceWords'
 import './threadStart.css'
 
 /**
@@ -113,7 +114,7 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
   const [open, setOpen] = useState(false)
   const [text, setText] = useState<string | null>(handover?.text ?? null)
   const [reading, setReading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<LaterWords | null>(null)
   const button = useRef<HTMLButtonElement>(null)
   const regionId = useId()
   const counts = handover?.counts ?? view.start.handover?.counts
@@ -124,13 +125,13 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
   const toggle = async (): Promise<void> => {
     if (open) { setOpen(false); return }
     if (text !== null) { setOpen(true); return }
-    if (!view.readHandover) { setError(t`Sotto can’t read the handover from this window. It still goes with your first message.`); return }
+    if (!view.readHandover) { setError(msg`Sotto can’t read the handover from this window. It still goes with your first message.`); return }
     setReading(true); setError(null)
     try {
       const read = await view.readHandover()
-      if (read === null) setError(t`The handover is no longer waiting for this thread’s first message.`)
+      if (read === null) setError(msg`The handover is no longer waiting for this thread’s first message.`)
       else { setText(read); setOpen(true) }
-    } catch { setError(t`Sotto could not read the handover. It still goes with your first message. Press Read the handover to try again.`) }
+    } catch { setError(msg`Sotto could not read the handover. It still goes with your first message. Press Read the handover to try again.`) }
     finally { setReading(false) }
   }
   const source = named(view.sourceTitle)
@@ -150,7 +151,7 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
     }}>
     <header><span className="thread-message__who"><SottoMark className="thread-message__mark" />Sotto</span><span className="thread-message__tag">{thin ? t({ message: 'Handover, thin', comment: 'A tag on a handover that carried only an agent\'s task and result.' }) : t({ message: 'Handover', comment: 'A tag on a message: Sotto\'s handover from another thread.' })}</span>
       <time dateTime={createdAt}>{clockLabel(Date.parse(createdAt))}</time></header>
-    <p className="thread-start-handover__lead">{handover
+    <p className="thread-start-handover__lead tt-paragraph">{handover
       ? <Trans comment="{from} says where the handover came from.">{from} Context, not a new request.</Trans>
       : <Trans comment="{from} says where the handover came from.">{from} Context, not a new request. It goes with your first message.</Trans>}</p>
     <p className="thread-start-handover__ledger tt-paragraph">{counts.historyKept ? null : t`Keep local history was off, so it held only what Sotto had kept since it last started.` + ' '}
@@ -158,6 +159,6 @@ export function StartHandoverCard({ view, handover, createdAt }: { readonly view
     <button ref={button} type="button" className="thread-start-handover__disclose tt-focusable" aria-expanded={open} aria-controls={open ? regionId : undefined}
       disabled={reading} onClick={() => void toggle()}><ChevronRight size={14} aria-hidden="true" />{open ? t`Hide the handover` : reading ? t`Reading the handover…` : t`Read the handover, word for word`}</button>
     {open && text !== null ? <div id={regionId} className="thread-start-handover__text tt-focusable" tabIndex={0} role="region" aria-label={t`The handover, word for word`}>{text}</div> : null}
-    {error === null ? null : <p className="thread-start-handover__error" role="alert">{error}</p>}
+    {error === null ? null : <p className="thread-start-handover__error tt-paragraph" role="alert">{shownWords(error)}</p>}
   </article>
 }

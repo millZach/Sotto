@@ -1,9 +1,11 @@
-import { t } from '@lingui/core/macro'
+import type { MessageDescriptor } from '@lingui/core'
+import { msg, ph, t } from '@lingui/core/macro'
 
 import type { AgentThread } from '../../../shared/agents'
 import type { GitPullRequestSummary } from '../../../shared/gitStatus'
 import type { GitRef } from '../../../shared/gitRefs'
 import type { SottoPlatform } from '../../../shared/platform'
+import { leftToRight, type LaterWords } from './interfaceWords'
 
 /** The thread fields the toolbar reads; a full record satisfies it, and tests can pass less. */
 export type ToolbarThread = Pick<AgentThread, 'id' | 'projectId' | 'nativeSessionStarted' | 'worktree' | 'messages' | 'remoteHost' | 'hostLabel' | 'updatedAt' | 'summary'>
@@ -71,7 +73,7 @@ export function workspaceLabel(thread: ToolbarThread): string {
 function previousWorktreeLabel(branch: string | null | undefined): string {
   return branch == null
     ? t({ message: 'Previous worktree (detached)', comment: 'A worktree another thread made, on no branch.' })
-    : t({ message: `Previous worktree (${branch})`, comment: '{branch} is a Git branch name.' })
+    : t({ message: `Previous worktree (${ph({ branch: leftToRight(branch) })})`, comment: '{branch} is a Git branch name.' })
 }
 
 /**
@@ -93,7 +95,7 @@ export function workspaceOptions(thread: ToolbarThread, threads: readonly Toolba
     if (seen.has(key)) continue
     seen.add(key)
     const folder = worktree.path.split(/[\\/]/u).filter(Boolean).at(-1)
-    previous.push({ id: `previous:${key}`, label: previousWorktreeLabel(worktree.branch), name: worktree.branch ?? t({ message: `Detached · ${folder}`, comment: 'A worktree on no branch, named by its folder.' }), choice: { kind: 'previous', path: worktree.path } })
+    previous.push({ id: `previous:${key}`, label: previousWorktreeLabel(worktree.branch), name: worktree.branch ?? t({ message: `Detached · ${ph({ folder: leftToRight(folder ?? '') })}`, comment: 'A worktree on no branch, named by its folder.' }), choice: { kind: 'previous', path: worktree.path } })
   }
   return [
     { id: 'current', label: t`Current checkout`, choice: { kind: 'current' } },
@@ -111,7 +113,7 @@ export function branchLabel(thread: ToolbarThread): string {
     if (worktree.checkoutBranch && worktree.branch) return worktree.branch
     const base = worktree.baseBranch ?? worktree.git?.branch ?? worktree.git?.defaultBranch ?? 'main'
     const ref = `${worktree.startFromOrigin === false ? '' : 'origin/'}${base}`
-    return t({ message: `From ${ref}`, comment: '{ref} is the Git branch a new worktree will start from.' })
+    return t({ message: `From ${ph({ ref: leftToRight(ref) })}`, comment: '{ref} is the Git branch a new worktree will start from.' })
   }
   return worktree.git?.branch ?? worktree.branch ?? t`Select ref`
 }
@@ -166,7 +168,8 @@ export function refBadges(ref: GitRef): RefBadge[] {
 export type PickOutcome =
   | { readonly kind: 'switch'; readonly ref: string }
   | { readonly kind: 'repoint'; readonly path: string }
-  | { readonly kind: 'refuse'; readonly reason: string }
+  // Sotto's own words, kept as a message and read in the interface language when shown.
+  | { readonly kind: 'refuse'; readonly reason: MessageDescriptor }
   | { readonly kind: 'record-base'; readonly baseBranch: string; readonly startFromOrigin: boolean }
 export function pickOutcome(ref: GitRef, thread: ToolbarThread): PickOutcome {
   const worktree = thread.worktree
@@ -176,27 +179,27 @@ export function pickOutcome(ref: GitRef, thread: ToolbarThread): PickOutcome {
     return { kind: 'record-base', baseBranch: base, startFromOrigin: ref.remote ? true : worktree?.startFromOrigin !== false }
   }
   const name = ref.name
-  if (ref.current) return { kind: 'refuse', reason: t({ message: `${name} is already checked out here.`, comment: '{name} is a Git branch name.' }) }
+  if (ref.current) return { kind: 'refuse', reason: msg({ message: `${ph({ name: leftToRight(name) })} is already checked out here.`, comment: '{name} is a Git branch name.' }) }
   if (ref.worktreePath) {
     if (!workspaceLocked(thread)) return { kind: 'repoint', path: ref.worktreePath }
-    return { kind: 'refuse', reason: t({ message: `${name} is checked out in another worktree. Start a new thread there to work on it.`, comment: '{name} is a Git branch name.' }) }
+    return { kind: 'refuse', reason: msg({ message: `${ph({ name: leftToRight(name) })} is checked out in another worktree. Start a new thread there to work on it.`, comment: '{name} is a Git branch name.' }) }
   }
   // A draft pointed at another thread's worktree does not move that worktree's branch before it has started there.
   if (previousWorktreeDraft(thread)) {
     const branch = worktree?.branch
     return { kind: 'refuse', reason: branch == null
-      ? t`This thread will work in a worktree that is on its own branch. Switch branches there after the first send.`
-      : t({ message: `This thread will work in a worktree that is on ${branch}. Switch branches there after the first send.`, comment: '{branch} is a Git branch name.' }) }
+      ? msg`This thread will work in a worktree that is on its own branch. Switch branches there after the first send.`
+      : msg({ message: `This thread will work in a worktree that is on ${ph({ branch: leftToRight(branch) })}. Switch branches there after the first send.`, comment: '{branch} is a Git branch name.' }) }
   }
   return { kind: 'switch', ref: ref.name }
 }
 
 /** T3's toast title, then Git's own words. The host already says it that way; a refusal from elsewhere gets the title here. */
-export function switchFailure(error: string | null | undefined): string {
+export function switchFailure(error: string | null | undefined): LaterWords {
   const detail = (error ?? '').replace(/\s+/gu, ' ').trim()
-  if (!detail) return t`Failed to switch ref.`
+  if (!detail) return msg`Failed to switch ref.`
   // The host writes its own refusal with this title already, in English.
-  return detail.startsWith('Failed to switch ref') ? detail : t({ message: `Failed to switch ref. ${detail}`, comment: '{detail} is the host\'s or Git\'s own words for why.' })
+  return detail.startsWith('Failed to switch ref') ? detail : msg({ message: `Failed to switch ref. ${detail}`, comment: '{detail} is the host\'s or Git\'s own words for why.' })
 }
 
 interface Chord { readonly key: string; readonly ctrl: boolean; readonly shift: boolean; readonly alt: boolean; readonly meta: boolean }

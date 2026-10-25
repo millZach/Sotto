@@ -9,6 +9,8 @@ import {
 } from '../../../../shared/requestDrafts'
 import { Button } from '../../components/Button'
 import { useTransientFlag, writeClipboard } from '../richActions'
+import { shownWords, type LaterWords } from '../interfaceWords'
+import { useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { answerProgress, requestAnswerStore, textOnly, type RequestAnswerStore, type StructuredQuestion } from './requestAnswers'
 import './requests.css'
 import './requestDraftRecovery.css'
@@ -19,7 +21,7 @@ export type RecoveryObservation = 'disconnected' | 'loading' | 'unavailable' | '
 const LIST_ERROR = msg`Sotto could not read saved answers.`
 const DISCARD_ERROR = msg`Sotto could not discard this saved answer. It is still kept.`
 const COPY_ERROR = msg`Could not copy. Select the answer above to copy it.`
-const readable = (error: unknown, fallback: string): string => error instanceof Error && error.message
+const readable = (error: unknown, fallback: LaterWords): LaterWords => error instanceof Error && error.message
   ? error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '') : fallback
 
 /** The key includes the question definition: a reused request ID with changed questions is another form. */
@@ -55,10 +57,11 @@ const hasContent = (draft: RequestDraft): boolean => draft.held
 export interface RequestDraftRecoveryModel {
   /** Saved forms this owner has that no live card shows. */
   readonly drafts: readonly RequestDraft[]
-  readonly error: string | null
+  /** Sotto's words kept as a message and read when shown, or main's as written. */
+  readonly error: LaterWords | null
   readonly reload: () => void
   /** Removes only this exact revision; resolves to a readable error, or null once main no longer keeps it. */
-  readonly discard: (draft: RequestDraft) => Promise<string | null>
+  readonly discard: (draft: RequestDraft) => Promise<LaterWords | null>
 }
 
 /**
@@ -70,9 +73,8 @@ export interface RequestDraftRecoveryModel {
  */
 function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentRequest[], observed: string,
   bridge: RequestDraftBridge | undefined = window.sotto?.requestDrafts, answers: RequestAnswerStore = requestAnswerStore): RequestDraftRecoveryModel {
-  const { t } = useLingui()
   const ownerKey = requestDraftOwnerKey(owner)
-  const [result, setResult] = useState<{ readonly ownerKey: string; readonly drafts: readonly RequestDraft[]; readonly error: string | null } | null>(null)
+  const [result, setResult] = useState<{ readonly ownerKey: string; readonly drafts: readonly RequestDraft[]; readonly error: LaterWords | null } | null>(null)
   const [attempt, setAttempt] = useState(0)
   const latest = useRef(0)
   const settled = useSyncExternalStore(answers.subscribe, () => answers.recoverySnapshot(owner, live))
@@ -86,17 +88,17 @@ function useRequestDraftRecovery(owner: RequestDraftOwner, live: readonly AgentR
     bridge.list({ kind, ownerId, providerId }).then(
       drafts => { if (latest.current === call) setResult({ ownerKey, drafts, error: null }) },
       // A failed re-read keeps what was already shown for this owner; the text is never dropped on an error.
-      (error: unknown) => { if (latest.current === call) setResult(previous => ({ ownerKey, drafts: previous?.ownerKey === ownerKey ? previous.drafts : [], error: readable(error, t(LIST_ERROR)) })) })
-  }, [bridge, ownerKey, observed, attempt, settled, t])
+      (error: unknown) => { if (latest.current === call) setResult(previous => ({ ownerKey, drafts: previous?.ownerKey === ownerKey ? previous.drafts : [], error: readable(error, LIST_ERROR) })) })
+  }, [bridge, ownerKey, observed, attempt, settled])
   const reload = useCallback(() => setAttempt(value => value + 1), [])
-  const discard = useCallback(async (draft: RequestDraft): Promise<string | null> => {
-    if (!bridge?.discard) return t(DISCARD_ERROR)
+  const discard = useCallback(async (draft: RequestDraft): Promise<LaterWords | null> => {
+    if (!bridge?.discard) return DISCARD_ERROR
     try {
       // False means it was already gone. A stale revision rejects, and the re-read shows the newer content.
       await bridge.discard({ target: draft.target, revision: draft.revision })
       return null
-    } catch (error) { return readable(error, t(DISCARD_ERROR)) } finally { reload() }
-  }, [bridge, reload, t])
+    } catch (error) { return readable(error, DISCARD_ERROR) } finally { reload() }
+  }, [bridge, reload])
   const current = result?.ownerKey === ownerKey ? result : null
   return { drafts: (current?.drafts ?? []).filter(draft => hasContent(draft) && !renderedLive(draft, live)), error: current?.error ?? null, reload, discard }
 }
@@ -118,6 +120,8 @@ export interface RequestDraftRecoveryProps {
  * closed them. They can be read, copied or discarded. Nothing here sends, rechecks, releases a hold or recreates a request.
  */
 export function RequestDraftRecovery({ owner, live, observation, observed, provider, bridge, answers }: RequestDraftRecoveryProps): ReactNode {
+  // Its kept words are read when shown, so a change of language draws the list again.
+  useInterfaceLanguageState()
   const model = useRequestDraftRecovery(owner, live, observed, bridge, answers)
   const container = useRef<HTMLDivElement>(null)
   /** Where keyboard focus goes once a discarded answer leaves the list. */
@@ -136,7 +140,7 @@ export function RequestDraftRecovery({ owner, live, observation, observed, provi
   const liveAnswer = live.some(request => requestDraftQuestions(request).length > 0)
   // An unreadable store is already explained inside a live card; elsewhere it is said once here.
   const listError = model.error && !liveAnswer
-    ? <div className="agent-request request-recovery request-recovery--error" role="alert"><p className="agent-request__error">{model.error}</p>
+    ? <div className="agent-request request-recovery request-recovery--error" role="alert"><p className="agent-request__error tt-paragraph">{shownWords(model.error)}</p>
       <div className="agent-request__actions"><Button variant="secondary" onClick={model.reload}><Trans>Try again</Trans></Button></div></div> : null
   if (!listError && model.drafts.length === 0) return null
   return <div ref={container} className="request-recovery-list">
@@ -165,13 +169,13 @@ function recoveryExplanation(held: boolean, changed: boolean, observation: Recov
 
 function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscard }: {
   readonly draft: RequestDraft; readonly draftKey: string; readonly changed: boolean; readonly observation: RecoveryObservation; readonly provider: string
-  readonly onDiscard: (element: HTMLElement) => Promise<string | null>
+  readonly onDiscard: (element: HTMLElement) => Promise<LaterWords | null>
 }): ReactNode {
   const { t } = useLingui()
   const [confirming, setConfirming] = useState(false)
   const [discarding, setDiscarding] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, showCopied] = useTransientFlag()
+  const [error, setError] = useState<LaterWords | null>(null)
+  const [copied, showCopied] = useTransientFlag<'copied'>()
   const root = useRef<HTMLElement>(null)
   const keep = useRef<HTMLButtonElement>(null)
   const discardButton = useRef<HTMLButtonElement>(null)
@@ -185,7 +189,7 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
   const cancel = (): void => { returnFocus.current = true; setConfirming(false) }
   const copy = (): void => {
     setError(null)
-    void writeClipboard(savedAnswerClipboard(draft)).then(() => showCopied(t`Copied`), () => setError(t(COPY_ERROR)))
+    void writeClipboard(savedAnswerClipboard(draft)).then(() => showCopied('copied'), () => setError(COPY_ERROR))
   }
   const discard = (): void => {
     if (discarding || !root.current) return
@@ -203,7 +207,7 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
   return <section ref={root} className="agent-request request-recovery" data-recovery-key={draftKey} data-held={draft.held || undefined} aria-labelledby={titleId}
     onKeyDown={(event: KeyboardEvent) => { if (confirming && !discarding && event.key === 'Escape') { event.preventDefault(); cancel() } }}>
     <div className="agent-request__head"><strong id={titleId}>{draft.held ? t`Unconfirmed answer` : t`Saved answer`}</strong></div>
-    <p className="request-recovery__why">{recoveryExplanation(draft.held, changed, observation, provider)}</p>
+    <p className="request-recovery__why tt-paragraph">{recoveryExplanation(draft.held, changed, observation, provider)}</p>
     <dl className="request-recovery__answers">
       {draft.target.questions.map(question => {
         const answer = savedAnswerText(question, draft.selections[question.id])
@@ -224,8 +228,8 @@ function SavedAnswer({ draft, draftKey, changed, observation, provider, onDiscar
         <Button variant="secondary" onClick={copy}><Trans>Copy answer</Trans></Button>
         <Button ref={discardButton} variant="ghost" onClick={() => { setError(null); setConfirming(true) }}><Trans comment="Discards a saved answer; asks first.">Discard</Trans></Button>
       </div>
-      <span className="agent-request__status" role="status">{copied}</span>
+      <span className="agent-request__status" role="status">{copied ? t`Copied` : null}</span>
     </div>}
-    {error ? <p className="agent-request__error" role="alert">{error}</p> : null}
+    {error ? <p className="agent-request__error tt-paragraph" role="alert">{shownWords(error)}</p> : null}
   </section>
 }

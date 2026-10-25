@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArrowDown, ArrowRight, ArrowUp, ChevronDown, ChevronRight, Pencil, X } from 'lucide-react'
-import { msg, plural, t } from '@lingui/core/macro'
+import { msg, ph, plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { capabilitiesForThread, isThreadBusy, PROVIDER_LABELS, type AgentFollowup, type AgentState } from '../../../shared/agents'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
@@ -15,7 +15,7 @@ import { isWakeUpFollowup } from './babysitting'
 import { SottoMark } from '../components/SottoMark'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../../shared/agentSkills'
 import { PromptEditor, setPromptSelection, type PromptEditorElement } from './PromptEditor'
-import { wordsOf } from './interfaceWords'
+import { shownCount, wordsOf } from './interfaceWords'
 
 type Command = AgentConnection['command']
 
@@ -114,8 +114,8 @@ function FollowupEditor({ item, current, catalog, providerId, saving, error, onS
         save()
       }} />
     <div className="followup-editor__foot">
-      {error ? <p className="followup-editor__note" data-tone="warning" id={hintId} role="alert">{error}</p>
-        : locked ? <p className="followup-editor__note" data-tone="warning" id={hintId} role="status">{locked}</p>
+      {error ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="alert">{error}</p>
+        : locked ? <p className="followup-editor__note tt-paragraph" data-tone="warning" id={hintId} role="status">{locked}</p>
           : <p className="followup-editor__note tt-paragraph" id={hintId}>{saving ? t`Saving…` : t`Enter to save · Shift+Enter for a new line`}</p>}
       <div className="followup-editor__actions">
         <Button variant="secondary" onClick={onClose} disabled={saving}><Trans>Cancel</Trans></Button>
@@ -323,9 +323,9 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       <button type="button" className="thread-followups__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => setOpened(!expanded)}>
         {expanded ? <ChevronDown size={15} aria-hidden="true" /> : <ChevronRight size={15} aria-hidden="true" />}
         {/* Only what the queue owns is counted; a submission it has not taken yet is not queued. */}
-        <span className="thread-followups__label">{count > 0 ? <Trans comment="The queue's heading with how many messages wait in it.">Queued <span className="thread-followups__count">{count}</span></Trans> : t({ message: 'Queue', comment: 'The follow-up queue\'s heading when it holds nothing yet.' })}</span>
-        {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">{t({ message: 'Added', comment: 'Before the message just added to the queue.' })}</span>{added.text}</span>
-          : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">{t({ message: 'Next', comment: 'Before the message the queue sends next.' })}</span>{next}</span> : null}
+        <span className="thread-followups__label">{count > 0 ? <Trans comment="The queue's heading with how many messages wait in it.">Queued <span className="thread-followups__count">{ph({ count: shownCount(count) })}</span></Trans> : t({ message: 'Queue', comment: 'The follow-up queue\'s heading when it holds nothing yet.' })}</span>
+        {!expanded && added ? <span className="thread-followups__next" data-added><span className="thread-followups__next-label">{t({ message: 'Added', context: 'queued message', comment: 'Before the message just added to the queue.' })}</span>{added.text}</span>
+          : !expanded && next ? <span className="thread-followups__next"><span className="thread-followups__next-label">{t({ message: 'Next', context: 'queued message', comment: 'Before the message the queue sends next.' })}</span>{next}</span> : null}
       </button>
       {expanded && sendsWhen ? <span className="thread-followups__when"><span aria-hidden="true">· </span>{sendsWhen}</span> : null}
       {queuePaused ? <span className="thread-followup__state" data-status="paused"><i aria-hidden="true" />{pausedBy}</span>
@@ -343,8 +343,8 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
       }}><Trans>Resume queue</Trans></Button> : null}
     </header>
     <span className="tt-visually-hidden" role="status">{added ? t`Queued: ${addedText}` : ''}</span>
-    {pauseNote ? <p className="thread-followups__note">{pauseNote}</p> : null}
-    {queueError ? <p className="thread-followups__error" role="alert">{queueError}</p> : null}
+    {pauseNote ? <p className="thread-followups__note tt-paragraph">{pauseNote}</p> : null}
+    {queueError ? <p className="thread-followups__error tt-paragraph" role="alert">{queueError}</p> : null}
     </div>
     {listed.length > 0 || listedAdmissions.length > 0 ? <ol id={listId} className="thread-followups__list">
       {listed.map(item => {
@@ -374,11 +374,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
                 shown => { refocus.current = { target: toggle, shown } })
             }}><ArrowRight size={14} aria-hidden="true" /><Trans>Steer now</Trans></Button> : null}
             {movable.length > 1 && !pendingDelivery ? <>
-              <Button variant="ghost" iconOnly data-tool="up" aria-label={t`Move queued message ${position} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
-              <Button variant="ghost" iconOnly data-tool="down" aria-label={t`Move queued message ${position} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
+              <Button variant="ghost" iconOnly data-tool="up" aria-label={t`Move queued message ${{ position: shownCount(position) }} up`} {...off(itemBusy || index === 0)} onClick={() => { if (index > 0) move(item, -1) }}><ArrowUp size={15} /></Button>
+              <Button variant="ghost" iconOnly data-tool="down" aria-label={t`Move queued message ${{ position: shownCount(position) }} down`} {...off(itemBusy || index >= lastMovable)} onClick={() => { if (index < lastMovable) move(item, 1) }}><ArrowDown size={15} /></Button>
             </> : null}
-            <Button variant="ghost" iconOnly data-tool="edit" aria-label={t`Edit queued message ${position}`} {...off(itemBusy)} onClick={() => { if (itemBusy) return; setBusy(null); setEditing(item) }}><Pencil size={15} /></Button>
-            <Button variant="ghost" iconOnly data-tool="remove" aria-label={t`Remove queued message ${position}`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
+            <Button variant="ghost" iconOnly data-tool="edit" aria-label={t`Edit queued message ${{ position: shownCount(position) }}`} {...off(itemBusy)} onClick={() => { if (itemBusy) return; setBusy(null); setEditing(item) }}><Pencil size={15} /></Button>
+            <Button variant="ghost" iconOnly data-tool="remove" aria-label={t`Remove queued message ${{ position: shownCount(position) }}`} {...off(itemBusy)} onClick={() => { if (!itemBusy) remove(item) }}><X size={15} /></Button>
           </span> : null}
           {note || itemError || unconfirmed ? <div className="thread-followup__detail">
             <span>{itemError ?? note}</span>

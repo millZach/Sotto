@@ -71,14 +71,14 @@ const Dot = (): ReactNode => <span className="activity-body__dot" aria-hidden="t
 /** What a read that failed says, under the part that stays, and the way to ask again. */
 function Problem({ view, said, rest }: { readonly view: ActivityBodyView; readonly said: Words; readonly rest: boolean }): ReactNode {
   return <div className="activity-body__problem" role="status">
-    <p>{rest ? said.failedRest : said.failed}</p>
+    <p className="tt-paragraph">{rest ? said.failedRest : said.failed}</p>
     <button type="button" className="activity-body__retry tt-focusable" aria-label={said.retry} onClick={view.retry}>{t`Try again`}</button>
   </div>
 }
 
 function Offline({ view, said, rest }: { readonly view: ActivityBodyView; readonly said: Words; readonly rest: boolean }): ReactNode {
   const host = view.hostName
-  return <p className="activity-body__problem" role="status">
+  return <p className="activity-body__problem tt-paragraph" role="status">
     {rest ? t`${host} is not connected. The rest shows here when it reconnects.` : said.offline}
   </p>
 }

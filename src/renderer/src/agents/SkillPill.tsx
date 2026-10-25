@@ -147,8 +147,8 @@ function SkillCard({ anchor, name, token, description, scope }: SkillPillProps &
   return createPortal(<div ref={card} className="skill-card" popover="manual" contentEditable={false} aria-hidden="true">
     <p className="skill-card__name">{name}</p>
     {description ? <p className="skill-card__description">{description}</p> : null}
-    <p className="skill-card__meta">{scope
-      ? <Trans comment="{scope} is where the skill comes from: Personal, Project, System or Admin.">{scope} skill, sent as <code>{token}</code></Trans>
-      : <Trans>Skill, sent as <code>{token}</code></Trans>}</p>
+    <p className="skill-card__meta tt-paragraph">{scope
+      ? <Trans comment="{scope} is where the skill comes from: Personal, Project, System or Admin.">{scope} skill, sent as <code dir="ltr">{token}</code></Trans>
+      : <Trans>Skill, sent as <code dir="ltr">{token}</code></Trans>}</p>
   </div>, document.body)
 }

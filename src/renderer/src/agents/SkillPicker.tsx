@@ -57,7 +57,9 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
   const [active, setActive] = useState<{ readonly key: string; readonly index: number } | null>(null)
   const [dismissed, setDismissed] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [requestError, setRequestError] = useState<string | null>(null)
+  // Whether the last load failed; its words are read when shown, in the interface language.
+  const [loadFailed, setLoadFailed] = useState(false)
+  const requestError = loadFailed ? t`Sotto couldn’t load skills.` : null
   const requested = useRef<string | null>(null)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -72,13 +74,13 @@ export function useCatalogSkillPicker({ ownerId, catalog, load, enabled, text }:
 
   const refresh = useCallback((forceReload: boolean): void => {
     setLoading(true)
-    setRequestError(null)
+    setLoadFailed(false)
     void load(forceReload).then(ok => {
       if (!mounted.current) return
       setLoading(false)
-      if (!ok) setRequestError(t`Sotto couldn’t load skills.`)
-    }, () => { if (mounted.current) { setLoading(false); setRequestError(t`Sotto couldn’t load skills.`) } })
-  }, [load, t])
+      if (!ok) setLoadFailed(true)
+    }, () => { if (mounted.current) { setLoading(false); setLoadFailed(true) } })
+  }, [load])
 
   useEffect(() => {
     if (!open || openKey === null || requested.current === openKey) return
@@ -157,7 +159,7 @@ export function SkillPicker({ model, listId, provider, selected = [], emptyMessa
           onMouseDown={event => event.preventDefault()} onMouseMove={() => { if (index !== activeIndex) model.highlight(index) }} onClick={() => { if (!over) onSelect(skill) }}>
           <span className="composer-picker__name"><WandSparkles size={14} aria-hidden="true" />{skill.name}</span>
           <span className="composer-picker__description">{skill.description}</span>
-          <span className="composer-picker__scope">{skillScopeLabel(skill.scope)}</span>
+          <span className="composer-picker__scope">{t(skillScopeLabel(skill.scope))}</span>
         </li>
       })}
     </ul> : null}

@@ -21,6 +21,7 @@ import type { AgentConnection } from './AgentContext'
 import { useAddProject } from './addProject'
 import { OwlSky } from './OwlSky'
 import { useSidebarSize } from './sidebarSize'
+import { shownCount } from './interfaceWords'
 
 /**
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
@@ -130,7 +131,7 @@ export function SidebarResize({ size, onResizing }: { readonly size: SidebarSize
   const { t } = useLingui()
   const width = size.width
   return <div className="thread-nav__resize tt-focusable" role="separator" tabIndex={0} aria-label={t`Resize sidebar`} aria-describedby={helpId} aria-orientation="vertical" aria-valuemin={260} aria-valuemax={size.maximum} aria-valuenow={size.width}
-    aria-valuetext={t`${width} pixels`} title={t`Drag to resize. Use arrow keys when focused. Double-click to reset.`}
+    aria-valuetext={t`${{ width: shownCount(width) }} pixels`} title={t`Drag to resize. Use arrow keys when focused. Double-click to reset.`}
     onPointerDown={event => {
       if (event.button !== 0) return
       event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); onResizing(true)
