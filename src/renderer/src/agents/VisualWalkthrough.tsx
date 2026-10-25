@@ -1,4 +1,5 @@
 import React, { useState, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { keepRecent, readRecent } from '../../../shared/recentMap'
 import type { AgentVisual } from '../../../shared/visuals'
 import { READ_ALL_STEP, type VisualStepPlace } from '../../../shared/visualGuest'
@@ -48,6 +49,7 @@ export function pageStepFor(steps: NonNullable<AgentVisual['steps']>, place: Wal
 
 /** Read all, named for what a press does: it shows every step, and reads Step through while it does. */
 export function ReadAllToggle({ readAll, onToggle }: { readonly readAll: boolean; readonly onToggle: () => void }): ReactNode {
+  const { t } = useLingui()
   return <button type="button" className="tt-button visual-card__read-all tt-focusable" data-reading-all={readAll || undefined}
-    onClick={onToggle}>{readAll ? 'Step through' : 'Read all'}</button>
+    onClick={onToggle}>{readAll ? t`Step through` : t`Read all`}</button>
 }

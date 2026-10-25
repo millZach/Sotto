@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import {
   OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, ownCleanupMeasuredListSchema, ownCleanupMeasureResultSchema,
 } from '../../shared/ownServerCleanup'
@@ -16,7 +17,7 @@ export function registerOwnServerCleanupIpc(
 ): () => void {
   if (!measures) return () => undefined
   const trusted = (event: IpcInvocationEvent): void => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Measure your own server from the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Measure your own server from the main Sotto window.`)
   }
   ipc.handle(OWN_SERVER_CLEANUP_MEASURE, async (event, ...args) => {
     trusted(event)

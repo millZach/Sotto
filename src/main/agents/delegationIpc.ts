@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
 import { DELEGATION_BRIEF_READ, DELEGATIONS_CHANGED, DELEGATIONS_READ, delegationBriefRequestSchema, delegationBriefSchema, delegationsChangedSchema, delegationsReadSchema, delegationsRequestSchema, type DelegatedView, type DelegationView } from '../../shared/delegation'
@@ -22,7 +23,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
   if (!delegation) return () => undefined
   const windowId = (id: string): string => hostEntityKey(localHostId(), id)
   ipc.handle(DELEGATIONS_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
     const [request] = z.tuple([delegationsRequestSchema]).parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) return delegationsReadSchema.parse({ threadId: request.threadId, delegations: [], received: [] })
@@ -32,7 +33,7 @@ export function registerDelegationIpc(ipc: IpcMainAdapter, delegation: Delegatio
     return delegationsReadSchema.parse({ threadId: request.threadId, delegations: made.map(named), received: received.map(named) })
   })
   ipc.handle(DELEGATION_BRIEF_READ, (event, ...args) => {
-    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('Open delegations in the main Sotto window.')
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open delegations in the main Sotto window.`)
     const [request] = z.tuple([delegationBriefRequestSchema]).parse(args)
     const key = parseHostEntityKey(request.threadId)
     if (key && key.hostId !== localHostId()) return null

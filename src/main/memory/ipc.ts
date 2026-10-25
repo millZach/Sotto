@@ -1,4 +1,6 @@
+import { t } from '@lingui/core/macro'
 import { z } from 'zod'
+
 import { MEMORY_COMMAND, MEMORY_GET, memoryCommandSchema, type MemorySnapshot } from '../../shared/memory'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { MemoryProfile } from './profile'
@@ -17,7 +19,7 @@ export function registerMemoryIpc(
   ipc.handle(MEMORY_COMMAND, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('MEMORY_MAIN_WINDOW_REQUIRED')
     const [command] = z.tuple([memoryCommandSchema]).parse(args)
-    if (!profile) throw new Error('Memory is unavailable. Restart Sotto and try again.')
+    if (!profile) throw new Error(t`Memory is unavailable. Restart Sotto and try again.`)
     const snapshot = profile.command(command)
     changed(snapshot)
     return snapshot

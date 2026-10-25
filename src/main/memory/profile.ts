@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+
+import { t } from '@lingui/core/macro'
+
 import {
   MAX_PREFERENCE_CONTEXT_CHARACTERS, memoryCommandSchema, memoryItemSchema, memoryTopicSchema,
   type MemoryCommand, type MemorySnapshot, type MemoryTopic,
@@ -88,9 +91,9 @@ export class MemoryProfile {
 
   private replace(command: Extract<MemoryCommand, { type: 'edit' | 'supersede' }>, at: string): void {
     const current = this.store.get(command.id)
-    if (!current) throw new Error('This memory no longer exists. Refresh the inspector.')
+    if (!current) throw new Error(t`This memory no longer exists. Refresh the inspector.`)
     if (current.supersededBy !== null || current.state === 'superseded') {
-      throw new Error('This memory has been superseded. Edit its current replacement.')
+      throw new Error(t`This memory has been superseded. Edit its current replacement.`)
     }
     const replacementId = randomUUID()
     this.store.insert({

@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -41,10 +42,10 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
   const usable = (model: AgentModel): boolean => model.ready && (model.providerId === undefined || HOST_SETUP_PROVIDERS.has(model.providerId))
   return {
     choice(): HostSetupChoice {
-      if (!options.localHostRunning) return { unavailable: 'An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto.', models: [] }
+      if (!options.localHostRunning) return { unavailable: t`An agent sets a host up from a thread on this computer, which needs the local host. Turn on Run the local host above and restart Sotto.`, models: [] }
       const current = state()
       const models = current.host.models.filter(usable)
-      if (!models.length) return { unavailable: 'No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first.', models: [] }
+      if (!models.length) return { unavailable: t`No model is ready on this computer yet. Connect Claude Code, Codex or Grok Build in Settings > Providers first.`, models: [] }
       // The model the user uses most: the one with the most threads here, else the new-thread default.
       const counts = new Map<string, number>()
       for (const thread of current.host.threads) {
@@ -58,13 +59,13 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
     async start({ title, modelId, brief, created }) {
       await mkdir(folder, { recursive: true })
       const model = resolveModel(state().host.models, modelId)
-      if (!model || !usable(model)) throw new Error('That model cannot set up a host. Choose a ready Claude Code, Codex or Grok Build model.')
+      if (!model || !usable(model)) throw new Error(t`That model cannot set up a host. Choose a ready Claude Code, Codex or Grok Build model.`)
       if (!project(model.providerId)) {
         await coordinator.command({ type: 'create-project', ...(model.providerId ? { provider: model.providerId } : {}), title: HOST_SETUP_PROJECT_TITLE, path: folder, useExisting: true })
         latest = coordinator.shell()
       }
       const home = project(model.providerId)
-      if (!home) throw new Error('The Host setup project could not be made.')
+      if (!home) throw new Error(t`The Host setup project could not be made.`)
       // The mode that asks before everything: the provider's own that allows nothing, or Sotto's approval-required.
       const asking = model.providerModes?.find(mode => mode.allows === 'nothing')
       const permission = asking ? { providerMode: asking.id } : model.runtimeModes?.includes('approval-required') ? { runtimeMode: 'approval-required' as const } : {}

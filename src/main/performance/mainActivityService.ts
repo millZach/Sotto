@@ -1,5 +1,8 @@
 import { join } from 'node:path'
 
+import { i18n } from '@lingui/core'
+import { msg, t } from '@lingui/core/macro'
+
 import { ACTIVITY_RECORDING_MS, type ActivityRecordingState, type MainActivityCommand, type MainActivityState, type MainLoopReading } from '../../shared/mainActivity'
 import { ActivityRecordingSaveError, activityRecordingName, cleanCpuProfile, saveActivityRecording, sweepPartialActivityRecordings, type RecordingFileSystem, type ProfilerTarget } from './activityRecorder'
 import { MainLoopMonitor, type MainLoopClock } from './mainLoopMonitor'
@@ -31,15 +34,15 @@ export interface MainActivityServiceOptions {
   readonly files?: RecordingFileSystem
 }
 
-const START_FAILED = 'Sotto could not start recording. Nothing was kept. Try Record a minute again.'
-const SAVE_FAILED = 'Sotto could not save the recording. Nothing was kept. Try Record a minute again.'
+const START_FAILED = msg`Sotto could not start recording. Nothing was kept. Try Record a minute again.`
+const SAVE_FAILED = msg`Sotto could not save the recording. Nothing was kept. Try Record a minute again.`
 /** What a failed save says when a half-written folder could not be removed: the folder, and that Sotto removes it later. */
 export function saveFailedLeaving(folder: string): string {
-  return `Sotto could not save the recording, and could not remove the unfinished folder ${folder} in performance-recordings. Sotto removes it the next time it starts or saves a recording. Try Record a minute again.`
+  return t`Sotto could not save the recording, and could not remove the unfinished folder ${folder} in performance-recordings. Sotto removes it the next time it starts or saves a recording. Try Record a minute again.`
 }
 /** What Stop without saving says when the recording was already saved and its folder could not be removed or marked. */
 export function discardLeaving(folder: string): string {
-  return `Sotto could not remove the recording you stopped. It is in performance-recordings as ${folder}, kept like a saved recording until five newer ones are saved.`
+  return t`Sotto could not remove the recording you stopped. It is in performance-recordings as ${folder}, kept like a saved recording until five newer ones are saved.`
 }
 
 interface ActiveRecording {
@@ -171,7 +174,7 @@ export class MainActivityService {
       await main.start()
     } catch {
       await main.cancel()
-      if (!starting.cancelled) this.fail(START_FAILED)
+      if (!starting.cancelled) this.fail(i18n._(START_FAILED))
       return
     }
     if (starting.cancelled) { await main.cancel(); return }
@@ -235,7 +238,8 @@ export class MainActivityService {
       const left = saveError?.left ?? null
       // Stopped without saving, and the throw-away removed everything: nothing to say.
       if (active.discarded && left === null) return
-      this.fail(left === null ? SAVE_FAILED : saveError!.removedLater ? saveFailedLeaving(left) : discardLeaving(left))
+      this.fail(left === null ? i18n._(SAVE_FAILED) :
+ saveError!.removedLater ? saveFailedLeaving(left) : discardLeaving(left))
       return
     }
     if (saved === null || active.discarded) return
