@@ -1,5 +1,5 @@
 import {
-  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
+  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlLayer, placeStars, quietAt, rampGlyph,
   RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
   type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
@@ -312,6 +312,10 @@ export class NightScenePainter {
   private light = false
   /** Cells an owl may be drawn in: the margins, below the header, clear of words. */
   private owlCells = new Uint8Array(0)
+  /** Cells where an owl passing over the column or the scrubber's lane is drawn behind the words, on the landscape's canvas. */
+  private behindCells = new Uint8Array(0)
+  /** What the last painted frame drew behind the words over the column and the scrubber's lane: ripple cells and owl glyphs. */
+  behind = { ripple: 0, owl: 0 }
   private noise = new Float32Array(0)
   private stars: Star[] = []
   private starAt = new Int32Array(0)
@@ -348,13 +352,16 @@ export class NightScenePainter {
     this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
-    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
+    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.behindCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
-      // The scrubber's lane takes the column's ink ceiling, and no owl, ripple or glow is drawn in it.
-      const lane = inLane(layout, x, y)
-      this.marginCells[i] = inMargin(layout, x) && !lane ? 1 : 0
-      this.owlCells[i] = owlRoom(layout, x) && !lane && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
+      // The scrubber's lane takes the column's ink ceiling, and no glow is drawn in it. An owl crossing the column or the
+      // lane is drawn behind the words there, at the column's share and under its ceiling (the user's pick A on October
+      // 25, 2026); in the margins it is drawn over everything, as before.
+      const owl = owlLayer(layout, x, y)
+      this.marginCells[i] = inMargin(layout, x) && !inLane(layout, x, y) ? 1 : 0
+      this.owlCells[i] = owl === 'over' ? 1 : 0
+      this.behindCells[i] = owl === 'behind' ? 1 : 0
     }
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land) : []
     this.starAt = new Int32Array(cells).fill(-1)
@@ -489,6 +496,7 @@ export class NightScenePainter {
     const summary = this.summary(frame, owlLines)
     if (summary === this.painted) return false
     this.painted = summary
+    this.behind = { ripple: 0, owl: 0 }
     const { cols, rows, cw, ch } = this.grid
     if (frame.watcher !== null) this.readOwl(frame.watcher.pose)
     else this.owlBox = null
@@ -511,7 +519,7 @@ export class NightScenePainter {
       // A sitting owl keeps the row its feet stand on, so its branch still runs under it.
       const feet = frame.watcher.pose.spread < 0.05 ? Math.floor((frame.watcher.pose.y - 1) / ch) : rows
       for (let r = box.r0; r < box.r0 + box.rn; r++) for (let c = box.c0; c < box.c0 + box.cn; c++) {
-        if (this.owlInk[r * cols + c]! < 0.1 || !this.owlCells[r * cols + c]) continue
+        if (this.owlInk[r * cols + c]! < 0.1 || !(this.owlCells[r * cols + c] || this.behindCells[r * cols + c])) continue
         for (let y = r - 1; y <= Math.min(r + 1, feet - 1); y++) for (let x = c - 1; x <= c + 1; x++) clear(x, y)
       }
     }
@@ -529,8 +537,9 @@ export class NightScenePainter {
       const r0 = clamp(Math.floor((ripple.y - reach) / ch), 0, rows), r1 = clamp(Math.ceil((ripple.y + reach) / ch), 0, rows)
       for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) {
         const i = r * cols + c
-        // Ripples stay in the margins: neither the ring nor the bend reaches the column.
-        if (this.touched[i] || this.cleared[i] || this.quiet[i] === 0 || !this.marginCells[i]) continue
+        // A ripple runs on under the column and the scrubber's lane at their share and under their ink ceiling, as the
+        // hills do (the user's pick A on October 25, 2026), so every word over it keeps 4.5:1.
+        if (this.touched[i] || this.cleared[i] || this.quiet[i] === 0) continue
         const x = (c + 0.5) * cw, y = (r + 0.5) * ch
         const effect = rippleAt(x, y, ripples, t, still, this.effect)
         const sc = c - Math.round(effect.dx), sr = r - Math.round(effect.dy)
@@ -539,7 +548,7 @@ export class NightScenePainter {
         const j = sc >= 0 && sc < cols && sr >= 0 && sr < rows ? sr * cols + sc : i
         const star = this.starAt[i]! >= 0 ? starStrength(this.stars[this.starAt[i]!]!, twinkleStep(t, still), still) * this.quiet[i]! : 0
         back.clearRect(c * cw, r * ch, cw, ch)
-        this.cell(back, i, j, effect.ring, star, x, y)
+        if (this.cell(back, i, j, effect.ring, star, x, y) && !this.marginCells[i]) this.behind.ripple++
       }
     }
 
@@ -588,13 +597,21 @@ export class NightScenePainter {
       }
     }
 
-    // The owls, on their own canvas: Watcher's in its own box, the thread owls as glyphs, and the pile's label.
+    // The owls, on their own canvas over everything in the margins: Watcher's in its own box, the thread owls as glyphs,
+    // and the pile's label. Over the column and the scrubber's lane an owl is drawn behind the words instead, on the
+    // landscape's canvas, at the column's share and under its ink ceiling, so every word over it keeps 4.5:1.
     front.setTransform(1, 0, 0, 1, 0, 0); front.clearRect(0, 0, this.front.width, this.front.height)
     front.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
     this.textStyle(front)
-    const glyph = (c: number, r: number, text: string, color: string): void => {
-      if (c < 0 || c >= cols || r < 0 || r >= rows || !this.owlCells[r * cols + c]) return
-      front.fillStyle = color; front.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch)
+    const glyph = (c: number, r: number, text: string, accent: boolean, strength: number): void => {
+      if (c < 0 || c >= cols || r < 0 || r >= rows) return
+      const i = r * cols + c
+      if (this.owlCells[i]) { front.fillStyle = inkAt(accent ? ink.accent : ink.ink, strength); front.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch); return }
+      if (!this.behindCells[i]) return
+      const cap = accent ? ink.column.accent : ink.column.ink
+      back.clearRect(c * cw, r * ch, cw, ch)
+      back.fillStyle = inkAt(accent ? ink.accent : ink.ink, Math.min(cap, strength * this.quiet[i]!)); back.fillText(text, (c + 0.5) * cw, (r + 0.5) * ch)
+      this.behind.owl++
     }
     if (box !== null) {
       // The eyes are the cells the accent covers most. A smaller owl covers less of each cell, so the bar is the
@@ -606,7 +623,7 @@ export class NightScenePainter {
         const i = r * cols + c, d = this.owlInk[i]!
         if (d < 0.1) continue
         const eye = this.owlAccent[i]! > eyeBar
-        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye ? inkAt(ink.accent, 1) : inkAt(ink.ink, 0.5 + 0.5 * d))
+        glyph(c, r, eye ? '@' : rampGlyph(d + (this.noise[i]! - 0.5) * 0.08), eye, eye ? 1 : 0.5 + 0.5 * d)
       }
     }
     for (const { pose, lines, cells } of sprites) {
@@ -616,12 +633,12 @@ export class NightScenePainter {
         const g = lines[k]![j]!
         if (g === ' ') continue
         const eye = k === 0 && (g === 'o' || g === 'O')
-        glyph(cells.c0 + j, cells.r0 + k, g, waiting ? inkAt(ink.accent, strength) : inkAt(ink.ink, (eye ? base + 0.15 : base) * pose.alpha))
+        glyph(cells.c0 + j, cells.r0 + k, g, waiting, waiting ? strength : (eye ? base + 0.15 : base) * pose.alpha)
       }
     }
     if (frame.pile !== null && pileCells !== null) {
       const label = pileLabel(frame.pile.count, rail)
-      for (let j = 0; j < label.length; j++) glyph(pileCells.c0 + j, pileCells.r0, label[j]!, inkAt(ink.ink, 0.95))
+      for (let j = 0; j < label.length; j++) glyph(pileCells.c0 + j, pileCells.r0, label[j]!, false, 0.95)
     }
     return true
   }

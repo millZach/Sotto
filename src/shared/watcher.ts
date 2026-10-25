@@ -288,7 +288,8 @@ export const watcherToolSchemas = {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema, text: prompt, delivery: deliveryMode.optional(),
       expectedLastUserMessageId: id.optional(), expectedTurnId: id.optional(),
       mergeTurn: z.object({ pullRequest: z.number().int().positive() }).strict().optional() }).strict(),
-    output: result({ ...receiptResult, delivery: deliveryMode }),
+    // `note` is the desktop's alone: what a send that asked to steer did instead, when it went now or queued (ADR-0130).
+    output: result({ ...receiptResult, delivery: deliveryMode, note: shortText.min(1).optional() }),
   },
   stop_thread: {
     input: z.object({ ...mutation, target: watcherThreadTargetSchema }).strict(),

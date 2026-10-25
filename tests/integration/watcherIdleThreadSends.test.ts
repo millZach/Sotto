@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { NO_TURN_TO_STEER, RUNNING_TURN_HOLD } from '../../src/main/agents/watcherSendHolds'
+import { RUNNING_TURN_HOLD, steerFallbackNote } from '../../src/main/agents/watcherSendHolds'
 import type { AgentBackgroundWork } from '../../src/shared/agentMonitoring'
 import { watcherToolSchemas } from '../../src/shared/watcher'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -87,12 +87,12 @@ describe.each(['codex', 'claude', 'grok'] as const)('Watcher reaches a %s thread
     expect(f.native().thread.backgroundWork).toEqual(job)
   })
 
-  it('still steers only a running turn: background work is not one', async () => {
+  it('still steers only a running turn: a steer to background work goes now, and says so', async () => {
     const f = await fixture(provider)
     await f.turn('finished', job)
     expect(await f.send('steer', 'Synthetic steer', { expectedTurnId: f.native().thread.lastTurn!.id }))
-      .toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: NO_TURN_TO_STEER })
-    expect(f.sent('Synthetic steer')).toBe(0)
+      .toMatchObject({ status: 'ok', delivery: 'now', note: steerFallbackNote('now'), receipt: { deliveryState: 'accepted' } })
+    expect(f.sent('Synthetic steer')).toBe(1)
   })
 })
 
