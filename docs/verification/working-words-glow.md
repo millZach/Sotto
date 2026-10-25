@@ -7,10 +7,12 @@ October 25, 2026. `fix/working-words-glow`, on Windows 11 with the built app (`n
 ```sh
 npm run typecheck
 npm run lint
-npx vitest run tests/unit/renderer/threadActivity.test.tsx tests/unit/renderer/ownServerTurn.test.tsx tests/unit/shared/omarchyThemes.test.ts tests/unit/renderer/themeTokens.test.ts
+npx vitest run tests/unit/renderer/threadActivity.test.tsx tests/unit/renderer/threadWorkingDisplay.test.tsx tests/unit/renderer/ownServerTurn.test.tsx tests/unit/shared/omarchyThemes.test.ts tests/unit/renderer/themeTokens.test.ts
 npm run build
 npx playwright test tests/e2e/thread-activity.spec.ts --timeout=180000
 ```
+
+The full suite runs in CI on the pull request, not on this machine.
 
 ## Why the light was faint
 
