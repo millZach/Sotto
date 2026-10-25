@@ -1,12 +1,13 @@
 import React, { type ReactNode } from 'react'
 import { ChevronDown, Folder, FolderPlus, GitBranch, Laptop, Server } from 'lucide-react'
+import { useLingui } from '@lingui/react/macro'
 import type { AgentState } from '../../../shared/agents'
-import { branchLabel, toolbarApplies } from './branchToolbar.logic'
+import { branchLabel, branchLabelChosen, toolbarApplies } from './branchToolbar.logic'
 import { threadHostName } from './HostBadge'
 import type { ThreadRow } from './threadFacts'
 import { useOwlFeature } from '../state/owlFeature'
 import { PaneMenu } from './PaneMenu'
-import { greetingFor, recentProjects } from './threadGreeting.logic'
+import { greetingFor, greetingWords, recentProjects } from './threadGreeting.logic'
 import { setNewThreadIntent } from './threadIntent'
 
 /**
@@ -16,23 +17,27 @@ import { setNewThreadIntent } from './threadIntent'
  * that project would. Stable shows the project as plain words.
  */
 export function ThreadGreeting({ row, state }: { readonly row: ThreadRow; readonly state: Pick<AgentState, 'connections' | 'host'> }): ReactNode {
+  const { t } = useLingui()
   const thread = row.thread
-  const line = greetingFor(thread.id)
+  const line = greetingWords(greetingFor(thread.id))
   const switcher = useOwlFeature('recent-projects')
-  const branch = toolbarApplies(thread) ? branchLabel(thread) : null
+  const branch = toolbarApplies(thread) && branchLabelChosen(thread) ? branchLabel(thread) : null
   const Host = thread.remoteHost ? Server : Laptop
+  const projectTitle = row.project?.title
+  // Each fact's name is for a screen reader, ahead of the value the eye reads.
+  const projectWord = t({ message: 'Project', comment: 'Read before a project\'s name.' })
   return <div className="thread-greeting">
     <h3>{line}</h3>
     <p className="thread-greeting__where">
-      {row.project && !switcher ? <span><Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">Project </span>{row.project.title}</span> : null}
-      {row.project && switcher ? <PaneMenu className="thread-greeting__project" label={`Change project, now ${row.project.title}`}
-        icon={<Folder size={13} aria-hidden="true" />} text={<><span className="tt-visually-hidden">Project </span><span className="thread-greeting__project-name">{row.project.title}</span><ChevronDown size={12} aria-hidden="true" /></>}
+      {row.project && !switcher ? <span><Folder size={13} aria-hidden="true" /><span className="tt-visually-hidden">{projectWord} </span>{row.project.title}</span> : null}
+      {row.project && switcher ? <PaneMenu className="thread-greeting__project" label={t`Change project, now ${projectTitle}`}
+        icon={<Folder size={13} aria-hidden="true" />} text={<><span className="tt-visually-hidden">{projectWord} </span><span className="thread-greeting__project-name">{row.project.title}</span><ChevronDown size={12} aria-hidden="true" /></>}
         groups={[
           recentProjects(state, thread).map(project => ({ id: project.id, label: project.title, icon: <Folder size={15} aria-hidden="true" />, run: () => setNewThreadIntent({ projectId: project.id }) })),
-          [{ id: 'other', label: 'Choose another folder…', icon: <FolderPlus size={15} aria-hidden="true" />, run: () => setNewThreadIntent({}) }],
+          [{ id: 'other', label: t`Choose another folder…`, icon: <FolderPlus size={15} aria-hidden="true" />, run: () => setNewThreadIntent({}) }],
         ]} /> : null}
-      {branch !== null && branch !== 'Select ref' ? <span><GitBranch size={13} aria-hidden="true" /><span className="tt-visually-hidden">Branch </span>{branch}</span> : null}
-      <span><Host size={13} aria-hidden="true" /><span className="tt-visually-hidden">Runs on </span>{threadHostName(state, thread)}</span>
+      {branch !== null ? <span><GitBranch size={13} aria-hidden="true" /><span className="tt-visually-hidden">{t({ message: 'Branch', comment: 'Read before a Git branch\'s name.' })} </span>{branch}</span> : null}
+      <span><Host size={13} aria-hidden="true" /><span className="tt-visually-hidden">{t({ message: 'Runs on', comment: 'Read before the computer or host the thread runs on.' })} </span>{threadHostName(state, thread)}</span>
     </p>
   </div>
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { Marked, useMark } from '../components/marks'
 import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
 import type { ProviderId } from '../../../shared/agents'
@@ -11,6 +12,7 @@ import {
   displayFractions, dividerRange, evenDivider, fitsArea, gridShape, isSplit, movePane, paneShape, placements, resizeDivider, setArrangement, setZoomed, slotOf, snapBoundary,
   type AxisPlacement, type DividerPlacement, type SplitLayout,
 } from './splitLayout'
+import { shownCount } from '../state/interfaceNumbers'
 import './splitWorkspace.css'
 
 export type DropTarget = { readonly kind: 'side'; readonly side: 'start' | 'end' } | { readonly kind: 'pane'; readonly index: number } | { readonly kind: 'add' } | { readonly kind: 'open' }
@@ -126,6 +128,7 @@ function PaneDivider({ divider, position, layout, size, label, controls, area, o
   const vertical = target.axis === 'columns'
   const drag = useRef<{ readonly pointerId: number; readonly start: number; readonly boundary: number; next: SplitLayout } | null>(null)
   const [dragging, setDragging] = useState(false)
+  const { t } = useLingui()
   const [min, max] = dividerRange(layout, target, size)
   const boundary = (vertical ? divider.x.start : divider.y.start)
   const usable = Math.max(1, size - (vertical ? divider.x.total : divider.y.total) * DIVIDER_WIDTH)
@@ -170,7 +173,7 @@ function PaneDivider({ divider, position, layout, size, label, controls, area, o
   }
   return <div role="separator" aria-orientation={vertical ? 'vertical' : 'horizontal'} aria-label={label} aria-controls={controls} tabIndex={0}
     aria-valuemin={Math.round(min * 100)} aria-valuemax={Math.round(max * 100)} aria-valuenow={Math.round(boundary * 100)}
-    className="thread-panes__divider tt-focusable" data-axis={target.axis} data-dragging={dragging || undefined} title="Drag to resize · Double-click to even"
+    className="thread-panes__divider tt-focusable" data-axis={target.axis} data-dragging={dragging || undefined} title={t`Drag to resize · Double-click to even`}
     style={boxStyle(`divider-${position}`)}
     onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}
     // Capture can be taken away mid-drag (another window activating); the panes stay where the drag had moved them.
@@ -224,8 +227,10 @@ function neighbour(shape: readonly number[], index: number, key: string): number
  * Every pane stays mounted in a stable order, so moving, hiding or resizing never loses its scroll position,
  * keyboard focus or draft, and the retained arrangement returns when there is room.
  */
-export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, onVisiblePaneIdsChange, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
+export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedId, dragging, renderPane, onFocusPane, onLayoutChange, onDrop, onClosePane, onVisiblePaneIdsChange, measuredWidth, measuredHeight }: ThreadPanesProps): ReactNode {
   const app = useOptionalApp()
+  const { t } = useLingui()
+  const label = givenLabel ?? t`Thread panes`
   const panePlatform = app?.platform ?? 'win32'
   // Zoom and Close pane answer to Settings › Keyboard (ADR-0133); Zoom's default is now `mod+shift+m` on every
   // platform, where it was Ctrl+Shift+M even on a Mac — off a Mac the same keys, by the mod pattern's own rule.
@@ -250,7 +255,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const shown = shownLayout(layout, width, height)
   const [shownRows, shownColumns] = gridSizes(shown)
   const placed = split && !single ? placements(shape, shownRows, shownColumns) : null
-  const title = (id: string): string => rows.get(id)?.title ?? 'Pane'
+  const title = (id: string): string => rows.get(id)?.title ?? t({ message: 'Pane', comment: 'The name of a pane whose thread is unknown.' })
   const paneName = (id: string): string => { const attention = rows.get(id)?.attention; return attention ? `${title(id)}, ${attention}` : title(id) }
 
   useLayoutEffect(() => {
@@ -272,12 +277,15 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   }
   const toggleArrangement = (): void => {
     const next = setArrangement(layout, layout.arrangement === 'row' ? 'grid' : 'row')
-    const name = next.arrangement === 'row' ? 'a single row' : 'a grid'
-    change(next, fitsArea(next, width, height) ? `Panes arranged in ${name}` : `Panes will be arranged in ${name} when there is room`)
+    const fitsNext = fitsArea(next, width, height)
+    change(next, next.arrangement === 'row'
+      ? fitsNext ? t`Panes arranged in a single row` : t`Panes will be arranged in a single row when there is room`
+      : fitsNext ? t`Panes arranged in a grid` : t`Panes will be arranged in a grid when there is room`)
   }
   const toggleZoom = (threadId: string): void => {
     if (!layout.zoomed) onFocusPane(threadId)
-    change(setZoomed(layout, !layout.zoomed), layout.zoomed ? 'Showing all panes' : `${title(threadId)} zoomed`)
+    const name = title(threadId)
+    change(setZoomed(layout, !layout.zoomed), layout.zoomed ? t`Showing all panes` : t({ message: `${name} zoomed`, comment: '{name} is a thread\'s title.' }))
   }
 
   const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
@@ -294,7 +302,8 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
     event.preventDefault()
     if (next === null) return
-    change(movePane(layout, index, next), `${title(threadId)} moved to pane ${next + 1} of ${layout.panes.length}`)
+    const name = title(threadId), position = next + 1, count = layout.panes.length
+    change(movePane(layout, index, next), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (!split || event.defaultPrevented || event.repeat) return
@@ -317,30 +326,32 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const nextShape = layout.arrangement === 'row' ? [paneIds.length + 1] : gridShape(paneIds.length + 1)
   const dropTargets = moving !== null && placed !== null
     ? <div className="thread-panes__drops" data-layout="boxes">
-      {placed.panes.map(pane => <DropZone key={pane.index} label="Move here" target={{ kind: 'pane', index: pane.index }} fallback={moving} type={PANE_DRAG_TYPE}
+      {placed.panes.map(pane => <DropZone key={pane.index} label={t`Move here`} target={{ kind: 'pane', index: pane.index }} fallback={moving} type={PANE_DRAG_TYPE}
         style={{ left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }}
         onDrop={(threadId, target) => {
           setMoving(null)
-          if (target.kind === 'pane') change(movePane(layout, layout.panes.indexOf(threadId), target.index), `${title(threadId)} moved to pane ${target.index + 1} of ${layout.panes.length}`)
+          if (target.kind !== 'pane') return
+          const name = title(threadId), position = target.index + 1, count = layout.panes.length
+          change(movePane(layout, layout.panes.indexOf(threadId), target.index), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
         }} />)}
     </div>
     : dragging === null ? null
-      : paneIds.length === 0 ? <div className="thread-panes__drops">{sidebarDrop('Open here', { kind: 'open' })}</div>
+      : paneIds.length === 0 ? <div className="thread-panes__drops">{sidebarDrop(t`Open here`, { kind: 'open' })}</div>
         : !split ? paneIds[0] === dragging ? null : <div className="thread-panes__drops" data-layout="boxes">
-          {evenBoxes([2]).map((style, index) => sidebarDrop(index === 0 ? 'Open on the left' : 'Open on the right', { kind: 'side', side: index === 0 ? 'start' : 'end' }, style, String(index)))}
+          {evenBoxes([2]).map((style, index) => sidebarDrop(index === 0 ? t`Open on the left` : t`Open on the right`, { kind: 'side', side: index === 0 ? 'start' : 'end' }, style, String(index)))}
         </div>
           : single || alreadyOpen ? <div className="thread-panes__drops" data-layout="boxes">
             {single
               ? evenBoxes([alreadyOpen ? 1 : 2]).map((style, index) => index === 0
-                ? sidebarDrop('Show here', { kind: 'pane', index: Math.max(0, paneIds.indexOf(shownId ?? '')) }, style, 'shown')
-                : sidebarDrop('Add as a pane', { kind: 'add' }, style, 'add'))
-              : placed!.panes.map(pane => sidebarDrop('Show here', { kind: 'pane', index: pane.index }, { left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }, String(pane.index)))}
+                ? sidebarDrop(t`Show here`, { kind: 'pane', index: Math.max(0, paneIds.indexOf(shownId ?? '')) }, style, 'shown')
+                : sidebarDrop(t`Add as a pane`, { kind: 'add' }, style, 'add'))
+              : placed!.panes.map(pane => sidebarDrop(t`Show here`, { kind: 'pane', index: pane.index }, { left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }, String(pane.index)))}
           </div>
             // The targets preview the arrangement after the drop: every open pane where it will sit, and the slot a new pane snaps into.
             : <div className="thread-panes__drops" data-layout="boxes" data-preview>
               {evenBoxes(nextShape).map((style, index) => index < paneIds.length
-                ? sidebarDrop('Show here', { kind: 'pane', index }, style, String(index), title(paneIds[index]!))
-                : sidebarDrop('Add here', { kind: 'add' }, style, 'add'))}
+                ? sidebarDrop(t`Show here`, { kind: 'pane', index }, style, String(index), title(paneIds[index]!))
+                : sidebarDrop(t`Add here`, { kind: 'add' }, style, 'add'))}
             </div>
 
   if (!paneIds.length) return dropTargets
@@ -358,7 +369,9 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   const dividersAfter = new Map<number, ReactNode[]>()
   placed?.dividers.forEach((divider, position) => {
     const [before, after] = [divider.before.map(index => paneIds[index]!), divider.after.map(index => paneIds[index]!)]
-    const label = placed.dividers.length === 1 ? 'Resize panes' : divider.target.axis === 'rows' ? `Resize rows ${divider.target.index + 1} and ${divider.target.index + 2}` : `Resize ${title(before[0]!)} and ${title(after[0]!)}`
+    const first = divider.target.index + 1, second = divider.target.index + 2, beforeName = title(before[0]!), afterName = title(after[0]!)
+    const label = placed.dividers.length === 1 ? t`Resize panes` : divider.target.axis === 'rows' ? t`Resize rows ${{ first: shownCount(first) }} and ${{ second: shownCount(second) }}`
+      : t({ message: `Resize ${beforeName} and ${afterName}`, comment: 'Each name is a thread\'s title.' })
     const last = Math.max(...divider.before)
     dividersAfter.set(last, [...dividersAfter.get(last) ?? [], <PaneDivider key={`${divider.target.axis}-${divider.target.axis === 'columns' ? divider.target.row : 0}-${divider.target.index}`} divider={divider} position={position}
       layout={shown} size={divider.target.axis === 'columns' ? width : height} label={label} controls={before.map(paneDomId).join(' ')} area={area}
@@ -366,7 +379,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
   })
   return <div className="thread-panes" ref={container} role="group" aria-label={label} data-split={split || undefined} data-narrow={single || undefined}
     data-zoomed={split && layout.zoomed || undefined} data-rows={multiRow || undefined} data-dragging={dragging !== null || moving !== null || undefined} onKeyDown={onAreaKey}>
-    {single ? <div className="thread-panes__tabs" role="tablist" aria-label="Open panes">
+    {single ? <div className="thread-panes__tabs" role="tablist" aria-label={t`Open panes`}>
       {paneIds.map((id, index) => {
         const paneRow = rows.get(id)
         const selected = id === shownId
@@ -386,6 +399,7 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
         // compact: the arrangement chosen there may be the one that does not fit, and the other may.
         const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
         const zooms = !narrow || layout.zoomed
+        const name = title(id)
         const controls = (arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1
         return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} data-controls={split ? controls : undefined} {...marks}
@@ -398,13 +412,13 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
           {split ? <div className="thread-pane__controls" data-count={controls}>
             {arranges
               ? <button type="button" className="thread-pane__control tt-focusable" data-pane-chrome aria-pressed={layout.arrangement === 'row'}
-                aria-label="Single row" title={layout.arrangement === 'row' ? 'Arrange in a grid' : 'Arrange in a single row'}
+                aria-label={t`Single row`} title={layout.arrangement === 'row' ? t`Arrange in a grid` : t`Arrange in a single row`}
                 onClick={toggleArrangement}>
                 {layout.arrangement === 'row' ? <LayoutGrid size={16} aria-hidden="true" /> : <Columns3 size={16} aria-hidden="true" />}
               </button>
               : null}
             {placed ? <button type="button" className="thread-pane__control thread-pane__grip tt-focusable" data-pane-chrome draggable
-              aria-label={`Move ${title(id)} pane`} aria-roledescription="movable pane" aria-description="Drag to another pane, or use the arrow keys" title="Drag or use arrow keys to move"
+              aria-label={t({ message: `Move ${name} pane`, comment: '{name} is a thread\'s title.' })} aria-roledescription={t`movable pane`} aria-description={t`Drag to another pane, or use the arrow keys`} title={t`Drag or use arrow keys to move`}
               onKeyDown={event => onGripKey(event, id)}
               onDragStart={event => {
                 event.dataTransfer.setData(PANE_DRAG_TYPE, id); event.dataTransfer.effectAllowed = 'move'
@@ -415,11 +429,11 @@ export function ThreadPanes({ layout, paneIds, rows, label = 'Thread panes', foc
               <GripVertical size={16} aria-hidden="true" />
             </button> : null}
             {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomChord ? threadChordLabel(zoomChord, panePlatform).keys : undefined}
-              aria-label={layout.zoomed ? 'Show all panes' : `Zoom ${title(id)} pane`} title={`${layout.zoomed ? 'Show all panes' : 'Zoom pane'}${zoomChord ? ` ${threadChordLabel(zoomChord, panePlatform).suffix}` : ''}`}
+              aria-label={layout.zoomed ? t`Show all panes` : t({ message: `Zoom ${name} pane`, comment: '{name} is a thread\'s title.' })} title={`${layout.zoomed ? t`Show all panes` : t`Zoom pane`}${zoomChord ? ` ${threadChordLabel(zoomChord, panePlatform).suffix}` : ''}`}
               onClick={() => toggleZoom(id)}>
               {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
             </button> : null}
-            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={`Close ${title(id)} pane`} aria-keyshortcuts={closeChord ? threadChordLabel(closeChord, panePlatform).keys : undefined} title={closeChord ? `Close pane ${threadChordLabel(closeChord, panePlatform).suffix}` : 'Close pane'}
+            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={t({ message: `Close ${name} pane`, comment: '{name} is a thread\'s title.' })} aria-keyshortcuts={closeChord ? threadChordLabel(closeChord, panePlatform).keys : undefined} title={closeChord ? `${t`Close pane`} ${threadChordLabel(closeChord, panePlatform).suffix}` : t`Close pane`}
               onClick={() => onClosePane(id)}>
               <X size={16} aria-hidden="true" />
             </button>
