@@ -139,7 +139,7 @@ describe('the desktop defaults a host keeps', () => {
 describe('where a thread on a host may delegate', () => {
   const facts = (family: 'linux' | 'macos' | null) => ({ read: async () => ({ observedAt: new Date().toISOString(), os: { family, name: null, version: null },
     architecture: null, totalMemoryBytes: null, freeMemoryBytes: null, logicalCpuCount: null }) }) as unknown as HostFactsSource
-  const machines = (family: 'linux' | 'macos' | null = 'linux') => hostDelegationMachines(() => 'host-a', facts(family), () => [{ status: 'running' }, { status: 'idle' }])
+  const machines = (family: 'linux' | 'macos' | null = 'linux') => hostDelegationMachines(() => 'host-a', facts(family), () => [{ id: 'thread-a', status: 'running' }, { id: 'thread-b', status: 'idle' }])
   const project = { hostId: 'host-a', projectId: 'project-a' }
 
   it('lists this machine alone and starts on it, by its ID or its own system', async () => {

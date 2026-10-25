@@ -113,13 +113,13 @@ const refusal = (message: string): WatcherRefusal => ({ status: 'refused', code:
  * between machines. `list_machines` lists this machine alone with its facts; a call that names this machine, or its own
  * system, starts here; another machine or system is refused in plain words and recorded, as the desktop refuses one.
  */
-export function hostDelegationMachines(hostId: () => string | undefined, facts: HostFactsSource, threads: () => readonly Pick<AgentThread, 'status'>[]): NonNullable<DelegationServiceOptions['machines']> {
+export function hostDelegationMachines(hostId: () => string | undefined, facts: HostFactsSource, threads: () => readonly Pick<AgentThread, 'id' | 'status'>[]): NonNullable<DelegationServiceOptions['machines']> {
   const here = (id: string) => ({ hostId: id, projectId: '', receipt: { hostId: id, name: THIS_MACHINE, awayFromDefault: false } })
   return {
     list: async () => {
       const id = hostId()
       let report: Awaited<ReturnType<typeof hostMachineReport>> | undefined
-      try { report = await hostMachineReport(facts, threads()) } catch { report = undefined }
+      try { report = await hostMachineReport(facts, () => ({ threads: threads() }), false) } catch { report = undefined }
       return { status: 'ok', machines: [{ hostId: id, name: THIS_MACHINE, thisComputer: true, connected: true,
         ...report ? { factsState: 'reported', facts: report.facts, runningThreads: report.runningThreads }
           : { factsState: 'unknown', facts: null, note: 'This machine\'s facts could not be read just now. Nothing was changed. Ask again.', runningThreads: null } }],
