@@ -95,7 +95,7 @@ function RowLine({ view, state, id, world, request }: { readonly view: Delegatio
     // Its machine is not connected: how it stood when Sotto last read it, never a wait still counting (#1310).
     : away ? lastReadOutcome(away.name, view.outcome, away.lastReadAt, away.connected)
       : delegatedLine(view, state, world.now ?? now, request, listed)
-  return <p id={id} className="delegated-work__line">{line}</p>
+  return <p id={id} className="delegated-work__line tt-paragraph">{line}</p>
 }
 
 /**
@@ -146,7 +146,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
       <span className="tt-visually-hidden">, {state.word}.</span>
     </p>
     <RowLine view={view} state={state.id} id={lineId} world={world} request={request} />
-    {held ? <p className="delegated-work__held"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}
+    {held ? <p className="delegated-work__held tt-paragraph"><ShieldCheck size={13} aria-hidden="true" /><span>{held}</span></p> : null}
   </li>
 }
 

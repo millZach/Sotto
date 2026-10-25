@@ -145,7 +145,7 @@ export const DelegatedThreadRow = memo(function DelegatedThreadRow({ row, shown,
     {open ? <div className="subagent-details" id={id}>
       {brief ? <><h3>Brief</h3>{row.lastRead && brief === row.brief ? <p className="delegated-row__source tt-paragraph">{t`The start of the brief, as Sotto last read it from ${machine}.`}</p> : null}<p>{brief}</p></> : null}
       <h3>Latest outcome</h3>
-      <p className="subagent-result" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
+      <p className="subagent-result tt-paragraph" data-needs={row.status === 'needs' || undefined}>{latestOutcome(row, Date.now())}</p>
     </div> : null}
   </li>
 })

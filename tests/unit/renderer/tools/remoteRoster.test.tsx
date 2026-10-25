@@ -165,6 +165,9 @@ describe('the rows of delegated work in a remote parent\'s transcript', () => {
     expect(row.querySelector('.delegated-work__meta')).toHaveTextContent('Codex·forge')
     expect(row.querySelector('.delegated-work__state')).toHaveTextContent('Working')
     expect(row.querySelector('.delegated-work__held')).toHaveTextContent('Started at Ask for approval: forge had no new-thread default from this computer yet.')
+    // Each is a translated paragraph, so in Arabic or Urdu it runs right to left (ADR-0123).
+    expect(row.querySelector('.delegated-work__held')).toHaveClass('tt-paragraph')
+    expect(row.querySelector('.delegated-work__line')).toHaveClass('tt-paragraph')
     const refused = screen.getByRole('listitem', { name: /, not delegated, Refused$/ })
     expect(refused).toHaveTextContent('Asked for this computer. forge can start threads only on forge for now. Nothing was started.')
     // It names no machine it could have started on: none was.
@@ -218,7 +221,7 @@ describe('Tools › Agents for a remote parent', () => {
     expect(within(review).getByText('Started at Ask for approval: forge had no new-thread default from this computer yet.')).toBeInTheDocument()
     const head = within(review).getByRole('button', { name: /^Review the socket changes, delegated thread on Codex, Working, Started at Ask for approval/u })
     fireEvent.click(head)
-    expect(within(review).getByText(/^forge hasn't had this computer's defaults yet\. It gets them the next time this computer connects to it/u)).toBeInTheDocument()
+    expect(within(review).getByText(/^forge hasn't had this computer's defaults yet\. It gets them the next time this computer connects to it/u)).toHaveClass('tt-paragraph')
     // Escape closes it and gives the focus back to the row.
     fireEvent.keyDown(head, { key: 'Escape' })
     expect(head).toHaveAttribute('aria-expanded', 'false')
