@@ -1,0 +1,419 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: a thread hands work to subagents, reviewers and Muse reviews, but the transcript only
+  shows "Worked for 4m 28s", "Changed 1 file" and prose ("Muse is checking the build plan for your
+  pick, A..."). Nothing in the UI says that delegated work is running, done or failed. How should a
+  Sotto thread show it? (DelegationCards.tsx already draws sotto_delegate threads as cards; this asks
+  the wider question for every kind of delegated work.)
+
+  Ten variants on ?variant=1..10, switchable with the bar (Left/Right arrows too). Every variant draws
+  the same two turns so they compare:
+    Turn 1 (finished): three subagents in parallel (two done, one failed) and a reviewer that came
+    back with two findings.
+    Turn 2 (the screenshot, live): the reply has ended but a Muse review is still running, one
+    subagent is running, one subagent is waiting for the user's approval, and a reviewer is queued.
+  Identity is shape plus word, never colour alone: subagent = fork, reviewer = magnifier, Muse = star.
+
+   1 Live cards        inline cards where the work was handed out
+   2 In the fold       rows inside the existing "Worked for" fold, plus a background line
+   3 Chips             icon chips under the reply; press one for its detail
+   4 Margin rail       lanes in a right gutter beside the turn they belong to
+   5 Header dock       a strip under the title for what is out now; returns leave a marker
+   6 Composer tray     a tray above the composer for what outlives the reply
+   7 Timeline          bars against the turn's clock, showing work past "Reply sent"
+   8 Tree              the thread as a process tree, waits nested under their worker
+   9 Reports           a quiet "out" line while running; a return lands as its own block
+  10 Presence          pixel marks beside the reply, one per worker, state as a ring
+
+  The State strip under the window lists every worker (who, state, findings) and stays the same on
+  every switch; State in the bar hides it to see the window at its true size (URL: state=off).
+  Bar extras: Reduced motion (also follows the OS setting), Light. URL: variant=N, theme=light,
+  motion=reduce. Palette: SOTTO_DARK/LIGHT through --tt-* roles, as the other prototypes here.
+
+  Picked: 2, In the fold (Drake, 2026-10-23, confirmed after the visual-filter revision).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - delegated work in a thread, ten variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 4px; }
+
+/* prototype bar */
+.bar { height: 44px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); overflow-x: auto; white-space: nowrap; }
+.bar b { font-weight: 600; margin-right: 4px; font-size: 13px; }
+.bar button { border: 1px solid var(--tt-hairline); background: transparent; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: var(--tt-surface-elevated); border-color: var(--tt-field-border); color: var(--tt-accent-text); }
+.bar .name { color: var(--tt-text-2); font-size: 12px; margin-left: 6px; }
+.bar .sp { flex: 1; }
+.bar .tag { font-size: 11px; color: var(--tt-text-muted); border: 1px dashed var(--tt-field-border); border-radius: 4px; padding: 1px 6px; }
+.state { border-top: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); padding: 6px 12px; font-size: 11px; line-height: 1.45; color: var(--tt-text-2); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; max-height: 30vh; overflow-y: auto; }
+.state[hidden] { display: none; }
+.state .k { color: var(--tt-text-muted); }
+.state .v { display: flex; flex-direction: column; }
+.state .v > span { display: inline; } .state .v .g { vertical-align: -2px; margin-right: 3px; }
+.state .g { width: 12px; height: 12px; }
+.state .st { font-size: 11px; }
+
+/* window */
+body { display: grid; grid-template-rows: 44px minmax(0, 1fr) auto; }
+.win { min-height: 0; display: grid; grid-template-rows: 36px auto minmax(0, 1fr) auto; }
+.strip { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); font-size: 13px; color: var(--tt-text-2); }
+.strip strong { color: var(--tt-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.body { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
+.scroll { overflow-y: auto; padding: 20px 24px 12px; }
+.col { max-width: 720px; margin: 0 auto; }
+.user { margin: 0 0 14px auto; max-width: 78%; width: fit-content; background: var(--tt-message); border-radius: 12px; padding: 8px 12px; }
+.turn { position: relative; margin-bottom: 28px; }
+.row { display: flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-size: 13px; padding: 2px 6px; margin-left: -6px; border-radius: 6px; width: fit-content; }
+.row .chev { color: var(--tt-text-muted); }
+.prose { margin: 8px 0 0; }
+.prose p { margin: 0 0 8px; }
+.composer-wrap { padding: 0 24px 14px; }
+.composer { max-width: 720px; margin: 0 auto; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-surface); padding: 10px 12px; color: var(--tt-text-muted); display: flex; justify-content: space-between; }
+.muted { color: var(--tt-text-muted); }
+.t2 { color: var(--tt-text-2); }
+.small { font-size: 12px; }
+
+/* identity glyphs and state marks */
+.g { width: 14px; height: 14px; flex: none; vertical-align: -2px; }
+.st { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+.ring { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 2px solid currentColor; display: inline-block; }
+[data-s='running'] { color: var(--tt-accent-text); }
+[data-s='running'] .ring { border-color: var(--tt-accent-text) transparent var(--tt-accent-text) var(--tt-accent-text); animation: spin 0.9s linear infinite; }
+[data-s='queued'] { color: var(--tt-text-muted); }
+[data-s='queued'] .ring { border-style: dashed; }
+[data-s='waiting'] { color: var(--tt-warning); }
+[data-s='waiting'] .ring { border-width: 0; background: linear-gradient(90deg, currentColor 0 35%, transparent 35% 65%, currentColor 65%); border-radius: 1px; }
+[data-s='done'] { color: var(--tt-success); }
+[data-s='done'] .ring { border-width: 0; background: currentColor; clip-path: polygon(14% 52%, 38% 76%, 88% 22%, 100% 34%, 38% 100%, 0 64%); border-radius: 0; }
+[data-s='findings'] { color: var(--tt-warning); }
+[data-s='findings'] .ring { background: currentColor; }
+[data-s='failed'] { color: var(--tt-error); }
+[data-s='failed'] .ring { border-width: 0; background: currentColor; clip-path: polygon(20% 0, 50% 30%, 80% 0, 100% 20%, 70% 50%, 100% 80%, 80% 100%, 50% 70%, 20% 100%, 0 80%, 30% 50%, 0 20%); border-radius: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 50% { opacity: 0.45; } }
+.reduce *, .reduce *::before, .reduce *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.btn { border: 1px solid var(--tt-field-border); background: var(--tt-surface-elevated); border-radius: 6px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+.btn:hover { background: var(--tt-hover); }
+.link { background: none; border: 0; padding: 0; color: var(--tt-accent-text); cursor: pointer; font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+ul.find { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+ul.find li { margin: 2px 0; }
+
+/* 1 cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 10px 0; }
+.cards .lbl { grid-column: 1 / -1; font-size: 12px; color: var(--tt-text-muted); margin-bottom: -2px; }
+.card { border: 1px solid var(--tt-hairline); background: var(--tt-surface); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.card[data-s='waiting'] { border-color: color-mix(in oklab, var(--tt-warning) 55%, var(--tt-hairline)); }
+.card[data-s='failed'] { border-color: color-mix(in oklab, var(--tt-error) 45%, var(--tt-hairline)); }
+.card .hd { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-2); }
+.card .hd .st { margin-left: auto; }
+.card .ttl { color: var(--tt-text); font-weight: 600; font-size: 13px; margin: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .nt { font-size: 12px; color: var(--tt-text-2); }
+.card[data-s] .nt { color: var(--tt-text-2); }
+.card.wide { grid-column: 1 / -1; }
+
+/* 2 fold */
+.fold { margin: 2px 0 0 1px; padding: 0 0 0 10px; border-left: 1px solid var(--tt-hairline); }
+.fold .fr { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--tt-text-2); padding: 2px 0; min-width: 0; }
+.fold .fr .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fold .fr .st { margin-left: auto; }
+.fold .sub { padding-left: 22px; font-size: 12px; }
+.bg-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--tt-text-2); border-top: 1px solid var(--tt-hairline); padding-top: 8px; margin-top: 6px; }
+
+/* 3 chips */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border-radius: 13px; border: 1px solid var(--tt-hairline); background: var(--tt-surface); cursor: pointer; font-size: 12px; }
+.chip[aria-expanded='true'] { border-color: var(--tt-field-border); background: var(--tt-surface-elevated); }
+.chip .n { font-weight: 600; }
+.pop { margin-top: 6px; border: 1px solid var(--tt-field-border); background: var(--tt-surface-elevated); border-radius: 10px; padding: 8px 12px; max-width: 460px; }
+
+/* 4 rail */
+.rail { width: 168px; border-left: 1px solid var(--tt-hairline); overflow-y: auto; padding: 20px 10px; background: var(--tt-surface-sunken); }
+.rail .rt { font-size: 11px; color: var(--tt-text-muted); text-transform: none; margin: 0 0 6px; }
+.rail .grp { margin-bottom: 18px; }
+.lane { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: center; padding: 3px 4px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; }
+.lane:hover { background: var(--tt-hover); }
+.lane .bar2 { height: 6px; border-radius: 3px; background: currentColor; opacity: 0.85; }
+.lane[data-s='queued'] .bar2 { background: none; border: 1px dashed currentColor; height: 6px; }
+.lane[data-s='running'] .bar2 { animation: pulse 1.6s ease-in-out infinite; }
+.lane .lw { grid-column: 2; font-size: 11px; color: var(--tt-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: -2px; }
+@media (max-width: 900px) { .rail { width: 56px; padding: 20px 6px; } .rail .lw, .rail .rt span { display: none; } .lane { grid-template-columns: 14px 1fr; } }
+
+/* 5 dock */
+.dock { display: flex; align-items: center; gap: 4px; padding: 4px 14px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface); font-size: 12px; position: relative; flex-wrap: wrap; }
+.dock .lbl { color: var(--tt-text-muted); margin-right: 4px; }
+.dock .it { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 6px; border: 0; background: none; cursor: pointer; font-size: 12px; }
+.dock .it:hover, .dock .it[aria-expanded='true'] { background: var(--tt-hover); }
+.dock-pop { position: absolute; top: 100%; left: 14px; z-index: 5; width: min(440px, calc(100% - 28px)); border: 1px solid var(--tt-field-border); background: var(--tt-surface-elevated); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px oklch(0 0 0 / 0.35); }
+.marker { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tt-text-2); margin: 6px 0; }
+
+/* 6 tray */
+.tray { max-width: 720px; margin: 0 auto 8px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); font-size: 13px; }
+.tray .th { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 0; background: none; width: 100%; text-align: left; cursor: pointer; color: var(--tt-text-2); font-size: 12px; }
+.tray .tr { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 4px 10px; border-top: 1px solid var(--tt-hairline); }
+.tray .tr .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 7 timeline */
+.tl { border: 1px solid var(--tt-hairline); border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: var(--tt-surface); }
+.tl .tlr { display: grid; grid-template-columns: minmax(110px, 30%) 1fr; gap: 10px; align-items: center; font-size: 12px; padding: 2px 0; }
+.tl .tlr .nm { display: flex; gap: 5px; align-items: center; overflow: hidden; white-space: nowrap; min-width: 0; }
+.tl .tlr .nm span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.tl .track { position: relative; height: 14px; }
+.tl .seg { position: absolute; top: 3px; height: 8px; border-radius: 4px; background: currentColor; }
+.tl .seg.wait { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px); }
+.tl .seg[data-s='queued'] { background: none; border: 1px dashed currentColor; }
+.tl .seg.live::after { content: ''; position: absolute; right: -3px; top: -2px; width: 6px; height: 12px; border-radius: 3px; background: currentColor; animation: pulse 1.4s infinite; }
+.tl .main { color: var(--tt-text-muted); }
+.tl .sent { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 1px dashed var(--tt-text-muted); }
+.tl .axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--tt-text-muted); margin-left: calc(min(30%, 9999px) + 10px); }
+
+/* 8 tree */
+.tree { font-size: 13px; margin: 8px 0; padding: 6px 0; }
+.tree .n { display: flex; align-items: center; gap: 6px; padding: 2px 0; min-width: 0; }
+.tree .n .ti { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tree .n .st { margin-left: auto; }
+.tree .kid { margin-left: 7px; padding-left: 14px; border-left: 1px solid var(--tt-hairline); }
+.tree .leaf { color: var(--tt-text-2); font-size: 12px; }
+
+/* 9 reports */
+.out { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--tt-text-muted); margin: 4px 0; }
+.report { margin: 16px 0; }
+.report .who { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--tt-text-2); }
+.report .who strong { color: var(--tt-text); font-weight: 600; font-size: 13px; }
+.report .rb { padding-left: 20px; font-size: 13px; }
+
+/* 10 presence */
+.pres { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0 2px; }
+.pm { display: grid; justify-items: center; gap: 2px; width: 78px; border: 0; background: none; cursor: pointer; padding: 4px; border-radius: 8px; }
+.pm:hover, .pm[aria-expanded='true'] { background: var(--tt-hover); }
+.pm .face { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 50%; box-shadow: 0 0 0 2px currentColor; }
+.pm[data-s='queued'] .face { box-shadow: none; outline: 2px dashed currentColor; outline-offset: -2px; }
+.pm[data-s='running'] .face { animation: pulse 1.6s ease-in-out infinite; }
+.pm[data-s='done'] .face, .pm[data-s='failed'] .face { opacity: 0.75; }
+.pm svg.px { width: 24px; height: 24px; color: var(--tt-text); shape-rendering: crispEdges; }
+.pm[data-s='running'] svg.px { animation: bob 0.8s steps(2) infinite; }
+@keyframes bob { 50% { transform: translateY(-2px); } }
+.pm .badge { position: absolute; right: -4px; bottom: -4px; background: var(--tt-canvas); border-radius: 50%; padding: 1px; display: grid; }
+.pm .pl { font-size: 11px; color: var(--tt-text-2); line-height: 1.25; text-align: center; }
+.say { border: 1px solid var(--tt-field-border); background: var(--tt-surface-elevated); border-radius: 10px; padding: 8px 12px; max-width: 460px; font-size: 13px; }
+
+@media (max-width: 900px) { .scroll { padding: 14px 14px 10px; } .composer-wrap { padding: 0 14px 10px; } .user { max-width: 92%; } }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <b>Delegated work</b><span class="tag">Prototype · throwaway</span>
+  <span id="vbtns"></span>
+  <span class="name" id="vname"></span>
+  <span class="sp"></span>
+  <button id="statebtn" aria-pressed="true" aria-controls="state">State</button>
+  <button id="motion" aria-pressed="false">Reduced motion</button>
+  <button id="theme" aria-pressed="false">Light</button>
+</div>
+<div class="win" id="win">
+  <div class="strip"><strong>Remove black text background in Watcher night scene</strong><span class="muted">· Claude Code</span></div>
+  <div id="dock"></div>
+  <div class="body">
+    <div class="scroll"><div class="col" id="col"></div></div>
+    <div id="rail"></div>
+  </div>
+  <div class="composer-wrap"><div id="tray"></div><div class="composer"><span>Ask for a change</span><span class="small">Opus 5.5 · medium</span></div></div>
+</div>
+<section class="state" id="state" aria-label="Prototype state: every delegated worker, the same for every variant"></section>
+<script>
+'use strict'
+const KIND = { sub: 'Subagent', rev: 'Reviewer', muse: 'Muse review' }
+const GLYPH = {
+  sub: '<svg class="g" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="3.5" r="1.7"/><circle cx="4" cy="12.5" r="1.7"/><circle cx="12" cy="6" r="1.7"/><path d="M4 5.2v5.6M12 7.7c0 2.5-2.5 3-7 4"/></svg>',
+  rev: '<svg class="g" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2 14 14"/></svg>',
+  muse: '<svg class="g" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 1 9.6 6.4 15 8 9.6 9.6 8 15 6.4 9.6 1 8 6.4 6.4z"/></svg>',
+}
+// 8x8 pixel marks for variant 10; one shape per kind.
+const PX = {
+  sub: ['..XXXX..', '.XXXXXX.', 'XX.XX.XX', 'XXXXXXXX', 'XXXXXXXX', '.X.XX.X.', 'X..XX..X', '........'],
+  rev: ['.XXXXXX.', 'XXXXXXXX', 'X..XX..X', 'X.XXXX.X', 'XXXXXXXX', '.XXXXXX.', '..X..X..', '.XX..XX.'],
+  muse: ['...XX...', '..XXXX..', 'XXXXXXXX', '.X.XX.X.', '.XXXXXX.', '..XXXX..', '.XX..XX.', 'X......X'],
+}
+const pxSvg = k => '<svg class="px" viewBox="0 0 8 8" aria-hidden="true" fill="currentColor">' + PX[k].flatMap((r, y) => [...r].map((c, x) => c === 'X' ? `<rect x="${x}" y="${y}" width="1" height="1"/>` : '')).join('') + '</svg>'
+
+const NOW = 330 // seconds since turn 2 started
+const T1 = { user: 'Pick A. Build it, check reduced motion, and have it reviewed.', worked: '6m 02s', changed: 'Changed 1 file', end: 362,
+  prose: ['Built option A: the night scene now draws labels straight on the sky, with no filled box behind them.', 'The reduced-motion check stopped before it ran, and the review found two things to fix. Both are below.'] }
+const T2 = { user: 'Go with A, and make sure the night scene still reads on every theme.', worked: '4m 28s', changed: 'Changed 1 file', end: 268,
+  prose: ['Muse is checking the build plan for your pick, A. When it returns I’ll fold its findings in.', 'Two subagents are checking contrast and capturing the scene meanwhile.'] }
+const W = [
+  { id: 's1', t: 1, kind: 'sub', title: 'Find where the night scene draws text', who: 'Opus 5.5 · Research', s: 'done', a: 8, b: 80, note: 'Found it: WatcherNight.tsx fills a box behind each label.' },
+  { id: 's2', t: 1, kind: 'sub', title: 'Build option A', who: 'Opus 5.5 · Building', s: 'done', a: 84, b: 300, note: 'Changed 1 file.' },
+  { id: 's3', t: 1, kind: 'sub', title: 'Check reduced motion', who: 'Opus 5.5 · Building', s: 'failed', a: 84, b: 132, note: 'Stopped: the test app did not start. Nothing was changed.', act: 'Try again' },
+  { id: 'r1', t: 1, kind: 'rev', title: 'Standards review', who: 'Opus 5.5 · Code review', s: 'findings', a: 302, b: 356, note: '2 findings',
+    find: ['The label keeps a 1px shadow in the light theme.', 'The new label colour is a literal, not a --tt-* token.'] },
+  { id: 'm1', t: 2, kind: 'muse', title: 'Build plan for your pick, A', who: 'Muse Wonder Full · max', s: 'running', a: 236, note: 'Reading the plan and 3 files.' },
+  { id: 's4', t: 2, kind: 'sub', title: 'Check text contrast on every theme', who: 'Opus 5.5 · UI', s: 'running', a: 150, note: '14 of 22 themes checked.' },
+  { id: 's5', t: 2, kind: 'sub', title: 'Capture the night scene', who: 'Sonnet 5.5 · Computer use', s: 'waiting', a: 150, w: 196, note: 'Waiting for you: allow npm run design:capture.', act: 'Review request' },
+  { id: 'r2', t: 2, kind: 'rev', title: 'Spec review', who: 'Opus 5.5 · Code review', s: 'queued', a: NOW, note: 'Starts when both subagents return.' },
+]
+const fmt = s => s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`
+const dur = w => w.b !== undefined ? fmt(w.b - w.a) : w.s === 'queued' ? '' : fmt(NOW - w.a)
+const WORD = w => ({ queued: 'Queued', running: 'Running', waiting: 'Needs you', done: 'Done', failed: 'Failed', findings: w.note })[w.s]
+const st = (w, word = true) => `<span class="st" data-s="${w.s}"><span class="ring" aria-hidden="true"></span>${word ? WORD(w) : `<span class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">${WORD(w)}</span>`}</span>`
+const id = w => `${GLYPH[w.kind]}<span>${KIND[w.kind]}</span>`
+const of = t => W.filter(w => w.t === t)
+const act = w => w.act ? ` <button class="${w.s === 'waiting' ? 'btn' : 'link'}">${w.act}</button>` : ''
+const finds = w => w.find ? `<ul class="find">${w.find.map(f => `<li>${f}</li>`).join('')}</ul>` : ''
+const detail = w => `<div class="small t2">${id(w)} · ${w.who}${dur(w) ? ' · ' + dur(w) : ''}</div><div style="font-weight:600;margin:2px 0">${w.title}</div><div class="small">${st(w)} <span class="t2">${w.s === 'findings' ? '' : w.note}</span>${act(w)}</div>${finds(w)}`
+const outlives = of(2).filter(w => w.s !== 'done')
+const summary = list => {
+  const c = k => list.filter(w => w.kind === k).length
+  return [c('sub') && `${c('sub')} subagent${c('sub') > 1 ? 's' : ''}`, c('rev') && `${c('rev')} review${c('rev') > 1 ? 's' : ''}`, c('muse') && 'Muse review'].filter(Boolean).join(' · ')
+}
+
+function turn(T, slots = {}) {
+  return `<section class="turn"><div class="user">${T.user}</div>${slots.pre || ''}
+    <div class="row"><span class="chev">›</span>Worked for ${T.worked}${slots.workedTail || ''}</div>${slots.fold || ''}
+    <div class="row"><span class="chev">›</span>${T.changed}</div>${slots.mid || ''}
+    <div class="prose">${T.prose.map(p => `<p>${p}</p>`).join('')}</div>${slots.post || ''}</section>`
+}
+
+const V = [
+  { n: 'Live cards', why: 'Inline cards where the work was handed out. Most legible; costs the most height.', r() {
+    const cards = (list, label) => `<div class="cards"><div class="lbl">${label}</div>${list.map(w => `<div class="card${w.find ? ' wide' : ''}" data-s="${w.s}">
+      <div class="hd">${id(w)}${st(w)}</div><div class="ttl">${w.title}</div>
+      <div class="nt">${w.who}${dur(w) ? ' · ' + dur(w) : ''}</div>${w.s !== 'findings' ? `<div class="nt">${w.note}${act(w)}</div>` : finds(w)}</div>`).join('')}</div>`
+    return { col: turn(T1, { mid: cards(of(1).filter(w => w.kind === 'sub'), '3 subagents in parallel') + cards(of(1).filter(w => w.kind !== 'sub'), 'Review') })
+      + turn(T2, { post: cards(of(2), 'Still working after this reply') }) }
+  } },
+  { n: 'In the fold', why: 'Rows inside the existing "Worked for" fold, plus one background line. Quietest; easy to miss.', r() {
+    const rows = list => `<div class="fold">${list.map(w => `<div class="fr">${GLYPH[w.kind]}<span class="ti">${KIND[w.kind]}: ${w.title}</span><span class="muted small">${dur(w)}</span>${st(w)}</div>${w.find ? `<div class="sub">${finds(w)}</div>` : w.s === 'failed' || w.s === 'waiting' ? `<div class="sub t2">${w.note}${act(w)}</div>` : ''}`).join('')}</div>`
+    const bg = `<div class="bg-line"><span class="st" data-s="running"><span class="ring" aria-hidden="true"></span></span>Still working after this reply: ${outlives.map(w => `${GLYPH[w.kind]} ${KIND[w.kind]} ${st(w)}`).join(' · ')}</div>`
+    return { col: turn(T1, { workedTail: `<span class="muted"> · ${summary(of(1))} · <span data-s="findings" class="st">2 findings</span> · <span data-s="failed" class="st">1 failed</span></span>`, fold: rows(of(1)) })
+      + turn(T2, { workedTail: `<span class="muted"> · ${summary(of(2))}</span>`, fold: rows(of(2)), post: bg }) }
+  } },
+  { n: 'Chips', why: 'Icon chips under the reply, press for detail. Compact and scannable; needs a press to learn why.', r() {
+    const chips = list => `<div class="chips" role="group" aria-label="Delegated work">${list.map(w => `<button class="chip" data-pop="${w.id}" aria-expanded="${w.id === 'r1' || w.id === 's5'}" aria-label="${KIND[w.kind]}: ${w.title}, ${WORD(w)}">${GLYPH[w.kind]}${st(w, false)}${w.find ? `<span class="n">${w.find.length}</span>` : ''}</button>`).join('')}</div><div class="popslot"></div>`
+    return { col: turn(T1, { post: chips(of(1)) }) + turn(T2, { post: chips(of(2)) }), after: initPops }
+  } },
+  { n: 'Margin rail', why: 'Lanes in a right gutter beside their turn. Never pushes text; steals width at 820px (folds to icons).', r() {
+    const lanes = (list, t) => `<div class="grp"><div class="rt">Turn ${t} <span>· ${summary(list)}</span></div>${list.map(w => `<button class="lane" data-s="${w.s}" title="${KIND[w.kind]}: ${w.title} — ${WORD(w)}" aria-label="${KIND[w.kind]}: ${w.title}, ${WORD(w)}"><span style="color:var(--tt-text-2)">${GLYPH[w.kind]}</span><span class="bar2"></span><span class="lw">${w.title}</span><span class="lw" data-s="${w.s}">${WORD(w)}${dur(w) ? ' · ' + dur(w) : ''}</span></button>`).join('')}</div>`
+    return { col: turn(T1, { post: `<div class="marker">${GLYPH.rev}<span>Standards review: 2 findings</span></div>${finds(W[3])}` }) + turn(T2),
+      rail: `<aside class="rail" aria-label="Delegated work">${lanes(of(1), 1)}<div style="height:110px"></div>${lanes(of(2), 2)}</aside>` }
+  } },
+  { n: 'Header dock', why: 'A strip under the title for what is out now; returns leave a marker. Always in view; detached from its turn.', r() {
+    const dock = `<div class="dock" role="group" aria-label="Out now"><span class="lbl">Out now</span>${outlives.map(w => `<button class="it" data-pop="${w.id}" aria-expanded="false">${GLYPH[w.kind]}${w.kind === 'sub' ? w.title.split(' ').slice(0, 2).join(' ') : KIND[w.kind]}${st(w, false)}<span class="muted">${dur(w) || 'queued'}</span></button>`).join('')}<div class="popslot"></div></div>`
+    const mark = w => `<div class="marker">${GLYPH[w.kind]}${KIND[w.kind]} returned: ${w.title} ${st(w)}${act(w)}</div>${finds(w)}`
+    return { dock, col: turn(T1, { post: of(1).map(mark).join('') }) + turn(T2, { post: `<div class="marker muted">${GLYPH.muse}Muse review and 3 others are out. They are in the strip above.</div>` }), after: () => initPops(true) }
+  } },
+  { n: 'Composer tray', why: 'A tray above the composer for work that outlives the reply. Ties to "what happens next"; history stays thin.', r() {
+    const tray = `<div class="tray"><button class="th" aria-expanded="true"><span class="st" data-s="running"><span class="ring" aria-hidden="true"></span></span>Still working for this thread · ${summary(outlives)}<span style="margin-left:auto" class="chev">⌄</span></button>${outlives.map(w => `<div class="tr">${GLYPH[w.kind]}<span class="ti">${KIND[w.kind]}: ${w.title}${w.s === 'waiting' ? ` <span class="t2 small">— ${w.note.replace('Waiting for you: ', '')}</span>` : ''}</span><span>${st(w)}${act(w)}</span></div>`).join('')}</div>`
+    return { tray, col: turn(T1, { post: `<div class="marker">${GLYPH.sub} 3 subagents ${st(W[2], false)} 1 failed · ${GLYPH.rev} Standards review ${st(W[3])} <button class="link">Show</button></div>${finds(W[3])}` }) + turn(T2) }
+  } },
+  { n: 'Timeline', why: 'Bars against the turn’s clock. Shows parallelism and "after the reply" exactly; reads like a tool, not a sentence.', r() {
+    const tl = (list, T, now) => {
+      const span = Math.max(now, ...list.map(w => w.b || 0)) * 1.04
+      const pct = s => (s / span * 100).toFixed(1) + '%'
+      const seg = w => w.s === 'queued' ? `<div class="seg" data-s="queued" style="left:${pct(now - 6)};width:14px"></div>`
+        : w.w ? `<div class="seg" style="left:${pct(w.a)};width:calc(${pct(w.w - w.a)})"></div><div class="seg wait" style="left:${pct(w.w)};width:${pct(now - w.w)}"></div>`
+        : `<div class="seg${w.b ? '' : ' live'}" style="left:${pct(w.a)};width:${pct((w.b || now) - w.a)}"></div>`
+      return `<div class="tl" role="img" aria-label="Timeline of delegated work"><div class="tlr"><div class="nm muted"><span>This thread</span></div><div class="track main"><div class="seg" style="left:0;width:${pct(T.end)};opacity:.5"></div><div class="sent" style="left:${pct(T.end)}"></div></div></div>
+        ${list.map(w => `<div class="tlr"><div class="nm" title="${w.title}">${GLYPH[w.kind]}<span>${w.title}</span></div><div class="track" data-s="${w.s}">${seg(w)}</div></div>`).join('')}
+        <div class="small muted" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">${list.map(w => `<span>${GLYPH[w.kind]} ${st(w)}${act(w)}</span>`).join('')}<span style="margin-left:auto">┆ Reply sent at ${fmt(T.end)}${now > T.end ? ` · now ${fmt(now)}` : ''}</span></div>${list.map(finds).join('')}</div>`
+    }
+    return { col: turn(T1, { mid: tl(of(1), T1, T1.end) }) + turn(T2, { post: tl(of(2), T2, NOW) }) }
+  } },
+  { n: 'Tree', why: 'The thread as a process tree, waits nested under their worker. Best for "who is waiting on whom"; dense.', r() {
+    const node = w => `<div class="n">${GLYPH[w.kind]}<span class="ti"><b style="font-weight:600">${KIND[w.kind]}</b> ${w.title}</span><span class="muted small">${dur(w)}</span>${st(w)}</div>${w.s !== 'done' ? `<div class="kid"><div class="n leaf">${w.s === 'findings' ? '' : '└ ' + w.note}${act(w)}</div>${finds(w)}</div>` : ''}`
+    const tree = (list, head) => `<div class="tree" role="tree"><div class="n t2 small">${head}</div><div class="kid">${list.map(node).join('')}</div></div>`
+    return { col: turn(T1, { mid: tree(of(1), 'This thread handed out 4') }) + turn(T2, { post: tree(of(2), 'Reply sent · 4 still out') }) }
+  } },
+  { n: 'Reports', why: 'A quiet "out" line while running; a return lands as its own block. Reads like a conversation; running work is faint.', r() {
+    const out = w => `<div class="out">${GLYPH[w.kind]}${KIND[w.kind]} out: ${w.title} ${st(w, w.s !== 'running')} <span>${dur(w)}</span>${act(w)}</div>`
+    const rep = w => `<div class="report" data-s="${w.s}"><div class="who">${GLYPH[w.kind]}<strong>${KIND[w.kind]}</strong> ${w.title} <span class="muted">· ${w.who} · ${dur(w)}</span></div><div class="rb">${st(w)} ${w.s === 'findings' ? '' : w.note}${act(w)}${finds(w)}</div></div>`
+    return { col: turn(T1, { pre: of(1).filter(w => w.kind === 'sub').map(rep).join(''), post: rep(W[3]) }) + turn(T2, { post: of(2).map(out).join('') }) }
+  } },
+  { n: 'Presence', why: 'Pixel marks beside the reply, one per worker, ring for state. Glanceable and in character; detail needs a press.', r() {
+    const marks = list => `<div class="pres" role="group" aria-label="Delegated work">${list.map(w => `<button class="pm" data-s="${w.s}" data-pop="${w.id}" aria-expanded="${w.id === 'r1' || w.id === 's5'}" aria-label="${KIND[w.kind]}: ${w.title}, ${WORD(w)}"><span class="face" data-s="${w.s}">${pxSvg(w.kind)}<span class="badge">${st(w, false)}</span></span><span class="pl">${KIND[w.kind]}</span><span class="pl" data-s="${w.s}">${WORD(w)}</span></button>`).join('')}</div><div class="popslot"></div>`
+    return { col: turn(T1, { post: marks(of(1)) }) + turn(T2, { post: marks(of(2)) }), after: () => initPops(false, 'say') }
+  } },
+]
+
+function initPops(dock, cls = 'pop') {
+  const show = (btn, open) => {
+    const slot = btn.closest('.chips, .pres, .dock').parentElement.querySelector('.popslot') || btn.closest('.dock').querySelector('.popslot')
+    btn.setAttribute('aria-expanded', String(open))
+    const openBtns = [...btn.parentElement.querySelectorAll('[aria-expanded="true"]')]
+    slot.innerHTML = openBtns.map(b => `<div class="${dock ? 'dock-pop' : cls}" style="${dock ? '' : 'margin-top:6px'}">${detail(W.find(w => w.id === b.dataset.pop))}</div>`).join('')
+  }
+  document.querySelectorAll('[data-pop]').forEach(b => {
+    b.addEventListener('click', () => { if (dock) b.parentElement.querySelectorAll('[data-pop]').forEach(o => o !== b && o.setAttribute('aria-expanded', 'false')); show(b, b.getAttribute('aria-expanded') !== 'true') })
+    if (b.getAttribute('aria-expanded') === 'true') show(b, true)
+  })
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('[data-pop][aria-expanded="true"]').forEach(b => show(b, false)) })
+}
+
+const params = new URLSearchParams(location.search)
+let cur = Math.min(10, Math.max(1, Number(params.get('variant')) || 1))
+const root = document.documentElement
+if (params.get('theme') === 'light') root.dataset.theme = 'light'
+if (params.get('motion') === 'reduce') document.body.classList.add('reduce')
+document.getElementById('theme').setAttribute('aria-pressed', String(root.dataset.theme === 'light'))
+document.getElementById('motion').setAttribute('aria-pressed', String(document.body.classList.contains('reduce')))
+document.getElementById('vbtns').innerHTML = V.map((v, i) => `<button data-v="${i + 1}" title="${v.n}">${i + 1}</button>`).join(' ')
+
+function render() {
+  const v = V[cur - 1], out = v.r()
+  for (const k of ['col', 'dock', 'rail', 'tray']) document.getElementById(k).innerHTML = out[k] || ''
+  document.getElementById('vname').textContent = `${cur}. ${v.n} — ${v.why}`
+  document.querySelectorAll('[data-v]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === cur)))
+  out.after?.()
+  const sc = document.querySelector(".scroll"); sc.scrollTop = sc.scrollHeight // a thread opens at its newest turn
+  try { const u = new URL(location.href); u.searchParams.set('variant', cur); history.replaceState(null, '', u) } catch { /* sandboxed */ }
+}
+document.getElementById('vbtns').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) { cur = Number(b.dataset.v); render() } })
+document.getElementById('theme').addEventListener('click', e => { const on = root.dataset.theme !== 'light'; on ? root.dataset.theme = 'light' : delete root.dataset.theme; e.currentTarget.setAttribute('aria-pressed', String(on)) })
+document.getElementById('motion').addEventListener('click', e => { const on = document.body.classList.toggle('reduce'); e.currentTarget.setAttribute('aria-pressed', String(on)) })
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea') || e.altKey || e.metaKey || e.ctrlKey) return
+  if (e.key === 'ArrowRight') { cur = cur % 10 + 1; render() } else if (e.key === 'ArrowLeft') { cur = (cur + 8) % 10 + 1; render() }
+})
+document.getElementById('state').innerHTML = [1, 2].map(t => `<span class="k">Turn ${t}${t === 2 ? ' (reply sent, now ' + fmt(NOW) + ')' : ''}</span><span class="v">${of(t).map(w =>
+  `<span>${GLYPH[w.kind]}${KIND[w.kind]}: ${w.title} · ${w.who}${dur(w) ? ' · ' + dur(w) : ''} ${st(w)}${w.find ? ' — ' + w.find.join(' / ') : w.s === 'waiting' || w.s === 'failed' ? ' — ' + w.note : ''}</span>`).join('')}</span>`).join('')
+if (params.get('state') === 'off') { document.getElementById('state').hidden = true; document.getElementById('statebtn').setAttribute('aria-pressed', 'false') }
+document.getElementById('statebtn').addEventListener('click', e => { const s = document.getElementById('state'); s.hidden = !s.hidden; e.currentTarget.setAttribute('aria-pressed', String(!s.hidden)) })
+render()
+</script>
+</body>
+</html>

@@ -66,7 +66,8 @@ async function controlFixture() {
 describe('bounded image contract', () => {
   it('accepts image-only manual prompts and rejects invalid encodings, duplicate IDs and excessive counts/sizes', () => {
     expect(agentCommandSchema.parse({ type: 'manual-send', threadId: 'thread', text: '', attachments: [image] })).toMatchObject({ attachments: [image] })
-    for (const attachments of [[{ ...image, digest: 'https://example.com/image.png' }], [{ ...image, mimeType: 'image/svg+xml' }],
+    // Since ADR-0131 any well-formed MIME type is an attached file; a type that is not one is refused.
+    for (const attachments of [[{ ...image, digest: 'https://example.com/image.png' }], [{ ...image, mimeType: 'image/svg+xml; charset=utf-8' }],
       [{ ...image, dataUrl: 'data:image/png;base64,AAAA' }], [image, image], Array.from({ length: 9 }, (_, i) => ({ ...image, id: String(i) })),
       [{ ...image, sizeBytes: 10 * 1024 * 1024 + 1 }],
       Array.from({ length: 3 }, (_, i) => ({ ...image, id: String(i), sizeBytes: 8 * 1024 * 1024 }))]) {
@@ -89,7 +90,7 @@ describe('coordinator images, authority and durable settings', () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-options-')); roots.push(root)
     const provider = new FixtureHost()
     const registry = new ThreadRegistry(root)
-    const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: { codex: new SottoThreadHost('codex', provider, registry), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost() } })
+    const host = new ConfiguredProviderHost({ provider: () => 'codex', hosts: { codex: new SottoThreadHost('codex', provider, registry), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost() } })
     disposers.push(() => host.disconnect())
     const initial = await host.connect()
     const threadId = initial.threads[0]!.id

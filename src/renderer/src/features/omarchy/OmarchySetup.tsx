@@ -136,7 +136,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       conflict: t`Needs your choice`, skipped: t`Left alone`, queued: t`Waiting`, working: state?.operation === 'remove' ? t`Removing` : t`Setting up` }[current.status]
   }
 
-  return <div className="omarchy-setup" ref={root} tabIndex={-1} aria-label={t`Omarchy setup`} aria-busy={busy}
+  return <div className="omarchy-setup" data-setting="omarchy-setup" ref={root} tabIndex={-1} aria-label={t`Omarchy setup`} aria-busy={busy}
     onKeyDown={event => { if (event.key === 'Escape' && files && !updateQuestion) { event.stopPropagation(); setFiles(false); filesButton.current?.focus() } }}>
     {surface === 'settings' ? <div className="omarchy-setup__head"><div>
       <p className="tt-field__label">Omarchy</p><p className="tt-field__description tt-paragraph"><Trans>Sotto’s keys, its owl in the bar and the Omarchy theme.</Trans></p>

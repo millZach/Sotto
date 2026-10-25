@@ -1,0 +1,794 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: every project folder starts closed (sidebar-folders-start-closed), and a closed folder
+  says only its name, its thread count, and a dot when a thread inside is working or waiting on you
+  (Indicators + count in ThreadSidebar.tsx). To answer "which thread is that?" you must open the
+  folder, which pushes the list down and stays open for the session. What should hovering (or
+  focusing) a closed folder show so you can glance inside without opening it?
+
+  Working title for the thing: the folder peek. The UI itself needs no name.
+
+  Picked October 24, 2026 (Zach): B, Ghost opening. Settled itself gets no peek (its folders peek
+  once the shelf is open). An Owl feature (`folder-peek`). The plan is
+  docs/plans/collapsed-folder-peek.md; the build is ThreadSidebar.tsx.
+
+  Three variants on ?variant=A|B|C, switchable with the bar at the bottom (Left/Right too). The
+  sidebar, its folders, rows, dots and counts are drawn from ThreadSidebar.tsx / threadSidebar.css
+  / threadFacts.ts at their real sizes; the thread pane is a stand-in so the cost of covering it
+  (or pushing the list) is visible. Clicking a folder still opens it for real in every variant.
+
+   A  Side card      A card flies out to the right of the sidebar with the folder's threads as
+                     compact rows, in the order the folder would open in. A row opens its thread;
+                     Ctrl/Cmd-click opens it beside, as a sidebar row does. The head says why the
+                     dots are lit, and the foot offers Open folder and New thread.
+   B  Ghost opening  The folder opens in place while you hover, drawn as a preview (guide line,
+                     "Preview" foot), and closes again when you leave. Clicking the folder while
+                     it previews keeps it open. Nothing covers the conversation; the list moves.
+   C  Glance         A small card that decodes the dots only: who needs you and who is working,
+                     by name, then one line for the rest ("3 done"). The named rows open their
+                     thread; seeing everything still takes opening the folder.
+
+  Same rules in every variant (the bar at the top varies the numbers):
+   - Hover intent: the peek waits (default 350 ms) so crossing the sidebar shows nothing, and
+     lingers 300 ms after you leave so a diagonal move to the card does not drop it.
+   - Keyboard: focus a closed folder and the peek follows; ArrowDown steps into it, Up/Down move,
+     Enter opens, Escape puts it away and returns focus to the folder.
+   - No peek where there is nothing to peek at: an open folder, an empty folder, while searching
+     (search opens folders already), or from touch (a tap opens the folder, as today).
+   - The folder's hover actions (New thread, Settle) still appear on the head; in A and C the
+     project's path moves into the card, because the toggle's native title tooltip would otherwise
+     compete with the card.
+   - Settled: the shelf itself gets no peek here (it holds folders, not threads). Open the shelf
+     and the folders inside peek like the ones above. Flag it if the shelf should peek two deep.
+
+  The State strip under the window names the variant, the peek and what opened it, which folders
+  are truly open, and the last thing a press did, so "the peek never opened the folder" is checkable.
+  Try it list sits in the thread pane. Light, Reduced motion, Narrow sidebar and Short window are
+  in the top bar; the last two are where a card's placing and a ghost's push are easiest to judge.
+  URL: variant=A|B|C, theme=light, motion=reduce, width=narrow, height=short, delay=0|200|350|600.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - peek inside a closed folder, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.13 0.008 265);
+  --threads-sidebar: oklch(0.135 0.008 265); --threads-field: oklch(0.17 0.008 265);
+  --threads-hover: oklch(0.2 0.01 265); --threads-selected: oklch(0.22 0.02 200);
+  --threads-selected-border: oklch(0.38 0.04 200); --threads-scrollbar: oklch(0.32 0.015 265);
+  --tt-hover: oklch(0.2 0.01 265); --tt-selected: var(--threads-selected);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 68%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 88%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.285 0.018 265); --tt-border: oklch(0.34 0.02 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-focus: var(--tt-accent); --tt-focus-ring: var(--tt-accent);
+  --tt-attention: oklch(0.83 0.14 80); --tt-activity: oklch(0.8 0.1 200);
+  --tt-success: oklch(0.79 0.13 165); --threads-warning-text: oklch(0.85 0.12 80);
+  --tt-shadow-color: oklch(0 0 0 / 55%); --tt-card-inset: oklch(0.165 0.008 265);
+  --tt-provider-claude: #e3b58e; --tt-provider-codex: #d7dbe1; --tt-provider-grok: #c9baff;
+  --tt-provider-devin: #a5d8f5; --tt-provider-muse: #f2c9d8;
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --sidebar-width: 320px;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(1 0 0); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --threads-sidebar: oklch(0.965 0.005 85); --threads-field: oklch(1 0 0);
+  --threads-hover: oklch(0.93 0.008 85); --threads-selected: oklch(0.9 0.03 195);
+  --threads-selected-border: oklch(0.68 0.06 195); --threads-scrollbar: oklch(0.78 0.012 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 72%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 88%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-border: oklch(0.79 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.4 0.08 183);
+  --tt-attention: oklch(0.55 0.13 70); --tt-activity: oklch(0.48 0.1 205);
+  --tt-success: oklch(0.5 0.12 160); --threads-warning-text: oklch(0.48 0.12 65);
+  --tt-shadow-color: oklch(0.3 0.02 80 / 28%); --tt-card-inset: oklch(0.955 0.006 85);
+  --tt-provider-claude: #9a5f2e; --tt-provider-codex: #3c434c; --tt-provider-grok: #5b4a9e;
+  --tt-provider-devin: #22688f; --tt-provider-muse: #8f3d5e;
+}
+:root[data-width='narrow'] { --sidebar-width: 262px; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.45 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; border-radius: 4px; }
+.tt-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* prototype bar (not part of the design under test) */
+.bar { height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); overflow-x: auto; white-space: nowrap; font-size: 12px; }
+.bar b { font-weight: 600; font-size: 13px; margin-right: 2px; }
+.bar .sep { width: 1px; align-self: stretch; margin: 8px 4px; background: var(--tt-hairline); flex: none; }
+.bar .lab { color: var(--tt-text-muted); }
+.bar button { border: 1px solid var(--tt-hairline); background: transparent; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: var(--tt-surface-elevated); border-color: var(--tt-border); color: var(--tt-accent-text); }
+.bar .hint { margin-left: auto; color: var(--tt-text-muted); }
+
+/* the app window */
+.window { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+:root[data-height='short'] .window { max-height: 460px; border-bottom: 1px solid var(--tt-hairline); }
+.thread-nav { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--tt-hairline); background: var(--threads-sidebar); }
+.thread-nav__top { display: flex; flex: none; align-items: center; gap: 2px; height: 44px; padding: 0 6px 0 14px; user-select: none; }
+.thread-nav__brand { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 14px; font-weight: 600; letter-spacing: -0.1px; min-width: 0; }
+.thread-nav__tile { flex: none; width: 18px; height: 18px; border-radius: 5px; background: var(--tt-accent); }
+.thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-width='narrow'] .thread-nav__wordmark { display: none; }
+.tt-button { display: grid; place-items: center; width: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.tt-button:hover { background: var(--threads-hover); color: var(--tt-text); }
+.threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
+.threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
+.threads-search input { width: 100%; height: 100%; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--threads-field); color: var(--tt-text); font: inherit; font-size: 13.5px; }
+.threads-search input::placeholder { color: var(--tt-text-muted); }
+.thread-nav__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 4px 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-nav__empty { margin: 4px 10px 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; list-style: none; }
+.thread-nav__foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__foot .sp { margin-left: auto; }
+
+/* project folders: the real metrics from threadSidebar.css (data-mode='threads') */
+.thread-folder { margin: 0 0 14px; }
+.thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.thread-folder__head:hover { background: var(--threads-hover); }
+.thread-folder__head[data-peeking] { background: var(--threads-hover); }
+.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 26px; padding: 0 56px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 14.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
+.thread-folder__chevron { flex: none; transition: transform .16s ease; }
+[aria-expanded='true'] > .thread-folder__chevron { transform: rotate(90deg); }
+.thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
+.thread-folder__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; }
+.thread-nav__indicators { display: inline-flex; gap: 4px; align-items: center; margin-left: auto; }
+.thread-nav__indicators > span { display: inline-flex; }
+.thread-nav__indicators i { display: block; width: 6px; height: 6px; border-radius: 50%; }
+.thread-nav__indicators [data-state='needs'] i { background: var(--tt-attention); }
+.thread-nav__indicators [data-state='working'] i { background: var(--tt-activity); }
+.thread-nav__indicators + .thread-folder__count { margin-left: 0; }
+.thread-folder__actions { display: flex; gap: 2px; width: 48px; margin-left: -48px; justify-content: flex-end; padding-right: 2px; opacity: 0; pointer-events: none; flex: none; }
+.thread-folder__actions > * { pointer-events: auto; }
+.thread-folder__head:is(:hover, :focus-within, [data-peeking]) .thread-folder__actions { opacity: 1; }
+.thread-folder__head:is(:hover, :focus-within, [data-peeking]) .thread-folder__count { visibility: hidden; }
+.thread-nav__action { display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.thread-nav__action:hover { background: var(--threads-hover); color: var(--tt-text); }
+.thread-folder__rows { margin: 0; padding: 0; list-style: none; }
+.thread-nav__settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font-size: 13.5px; text-align: left; cursor: pointer; }
+.thread-nav__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
+
+/* thread rows (real row + the peek's compact row share the ring and type) */
+.thread-nav__row { position: relative; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; list-style: none; }
+.thread-nav__row:hover { background: var(--threads-hover); }
+.thread-nav__row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
+.thread-nav__item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 5px; align-items: center; width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; }
+.thread-nav__ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--tt-hairline); border-radius: 50%; flex: none; }
+.thread-nav__ring[data-state='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.thread-nav__ring[data-state='needs'] { border: 2px solid var(--tt-attention); }
+.thread-nav__ring[data-unseen] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); mask: none; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-motion='reduce']) .thread-nav__ring[data-state='working']:not([data-unseen]) { animation: ringspin 1.5s linear infinite; } }
+@keyframes ringspin { to { rotate: 360deg; } }
+.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; line-height: 1.4; }
+.thread-nav__row[data-current] .thread-nav__title, .peek-row[data-current] .thread-nav__title { color: var(--tt-text); }
+.thread-nav__time { color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__provider { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.thread-nav__mark { display: grid; place-items: center; flex: none; width: 14px; height: 14px; font-size: 9px; font-weight: 700; line-height: 1; }
+.thread-nav__mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.thread-nav__mark[data-provider='codex'] { color: var(--tt-provider-codex); }
+.thread-nav__mark[data-provider='grok'] { color: var(--tt-provider-grok); }
+.thread-nav__mark[data-provider='devin'] { color: var(--tt-provider-devin); }
+.thread-nav__mark[data-provider='muse'] { color: var(--tt-provider-muse); }
+.thread-nav__model { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.thread-nav__status { margin-left: auto; flex-shrink: 0; max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__status[data-state='working'] { color: var(--tt-activity); }
+.thread-nav__status[data-state='needs'] { color: var(--threads-warning-text); }
+.thread-nav__status[data-unseen], .thread-nav__status[data-flag] { color: var(--tt-text-2); }
+.thread-nav__branch { grid-column: 2 / -1; display: none; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+:root:not([data-width='narrow']) .thread-nav__branch { display: flex; }
+.thread-nav__branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A + C: the fly-out card. A's rows are the folder's rows, one line shorter (no branch line). */
+.peek-card { position: fixed; z-index: 40; width: 342px; max-width: calc(100vw - var(--sidebar-width) - 24px); display: flex; flex-direction: column; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: 0 16px 40px -14px var(--tt-shadow-color); color: var(--tt-text); }
+.peek-card[data-variant='C'] { width: 308px; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-motion='reduce']) .peek-card { animation: peek-in 120ms ease-out; } }
+@keyframes peek-in { from { opacity: 0; transform: translateX(-4px); } }
+.peek-bridge { position: fixed; z-index: 39; }
+.peek-head { flex: none; padding: 9px 12px 8px; border-bottom: 1px solid var(--tt-hairline); }
+.peek-head__line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.peek-head__line > svg { flex: none; color: var(--tt-text-muted); }
+.peek-head__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 600; }
+.peek-head__count { flex: none; color: var(--tt-text-muted); font-size: 12px; }
+.peek-head__count { margin-left: auto; }
+.peek-head__why { margin: 3px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--tt-text-muted); font-size: 12px; }
+.peek-head__why span { display: inline-flex; align-items: center; gap: 5px; }
+.peek-head__why i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.peek-head__why [data-state='needs'] { color: var(--threads-warning-text); } .peek-head__why [data-state='needs'] i { background: var(--tt-attention); }
+.peek-head__why [data-state='working'] i { background: var(--tt-activity); }
+.peek-head__why [data-state='finished'] i { background: var(--tt-success); }
+.peek-head__path { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tt-text-muted); font-size: 11.5px; }
+.peek-list { min-height: 0; overflow-y: auto; margin: 0; padding: 4px; list-style: none; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.peek-row { margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.peek-row:hover { background: var(--threads-hover); }
+.peek-row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
+.peek-row__item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 3px; align-items: center; width: 100%; padding: 7px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; }
+.peek-row__item:focus-visible { outline-offset: -1px; }
+.peek-row .thread-nav__title { font-size: 13.5px; }
+.peek-rest { display: flex; align-items: center; gap: 8px; padding: 7px 10px; color: var(--tt-text-muted); font-size: 12.5px; }
+.peek-empty { padding: 10px 12px; color: var(--tt-text-muted); font-size: 13px; }
+.peek-foot { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-top: 1px solid var(--tt-hairline); }
+.peek-foot button { min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; font-weight: 500; cursor: pointer; }
+.peek-foot button:hover { background: var(--threads-hover); color: var(--tt-text); }
+.peek-foot .keys { margin-left: auto; color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; }
+.peek-group { padding: 8px 10px 2px; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
+
+/* B: the ghost opening. Preview rows sit in the list under a guide line, on the sunken surface. */
+.ghost { margin: 2px 0 4px 17px; padding: 2px 2px 4px 8px; border-left: 2px solid var(--tt-border); border-radius: 0 0 0 6px; background: var(--tt-surface-sunken); list-style: none; }
+.ghost .thread-nav__row:hover { background: var(--threads-hover); }
+.ghost-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: 11.5px; }
+.ghost-foot button { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 11.5px; cursor: pointer; }
+.ghost-foot button:hover { color: var(--tt-text); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-motion='reduce']) .ghost { animation: peek-in 120ms ease-out; } }
+
+/* the stand-in thread pane */
+.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--tt-surface); }
+.pane-top { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); }
+.pane-top__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14.5px; font-weight: 600; }
+.pane-top__meta { flex: none; color: var(--tt-text-muted); font-size: 12px; }
+.pane-top__beside { display: none; flex: none; padding: 2px 8px; border: 1px solid var(--tt-border); border-radius: 6px; color: var(--tt-accent-text); font-size: 12px; }
+.pane-top__beside[data-on] { display: inline-block; }
+.pane-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px; }
+.pane-col { max-width: 680px; margin: 0 auto; }
+.msg { margin: 0 0 14px; }
+.msg__who { margin: 0 0 3px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
+.msg p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; }
+.msg--you p { color: var(--tt-text); }
+.judge { margin-top: 22px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-card-inset); }
+.judge h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.judge ol { margin: 0; padding-left: 18px; color: var(--tt-text-2); font-size: 13px; line-height: 1.6; }
+.judge code { font-family: ui-monospace, monospace; font-size: 12px; color: var(--tt-accent-text); }
+.composer { flex: none; margin: 0 22px 16px; }
+.composer__box { max-width: 680px; margin: 0 auto; padding: 10px 12px; border: 1px solid var(--tt-border); border-radius: 10px; background: var(--threads-field); color: var(--tt-text-muted); font-size: 13.5px; }
+
+/* state strip + floating variant switcher (prototype furniture) */
+.state { flex: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 7px 12px 54px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 12px; }
+.state b { color: var(--tt-text-2); font-weight: 600; }
+.state .log { flex-basis: 100%; color: var(--tt-text-2); }
+.state .log::before { content: 'Last: '; color: var(--tt-text-muted); }
+.switcher { position: fixed; left: 50%; bottom: 10px; translate: -50% 0; z-index: 60; display: flex; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--tt-border); border-radius: 999px; background: var(--tt-surface-elevated); box-shadow: 0 10px 30px -10px var(--tt-shadow-color); }
+.switcher button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: var(--tt-text-2); cursor: pointer; font-size: 15px; }
+.switcher button:hover { background: var(--threads-hover); color: var(--tt-text); }
+.switcher__name { min-width: 190px; text-align: center; font-size: 12.5px; font-weight: 500; white-space: nowrap; }
+.switcher__name span { color: var(--tt-text-muted); font-weight: 400; }
+@media (hover: none) { .peek-card, .peek-bridge { display: none !important; } }
+@media (max-width: 720px) { .peek-card { width: calc(100vw - var(--sidebar-width) - 16px); } .switcher__name { min-width: 0; } }
+</style>
+</head>
+<body>
+<div class="bar" role="group" aria-label="Prototype controls">
+  <b>Closed-folder peek</b>
+  <span class="lab">Delay</span>
+  <span id="delayBtns"></span>
+  <span class="sep" aria-hidden="true"></span>
+  <button type="button" id="themeBtn" aria-pressed="false">Light</button>
+  <button type="button" id="motionBtn" aria-pressed="false">Reduced motion</button>
+  <button type="button" id="widthBtn" aria-pressed="false">Narrow sidebar</button>
+  <button type="button" id="heightBtn" aria-pressed="false">Short window</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button type="button" id="finishBtn">Finish a working thread</button>
+  <button type="button" id="resetBtn">Reset</button>
+  <span class="hint">Prototype - throwaway. The sidebar is the design under test; the pane is a stand-in.</span>
+</div>
+
+<div class="window">
+  <div class="thread-nav" id="sidebar" data-mode="threads" aria-label="Thread sidebar (mock)">
+    <div class="thread-nav__top">
+      <span class="thread-nav__brand"><span class="thread-nav__tile" aria-hidden="true"></span><span class="thread-nav__wordmark">Sotto</span></span>
+      <button type="button" class="tt-button" aria-label="New thread" title="New thread"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+      <button type="button" class="tt-button" aria-label="Collapse sidebar" title="Collapse sidebar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+    </div>
+    <label class="threads-search">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span class="tt-visually-hidden">Search threads</span>
+      <input id="search" type="search" placeholder="Search threads" autocomplete="off">
+    </label>
+    <div class="thread-nav__scroll" id="scroll"></div>
+    <div class="thread-nav__foot"><span>Threads</span><span>Watcher</span><span class="sp">Settings</span></div>
+  </div>
+
+  <main class="pane" aria-label="Thread pane (stand-in)">
+    <div class="pane-top">
+      <span class="pane-top__title" id="paneTitle">Hover peek mockup</span>
+      <span class="pane-top__meta" id="paneMeta">Muse - in Sotto</span>
+      <span class="pane-top__beside" id="besideTag">Opened beside</span>
+    </div>
+    <div class="pane-body"><div class="pane-col">
+      <div class="msg msg--you"><p class="msg__who">You</p><p>when folders are collapsed - design and mockup the ability to hoverover pop up that shows threads inside</p></div>
+      <div class="msg"><p class="msg__who">Muse</p><p id="paneReply">Three ways to peek are in the switcher below. The folders on the left are closed, as they start. Rest on Sotto for a moment: the peek should tell you which thread is working and which one is waiting on you, without opening the folder. Pressing a thread in the peek opens it here.</p></div>
+      <section class="judge" aria-label="Try it">
+        <h2>Try it</h2>
+        <ol>
+          <li>Rest on <strong>Sotto</strong> until the peek lands. Sweep straight down the folders: nothing should flash open.</li>
+          <li>Move diagonally from the folder to a thread in the peek and press it. The folder stays closed - check the State strip.</li>
+          <li>Hover <strong>Workshop</strong> (12 threads): where does the list end, and is that ending honest?</li>
+          <li>Turn on <strong>Short window</strong> and hover the lowest folder. Then <strong>Archive lab</strong> (empty) and <strong>Field notes</strong> (one, done).</li>
+          <li>Keyboard only: <code>Tab</code> to a folder, wait, <code>ArrowDown</code> into the peek, <code>Enter</code> to open, <code>Esc</code> to put a peek away.</li>
+          <li>Click a folder to open it for real, then hover it again: no peek. Type <code>login</code> in Search: search still opens folders; the peek stands down.</li>
+          <li>With a peek open on Sotto, press <strong>Finish a working thread</strong> above: the row and the folder's dots change under your pointer.</li>
+        </ol>
+      </section>
+    </div></div>
+    <div class="composer"><div class="composer__box">Message this thread...</div></div>
+  </main>
+</div>
+
+<div class="state" id="stateStrip" aria-live="off"></div>
+<div id="peekRoot"></div>
+
+<div class="switcher" role="group" aria-label="Prototype variant">
+  <button type="button" id="prevVar" aria-label="Previous variant">&#8592;</button>
+  <span class="switcher__name" id="varName"></span>
+  <button type="button" id="nextVar" aria-label="Next variant">&#8594;</button>
+</div>
+
+<script>
+'use strict';
+/* Data: the screenshot's folders (Sotto 5, Developer 4, Settled) plus the cases that stress a
+   peek: a 12-thread folder, a 1-thread folder, an empty folder, the open thread inside a closed
+   folder, and every word a row can say where it would say Done. Order is newest activity first,
+   as organizeWorkspace sorts a folder's rows; every variant keeps that order. */
+const T = (id, title, state, status, provider, model, when, extra = {}) => ({ id, title, state, status, provider, model, when, ...extra });
+let THREADS = {
+  'fix-gap':    T('fix-gap', 'Fix composer prompt gap', 'working', 'Working', 'claude', 'Opus 4.8', '', { secs: 252, branch: 'fix/composer-prompt-gap' }),
+  'review':     T('review', 'Review sidebar counts', 'needs', 'Needs your approval', 'codex', 'GPT-5.6 Sol', '4:41 pm', { waiting: 'approval', branch: 'feat/sidebar-counts' }),
+  'peek':       T('peek', 'Hover peek mockup', 'done', 'Just finished', 'muse', 'Muse Wonder Full', '4:38 pm', { unseen: true, branch: 'prototype/folder-peek' }),
+  'release':    T('release', 'Release notes 1.4', 'done', 'Done', 'claude', 'Sonnet 5', '2:02 pm', { branch: 'main' }),
+  'watcher-pic':T('watcher-pic', 'Watcher picture polish, the long pass over limbs and owls', 'done', 'Babysitting #1446', 'devin', 'Devin', '11:20 am', { flag: true, branch: 'feat/watcher-picture' }),
+  'tailnet':    T('tailnet', 'Tailnet host check', 'working', 'Working', 'codex', 'GPT-5.6 Sol', '', { secs: 74, branch: 'forge - main' }),
+  'login':      T('login', 'Flaky login test', 'needs', 'Needs attention', 'claude', 'Opus 4.8', '3:57 pm', { branch: 'fix/login-flake' }),
+  'answer-q':   T('answer-q', 'Pick the retry budget', 'needs', 'Needs your answer', 'grok', 'Grok 4.5', '3:12 pm', { waiting: 'question', branch: 'main' }),
+  'docs':       T('docs', 'Docs cleanup', 'done', 'Done', 'claude', 'Haiku 4.5', 'Tue', { branch: 'main' }),
+};
+const workshop = [
+  ['w1','Footer links','working','Working','claude','Sonnet 5', 41],
+  ['w2','Dictation retry','done','Just finished','codex','GPT-5.6 Sol','4:12 pm'],
+  ['w3','Model picker polish','working','Working','muse','Muse Wonder Full', 612],
+  ['w4','CI fixture deadlines','needs','Needs attention','claude','Opus 4.8','2:48 pm'],
+  ['w5','Phone photo attach','done','Prototype ready','claude','Opus 4.8','1:30 pm'],
+  ['w6','Streaming WAV stall','done','Done','grok','Grok 4.5','12:04 pm'],
+  ['w7','Tray owl asset','done','Done','claude','Sonnet 5','Mon'],
+  ['w8','Host pairing copy','done','Done','codex','GPT-5.5','Mon'],
+  ['w9','Worktree cleanup sweep','working','Waiting','claude','Haiku 4.5', 1805],
+  ['w10','iPhone steer compact','done','Done','devin','Devin','Sun'],
+  ['w11','Design capture baselines','done','Done','claude','Sonnet 5','Sun'],
+  ['w12','Weekly note','done','Done','muse','Muse Wonder Full','Sat'],
+];
+for (const [id, title, state, status, provider, model, w] of workshop)
+  THREADS[id] = T(id, title, state, status, provider, model, typeof w === 'number' ? '' : w, { secs: typeof w === 'number' ? w : undefined, unseen: status === 'Just finished', flag: status === 'Prototype ready', branch: 'main' });
+THREADS['reading'] = T('reading', 'Reading list triage', 'done', 'Done', 'claude', 'Haiku 4.5', 'Wed', { branch: 'main' });
+THREADS['s1'] = T('s1', 'Sotto site footer', 'done', 'Settled', 'claude', 'Sonnet 5', 'Oct 12', { settled: true });
+THREADS['s2'] = T('s2', 'Launch checklist', 'done', 'Settled', 'codex', 'GPT-5.5', 'Oct 9', { settled: true });
+THREADS['s3'] = T('s3', 'Old workshop spike', 'done', 'Settled', 'grok', 'Grok 4.5', 'Sep 28', { settled: true });
+
+const FOLDERS = [
+  { id: 'sotto', section: 'open', title: 'Sotto', path: 'C:\\Users\\zach\\projects\\Sotto', threads: ['fix-gap','review','peek','release','watcher-pic'] },
+  { id: 'developer', section: 'open', title: 'Developer', path: 'C:\\Users\\zach\\Developer', threads: ['tailnet','login','answer-q','docs'] },
+  { id: 'workshop', section: 'open', title: 'Workshop', path: 'C:\\Users\\zach\\projects\\workshop', threads: workshop.map(w => w[0]) },
+  { id: 'field-notes', section: 'open', title: 'Field notes', path: 'C:\\Users\\zach\\notes', threads: ['reading'] },
+  { id: 'archive-lab', section: 'open', title: 'Archive lab', path: 'C:\\Users\\zach\\projects\\archive-lab', threads: [] },
+  { id: 'sotto-site', section: 'settled', title: 'sotto-site', path: 'C:\\Users\\zach\\projects\\sotto-site', threads: ['s1','s2'] },
+  { id: 'workshop-old', section: 'settled', title: 'Workshop', path: 'C:\\Users\\zach\\projects\\workshop', threads: ['s3'] },
+];
+const PROVIDERS = { claude: ['Claude', 'C'], codex: ['Codex', '›_'], grok: ['Grok', 'X'], devin: ['Devin', 'D'], muse: ['Muse', 'M'] };
+const VARIANTS = { A: 'Side card', B: 'Ghost opening', C: 'Glance' };
+
+const Q = new URLSearchParams(location.search);
+const S = {
+  variant: VARIANTS[Q.get('variant')] ? Q.get('variant') : 'A',
+  delay: Q.has('delay') && [0, 200, 350, 600].includes(+Q.get('delay')) ? +Q.get('delay') : 350,
+  expanded: new Set(), settledOpen: false, query: '',
+  current: 'peek', beside: null, log: 'Nothing pressed yet. Every folder starts closed, as in the app.',
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const folderOf = key => FOLDERS.find(f => `${f.section}:${f.id}` === key);
+const keyOf = f => `${f.section}:${f.id}`;
+const rowsOf = f => f.threads.map(id => THREADS[id]).filter(Boolean);
+const countsOf = f => { const rows = rowsOf(f); return { n: rows.length, working: rows.filter(r => r.state === 'working').length, needs: rows.filter(r => r.state === 'needs').length, finished: rows.filter(r => r.status === 'Just finished').length }; };
+const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+const searching = () => S.query.trim() !== '';
+const matchIds = () => { const q = S.query.trim().toLowerCase(); if (!q) return null; return new Set(Object.values(THREADS).filter(t => `${t.title} ${PROVIDERS[t.provider][0]} ${t.model}`.toLowerCase().includes(q)).map(t => t.id)); };
+const clock = secs => { const m = Math.floor(secs / 60), s = secs % 60; return m < 60 ? `${m}m ${String(s).padStart(2, '0')}s` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`; };
+const whenOf = t => t.state === 'working' && t.secs != null ? clock(t.secs) : t.when;
+const chev = size => `<svg class="thread-folder__chevron" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`;
+const folderIcon = size => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+const penIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
+const settleIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>`;
+const branchIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-5 4.5-8.5 5.5"/></svg>`;
+
+function indicators(c, id) {
+  if (!c.working && !c.needs) return '';
+  return `<span ${id ? `id="${id}"` : ''} class="thread-nav__indicators">`
+    + (c.needs ? `<span data-state="needs" title="${c.needs} waiting on you"><i aria-hidden="true"></i><span class="tt-visually-hidden">${c.needs} waiting on you</span></span>` : '')
+    + (c.working ? `<span data-state="working" title="${c.working} working"><i aria-hidden="true"></i><span class="tt-visually-hidden">${c.working} working</span></span>` : '')
+    + `</span>`;
+}
+function ring(t) { return `<span class="thread-nav__ring" data-state="${t.state}"${t.waiting ? ` data-waiting="${t.waiting}"` : ''}${t.unseen ? ' data-unseen="true"' : ''} aria-hidden="true"></span>`; }
+function statusSpan(t) {
+  return `<span class="thread-nav__status" data-state="${t.state}"${t.waiting ? ` data-waiting="${t.waiting}"` : ''}${t.unseen ? ' data-unseen="true"' : ''}${t.flag ? ' data-flag="true"' : ''} title="${esc(t.status)}"><span class="tt-visually-hidden">${PROVIDERS[t.provider][0]}, </span>${esc(t.status)}</span>`;
+}
+function providerSpan(t) {
+  const [name, glyph] = PROVIDERS[t.provider];
+  return `<span class="thread-nav__provider" title="${esc(name)} · ${esc(t.model)}"><span class="thread-nav__mark" data-provider="${t.provider}" aria-hidden="true">${esc(glyph)}</span><span class="thread-nav__model">${esc(t.model)}</span></span>`;
+}
+/* The sidebar's own row (ThreadNavRow, trimmed of its hover actions to keep the mock readable). */
+function rowHtml(t, where) {
+  return `<li class="thread-nav__row" data-thread="${t.id}"${S.current === t.id ? ' data-current="true"' : ''}>
+    <button type="button" class="thread-nav__item" data-open-thread="${t.id}" data-where="${where}" aria-label="${esc(t.title)}" aria-current="${S.current === t.id ? 'page' : 'false'}">
+      ${ring(t)}<span class="thread-nav__title">${esc(t.title)}</span><span class="thread-nav__time" data-when="${t.id}">${esc(whenOf(t))}</span>
+      <span class="thread-nav__metadata">${providerSpan(t)}${statusSpan(t)}</span>
+      ${t.branch ? `<span class="thread-nav__branch">${branchIcon}<span class="thread-nav__branch-name">${esc(t.branch)}</span></span>` : ''}
+    </button></li>`;
+}
+/* The peek's row: same ring, title, clock and status; the branch line is left to the open folder. */
+function peekRowHtml(t, where) {
+  return `<li class="peek-row" data-thread="${t.id}"${S.current === t.id ? ' data-current="true"' : ''}>
+    <button type="button" class="peek-row__item" data-open-thread="${t.id}" data-where="${where}" aria-label="${esc(t.title)}" aria-current="${S.current === t.id ? 'page' : 'false'}">
+      ${ring(t)}<span class="thread-nav__title">${esc(t.title)}</span><span class="thread-nav__time" data-when="${t.id}">${esc(whenOf(t))}</span>
+      <span class="thread-nav__metadata">${providerSpan(t)}${statusSpan(t)}</span>
+    </button></li>`;
+}
+function folderHtml(f, matches) {
+  const key = keyOf(f);
+  const all = rowsOf(f);
+  const visible = matches ? all.filter(t => t.state === 'needs' || matches.has(t.id)) : all;
+  if (matches && !visible.length) return '';
+  const c = countsOf({ ...f, threads: visible.map(t => t.id) });
+  const open = searching() || S.expanded.has(key);
+  const listId = `folder-${key.replace(':', '-')}`;
+  const indId = `${listId}-ind`;
+  const settleAction = f.section === 'settled'
+    ? `<button type="button" class="thread-nav__action" data-act="restore-project" data-key="${key}" aria-label="Restore project ${esc(f.title)}" title="Restore project">${settleIcon}</button>`
+    : `<button type="button" class="thread-nav__action" data-act="new" data-key="${key}" aria-label="New thread in ${esc(f.title)}" title="New thread here">${penIcon}</button><button type="button" class="thread-nav__action" data-act="settle-project" data-key="${key}" aria-label="Settle project ${esc(f.title)}" title="Settle project">${settleIcon}</button>`;
+  return `<div class="thread-folder" data-section="${f.section}" data-folder="${key}"${all.some(t => t.id === S.current) ? ' data-active="true"' : ''}>
+    <div class="thread-folder__head" data-head="${key}">
+      <button type="button" class="thread-folder__toggle" data-toggle="${key}" aria-expanded="${open}" aria-controls="${listId}"
+        aria-label="${esc(f.title)} ${plural(visible.length, 'thread')}"${!open && (c.working || c.needs) ? ` aria-describedby="${indId}"` : ''}>
+        ${chev(12)}${folderIcon(14)}<span class="thread-folder__title">${esc(f.title)}</span>
+        ${open ? '' : indicators(c, indId)}<span class="thread-folder__count" aria-hidden="true">${visible.length}</span>
+      </button>
+      <span class="thread-folder__actions">${settleAction}</span>
+    </div>
+    <div data-ghost-slot="${key}"></div>
+    ${open ? `<ul class="thread-folder__rows" id="${listId}">${visible.map(t => rowHtml(t, 'folder')).join('') || `<li class="thread-nav__empty">${f.section === 'open' ? 'No open threads.' : 'No threads yet.'}</li>`}</ul>` : ''}
+  </div>`;
+}
+function renderSidebar(keepScroll = true) {
+  const scroller = $('#scroll'); const top = keepScroll ? scroller.scrollTop : 0;
+  const matches = matchIds();
+  const openFolders = FOLDERS.filter(f => f.section === 'open');
+  const settledFolders = FOLDERS.filter(f => f.section === 'settled');
+  const settledRows = settledFolders.flatMap(rowsOf);
+  const sc = { working: settledRows.filter(r => r.state === 'working').length, needs: settledRows.filter(r => r.state === 'needs').length };
+  const shown = S.settledOpen || searching();
+  const anyOpen = openFolders.map(f => folderHtml(f, matches)).join('');
+  scroller.innerHTML = `<section aria-label="Projects">${anyOpen || `<p class="thread-nav__empty">${searching() ? 'No matching open threads.' : 'All caught up.'}</p>`}</section>
+    <section aria-label="Settled" role="region">
+      <button type="button" class="thread-nav__settled" id="shelfBtn" aria-expanded="${shown}" aria-label="Settled ${plural(settledRows.length, 'thread')}${sc.needs ? `, ${sc.needs} waiting on you` : ''}${sc.working ? `, ${sc.working} working` : ''}">
+        ${chev(13)}<span>Settled</span>${shown ? '' : indicators(sc)}
+      </button>
+      ${shown ? `<div>${settledFolders.map(f => folderHtml(f, matches)).join('') || '<p class="thread-nav__empty">No settled threads.</p>'}</div>` : ''}
+    </section>
+    ${searching() && matches.size === 0 ? `<p class="thread-nav__empty">Nothing matches "${esc(S.query)}".</p>` : ''}`;
+  scroller.scrollTop = top;
+  bindSidebar();
+}
+function logIt(msg) { S.log = msg; renderState(); }
+function openThread(id, via, beside = false) {
+  const t = THREADS[id]; if (!t) return;
+  const wasPeek = via.startsWith('peek');
+  closePeek('opened');
+  if (beside) { S.beside = id; } else { S.current = id; S.beside = null; if (t.unseen) { t.unseen = false; t.status = 'Done'; } }
+  const folder = FOLDERS.find(f => f.threads.includes(id));
+  $('#paneTitle').textContent = t.title;
+  $('#paneMeta').textContent = `${PROVIDERS[t.provider][0]} - in ${folder ? folder.title : ''} - ${t.status}`;
+  $('#besideTag').toggleAttribute('data-on', beside);
+  $('#paneReply').textContent = beside
+    ? `Opened "${t.title}" beside the thread you were on (${via}). In the app the pane splits; here the tag above stands in for it.`
+    : `This is "${t.title}" (${via}). ${wasPeek ? 'Its folder is still closed - the peek did not open it.' : 'Opened from its folder row.'}`;
+  renderSidebar();
+  logIt(`${beside ? 'Opened beside' : 'Opened'} "${t.title}" via ${via}. Folder "${folder.title}" ${S.expanded.has(keyOf(folder)) ? 'was already open' : 'stayed closed'}.`);
+}
+
+/* ---- the peek ---- */
+const peek = { key: null, trigger: null, enterTimer: 0, leaveTimer: 0, pendingKey: null, suppress: null };
+const finePointer = () => matchMedia('(hover: hover) and (pointer: fine)').matches;
+const headEl = key => document.querySelector(`[data-head="${CSS.escape(key)}"]`);
+const toggleEl = key => document.querySelector(`[data-toggle="${CSS.escape(key)}"]`);
+function bindSidebar() { if (peek.key) headEl(peek.key)?.setAttribute('data-peeking', 'true'); }
+function canPeek(key, trigger) {
+  const f = folderOf(key); if (!f) return false;
+  if (!rowsOf(f).length) return false;                 /* an empty folder has nothing to show */
+  if (searching() || S.expanded.has(key)) return false; /* search and a real opening already show the rows */
+  if (trigger === 'hover' && !finePointer()) return false;
+  return true;
+}
+function schedulePeek(key, trigger) {
+  if (peek.key === key) { cancelClose(); return; }
+  if (trigger === 'focus' && peek.suppress === key) return; /* Escape latched this folder shut until focus leaves it */
+  if (trigger === 'hover') peek.suppress = null;
+  if (!canPeek(key, trigger)) return;
+  clearTimeout(peek.enterTimer); peek.pendingKey = key;
+  const wait = peek.key ? 80 : S.delay; /* gliding from one open peek to the next folder retargets at once */
+  peek.enterTimer = setTimeout(() => { peek.pendingKey = null; showPeek(key, trigger); }, wait);
+}
+function cancelSchedule(key) { if (peek.pendingKey === key) { clearTimeout(peek.enterTimer); peek.pendingKey = null; } }
+function scheduleClose() { cancelClose(); peek.leaveTimer = setTimeout(() => closePeek('left'), 300); }
+function cancelClose() { clearTimeout(peek.leaveTimer); }
+function whyHtml(c) {
+  const bits = [];
+  if (c.needs) bits.push(`<span data-state="needs"><i aria-hidden="true"></i>${c.needs} waiting on you</span>`);
+  if (c.working) bits.push(`<span data-state="working"><i aria-hidden="true"></i>${c.working} working</span>`);
+  if (c.finished) bits.push(`<span data-state="finished"><i aria-hidden="true"></i>${c.finished} just finished</span>`);
+  if (!bits.length) bits.push(`<span>All done</span>`);
+  return `<p class="peek-head__why">${bits.join('')}</p>`;
+}
+function cardHtml(f) {
+  const rows = rowsOf(f); const c = countsOf(f); const key = keyOf(f);
+  const head = `<div class="peek-head"><div class="peek-head__line">${folderIcon(14)}<span class="peek-head__name">${esc(f.title)}</span><span class="peek-head__count">${plural(c.n, 'thread')}</span></div>${whyHtml(c)}<p class="peek-head__path">${esc(f.path)}</p></div>`;
+  const foot = `<div class="peek-foot"><button type="button" data-act="open-folder" data-key="${key}">Open folder</button><button type="button" data-act="new" data-key="${key}">New thread</button><span class="keys">Esc closes</span></div>`;
+  if (S.variant === 'A')
+    return head + `<ul class="peek-list">${rows.map(t => peekRowHtml(t, 'peek A')).join('')}</ul>` + foot;
+  /* C: who explains the dots, by name; the quiet rest is one line. An all-done folder names its newest three. */
+  const needs = rows.filter(t => t.state === 'needs'), working = rows.filter(t => t.state === 'working'), finished = rows.filter(t => t.status === 'Just finished');
+  const named = [...needs, ...working, ...finished];
+  const group = (label, list) => list.length ? `<li class="peek-group" aria-hidden="true">${label}</li>` + list.map(t => peekRowHtml(t, 'peek C')).join('') : '';
+  let body;
+  if (named.length) {
+    const rest = rows.length - new Set(named.map(t => t.id)).size;
+    body = group('Needs you', needs) + group('Working', working) + group('Just finished', finished)
+      + (rest ? `<li class="peek-rest">and ${plural(rest, 'thread')} done</li>` : '');
+  } else {
+    body = group('Most recent', rows.slice(0, 3)) + (rows.length > 3 ? `<li class="peek-rest">and ${plural(rows.length - 3, 'thread')} more</li>` : '');
+  }
+  return head + `<ul class="peek-list">${body}</ul>` + foot;
+}
+function ghostHtml(f) {
+  const key = keyOf(f);
+  return `<ul class="ghost" role="group" aria-label="Preview of threads in ${esc(f.title)}">`
+    + rowsOf(f).map(t => peekRowHtmlAsRow(t)).join('')
+    + `<li class="ghost-foot"><span>Preview</span><button type="button" data-act="open-folder" data-key="${key}">Keep open</button><button type="button" data-act="new" data-key="${key}">New thread</button></li></ul>`;
+}
+function peekRowHtmlAsRow(t) { return rowHtml(t, 'peek B'); }
+function showPeek(key, trigger) {
+  if (!canPeek(key, trigger)) return;
+  closePeek('switch', true);
+  const f = folderOf(key); const head = headEl(key); if (!head) return;
+  peek.key = key; peek.trigger = trigger;
+  head.setAttribute('data-peeking', 'true');
+  if (S.variant === 'B') {
+    const slot = document.querySelector(`[data-ghost-slot="${CSS.escape(key)}"]`);
+    if (slot) { slot.innerHTML = ghostHtml(f); slot.onpointerenter = cancelClose; slot.onpointerleave = scheduleClose; }
+  } else {
+    const card = document.createElement('div');
+    card.className = 'peek-card'; card.dataset.variant = S.variant; card.id = 'peekCard';
+    card.setAttribute('role', 'group'); card.setAttribute('aria-label', `Threads in ${f.title}, preview`);
+    card.innerHTML = cardHtml(f);
+    $('#peekRoot').append(card);
+    const bridge = document.createElement('div');
+    bridge.className = 'peek-bridge'; bridge.id = 'peekBridge';
+    $('#peekRoot').append(bridge);
+    positionCard();
+    card.onpointerenter = cancelClose;
+    card.onpointerleave = () => { if (!(peek.trigger === 'focus' && card.contains(document.activeElement))) scheduleClose(); };
+    bridge.onpointerenter = cancelClose;
+  }
+  renderState();
+}
+/* The card follows its folder (scroll, resize, a narrower sidebar) instead of vanishing. */
+function positionCard() {
+  const card = $('#peekCard'), bridge = $('#peekBridge');
+  if (!card || !peek.key) return;
+  const head = headEl(peek.key); if (!head) return;
+  const side = $('#sidebar').getBoundingClientRect(); const hr = head.getBoundingClientRect();
+  card.style.left = `${Math.round(side.right + 6)}px`;
+  card.style.maxHeight = `${Math.max(160, innerHeight - 76)}px`;
+  const h = card.getBoundingClientRect().height;
+  const top = Math.max(52, Math.min(hr.top - 5, innerHeight - h - 58));
+  card.style.top = `${Math.round(top)}px`;
+  if (bridge) {
+    const bTop = Math.min(hr.top, top), bBottom = Math.max(hr.bottom, top + 64);
+    bridge.style.cssText = `left:${Math.round(side.right - 4)}px;top:${Math.round(bTop)}px;width:16px;height:${Math.round(bBottom - bTop)}px`;
+  }
+}
+function closePeek(reason, silent = false) {
+  clearTimeout(peek.enterTimer); cancelClose(); peek.pendingKey = null;
+  if (!peek.key) { $('#peekRoot').innerHTML = ''; return; }
+  headEl(peek.key)?.removeAttribute('data-peeking');
+  const slot = document.querySelector(`[data-ghost-slot="${CSS.escape(peek.key)}"]`); if (slot) slot.innerHTML = '';
+  $('#peekRoot').innerHTML = '';
+  peek.key = null; peek.trigger = null;
+  if (!silent) renderState();
+}
+function peekButtons() {
+  const root = S.variant === 'B' ? document.querySelector('.ghost') : $('#peekCard');
+  return root ? [...root.querySelectorAll('[data-open-thread]')] : [];
+}
+function focusPeekRow(index) { const list = peekButtons(); if (list.length) list[Math.max(0, Math.min(index, list.length - 1))].focus(); }
+function refreshAfterData() {
+  const key = peek.key, trigger = peek.trigger;
+  renderSidebar();
+  if (key && canPeek(key, trigger === 'hover' ? 'hover' : 'focus')) showPeek(key, trigger);
+  else if (key) { peek.key = null; }
+  renderState();
+}
+
+/* ---- events (delegated: the sidebar re-renders, the scroller does not) ---- */
+const scrollerEl = $('#scroll');
+let hoverKey = null;
+scrollerEl.addEventListener('pointerover', e => {
+  if (e.pointerType && e.pointerType !== 'mouse' && e.pointerType !== 'pen') return;
+  const head = e.target.closest('[data-head]'); if (!head) return;
+  const key = head.dataset.head;
+  if (hoverKey !== key) { hoverKey = key; schedulePeek(key, 'hover'); }
+  else cancelClose();
+});
+scrollerEl.addEventListener('pointerout', e => {
+  const head = e.target.closest('[data-head]'); if (!head || head.contains(e.relatedTarget)) return;
+  const key = head.dataset.head; if (hoverKey === key) hoverKey = null;
+  cancelSchedule(key); if (peek.key === key && peek.trigger === 'hover') scheduleClose();
+});
+scrollerEl.addEventListener('focusin', e => {
+  const toggle = e.target.closest('[data-toggle]'); if (toggle) { schedulePeek(toggle.dataset.toggle, 'focus'); return; }
+  if (peek.key && (e.target.closest('[data-ghost-slot]') || e.target.closest('[data-head]'))) cancelClose();
+});
+scrollerEl.addEventListener('focusout', e => {
+  if (peek.suppress && e.target.closest?.('[data-toggle]')?.dataset.toggle === peek.suppress && !headEl(peek.suppress)?.contains(e.relatedTarget)) peek.suppress = null;
+  if (!peek.key) return;
+  const inside = el => el && (headEl(peek.key)?.contains(el) || el.closest?.('[data-ghost-slot], #peekCard'));
+  if (!inside(e.relatedTarget) && peek.trigger === 'focus') scheduleClose();
+});
+document.addEventListener('focusin', e => { if (peek.key && e.target.closest?.('#peekCard')) cancelClose(); });
+document.addEventListener('focusout', e => {
+  if (!peek.key || !e.target.closest?.('#peekCard')) return;
+  const to = e.relatedTarget;
+  if (!(to && (to.closest?.('#peekCard') || headEl(peek.key)?.contains(to)))) scheduleClose();
+});
+scrollerEl.addEventListener('scroll', () => { if (peek.key && S.variant !== 'B') positionCard(); }, { passive: true });
+function toggleFolder(key, keepFocus = true) {
+  closePeek('toggle', true);
+  const had = S.expanded.has(key);
+  had ? S.expanded.delete(key) : S.expanded.add(key);
+  renderSidebar();
+  if (keepFocus) toggleEl(key)?.focus();
+  logIt(`${had ? 'Closed' : 'Opened'} folder "${folderOf(key).title}" for real. It stays ${had ? 'closed' : 'open'} for the session.`);
+}
+document.addEventListener('click', e => {
+  const openBtn = e.target.closest('[data-open-thread]');
+  if (openBtn) { openThread(openBtn.dataset.openThread, openBtn.dataset.where || 'row', e.ctrlKey || e.metaKey); return; }
+  const act = e.target.closest('[data-act]');
+  if (act) {
+    const key = act.dataset.key, f = folderOf(key);
+    if (act.dataset.act === 'open-folder') { closePeek('open', true); S.expanded.add(key); renderSidebar(); toggleEl(key)?.focus(); logIt(`Opened folder "${f.title}" from the peek. Now it is really open.`); }
+    else if (act.dataset.act === 'new') { closePeek('new'); logIt(`New thread in "${f.title}" (mock: nothing started). The folder stayed closed.`); }
+    else { closePeek('act'); logIt(`${act.getAttribute('aria-label') || act.title} (mock: nothing changed).`); }
+    return;
+  }
+  const toggle = e.target.closest('[data-toggle]');
+  if (toggle) { toggleFolder(toggle.dataset.toggle); return; }
+  if (e.target.closest('#shelfBtn')) { closePeek('shelf', true); S.settledOpen = !S.settledOpen; renderSidebar(); $('#shelfBtn')?.focus(); logIt(`${S.settledOpen ? 'Opened' : 'Closed'} the Settled shelf. Its folders peek like the others.`); return; }
+  if (peek.key && !e.target.closest('#peekCard, .ghost, .bar, .switcher')) closePeek('outside');
+});
+document.addEventListener('keydown', e => {
+  const inPeek = e.target.closest?.('#peekCard, .ghost');
+  if (e.key === 'Escape' && peek.key) {
+    const key = peek.key; peek.suppress = key; closePeek('escape'); toggleEl(key)?.focus(); e.preventDefault(); e.stopPropagation(); return;
+  }
+  if (inPeek && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+    const list = peekButtons(); const at = list.indexOf(e.target.closest('[data-open-thread]') || document.activeElement);
+    e.preventDefault();
+    focusPeekRow(e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : at + (e.key === 'ArrowDown' ? 1 : -1));
+    return;
+  }
+  if (inPeek && (e.key === 'ArrowLeft')) { const key = peek.key; peek.suppress = key; closePeek('left-arrow'); toggleEl(key)?.focus(); e.preventDefault(); return; }
+  const toggle = e.target.closest?.('[data-toggle]');
+  if (toggle && (e.key === 'ArrowDown' || e.key === 'ArrowRight') && !S.expanded.has(toggle.dataset.toggle)) {
+    const key = toggle.dataset.toggle;
+    if (canPeek(key, 'focus')) { e.preventDefault(); peek.suppress = null; if (peek.key !== key) showPeek(key, 'focus'); focusPeekRow(0); }
+    return;
+  }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    const btn = e.target.closest?.('[data-open-thread]');
+    if (btn) { e.preventDefault(); openThread(btn.dataset.openThread, btn.dataset.where || 'row', true); }
+    return;
+  }
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable;
+  if (!typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inPeek && !toggle) cycleVariant(e.key === 'ArrowRight' ? 1 : -1);
+});
+$('#search').addEventListener('input', e => { S.query = e.target.value; closePeek('search', true); renderSidebar(); renderState(); });
+addEventListener('resize', () => { if (peek.key && S.variant !== 'B') positionCard(); });
+
+/* ---- state strip, bar, variant switcher ---- */
+function renderState() {
+  const openNames = [...S.expanded].map(k => folderOf(k)?.title).filter(Boolean);
+  const cur = THREADS[S.current];
+  $('#stateStrip').innerHTML =
+    `<span><b>Variant</b> ${S.variant} ${VARIANTS[S.variant]}</span>`
+    + `<span><b>Peek</b> ${peek.key ? `${esc(folderOf(peek.key).title)} (by ${peek.trigger})` : peek.pendingKey ? `waiting on ${esc(folderOf(peek.pendingKey).title)}...` : 'none'}</span>`
+    + `<span><b>Folders open</b> ${openNames.length ? esc(openNames.join(', ')) : 'none'}</span>`
+    + `<span><b>Settled shelf</b> ${S.settledOpen ? 'open' : 'closed'}</span>`
+    + `<span><b>In the pane</b> ${cur ? esc(cur.title) : '-'}</span>`
+    + `<span><b>Delay</b> ${S.delay} ms</span>`
+    + `<span class="log">${esc(S.log)}</span>`;
+}
+function syncUrl() {
+  const p = new URLSearchParams();
+  p.set('variant', S.variant);
+  if (S.delay !== 350) p.set('delay', S.delay);
+  const r = document.documentElement;
+  if (r.dataset.theme === 'light') p.set('theme', 'light');
+  if (r.dataset.motion === 'reduce') p.set('motion', 'reduce');
+  if (r.dataset.width === 'narrow') p.set('width', 'narrow');
+  if (r.dataset.height === 'short') p.set('height', 'short');
+  if (Q.get('peek')) p.set('peek', Q.get('peek'));
+  history.replaceState(null, '', `?${p}`);
+}
+function renderVariant() { $('#varName').innerHTML = `${S.variant} <span>(${VARIANTS[S.variant]})</span>`; }
+function setVariant(v) { S.variant = v; closePeek('variant', true); renderVariant(); syncUrl(); renderState(); }
+function cycleVariant(dir) { const keys = Object.keys(VARIANTS); setVariant(keys[(keys.indexOf(S.variant) + dir + keys.length) % keys.length]); logIt(`Variant ${S.variant} (${VARIANTS[S.variant]}). Hover a closed folder.`); }
+$('#prevVar').onclick = () => cycleVariant(-1);
+$('#nextVar').onclick = () => cycleVariant(1);
+$('#delayBtns').innerHTML = [0, 200, 350, 600].map(d => `<button type="button" data-delay="${d}" aria-pressed="${S.delay === d}">${d}</button>`).join('');
+$('#delayBtns').onclick = e => { const b = e.target.closest('[data-delay]'); if (!b) return; S.delay = +b.dataset.delay; [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', x === b)); syncUrl(); logIt(`Hover delay ${S.delay} ms. Sweep the folders, then rest on one.`); };
+function wireToggle(id, attr, on) {
+  const btn = $(id); const apply = v => { const r = document.documentElement; v ? r.setAttribute(attr, on) : r.removeAttribute(attr); btn.setAttribute('aria-pressed', v); syncUrl(); if (peek.key && S.variant !== 'B') requestAnimationFrame(positionCard); };
+  btn.onclick = () => apply(btn.getAttribute('aria-pressed') !== 'true');
+  return apply;
+}
+const applyTheme = wireToggle('#themeBtn', 'data-theme', 'light');
+const applyMotion = wireToggle('#motionBtn', 'data-motion', 'reduce');
+const applyWidth = wireToggle('#widthBtn', 'data-width', 'narrow');
+const applyHeight = wireToggle('#heightBtn', 'data-height', 'short');
+$('#finishBtn').onclick = () => {
+  const first = FOLDERS.flatMap(rowsOf).find(t => t.state === 'working');
+  if (!first) { logIt('Nothing is working now. Reset brings the threads back.'); return; }
+  first.state = 'done'; first.status = 'Just finished'; first.unseen = true; first.when = 'now'; delete first.secs;
+  refreshAfterData();
+  logIt(`"${first.title}" finished. Its row (open peek included) and its folder's dots updated where they stood.`);
+};
+$('#resetBtn').onclick = () => location.reload();
+
+/* working clocks tick where they stand, sidebar and peek alike */
+setInterval(() => {
+  for (const t of Object.values(THREADS)) if (t.state === 'working' && t.secs != null) t.secs += 1;
+  document.querySelectorAll('[data-when]').forEach(el => { const t = THREADS[el.dataset.when]; if (t) el.textContent = whenOf(t); });
+}, 1000);
+
+/* init from the URL (and the OS motion setting) */
+if (Q.get('theme') === 'light') applyTheme(true);
+if (Q.get('motion') === 'reduce' || (!Q.has('motion') && matchMedia('(prefers-reduced-motion: reduce)').matches)) applyMotion(true);
+if (Q.get('width') === 'narrow') applyWidth(true);
+if (Q.get('height') === 'short') applyHeight(true);
+renderVariant(); renderSidebar(false); renderState(); syncUrl();
+/* ?peek=<folder id> deep-links an open peek, so a state can be shared (or captured) without a pointer. */
+if (Q.get('peek')) {
+  const target = FOLDERS.find(f => f.id === Q.get('peek') && f.section === 'open') || FOLDERS.find(f => f.id === Q.get('peek'));
+  if (target) {
+    if (target.section === 'settled') { S.settledOpen = true; renderSidebar(false); }
+    showPeek(keyOf(target), 'focus');
+    logIt(peek.key ? `Peek opened from the URL (?peek=${target.id}). Hover and focus open it the same way.` : `No peek for "${target.title}": it has no threads. That is the rule in every variant.`);
+  }
+}
+</script>
+</body>
+</html>
+
+
+
+
+
+

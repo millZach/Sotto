@@ -34,6 +34,7 @@ const fakeSkips: AdapterContractSkips = { uncertain: 'FakeProviderHost has no tr
   liveSettings: 'The fixture must apply settings to a live provider session.',
   settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
   clientUpdate: 'The fixture must install a client update and the adapter must accept it.',
+  attachedFiles: 'FakeProviderHost is no adapter: it saves no attached file and gives its provider no note.',
 }
 describeAdapterContract('Fake provider', async (): Promise<AdapterFixture> => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-contract-'))

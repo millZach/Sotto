@@ -1,0 +1,21 @@
+{
+  "signIn": {
+    "page": "https://cursor.com/",
+    "configFolder": "profile/cursor/config",
+    "noOpenBrowser": true
+  },
+  "settingsMakers": [
+    "Cursor",
+    "Anthropic",
+    "OpenAI"
+  ],
+  "makers": [
+    "Cursor",
+    "Anthropic",
+    "OpenAI"
+  ],
+  "stable": {
+    "cursorRow": false,
+    "recordsKept": true
+  }
+}

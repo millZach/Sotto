@@ -28,11 +28,32 @@ export function isImmutableActivities(activities: readonly AgentActivity[] | und
 /** A record is trusted only when this owner recursively copied and froze it. */
 export function isImmutableActivity(activity: AgentActivity): boolean { return owned.has(activity) }
 
+/** Any record of plain schema data, such as a thread or the rest of a snapshot, copied, frozen and owned the same way. */
+export function immutableRecord<T extends object>(record: T): T {
+  return copy(record, true) as T
+}
+
+/** Whether this record was copied and frozen all the way down here, so nobody can write into any part of it. */
+export function isImmutableRecord(record: object): boolean { return owned.has(record) }
+
 /** Owns a record its caller has just built and nobody else holds, such as one the schema parsed off the disk: with no
  * alias to keep apart from, it is frozen and owned where it is rather than copied first (#1333). */
 export function ownBuiltActivity(activity: AgentActivity): AgentActivity {
   ownInPlace(activity)
   return activity
+}
+
+/**
+ * Owns a record its caller has just built and nobody else holds, whose every part is already owned, such as a thread
+ * record a layer renamed by spreading an owned one (#925): it is frozen where it is and its parts are shared, so handing
+ * on a thread costs the fields the layer changed rather than a copy. A record holding a part that is not owned is copied
+ * instead, since freezing that part would freeze it under whoever else holds it. A part the caller built too is owned
+ * first, with this.
+ */
+export function ownBuiltRecord<T extends object>(record: T): T {
+  for (const child of Object.values(record)) if (child !== null && typeof child === 'object' && !owned.has(child)) return immutableRecord(record)
+  own(record)
+  return record
 }
 
 function ownInPlace(value: unknown): void {

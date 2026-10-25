@@ -73,7 +73,7 @@ export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSe
 
   return <div className="key-field">
     <div className="settings-input-action">
-      <Field label={say`OpenRouter API key`} description={say`Used only for AI cleanup and kept in your system’s credential store.`}>
+      <Field setting="openrouter-key" label={say`OpenRouter API key`} description={say`Used only for AI cleanup and kept in your system’s credential store.`}>
         {/* An already-saved key is a state, not 47 characters of prose to show
             as dots in a field the user is meant to be able to read. */}
         <input className="tt-input" type="password" autoComplete="off"

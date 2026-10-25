@@ -4,7 +4,7 @@ import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode } from '../../../shared/agents'
-import { ChoiceChip, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
+import { ChoiceChip, cursorModeLine, PERMISSIONS_ICON, permissionInForceCaption, RUNTIME_LABELS, WatcherPermission, type ChoiceOption } from '../agents/ThreadOptions'
 import { useWatcherRoom } from './watcherRoom'
 
 /**
@@ -27,13 +27,18 @@ export function watcherModeDescriptions(provider: string): Record<AgentRuntimeMo
 
 /**
  * The modes Watcher's model offers, each with its line, led by the chosen mode as unchoosable when the model does not
- * offer it (a Grok Build model offers three). A model that lists none offers Sotto's four.
+ * offer it (a Grok Build model offers three). A model that lists none offers Sotto's four. A Cursor model offers Cursor's
+ * three, each with the line a Cursor thread's menu gives it (ADR-0128): Ask for approval still edits inside the project
+ * without asking, and Auto's classifier runs on Cursor's servers.
  */
 function choices(model: AgentModel | undefined, chosen: AgentRuntimeMode, provider: string): ChoiceOption[] {
   const offered = model?.runtimeModes?.length ? model.runtimeModes : agentRuntimeModeSchema.options
   const lines = watcherModeDescriptions(provider)
   const lead = offered.includes(chosen) ? [] : [{ id: chosen, label: RUNTIME_LABELS[chosen], disabled: true }]
-  return [...lead, ...offered.map(mode => ({ id: mode, label: RUNTIME_LABELS[mode], description: lines[mode] }))]
+  return [...lead, ...offered.map(mode => {
+    const cursor = model?.providerId === 'cursor' ? cursorModeLine(mode) : undefined
+    return { id: mode, label: RUNTIME_LABELS[mode], ...(cursor ? { description: cursor, translated: true } : { description: lines[mode] }) }
+  })]
 }
 
 /**
@@ -58,6 +63,7 @@ export function WatcherPermissionChip({ model, provider, inForce, disabled = fal
   /** Opens below the chip when there is no room above it, as on the Orchestrating card in Settings. */
   readonly flip?: boolean
 }): ReactNode {
+  // Its words and Cursor's permission lines are messages, so a change of interface language draws this again.
   const { t } = useLingui()
   const room = useWatcherRoom()
   const captionId = useId()

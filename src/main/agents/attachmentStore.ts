@@ -3,14 +3,16 @@ import { mkdir, open, readdir, readFile, rename, stat, unlink } from 'node:fs/pr
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_IMAGE_BYTES, agentAttachmentHandleSchema, attachmentDigestSchema, bytesHaveRasterSignature,
-  SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, type AgentAttachment, type AgentAttachmentDimensions, type AgentAttachmentHandle } from '../../shared/agents'
+import { AGENT_GENERIC_FILE_MIME_TYPE, AGENT_MAX_FILE_BYTES, agentAttachmentHandleSchema, agentMimeTypeSchema, attachmentDigestSchema, attachmentLimitBytes, bytesHaveRasterSignature,
+  ATTACHED_FILE_TOO_LARGE, isImageAttachment, SCREENSHOT_NOT_ITS_TYPE, SCREENSHOT_TOO_LARGE, SCREENSHOT_WRONG_TYPE, type AgentAttachment, type AgentAttachmentDimensions,
+  type AgentAttachmentHandle, type AgentImageMimeType } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
-type ImageType = typeof AGENT_IMAGE_MIME_TYPES[number]
-const EXTENSIONS: Record<ImageType, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
-const TYPES = new Map(Object.entries(EXTENSIONS).map(([type, extension]) => [extension, type as ImageType]))
-const CONTENT_FILE = /^([a-f0-9]{64})\.(png|jpg|gif|webp)$/u
+const EXTENSIONS: Record<AgentImageMimeType, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+const TYPES = new Map(Object.entries(EXTENSIONS).map(([type, extension]) => [extension, type as AgentImageMimeType]))
+/** A file that is not an image is kept as `<digest>.bin`, its MIME type in the index alone (ADR-0131). */
+const FILE_EXTENSION = 'bin'
+const CONTENT_FILE = /^([a-f0-9]{64})\.(png|jpg|gif|webp|bin)$/u
 const INDEX_FILE = 'index.json'
 const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const
 /**
@@ -19,8 +21,9 @@ const WINDOWS_RENAME_RETRY_DELAYS_MS = [10, 20, 40, 80, 160] as const
  */
 export const UNOWNED_ATTACHMENT_GRACE_MS = 60 * 60_000
 
-const entrySchema = z.object({ digest: attachmentDigestSchema, mimeType: z.enum(AGENT_IMAGE_MIME_TYPES),
-  sizeBytes: z.number().int().min(1).max(AGENT_MAX_IMAGE_BYTES), stagedAt: z.number().finite() }).strict()
+const entrySchema = z.object({ digest: attachmentDigestSchema, mimeType: agentMimeTypeSchema,
+  sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), stagedAt: z.number().finite() }).strict()
+  .refine(entry => entry.sizeBytes <= attachmentLimitBytes(entry.mimeType))
 type Entry = z.infer<typeof entrySchema>
 type Index = { version: 1; entries: Entry[] }
 /**
@@ -29,6 +32,14 @@ type Index = { version: 1; entries: Entry[] }
  * content only an older preview names.
  */
 interface Held extends Entry { memory?: Buffer; unownedSince: number | null; lastStagedAt: number }
+
+/**
+ * Whether a handle describes content as it is kept: the same size, and for an image the same type, since its signature
+ * was checked for that type. A file's bytes are not inspected, so any kept content of its size is the file it names.
+ */
+function describes(held: Pick<Entry, 'mimeType' | 'sizeBytes'>, handle: Pick<AgentAttachmentHandle, 'mimeType' | 'sizeBytes'>): boolean {
+  return held.sizeBytes === handle.sizeBytes && (held.mimeType === handle.mimeType || !isImageAttachment(handle.mimeType))
+}
 
 /** Content staging refuses for what it is (its type, its size, its signature), not for a failure to keep it. */
 export class RefusedImage extends Error {}
@@ -61,6 +72,12 @@ export const MISMATCHED_ATTACHMENT = 'An image in this message does not match th
  */
 export class AttachmentStore {
   private readonly held = new Map<string, Held>()
+  /**
+   * Content read whole from disk and found to be its digest this run, so a part of it reads only its own bytes
+   * (`readPart`), and a whole read already under way that a part waits on. Content kept again is a new entry, checked again.
+   */
+  private readonly hashed = new WeakSet<Held>()
+  private readonly hashing = new WeakMap<Held, Promise<Buffer | null>>()
   private readonly folder: string
   private readonly index: AtomicJsonStore<Index>
   private serial: Promise<unknown> = Promise.resolve()
@@ -71,9 +88,11 @@ export class AttachmentStore {
    * MISSING_REMOTE_ATTACHMENT on a headless host, whose refusals a desktop shows.
    */
   readonly missing: string
-  constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), missing = MISSING_ATTACHMENT }: {
-    readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly missing?: string | undefined } = {}) {
-    this.historyEnabled = historyEnabled; this.now = now; this.missing = missing
+  /** Whether this store keeps files that are not images: the `attach-any-file` Owl answer, read once at start (ADR-0131). */
+  readonly acceptsFiles: boolean
+  constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), missing = MISSING_ATTACHMENT, acceptsFiles = false }: {
+    readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly missing?: string | undefined; readonly acceptsFiles?: boolean | undefined } = {}) {
+    this.historyEnabled = historyEnabled; this.now = now; this.missing = missing; this.acceptsFiles = acceptsFiles
     this.folder = join(directory, 'attachments')
     this.index = new AtomicJsonStore(join(this.folder, INDEX_FILE), value => {
       const saved = z.object({ version: z.literal(1), entries: z.array(z.unknown()) }).parse(value)
@@ -85,7 +104,9 @@ export class AttachmentStore {
     this.serial = pending.catch(() => undefined)
     return pending
   }
-  private file(entry: Pick<Entry, 'digest' | 'mimeType'>): string { return join(this.folder, `${entry.digest}.${EXTENSIONS[entry.mimeType]}`) }
+  private file(entry: Pick<Entry, 'digest' | 'mimeType'>): string {
+    return join(this.folder, `${entry.digest}.${isImageAttachment(entry.mimeType) ? EXTENSIONS[entry.mimeType] : FILE_EXTENSION}`)
+  }
 
   /**
    * Reads the index and squares it with the folder. Every content counts as unowned from now, so one staged just
@@ -101,16 +122,22 @@ export class AttachmentStore {
       const saved = await this.index.peek()
       const indexed = new Map(saved.entries.map(entry => [entry.digest, entry]))
       const now = this.now()
-      for (const name of names) {
+      // An image's file before a file's of the same digest: a crash inside `keepAsImage` leaves both, and the image's,
+      // written only after its signature was checked, is what that content is kept as. The `.bin` then goes as a copy.
+      const ordered = [...names].sort((a, b) => Number(a.endsWith(`.${FILE_EXTENSION}`)) - Number(b.endsWith(`.${FILE_EXTENSION}`)))
+      for (const name of ordered) {
         if (name === INDEX_FILE) continue
         const match = CONTENT_FILE.exec(name)
-        const mimeType = match ? TYPES.get(match[2]!) : undefined
+        const entry = match ? indexed.get(match[1]!) : undefined
+        // A file's type is in the index alone; one the index lost comes back as a file of no particular type.
+        const mimeType = !match ? undefined : match[2] === FILE_EXTENSION
+          ? entry && !isImageAttachment(entry.mimeType) ? entry.mimeType : AGENT_GENERIC_FILE_MIME_TYPE
+          : TYPES.get(match[2]!)
         const size = match && mimeType ? await stat(join(this.folder, name)).then(info => info.isFile() ? info.size : 0, () => 0) : 0
-        if (!match || !mimeType || size < 1 || size > AGENT_MAX_IMAGE_BYTES || this.held.has(match[1]!)) {
+        if (!match || !mimeType || size < 1 || size > attachmentLimitBytes(mimeType) || this.held.has(match[1]!)) {
           await unlink(join(this.folder, name)).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT' && error.code !== 'EISDIR' && error.code !== 'EPERM') throw error })
           continue
         }
-        const entry = indexed.get(match[1]!)
         this.held.set(match[1]!, { digest: match[1]!, mimeType, sizeBytes: size, stagedAt: entry?.stagedAt ?? now, unownedSince: now, lastStagedAt: entry?.stagedAt ?? now })
       }
       if (saved.entries.length !== this.held.size || saved.entries.some(entry => !this.held.has(entry.digest))) await this.writeIndex()
@@ -122,31 +149,41 @@ export class AttachmentStore {
   }
 
   /**
-   * Keeps an image's bytes once and answers with its handle. The type, size and signature are checked here, whoever
-   * sent them. With history on the bytes are on disk, and in the index, before this resolves; with it off they are
-   * kept in memory and nothing is written. `onDisk` writes them whatever the setting, for bytes that were already on
-   * disk elsewhere (`inlineStager`) and so are not new.
+   * Keeps an attachment's bytes once and answers with its handle. The type, size and, for an image, its signature are
+   * checked here, whoever sent them; a file's bytes are not inspected. A store that does not accept files refuses
+   * anything but the four image types, as before ADR-0131. With history on the bytes are on disk, and in the index,
+   * before this resolves; with it off they are kept in memory and nothing is written. `onDisk` writes them whatever the
+   * setting, for bytes that were already on disk elsewhere (`inlineStager`) and so are not new.
    */
   stage(input: { readonly name: string; readonly mimeType: string; readonly bytes: Uint8Array; readonly dimensions?: AgentAttachmentDimensions | undefined },
     { onDisk = false }: { readonly onDisk?: boolean } = {}): Promise<AgentAttachmentHandle> {
-    const mimeType = input.mimeType as ImageType
-    if (!(AGENT_IMAGE_MIME_TYPES as readonly string[]).includes(input.mimeType)) return Promise.reject(new RefusedImage(SCREENSHOT_WRONG_TYPE))
-    if (input.bytes.byteLength < 1 || input.bytes.byteLength > AGENT_MAX_IMAGE_BYTES) return Promise.reject(new RefusedImage(SCREENSHOT_TOO_LARGE))
-    if (!bytesHaveRasterSignature(mimeType, input.bytes)) return Promise.reject(new RefusedImage(SCREENSHOT_NOT_ITS_TYPE))
+    const image = isImageAttachment(input.mimeType)
+    if (!image && (!this.acceptsFiles || !agentMimeTypeSchema.safeParse(input.mimeType).success)) return Promise.reject(new RefusedImage(SCREENSHOT_WRONG_TYPE))
+    if (input.bytes.byteLength < 1 || input.bytes.byteLength > attachmentLimitBytes(input.mimeType)) {
+      return Promise.reject(new RefusedImage(image ? SCREENSHOT_TOO_LARGE : ATTACHED_FILE_TOO_LARGE))
+    }
+    if (image && !bytesHaveRasterSignature(input.mimeType, input.bytes)) return Promise.reject(new RefusedImage(SCREENSHOT_NOT_ITS_TYPE))
     const bytes = Buffer.from(input.bytes.buffer, input.bytes.byteOffset, input.bytes.byteLength)
     const digest = createHash('sha256').update(bytes).digest('hex')
     // The sizes are the composer's word for what it attached and staged; they describe, and are never read as content.
-    const parsed = agentAttachmentHandleSchema.safeParse({ id: randomUUID(), name: input.name.trim() || 'Screenshot', mimeType, sizeBytes: bytes.byteLength, digest,
-      ...(input.dimensions ? { dimensions: input.dimensions } : {}) })
-    if (!parsed.success) return Promise.reject(new RefusedImage('Could not read this screenshot’s name or size. Nothing was attached. Try again.'))
+    const parsed = agentAttachmentHandleSchema.safeParse({ id: randomUUID(), name: input.name.trim() || (image ? 'Screenshot' : 'File'), mimeType: input.mimeType,
+      sizeBytes: bytes.byteLength, digest, ...(image && input.dimensions ? { dimensions: input.dimensions } : {}) })
+    if (!parsed.success) {
+      return Promise.reject(new RefusedImage(image ? 'Could not read this screenshot’s name or size. Nothing was attached. Try again.'
+        : 'Could not read this file’s name or size. Nothing was attached. Try again.'))
+    }
     const handle = parsed.data
+    const mimeType = handle.mimeType
     return this.enqueue(async () => {
       const now = this.now()
       const existing = this.held.get(digest)
       // Re-staging content starts its grace again; the same bytes are never written twice, unless only memory had
-      // them and they must now reach disk.
+      // them and they must now reach disk. Each handle keeps the type it was attached as: the same bytes attached as an
+      // image and as a file are an image and a file (ADR-0131). Content first kept as a file and now attached as an
+      // image, whose signature was just checked, is kept as that image from now on, so its chip and preview can read it.
       if (existing && !(onDisk && existing.memory)) {
         existing.unownedSince = existing.unownedSince === null ? null : now; existing.lastStagedAt = now
+        if (image && !isImageAttachment(existing.mimeType)) await this.keepAsImage(existing, mimeType, bytes)
         return handle
       }
       if (!onDisk && !this.historyEnabled()) {
@@ -166,6 +203,23 @@ export class AttachmentStore {
       }
       return handle
     })
+  }
+  /**
+   * Keeps content first staged as a file under the image type it was just staged as. The image's file is written and
+   * indexed before the file's copy goes, and `read` follows the new entry, so nothing that names the digest loses it.
+   */
+  private async keepAsImage(existing: Held, mimeType: string, bytes: Buffer): Promise<void> {
+    const image: Held = { ...existing, mimeType }
+    if (existing.memory) { this.held.set(existing.digest, image); return }
+    await this.writeContent(image, bytes)
+    this.held.set(existing.digest, image)
+    try { await this.writeIndex() }
+    catch (error) {
+      this.held.set(existing.digest, existing)
+      await unlink(this.file(image)).catch(() => undefined)
+      throw error
+    }
+    await unlink(this.file(existing)).catch(() => undefined)
   }
   private async writeContent(entry: Pick<Entry, 'digest' | 'mimeType'>, bytes: Buffer): Promise<void> {
     await mkdir(this.folder, { recursive: true })
@@ -202,13 +256,13 @@ export class AttachmentStore {
     for (const handle of handles ?? []) {
       const held = this.held.get(handle.digest)
       if (!held) throw new Error(this.missing)
-      if (held.mimeType !== handle.mimeType || held.sizeBytes !== handle.sizeBytes) throw new Error(MISMATCHED_ATTACHMENT)
+      if (!describes(held, handle)) throw new Error(MISMATCHED_ATTACHMENT)
     }
   }
   /** Whether a handle names content this store keeps, as the handle describes it: what `verify` asks of each one. */
   keeps(handle: Pick<AgentAttachmentHandle, 'digest' | 'mimeType' | 'sizeBytes'>): boolean {
     const held = this.held.get(handle.digest)
-    return held !== undefined && held.mimeType === handle.mimeType && held.sizeBytes === handle.sizeBytes
+    return held !== undefined && describes(held, handle)
   }
   /**
    * The bytes a digest names, or null when this store no longer keeps them. Bytes read from disk are hashed first:
@@ -224,8 +278,11 @@ export class AttachmentStore {
     let bytes: Buffer | null = null
     try { bytes = await readFile(this.file(held)) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    if (bytes && createHash('sha256').update(bytes).digest('hex') === digest) return bytes
-    if (this.held.get(digest) === held) {
+    if (bytes && createHash('sha256').update(bytes).digest('hex') === digest) { this.hashed.add(held); return bytes }
+    // Content kept again under an image type meanwhile (`keepAsImage`) is read from its new file.
+    const current = this.held.get(digest)
+    if (current && current !== held && current.mimeType !== held.mimeType) return this.read(digest)
+    if (current === held) {
       this.held.delete(digest)
       // In turn with staging: an image staged again meanwhile has written a good file, which is left alone.
       await this.enqueue(async () => {
@@ -236,8 +293,41 @@ export class AttachmentStore {
     }
     return null
   }
+  /**
+   * At most `length` of the bytes a digest names from `start`, or null when this store no longer keeps them or `start`
+   * is past their end: one part of a sent file for the iPhone's Quick Look (ADR-0131, October 25 amendment). The first
+   * read of content from disk in a run is `read`'s, whole and hashed; after it each part reads only its own bytes, so
+   * opening a file reads and hashes it once rather than once a part. A file that no longer has its size is read whole
+   * again, which lets it go when it is not the content staged; the client checks the joined parts' digest itself.
+   */
+  async readPart(digest: string, start: number, length: number): Promise<Buffer | null> {
+    const held = this.held.get(digest)
+    if (!held || !Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 1 || start >= held.sizeBytes) return null
+    const end = Math.min(held.sizeBytes, start + length)
+    if (held.memory) return held.memory.subarray(start, end)
+    if (!this.hashed.has(held)) {
+      let whole = this.hashing.get(held)
+      if (!whole) {
+        whole = this.read(digest).finally(() => this.hashing.delete(held))
+        this.hashing.set(held, whole)
+      }
+      return (await whole)?.subarray(start, end) ?? null
+    }
+    try {
+      const file = await open(this.file(held), 'r')
+      try {
+        if ((await file.stat()).size === held.sizeBytes) {
+          const part = Buffer.alloc(end - start)
+          const { bytesRead } = await file.read(part, 0, part.length, start)
+          if (bytesRead === part.length) return part
+        }
+      } finally { await file.close() }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    this.hashed.delete(held)
+    return this.readPart(digest, start, length)
+  }
   /** The type a digest was staged as, so a reader can say what the bytes are. */
-  mimeType(digest: string): ImageType | null { return this.held.get(digest)?.mimeType ?? null }
+  mimeType(digest: string): string | null { return this.held.get(digest)?.mimeType ?? null }
 
   /**
    * Removes content nothing owns once it has been unowned for `graceMs`. Owned content starts its grace again the

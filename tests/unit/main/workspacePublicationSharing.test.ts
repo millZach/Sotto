@@ -18,8 +18,11 @@ import { testCredentials } from '../../fixtures/testCredentials'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
-/** What the workspace holds, reached the way only a test does, to change a record in place as its own code can. */
-interface Internals { state: { snapshot: AgentHostSnapshot }; invalidEventThreads: Set<string> }
+/**
+ * What the workspace holds, reached the way only a test does, to change a record in place as its own code can. Its own
+ * code marks every thread it changes (`touch`, #925), so the next publication reads that thread again; so does this.
+ */
+interface Internals { state: { snapshot: AgentHostSnapshot }; invalidEventThreads: Set<string>; touch(id: string): void }
 
 async function workspace() {
   const root = await mkdtemp(join(tmpdir(), 'sotto-publication-sharing-'))
@@ -77,12 +80,14 @@ it('sees a change the workspace made inside a record in place, as recording the 
   const { host, internals, publish } = await workspace()
   const own = internals.state.snapshot.threads.find(item => item.id === 'session-docs')!
   own.worktree = { mode: 'independent', status: 'ready', path: 'C:/worktree', branch: 'sotto/one' } as NonNullable<AgentThread['worktree']>
+  internals.touch('session-docs')
   const first = await publish()
   expectSameAsFreshCopy(first, host)
   expect(thread(first, 'session-docs').worktree?.sentBranch).toBeUndefined()
   // The accept carries the record's worktree over, so this is the object the workspace still holds.
   const held = internals.state.snapshot.threads.find(item => item.id === 'session-docs')!.worktree!
   held.sentBranch = held.branch
+  internals.touch('session-docs')
   const second = await publish()
   expectSameAsFreshCopy(second, host)
   expect(thread(second, 'session-docs').worktree?.sentBranch).toBe('sotto/one')
@@ -94,12 +99,14 @@ it('carries a history notice on the publication only, and drops it when the hist
   const { host, internals, publish } = await workspace()
   const first = await publish()
   internals.invalidEventThreads.add('session-docs')
+  internals.touch('session-docs')
   const noticed = await publish()
   expectSameAsFreshCopy(noticed, host)
   expect(thread(noticed, 'session-docs').historySaveNotice).toMatch(/could not be saved/u)
   expect(internals.state.snapshot.threads.find(item => item.id === 'session-docs')!.historySaveNotice).toBeUndefined()
   expect(thread(noticed, 'session-workshop')).toBe(thread(first, 'session-workshop'))
   internals.invalidEventThreads.delete('session-docs')
+  internals.touch('session-docs')
   const cleared = await publish()
   expectSameAsFreshCopy(cleared, host)
   expect(thread(cleared, 'session-docs').historySaveNotice).toBeUndefined()

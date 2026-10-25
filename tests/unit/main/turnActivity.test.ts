@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { markTurnActivity } from '../../../src/main/agents/turnActivity'
+import { agentActivitySchema } from '../../../src/shared/agentActivity'
 
 describe('turn lifecycle records for providers that report none', () => {
   it('opens a turn once, keeps its start, and settles it without reopening', () => {
@@ -33,5 +34,20 @@ describe('turn lifecycle records for providers that report none', () => {
     const finished = markTurnActivity([], { provider: 'claude', turnId: 'a', status: 'completed', steered: true, at: 1_000 })
     expect(finished[0]).toMatchObject({ status: 'completed', title: 'Turn completed' })
     expect(finished[0]!.steered).toBeUndefined()
+  })
+
+  it('carries a turn’s own server, replacing what it said with each mark, so a retry clears and a failure stays', () => {
+    const server = { name: 'Sparks', model: 'DeepSeek V4.1 Flash', host: 'spark-head:8888' }
+    const trying = markTurnActivity([], { provider: 'opencode', turnId: 'a', status: 'running', ownServer: { ...server, attempt: 3, attempts: 10 }, at: 1_000 })
+    expect(trying[0]!.ownServer).toEqual({ ...server, attempt: 3, attempts: 10 })
+    const answered = markTurnActivity(trying, { provider: 'opencode', turnId: 'a', status: 'running', ownServer: server, at: 2_000 })
+    expect(answered[0]!.ownServer).toEqual(server)
+    const failed = markTurnActivity(answered, { provider: 'opencode', turnId: 'a', status: 'failed', error: 'Sparks didn’t answer.', ownServer: { ...server, failure: 'unreachable' }, at: 3_000 })
+    expect(failed[0]).toMatchObject({ status: 'failed', error: 'Sparks didn’t answer.', ownServer: { ...server, failure: 'unreachable' } })
+    // The thread store and the host protocol read records through the shared schema, which keeps it whole.
+    expect(agentActivitySchema.parse(failed[0]).ownServer).toEqual({ ...server, failure: 'unreachable' })
+    expect(agentActivitySchema.safeParse({ ...failed[0], ownServer: { ...server, failure: 'asleep' } }).success).toBe(false)
+    // A mark that says nothing of the server keeps what the record said.
+    expect(markTurnActivity([], { provider: 'opencode', turnId: 'b', status: 'running', at: 0 })[0]!.ownServer).toBeUndefined()
   })
 })

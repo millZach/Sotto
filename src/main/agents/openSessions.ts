@@ -7,20 +7,22 @@ import type { AgentThread } from '../../shared/agents'
  * when it is added again.
  */
 export class OpenSessions extends Set<string> {
-  constructor(private readonly thread: (id: string) => Pick<AgentThread, 'providerSessionOpen'> | undefined) { super() }
+  /** `changed` hears each thread whose flag this set wrote, so an adapter that marks its thread changes marks it (#925). */
+  constructor(private readonly thread: (id: string) => Pick<AgentThread, 'providerSessionOpen'> | undefined,
+    private readonly changed: (id: string) => void = () => undefined) { super() }
   override add(id: string): this {
     super.add(id)
     const thread = this.thread(id)
-    if (thread) thread.providerSessionOpen = true
+    if (thread) { thread.providerSessionOpen = true; this.changed(id) }
     return this
   }
   override delete(id: string): boolean {
     const thread = this.thread(id)
-    if (thread) delete thread.providerSessionOpen
+    if (thread) { delete thread.providerSessionOpen; this.changed(id) }
     return super.delete(id)
   }
   override clear(): void {
-    for (const id of this) { const thread = this.thread(id); if (thread) delete thread.providerSessionOpen }
+    for (const id of this) { const thread = this.thread(id); if (thread) { delete thread.providerSessionOpen; this.changed(id) } }
     super.clear()
   }
 }

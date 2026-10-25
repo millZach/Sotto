@@ -4,6 +4,8 @@
 
 Accepted October 14, 2026. Zach asked to remove the Glass opacity slider, the Frosted window switch and the See-through slider from Settings → Appearance, and everything behind them. This supersedes [ADR-0048](0048-the-main-window-can-let-the-desktop-through.md) and amends the Glass part of [ADR-0011](0011-main-window-themes-replace-the-accent.md). It is a removal, not an Owl feature, so it reaches stable with the next release.
 
+Amended October 23, 2026 by [ADR-0126](0126-watchers-conversation-runs-over-a-still-night-scene.md): Watcher's composer is frosted glass over the night scene. The window stays solid, and so does every other surface, the Threads composer included.
+
 ## Decision
 
 The main window is always solid. Main makes it with the black `#000000` native background ADR-0009 described, on every platform, with no acrylic, no vibrancy and no launch argument telling the renderer it could frost. The renderer has no `canFrostWindow`, no `data-frost` and no `frost.css`. A pane's terminal drawer paints the theme's terminal colour, and its terminal draws an opaque background. The Linux window keeps `transparent: true`: that clears Electron's Linux resize insets and has nothing to do with frost.

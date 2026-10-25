@@ -1408,6 +1408,7 @@ msgstr "Continue"
 msgid "Continue with the handover"
 msgstr "Continue with the handover"
 
+#. The tab that shows Watcher’s own conversation
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Conversation"
 msgstr "Conversation"
@@ -1527,6 +1528,10 @@ msgstr "Days used"
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Days with dictation over the last {weekCount} weeks: {days} of them, darker on days with more words"
 msgstr "Days with dictation over the last {weekCount} weeks: {days} of them, darker on days with more words"
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Decisions it noted"
+msgstr "Decisions it noted"
 
 #. The cleanup model or mode Sotto chooses itself
 #. The cleanup model or mode Sotto chooses itself
@@ -3328,9 +3333,17 @@ msgstr "Permission"
 msgid "Permission boundaries"
 msgstr "Permission boundaries"
 
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Permission request"
+msgstr "Permission request"
+
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Permission request from {title}"
 msgstr "Permission request from {title}"
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Permission request in a thread it delegated to"
+msgstr "Permission request in a thread it delegated to"
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Phone access could not be changed. Nothing was changed. Try again."
@@ -3482,9 +3495,14 @@ msgstr "Prompts you sent, by weekday and hour. Use the arrow keys to read one ho
 msgid "prototype to review"
 msgstr "prototype to review"
 
+#: src/renderer/src/watcher/WatcherContextTile.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Prototype to review"
 msgstr "Prototype to review"
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Prototype to review in a thread it delegated to"
+msgstr "Prototype to review in a thread it delegated to"
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Provider"
@@ -3543,7 +3561,9 @@ msgid "question"
 msgstr "question"
 
 #. A tag on a moving mark in Watcher’s picture: a question going to the user
+#. What a thread waits on the user for, in Watcher’s state
 #: src/renderer/src/watcher/constellation.ts
+#: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Question"
 msgstr "Question"
 
@@ -3554,6 +3574,10 @@ msgstr "Question {step} of 9"
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "Question from {title}"
 msgstr "Question from {title}"
+
+#: src/renderer/src/watcher/WatcherContextTile.tsx
+msgid "Question in a thread it delegated to"
+msgstr "Question in a thread it delegated to"
 
 #. A group of threads in Watcher’s room, and a thread’s status: nothing has happened for a while
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -3981,10 +4005,6 @@ msgstr "Search models"
 msgid "Search transcripts"
 msgstr "Search transcripts"
 
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "See what Watcher is doing as a picture"
-msgstr "See what Watcher is doing as a picture"
-
 #. How a message Watcher sent went, after a comma on a thread card: Sent to it, delivered
 #: src/renderer/src/watcher/constellation.ts
 msgid "sending"
@@ -4113,6 +4133,10 @@ msgstr "Shortcut"
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Shortcut conflicts"
 msgstr "Shortcut conflicts"
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
+msgstr "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
 
 #: src/renderer/src/App.tsx
 msgid "Shortcuts, privacy, and troubleshooting."
@@ -4757,12 +4781,10 @@ msgstr "Stop test"
 msgid "Stop the threads Watcher started?"
 msgstr "Stop the threads Watcher started?"
 
-#: src/renderer/src/watcher/WatchControls.tsx
 #: src/renderer/src/watcher/WatcherWatched.tsx
 msgid "Stop watching"
 msgstr "Stop watching"
 
-#: src/renderer/src/watcher/WatchControls.tsx
 #: src/renderer/src/watcher/WatcherWatched.tsx
 msgid "Stop watching {title}"
 msgstr "Stop watching {title}"
@@ -5520,6 +5542,7 @@ msgstr "Verify key"
 msgid "Verifying..."
 msgstr "Verifying..."
 
+#. The tab that shows what Watcher is doing as a picture
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Visualize"
 msgstr "Visualize"
@@ -5594,26 +5617,9 @@ msgstr "Watch: Watcher keeps this thread going until you stop it"
 msgid "Watch: Watcher watches this thread from your first message until you stop it"
 msgstr "Watch: Watcher watches this thread from your first message until you stop it"
 
-#. The tab that lists the threads Watcher watches
-#: src/renderer/src/watcher/WatcherView.tsx
-msgid "Watched"
-msgstr "Watched"
-
 #: src/renderer/src/watcher/WatcherOwl.tsx
 msgid "Watched by Watcher"
 msgstr "Watched by Watcher"
-
-#: src/renderer/src/watcher/WatchControls.tsx
-msgid "Watched by Watcher. If you send here, Watcher stops sending to it."
-msgstr "Watched by Watcher. If you send here, Watcher stops sending to it."
-
-#: src/renderer/src/watcher/WatchControls.tsx
-msgid "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
-msgstr "Watched by Watcher. It keeps this thread going and brings you its questions and permissions."
-
-#: src/renderer/src/watcher/WatchControls.tsx
-msgid "Watched by Watcher. While your own turn here runs, it can only steer that turn."
-msgstr "Watched by Watcher. While your own turn here runs, it can only steer that turn."
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watched: Watcher watches this thread from your first message. Press again to leave it unwatched"
@@ -5704,8 +5710,8 @@ msgid "Watcher’s room"
 msgstr "Watcher’s room"
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
-msgid "Watcher’s state, kept through compaction"
-msgstr "Watcher’s state, kept through compaction"
+msgid "Watcher’s state"
+msgstr "Watcher’s state"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Watcher’s view"

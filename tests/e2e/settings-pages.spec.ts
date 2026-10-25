@@ -13,7 +13,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
  * an old section link lands where it should. Captures go to artifacts/settings-pages for the verification note.
  */
 const evidence = evidenceDirectory('artifacts/settings-pages')
-const PAGES = ['Dictation', 'Cleanup', 'Threads', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
+const PAGES = ['Dictation', 'Cleanup', 'Threads', 'Keyboard', 'Git & worktrees', 'Providers', 'Hosts & phones', 'Cloud iPhone', 'Appearance', 'Application'] as const
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 
 const sections = (page: Page) => page.getByRole('tablist', { name: 'Settings sections' })

@@ -4,7 +4,7 @@ import { msg } from '@lingui/core/macro'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { parseHostEntityKey } from '../../../shared/clientIdentity'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
-import { isWatchedRow, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { isWatchedRow, newerWatcherRoom, type WatcherBridge, type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherMergeTurnsRead, type WatcherRoomResult, type WatcherRoomState } from '../../../shared/watcherRoom'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { useWatcherEnabled } from '../state/watcherFeature'
 import { firstMessage, useFirstMessageDelivery } from './watcherFirstMessage'
@@ -25,10 +25,6 @@ export interface WatcherRoom {
   /** The thread that is the current Watcher, once main names it and the window has its row. */
   readonly currentThreadId: string | null
   readonly watchedThreadIds: ReadonlySet<string>
-  /** Watched threads whose watching waits while the user's own turn there runs. */
-  readonly pausedThreadIds: ReadonlySet<string>
-  /** Watched threads under a standing watch, which lasts until the user stops it; the rest are watched for a request. */
-  readonly standingThreadIds: ReadonlySet<string>
   readonly open: WatcherBridge['open'] | null
   /** What Watcher may do without asking; null where the bridge cannot change it, and the room says it as a fact. */
   readonly setPermission: NonNullable<WatcherBridge['setPermission']> | null
@@ -133,10 +129,8 @@ export function watchedTargets(room: WatcherRoomState): WatcherThreadTarget[] {
   return watchedRows(room).map(entry => entry.target)
 }
 
-/** The newer of two projections; an answer to `get` can arrive after a change main published later. */
-function newer(current: WatcherRoomState | null, next: WatcherRoomState): WatcherRoomState {
-  return current !== null && Date.parse(current.observedAt) > Date.parse(next.observedAt) ? current : next
-}
+/** The newer of two projections; an answer to `get` or a command can arrive after a change main published later. */
+const newer = newerWatcherRoom
 
 /**
  * Reads Watcher's projection from main while the Watcher gate is on, and nothing at all while it is off: no
@@ -173,12 +167,6 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   const currentThreadId = current === null ? null : idOf(current.target) ?? null
   const watchedKey = state === null || agentState === null ? '' : JSON.stringify(watchedTargets(state).map(idOf).filter(Boolean))
   const watchedThreadIds = useMemo<ReadonlySet<string>>(() => watchedKey === '' ? NONE : new Set(JSON.parse(watchedKey) as string[]), [watchedKey])
-  const pausedKey = state === null || agentState === null ? '' : JSON.stringify(state.watchedThreads.filter(entry => entry.watched === true && entry.paused === true)
-    .map(entry => idOf(entry.target)).filter(Boolean))
-  const pausedThreadIds = useMemo<ReadonlySet<string>>(() => pausedKey === '' ? NONE : new Set(JSON.parse(pausedKey) as string[]), [pausedKey])
-  const standingKey = state === null || agentState === null ? '' : JSON.stringify(watchedRows(state).filter(entry => hasStandingWatch(state, entry.target))
-    .map(entry => idOf(entry.target)).filter(Boolean))
-  const standingThreadIds = useMemo<ReadonlySet<string>>(() => standingKey === '' ? NONE : new Set(JSON.parse(standingKey) as string[]), [standingKey])
   // A first message sent before Watcher existed goes to it from here, so leaving the room cannot lose it.
   useFirstMessageDelivery(enabled ? agents : null, currentThreadId)
   // A first message read back after a reload as started, when main then says there is no Watcher, goes back to the composer.
@@ -229,7 +217,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
   }, [enabled, manage, settle])
   const value = useMemo<WatcherRoom | null>(() => !enabled ? null : {
     status: !live ? 'unavailable' : answered ? 'ready' : 'loading',
-    state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle,
+    state, error, currentThreadId, watchedThreadIds, settle,
     open: live ? request => bridge.open(request) : null,
     setPermission: manage.setPermission,
     watchThread: manage.watch?.watchThread ?? null,
@@ -238,7 +226,7 @@ export function WatcherRoomProvider({ bridge, children }: { readonly bridge?: Wa
     startNew: manage.startNew,
     readMergeTurns: manage.readMergeTurns,
     stopAll: live ? { prepare: () => bridge.prepareStopAll(), stop: request => bridge.stopAll(request) } : null,
-  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, pausedThreadIds, standingThreadIds, settle, bridge, manage])
+  }, [enabled, live, answered, state, error, currentThreadId, watchedThreadIds, settle, bridge, manage])
   return <WatcherRoomContext.Provider value={value}>
     <WatchedThreadsContext.Provider value={enabled ? watchedThreadIds : NONE}>
       <WatchActionsContext.Provider value={actions}>{children}</WatchActionsContext.Provider>
@@ -259,16 +247,6 @@ export function useWatchedThread(threadId: string): boolean {
 /** Watch and Stop watching, or null with the gate off or where the bridge offers neither. */
 export function useWatchActions(): WatchActions | null {
   return useContext(WatchActionsContext)
-}
-
-/** Whether a watched thread's watching waits while the user's own turn there runs. */
-export function useWatchPaused(threadId: string): boolean {
-  return useContext(WatcherRoomContext)?.pausedThreadIds.has(threadId) ?? false
-}
-
-/** Whether a watched thread is under a standing watch, rather than watched for a Watcher request alone. */
-export function useStandingWatch(threadId: string): boolean {
-  return useContext(WatcherRoomContext)?.standingThreadIds.has(threadId) ?? false
 }
 
 /** The window's ID for the current Watcher, which the Threads page leaves to Watcher's room. */

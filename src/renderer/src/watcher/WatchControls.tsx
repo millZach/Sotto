@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { useStandingWatch, useWatchActions, useWatchedThread, useWatchPaused } from './watcherRoom'
+import { useWatchActions, useWatchedThread } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
 import { useWatchOnSend, watchOnSend } from './watchOnSend'
 import { WatcherOwl } from './WatcherOwl'
@@ -63,30 +63,6 @@ export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): 
     }}>
     <WatcherOwl size={14} /><span><Trans context="Put a thread under Watcher's watch">Watch</Trans></span>
   </button>
-}
-
-/**
- * Under a watched thread's composer, before anything is sent: what watching means, with Stop watching. A standing watch
- * lasts until it is stopped; the user's own send only holds Watcher back while that turn runs, and the line says so
- * then. A thread watched only for a Watcher request is taken over by the user's own send, and the line says that.
- */
-export function WatchedNote({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
-  const { t } = useLingui()
-  const actions = useWatchActions()
-  const watched = useWatchedThread(threadId)
-  const paused = useWatchPaused(threadId)
-  const standing = useStandingWatch(threadId)
-  // Stop watching takes the note away with its own button: the composer just above it keeps the keyboard.
-  const landing = useFocusLanding(watched)
-  if (!watched) return null
-  return <p className="watched-note tt-paragraph">
-    <WatcherOwl size={13} />
-    {/* A thread watched only for a Watcher request is taken over by the user's own send: word for word as the iPhone says it. */}
-    <span>{!standing ? t`Watched by Watcher. If you send here, Watcher stops sending to it.` : paused ? t`Watched by Watcher. While your own turn here runs, it can only steer that turn.`
-      : t`Watched by Watcher. It keeps this thread going and brings you its questions and permissions.`}</span>
-    {actions === null ? null : <button type="button" className="watched-note__stop tt-focusable" aria-label={t`Stop watching ${title}`}
-      onClick={event => { landing.from(event.currentTarget); void actions.setThread(threadId, false) }}><Trans>Stop watching</Trans></button>}
-  </p>
 }
 
 /** The composer field of the pane whose compose area this is, which keeps the keyboard when a control by it goes away. */

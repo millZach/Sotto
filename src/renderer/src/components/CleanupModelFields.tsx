@@ -120,7 +120,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
       <label className="tt-field__label" htmlFor={`${id}-input`}><Trans>Cleanup model</Trans></label>
       <p className="tt-field__description tt-paragraph" id={descriptionId}><Trans>Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen.</Trans></p>
       <div className="cleanup-model__control">
-        <input ref={input} id={`${id}-input`} className="tt-input tt-focusable" type="text" role="combobox" autoComplete="off" spellCheck={false}
+        <input ref={input} id={`${id}-input`} data-setting="cleanup-model" className="tt-input tt-focusable" type="text" role="combobox" autoComplete="off" spellCheck={false}
           aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-describedby={descriptionId}
           {...(open && matches[active] ? { 'aria-activedescendant': optionId(active) } : {})}
           value={open ? query : chosen.name}
@@ -146,7 +146,7 @@ export function CleanupModelFields({ settings, onSave, onListModels }: {
       <CircleAlert size={16} aria-hidden="true" />{failure !== null ? failureCopy(failure) : t`OpenRouter no longer lists this model, so Mercury 2 cleans up instead. Choose another.`}
     </p>}
     <Field label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} description={t`How OpenRouter picks a host. Nitro takes the fastest and may bill at priority rates. Floor takes the cheapest and may run slower.`}>
-      <SegmentedControl label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
+      <SegmentedControl setting="cleanup-mode" label={t({ message: 'Mode', comment: 'How OpenRouter picks a host for cleanup' })} value={settings.llmMode} onChange={value => void onSave({ llmMode: value as LlmMode })}
         options={[{ value: 'default', label: t({ message: 'Default', comment: 'The cleanup model or mode Sotto chooses itself' }) }, { value: 'nitro', label: 'Nitro' }, { value: 'floor', label: 'Floor' }]} />
     </Field>
   </>

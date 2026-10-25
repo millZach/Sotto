@@ -6,7 +6,7 @@ import { z } from 'zod'
  * before the type checker names what still needs it. It lives apart from `agents.ts` so the schemas `agents.ts`
  * imports can use it too.
  */
-export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode'])
+export const providerIdSchema = z.enum(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
 export type ProviderId = z.infer<typeof providerIdSchema>
 
 type MissingProvider<T extends readonly ProviderId[]> = Exclude<ProviderId, T[number]>
