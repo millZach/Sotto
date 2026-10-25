@@ -286,6 +286,10 @@ async function agree(made: Stack, step: string, supply = true): Promise<void> {
   let found: string[] = []
   for (let attempt = 0; attempt < 60; attempt++) {
     await settled(made, supply)
+    // How many passes each side ran follows when its coordinator's broadcasts reached it, which the harness, not the changes
+    // path, decides: a late broadcast leaves one side a pass owed. Both run one pass now, at the same time on the clock, which
+    // takes the place of any pass owed, so what is compared is each side's own pass over the same threads.
+    if (supply) for (const side of made.sides) side.watcher.wakes.observe()
     passTime(made, WATCHER_OBSERVE_MS)
     await quiet()
     found = differences(made)
