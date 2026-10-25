@@ -34,7 +34,7 @@ A thread's permission mode is its process's sandbox, set by environment at spawn
 - **Auto-accept edits** runs the workspace-write sandbox with its ask policy: edits, commands and network inside the sandbox run without asking, and crossing its boundary asks. The menu says so, the way Cursor's menu says what its asking mode cannot ask about (ADR-0128).
 - **Full access** runs danger-full-access, which asks about nothing.
 
-**Automatic** is not offered; the harness's own auto-review is not part of its ACP surface. A request carries only the tool call's ID, so the card is built from the tool update that precedes it — the command or file, the boundary it asks to cross, and the model's own justification named as the model's. The user answers every one (ADR-0004) with allow once or reject; the harness offers no allow-always, and disconnecting sends no decision, which leaves the escalated action undone. A reject reaches the model as a refused tool call and the turn goes on.
+**Automatic** is not offered; the harness's own auto-review is not part of its ACP surface. A request carries only the tool call's ID, so the card is built from the tool update that precedes it — the command or file, the boundary it asks to cross, and the model's own justification named as the model's. The user answers every one (ADR-0004) with allow once or reject; the harness offers no allow-always, and disconnecting declines every request still waiting (`cancelled`), which grants nothing and leaves the escalated action undone. A reject reaches the model as a refused tool call and the turn goes on.
 
 ## What a DeepSeek Harness thread can do in this first version
 
