@@ -144,9 +144,38 @@ export function watcherDelegationOwners(snapshot: Pick<AgentHostSnapshot, 'hostI
   return delegationOwnersOf(snapshot.hostId, parentOf, watched)
 }
 /**
- * `watcherDelegationOwners` from each delegated thread's key and the key of the thread that delegated it, as the hosts'
- * look-ups give them (#925 step 5), without a walk of every thread.
+ * `watcherDelegationOwners` by the hosts' look-ups (#925 step 5), reading only the threads under the watched threads: each
+ * watched thread's delegated threads, a level at a time, then for each of those the threads above it, to find the topmost
+ * watched one. A delegated thread under no watched thread is never read, however many there are.
  */
+export function delegationOwnersUnder(hostId: string | undefined, index: WatcherHostsIndex, watched: ReadonlySet<string>): Map<string, string> {
+  const owners = new Map<string, string>()
+  if (!hostId) return owners
+  const under = new Set<string>()
+  for (const key of watched) {
+    const top = keyTarget(key), seen = new Set([top.threadId])
+    for (let level = [top.threadId]; level.length;) {
+      const next: string[] = []
+      for (const parent of level) for (const child of index.delegatedFrom({ hostId: top.hostId, threadId: parent })) {
+        if (seen.has(child)) continue
+        seen.add(child); next.push(child); under.add(targetKey({ hostId: top.hostId, threadId: child }))
+      }
+      level = next
+    }
+  }
+  // The thread above each, as the whole path's walk keys it: the thread's own host, which the look-up has checked.
+  const parentOf = (key: string): string | undefined => {
+    const target = keyTarget(key), delegatedBy = index.thread(target)?.delegatedBy
+    return delegatedBy === undefined ? undefined : targetKey({ hostId: target.hostId, threadId: delegatedBy })
+  }
+  for (const child of under) {
+    let owner: string | undefined, up = parentOf(child)
+    for (const seen = new Set<string>(); up !== undefined && !seen.has(up); up = parentOf(up)) { seen.add(up); if (watched.has(up)) owner = up }
+    if (owner) owners.set(child, owner)
+  }
+  return owners
+}
+/** `watcherDelegationOwners` from each delegated thread's key and the key of the thread that delegated it. */
 export function delegationOwnersOf(hostId: string | undefined, parentOf: ReadonlyMap<string, string>, watched: ReadonlySet<string>): Map<string, string> {
   const owners = new Map<string, string>()
   if (!hostId || !parentOf.size) return owners
@@ -305,7 +334,7 @@ export class WatcherWakeUp {
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
   private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean
     workers?: Workers; closedWorkers?: Workers; requests?: Map<string, WatcherRecord['requests'][number]>; threads?: Map<string, Map<string, AgentThread>>
-    index?: WatcherHostsIndex | null } | undefined
+    index?: WatcherHostsIndex | null; owners?: { readonly indexed: boolean; readonly watched: ReadonlySet<string>; readonly owners: Map<string, string> } } | undefined
   /** How many wake-up passes read every thread and how many only what they act on, for a test that asks which ran. */
   observedWhole = 0
   observedChanges = 0
@@ -878,7 +907,7 @@ export class WatcherWakeUp {
     const edge = (thread: AgentThread) => `|${thread.hostId ?? ''}/${thread.id}:${thread.status}:${thread.lastTurn?.id ?? ''}:${thread.lastTurn?.status ?? ''}:${watcherBackgroundWorkCount(thread)}:${thread.clientConnected ?? ''}:${thread.requests.map(card => `${card.id}@${requestRevision(card)}`).join(',')}:${thread.prototypeReady?.source ?? ''}`
     const index = this.hostsIndex(snapshot)
     if (index) {
-      const owners = delegationOwnersOf(snapshot.hostId, index.delegated(), watched)
+      const owners = this.ownersOf(snapshot, watched)
       const rows = new Map<string, { thread: AgentThread; place: readonly [number, number] }>()
       const add = (target: WatcherThreadTarget) => {
         const thread = index.thread(target), place = thread && index.place(target)
@@ -890,7 +919,7 @@ export class WatcherWakeUp {
       for (const { thread } of [...rows.values()].sort((left, right) => byPlace(left.place, right.place))) edges += edge(thread)
       return edges
     }
-    const owners = watcherDelegationOwners(snapshot, watched)
+    const owners = this.ownersOf(snapshot, watched)
     // Watched threads by host, so the walk below asks of each thread without building its key: it runs on every publish.
     const byHost = new Map<string, Set<string>>()
     for (const target of targets) { const ids = byHost.get(target.hostId); if (ids) ids.add(target.threadId); else byHost.set(target.hostId, new Set([target.threadId])) }
@@ -901,6 +930,20 @@ export class WatcherWakeUp {
       edges += edge(thread)
     }
     return edges
+  }
+  /**
+   * The threads under the watched threads, with the topmost watched thread above each (`watcherDelegationOwners`), worked
+   * out once per pass and shared by the pass's edges and the pass itself: by the hosts' look-ups, from the watched threads
+   * down, when the pass reads by them (`indexed`, which a pass reading every thread passes as false), otherwise from every
+   * thread, as before.
+   */
+  private ownersOf(snapshot: AgentHostSnapshot, watched: ReadonlySet<string>, indexed = true): Map<string, string> {
+    const index = indexed ? this.hostsIndex(snapshot) : undefined
+    const kept = this.pass?.snapshot === snapshot ? this.pass.owners : undefined
+    if (kept && kept.indexed === (index !== undefined) && kept.watched.size === watched.size && [...watched].every(key => kept.watched.has(key))) return kept.owners
+    const owners = index ? delegationOwnersUnder(snapshot.hostId, index, watched) : watcherDelegationOwners(snapshot, watched)
+    if (this.pass?.snapshot === snapshot) this.pass.owners = { indexed: index !== undefined, watched, owners }
+    return owners
   }
   /** The hosts' look-ups into `snapshot`, read once per pass, or undefined when a pass must search its list. */
   private hostsIndex(snapshot: AgentHostSnapshot): WatcherHostsIndex | undefined {
@@ -924,7 +967,7 @@ export class WatcherWakeUp {
     const watched = new Set(this.watchedByKey().keys())
     // A thread a watched thread delegated to is that thread's responsibility (ADR-0081): Watcher watches only the
     // delegating thread, and hears of the delegated thread's request cards as its news (#1190).
-    const muted = this.delegatedOwner = index ? delegationOwnersOf(snapshot.hostId, index.delegated(), watched) : watcherDelegationOwners(snapshot, watched)
+    const muted = this.delegatedOwner = this.ownersOf(snapshot, watched, index !== undefined)
     // News no longer due is let go first, so what is still true is told again in this pass, as under another request.
     if (this.pending.length) this.pending = this.stillDue(this.pending)
     const lookedAt = new Set<string>(), holders = new Set<string>()

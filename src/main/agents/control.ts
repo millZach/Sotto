@@ -102,8 +102,6 @@ export interface HostThreadsView {
   position(id: string): number | undefined
   /** The threads that name this one as the thread that delegated them (ADR-0081), in no order. */
   delegatedFrom(parentId: string): ReadonlySet<string> | undefined
-  /** Each thread that names the thread that delegated it, with that thread's ID. */
-  readonly delegated: ReadonlyMap<string, string>
   /** Watcher's conversations, current and earlier. */
   readonly watcherKinds: ReadonlySet<string>
   /** Whether a thread names a host other than this one, which a look-up by this host's ID would not find as a search does. */
@@ -133,8 +131,6 @@ class HostThreadIndex implements HostThreadsView {
   readonly hidden = new Set<string>()
   /** Watcher's conversations, shown again whenever Watcher's requests move. */
   readonly watcherKinds = new Set<string>()
-  /** Each thread that names the thread that delegated it, with that thread's ID (ADR-0081). */
-  readonly delegated = new Map<string, string>()
   /** The threads each thread delegated to, by its ID. */
   private readonly children = new Map<string, Set<string>>()
   /** Threads that name a host other than the host snapshot's own. */
@@ -159,8 +155,7 @@ class HostThreadIndex implements HostThreadsView {
       siblings?.delete(thread.id)
       if (siblings?.size === 0) this.children.delete(previous.delegatedBy)
     }
-    if (thread.delegatedBy === undefined) { this.delegated.delete(thread.id); return }
-    this.delegated.set(thread.id, thread.delegatedBy)
+    if (thread.delegatedBy === undefined) return
     const siblings = this.children.get(thread.delegatedBy)
     if (siblings) siblings.add(thread.id); else this.children.set(thread.delegatedBy, new Set([thread.id]))
   }

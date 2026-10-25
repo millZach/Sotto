@@ -24,8 +24,8 @@ interface ListIndex {
   readonly byId: ReadonlyMap<string, { readonly thread: AgentThread; readonly at: number }>
   /** Watcher's current conversations (kind `watcher`), in list order. */
   readonly watchers: readonly string[]
-  /** Each thread that names the thread that delegated it, with that thread's ID. */
-  readonly delegated: ReadonlyMap<string, string>
+  /** The threads each thread delegated to (ADR-0081), by its ID, in list order. */
+  readonly children: ReadonlyMap<string, readonly string[]>
   /** The host IDs the threads name, `undefined` for a thread that names none. */
   readonly hostIds: ReadonlySet<string | undefined>
 }
@@ -38,15 +38,15 @@ function listIndex(threads: readonly AgentThread[]): ListIndex | undefined {
   if (!Object.isFrozen(threads)) return undefined
   let index = listIndexes.get(threads)
   if (index) return index
-  const byId = new Map<string, { thread: AgentThread; at: number }>(), watchers: string[] = [], delegated = new Map<string, string>(), hostIds = new Set<string | undefined>()
+  const byId = new Map<string, { thread: AgentThread; at: number }>(), watchers: string[] = [], children = new Map<string, string[]>(), hostIds = new Set<string | undefined>()
   threads.forEach((thread, at) => {
     hostIds.add(thread.hostId)
     if (byId.has(thread.id)) return
     byId.set(thread.id, { thread, at })
     if (thread.kind === 'watcher') watchers.push(thread.id)
-    if (thread.delegatedBy !== undefined) delegated.set(thread.id, thread.delegatedBy)
+    if (thread.delegatedBy !== undefined) { const siblings = children.get(thread.delegatedBy); if (siblings) siblings.push(thread.id); else children.set(thread.delegatedBy, [thread.id]) }
   })
-  index = { byId, watchers, delegated, hostIds }
+  index = { byId, watchers, children, hostIds }
   listIndexes.set(threads, index)
   return index
 }
@@ -97,8 +97,12 @@ export interface WatcherHostsIndex {
   holds(target: WatcherThreadTarget): boolean
   /** Watcher's current conversations on every host, as the merged list carries them, in its order. */
   watchers(): AgentThread[]
-  /** Each thread that names the thread that delegated it, keyed by target, with that thread's key, on every host. */
-  delegated(): Map<string, string>
+  /**
+   * The IDs of the threads a target's thread delegated to, on its host, in no order: by the coordinator's index of who
+   * delegated what on this computer and by the index of a paired host's frozen list, so finding the threads under the
+   * watched threads reads no thread outside them (#925 step 5).
+   */
+  delegatedFrom(target: WatcherThreadTarget): Iterable<string>
 }
 
 export interface WatcherHostsReader {
@@ -297,16 +301,11 @@ export class WatcherHosts implements WatcherHostsReader {
         const ids = part === local ? [...view.watcherKinds].filter(id => view.thread(id)?.kind === 'watcher').sort((a, b) => view.position(a)! - view.position(b)!) : part.list!.watchers
         return ids.map(id => markedThread(part.snapshot, part === local ? view.thread(id)! : part.list!.byId.get(id)!.thread))
       }),
-      delegated: () => {
-        const parents = new Map<string, string>()
-        for (const part of [local, ...others]) {
-          const entries = part === local ? view.delegated : part.list!.delegated
-          for (const [child, parent] of entries) {
-            const thread = part === local ? view.thread(child)! : part.list!.byId.get(child)!.thread, hostId = thread.hostId ?? localId ?? ''
-            parents.set(targetKey({ hostId, threadId: child }), targetKey({ hostId, threadId: parent }))
-          }
-        }
-        return parents
+      delegatedFrom: target => {
+        const found = partOf(target.hostId)
+        if (!found) return []
+        const [, part] = found
+        return (part === local ? view.delegatedFrom(target.threadId) : part.list!.children.get(target.threadId)) ?? []
       },
     }
   }

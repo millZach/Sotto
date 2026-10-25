@@ -119,7 +119,7 @@ function delegatedBelowOf(view: HostThreadsView, threadId: string): string[] {
   return below
 }
 /** One owning host's threads as a look for finished threads first read them, with the threads some thread delegated from. */
-interface FinishedHost { readonly snapshot: AgentHostSnapshot | undefined; readonly threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>; readonly delegators: ReadonlySet<string>; readonly reportsWork: boolean }
+interface FinishedHost { readonly snapshot: AgentHostSnapshot | undefined; readonly threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>; readonly delegators: Pick<ReadonlySet<string>, 'has'>; readonly reportsWork: boolean }
 /** What one look for finished threads reads once (Settle finished threads). */
 interface FinishedLook {
   readonly watches: ReadonlyMap<string, WatcherStandingWatch>
@@ -759,9 +759,9 @@ export class WatcherService implements WatcherControlHooks {
     let host = look.hosts.get(hostId)
     if (!host) {
       const snapshot = this.owningSnapshot(hostId), view = snapshot && this.options.control.hostThreadsOf(snapshot)
-      let threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>, delegators: ReadonlySet<string>
+      let threads: Pick<ReadonlyMap<string, AgentThread>, 'get'>, delegators: Pick<ReadonlySet<string>, 'has'>
       // This computer's threads by the coordinator's index, so a look reads no thread it does not ask about (#925 step 5).
-      if (view) { threads = { get: id => view.thread(id) }; delegators = new Set(view.delegated.values()) }
+      if (view) { threads = { get: id => view.thread(id) }; delegators = { has: id => (view.delegatedFrom(id)?.size ?? 0) > 0 } }
       else {
         const listed = new Map<string, AgentThread>(), delegating = new Set<string>()
         for (const thread of snapshot?.threads ?? []) { listed.set(thread.id, thread); if (thread.delegatedBy) delegating.add(thread.delegatedBy) }
