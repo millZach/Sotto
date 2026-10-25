@@ -1,0 +1,100 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): the strip under a watched Claude thread's composer, before and after removing the
+     Watcher note and the idle-compaction line. Not production code. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype: notices under the composer</title>
+<style>
+  :root { font-family: Figtree, system-ui, sans-serif; }
+  body { margin: 0; background: #202226; color: #e8e8e8; }
+  .bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; background: #111; border-bottom: 1px solid #333; }
+  .bar h1 { font-size: 15px; font-weight: 600; margin: 0 12px 0 0; }
+  .bar button { font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 999px; border: 1px solid #555; background: #1c1c1c; color: #eee; cursor: pointer; }
+  .bar button[aria-pressed='true'] { background: #e8e8e8; color: #111; border-color: #e8e8e8; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr)); gap: 18px; padding: 18px; }
+  figure { margin: 0; }
+  figcaption { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: #ddd; }
+  figcaption small { font-weight: 400; color: #aaa; }
+
+  /* The pane, in Sotto's two default themes. */
+  .pane { --canvas: #050608; --surface: #151a1f; --bubble: #151a1f; --text: #e9ecef; --muted: #9aa1a8; --text2: #c6cbd0; --link: #6fd2b9; --accent: #3f8f7d; --rule: #2a2f35;
+    background: var(--canvas); color: var(--text); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; min-height: 520px; font-size: 15px; }
+  .pane[data-theme='light'] { --canvas: #f8f7f4; --surface: #efece6; --bubble: #ebe6df; --text: #23211e; --muted: #6b665f; --text2: #4a4640; --link: #0d6b5c; --accent: #7cb3a7; --rule: #d6d1c9; }
+  .head { display: flex; align-items: center; gap: 10px; padding: 12px 18px; }
+  .head b { font-weight: 600; font-size: 16px; }
+  .head .crumb { color: var(--muted); font-size: 14px; }
+  .head .spacer { flex: 1; }
+  .watch { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; padding: 5px 11px; border-radius: 8px; color: var(--text); background: transparent; border: 1.5px solid var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .body { flex: 1; padding: 6px 28px 0; display: flex; flex-direction: column; gap: 14px; }
+  .msg small { color: var(--muted); font-size: 13px; }
+  .msg p { margin: 4px 0 0; }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; margin: 8px 0; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--rule); }
+  .divider span b { color: var(--text2); font-weight: 500; }
+  .compose { padding: 0 28px 14px; }
+  .composer { background: var(--surface); border-radius: 16px; padding: 14px 16px 10px; } /* no border, in any state */
+  .composer .prompt { color: var(--muted); min-height: 46px; }
+  .composer .foot { display: flex; align-items: center; gap: 16px; color: var(--text2); font-size: 13.5px; }
+  .composer .send { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; color: #fff; }
+  .meta { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .meta p { margin: 0; padding-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .meta a { color: var(--text2); text-decoration: underline; text-underline-offset: 3px; }
+  .meta a.link { color: var(--link); font-weight: 600; }
+  .owl { width: 13px; height: 13px; flex: none; }
+  .gone { outline: 1.5px dashed #e0565b; outline-offset: 3px; border-radius: 3px; }
+  .note { font-size: 13px; color: #bbb; padding: 0 18px 24px; max-width: 900px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Notices under the composer</h1>
+  <button data-theme-btn="dark" aria-pressed="true">Dark</button>
+  <button data-theme-btn="light" aria-pressed="false">Light</button>
+</div>
+<div class="grid" id="grid"></div>
+<p class="note">A watched Claude thread that Sotto compacted while it was idle. <b>Before</b>, the two lines under the composer are outlined in red; <b>After</b>, they are gone and nothing takes their place. The header's Watch button stays pressed while the thread is watched, and a press stops watching. Idle compaction's switch stays in Settings › Providers › Claude Code, and the transcript keeps its "Context compacted" divider. The large-context "Compact / Keep full history" suggestion and other compaction results stay where they are.</p>
+<template id="pane">
+  <div class="pane">
+    <div class="head">
+      <span>✳</span><b>Lighthouse survey</b><span class="crumb">/ Lighthouses</span><span class="spacer"></span>
+      <span class="watch" title="Stop watching: Watcher lets this thread be"><svg class="owl" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="8" r="3"/><circle cx="11" cy="8" r="3"/></svg>Watch</span>
+    </div>
+    <div class="body">
+      <div class="msg"><small>You · 10:15 am</small><p>Survey every lighthouse on the Atlantic coast.</p></div>
+      <div class="msg"><small>Claude Code · 9:20 am</small><p>Surveyed 212 lighthouses.</p></div>
+      <div class="divider"><span>Context compacted <b>250k → 41k tokens</b></span></div>
+    </div>
+    <div class="compose">
+      <div class="composer">
+        <div class="prompt">What would you like to do next?</div>
+        <div class="foot"><span>📎</span><span>✳ Claude Opus</span><span>Effort ⌄</span><span>Ask for approval ⌄</span><span class="send">↑</span></div>
+      </div>
+      <div class="meta" data-meta>
+        <p class="gone"><svg class="owl" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="8" r="3"/><circle cx="11" cy="8" r="3"/></svg><span>Watched by Watcher. It keeps this thread going and brings you its questions and permissions.</span> <a href="#">Stop watching</a></p>
+        <p class="gone">Sotto compacted this idle thread before its cache expired. <a class="link" href="#">Turn off</a></p>
+      </div>
+    </div>
+  </div>
+</template>
+<script>
+  const grid = document.getElementById('grid')
+  const tpl = document.getElementById('pane')
+  for (const [label, sub, keep] of [['Before', 'what Zach sees today', true], ['After', 'both lines removed', false]]) {
+    const fig = document.createElement('figure')
+    fig.innerHTML = `<figcaption>${label} <small>— ${sub}</small></figcaption>`
+    const pane = tpl.content.firstElementChild.cloneNode(true)
+    if (!keep) pane.querySelector('[data-meta]').replaceChildren()
+    fig.append(pane); grid.append(fig)
+  }
+  const setTheme = theme => {
+    for (const pane of document.querySelectorAll('.pane')) pane.dataset.theme = theme
+    for (const b of document.querySelectorAll('[data-theme-btn]')) b.setAttribute('aria-pressed', String(b.dataset.themeBtn === theme))
+    history.replaceState(null, '', `?theme=${theme}`)
+  }
+  for (const b of document.querySelectorAll('[data-theme-btn]')) b.onclick = () => setTheme(b.dataset.themeBtn)
+  setTheme(new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark')
+</script>
+</body>
+</html>
