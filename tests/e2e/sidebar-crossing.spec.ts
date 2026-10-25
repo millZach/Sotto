@@ -24,7 +24,8 @@ const PROFILE = { onboardingComplete: true, appearance: 'dark', motion: 'reduced
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 interface Frame {
   readonly column: Box
-  readonly brand: Box
+  /** The top row's brand; a Mac draws none beside the traffic lights, so a run there reads null on both pages. */
+  readonly brand: Box | null
   readonly foot: Box
   /** The foot's top border: its width and colour. */
   readonly hairline: string
@@ -56,7 +57,7 @@ async function frame(page: Page): Promise<Frame> {
     const border = getComputedStyle(foot)
     return {
       column: box(aside)!,
-      brand: box(aside.querySelector('.thread-nav__brand'))!,
+      brand: box(aside.querySelector('.thread-nav__brand')),
       foot: box(foot)!,
       hairline: `${border.borderTopWidth} ${border.borderTopColor}`,
       // The switch is centred and its open room's tile widens to show its name; Settings opens no room, so only
@@ -172,9 +173,12 @@ test('the top row meets the window corner on Windows and Linux as it does on a M
       await withoutMacClass()
       const settings = await frame(page)
       // At the narrowest widths the wordmark gives way to the mark on both pages, so the brand is the same box too.
+      // A run on a Mac has no brand on either page; the corner's place is checked where the brand is drawn.
       expect(settings.brand, `saved ${saved}`).toEqual(threads.brand)
-      expect(threads.brand.x, `saved ${saved}`).toBe(14)
-      expect(threads.brand.y + threads.brand.height / 2, `saved ${saved}`).toBeCloseTo(22, 0)
+      if (threads.brand !== null) {
+        expect(threads.brand.x, `saved ${saved}`).toBe(14)
+        expect(threads.brand.y + threads.brand.height / 2, `saved ${saved}`).toBeCloseTo(22, 0)
+      }
       expect(settings, `saved ${saved}`).toEqual(threads)
     }
   })
