@@ -4,7 +4,13 @@
 
 Accepted October 22, 2026. Zach picked each part from `docs/prototypes/look-tuneup-prototype.html`, the look tune-up mock-up made from user feedback: "thin box outlines, pill designs, provider boxes hard to tell apart with the toggle far away, usage index not scaled correctly, left sidebar text too small, too much grey". His picks: containers B (filled surfaces), controls N1 (soft square), provider cards P1 (the toggle at the end of the name's line), Usage scaling with the room, and the light sidebar tune.
 
+Amended October 23, 2026: decision 3's provider cards are replaced by one card holding a row per provider, each row opening in place to its connection, client and models (Zach's pick, variant A "List" of the prototype tag `prototype/providers-settings`; `docs/verification/2026-10-23-providers-list.md`). The rows are divided by the inset's 2px line like rows on any card, and the toggle keeps its name, `Enable <Provider>`.
+
 Amended October 23, 2026 by [ADR-0113](0113-the-composer-controls-are-text-buttons.md): inside a composer, the option chips, Steer now, the branch toolbar and the queued messages' actions are text buttons with no fill or edge at rest, not filled chips.
+
+Amended October 23, 2026 again: the composer card's edge no longer comes back for focus (below, "The composer's edge").
+
+Amended October 24, 2026: the composer card has no edge in any state, running and at the highest effort included (below, "The composer's edge").
 
 Amends ADR-0011 (main window themes): the look keeps its character and its colours still come only from theme roles through `--tt-*` tokens, but a container is no longer a hairline box and a control is no longer a pill. Amends ADR-0084 (solid glass) for the composer only: it is painted as a card, not in the field colour; the skill list that opens from it keeps the field colour.
 
@@ -40,3 +46,12 @@ Almost every container in the main window was a 1px line in the faintest border 
 - The design capture baselines change wherever a container, a control or the sidebar shows, and are regenerated on the machines that hold them.
 - The floating widget and Omarchy's shell pill keep their own look; this decision is about the main window.
 - The message scrubber's card (ADR-0109) keeps the clear border Zach picked, with the soft square's 6px corners, and the question's choices on it are filled 4px labels like every other chip. Its ticks are square-ended lines and stay so.
+
+## The composer's edge
+
+Amended October 23, 2026, at the user's ask. The Threads composer card, like every card, has no outline at rest. Its edge came back for three things: focus, a running turn, and a model's highest effort (ADR-0019). It now comes back for the last two only. Focus is already shown by the caret, and the card is the only text field in its pane, so a press anywhere in it and Tab both land where the caret shows. The edge that lit on every click read as a box drawn round the card, which this decision exists to avoid.
+
+Amended October 24, 2026, at the user's ask: "the thin border around the composer, it is still there I want it gone." The card has no edge in any state: at rest, pointed at, with focus, slim, while a turn runs and at a model's highest effort, in a thread and in Watcher (whose glass card had a faint hairline, ADR-0126). The user chose this over keeping the two edges that said something. A running turn still shows in the stop disc, the status line and the thread's row, and the highest effort in the effort chip's coloured word and the arrival's tide through the card (ADR-0019). The card keeps a transparent border so it keeps its size. Focus is still shown by the caret alone, the user's pick over a brighter fill. `tests/e2e/composer-no-edge.spec.ts` reads every state in every built-in theme, dark and light.
+
+Keyboard users keep a visible path: the composer's buttons, chips and the branch toolbar keep their focus rings, and the transcript keeps its own. Watcher's composer follows the same rule.
+

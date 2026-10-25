@@ -66,11 +66,10 @@ describe('Muse in provider settings', () => {
     expect(within(support).getByText(/On Muse 1\.4\.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse\. Skills are unavailable\./)).toBeInTheDocument()
     expect(within(support).queryByText(/browser tools, Watcher and skills are unavailable/)).toBeNull()
     expect(within(support).getByText(/Muse does not write thread titles, branch names, commit messages or pull request drafts/)).toBeInTheDocument()
-    const models = screen.getByRole('tab', { name: 'Models' })
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Configuration' }), { key: 'ArrowRight' })
-    expect(models).toHaveFocus()
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Muse Spark')
-    expect(screen.getByRole('tabpanel')).not.toHaveTextContent('Codex model')
+    // Muse's models sit beside its connection in its open row, and no other provider's are there.
+    const models = within(screen.getByRole('region', { name: 'Muse details' })).getByRole('list', { name: 'Muse available models' })
+    expect(models).toHaveTextContent('Muse Spark')
+    expect(models).not.toHaveTextContent('Codex model')
   })
 
   it('keeps the client controls pending until an update finishes, then allows a retry after rejection', async () => {

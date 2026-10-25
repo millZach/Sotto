@@ -322,6 +322,12 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ babysitPullRequests: false })
     })
 
+  it('persists turning next prompt suggestions off through settings IPC (ADR-0132)', async () => {
+      const { ipc, settings } = createIpcHarness()
+      await expect(ipc.invoke(SETTINGS_UPDATE, { nextPromptSuggestions: false })).resolves.toMatchObject({ nextPromptSuggestions: false })
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith({ nextPromptSuggestions: false })
+    })
+
   it('persists turning Watcher’s Settle finished threads off through settings IPC', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { watcherSettlesFinishedThreads: false })).resolves.toMatchObject({ watcherSettlesFinishedThreads: false })
@@ -337,6 +343,14 @@ describe('IPC validation and lifecycle', () => {
       await expect(ipc.invoke(SETTINGS_UPDATE, { newWorkerMachine: 'forge' })).rejects.toThrow('Invalid IPC payload')
       expect(settings.update).toHaveBeenCalledTimes(2)
     })
+
+  it('persists the night falls look through the allow-list, and refuses a look Sotto does not have (ADR-0119)', async () => {
+    const { ipc, settings } = createIpcHarness()
+    await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'stars' })).resolves.toMatchObject({ roomTransitionLook: 'stars' })
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith({ roomTransitionLook: 'stars' })
+    await expect(ipc.invoke(SETTINGS_UPDATE, { roomTransitionLook: 'wing' })).rejects.toThrow('Invalid IPC payload')
+    expect(settings.update).toHaveBeenCalledOnce()
+  })
 
   it('persists the typing speed the Dictate room counts time saved against, and refuses one out of bounds (#1293)', async () => {
     const { ipc, settings } = createIpcHarness()

@@ -114,3 +114,23 @@ it('never offers compaction for Grok Build, Devin, OpenCode or a thread that nam
     view.unmount()
   }
 })
+
+it('names Sotto on an idle compaction and leads to the switch that stops it (ADR-0127)', async () => {
+  const navigate = vi.fn()
+  const appContext = await import('../../../src/renderer/src/state/AppContext')
+  const spy = vi.spyOn(appContext, 'useOptionalApp').mockReturnValue({ actions: { navigate } } as unknown as ReturnType<typeof appContext.useOptionalApp>)
+  const target = await import('../../../src/renderer/src/features/settings/settingsTarget')
+  const idle = (status: 'completed' | 'failed' | 'uncertain'): AgentThread => ({ ...thread, id: `idle-${status}`, usage: { ...thread.usage!, contextUsed: 41_000 }, compaction: { commandId: 'c', status, idle: true } })
+  const view = render(<ThreadCompaction thread={idle('completed')} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Sotto compacted this idle thread before its cache expired.')
+  fireEvent.click(screen.getByRole('button', { name: 'Turn off idle compaction in Settings' }))
+  expect(navigate).toHaveBeenCalledWith('settings', 'settings-providers', 'compact-idle-threads')
+  expect(target.takeAimedProvider()).toBe('claude')
+  view.rerender(<ThreadCompaction thread={idle('failed')} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Sotto could not compact this idle thread. Its full history is kept.')
+  // The user's own compaction keeps its plain line and has no Turn off.
+  view.rerender(<ThreadCompaction thread={{ ...thread, compaction: { commandId: 'c', status: 'completed' } }} supported connected command={vi.fn()} />)
+  expect(screen.getByRole('status')).toHaveTextContent('Context compacted')
+  expect(screen.queryByRole('button', { name: 'Turn off idle compaction in Settings' })).not.toBeInTheDocument()
+  spy.mockRestore()
+})

@@ -6,3 +6,810 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: @lingui/cli\n"
 "Language: sv\n"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "(optional)"
+msgstr ""
+
+#. placeholder {0}: extra.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It also lists {names}, which is not added. To use it, remove the server and add it again.} other {It also lists {names}, which are not added. To use them, remove the server and add it again.}}"
+msgstr ""
+
+#. placeholder {0}: gone.length
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
+msgstr ""
+
+#. placeholder {0}: questions.length
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "{0, plural, one {Skip question} other {Skip questions}}"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{count, plural, one {# model} other {# models}}"
+msgstr ""
+
+#. {derivedName} is the name Sotto takes from the address, such as spark-head.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{derivedName}, from the address"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} answered but has no models loaded. Nothing was saved. Load a model on the server, then check again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} is on the internet, so Sotto needs https:// to send it a key and your code. Use the server’s https address, or reach it over your tailnet."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{host} turned down the key. Nothing was saved. Check the key with whoever runs the server, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "{label} details"
+msgstr ""
+
+#. {maker} is the company that made the models, such as Anthropic.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "{maker} models in Cursor"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{name} answered in {ms} ms and asks for its key, which OpenCode keeps, so Sotto could not read its models again."
+msgstr ""
+
+#. {name} is the user’s own model server, such as Sparks.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} didn’t answer."
+msgstr ""
+
+#. {five} is the number 5.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} didn’t start answering within {five} minutes."
+msgstr ""
+
+#. {name} is the user’s own model server, such as Sparks. "(3 of 10)": the try OpenCode is on, of how many it makes.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} isn’t answering. Trying again ({tried} of {of})."
+msgstr ""
+
+#. {model} is a model’s name, such as DeepSeek V4.1 Flash.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} no longer has {model}."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "{name} turned down its key."
+msgstr ""
+
+#. {who} is a server program such as Ollama; {count} is a number of models, as in "2 models".
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{who} answered in {ms} ms with {count}."
+msgstr ""
+
+#. {who} is a server program such as Ollama.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "{who} answered in {ms} ms."
+msgstr ""
+
+#. {five} is the number 5.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "A long prompt can take a few minutes. The turn stops waiting at {five} minutes."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Accept Cursor’s plan"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Accept plan"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add a server"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add server"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add your own model server"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Added {doneName}"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Added {name}. Its models are in the model menu under {name}, with OpenCode."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Adding files..."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Adding…"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Address"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "After 54 minutes idle, Sotto compacts a large Claude thread before its cache expires, so your next message costs less. The thread keeps a summary instead of its full history."
+msgstr ""
+
+#. A model server that answers the OpenAI API but did not say which program it is.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "An OpenAI-compatible server"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Asking the server for its models…"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach files"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attach up to 8 files at a time. Nothing was attached."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached files"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attached images"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Back to Cursor’s model makers"
+msgstr ""
+
+#. Stops a sign-in that is waiting for the user.
+#: src/renderer/src/agents/CursorConnection.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Cancel"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cancel signing in to Cursor"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check {name} again"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check again"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check this server"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Checking…"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Choose an answer, or skip"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Close without adding a server"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Compact idle threads"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Context, in tokens"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. {next}"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it and the {after} after it were not attached. Try adding them again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. {next}"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add {name}, so it was not attached. Try adding it again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not add this file. Nothing was attached. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Could not read this file. Nothing was attached. Try adding it again."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor asked to sign in on a page Sotto does not open. Nothing was signed in. Run agent login in a terminal instead."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor asks before commands, web requests and tools. It edits files inside the project without asking."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor could not sign out. Nothing was changed. Run agent logout in a terminal to try again."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor did not finish signing in, so Sotto is not connected to it. Nothing was saved. Sign in again to try once more."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor is signed out on this computer."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Cursor made a plan and waits for you before it starts."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor runs commands, web requests and tools and edits files without asking, in the project and outside it."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor’s CLI is not installed on this computer. Install it with Cursor’s guide, then connect again."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Cursor’s install guide could not be opened. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Cursor’s model makers"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Cursor’s own auto-review decides what runs without asking. Its classifier runs on Cursor’s servers; what it holds back comes to you."
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Cursor’s plan"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Cursor’s sign-in is not available right now. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Done"
+msgstr ""
+
+#. Shown over the message box while files are dragged over it.
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Drop to attach"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each file must be 25 MB or smaller. Nothing was attached. Choose a smaller file."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Each image must be 10 MB or smaller. Nothing was attached. Choose a smaller image."
+msgstr ""
+
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Every model here runs through Cursor, on your Cursor plan."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files cannot be attached while this thread waits for your answer. Nothing was attached."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Files to attach"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Finish signing in on cursor.com in your browser."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "From the address, if left empty"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or choose smaller ones."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Install guide"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "It runs with OpenCode."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check {name}, then try again."
+msgstr ""
+
+#. A secret the model server checks before it answers.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key kept by OpenCode"
+msgstr ""
+
+#. Heading of a provider’s connection on this computer, in Settings > Providers.
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Local connection"
+msgstr ""
+
+#. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Makers"
+msgstr ""
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+msgid "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
+msgstr ""
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+msgid "mise does not list {to} yet"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Models"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Models found"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Name"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "None yet. Add a model server you run to use its models in OpenCode threads."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Not signed in"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
+msgstr ""
+
+#. Settings › Providers › Your own model servers is where the server is kept; translate each name as the Settings page does.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove {name} and add it again with the right key, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "Nothing was attached."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Only if the server was started with one"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open Cursor’s install guide in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open Cursor’s sign-in page in your browser again"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Open Settings"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Open Settings at Your own model servers"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Open the page again"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not take the key for {name}, and Sotto could not take {name} back off its list, so it is saved without its key. Remove it, then add it again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode did not take the key for {name}, so nothing was saved. Try adding the server again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode keeps the key in Sotto’s OpenCode folder, and Sotto keeps no copy."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode no longer has the key for {name}, but Sotto could not take {name} off its list. Remove it again."
+msgstr ""
+
+#. {ten} is the number 10. {host} is the server’s address and port, such as spark-head:8888; keep it as it is.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "OpenCode tried it {ten} times over about a minute and a half. Nothing in the thread was lost. Check that {name} is on and this computer can reach {host}, then try again."
+msgstr ""
+
+#. The heading of a card that shows a plan Cursor made and waits for the user to accept.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Plan"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Plan from {ownerTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Read your saved servers again"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Reading your servers…"
+msgstr ""
+
+#. Rejects a plan the coding agent proposed.
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Reject"
+msgstr ""
+
+#: src/renderer/src/agents/requests/AgentRequestCard.tsx
+msgid "Reject Cursor’s plan"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Remove"
+msgstr ""
+
+#. {name} is an attached file's name. The button takes it off the draft.
+#: src/renderer/src/agents/attachmentWords.ts
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Remove {name}"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Removed {name}. Its models are gone from the model menu. Threads that used them keep their history; pick another model in them to go on."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Removing…"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Runs with OpenCode"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Saved model servers"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it, and OpenCode threads can use its models."
+msgstr ""
+
+#. A button that signs in to a provider.
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign in"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign in to Cursor in your browser"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign out of Cursor"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sign out of Cursor on this computer"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Signed in on cursor.com. Connecting Cursor…"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Signing in…"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Signing out…"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Something answered at {host}, but not as an OpenAI-compatible server. Nothing was saved. Check the port and the path, such as http://localhost:11434/v1, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto compacted this idle thread before its cache expired."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto could not compact this idle thread. Its full history is kept."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not finish that, so nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not reach its own side of this. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Sotto could not read your saved servers. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto could not remove {name}. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Sotto uses Cursor’s own sign-in on this computer and keeps no Cursor key. You need a Cursor account."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Sotto’s OpenCode holds the key for {name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Starting Cursor’s sign-in…"
+msgstr ""
+
+#. {name} is the user’s own model server, such as Sparks.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Still waiting for {name} to start answering."
+msgstr ""
+
+#. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Stop"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Stop agent"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Takes images."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "That server is no longer saved. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "The images in your last message were not kept. Attach them again, then send."
+msgstr ""
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}"
+msgstr ""
+
+#: src/renderer/src/agents/ClientUpdateCard.tsx
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "the published version"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "The server does not say how much context this model has. Type it from the model’s page."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "The sign-in page could not open. Nothing was changed. Try again."
+msgstr ""
+
+#. Whether the model reasons before it answers.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Thinking"
+msgstr ""
+
+#. {model} is a model name.
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Thinking for {model}"
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file changed on its way to the host. Nothing was attached. Attach it again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This file did not reach the host whole. Nothing was attached. Attach it again."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host cannot keep files yet. Update Sotto there, then attach them again. Nothing was attached."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This host is disconnected. Connect again before attaching files. Nothing was attached."
+msgstr ""
+
+#. {name} is the file name of the image, such as "screenshot.png".
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This model does not read images. Choose a model with image support, or remove {name}."
+msgstr ""
+
+#: src/renderer/src/agents/attachmentWords.ts
+msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "This thread is too long for {model}."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Threads on this server send your code and messages to it, so whoever runs it can read them."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Threads with Cursor"
+msgstr ""
+
+#. Button under a failed turn: sends the user’s last message again.
+#: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, putting your last message back in the composer"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Try again, sending your last message to {name} again"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Turn off"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadCompaction.tsx
+msgid "Turn off idle compaction in Settings"
+msgstr ""
+
+#. 128K means 128 times 1,024 tokens; keep 131072 and 128K as they are.
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update {label} to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Update to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating {label} to {version}"
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Updating…"
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, and runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
+msgstr ""
+
+#: src/renderer/src/agents/CursorConnection.tsx
+msgid "Waiting for Cursor. This connects by itself."
+msgstr ""
+
+#: src/renderer/src/agents/ProvidersSettings.tsx
+msgid "Waiting to update"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "What the model menu calls it."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Where the server listens, on this computer, your network or your tailnet."
+msgstr ""
+
+#: src/renderer/src/agents/ownServerTurnWords.ts
+msgid "Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread."
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own model servers"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own server: add a model server you run"
+msgstr ""
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Your own server…"
+msgstr ""
+
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "Your own servers run with OpenCode, and Sotto’s OpenCode is not running, so nothing was saved. Connect OpenCode under Providers, then add the server again."
+msgstr ""

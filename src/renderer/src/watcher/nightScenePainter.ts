@@ -1,7 +1,7 @@
 import {
-  boxDistance, clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inMargin, layoutScene, lerp, limbY, LINE_GAP, lineGap, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
+  clamp, COLUMN_QUIET, gridFor, groundAt, inkAt, inLane, inMargin, layoutScene, lerp, limbY, OWL_GAP, owlRoom, placeStars, quietAt, rampGlyph,
   RIPPLE_GLYPHS, rippleAt, rippleReach, runningRipples, seeded, smooth, starStrength, twinkleStep, WHIRL_GLYPHS,
-  type Box, type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
+  type Grid, type Limb, type Moon, type OwlPose, type OwlStage, type Ripple, type RippleEffect, type SceneInk, type SceneLayout, type SceneMeasure, type Spot, type Star, type Tree,
 } from './nightScene'
 import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from './owlFamily'
 
@@ -12,8 +12,8 @@ import { glowStep, owlGlyphs, pileLabel, spriteCells, type ThreadOwlPose } from 
  * is then drawn as the glyph for its density. The landscape's glyphs are drawn once per size and theme and kept. A frame
  * copies them, clears the cells under the owls, and redraws only the stars, the whirlpool and the cells a ripple
  * reaches; the owls are drawn on their own canvas. A frame whose picture would not change is not painted at all.
- * Between the margins only the sky and the hills show, quieter, with a soft gap around each line of words; when the
- * lines move, only the rows they left and reached are drawn again. Trees, owls and ripples stay in the margins.
+ * Between the margins the sky and the hills show at the column's share, still whatever the words over them do, with no
+ * glyph stronger than the words written over it allow (`SceneInk.column`). Trees, owls and ripples stay in the margins.
  */
 
 /** Field pixels per glyph cell, a side. */
@@ -305,15 +305,10 @@ export class NightScenePainter {
   private font = ''
   private land = new Float32Array(0)
   private landAccent = new Float32Array(0)
-  /** Each cell's share of the scene with no lines of words: quietAt, for the theme's column strength. */
-  private base = new Float32Array(0)
-  /** Each cell's share as drawn: `base` with the gaps around the transcript's lines taken out. */
+  /** Each cell's share of the scene: quietAt, for the theme's column strength. */
   private quiet = new Float32Array(0)
-  /** Cells in a margin, the only ones a ripple or the whirlpool reaches. */
+  /** Cells in a margin, the only ones a ripple or the whirlpool reaches, and the only ones past the column's ink ceiling. */
   private marginCells = new Uint8Array(0)
-  /** The transcript's lines, or null when they could not be measured, which leaves the column empty. */
-  private lines: readonly Box[] | null = []
-  private linesKey = '[]'
   private light = false
   /** Cells an owl may be drawn in: the margins, below the header, clear of words. */
   private owlCells = new Uint8Array(0)
@@ -334,7 +329,7 @@ export class NightScenePainter {
   constructor(private readonly back: HTMLCanvasElement, private readonly front: HTMLCanvasElement) {}
 
   /** Lays the scene out for the room's size and builds its landscape; null when the room is too small to draw in. */
-  resize(measure: SceneMeasure, dpr: number, lines: readonly Box[] | null = this.lines): SceneLayout | null {
+  resize(measure: SceneMeasure, dpr: number): SceneLayout | null {
     if (measure.width < 120 || measure.height < 120) { this.layout = null; return null }
     const layout = layoutScene(measure), grid = gridFor(measure.width, measure.height)
     const cells = grid.cols * grid.rows
@@ -353,17 +348,18 @@ export class NightScenePainter {
     this.cleared = new Uint8Array(cells); this.touched = new Uint8Array(cells)
     const N = seeded(99)
     this.noise = new Float32Array(cells); for (let i = 0; i < cells; i++) this.noise[i] = N()
-    this.base = new Float32Array(cells); this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
+    this.quiet = new Float32Array(cells); this.owlCells = new Uint8Array(cells); this.marginCells = new Uint8Array(cells)
     for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
       const x = (c + 0.5) * grid.cw, y = (r + 0.5) * grid.ch, i = r * grid.cols + c
-      this.marginCells[i] = inMargin(layout, x) ? 1 : 0
-      this.owlCells[i] = owlRoom(layout, x) && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
+      // The scrubber's lane takes the column's ink ceiling, and no owl, ripple or glow is drawn in it.
+      const lane = inLane(layout, x, y)
+      this.marginCells[i] = inMargin(layout, x) && !lane ? 1 : 0
+      this.owlCells[i] = owlRoom(layout, x) && !lane && y > layout.header && !layout.words.some(box => x >= box.x - 4 && x <= box.x + box.w + 4 && y >= box.y - 4 && y <= box.y + box.h + 4) ? 1 : 0
     }
     this.stars = layout.mode === 'trees' ? placeStars(layout, grid, this.land) : []
     this.starAt = new Int32Array(cells).fill(-1)
     this.stars.forEach((star, index) => { this.starAt[star.i] = index })
     this.layout = layout; this.grid = grid; this.dpr = dpr
-    this.lines = lines; this.linesKey = JSON.stringify(lines)
     this.baseQuiet()
     this.owlBox = null
     this.painted = ''
@@ -381,75 +377,24 @@ export class NightScenePainter {
     this.paintGlyphs()
   }
 
-  /**
-   * The transcript's lines of words, in the pane's pixels on the 7 by 12 grid, or null when a transcript with words in it
-   * gave none, which leaves the column empty rather than risk drawing under them. Only the rows the old and the new lines
-   * reach are worked out and drawn again. Returns whether anything changed; the caller asks for a frame.
-   */
-  setLines(lines: readonly Box[] | null): boolean {
-    const key = JSON.stringify(lines)
-    if (key === this.linesKey) return false
-    const old = this.lines
-    this.lines = lines; this.linesKey = key
-    if (this.layout === null) return false
-    const { cols, rows, cw, ch } = this.grid
-    // Either side failing closed touches the whole column, so every row is worked out again.
-    const span = old === null || lines === null ? null : [...old, ...lines]
-    const reach = LINE_GAP.soft + Math.max(cw, ch) * 1.5
-    let r0 = 0, r1 = rows, c0 = 0, c1 = cols
-    if (span !== null) {
-      if (span.length === 0) return false
-      r0 = rows; r1 = 0; c0 = cols; c1 = 0
-      for (const box of span) {
-        r0 = Math.min(r0, Math.floor((box.y - reach) / ch)); r1 = Math.max(r1, Math.ceil((box.y + box.h + reach) / ch))
-        c0 = Math.min(c0, Math.floor((box.x - reach) / cw)); c1 = Math.max(c1, Math.ceil((box.x + box.w + reach) / cw))
-      }
-      r0 = clamp(r0, 0, rows); r1 = clamp(r1, 0, rows); c0 = clamp(c0, 0, cols); c1 = clamp(c1, 0, cols)
-    }
-    if (r1 <= r0 || c1 <= c0) return false
-    this.applyLines(r0, r1, c0, c1)
-    this.paintGlyphs(r0, r1, c0, c1)
-    this.painted = ''
-    return true
-  }
-
-  /** Every cell's share with no lines, for the theme's column strength, and then the lines taken out. */
+  /** Every cell's share, for the theme's column strength. */
   private baseQuiet(): void {
     const layout = this.layout
     if (layout === null) return
     const { cols, rows, cw, ch } = this.grid, strength = this.light ? COLUMN_QUIET.light : COLUMN_QUIET.dark
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) this.base[r * cols + c] = quietAt(layout, (c + 0.5) * cw, (r + 0.5) * ch, strength)
-    this.applyLines(0, rows, 0, cols)
-  }
-
-  /** The drawn share for the cells in rows `r0` to `r1` and columns `c0` to `c1`: the base, with the lines' gaps taken out. */
-  private applyLines(r0: number, r1: number, c0: number, c1: number): void {
-    const { cols, cw, ch } = this.grid
-    // Distances are taken from each cell's centre, so every line is grown by half a cell: the gap then holds to the
-    // glyph's own pixels, not just to the middle of its cell.
-    const lines = this.lines?.map(box => ({ x: box.x - cw / 2, y: box.y - ch / 2, w: box.w + cw, h: box.h + ch })) ?? null
-    for (let r = r0; r < r1; r++) {
-      const y = (r + 0.5) * ch
-      // Only the lines whose gap reaches this row.
-      const near = lines === null ? [] : lines.filter(box => y > box.y - LINE_GAP.soft && y < box.y + box.h + LINE_GAP.soft)
-      for (let c = c0; c < c1; c++) {
-        const i = r * cols + c, x = (c + 0.5) * cw
-        if (lines === null) { this.quiet[i] = this.marginCells[i] ? this.base[i]! : 0; continue }
-        let d = Number.POSITIVE_INFINITY
-        for (const box of near) d = Math.min(d, boxDistance(box, x, y))
-        this.quiet[i] = this.base[i]! * lineGap(d)
-      }
-    }
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) this.quiet[r * cols + c] = quietAt(layout, (c + 0.5) * cw, (r + 0.5) * ch, strength)
   }
 
   get ready(): boolean { return this.layout !== null && this.ink !== null }
 
-  /** Forgets the layout, so nothing is drawn until the room can be measured again, and clears both canvases. */
+  /**
+   * Forgets the layout, so nothing is drawn until the room can be measured again. The canvases keep the last frame drawn:
+   * the scene never blinks, and the next layout draws over it in the frame it is made.
+   */
   invalidate(): void {
     this.layout = null
     this.owlBox = null
     this.painted = ''
-    for (const canvas of [this.back, this.front]) context(canvas)?.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   /** The perched thread owls' boxes in the pane, for their buttons. */
@@ -467,7 +412,7 @@ export class NightScenePainter {
   }
 
   /**
-   * The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet in the column and around words.
+   * The landscape's glyphs, kept: every cell dense enough to show, in its own ink, quiet in the column and around still words.
    * Given rows and columns, only that block is cleared and drawn again, clipped to it so its neighbours keep every pixel.
    */
   private paintGlyphs(r0 = 0, r1 = this.grid.rows, c0 = 0, c1 = this.grid.cols): void {
@@ -500,17 +445,20 @@ export class NightScenePainter {
   private cell(ctx: CanvasRenderingContext2D, i: number, j: number, ring: number, star: number, x: number, y: number): boolean {
     const ink = this.ink!
     const q = this.quiet[i]!
-    // Under words and in their hard gap nothing is drawn, not even a star or a ripple.
+    // Under still words nothing is drawn, not even a star or a ripple.
     if (q === 0) return false
+    // In the column, where the conversation's words pass over it, no glyph is stronger than they allow.
+    const cap = this.marginCells[i] ? 1 : ink.column.ink, accentCap = this.marginCells[i] ? 1 : ink.column.accent
+    const tone = (accent: boolean, strength: number): string => accent ? inkAt(ink.accent, Math.min(accentCap, strength)) : inkAt(ink.ink, Math.min(cap, strength))
     const d = this.land[j]! * q
     ring = Math.min(1, ring) * (0.5 + 0.5 * q)
     if (d < 0.1 && ring < 0.08 && star <= 0) return false
-    if (ring > d + 0.05) { ctx.fillStyle = inkAt(ink.accent, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
+    if (ring > d + 0.05) { ctx.fillStyle = tone(true, 0.18 + 0.6 * ring); ctx.fillText(RIPPLE_GLYPHS[Math.min(3, Math.floor(ring * 4))]!, x, y); return true }
     const st = this.starAt[i]! >= 0 ? this.stars[this.starAt[i]!]! : null
     const accent = this.landAccent[j]! > 0.3 || st?.accent === true
-    if (star > d) { ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
+    if (star > d) { ctx.fillStyle = tone(accent, 0.15 + 0.6 * star); ctx.fillText(star > 0.7 ? '*' : star > 0.45 ? '+' : '·', x, y); return true }
     const dd = clamp(d + (this.noise[j]! - 0.5) * 0.1 + ring * 0.3, 0, 1)
-    ctx.fillStyle = inkAt(accent ? ink.accent : ink.ink, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
+    ctx.fillStyle = tone(accent, (0.1 + 0.5 * dd) * (accent ? 1.25 : 1)); ctx.fillText(rampGlyph(dd), x, y)
     return true
   }
 

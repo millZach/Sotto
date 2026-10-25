@@ -120,7 +120,7 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
     ...remotes,
   ]
   const isChosen = (choice: Choice): boolean => choice.value === chosen || (choice.kind === 'local' && chosenHost !== undefined && chosenHost === localId)
-  return <SettingsGroup id={WORKER_MACHINE_SECTION} title={t`Where new workers start`} icon={MapPin} note={workerMachineNote()} rows={false}>
+  return <SettingsGroup id={WORKER_MACHINE_SECTION} setting="new-workers" title={t`Where new workers start`} icon={MapPin} note={workerMachineNote()} rows={false}>
     {remotes.length === 0 ? <p className="worker-machine__alone tt-paragraph"><Trans>Only this computer is connected, so new workers start here. Add a machine in{' '}
       <button type="button" className="worker-machine__link tt-focusable" onClick={onOpenHosts}>Hosts & phones</button>.</Trans></p> : null}
     <fieldset className="worker-machine__choices">

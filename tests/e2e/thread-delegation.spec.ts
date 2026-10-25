@@ -2,9 +2,9 @@
  * Delegation between threads as the window shows it (#1029, design A; ADR-0081), on the Owl track, with the real Claude
  * and Codex adapters over the fake CLIs in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`).
  * A Claude Code thread delegates a review to a Codex thread through `sotto_delegate`, called as the thread's agent would
- * call it (`sottoE2E.delegationTool`): the card appears in the Claude thread with the thread as a link, Codex, This
- * computer and the wait, and its outcome moves to Answered when Codex answers; a delegation wider than the Claude
- * thread's own permission is refused, and its card says so with no link; the Codex thread keeps the name it was given,
+ * call it (`sottoE2E.delegationTool`): its row of delegated work appears in the Claude thread with the thread as a link, Codex, This
+ * computer and the wait, and its state moves to Returned when Codex answers; a delegation wider than the Claude
+ * thread's own permission is refused, and its row says so with no link; the Codex thread keeps the name it was given,
  * has no row in the sidebar and is listed in the Claude thread's Tools › Agents instead (October 17, 2026), where its
  * request rolls up to the Claude thread's row and Open to answer shows it in the pane with Tools kept on the Claude
  * thread; it says "Delegated by" with a link back; the line under its composer speaks only while the user's own turn
@@ -114,10 +114,10 @@ async function openThread(page: Page, title: string): Promise<Locator> {
   await expect(opened.locator('.thread-workspace__head h2')).toHaveText(title)
   return opened
 }
-/** Nothing in the pane wider than the pane, and every card inside the transcript's column. */
+/** Nothing in the pane wider than the pane, and every row of delegated work inside the transcript's column. */
 async function fits(page: Page, where: string): Promise<void> {
   expect(await pageBoundProblems(page), where).toEqual([])
-  const overflow = await pane(page).evaluate(element => [...element.querySelectorAll<HTMLElement>('.thread-workspace__transcript, .delegation-card, .delegated-by, .delegation-note')]
+  const overflow = await pane(page).evaluate(element => [...element.querySelectorAll<HTMLElement>('.thread-workspace__transcript, .delegated-work__row, .delegated-by, .delegation-note')]
     .filter(item => item.scrollWidth > item.clientWidth + 1).map(item => item.className))
   expect(overflow, where).toEqual([])
 }
@@ -138,8 +138,8 @@ async function readable(page: Page, where: string): Promise<void> {
       }
       return hex(getComputedStyle(document.body).backgroundColor)
     }
-    const selectors = ['.delegation-card__lead', '.delegation-card__link', '.delegation-card__name', '.delegation-card__outcome', '.delegation-card__meta', '.delegation-card__wait', '.delegated-by > span',
-      '.delegated-by .delegation-card__outcome', '.delegation-note', '.thread-message[data-from="delegation"] .thread-message__who']
+    const selectors = ['.delegated-work__kind', '.delegation-link', '.delegated-work__name', '.delegated-work__state', '.delegated-work__meta', '.delegated-work__line', '.delegated-by > span',
+      '.delegated-by .delegation-outcome', '.thread-work__delegated', '.delegated-work-still__heading', '.delegation-note', '.thread-message[data-from="delegation"] .thread-message__who']
     return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0)
       .map((element, index) => ({ name: `${selector} ${index}`, ink: hex(getComputedStyle(element).color), on: background(element) })))
   })
@@ -163,7 +163,7 @@ async function openAgents(page: Page): Promise<Locator> {
  * tint and the opened row's tone included: translucent layers are laid over the opaque one under them, as drawn.
  */
 async function rosterFits(page: Page, where: string): Promise<void> {
-  // Beside Tools at the minimum size, the card's link in the pane gives way to an ellipsis, as it is drawn to; its full
+  // Beside Tools at the minimum size, the row's link in the pane gives way to an ellipsis, as it is drawn to; its full
   // name stays its title and its accessible name.
   expect((await pageBoundProblems(page)).filter(problem => problem !== `button-Open ${REVIEW}-content-clipped`), where).toEqual([])
   const problems = await tools(page).evaluate(panel => {
@@ -213,7 +213,7 @@ async function rosterFits(page: Page, where: string): Promise<void> {
   for (const { name, ink, on } of pairs) expect(contrastRatio(parseThemeRgb(ink, black), parseThemeRgb(on, black)), `${name}, ${where}`).toBeGreaterThanOrEqual(4.5)
 }
 
-test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delegated by and Stop', async () => {
+test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, Delegated by and Stop', async () => {
   test.setTimeout(240_000)
   const { profile, root, project, restore } = await nativeFixtureProfile()
   const codex = join(root, 'codex')
@@ -239,21 +239,21 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       }, { threadId: parentId, args: { work: 'code-review', title: REVIEW, brief: 'Review the diff on the reconnect fix. Say what blocks a merge.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', wait_seconds: 300 } })
 
-      // The card: the thread as a link, Codex on This computer, Working, and the wait.
+      // Its row of delegated work: Review, the thread as a link, Codex on This computer, Working, and the wait.
       const reviewId = await delegatedThread(page, parentId, [], REVIEW)
-      const card = parent.getByRole('group', { name: `Delegated to ${REVIEW}` })
-      await expect(card).toBeVisible({ timeout: 30_000 })
-      await expect(card.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
-      await expect(card.locator('.delegation-card__meta')).toContainText('Codex')
-      await expect(card.locator('.delegation-card__meta')).toContainText('This computer')
-      await expect(card.locator('.delegation-card__outcome')).toHaveText('Working')
-      await expect(card.locator('.delegation-card__wait')).toHaveText(/^This thread waits up to 5 min for it\. \d+ s so far\.$/u, { timeout: 30_000 })
+      const review = parent.getByRole('listitem', { name: new RegExp(`^Review: ${REVIEW}, `, 'u') })
+      await expect(review).toBeVisible({ timeout: 30_000 })
+      await expect(review.getByRole('button', { name: `Open ${REVIEW}` })).toBeVisible()
+      await expect(review.locator('.delegated-work__meta')).toContainText('Codex')
+      await expect(review.locator('.delegated-work__meta')).toContainText('This computer')
+      await expect(review.locator('.delegated-work__state')).toHaveText('Working')
+      await expect(review.locator('.delegated-work__line')).toHaveText(/^This thread waits up to 5 min for it\. \d+ s so far\.$/u, { timeout: 30_000 })
 
       // The delegated thread has no row in the sidebar: the Claude thread's row stands for it.
       const parentRow = sidebar(page).getByRole('button', { name: PARENT, exact: true })
       await expect(parentRow).toBeVisible()
       await expect(sidebar(page).getByRole('button', { name: REVIEW, exact: true })).toHaveCount(0)
-      await capture(launched, 'card-working-dark-1280x800')
+      await capture(launched, 'review-working-dark-1280x800')
 
       // Tools › Agents lists it as a thread: its provider, a Thread marker, its brief, what the record knows, its outcome.
       const roster = await openAgents(page)
@@ -345,34 +345,34 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
 
       // Codex answers: the outcome moves to Answered, and the waiting call returns the reply as the delegated thread's.
       await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: reviewNative, text: 'Two small nits and nothing that blocks a merge.' })
-      await expect(card.locator('.delegation-card__outcome')).toHaveText('Answered', { timeout: 30_000 })
-      await expect(card.locator('.delegation-card__wait')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\.$|^Answered in \d+ min, while this thread waited for it\.$/u)
+      await expect(review.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
+      await expect(review.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
       const answered = await page.evaluate(async () => {
         const result = await (window as unknown as { delegating: Promise<{ content: { type: string; text?: string }[] }> }).delegating
         return JSON.parse(result.content[0]!.text!) as ToolResult
       })
       expect(answered.delegation).toMatchObject({ outcome: 'answered', reply: { text: 'Two small nits and nothing that blocks a merge.' } })
 
-      // A second delegation the agent does not wait for: it keeps working, and the card says the answer comes later.
+      // A second delegation the agent does not wait for: it keeps working, and its row says the answer comes later.
       const second = await tool(page, parentId, 'delegate', { work: 'building', title: JOURNEYS, brief: 'Run the Linux journeys against the fix and report which fail.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', wait_seconds: 0 })
       expect(second.delegation?.outcome, JSON.stringify(second)).toBe('working')
       const journeysId = await delegatedThread(page, parentId, [reviewId], JOURNEYS)
-      const journeys = parent.getByRole('group', { name: `Delegated to ${JOURNEYS}` })
-      await expect(journeys.locator('.delegation-card__wait')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
+      const journeys = parent.getByRole('listitem', { name: new RegExp(`^Building: ${JOURNEYS}, `, 'u') })
+      await expect(journeys.locator('.delegated-work__line')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(2)
 
-      // A delegation wider than this thread's own permission is refused: its card says what and why, and links nowhere.
+      // A delegation wider than this thread's own permission is refused: its row says what and why, and links nowhere.
       expect(model!.permissions).toContain('full-access')
       const wider = await tool(page, parentId, 'delegate', { work: 'research', brief: 'Draft the release notes for the reconnect fix.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'full-access', wait_seconds: 0 })
       expect(wider, JSON.stringify(wider)).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
-      const refused = parent.getByRole('note', { name: 'Not delegated: Research' })
+      const refused = parent.getByRole('listitem', { name: 'Research, not delegated, Refused' })
       await expect(refused).toBeVisible({ timeout: 30_000 })
       await expect(refused).toHaveAttribute('data-outcome', 'refused')
-      await expect(refused.locator('.delegation-card__meta')).toContainText('Codex')
-      await expect(refused.locator('.delegation-card__meta')).toContainText('This computer')
-      await expect(refused.locator('.delegation-card__wait')).toHaveText('It asked for more permission than this thread has, or than your new-thread default allows. '
+      await expect(refused.locator('.delegated-work__meta')).toContainText('Codex')
+      await expect(refused.locator('.delegated-work__meta')).toContainText('This computer')
+      await expect(refused.locator('.delegated-work__line')).toHaveText('It asked for more permission than this thread has, or than your new-thread default allows. '
         + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
       await expect(refused.getByRole('button')).toHaveCount(0)
       // Nothing was started for it.
@@ -398,11 +398,22 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
           await capture(launched, `refused-${appearance}-${width}x${height}`)
         }
       }
+      // Citrine, a built-in theme with a yellow accent, at the minimum size in both appearances.
+      await page.evaluate(() => window.sotto!.updateSettings({ darkTheme: 'citrine', lightTheme: 'citrine' }))
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+        await journeys.scrollIntoViewIfNeeded()
+        await fits(page, `citrine ${appearance} 820x560`)
+        await readable(page, `citrine ${appearance} 820x560`)
+        await capture(launched, `parent-citrine-${appearance}-820x560`)
+      }
+      await page.evaluate(() => window.sotto!.updateSettings({ darkTheme: 't3-code', lightTheme: 't3-code' }))
       await resizeWindow(launched, 1280, 800)
       await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
 
-      // By keyboard: the card's link opens the delegated thread, whose "Delegated by" links back.
-      const link = card.getByRole('button', { name: `Open ${REVIEW}` })
+      // By keyboard: the row's link opens the delegated thread, whose "Delegated by" links back.
+      const link = review.getByRole('button', { name: `Open ${REVIEW}` })
       await link.focus()
       await expect(link).toBeFocused()
       await page.keyboard.press('Enter')
@@ -410,7 +421,7 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
       await expect(delegated.locator('.thread-workspace__head h2')).toHaveText(REVIEW)
       const by = delegated.locator('.delegated-by')
       await expect(by).toContainText(`Delegated by ${PARENT}`)
-      await expect(by.locator('.delegation-card__outcome')).toHaveText('Answered')
+      await expect(by.locator('.delegation-outcome')).toHaveText('Answered')
       // The brief is the delegating thread's words, not the user's.
       const brief = delegated.locator('.thread-message[data-from="delegation"]')
       await expect(brief.locator('header')).toContainText(`${PARENT}delegated`)
@@ -450,8 +461,11 @@ test('a Claude thread delegates to a Codex thread: the card, the sidebar, Delega
 
       // One press stops the Claude thread and the Codex thread it delegated that is still working.
       await pane(page).getByRole('button', { name: 'Stop agent and the thread it delegated that is working' }).click()
-      await expect(journeys.locator('.delegation-card__outcome')).toHaveText('Stopped', { timeout: 30_000 })
       await expect(pane(page).getByRole('button', { name: /^Stop agent/ })).toHaveCount(0, { timeout: 30_000 })
+      // A stopped turn can fold: its rows of delegated work are then in its Worked for fold.
+      const fold = pane(page).getByRole('button', { name: /^Worked for/u }).last()
+      if (await fold.count() && await fold.getAttribute('aria-expanded') === 'false') await fold.click()
+      await expect(journeys.locator('.delegated-work__state')).toHaveText('Stopped', { timeout: 30_000 })
       await expect(pane(page).locator('.delegation-note')).toHaveCount(0)
       const threads = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => ({ title: thread.title, status: thread.status })))
       expect(threads.find(thread => thread.title === JOURNEYS)?.status).not.toBe('running')
@@ -481,7 +495,7 @@ test('stable offers no delegation bridge and no delegation tool', async () => {
       await openThreads(page)
       await sidebar(page).getByRole('button', { name: PARENT, exact: true }).click({ position: { x: 16, y: 12 } })
       await expect(pane(page).getByRole('button', { name: 'Stop agent', exact: true })).toBeVisible({ timeout: 30_000 })
-      await expect(page.locator('.delegation-card, .delegated-by, .delegation-note, [data-delegation-level]')).toHaveCount(0)
+      await expect(page.locator('.delegated-work, .delegated-by, .delegation-note, [data-delegation-level]')).toHaveCount(0)
     })
   } finally {
     if (launched) await closeSotto(launched)
