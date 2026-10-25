@@ -483,6 +483,16 @@ msgstr ""
 msgid "{kindWord}, not sent to {threadTitle}, {stateWord}"
 msgstr ""
 
+#. {kindWord} is the kind of a provider's background agent, such as Subagent; Working is its state.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "{kindWord}, Working"
+msgstr ""
+
+#. {kindWord} is the kind of a provider's background agent; {label} is the provider's label for it.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "{kindWord}: {label}, Working"
+msgstr ""
+
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "{kindWord}: {name}, {stateWord}"
 msgstr ""
@@ -7862,11 +7872,13 @@ msgstr ""
 msgid "Worked for {took}"
 msgstr ""
 
+#. A provider's background agent's state: it is running.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.
 #. A turn that is running.
 #. A turn that is running.
 #. The readout beside the creature: background work the turn started is running.
+#: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/ThreadActivity.tsx
 #: src/renderer/src/agents/threadActivityView.ts
 #: src/renderer/src/agents/threadFacts.ts
