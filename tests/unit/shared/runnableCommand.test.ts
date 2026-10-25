@@ -40,8 +40,13 @@ describe('runnable inline code (ADR-0136)', () => {
 })
 
 describe('runnable fenced blocks (ADR-0136)', () => {
-  it.each(['bash', 'sh', 'zsh', 'shell', 'console', 'terminal', 'powershell', 'pwsh', 'ps1', 'cmd', 'Bash', 'PowerShell'])('runs a %s block', language => {
+  it.each(['bash', 'sh', 'zsh', 'shell', 'powershell', 'pwsh', 'ps1', 'cmd', 'Bash', 'PowerShell'])('runs a %s block', language => {
     expect(runnableBlock('git status', language)).toBe('git status')
+  })
+
+  it.each(['console', 'terminal'])('runs a %s block only through its prompts', language => {
+    expect(runnableBlock('$ git status', language)).toBe('git status')
+    expect(runnableBlock('On branch main\nnothing to commit', language)).toBeNull()
   })
 
   it.each([undefined, 'ts', 'json', 'text', 'diff', 'command', 'output', 'mermaid'])('offers nothing for a %s block', language => {
@@ -53,12 +58,20 @@ describe('runnable fenced blocks (ADR-0136)', () => {
     expect(runnableBlock('if true; then\n  echo yes\nfi', 'bash')).toBe('if true; then\n  echo yes\nfi')
   })
 
-  it('strips console prompts and drops output lines when a line has a prompt', () => {
+  it('strips prompts in every shell language and drops output lines when a line has a prompt', () => {
     expect(runnableBlock('$ npm test\nPASS  tests/a.test.ts\n$ git status', 'console')).toBe('npm test\ngit status')
     expect(runnableBlock('> dir\n file.txt', 'console')).toBe('dir')
     expect(runnableBlock('$ santactl status\n>>> Daemon Info\n  Mode | Monitor', 'console')).toBe('santactl status')
-    expect(runnableBlock('npm test', 'console')).toBe('npm test')
-    expect(runnableBlock('$ npm test', 'bash')).toBe('$ npm test')
+    expect(runnableBlock('$ npm test\n> sotto@1 test', 'bash')).toBe('npm test\nsotto@1 test')
+    expect(runnableBlock('$ brew install jq\n==> Pouring jq', 'zsh')).toBe('brew install jq')
+    expect(runnableBlock('npm test\nnpm run lint', 'sh')).toBe('npm test\nnpm run lint')
+  })
+
+  it('reads PowerShell prompts, and leaves its variables alone', () => {
+    expect(runnableBlock('PS> Get-ChildItem\n\n    Directory: C:\\work', 'powershell')).toBe('Get-ChildItem')
+    expect(runnableBlock('PS C:\\work> npm test\nPASS\nPS C:\\work> git status', 'pwsh')).toBe('npm test\ngit status')
+    expect(runnableBlock('$env:NODE_ENV = "test"\nnpm test', 'ps1')).toBe('$env:NODE_ENV = "test"\nnpm test')
+    expect(runnableBlock('PS> npm test', 'bash')).toBe('PS> npm test')
   })
 
   it('refuses control characters other than newline, tabs and empty blocks', () => {

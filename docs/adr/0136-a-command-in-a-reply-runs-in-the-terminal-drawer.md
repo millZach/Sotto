@@ -18,7 +18,7 @@ Replies often tell the user to run something: `brew install --cask osquery santa
 
 **4. What counts as a command.** One pure rule, `src/shared/runnableCommand.ts`, used by the window and by the request schema:
 
-- A fenced block is runnable when its language is `bash`, `sh`, `zsh`, `shell`, `console`, `terminal`, `powershell`, `pwsh`, `ps1` or `cmd`. A `console` block with any line starting `$ ` or `> ` runs only those lines, without the prompt; the other lines are output.
+- A fenced block is runnable when its language is `bash`, `sh`, `zsh`, `shell`, `console`, `terminal`, `powershell`, `pwsh`, `ps1` or `cmd`. A block with any line starting with a prompt, `$ ` or `> `, or for PowerShell also `PS> ` or `PS C:\work> `, is a transcript: only those lines run, without the prompt, and the other lines are output. A `console` or `terminal` block with no prompt line holds only output and is not runnable.
 - An inline code span is runnable when it is one line whose first word is a lower-case program name or a path (`./`, `../`, `/`, `~/`), and it has a space after that word or the word is a path. A lone word (`santa`, `true`), a bare file name (`src/shared/owlFeatures.ts`), a call (`useOwlFeature()`), a capitalised phrase (`Mode | Lockdown`) and a menu path with `›` or `→` are not commands.
 - Text with any control character other than newline, or a bidirectional control, is never runnable, so an escape sequence or a carriage return cannot make the shell run something other than what is shown. A tab counts: typed into an interactive shell it asks for completion, so a block indented with tabs offers no Run.
 - What runs is the text the reply shows, never an attribute the model could write differently.

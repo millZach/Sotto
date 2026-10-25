@@ -16,6 +16,11 @@ const FORBIDDEN = /[\u0000-\u0009\u000B-\u001F\u007F-\u009F]|\p{Bidi_Control}/u
 export function hasForbiddenControl(text: string): boolean { return FORBIDDEN.test(text) }
 
 const PROMPT = /^[$>] /u
+// PowerShell's own prompt: `PS> ` or `PS C:\work> `.
+const POWERSHELL_PROMPT = /^(?:[$>] |PS(?: [^>\n]*)?> )/u
+const POWERSHELL = new Set(['powershell', 'pwsh', 'ps1'])
+/** Languages that name a transcript rather than a script: without a prompt line they hold only output. */
+const TRANSCRIPTS = new Set(['console', 'terminal'])
 // A first word a shell can run: a path (`./`, `../`, `/`, `~/`) or a lower-case program name.
 const PATH_START = /^(?:\.{0,2}\/|~\/)/u
 const FIRST_TOKEN = /^(?:(?:\.{0,2}\/|~\/)\S*|[a-z][\w.+-]*)$/u
@@ -25,8 +30,10 @@ export function runnableBlock(code: string, language: string | undefined): strin
   const lang = language?.trim().toLowerCase()
   if (!lang || !RUNNABLE_LANGUAGES.has(lang) || hasForbiddenControl(code)) return null
   let lines = code.split('\n')
-  // A console transcript runs only its prompted lines, without the prompt; the rest is output.
-  if (lang === 'console' && lines.some(line => PROMPT.test(line))) lines = lines.filter(line => PROMPT.test(line)).map(line => line.replace(PROMPT, ''))
+  // A block with prompts is a transcript: only its prompted lines run, without the prompt; the rest is output.
+  const prompt = POWERSHELL.has(lang) ? POWERSHELL_PROMPT : PROMPT
+  if (lines.some(line => prompt.test(line))) lines = lines.filter(line => prompt.test(line)).map(line => line.replace(prompt, ''))
+  else if (TRANSCRIPTS.has(lang)) return null
   const command = lines.join('\n').replace(/^\s*\n/u, '').trimEnd()
   return command.trim() ? command : null
 }
