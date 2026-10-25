@@ -1,6 +1,6 @@
 # Each layer passes on only the threads that changed (#925)
 
-The plan behind ADR-0016's amendment of October 24, 2026, accepted October 25. Step 1 landed in #1502.
+The plan behind ADR-0016's amendment of October 24, 2026, accepted October 25. Step 1 landed in #1502, and step 2 from `perf/thread-changes-adapters`.
 
 ## Zach's picks, October 24, 2026
 
@@ -35,6 +35,7 @@ One pull request per step. Each step keeps the old snapshot subscription working
    - A boundary shim turns any adapter's snapshot publication into changes by comparing each thread's record with the last one published. That is one check per thread, for that adapter's threads only.
    - Then each adapter (Claude, Codex, Grok, Devin, Muse, OpenCode) marks a thread changed on every path that changes it. Its publication sends only marked threads, and the shim goes for that adapter.
    - `tests/integration/adapterContract.ts` gains a check that every state change publishes the thread, and that a removed thread is published as removed.
+   - **Landed.** All seven adapters (Claude, Codex, Grok, Devin, Muse, OpenCode and Cursor) offer `subscribeActivityChanges` beside their activity snapshots, and all seven mark their own changes (`adapterThreadChanges.ts`), so none uses the shim. An adapter falls back to it only for a first publication, the first after a connection or another change to every thread, and one bringing more than one new thread. `publishChanges` now leaves out a record equal to the one published, unless the same change removes or places that thread, and a rest equal to the published rest, so a publication carries only what changed. The contract also checks a thread watched from before it is created, and with `SOTTO_VERIFY_THREAD_CHANGES=1` checks both forms after every publication in every case. Nothing above the adapters reads the changes yet, so the owner-scale `threadRecordsTouched` count does not fall until step 3.
 3. **The wrapper and the provider switch.** `threads.ts` binds IDs and `providerSwitch.ts` names providers for upserts only, mapping removals to Sotto IDs, and each keeps its map.
 4. **The workspace.**
    - `accept` applies upserts and removals to its state, merging each upserted thread with what it lays over the provider's: messages, activities, worktree, Git action, pull requests and the rest.
