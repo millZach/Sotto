@@ -554,7 +554,7 @@
 .watcher-stop__said { display: block; color: var(--tt-text-2); }
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
 
-/* ---------- Night falls: the move between Threads and Watcher's room (nightFalls.ts) ---------- */
+/* ---------- Night falls: the move between Dictate or Threads and Watcher's room (nightFalls.ts) ---------- */
 /* The pages' own crossfade is off: the page being left stays whole underneath, and the script clips the opened one in
    behind the band. The band is a canvas of its own above both, and the room switch's owl rides it from the foot to the
    dock. Only while a run plays (data-room-transition on the root). */

@@ -2978,7 +2978,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
-msgid "Night falls between Threads and Watcher"
+msgid "Night falls between Dictate or Threads and Watcher"
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -5359,8 +5359,8 @@ msgid "The widget follows the Omarchy theme’s mode."
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
-msgid "The window sweeps between Threads and Watcher's room when you open Watcher's room or go back to Threads, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
-msgstr "Watcher のルームを開くときや Threads に戻るとき、ウィンドウが Threads と Watcher のルームの間を横切って切り替わり、フクロウがその動きに乗って新しい場所へ移ります。オフにすると、ウィンドウはすぐに切り替わります。動きを減らす設定では、常にすぐに切り替わります。"
+msgid "The window sweeps when you move between Dictate or Threads and Watcher's room, and the owl rides the sweep to its new place. Off, the window changes at once. Reduced motion always changes it at once."
+msgstr "Dictate または Threads と Watcher のルームの間を移動するとき、ウィンドウが横切って切り替わり、フクロウがその動きに乗って新しい場所へ移ります。オフにすると、ウィンドウはすぐに切り替わります。動きを減らす設定では、常にすぐに切り替わります。"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Theme file"
