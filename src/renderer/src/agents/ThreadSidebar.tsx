@@ -18,6 +18,7 @@ import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
+import { NeedsYouQueue } from './NeedsYouQueue'
 import { useOwlFeature } from '../state/owlFeature'
 import './workingThreadsLine.css'
 
@@ -41,8 +42,10 @@ const plural = (count: number, noun: string): string => `${count} ${noun}${count
 /** What follows a row's status while its provider is out of reach: Reconnecting while its host restarts for an update. */
 const disconnectedLabel = (row: ThreadRow): string => row.connected ? '' : row.reconnecting ? ' · Reconnecting' : ' · Disconnected'
 
-function Indicators({ working, needs, id }: { readonly working: number; readonly needs: number; readonly id?: string }): ReactNode {
+function Indicators({ working, needs, id, hidden = false }: { readonly working: number; readonly needs: number; readonly id?: string; readonly hidden?: boolean }): ReactNode {
   if (!working && !needs) return null
+  // While Needs you stands (ADR-0135) the dots are not drawn, but the toggle keeps naming what waits behind it.
+  if (hidden) return <span id={id} className="tt-visually-hidden">{[needs ? `${needs} waiting on you` : '', working ? `${working} working` : ''].filter(Boolean).join(', ')}</span>
   return <span id={id} className="thread-nav__indicators">
     {needs ? <span data-state="needs" title={`${needs} waiting on you`}><i aria-hidden="true" /><span className="tt-visually-hidden">{needs} waiting on you</span></span> : null}
     {working ? <span data-state="working" title={`${working} working`}><i aria-hidden="true" /><span className="tt-visually-hidden">{working} working</span></span> : null}
@@ -228,7 +231,7 @@ const PEEK_DELAY_MS = 350
 const PEEK_GRACE_MS = 300
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
   readonly host?: ListedHost | undefined
@@ -243,6 +246,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   readonly newThreadShortcut?: { readonly suffix: string; readonly keys: string } | undefined
   /** The folder peek (Owl, docs/plans/collapsed-folder-peek.md): a closed folder previews its rows in place while rested on. */
   readonly peekEnabled: boolean
+  /** Needs you stands at the sidebar's head (ADR-0135): the folder dots give their telling to it. */
+  readonly indicatorsHidden: boolean
 }): ReactNode {
   const listId = `thread-folder-${section}-${folder.id}`
   const indicatorsId = `${listId}-indicators`
@@ -333,7 +338,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         aria-label={`${folder.title}${host ? ` on ${host.name}` : ''} ${plural(folder.rows.length, 'thread')}`} aria-describedby={!expanded && (folder.working || folder.needs) ? indicatorsId : undefined} title={peeking ? undefined : project?.path}>
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
         <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
-        {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} /> : null}
+        {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} hidden={indicatorsHidden} /> : null}
         <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
@@ -420,6 +425,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
    */
   readonly shortcutsLive?: boolean | undefined
 }): ReactNode {
+  const queueOn = useOwlFeature('needs-you-queue')
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
@@ -500,7 +506,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     const hostId = hosts.length ? hostIdOf(folder.project) ?? hostIdOf({ id: folder.id }) ?? folder.rows[0]?.thread.hostId : undefined
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
       host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
-      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} />
+      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn} />
   }
   const { open, settled } = organization
   const threads = state.host.threads
@@ -515,7 +521,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} label="Thread sidebar" query={query} searchPlaceholder="Search threads" onQuery={onQuery}
     onNew={() => onNewThread()} newLabel="New thread" NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
-    afterSearch={<NeedsAttentionLine failures={failures} command={command} />}
+    afterSearch={queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     collapsedContent={<nav aria-label="Threads">{[...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)].map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row)} />
     </button>)}</nav>}>
@@ -528,7 +534,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           aria-label={[`Settled ${plural(settledThreads, 'thread')}`, settledNeeds ? `${settledNeeds} waiting on you` : '', settledWorking ? `${settledWorking} working` : ''].filter(Boolean).join(', ')}>
           <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span>Settled</span>
-          {!settledShown ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
+          {!settledShown && !queueOn ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
         </button>
         {settledShown ? <div>{settled.map(folderView('settled'))}{!settled.length ? <p className="thread-nav__empty">No settled threads.</p> : null}</div> : null}
       </section>

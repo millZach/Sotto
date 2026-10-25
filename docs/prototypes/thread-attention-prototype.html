@@ -1,0 +1,285 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: how should a collapsed project folder say "threads need you"?
+     Same data in every variant: Sotto (4: 1 approval waiting, 1 failed unseen, 1 working, 1 done),
+     Developer (4: 1 question waiting, 1 just finished, 1 working, 1 done), Settled quiet.
+     Today both folders render "● 4" where 4 is the TOTAL — the needs count is screen-reader-only. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Threads that need you — 10 ways</title>
+<style>
+:root{--ink:var(--sotto-text,#ededed);--mut:var(--sotto-muted,#a3a3a3);--bord:var(--sotto-border,#3a3a3a);--acc:var(--sotto-accent,#f0b429)}
+*{box-sizing:border-box}
+body{margin:0;padding:14px;background:var(--sotto-background,#101010);color:var(--ink);font:14px/1.45 -apple-system,"Segoe UI",system-ui,sans-serif}
+h1{font-size:16px;margin:0 0 2px} .sub{color:var(--mut);font-size:12.5px;margin:0 0 8px;max-width:72ch}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--mut);margin:0 0 10px}
+.legend b{color:var(--ink);font-weight:600}
+.controls{display:flex;gap:6px;align-items:center;margin:0 0 12px;font-size:12.5px;color:var(--mut)}
+.controls button{font:inherit;font-size:12.5px;padding:3px 10px;border-radius:6px;border:1px solid var(--bord);background:var(--sotto-surface,#1c1c1c);color:var(--ink);cursor:pointer}
+.controls button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(272px,1fr));gap:12px}
+.card{border:1px solid var(--bord);border-radius:10px;padding:10px;background:var(--sotto-surface,#171717);cursor:pointer}
+.card.hot{outline:2px solid var(--acc);outline-offset:1px}
+.card.dim{opacity:.42}
+.card h2{font-size:13px;margin:0 0 8px;display:flex;gap:7px;align-items:baseline}
+.card h2 .n{color:var(--acc);font-variant-numeric:tabular-nums}
+.card h2 .tag{margin-left:auto;font-size:10.5px;color:var(--mut);font-weight:400;white-space:nowrap}
+.card p{font-size:12px;color:var(--mut);margin:8px 0 0}
+.card p b{color:var(--ink);font-weight:600}
+/* --- mini sidebar (fixed dark, like the screenshot) --- */
+.sb{background:#232323;color:#f2f2f2;border:1px solid #3d3d3d;border-radius:8px;padding:8px;font-size:13px}
+.search{display:flex;gap:6px;align-items:center;background:#14171f;border:1px solid #4a4f5c;border-radius:7px;padding:6px 8px;color:#c9cedb;margin-bottom:6px}
+.frow{display:flex;align-items:center;gap:6px;padding:5px 4px;border-radius:6px}
+.frow svg{flex:none;color:#d8d8d8}
+.chev{color:#bdbdbd;font-size:15px;line-height:1}
+.fname{font-weight:600;white-space:nowrap}
+.right{margin-left:auto;display:flex;gap:6px;align-items:center;flex:none}
+.tot{color:#9a9a9a;font-size:12px;font-variant-numeric:tabular-nums}
+.settled{color:#e8e8e8;margin-top:2px}
+.fsub{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:1px 4px 5px 38px;font-size:11.5px;color:#a9a9a9}
+.dot{width:7px;height:7px;border-radius:50%;background:#f0b429;display:inline-block;flex:none}
+.pill{background:rgba(240,180,41,.15);color:#f6c453;border:1px solid rgba(240,180,41,.5);padding:1px 8px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
+.pill.stale{background:rgba(224,82,82,.18);color:#ff9d8a;border-color:rgba(224,82,82,.6)}
+.chip{display:inline-flex;gap:5px;align-items:center;border:1px solid #454545;border-radius:99px;padding:1px 8px 1px 7px;color:#e6e6e6;font-size:11px;white-space:nowrap}
+.d-fill{width:7px;height:7px;border-radius:50%;background:#f0b429;flex:none}
+.d-ring{width:7px;height:7px;border-radius:50%;border:1.5px solid #f0b429;flex:none}
+.d-dia{width:7px;height:7px;background:#f0b429;transform:rotate(45deg);flex:none;border-radius:1px}
+.d-grn{width:7px;height:7px;border-radius:50%;background:#4ade80;flex:none}
+.peek{display:flex;gap:6px;align-items:baseline;padding:2px 4px 2px 38px;font-size:12px;color:#eaeaea}
+.peek em{font-style:normal;color:#f6c453;font-size:11px;white-space:nowrap}
+.peek .fin{color:#7ee2a0}
+.more{padding:1px 4px 5px 38px;font-size:11px;color:#8f8f8f}
+.ring{width:8px;height:8px;border-radius:50%;border:2px solid #f0b429;flex:none;position:relative;top:1px}
+.ring.grn{border-color:#4ade80}
+.bar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin:3px 4px 6px 38px;background:#3a3a3a}
+.bar i{display:block}
+.inbox{border:1px solid rgba(240,180,41,.45);background:rgba(240,180,41,.08);border-radius:7px;padding:6px 8px;margin-bottom:8px}
+.inbox h3{margin:0 0 4px;font-size:12px;color:#f6c453;display:flex;justify-content:space-between}
+.inbox .trow{padding:3px 0}
+.trow{display:flex;gap:6px;align-items:baseline;font-size:12px;color:#f0f0f0}
+.trow .meta{color:#a9a9a9;font-size:11px;white-space:nowrap}
+.trow .acts{margin-left:auto;display:flex;gap:4px;flex:none}
+.trow button{font:inherit;font-size:11px;padding:1px 8px;border-radius:5px;border:1px solid #555;background:#2e2e2e;color:#f2f2f2;cursor:pointer}
+.trow button.go{border-color:rgba(240,180,41,.6);color:#f6c453;font-weight:700}
+.trow.done{opacity:.45;text-decoration:line-through}
+.ask{padding:0 4px 5px 38px;font-size:12px;color:#d9d9d9}
+.ask .m{color:#8f8f8f;font-size:11px}
+.bigcount{color:#f6c453;font-weight:800;font-size:14px}
+.elev{background:#2e2a20}
+.recede{opacity:.5}
+.pips{display:flex;gap:4px;align-items:center}
+.pip{width:9px;height:9px;border-radius:50%;flex:none}
+.pip.fill{background:#f0b429}
+.pip.dia{background:#f0b429;transform:rotate(45deg);border-radius:2px;width:8px;height:8px}
+.pip.hring{border:1.5px solid #f0b429}
+.pip.work{border:1.5px solid #8ab4f8;border-top-color:transparent}
+.pip.fin{background:#4ade80}
+.pip.done{border:1.5px solid #5c5c5c}
+/* --- №11 combo queue rows --- */
+.qrow{border-top:1px solid rgba(240,180,41,.18);padding:6px 0 2px}
+.qrow:first-of-type{border-top:0}
+.qtop{display:flex;gap:6px;align-items:baseline;font-size:12px;color:#f0f0f0}
+.qtop b{font-weight:600}
+.qtop .meta{margin-left:auto;color:#a9a9a9;font-size:11px;white-space:nowrap;flex:none}
+.qask{padding:1px 0 3px 16px;font-size:11.5px;color:#cfcfcf}
+.qask code{font-size:11px;color:#f6c453}
+.qacts{display:flex;gap:4px;align-items:center;padding:0 0 4px 16px;min-height:22px}
+.qacts button{font:inherit;font-size:11px;padding:1px 8px;border-radius:5px;border:1px solid #555;background:#2e2e2e;color:#f2f2f2;cursor:pointer}
+.qacts button.go{border-color:rgba(240,180,41,.6);color:#f6c453;font-weight:700}
+.qacts .open,.finline .open{margin-left:auto;font-size:11px;color:#9a9a9a;white-space:nowrap}
+.qdone{color:#7ee2a0;font-size:11px;font-weight:700}
+.qempty{font-size:12px;color:#bfe9cc;padding:4px 0 2px}
+.finline{display:flex;gap:6px;align-items:center;padding:5px 4px 7px;font-size:11.5px;color:#bfe9cc}
+.finline .meta{color:#8f8f8f;font-size:11px}
+.qfoot{padding:4px 0 1px;font-size:11px;color:#8f8f8f;border-top:1px solid rgba(240,180,41,.18)}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style></head><body>
+<h1>Threads that need you — 10 ways to say it</h1>
+<p class="sub">Every sidebar below holds the <b>same threads</b>: <b>Sotto</b> — 1 approval waiting, 1 failed unseen, 1 working, 1 done · <b>Developer</b> — 1 question waiting, 1 just finished, 1 working, 1 done · <b>Settled</b> — quiet. Only the telling changes. Click a card to focus it.</p>
+<p class="legend"><span><b>● filled amber</b> approval — agent held still</span><span><b>○ amber ring</b> answer — yours to write</span><span><b>◆ amber</b> failed turn, unseen</span><span><b>● green</b> just finished</span><span><b>◌ blue arc</b> working</span></p>
+<div class="controls"><span>Waits are:</span>
+<button id="fresh" aria-pressed="true">Fresh (2–12 min)</button>
+<button id="stale" aria-pressed="false">Stale (47 min – 2 h)</button>
+<span>— watch №5 and №3</span></div>
+<div class="grid" id="grid"></div>
+<script>
+let pending=null;
+window.addEventListener("message",e=>{const d=e.data||{};if(d.type==="sotto-visual-step"){pending=d;applyStep();}});
+function applyStep(){if(!pending)return;focusCards(pending.highlight||[]);}
+
+const FOLD='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+const SRCH='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+const sb=inner=>`<div class="sb"><div class="search">${SRCH}<span>Search threads</span></div>${inner}<div class="frow settled"><span class="chev">›</span><span>Settled</span></div></div>`;
+const frow=(name,right='',cls='')=>`<div class="frow ${cls}"><span class="chev">›</span>${FOLD}<span class="fname">${name}</span><span class="right">${right}</span></div>`;
+const tot='<span class="tot">4</span>';
+const wait=(f,s)=>`data-wait data-fresh="${f}" data-stale="${s}"`;
+
+const V=[
+{id:'v0',n:'0',name:'Today — your screenshot',tag:'baseline',
+ html:sb(frow('Sotto','<span class="dot"></span>'+tot)+frow('Developer','<span class="dot"></span>'+tot)),
+ foot:'<b>The bug:</b> <b>4 is the total</b>, not the needy. How many need you, and for what, lives only in a tooltip and the screen-reader name.'},
+
+{id:'v1',n:'1',name:'Say the number',tag:'smallest fix',
+ html:sb(
+  frow('Sotto','<span class="pill">2 need you</span>'+tot)+
+  frow('Developer','<span class="pill">1 needs you</span>'+tot)),
+ foot:'<b>Wins:</b> unhides the words the row already computes (“N waiting on you”). <b>Costs:</b> still a mystery count — approval? failure?'},
+
+{id:'v2',n:'2',name:'Split by kind',tag:'what for?',
+ html:sb(
+  frow('Sotto',tot)+'<div class="fsub"><span class="chip"><i class="d-fill"></i>1 approval</span><span class="chip"><i class="d-dia"></i>1 failed</span></div>'+
+  frow('Developer',tot)+'<div class="fsub"><span class="chip"><i class="d-ring"></i>1 answer</span><span class="chip"><i class="d-grn"></i>1 finished</span></div>'),
+ foot:'<b>Wins:</b> blocked vs failed vs finished read at a glance; reuses the filled/ring dot language rows already speak. <b>Costs:</b> a second line per folder.'},
+
+{id:'v3',n:'3',name:'Needs-you inbox',tag:'structural',
+ html:sb(
+  `<div class="inbox"><h3><span>Needs you</span><span ${wait('3 · oldest 12m','3 · oldest 2h 05m')}>3 · oldest 12m</span></h3>`+
+  '<div class="trow"><span class="ring"></span><span>Visual gate for owl</span><span class="meta">approval · Sotto</span></div>'+
+  '<div class="trow"><span class="ring"></span><span>Ship the migration</span><span class="meta">answer · Developer</span></div>'+
+  '<div class="trow"><span class="ring"></span><span>Streaming WAV stall</span><span class="meta">failed · Sotto</span></div></div>'+
+  frow('Sotto',tot)+frow('Developer',tot)),
+ foot:'<b>Wins:</b> one queue across projects, oldest first; folders go quiet. <b>Costs:</b> threads appear twice (queue + home); needs a “where do I file this?” answer.'},
+
+{id:'v4',n:'4',name:'Peek, don’t count',tag:'show the threads',
+ html:sb(
+  frow('Sotto',tot)+
+  '<div class="peek"><span class="ring"></span><span>Visual gate for owl</span><em>Needs your approval</em></div>'+
+  '<div class="peek"><span class="ring"></span><span>Streaming WAV stall</span><em>Needs attention</em></div>'+
+  '<div class="more">+ 2 more inside (1 working)</div>'+
+  frow('Developer',tot)+
+  '<div class="peek"><span class="ring"></span><span>Ship the migration</span><em>Needs your answer</em></div>'+
+  '<div class="peek"><span class="ring grn"></span><span>Grok voice previews</span><em class="fin">Just finished</em></div>'+
+  '<div class="more">+ 2 more inside (1 working)</div>'),
+ foot:'<b>Wins:</b> names beat numbers — you triage by title without expanding. <b>Costs:</b> sidebar grows with every needy thread; needs a cap.'},
+
+{id:'v5',n:'5',name:'Oldest wait leads',tag:'time = urgency',
+ html:sb(
+  frow('Sotto',`<span class="pill" ${wait('waiting 12m','waiting 2h 05m')}>waiting 12m</span>`)+
+  '<div class="fsub">2 waiting on you · oldest first</div>'+
+  frow('Developer',`<span class="pill" ${wait('waiting 2m','waiting 47m')}>waiting 2m</span>`)+
+  '<div class="fsub">1 waiting on you</div>'),
+ foot:'<b>Wins:</b> a fresh ask whispers, a stale one shouts (try the Stale toggle); sort folders by it. <b>Costs:</b> needs a wait-start clock per request; time alone hides kind.'},
+
+{id:'v6',n:'6',name:'Blocked-work meter',tag:'cost of waiting',
+ html:sb(
+  frow('Sotto',tot)+'<div class="fsub">1 agent blocked · 1 failed · 1 working</div>'+
+  '<div class="bar"><i style="width:50%;background:#f0b429"></i><i style="width:25%;background:#8ab4f8"></i><i style="width:25%;background:#4d4d4d"></i></div>'+
+  frow('Developer',tot)+'<div class="fsub">1 agent blocked · 1 working · 1 just finished</div>'+
+  '<div class="bar"><i style="width:25%;background:#f0b429"></i><i style="width:25%;background:#8ab4f8"></i><i style="width:25%;background:#4ade80"></i><i style="width:25%;background:#4d4d4d"></i></div>'),
+ foot:'<b>Wins:</b> frames it as idle agents, not notifications; share-of-folder is comparable. <b>Costs:</b> bar needs the sentence beside it — colour alone teaches slowly.'},
+
+{id:'v7',n:'7',name:'Triage in place',tag:'act, don’t navigate',
+ html:sb(
+  '<div class="fsub" style="padding-left:4px"><span class="pill"><span data-v7count>3</span>&nbsp;need you</span><span>try the buttons</span></div>'+
+  frow('Sotto',tot)+
+  '<div class="peek"><span class="trow" style="flex:1"><span>Visual gate for owl</span><span class="acts"><button class="go" data-triage>Allow</button><button data-triage>Deny</button></span></span></div>'+
+  '<div class="peek"><span class="trow" style="flex:1"><span>Streaming WAV stall</span><span class="acts"><button data-triage>Dismiss</button></span></span></div>'+
+  frow('Developer',tot)+
+  '<div class="peek"><span class="trow" style="flex:1"><span>Ship the migration</span><span class="acts"><button class="go" data-triage>Friday</button><button data-triage>Monday</button></span></span></div>'),
+ foot:'<b>Wins:</b> the count drops where you stand — no open, scroll, answer, return. <b>Costs:</b> fat-finger risk on Allow; long questions still need the thread. Approvals must never get a Dismiss.'},
+
+{id:'v8',n:'8',name:'Show the ask',tag:'most informative line',
+ html:sb(
+  frow('Sotto','<span class="bigcount">2</span>')+
+  '<div class="ask">“Allow <b>npm run design:capture</b>?” <span class="m">+1 more waiting</span></div>'+
+  frow('Developer','<span class="bigcount">1</span>')+
+  '<div class="ask">“Ship the migration <b>Friday or Monday</b>?”</div>'),
+ foot:'<b>Wins:</b> you often know your answer before opening anything. <b>Costs:</b> asks truncate badly (commands, paths); only the top ask shows — pick it by rank, approval first.'},
+
+{id:'v9',n:'9',name:'Float and recede',tag:'hierarchy only',
+ html:sb(
+  frow('Sotto','<span style="color:#f6c453;font-weight:700;font-size:12px">2 waiting</span>','elev')+
+  frow('Developer','<span style="color:#f6c453;font-weight:700;font-size:12px">1 waiting</span>','elev')+
+  '<div class="more recede" style="padding-left:4px">quiet projects sit below, muted — order follows need</div>'),
+ foot:'<b>Wins:</b> calmest option — position and weight do the work, no new chrome. <b>Costs:</b> weakest demo here (both projects need you); moving folders can feel unstable.'},
+
+{id:'v10',n:'10',name:'A pip per thread',tag:'countable, no numerals',
+ html:sb(
+  frow('Sotto','<span class="pips"><i class="pip fill"></i><i class="pip dia"></i><i class="pip work"></i><i class="pip done"></i></span>')+
+  frow('Developer','<span class="pips"><i class="pip hring"></i><i class="pip fin"></i><i class="pip work"></i><i class="pip done"></i></span>')),
+ foot:'<b>Wins:</b> nothing to misread — needy, working and done are literally countable. <b>Costs:</b> caps out around a dozen threads, then needs “+n”; kinds rest on shape alone.'},
+
+{id:'v11',n:'11',name:'Combo — Inbox × Triage (3+7)',tag:'live: try it',
+ html:sb(
+  `<div class="inbox" data-queue><h3><span>Needs you</span><span><span data-needcount>3</span> · <span ${wait('oldest 12m','oldest 2h 05m')}>oldest 12m</span></span></h3>`+
+  `<div class="qrow"><div class="qtop"><span class="ring"></span><b>Visual gate for owl</b><span class="meta">Sotto · <span ${wait('12m','2h 05m')}>12m</span></span></div>`+
+  '<div class="qask">Allow <code>npm run design:capture</code>?</div>'+
+  '<div class="qacts" data-qacts><button class="go" data-triage data-result="Allowed">Allow</button><button data-triage data-result="Denied">Deny</button><span class="open">Open ›</span></div></div>'+
+  `<div class="qrow"><div class="qtop"><span class="ring"></span><b>Streaming WAV stall</b><span class="meta">Sotto · <span ${wait('failed 9m ago','failed 1h 20m ago')}>failed 9m ago</span></span></div>`+
+  '<div class="qask">The last turn failed. Nothing was lost.</div>'+
+  '<div class="qacts" data-qacts><button data-triage data-result="Dismissed">Dismiss</button><span class="open">Open ›</span></div></div>'+
+  `<div class="qrow"><div class="qtop"><span class="ring"></span><b>Ship the migration</b><span class="meta">Developer · <span ${wait('2m','47m')}>2m</span></span></div>`+
+  '<div class="qask">Ship the migration Friday or Monday?</div>'+
+  '<div class="qacts" data-qacts><button class="go" data-triage data-result="Answered: Friday">Friday</button><button data-triage data-result="Answered: Monday">Monday</button><span class="open">Open ›</span></div></div>'+
+  '<div class="qempty" data-qempty hidden>All caught up — nothing needs you.</div></div>'+
+  '<div class="finline"><i class="d-grn"></i><span>Just finished · Grok voice previews</span><span class="meta">Developer</span><span class="open">Open ›</span></div>'+
+  frow('Sotto',tot)+frow('Developer',tot)),
+ foot:'<b>The combo:</b> №3 queue, №7 buttons, one borrowed line from №8 — the ask itself, because Allow without it is blind. Undo covers the fat finger. Just finished stays outside the count.'},
+
+{id:'v11o',n:'11+',name:'Combo at overflow',tag:'7 waiting',
+ html:sb(
+  '<div class="inbox" data-queue><h3><span>Needs you</span><span><span data-needcount>7</span> · oldest 2h 05m</span></h3>'+
+  '<div class="qrow"><div class="qtop"><span class="ring"></span><b>Visual gate for owl</b><span class="meta">Sotto · 2h 05m</span></div>'+
+  '<div class="qask">Allow <code>npm run design:capture</code>?</div>'+
+  '<div class="qacts" data-qacts><button class="go" data-triage data-result="Allowed">Allow</button><button data-triage data-result="Denied">Deny</button><span class="open">Open ›</span></div></div>'+
+  '<div class="qrow"><div class="qtop"><span class="ring"></span><b>Socket host contract</b><span class="meta">Developer · 58m</span></div>'+
+  '<div class="qask">Allow writing to the test socket?</div>'+
+  '<div class="qacts" data-qacts><button class="go" data-triage data-result="Allowed">Allow</button><button data-triage data-result="Denied">Deny</button><span class="open">Open ›</span></div></div>'+
+  '<div class="qrow"><div class="qtop"><span class="ring"></span><b>Ship the migration</b><span class="meta">Developer · 47m</span></div>'+
+  '<div class="qask">Ship the migration Friday or Monday?</div>'+
+  '<div class="qacts" data-qacts><button class="go" data-triage data-result="Answered: Friday">Friday</button><button data-triage data-result="Answered: Monday">Monday</button><span class="open">Open ›</span></div></div>'+
+  '<div class="qfoot">+ 4 more waiting (2 failed, 1 approval, 1 answer) — Show all</div>'+
+  '<div class="qempty" data-qempty hidden>All caught up — nothing needs you.</div></div>'+
+  frow('Sotto',tot)+frow('Developer',tot)),
+ foot:'<b>Cap it or it becomes the sidebar.</b> Three rows tall, then a counted “+4 more” grouped by kind. Resolving the top row should pull the next oldest up, not shrink the box.'},
+
+{id:'v11e',n:'11✓',name:'Combo, all caught up',tag:'empty state',
+ html:sb(
+  '<div class="finline" style="color:#a9a9a9"><span>All caught up — nothing needs you.</span></div>'+
+  '<div class="finline"><i class="d-grn"></i><span>Just finished · Grok voice previews</span><span class="meta">Developer</span><span class="open">Open ›</span></div>'+
+  frow('Sotto',tot)+frow('Developer',tot)),
+ foot:'<b>The reward state:</b> the amber box is gone entirely — no empty inbox chrome. Finished work still whispers in green, on its own line, never in the count.'},
+];
+
+const grid=document.getElementById('grid');
+grid.innerHTML=V.map(v=>`<section class="card" id="${v.id}" tabindex="0"><h2><span class="n">№${v.n}</span><span>${v.name}</span><span class="tag">${v.tag}</span></h2>${v.html}<p>${v.foot}</p></section>`).join('');
+
+function focusCards(ids){
+  const hot=new Set(ids||[]);
+  document.querySelectorAll('.card').forEach(c=>{
+    c.classList.toggle('hot',hot.has(c.id));
+    c.classList.toggle('dim',hot.size>0&&!hot.has(c.id));
+  });
+  const first=[...document.querySelectorAll('.card.hot')][0];
+  if(first)first.scrollIntoView({block:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+}
+function bump(scope,delta){
+  const c=scope&&scope.querySelector('[data-needcount],[data-v7count]');
+  if(!c)return;
+  c.textContent=Math.max(0,parseInt(c.textContent,10)+delta);
+  if(c.dataset.needcount!==undefined&&c.parentElement)c.parentElement.style.visibility=c.textContent==='0'?'hidden':'visible';
+  const empty=scope.querySelector('[data-qempty]');
+  if(empty)empty.hidden=c.textContent!=='0';
+}
+grid.addEventListener('click',e=>{
+  const undo=e.target.closest('[data-undo]');
+  if(undo){const acts=undo.closest('[data-qacts]');const scope=undo.closest('[data-queue]');
+    if(acts&&acts._saved){acts.innerHTML=acts._saved;acts._saved=null;bump(scope,1);}e.stopPropagation();return;}
+  const btn=e.target.closest('[data-triage]');
+  if(btn){
+    const acts=btn.closest('[data-qacts]');
+    if(acts&&!acts._saved){const scope=acts.closest('[data-queue]');acts._saved=acts.innerHTML;
+      acts.innerHTML=`<span class="qdone">${btn.dataset.result||'Done'}</span><button data-undo>Undo</button><span class="open">Open ›</span>`;
+      bump(scope,-1);}
+    else{const row=btn.closest('.trow');if(row&&!row.classList.contains('done')){row.classList.add('done');bump(btn.closest('.card'),-1);}}
+    e.stopPropagation();return;}
+  const card=e.target.closest('.card');if(card)focusCards(card.classList.contains('hot')?[]:[card.id]);
+});
+function setWaits(stale){
+  document.getElementById('fresh').setAttribute('aria-pressed',String(!stale));
+  document.getElementById('stale').setAttribute('aria-pressed',String(stale));
+  document.querySelectorAll('[data-wait]').forEach(el=>{el.textContent=stale?el.dataset.stale:el.dataset.fresh;el.classList.toggle('stale',stale);});
+}
+document.getElementById('fresh').addEventListener('click',()=>setWaits(false));
+document.getElementById('stale').addEventListener('click',()=>setWaits(true));
+applyStep();
+</script>
+</body></html>
