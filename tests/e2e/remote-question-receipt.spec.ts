@@ -82,7 +82,7 @@ async function fixture(provider: ProviderId, uncertain = false, answerCompletion
   try {
     await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true,
       localHostEnabled: false, reducedMotion: 'on', historyEnabled: options.historyEnabled ?? false }))
-    const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider(), muse: new AnswerProvider(), opencode: new AnswerProvider(), cursor: new AnswerProvider() }
+    const providers = { codex: new AnswerProvider(uncertain, answerCompletion, keepQuestion), claude: new AnswerProvider(uncertain, answerCompletion, keepQuestion), grok: new AnswerProvider(uncertain, answerCompletion, keepQuestion), devin: new AnswerProvider(), muse: new AnswerProvider(), opencode: new AnswerProvider(), cursor: new AnswerProvider(), deepseek: new AnswerProvider() }
     await Promise.all(Object.entries(providers).map(([id, provider]) => provider.initializeWorkingFolders(join(profile, 'working-folders', id))))
     const native = providers[provider]
     host = await startHeadlessHost({ dataDirectory: join(profile, 'remote-host'), port: 0,

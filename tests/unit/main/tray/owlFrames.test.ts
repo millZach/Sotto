@@ -15,7 +15,7 @@ import {
 } from '../../../../src/main/tray/owl/frames'
 import { allOwlPoses, poseKey } from '../../../../src/main/tray/owl/poses.mjs'
 
-const FRAME_BYTES = 27 * 22 * 4
+const FRAME_BYTES = 18 * 18 * 4
 const OWL_DIR = join(__dirname, '../../../../resources/tray/owl')
 const MANIFEST = join(OWL_DIR, 'manifest.json')
 
@@ -23,8 +23,8 @@ function goodManifest() {
   const frames = allOwlPoses().length
   return {
     version: 1,
-    width: 27,
-    height: 22,
+    width: 18,
+    height: 18,
     frames,
     poseKeys: allOwlPoses().map(poseKey),
     palettes: MENU_BAR_OWL_BODIES.flatMap(body => MENU_BAR_OWL_EYES.map(eyes => ({
@@ -103,8 +103,8 @@ describe('the menu bar owl frames', () => {
 
   it('encodes an sRGB RGBA PNG that decodes to the same pixels', () => {
     const rgba = patternFrame(3)
-    const png = decodePng(encodePng(rgba, 27, 22))
-    expect(png).toMatchObject({ width: 27, height: 22 })
+    const png = decodePng(encodePng(rgba, 18, 18))
+    expect(png).toMatchObject({ width: 18, height: 18 })
     expect(png.chunks).toEqual(['IHDR', 'sRGB', 'IDAT', 'IEND'])
     expect([...png.rgba]).toEqual([...rgba])
   })
@@ -117,10 +117,10 @@ describe('the menu bar owl frames', () => {
     for (const i of [0, 1, manifest.frames - 1]) {
       const one = decodePng(frames[i]!.png1x)
       const two = decodePng(frames[i]!.png2x)
-      expect(one).toMatchObject({ width: 27, height: 22 })
-      expect(two).toMatchObject({ width: 54, height: 44 })
+      expect(one).toMatchObject({ width: 18, height: 18 })
+      expect(two).toMatchObject({ width: 36, height: 36 })
       expect([...one.rgba]).toEqual([...patternFrame(i)])
-      expect([...two.rgba]).toEqual([...doublePixels(patternFrame(i), 27, 22)])
+      expect([...two.rgba]).toEqual([...doublePixels(patternFrame(i), 18, 18)])
     }
   })
 
@@ -143,7 +143,7 @@ describe('the menu bar owl frames', () => {
   })
 
   it('throws for a picture that is not width times height pixels', () => {
-    expect(() => doublePixels(new Uint8Array(10), 27, 22)).toThrow()
+    expect(() => doublePixels(new Uint8Array(10), 18, 18)).toThrow()
   })
 })
 

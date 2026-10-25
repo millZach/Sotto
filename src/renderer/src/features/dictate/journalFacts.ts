@@ -1,6 +1,9 @@
+import { plural, t } from '@lingui/core/macro'
+
 import { countWords, type DictationRecord } from '../../../../shared/dictationRecord'
 import type { HistoryEntry } from '../../../../shared/history'
 import { languageLabel } from '../../languages'
+import { shownLocalCount } from '../../state/interfaceNumbers'
 
 /**
  * The Journal's arithmetic: days, labels, a transcript's facts, and the stats column, all worked out from
@@ -36,17 +39,17 @@ export function daysBefore(day: number, days: number): number {
 /** Day labels: Today, Yesterday, then the weekday and date. */
 export function dayLabel(createdAt: number, now: number): string {
   const date = new Date(createdAt)
-  if (!Number.isFinite(date.valueOf())) return 'Saved'
+  if (!Number.isFinite(date.valueOf())) return t({ message: 'Saved', comment: 'A Journal day or time label for a transcript whose date is unknown' })
   const today = startOfDay(now)
-  if (createdAt >= today) return 'Today'
-  if (createdAt >= daysBefore(today, 1)) return 'Yesterday'
+  if (createdAt >= today) return t`Today`
+  if (createdAt >= daysBefore(today, 1)) return t`Yesterday`
   return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
 }
 
 /** The row's clock: "2:32 pm" in a 12-hour locale, "14:32" in a 24-hour one. */
 export function clockLabel(createdAt: number): { dateTime?: string; time: string; full: string } {
   const date = new Date(createdAt)
-  if (!Number.isFinite(date.valueOf())) return { time: 'Saved', full: 'Saved transcript' }
+  if (!Number.isFinite(date.valueOf())) return { time: t({ message: 'Saved', comment: 'A Journal day or time label for a transcript whose date is unknown' }), full: t`Saved transcript` }
   return {
     dateTime: date.toISOString(),
     time: date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/u, (period) => period.toLowerCase()),
@@ -64,8 +67,13 @@ export function shortDate(day: number): string {
   return new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/** A count as the interface language writes it; English keeps the computer's own grouping, as the Journal always did. */
+export const countLabel = shownLocalCount
+
+/** "1,240 words": the count written by countLabel, in a message that says it in the reader's plural. */
 export function wordsLabel(words: number): string {
-  return `${words.toLocaleString()} ${words === 1 ? 'word' : 'words'}`
+  const shown = countLabel(words)
+  return plural(words, { one: `${shown} word`, other: `${shown} words` })
 }
 
 /** Minutes for a person: "45 min", "2 h", "1 h 20 min". */
@@ -79,7 +87,7 @@ export function minutesLabel(minutes: number): string {
 
 function lengthLabel(durationMs: number): string {
   const seconds = Math.max(0, Math.round(durationMs / 1_000))
-  if (seconds < 60) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
+  if (seconds < 60) return plural(seconds, { one: '# second', other: '# seconds' })
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
   return rest === 0 ? `${minutes} min` : `${minutes} min ${rest} s`
@@ -87,8 +95,8 @@ function lengthLabel(durationMs: number): string {
 
 /** Entries kept from before Parakeet (ADR-0071) name the model that transcribed them, or an earlier one. */
 function modelLabel(preset: HistoryEntry['modelPreset']): string {
-  if (preset === 'parakeet') return 'Parakeet model'
-  return preset === 'mai' ? 'MAI-Transcribe-2 model' : 'an earlier model'
+  if (preset === 'parakeet') return t`Parakeet model`
+  return preset === 'mai' ? t`MAI-Transcribe-2 model` : t({ message: 'an earlier model', comment: 'Mid-sentence, after the dictation language: "English, an earlier model."' })
 }
 
 /** Words a minute, or null when nothing was timed. */
@@ -112,7 +120,8 @@ export function journalRow(entry: HistoryEntry, record: DictationRecord | undefi
 
 /** The collapsed row's line under the text: "Outlook · 42 words · 128 wpm", without the parts it does not know. */
 export function rowMeta(row: JournalRow): string {
-  return [row.app, wordsLabel(row.words), row.wpm === null ? undefined : `${row.wpm} wpm`].filter(Boolean).join(' · ')
+  const wpm = row.wpm
+  return [row.app, wordsLabel(row.words), wpm === null ? undefined : t`${wpm} wpm`].filter(Boolean).join(' · ')
 }
 
 /**
@@ -122,11 +131,15 @@ export function rowMeta(row: JournalRow): string {
  */
 export function transcriptFacts(row: JournalRow): { lead: string; rest: string } {
   const { entry, words, wpm } = row
+  const length = lengthLabel(entry.durationMs)
+  const wordCount = wordsLabel(words)
   const lead = entry.durationMs > 0
-    ? `${lengthLabel(entry.durationMs)}, ${wordsLabel(words)}${wpm === null ? '' : ` at ${wpm} wpm`}.`
-    : `${wordsLabel(words)}.`
-  const where = row.app === undefined ? '' : `, in ${row.app}`
-  return { lead, rest: `${languageLabel(entry.language)}, ${modelLabel(entry.modelPreset)}${where}. Kept on this computer only.` }
+    ? wpm === null ? t`${length}, ${wordCount}.` : t`${length}, ${wordCount} at ${wpm} wpm.`
+    : `${wordCount}.`
+  const language = languageLabel(entry.language)
+  const model = modelLabel(entry.modelPreset)
+  const app = row.app
+  return { lead, rest: app === undefined ? t`${language}, ${model}. Kept on this computer only.` : t`${language}, ${model}, in ${app}. Kept on this computer only.` }
 }
 
 export interface JournalDay {

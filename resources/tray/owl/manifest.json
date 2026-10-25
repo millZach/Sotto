@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "width": 27,
-  "height": 22,
+  "width": 18,
+  "height": 18,
   "frames": 73,
   "poseKeys": [
     "0,0,0,1,-100,,5,0,1,0,0",
@@ -83,55 +83,55 @@
       "body": "slate",
       "eyes": "teal",
       "file": "slate-teal.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "slate",
       "eyes": "ice",
       "file": "slate-ice.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "slate",
       "eyes": "amber",
       "file": "slate-amber.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "ink",
       "eyes": "teal",
       "file": "ink-teal.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "ink",
       "eyes": "ice",
       "file": "ink-ice.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "ink",
       "eyes": "amber",
       "file": "ink-amber.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "light",
       "eyes": "teal",
       "file": "light-teal.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "light",
       "eyes": "ice",
       "file": "light-ice.bin",
-      "bytes": 173448
+      "bytes": 94608
     },
     {
       "body": "light",
       "eyes": "amber",
       "file": "light-amber.bin",
-      "bytes": 173448
+      "bytes": 94608
     }
   ]
 }

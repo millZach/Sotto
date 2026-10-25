@@ -8,7 +8,7 @@ import type { Checkpoint, checkpointInspectionSchema, checkpointListingSchema } 
 import type { GitChangesBridge } from '../../../shared/gitChanges'
 import type { ToolsResult } from '../../../shared/tools'
 import type { ChangesStore, ThreadChanges } from './changesStore'
-import { shownCount } from './toolsWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 /**
  * The Checkpoints drawer. It opens under the Changes line of chrome, and its toggle is drawn into that line

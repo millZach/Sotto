@@ -17,7 +17,8 @@ import './changes.css'
 import { useDiffPreferences } from '../state/gitSettings'
 import { inEnglish } from '../state/interfaceLanguage'
 import { shownWords } from '../features/settings/laterWords'
-import { shownCount, shownNotice } from './toolsWords'
+import { shownCount } from '../state/interfaceNumbers'
+import { shownNotice } from './toolsWords'
 
 const BINARY_DIFF = msg`Binary file: no text diff.`
 const TOO_LARGE_DIFF = msg`Too large to show as a diff.`

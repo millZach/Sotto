@@ -206,9 +206,10 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
           for (const [index, form] of forms.entries()) expect(form.upserted(sessionId, since[index]!)).toBe(true)
         }
         await step(() => send(), () => shown()?.status === 'running' && shown()!.messages.some(m => m.id === 'own-message'))
-        await step(() => f.driver.raiseQuestion(sessionId, 'Which color?'), () => shown()?.requests.length === 1)
+        // A provider with no question route (DeepSeek Harness) shows its one kind of request, a permission, instead.
+        await step(() => skips.questions ? f.driver.raisePermission(sessionId, 'Run build?') : f.driver.raiseQuestion(sessionId, 'Which color?'), () => shown()?.requests.length === 1)
         const request = shown()!.requests[0]!
-        await step(() => f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: 'Blue' }), () => shown()?.requests.length === 0)
+        await step(() => f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: skips.questions ? '' : 'Blue', ...(skips.questions ? { approved: false } : {}) }), () => shown()?.requests.length === 0)
         await step(() => f.driver.completeTurn(sessionId, 'Completed reply'), () => shown()?.status === 'idle'
           && (shown(forms[1])?.summary?.lastAssistant?.text ?? '').includes('Completed reply'))
         for (const form of forms) {
@@ -232,7 +233,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         // More publications, so a thread read differently the second time shows it. The question shows before the next
         // driver action is written: a fake reads one action at a time from one file, and an action written while one of its
         // hosts is still taking the question can be removed with it, so the turn below would never end.
-        await f.driver.raiseQuestion(sessionId, 'Another thread asks')
+        await (skips.questions ? f.driver.raisePermission(sessionId, 'Another thread asks') : f.driver.raiseQuestion(sessionId, 'Another thread asks'))
         await expect.poll(() => shown(forms[0], sessionId)?.requests.length).toBe(1)
         f.host.observeThreads?.([sessionId, fresh])
         await f.host.execute({ type: 'send', threadId: fresh, commandId: randomUUID(), messageId: 'fresh-message', text: 'Synthetic prompt' })
@@ -399,7 +400,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       f = await f.driver.restart(); f.host.observeThreads?.([sessionId]); await f.host.connect()
       expect((await thread()).backgroundWork ?? []).toEqual([])
     })
-    it('routes a question and delivers its answer', async () => {
+    it('routes a question and delivers its answer', withFixtureSkip(skips.questions), async () => {
       await send(); await f.driver.raiseQuestion(sessionId, 'Which color?')
       await expect.poll(async () => (await thread()).requests.length).toBe(1)
       const request = (await thread()).requests[0]!

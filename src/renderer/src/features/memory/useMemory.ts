@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { msg } from '@lingui/core/macro'
 import type { MemoryBridge, MemoryCommand, MemorySnapshot } from '../../../../shared/memory'
+import { useLingui as useInterfaceLanguage } from '../../state/interfaceLanguageReact'
+import { shownWords, type LaterWords } from '../settings/laterWords'
 
 export function useMemory(bridge: MemoryBridge | undefined) {
+  // Reading the language here draws the memory pages again when it changes, so a kept error is said in the new one.
+  useInterfaceLanguage()
   const [snapshot, setSnapshot] = useState<MemorySnapshot | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<LaterWords>('')
   const [busy, setBusy] = useState(false)
   const generation = useRef(0)
   const mounted = useRef(false)
@@ -13,7 +18,7 @@ export function useMemory(bridge: MemoryBridge | undefined) {
     try {
       const value = await bridge?.get() ?? { available: false, questionnaireCompletedAt: null, memories: [], policies: [] }
       if (mounted.current && current === generation.current) { setSnapshot(value); setError('') }
-    } catch { if (mounted.current && current === generation.current) setError('Could not read memory. Try again.') }
+    } catch { if (mounted.current && current === generation.current) setError(msg`Could not read memory. Try again.`) }
   }, [bridge])
   useEffect(() => {
     mounted.current = true
@@ -33,10 +38,10 @@ export function useMemory(bridge: MemoryBridge | undefined) {
     } catch (failure) {
       // Refresh stale IDs while keeping the user's unsaved text in the editor.
       await refresh()
-      if (mounted.current) setError(failure instanceof Error ? failure.message : 'Could not save memory. Try again.')
+      if (mounted.current) setError(failure instanceof Error ? failure.message : msg`Could not save memory. Try again.`)
       return false
     } finally { pending.current = false; if (mounted.current) setBusy(false) }
   }
-  return { snapshot, error, busy, command, refresh }
+  return { snapshot, error: shownWords(error), busy, command, refresh }
 }
 export type MemoryController = ReturnType<typeof useMemory>
