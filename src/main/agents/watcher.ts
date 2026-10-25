@@ -2713,6 +2713,11 @@ export class WatcherService implements WatcherControlHooks {
       }
       const steerFallback = asked === 'steer' ? steerFallbackNote((input as WatcherToolInput<'send_to_thread'>).delivery) : undefined
       if (thread && send) {
+        // A steer that names its turn is meant for that turn alone. While any turn is under way, one that is not the named
+        // turn running refuses it before it could go another way; a thread at rest has no turn to mix it into.
+        const fence = (input as WatcherToolInput<'send_to_thread'>).expectedTurnId
+        if (fence && (picked ? isThreadTurnRunning(thread) && !(thread.lastTurn?.id === fence && thread.lastTurn.status === 'running')
+          : (input as WatcherToolInput<'send_to_thread'>).delivery === 'steer' && fence !== thread.lastTurn?.id)) refuse('STEER_UNAVAILABLE', STEER_TURN_CHANGED)
         this.checkHumanTurn(thread, record, (input as WatcherToolInput<'send_to_thread'>).delivery)
         // A send gives the thread no permission, so neither the new-thread default nor a host's hold-back limits it (#1145).
         const sent = input as WatcherToolInput<'send_to_thread'>
@@ -2731,7 +2736,6 @@ export class WatcherService implements WatcherControlHooks {
         const unfenced = !sent.expectedTurnId && (picked || Boolean(imported))
         if (sent.delivery === 'steer' && (!capabilitiesForThread(this.owningSnapshot(owner)!, thread).steer || thread.status !== 'running'
           || !sent.expectedTurnId && !unfenced)) refuse('STEER_UNAVAILABLE', 'Steer needs a supported, confirmed running turn. Read the thread and its turn first.')
-        if (sent.delivery === 'steer' && sent.expectedTurnId && sent.expectedTurnId !== thread.lastTurn?.id) refuse('STEER_UNAVAILABLE', STEER_TURN_CHANGED)
       }
       if (thread && name === 'settle_thread') {
         this.checkSettlement(thread)

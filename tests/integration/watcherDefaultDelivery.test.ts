@@ -181,6 +181,25 @@ it('refuses a default steer into a turn other than the one the send names', asyn
   expect(await f.send('Synthetic stale steer', { expectedTurnId: first })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
   expect(await f.send('Synthetic stale steer', { delivery: 'steer', expectedTurnId: first })).toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
   expect(f.commands('steer', 'Synthetic stale steer')).toBe(0)
+  // A turn Sotto has not confirmed is not the turn the send names either.
+  f.native().thread.lastTurn = { ...f.native().thread.lastTurn!, status: 'completed' }
+  await f.refresh()
+  expect(await f.send('Synthetic stale steer', { delivery: 'steer', expectedTurnId: f.native().thread.lastTurn!.id }))
+    .toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
+  expect(f.commands('steer', 'Synthetic stale steer')).toBe(0)
+})
+
+it('refuses a named steer for an ended turn rather than queue it behind another, where the provider cannot steer', async () => {
+  const f = await fixture('grok')
+  const first = await f.turn('running')
+  await f.turn('running')
+  expect(await f.send('Synthetic stale queue', { delivery: 'steer', expectedTurnId: first }))
+    .toMatchObject({ status: 'refused', code: 'STEER_UNAVAILABLE', message: STEER_TURN_CHANGED })
+  expect(f.control.hasPendingThreadWork(f.target.threadId)).toBe(false)
+  // Once the turn is over the thread is at rest, so the steer goes now and says so.
+  await f.turn('finished')
+  expect(await f.send('Synthetic late steer', { delivery: 'steer', expectedTurnId: first }))
+    .toMatchObject({ status: 'ok', delivery: 'now', note: steerFallbackNote('now') })
 })
 
 it('answers a retry of a default send with its first receipt, whatever the thread does since', async () => {
