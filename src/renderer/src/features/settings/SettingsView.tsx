@@ -66,6 +66,7 @@ import { CloudIphoneSettings } from './CloudIphoneSettings'
 import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
+import { WorkerMachineSettings } from './WorkerMachineSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
@@ -437,8 +438,10 @@ export function SettingsView({
   /** A group or setting to bring into view once its page shows. */
   const [reveal, setReveal] = useState<{ readonly group: string | null; readonly settings: readonly string[]; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
-  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles')
+  const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles'), crossMachineOn = useOwlFeature('cross-machine-work')
   const workerRoles = watcherOn && workerRolesOn
+  // Where new workers start (#1032), part of the Owl feature Work across machines, inside Watcher's page.
+  const workerMachine = watcherOn && crossMachineOn
   const performanceOn = useOwlFeature('main-freeze')
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
@@ -456,7 +459,7 @@ export function SettingsView({
   const ownServerCleanupOn = useOwlFeature('own-server-cleanup')
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -739,7 +742,9 @@ export function SettingsView({
               </Card>
 
               {watcherOn ? <Card className="settings-section" id="settings-watcher" {...panelProps('settings-watcher')}>
-                <div className="settings-section__heading"><h2>Watcher</h2><p className="tt-paragraph">{workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
+                <div className="settings-section__heading"><h2>Watcher</h2><p className="tt-paragraph">{workerMachine && workerRoles ? t`How Watcher looks after threads, where new workers start, and what each kind of work runs on`
+                  : workerMachine ? t`How Watcher looks after threads, and where new workers start`
+                  : workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
                 <SettingsGroup title={t`Watched threads`} icon={Eye}>
                   <Toggle setting="watcher-settles" label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
                     description={t`Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.`} />
@@ -747,6 +752,8 @@ export function SettingsView({
                 <SettingsGroup title={t`Compaction`} icon={Shrink}>
                   <WatcherCompactionSetting value={settings.watcherCompactAtTokens} onSave={save} />
                 </SettingsGroup>
+                {workerMachine ? <WorkerMachineSettings settings={settings} onUpdateSettings={onUpdateSettings}
+                  onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /> : null}
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 

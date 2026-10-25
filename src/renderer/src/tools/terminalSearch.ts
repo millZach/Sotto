@@ -3,7 +3,7 @@ import { plural, t } from '@lingui/core/macro'
 import type { IMarker, Terminal } from '@xterm/xterm'
 import { SearchAddon } from '@xterm/addon-search'
 import { terminalLineStart, terminalLineText, terminalTextPosition } from './terminalBuffer'
-import { shownCount } from './toolsWords'
+import { shownCount } from '../state/interfaceNumbers'
 
 const HIGHLIGHT_LIMIT = 1_000
 

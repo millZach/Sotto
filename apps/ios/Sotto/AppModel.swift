@@ -16,6 +16,9 @@ extension AppModel {
     /// Whether this computer takes a message while Watcher works (#1229): Send steers into Watcher's turn, or the words go
     /// next as their own turn, and a follow-up waiting for Watcher can be removed. An older one refuses it while Watcher works.
     func offersWatcherSteer(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(Self.watcherSteerFeature) == true }
+    /// Whether this computer's Watcher page names its machines (#1032): the line under Watcher's name and each machine's
+    /// panel. Only a computer with Work across machines on offers it.
+    func offersWatcherMachines(_ hostID: String) -> Bool { offersWatcher(hostID) && live[hostID]?.features.contains(WatcherWire.machinesFeature) == true }
     /// The computer whose Watcher the Watcher tab shows: the one last chosen, by a Watcher alert or the menu in the tab's
     /// header, while it still runs Watcher, and otherwise the first paired computer that runs one. With none, there is no
     /// tab, and nothing else in the app changes.
@@ -116,6 +119,34 @@ extension AppModel {
                 continue
             }
         } while watcherRereads.contains(hostID)
+    }
+    /// Reads Watcher's page with each machine's facts read afresh (#1032): when the user opens a machine's numbers, or
+    /// Watcher has placed work the line has not been read for. Never on a timer. One at a time on each computer; a request
+    /// during one asks for one more after it, so a placement made meanwhile is still read for. A read that fails leaves the
+    /// last page, whose machines say when they were read.
+    func readWatcherMachines(_ hostID: String) async {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return }
+        #endif
+        guard offersWatcherMachines(hostID), online(hostID) else { return }
+        guard watcherMachineReads.insert(hostID).inserted else { watcherMachineRereads.insert(hostID); return }
+        defer { watcherMachineReads.remove(hostID) }
+        repeat {
+            watcherMachineRereads.remove(hostID)
+            guard online(hostID), let connection = connections[hostID], let epoch = generations[hostID] else { return }
+            guard case .ok(let page)? = try? await connection.call(WatcherWire.readMachines, as: WatcherPhoneResult.self),
+                  generations[hostID] == epoch else { continue }
+            applyWatcher(page, from: hostID)
+        } while watcherMachineRereads.contains(hostID)
+    }
+    /// Reads the machines once for each set of Watcher's starts the line has not been read for (#1032), so the line's words
+    /// follow a start. Starts are the page's start receipts; the same set is not read for twice while the app runs.
+    func readWatcherMachinesAfterStarts(_ hostID: String) {
+        guard offersWatcherMachines(hostID), let page = watcherPage(hostID) else { return }
+        let starts = page.receiptGroups.flatMap { $0.rows }.filter { $0.action == "start" }.map(\.operationId).joined(separator: ",")
+        guard !starts.isEmpty, watcherStore.machinesReadFor[hostID] != starts else { return }
+        watcherStore.machinesReadFor[hostID] = starts
+        Task { await readWatcherMachines(hostID) }
     }
     static func watcherUnreadable(_ computer: String) -> String {
         "Watcher on \(computer) couldn’t be read. Nothing was lost. Pull down to read it again."
@@ -998,6 +1029,8 @@ enum AlertPermission: Equatable { case undecided, allowed, denied }
 /// threads read a summary on the model, which changes far less often.
 @MainActor final class WatcherStore: ObservableObject {
     @Published var pages: [String: WatcherPage] = [:]
+    /// The starts each computer's machines were last read for, so a placement is read for once however often the tab opens.
+    var machinesReadFor: [String: String] = [:]
 }
 
 /// A thread's history as it was last read, and the thread it belongs to.
@@ -1164,6 +1197,9 @@ struct HeldDetail {
     /// Computers whose page is being read, and ones asked to read again once that read is done.
     private var watcherReads: Set<String> = []
     private var watcherRereads: Set<String> = []
+    /// Computers whose machines are being read afresh, and ones asked to read them again once that read is done (#1032).
+    private var watcherMachineReads: Set<String> = []
+    private var watcherMachineRereads: Set<String> = []
     /// What each computer's Watcher page held when this iPhone last read it, for Watcher's own alerts.
     private var watcherWatches: [String: WatcherWatch] = [:]
     /// Watcher's permissions, by computer, and threads' watches, by thread, being changed until their computer answers

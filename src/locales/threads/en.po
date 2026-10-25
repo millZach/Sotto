@@ -552,6 +552,35 @@ msgstr "Removing…"
 msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 msgstr "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
 
+#. Runs a code block's shell command in a new terminal.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run"
+msgstr "Run"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again"
+msgstr "Run again"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again in terminal"
+msgstr "Run again in terminal"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run again: {command}"
+msgstr "Run again: {command}"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in a new terminal drawer shell"
+msgstr "Run in a new terminal drawer shell"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in terminal"
+msgstr "Run in terminal"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Run in terminal: {command}"
+msgstr "Run in terminal: {command}"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Runs with OpenCode"
 msgstr "Runs with OpenCode"
@@ -640,6 +669,18 @@ msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothi
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Starting Cursor’s sign-in…"
 msgstr "Starting Cursor’s sign-in…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting in terminal…"
+msgstr "Starting in terminal…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting…"
+msgstr "Starting…"
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Starting…: {command}"
+msgstr "Starting…: {command}"
 
 #. {name} is the user’s own model server, such as Sparks.
 #: src/renderer/src/agents/ownServerTurnWords.ts

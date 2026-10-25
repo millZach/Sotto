@@ -133,20 +133,35 @@ export class TerminalStore {
     this.setThread({ ...latest, workspace, status: 'ready', error: null, sessions, activeSessionId: active })
   }
 
+  /** Drops the last failure's words, such as when its drawer is hidden, so they do not greet the next opening. */
+  clearNotice(threadId: string): void {
+    if (this.threads.get(threadId)?.notice) this.patch(threadId, { notice: null })
+  }
+
   select(threadId: string, sessionId: string): void {
     const current = this.threads.get(threadId)
     if (current?.sessions.some(session => session.id === sessionId)) this.patch(threadId, { activeSessionId: sessionId })
   }
 
-  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }): Promise<void> {
+  /**
+   * Starts a new shell, true once main has. With `run`, a reply's command (ADR-0139), main types it into the new shell
+   * itself, so nothing here writes it and a snapshot replay cannot drop it. The thread must be listed first. `busy` is
+   * set before the first wait, so a drawer opened alongside starts no second shell of its own.
+   */
+  async create(bridge: TerminalBridge | undefined, threadId: string, size?: { cols: number; rows: number }, run?: string): Promise<boolean> {
     const target = this.target(threadId)
-    if (!bridge || !target) return
+    if (!bridge || !target) {
+      // A press always gets an answer: a Run that cannot start says so rather than quietly going back to idle.
+      if (run !== undefined) this.patch(threadId, { notice: { words: msg`The command did not run. Sotto could not reach this thread’s terminals. Try again.` } })
+      return false
+    }
     this.listen(bridge)
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}) }))
-    if (!result.ok) { this.fail(bridge, threadId, result.error, msg`Could not start a terminal.`); return }
+    const result = await settle(bridge.create({ ...target, place: this.place, ...(size ?? {}), ...(run === undefined ? {} : { run }) }))
+    if (!result.ok) { this.fail(bridge, threadId, result.error, run === undefined ? msg`Could not start a terminal.` : msg`The command did not run.`); return false }
     this.adopt(threadId, result.value)
     this.patch(threadId, { busy: false, activeSessionId: result.value.session.id })
+    return true
   }
 
   /** A session that exited or ended with the app gets a new shell in the same place. Its old output is not restored. */

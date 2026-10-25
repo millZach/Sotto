@@ -1,6 +1,5 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import type { ToolsError } from '../../../shared/tools'
-import { SOURCE_INTERFACE_LANGUAGE } from '../../../shared/interfaceLanguages'
 import { shownWords, type LaterWords } from '../features/settings/laterWords'
 
 /**
@@ -34,12 +33,4 @@ export function ownError(code: ToolsError['code'], words: MessageDescriptor): To
 /** What an error says, to keep: the window's own message, or main's text as main wrote it. */
 export function errorWords(error: ToolsError): LaterWords {
   return ownErrors.get(error) ?? error.message
-}
-
-/**
- * A count in the interface language, for a message to place where `#` would go. English keeps the digits as it always
- * wrote them, ungrouped ("1000 commits behind main"), which a plural's own `#` would change to "1,000".
- */
-export function shownCount(value: number): string {
-  return i18n.locale === SOURCE_INTERFACE_LANGUAGE ? String(value) : new Intl.NumberFormat(i18n.locale).format(value)
 }

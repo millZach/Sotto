@@ -1,12 +1,13 @@
 import { t } from '@lingui/core/macro'
-import type { WatcherBridge, WatcherRoomListChange, WatcherRoomPatch, WatcherRoomState, WatcherRoomUpdate } from '../../shared/watcherRoom'
+import { watcherMachinesReadSchema, type WatcherBridge, type WatcherRoomListChange, type WatcherRoomPatch, type WatcherRoomState, type WatcherRoomUpdate } from '../../shared/watcherRoom'
 import type { WatcherService } from './watcher'
 import { samePlainData } from './agentStateBroadcast'
 import { coalesceAgentStatePublishes, type PublishScheduler } from './control'
 
 type RoomService = Pick<WatcherService, 'subscribe' | 'state' | 'get' | 'open' | 'prepareStopAll' | 'stopAll' | 'setPermission' | 'watchThread' | 'unwatchThread'
-  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'>
-type RoomBridge = Required<Omit<WatcherBridge, 'onChanged'>>
+  | 'readHandover' | 'continueWithHandover' | 'dismissHandover' | 'startNew' | 'readMergeTurns'> & Partial<Pick<WatcherService, 'machines'>>
+/** Every room call, and the machines read only while Work across machines is on (#1032). */
+export type RoomBridge = Required<Omit<WatcherBridge, 'onChanged' | 'readMachines'>> & Pick<WatcherBridge, 'readMachines'>
 
 /**
  * The window's room updates (#1450): each carries what changed since the last one the window was sent, a list's
@@ -90,6 +91,8 @@ function listChange(before: readonly unknown[], after: readonly unknown[]): Watc
 export function createWatcherRoomDesktop(options: {
   watcherEnabled: boolean
   streamingPublishCost: boolean
+  /** Work across machines (#1032, Owl `cross-machine-work`), read once at start: offers the machines read. */
+  machinesEnabled?: boolean
   watcher?: RoomService | undefined
   send(state: WatcherRoomState | WatcherRoomUpdate): boolean
   schedule?: PublishScheduler
@@ -111,6 +114,7 @@ export function createWatcherRoomDesktop(options: {
     dismissHandover: async () => watcher?.dismissHandover() ?? unavailable(),
     startNew: () => watcher?.startNew() ?? Promise.resolve(unavailable()),
     readMergeTurns: async () => watcher?.readMergeTurns() ?? unavailable(),
+    ...options.machinesEnabled === true ? { readMachines: async () => watcher?.machines ? watcherMachinesReadSchema.parse(await watcher.machines()) : unavailable() } : {},
   }
   // Keep the legacy callback/replies, without a publisher or updates, when either owner is absent: the room, whole, on every change.
   if (!options.streamingPublishCost || !watcher) {
@@ -143,6 +147,7 @@ export function createWatcherRoomDesktop(options: {
       startNew: () => reply(() => bridge.startNew()),
       // A read changes nothing, so it waits for no publish.
       readMergeTurns: () => bridge.readMergeTurns(),
+      ...bridge.readMachines ? { readMachines: bridge.readMachines } : {},
     },
     dispose: () => { unsubscribe(); publisher.dispose() },
   }

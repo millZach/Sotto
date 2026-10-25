@@ -1,13 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { Trans, useLingui } from '@lingui/react/macro'
+import { shownWords } from '../features/settings/laterWords'
 import { useWatchActions, useWatchedThread } from './watcherRoom'
 import { watchNotices, useWatchNotice } from './watchNotice'
 import { useWatchOnSend, watchOnSend } from './watchOnSend'
 import { WatcherOwl } from './WatcherOwl'
-
-/** What a press on a toggle does, for its tooltip: the toggle's name stays Watch, and its pressed state says the rest. */
-const WATCH_TIP = 'Watch: Watcher keeps this thread going until you stop it'
-const STOP_TIP = 'Stop watching: Watcher lets this thread be'
 
 /**
  * What every owl toggle shares: its name, pressed state, tooltip and press. Its name is Watch and the thread's title, the
@@ -15,17 +13,19 @@ const STOP_TIP = 'Stop watching: Watcher lets this thread be'
  * bridge offers neither, and no owl is drawn as a control.
  */
 function useWatchToggle(threadId: string, title: string) {
+  const { t } = useLingui()
   const actions = useWatchActions()
   const watched = useWatchedThread(threadId)
-  return actions === null ? null : { type: 'button' as const, 'aria-pressed': watched, 'aria-label': `Watch ${title}`,
-    title: watched ? STOP_TIP : WATCH_TIP, onClick: () => void actions.setThread(threadId, !watched) }
+  // What a press does, for its tooltip: the toggle's name stays Watch, and its pressed state says the rest.
+  return actions === null ? null : { type: 'button' as const, 'aria-pressed': watched, 'aria-label': t`Watch ${title}`,
+    title: watched ? t`Stop watching: Watcher lets this thread be` : t`Watch: Watcher keeps this thread going until you stop it`, onClick: () => void actions.setThread(threadId, !watched) }
 }
 
 /** Watch in a thread's pane header (Zach's pick on October 13, 2026, watch B): pressed while Watcher watches the thread. */
 export function WatchHeaderToggle({ threadId, title }: { readonly threadId: string; readonly title: string }): ReactNode {
   const toggle = useWatchToggle(threadId, title)
   if (toggle === null) return null
-  return <button className="watch-toggle tt-focusable" {...toggle}><WatcherOwl size={15} /><span className="watch-toggle__text">Watch</span></button>
+  return <button className="watch-toggle tt-focusable" {...toggle}><WatcherOwl size={15} /><span className="watch-toggle__text"><Trans context="Put a thread under Watcher's watch">Watch</Trans></span></button>
 }
 
 /** The owl among a sidebar row's actions, pressed while Watcher watches the thread. */
@@ -42,15 +42,13 @@ export function WatchListToggle({ threadId, title }: { readonly threadId: string
   return <button className="watcher-row__watch tt-focusable" {...toggle}><WatcherOwl size={15} /></button>
 }
 
-const WATCH_ON_SEND_TIP = 'Watch: Watcher watches this thread from your first message until you stop it'
-const WATCHED_ON_SEND_TIP = 'Watched: Watcher watches this thread from your first message. Press again to leave it unwatched'
-
 /**
  * Watch among a new thread's option chips, after its permissions, named Watch like the other toggles: pressed, the first send puts the thread under a
  * standing watch. It is pressed too while Watcher already watches the thread, and a press then stops watching at once.
  * Not drawn where the Watcher gate is off or the bridge offers no Watch.
  */
 export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): ReactNode {
+  const { t } = useLingui()
   const actions = useWatchActions()
   const watched = useWatchedThread(threadId)
   const wanted = useWatchOnSend(threadId)
@@ -59,12 +57,12 @@ export function WatchOnSendToggle({ threadId }: { readonly threadId: string }): 
   if (actions === null) return null
   const on = watched || wanted
   return <button type="button" className="thread-chip watch-on-send tt-focusable" aria-pressed={on}
-    title={on ? WATCHED_ON_SEND_TIP : WATCH_ON_SEND_TIP}
+    title={on ? t`Watched: Watcher watches this thread from your first message. Press again to leave it unwatched` : t`Watch: Watcher watches this thread from your first message until you stop it`}
     onClick={() => {
       if (!watched) { watchOnSend.set(threadId, !wanted); return }
       watchOnSend.set(threadId, false); void actions.setThread(threadId, false)
     }}>
-    <WatcherOwl size={14} /><span>Watch</span>
+    <WatcherOwl size={14} /><span><Trans context="Put a thread under Watcher's watch">Watch</Trans></span>
   </button>
 }
 
@@ -99,6 +97,7 @@ export function useFocusLanding(shown: unknown, land: (compose: Element) => HTML
  * after a few seconds.
  */
 export function WatchToast(): ReactNode {
+  const { t } = useLingui()
   const actions = useWatchActions()
   const notice = useWatchNotice()
   // Dismiss and Undo take the toast away with their own button; the composer under it keeps the keyboard, and the
@@ -107,14 +106,14 @@ export function WatchToast(): ReactNode {
   if (actions === null || notice === null) return null
   const { id, target, title, watched, refusal } = notice
   if (refusal !== null) return <div className="watch-toast-anchor"><div className="watch-toast" data-tone="refused" role="alert">
-    <WatcherOwl size={15} /><span>{refusal}</span>
-    <button type="button" className="watch-toast__dismiss tt-focusable" aria-label="Dismiss" title="Dismiss"
+    <WatcherOwl size={15} /><span>{shownWords(refusal)}</span>
+    <button type="button" className="watch-toast__dismiss tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`}
       onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id) }}><X size={14} aria-hidden="true" /></button>
   </div></div>
   return <div className="watch-toast-anchor"><div className="watch-toast" role="status">
     <WatcherOwl size={15} />
-    <span>{watched ? <>Watcher is watching <strong>{title}</strong>.</> : <>Watcher stopped watching <strong>{title}</strong>.</>}</span>
-    <button type="button" className="watch-toast__undo tt-focusable" aria-label={watched ? `Undo: stop watching ${title}` : `Undo: watch ${title} again`}
-      onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id); void actions.set(target, title, !watched) }}>Undo</button>
+    <span>{watched ? <Trans>Watcher is watching <strong>{title}</strong>.</Trans> : <Trans>Watcher stopped watching <strong>{title}</strong>.</Trans>}</span>
+    <button type="button" className="watch-toast__undo tt-focusable" aria-label={watched ? t`Undo: stop watching ${title}` : t`Undo: watch ${title} again`}
+      onClick={event => { landing.from(event.currentTarget); watchNotices.dismiss(id); void actions.set(target, title, !watched) }}><Trans>Undo</Trans></button>
   </div></div>
 }

@@ -35,6 +35,27 @@ const CELL_HEIGHT = 17
 const CHROME_HEIGHT = 80
 const CHROME_WIDTH = 40
 
+/** The cell grid a new drawer shell should start at, estimated from the drawer's width and height in pixels. */
+export function drawerShellSize(width: number, height: number): { cols: number; rows: number } | undefined {
+  if (width <= 0) return undefined
+  return {
+    cols: Math.max(20, Math.min(500, Math.floor((width - CHROME_WIDTH) / CELL_WIDTH))),
+    rows: Math.max(5, Math.min(300, Math.floor((height - CHROME_HEIGHT) / CELL_HEIGHT))),
+  }
+}
+
+/**
+ * How tall a pane's drawer is, and the bounds it is held to: the saved height, else a third of the pane, kept between
+ * the drawer's minimum (more while its search is open) and what leaves the conversation its room. `paneHeight` is the
+ * `.thread-pane`'s client height, 0 while unmeasured.
+ */
+export function drawerHeight(paneHeight: number, saved: number | null, searchOpen = false): { readonly height: number; readonly min: number; readonly max: number } {
+  // The search row takes 48px; another 16px keeps one output row readable even at the largest text size.
+  const min = MIN_DRAWER_HEIGHT + (searchOpen ? 64 : 0)
+  const max = paneHeight > 0 ? Math.max(min, paneHeight - MIN_CONVERSATION_AREA) : Math.max(min, saved ?? min)
+  const clamp = (value: number): number => Math.min(max, Math.max(min, value))
+  return { height: clamp(saved ?? (paneHeight > 0 ? Math.round(paneHeight / 3) : 200)), min, max }
+}
 
 /**
  * Hides a pane's drawer from inside it and puts focus back in the pane once the drawer has left the page, so focus
@@ -112,7 +133,9 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
       else chromeStore.setOpen(threadId, false)
     }
   }, [chrome.open, terminals, chromeStore, threadId])
-  useLayoutEffect(() => { if (!chrome.open) hadSessions.current = false }, [chrome.open])
+  // A hidden drawer forgets its last failure, so opening it again starts a shell as usual; a Run that fails while it
+  // is open leaves its notice up, and the drawer starts no plain shell in that command's place (ADR-0139).
+  useLayoutEffect(() => { if (!chrome.open) { hadSessions.current = false; store.clearNotice(threadId) } }, [chrome.open, store, threadId])
 
   // The Ctrl+J shortcut sets this before opening by keyboard; consumed at most once, it reaches the terminal
   // once its first shell is ready, the same way the "Start terminal" and "Reopen" buttons already do. This runs
@@ -127,12 +150,8 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
 
   if (!chrome.open) return null
 
-  // The search row takes 48px; another 16px keeps one output row readable even at the largest text size.
-  const min = MIN_DRAWER_HEIGHT + (searchOpen ? 64 : 0)
-  const max = paneAreaHeight > 0 ? Math.max(min, paneAreaHeight - MIN_CONVERSATION_AREA) : Math.max(min, chrome.height ?? min)
+  const { height, min, max } = drawerHeight(paneAreaHeight, chrome.height, searchOpen)
   const clamp = (value: number): number => Math.min(max, Math.max(min, value))
-  const defaultHeight = clamp(paneAreaHeight > 0 ? Math.round(paneAreaHeight / 3) : 200)
-  const height = clamp(chrome.height ?? defaultHeight)
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (event.button !== 0) return
@@ -161,14 +180,7 @@ export function PaneTerminalDrawer({ threadId, thread, project, bridge, viewFact
     chromeStore.setHeight(threadId, clamp(next))
   }
 
-  const startSize = (): { cols: number; rows: number } | undefined => {
-    const width = root.current?.clientWidth ?? 0
-    if (width <= 0) return undefined
-    return {
-      cols: Math.max(20, Math.min(500, Math.floor((width - CHROME_WIDTH) / CELL_WIDTH))),
-      rows: Math.max(5, Math.min(300, Math.floor((height - CHROME_HEIGHT) / CELL_HEIGHT))),
-    }
-  }
+  const startSize = (): { cols: number; rows: number } | undefined => drawerShellSize(root.current?.clientWidth ?? 0, height)
 
   const facts = describeWorkingCopy(thread, project)
   // The drawer's shells start in the project folder, so the branch is named only when the thread's own folder is that

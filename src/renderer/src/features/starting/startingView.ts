@@ -1,3 +1,5 @@
+import { plural, t } from '@lingui/core/macro'
+
 import { PROVIDER_LABELS, type AgentProviderStatus, type AgentState } from '../../../../shared/agents'
 import type { HostsState, HostStatus } from '../../../../shared/hosts'
 
@@ -101,7 +103,9 @@ export function watchedItems(agent: AgentState | null, hosts: HostsState | null)
 /** "Codex", "Codex and forge", "Claude Code, Codex and forge". */
 export function listNames(names: readonly string[]): string {
   if (names.length < 2) return names[0] ?? ''
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  const first = names.slice(0, -1).join(', ')
+  const last = names[names.length - 1]!
+  return t`${first} and ${last}`
 }
 
 /**
@@ -113,19 +117,23 @@ export function startingView(input: StartingInput): StartingView {
   const shown = watchedItems(input.agentKnown ? input.agent : null, input.hostsKnown ? input.hosts : null)
     .filter(item => item.state !== 'not-connected' || input.seen.has(item.key))
   const pending = shown.filter(item => item.state === 'connecting')
-  const names = listNames(pending.map(item => item.name))
+  const names = listNames(pending.map(item => item.name)), pendingCount = pending.length
   // Ten seconds never stand in for an answer: without main's first state the screen holds and, once late, says so.
   const settled = input.agentKnown && input.hostsKnown && pending.length === 0
   const loading = !input.agentKnown || pending.length === 0
-  const line = settled ? 'Ready'
-    : loading ? 'Loading your threads'
-      : input.late ? `Waiting for ${names}`
-        : `Connecting ${pending[0]!.name}`
+  const connecting = pending[0]?.name ?? ''
+  const line = settled ? t({ message: 'Ready', comment: 'The starting screen once every provider and host has connected' })
+    : loading ? t`Loading your threads`
+      : input.late ? t`Waiting for ${names}`
+        : t`Connecting ${connecting}`
   const late = !input.late || settled ? null
-    : loading ? { text: 'Sotto has not loaded your threads in 10 seconds. It keeps trying.', button: 'Open Sotto now' }
+    : loading ? { text: t`Sotto has not loaded your threads in 10 seconds. It keeps trying.`, button: t`Open Sotto now` }
       : {
-          text: `${names} ${pending.length > 1 ? 'have' : 'has'} not answered in 10 seconds. Sotto keeps trying in the background.`,
-          button: `Open Sotto without ${names}`,
+          text: plural(pendingCount, {
+            one: `${names} has not answered in 10 seconds. Sotto keeps trying in the background.`,
+            other: `${names} have not answered in 10 seconds. Sotto keeps trying in the background.`,
+          }),
+          button: t`Open Sotto without ${names}`,
         }
   return {
     line,
