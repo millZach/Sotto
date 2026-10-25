@@ -395,6 +395,12 @@ export class WatcherService implements WatcherControlHooks {
    */
   private readonly createdRemotely = new Set<string>()
   /**
+   * Moved branches of starts sent to another machine whose answer never came (#1033), by operation: reconciling lets one go
+   * once the host's receipt is a definite failure and its snapshot holds no such thread, as an answer would have. In
+   * memory only, as the move's own record is; bounded like the other in-memory start records.
+   */
+  private readonly unsettledMoves = new Map<string, LandedMove>()
+  /**
    * Starts from a thread's branch placed but not yet run (#1033), by the move each will make: the thread whose branch it
    * carries, whether it is a test run, and the machine it goes to. Taken when the start runs, which is at once.
    */
@@ -3436,6 +3442,8 @@ ${operation.draftId}`)
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id), ...this.machineWorkingWarning(operation.target) } : {}), ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
     } catch (error) {
       if (!sent) await this.releaseMove(landed)
+      // Sent, but the answer was lost: the host may have failed the start, and reconciling finds out.
+      else if (landed) this.rememberUnsettledMove(operation.id, landed)
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
         return { ...error.result, receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
@@ -3447,6 +3455,24 @@ ${operation.draftId}`)
           if (saved.action === 'start' && requestTimedOut(error)) this.timedOutStarts.add(saved.id)
         } })
       return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+    }
+  }
+  private rememberUnsettledMove(operationId: string, landed: LandedMove): void {
+    this.unsettledMoves.set(operationId, landed)
+    while (this.unsettledMoves.size > 1_000) this.unsettledMoves.delete(this.unsettledMoves.keys().next().value!)
+  }
+  /**
+   * After a reconcile of `hostId`: a start whose answer was lost lets its branch go once its receipt is a definite failure
+   * and the host's snapshot holds no thread for it, the rule an answer follows. An accepted start's thread owns the ref;
+   * an uncertain one keeps it.
+   */
+  private async settleMoves(hostId: string): Promise<void> {
+    for (const [operationId, landed] of [...this.unsettledMoves]) {
+      if (landed.hostId !== hostId) continue
+      const operation = this.record().operations.find(item => item.id === operationId)
+      if (operation?.deliveryState === 'uncertain' || operation?.deliveryState === 'dispatching') continue
+      this.unsettledMoves.delete(operationId)
+      if (operation?.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
     }
   }
   private recordRemoteRefusal(record: WatcherRecord, operationId: string, code: WatcherRefusal['code']): void {
@@ -3625,6 +3651,7 @@ ${operation.draftId}`)
         }
         while (this.remoteProgress.size > 1_000) this.remoteProgress.delete(this.remoteProgress.keys().next().value!)
         this.wakes.pairedEvidence(host.hostId, projection.evidence)
+        await this.settleMoves(host.hostId)
         if (receiptFailed) this.retryRemote(host.hostId)
         else this.remoteFailures.delete(host.hostId)
       } catch {
