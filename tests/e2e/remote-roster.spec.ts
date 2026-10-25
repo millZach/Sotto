@@ -125,9 +125,12 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) })
       return ((await response.json()) as { result: { structuredContent: Delegated } }).result.structuredContent
     }
-    const reply = async (threadId: string, text: string) => {
+    /** The provider ends the thread's running turn with a reply; the host has seen that turn end, whatever starts after it. */
+    const reply = async (threadId: string, text: string): Promise<string | undefined> => {
+      const turn = thread(threadId)?.lastTurn?.id
       await native.driver.completeTurn(await session(threadId), text)
-      await expect.poll(() => thread(threadId)?.lastTurn?.status).toBe('completed')
+      await expect.poll(() => { const last = thread(threadId)?.lastTurn; return last !== undefined && (last.id !== turn || last.status === 'completed') }).toBe(true)
+      return turn
     }
     const delegate = (from: string, work: string, title: string, brief: string, extra: Record<string, unknown> = {}) =>
       call(from, 'delegate', { work, title, brief, provider: 'codex', model: model.id, effort: 'low', wait_seconds: 0, ...extra })
@@ -143,7 +146,11 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
     const list = await delegate(research.delegation!.thread, 'research', 'List the agents-view fields', 'From docs/host-protocol.md, list each field of thread-delegations with its type.', { permission: 'approval-required' })
     expect(list.status, JSON.stringify(list)).toBe('ok')
     await reply(list.delegation!.thread, 'Synthetic list of fields')
-    await reply(research.delegation!.thread, 'Synthetic research finding')
+    const researched = await reply(research.delegation!.thread, 'Synthetic research finding')
+    // The list's answer reached the research thread while its turn ran, so it wakes that thread once the turn ends.
+    await expect.poll(() => thread(research.delegation!.thread)?.lastTurn?.id).not.toBe(researched)
+    await reply(research.delegation!.thread, 'Synthetic reply to the answer of the list')
+    await expect.poll(() => thread(research.delegation!.thread)?.lastTurn?.status).toBe('completed')
     // Asked for a system the host is not: the start is refused, and its record keeps what was asked for.
     const otherSystem = process.platform === 'darwin' ? 'windows' : 'macos'
     expect(await delegate(parentId, 'building', 'Sign the Mac build', 'Notarize the Mac build.', { os: otherSystem })).toMatchObject({ status: 'refused', code: 'MACHINE_UNAVAILABLE' })
@@ -194,7 +201,8 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       const rows = forge.getByRole('list', { name: 'Delegated threads on Forge, newest first' })
       const row = (title: string): Locator => rows.locator('li', { has: page.locator('.subagent-title', { hasText: title }) })
       await expect(row('List the agents-view fields')).toHaveAttribute('data-nested', 'true')
-      await expect(row('Find what the iPhone reads for agents').locator('.delegated-row__status')).toHaveText('Answered')
+      // Its last turn, the wake-up with the list's answer, finished while no one had it open.
+      await expect(row('Find what the iPhone reads for agents').locator('.delegated-row__status')).toHaveText('Just finished')
       await expect(row('Run the host contract tests').locator('.delegated-row__held')).toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
       await expect(row('Review the delegation socket changes').locator('.delegated-row__held')).toHaveText('Held at Ask for approval: this computer can\'t answer on Forge.')
       await expect(row('Review the delegation socket changes').locator('.subagent-meta')).toContainText('Codex · Building')
