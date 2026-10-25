@@ -151,17 +151,19 @@ export class FailuresSeen {
   }
 
   /**
-   * The thread as clients read it: its failure's name and reason while it stands in one, and `failureSeen` while that is
-   * seen. A thread that stands in none carries none of the three.
+   * The thread as clients read it: its failure's name, reason and when it was named while it stands in one, and
+   * `failureSeen` while that is seen. A thread that stands in none carries none of the four.
    */
-  publish<T extends Pick<AgentThread, 'id' | 'failureSeen' | 'failureId' | 'failureReason'>>(thread: T): T {
+  publish<T extends Pick<AgentThread, 'id' | 'failureSeen' | 'failureId' | 'failureReason' | 'failureSince'>>(thread: T): T {
     const failure = this.failures.get(thread.id)
     const seen = failure?.seen === true
-    if (thread.failureId === failure?.id && (thread.failureSeen === true) === seen && thread.failureReason === failure?.reason) return thread
-    const { failureSeen: _seen, failureId: _id, failureReason: _reason, ...rest } = thread
-    void _seen; void _id; void _reason
+    const since = failure?.since === undefined ? undefined : new Date(failure.since).toISOString()
+    if (thread.failureId === failure?.id && (thread.failureSeen === true) === seen && thread.failureReason === failure?.reason
+      && thread.failureSince === since) return thread
+    const { failureSeen: _seen, failureId: _id, failureReason: _reason, failureSince: _since, ...rest } = thread
+    void _seen; void _id; void _reason; void _since
     return { ...rest, ...(failure ? { failureId: failure.id } : {}), ...(failure?.reason ? { failureReason: failure.reason } : {}),
-      ...(seen ? { failureSeen: true } : {}) } as T
+      ...(since ? { failureSince: since } : {}), ...(seen ? { failureSeen: true } : {}) } as T
   }
 
   /** Keeps the failed turn's reason with its failure; a snapshot that carries no activity leaves what was read before. */

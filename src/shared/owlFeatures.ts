@@ -43,6 +43,7 @@ export const OWL_FEATURES = [
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },
+  { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
   { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
