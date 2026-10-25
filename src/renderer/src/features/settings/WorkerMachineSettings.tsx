@@ -140,7 +140,7 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
             <span className="worker-machine__title" id={titleId}>{choice.title}</span>
             {on ? <span className="worker-machine__tag">{t`New workers start here`}</span> : null}
           </span>
-          {facts !== null ? <span className="worker-machine__facts" id={factsId}>{facts}</span> : null}
+          {facts !== null ? <span className="worker-machine__facts tt-paragraph" id={factsId}>{facts}</span> : null}
           <NowWords choice={choice} />
           {on && !choice.connected ? <span className="worker-machine__note tt-paragraph" id={noteId}>{choice.forgotten === true
             ? t`This machine is no longer saved, so new workers start on this computer. Choose another.`

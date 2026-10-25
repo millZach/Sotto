@@ -7,10 +7,6 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: hi\n"
 
-#: src/renderer/src/watcher/WatcherMachines.tsx
-msgid ". New workers start here."
-msgstr ""
-
 #. placeholder {0}: entry.starting
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
@@ -119,6 +115,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{working, plural, one {# working} other {# working}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "<0>{count}</0>. New workers start here."
 msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts

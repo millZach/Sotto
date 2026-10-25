@@ -139,7 +139,7 @@ function ReceiptCard({ operation, conversation }: { readonly operation: WatcherO
       {facts.project === undefined ? null : <span className="receipt-card__project">{facts.project}</span>}
       {unconfirmed ? <span className="receipt-card__unconfirmed">Not confirmed yet</span> : null}
     </p>
-    {placed !== null ? <p className="receipt-card__placement">{placed}</p> : null}
+    {placed !== null ? <p className="receipt-card__placement tt-paragraph">{placed}</p> : null}
   </li>
 }
 

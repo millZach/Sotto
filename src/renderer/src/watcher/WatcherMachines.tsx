@@ -9,7 +9,7 @@ import { machineEntries, shortLine, systemWords, type MachineEntry } from '../..
 import { agoWords, calmLabel, calmWords, countWords, cpuWords, lineText, listWords, machineLabel, machineName, memoryRowWords, moreLabel, moreWords, overWords,
   problemWords, unknownWhyWords } from './machineWords'
 import { plural } from '@lingui/core/macro'
-import { useLingui } from '@lingui/react/macro'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { machinesStore, useMachines } from './useMachines'
 import { savedMachines, useHostsState } from '../state/hostsState'
 import type { HostsBridge } from '../../../shared/hosts'
@@ -135,6 +135,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   const why = unknownWhyWords(entry, now)
   const name = machineName(entry)
   const over = overWords(entry)
+  const count = countWords(entry)
   const system = machine === null ? null : systemWords(machine)
   const cpus = facts?.logicalCpuCount ?? null
   const cpuKnown = machine !== null && machine.cpuState !== 'unknown' && load?.cpuBusyPercent != null
@@ -159,7 +160,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
         {load !== null ? <><dt>{t`Read`}</dt><dd>{agoWords(now - Date.parse(load.observedAt))}</dd></> : null}
       </dl>
       {why !== null ? <p className="tt-paragraph">{why}</p> : null}
-      <p className="watcher-machine-panel__count"><b>{countWords(entry)}</b>{entry.isDefault ? t`. New workers start here.` : ''}</p>
+      <p className="watcher-machine-panel__count tt-paragraph">{entry.isDefault ? <Trans><b>{count}</b>. New workers start here.</Trans> : <b>{count}</b>}</p>
       {over !== null ? <p className="tt-paragraph" data-warn="true">{over}</p> : null}
       {working.length > 0 || entry.starting > 0 ? <ul>
         {working.slice(0, NAMED).map(thread => <li key={thread.id}><span className="watcher-row__ring" data-tone="working" aria-hidden="true" />
