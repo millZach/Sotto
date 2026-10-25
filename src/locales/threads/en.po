@@ -655,6 +655,10 @@ msgstr "Stop agent"
 msgid "Takes images."
 msgstr "Takes images."
 
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "That is not a branch Sotto moved here. Nothing was made."
+msgstr "That is not a branch Sotto moved here. Nothing was made."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
 msgstr "That is not an address Sotto can reach. Type it like http://localhost:11434 or http://spark-head:8888."
@@ -663,6 +667,14 @@ msgstr "That is not an address Sotto can reach. Type it like http://localhost:11
 msgid "That server is no longer saved. Nothing was changed."
 msgstr "That server is no longer saved. Nothing was changed."
 
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+msgstr "The branch this worker starts from is no longer here. Start the worker again. Nothing was made."
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
+msgstr "The branch this worker starts from is not in this project. Start the worker again. Nothing was made."
+
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "The images in your last message were not kept. Attach them again, then send."
 msgstr "The images in your last message were not kept. Attach them again, then send."
@@ -670,6 +682,10 @@ msgstr "The images in your last message were not kept. Attach them again, then s
 #: src/renderer/src/agents/delegationWords.ts
 msgid "The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}"
 msgstr "The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}"
+
+#: src/renderer/src/agents/movedWorktreeWords.ts
+msgid "The project subdirectory is not on the branch this worker starts from. Nothing was made."
+msgstr "The project subdirectory is not on the branch this worker starts from. Nothing was made."
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx

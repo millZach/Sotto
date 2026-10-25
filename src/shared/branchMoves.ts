@@ -136,4 +136,14 @@ export function branchStartWords(machine: string, branch: string, snapshot?: Sna
   const count = snapshot.untrackedCount
   return `Started on ${machine} from ${branch} with your uncommitted changes${count ? ` (${count} untracked file${count === 1 ? '' : 's'})` : ''}.`
 }
+/**
+ * Why a worker's worktree could not be made from a moved branch (#1033). Main sets one as the worktree's error, and the
+ * window shows it as a message of its own catalog (ADR-0123), so each sentence is also the key the window reads it by.
+ */
+export const movedWorktreeWords = {
+  notMoved: 'That is not a branch Sotto moved here. Nothing was made.',
+  notInProject: 'The branch this worker starts from is not in this project. Start the worker again. Nothing was made.',
+  gone: 'The branch this worker starts from is no longer here. Start the worker again. Nothing was made.',
+  noSubdirectory: 'The project subdirectory is not on the branch this worker starts from. Nothing was made.',
+} as const
 export function branchMoveRefusal(reason: BranchMoveRefusalReason, message: string): BranchMoveRefusal { return { type: 'refused', reason, message } }

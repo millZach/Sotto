@@ -3,6 +3,7 @@ import type { Dirent, Stats } from 'node:fs'
 import { lstat, mkdir, opendir, readdir, readFile, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { RECLAIM_WORKTREE_NEEDS_CONFIRMATION, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentWorktree } from '../../shared/agents'
+import { movedWorktreeWords } from '../../shared/branchMoves'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
 import { launchProcess, runToExit } from './gitLauncher'
 import { QUIET_GIT_ENV } from './gitStatus'
@@ -20,10 +21,10 @@ const MOVED_BRANCH_ADD_ATTEMPTS = 3
  * A worker started from a moved branch names its move, and its worktree is made from this ref.
  */
 export async function movedBranchRef(projectPath: string, moveId: string, git: RunGit = runWorktreeGit): Promise<string> {
-  if (!/^[0-9a-f-]{36}$/u.test(moveId)) throw new Error('That is not a branch Sotto moved here. Nothing was made.')
+  if (!/^[0-9a-f-]{36}$/u.test(moveId)) throw new Error(movedWorktreeWords.notMoved)
   const refs = await existingWorkingDirectory(projectPath).then(folder => git(folder, ['for-each-ref', '--format=%(refname)', `refs/sotto/incoming/${moveId}/`]))
     .then(output => output.split(/\r?\n/u).filter(Boolean), () => [] as string[])
-  if (refs.length !== 1 || !INCOMING_REF.test(refs[0]!)) throw new Error('The branch this worker starts from is not in this project. Start the worker again. Nothing was made.')
+  if (refs.length !== 1 || !INCOMING_REF.test(refs[0]!)) throw new Error(movedWorktreeWords.notInProject)
   return refs[0]!
 }
 
@@ -708,16 +709,16 @@ export class ThreadWorktrees {
    */
   private async allocateFromMove(repositoryRoot: string, cwd: string, mode: 'independent' | 'shared', ref: string): Promise<AgentWorktree> {
     const moved = INCOMING_REF.exec(ref)?.[1]
-    if (!moved) throw new Error('That is not a branch Sotto moved here. Nothing was made.')
+    if (!moved) throw new Error(movedWorktreeWords.notMoved)
     await this.git(repositoryRoot, ['check-ref-format', ref])
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${ref}^{commit}`])).trim() }
-    catch { throw new Error('The branch this worker starts from is no longer here. Start the worker again. Nothing was made.') }
+    catch { throw new Error(movedWorktreeWords.gone) }
     const root = await realpath(repositoryRoot), projectRelativePath = relative(root, cwd).split(sep).join('/')
     if (projectRelativePath) {
       try {
         if ((await this.git(repositoryRoot, ['cat-file', '-t', `${baseCommit}:${projectRelativePath}`])).trim() !== 'tree') throw new Error('Not a committed directory')
-      } catch { throw new Error('The project subdirectory is not on the branch this worker starts from. Nothing was made.') }
+      } catch { throw new Error(movedWorktreeWords.noSubdirectory) }
     }
     const token = randomUUID()
     return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: root,
