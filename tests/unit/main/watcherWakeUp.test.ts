@@ -1720,8 +1720,8 @@ it('tells Watcher a reply its news gives whole is enough to act on, and to read 
   expect(footer).toContain('Use read_thread only for what a reply does not say')
 })
 
-it('tells Watcher to end its turn while a thread works rather than reading it again to see whether it has finished (#1552)', () => {
-  expect(WATCHER_SYSTEM_PROMPT).toContain('While a thread works, end your turn and wait for its news.')
+it('tells Watcher to end its turn while a watched thread works rather than reading it again to see whether it has finished (#1552)', () => {
+  expect(WATCHER_SYSTEM_PROMPT).toContain('While a watched thread works, end your turn and wait for its news.')
   expect(WATCHER_SYSTEM_PROMPT).toContain('Do not read it again and again to see whether it has finished')
 })
 
