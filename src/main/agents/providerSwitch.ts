@@ -2,6 +2,7 @@ import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot, clonePlainData } from './cloneHostSnapshot'
@@ -294,7 +295,9 @@ export class ConfiguredProviderHost implements AgentHost {
     for (const record of records) {
       if (!held.has(record.id)) { this.mark(id, record.id, true); continue }
       if (kept[at++] !== record.id) moved = true
-      if (held.get(record.id) !== record) this.mark(id, record.id)
+      // A read and the subscription build their own records for one state, so an equal record is no change.
+      const before = held.get(record.id)
+      if (before !== record && !isDeepStrictEqual(before, record)) this.mark(id, record.id)
     }
     // Threads the slot kept changed order, which is rarer than anything else here: the next publication is worked out whole.
     if (moved) this.markAll()
