@@ -251,6 +251,7 @@ describe('the workspace\'s thread changes', () => {
     // Its provider publishing the same list again reads nothing back, and publishes nothing new for it.
     from = seen.received.length
     adapter.mark('s1'); adapter.publish(false); await quiet()
+    expect(seen.since(from).upserted).not.toContain(sotto('s1'))
     expect(seen.map.get(sotto('s1'))!.activities).toBeUndefined()
     // A window looks at it again: its records come back from the store, and so does the publication.
     from = seen.received.length
@@ -301,18 +302,19 @@ describe('the workspace taking in changes and taking in everything', () => {
   it('says the same as the whole path across a long run of mixed operations', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
     const sessions = ['s1', 's2', 's3', 's4', 's5', 's6']
-    const { adapter, hosts: [changed, whole], sotto } = await stack(sessions, 2)
+    const { adapter, hosts, sotto } = await stack(sessions, 2)
+    const [changed, whole] = hosts as [WorkspaceHost, WorkspaceHost]
     ;(whole as unknown as { acceptsWhole: boolean }).acceptsWhole = true
     const publications = new Map<WorkspaceHost, AgentHostSnapshot>(), ordinary = new Map<WorkspaceHost, AgentHostSnapshot>()
     for (const host of [changed, whole]) {
       host.subscribeActivitySnapshots(snapshot => { publications.set(host, snapshot) })
       host.subscribe(snapshot => { ordinary.set(host, snapshot) })
     }
-    const seen = watch(changed!)
+    const seen = watch(changed)
     // Both paths run: the changes path takes most publications in as changes, the other takes every one in whole.
     const taken = vi.spyOn(changed as unknown as { acceptThreads(changes: AgentHostChanges): unknown }, 'acceptThreads')
     const takenWhole = vi.spyOn(whole as unknown as { acceptThreads(changes: AgentHostChanges): unknown }, 'acceptThreads')
-    const both = async (work: (host: WorkspaceHost) => unknown): Promise<void> => { for (const host of [changed!, whole!]) await work(host); await quiet() }
+    const both = async (work: (host: WorkspaceHost) => unknown): Promise<void> => { for (const host of [changed, whole]) await work(host); await quiet() }
     const text = (host: WorkspaceHost, value: unknown): string => {
       const hostId = host.workspaceSnapshot().hostId!
       return JSON.stringify(value).split(hostId).join('HOST')
@@ -320,9 +322,9 @@ describe('the workspace taking in changes and taking in everything', () => {
     let compared = 0
     const same = (step: string): void => {
       compared++
-      expect(text(changed!, changed!.workspaceSnapshot()), `the workspace snapshot after ${step}`).toBe(text(whole!, whole!.workspaceSnapshot()))
-      expect(text(changed!, publications.get(changed!)), `the activity publication after ${step}`).toBe(text(whole!, publications.get(whole!)))
-      expect(text(changed!, ordinary.get(changed!)), `the ordinary publication after ${step}`).toBe(text(whole!, ordinary.get(whole!)))
+      expect(text(changed, changed.workspaceSnapshot()), `the workspace snapshot after ${step}`).toBe(text(whole, whole.workspaceSnapshot()))
+      expect(text(changed, publications.get(changed)), `the activity publication after ${step}`).toBe(text(whole, publications.get(whole)))
+      expect(text(changed, ordinary.get(changed)), `the ordinary publication after ${step}`).toBe(text(whole, ordinary.get(whole)))
     }
     const at = (session: string) => adapter.state.threads.find(item => item.id === session)!
     const publish = async (...marked: string[]): Promise<void> => { for (const session of marked) adapter.mark(session); adapter.publish(false); await quiet() }
@@ -342,7 +344,7 @@ describe('the workspace taking in changes and taking in everything', () => {
       else if (pick === 3) { at(session).title = `Provider ${round}`; await publish(session); same(`the provider renaming ${session}`) }
       else if (pick === 4) { await both(host => host.renameThread(sotto(session), `User ${round}`)); same(`the user renaming ${session}`) }
       else if (pick === 5) { const settled = round % 2 === 0; await both(host => host.setWorkspaceSettled('thread', sotto(session), settled)); same(`settling ${session}`) }
-      else if (pick === 6) { at(session).providerSessionOpen = !at(session).providerSessionOpen; await publish(session); same(`opening ${session}'s session`) }
+      else if (pick === 6) { at(session).providerSessionOpen = at(session).providerSessionOpen ? undefined : true; await publish(session); same(`opening ${session}'s session`) }
       else if (pick === 7) { const shown = sessions.filter(() => next(2) === 0).map(sotto); await both(host => host.observeThreads(shown)); same('a window showing other threads') }
       else if (pick === 8) { await both(host => host.flush()); same('a save') }
       else if (pick === 9 && adapter.state.threads.length > 3) {
